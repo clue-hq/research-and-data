@@ -47,7 +47,7 @@ import contextlib
 import time
 from typing import Any
 
-from .geometry import FREEZE_MOTION_FN, state_targets
+from .geometry import FREEZE_MOTION_FN, normalize_transform, state_targets
 
 #: The whole pass's wall clock. Ten buttons and a dozen other styles take about 2.5 s at the
 #: measured 100-140 ms each; the rest is headroom for covered elements (1.2 s each).
@@ -333,12 +333,25 @@ def look_delta(rest: dict, other: dict) -> dict:
     return out
 
 
+async def _look(handle: Any) -> dict:
+    """One read of the element's look (LOOK_JS) with its transforms as evidence (`normalize_transform`):
+    a sub-pixel leftover is no transform, and no transform is `None`, the way LOOK_JS reports a computed
+    `none`. Every rest and state read goes through here, so `look_delta` compares the values the
+    evidence keeps (a state that differs from rest only by a leftover has no transform delta)."""
+    look = await handle.evaluate(LOOK_JS)
+    for key in ("transform", "icon_transform"):
+        if look.get(key) is not None:
+            value = normalize_transform(look[key])
+            look[key] = None if value == "none" else value
+    return look
+
+
 async def _settled(handle: Any) -> dict:
     deadline = time.monotonic() + SETTLE_LIMIT_S
-    previous = await handle.evaluate(LOOK_JS)
+    previous = await _look(handle)
     while time.monotonic() < deadline:
         await asyncio.sleep(SETTLE_STEP_S)
-        current = await handle.evaluate(LOOK_JS)
+        current = await _look(handle)
         if current == previous:
             return current
         previous = current
@@ -383,7 +396,7 @@ async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: 
     motion = await handle.evaluate(MOTION_JS)  # reads the transitions, so before they are frozen
     priors = await handle.evaluate_handle(FREEZE_JS)  # the animations themselves, so the thaw finds them
     try:
-        rest = await handle.evaluate(LOOK_JS)
+        rest = await _look(handle)
         record: dict[str, Any] = {"idx": idx, "motion": motion, "rest": rest}
         _in_time(deadline)
         try:
@@ -394,25 +407,25 @@ async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: 
             if cdp is None:
                 raise
             await _force(cdp, root, idx, ["hover"])
-            hover = await handle.evaluate(LOOK_JS)
+            hover = await _look(handle)
             await _force(cdp, root, idx, [])
             record["how"] = "forced"
         record["hover"] = look_delta(rest, hover)
         if cdp is not None:
             _in_time(deadline)
             await _force(cdp, root, idx, ["hover", "active"])
-            record["pressed"] = look_delta(rest, await handle.evaluate(LOOK_JS))
+            record["pressed"] = look_delta(rest, await _look(handle))
             await _force(cdp, root, idx, [])
             await _pointer_away(page, handle)
             _in_time(deadline)
             await _force(cdp, root, idx, ["focus", "focus-visible"])
-            record["focus"] = look_delta(rest, await handle.evaluate(LOOK_JS))
+            record["focus"] = look_delta(rest, await _look(handle))
             await _force(cdp, root, idx, [])
         await _pointer_away(page, handle)
         _in_time(deadline)
         prior = await handle.evaluate(DISABLE_JS)
         try:
-            record["disabled"] = look_delta(rest, await handle.evaluate(LOOK_JS))
+            record["disabled"] = look_delta(rest, await _look(handle))
         finally:
             await _restore(handle, ENABLE_JS, prior)
     finally:
@@ -427,7 +440,7 @@ def _reveals(before: list, after: list) -> list[dict]:
     for prior, now in zip(before, after):
         if not isinstance(prior, dict) or not isinstance(now, dict) or now.get("tag") != prior.get("tag"):
             continue
-        settled = (now.get("opacity") or 0) >= 0.95 and now.get("transform") in (None, "none", "matrix(1, 0, 0, 1, 0, 0)")
+        settled = (now.get("opacity") or 0) >= 0.95 and normalize_transform(now.get("transform")) in (None, "none")
         if not settled:
             continue
         transitions = [

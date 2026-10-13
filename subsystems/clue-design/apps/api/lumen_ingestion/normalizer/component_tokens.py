@@ -84,7 +84,9 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 _SLOT_SUFFIX = re.compile(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$")
 #: Values a rest look carries that are no choice of the brand's; never minted at rest. A rest
 #: `text-decoration-line: none` IS a choice (the browser underlines links), so it is minted.
-_REST_DEFAULTS = {"text-transform": {"none"}, "cursor": {"auto", "default"}, "filter": {"none"}}
+_REST_DEFAULTS = {
+    "text-transform": {"none"}, "cursor": {"auto", "default"}, "filter": {"none"}, "transform": {"none"},
+}
 _FAMILY_PREFERENCE = {
     "fill": ("surface.", "palette.", "border.", "text."),
     "label": ("text.", "surface.", "palette.", "border."),
@@ -410,7 +412,8 @@ def _slots(look: StyleLook, *, at_rest: bool, fonts: dict[str, str]) -> list[tup
             out.append((f"shadow-{index}", "shadows", _shadow_value(sample)))
     if look.opacity is not None and not (at_rest and look.opacity == 1):
         out.append(("opacity", "opacity", _ratio(look.opacity)))
-    if look.transform and transform_ok(look.transform) and not (at_rest and look.transform == "none"):
+    if look.transform and transform_ok(look.transform) \
+            and not (at_rest and look.transform in _REST_DEFAULTS["transform"]):
         out.append(("transform", "styles", {"kind": "transform", "value": look.transform}))
     if look.outline_style not in (None, "none", "auto"):
         color("outline", look.outline_color)
@@ -423,7 +426,8 @@ def _slots(look: StyleLook, *, at_rest: bool, fonts: dict[str, str]) -> list[tup
             out.append(("outline-offset", "numbers", _px(look.outline_offset)))
     if look.icon_color and (not at_rest or look.icon_color != (look.label_color or look.color)):
         color("icon-color", look.icon_color)
-    if look.icon_transform and transform_ok(look.icon_transform):
+    if look.icon_transform and transform_ok(look.icon_transform) \
+            and not (at_rest and look.icon_transform in _REST_DEFAULTS["transform"]):
         out.append(("icon-transform", "styles", {"kind": "transform", "value": look.icon_transform}))
     if look.icon_opacity is not None and not (at_rest and look.icon_opacity == 1):
         out.append(("icon-opacity", "opacity", _ratio(look.icon_opacity)))

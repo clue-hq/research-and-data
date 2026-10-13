@@ -272,6 +272,23 @@ def test_a_colour_a_state_clears_is_minted_as_transparent() -> None:
     assert _value(kit, "colors", cleared) == {"kind": "hex", "value": "#00000000"}
 
 
+def test_no_transform_at_rest_is_the_browser_default_but_a_state_may_remove_one() -> None:
+    """A rest `none` transform (the button's or its icon's) is no brand choice, so nothing is minted for
+    it; in a state, `none` is the state taking the rest transform away, and is minted."""
+    pointer = EvidencePointer(source="website", locator="https://fixture.test/ :: button solid.047464")
+    style = MeasuredStyle(
+        surface="button", variant="solid.047464", probed="pointer",
+        rest=StyleLook(background="#047464", transform="none", icon_transform="none"),
+        hover=StyleLook(transform="none", icon_transform="none"), pointer=pointer,
+    )
+    kit = _kit()
+    (recipe,) = mint_component_tokens(kit, [style], MotionEvidence()).section["styles"]
+    assert not {"transform", "icon-transform"} & set(recipe["rest"]), recipe["rest"]
+    hover = recipe["states"]["hover"]
+    assert _value(kit, "styles", hover["transform"]) == {"kind": "transform", "value": "none"}
+    assert _value(kit, "styles", hover["icon-transform"]) == {"kind": "transform", "value": "none"}
+
+
 def test_a_kit_with_minted_tokens_comes_back_from_the_engine_whole() -> None:
     kit, _ = _mint()
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)

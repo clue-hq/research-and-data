@@ -923,6 +923,35 @@ _CLEARED = "#00000000"
 _FONT = re.compile(r"^(\d+)\s+([\d.]+)px/(\S+)\s+(.+)$")
 
 
+_MATRIX_FUNCTION = re.compile(r"^(matrix|matrix3d)\((.*)\)$")
+#: Where each matrix keeps its translation (px, rounded to 2 decimals); every other component is a
+#: ratio (rounded to 4).
+_TRANSLATION = {"matrix": (4, 5), "matrix3d": (12, 13, 14)}
+_IDENTITY = {"matrix": (1, 0, 0, 1, 0, 0), "matrix3d": (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)}
+
+
+def normalize_transform(value: object) -> object:
+    """A computed transform as evidence: a `matrix(…)` / `matrix3d(…)` rounded (ratios to 4 decimals,
+    the translation to 2 px) and written as the browser writes numbers (`1`, `0.98`, `-2`), and the
+    identity written `none`. Reads that differ only below that precision — an entrance held one
+    millisecond before its end leaves `matrix(1, 0, 0, 1, 0, 1.88911e-06)` — are the same value, and an
+    identity is no transform. Anything else is returned unchanged."""
+    match = _MATRIX_FUNCTION.match(value) if isinstance(value, str) else None
+    if not match:
+        return value
+    kind = match.group(1)
+    try:
+        numbers = [float(part) for part in match.group(2).split(",")]
+    except ValueError:
+        return value
+    if len(numbers) != len(_IDENTITY[kind]) or not all(math.isfinite(n) for n in numbers):
+        return value
+    rounded = [round(n, 2 if i in _TRANSLATION[kind] else 4) + 0.0 for i, n in enumerate(numbers)]  # + 0.0: no -0
+    if tuple(rounded) == _IDENTITY[kind]:
+        return "none"
+    return f"{kind}({', '.join(f'{n:.4f}'.rstrip('0').rstrip('.') for n in rounded)})"
+
+
 def _opaque_hex(value: object) -> str | None:
     """A measured colour, or None when it paints nothing (fully transparent)."""
     hex_value = _hex(value)

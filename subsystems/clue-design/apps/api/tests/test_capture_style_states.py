@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import re
+import json
 import time
 from pathlib import Path
 
@@ -22,8 +22,12 @@ import pytest
 from lumen_ingestion.capture import states as states_module
 from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry, shape_groups
 from lumen_ingestion.capture.states import LOOK_JS, REVEAL_BEFORE_JS, STATE_PASS_DEADLINE_S, probe_states
+from lumen_ingestion.evidence import MotionEvidence
+from lumen_ingestion.normalizer.component_tokens import mint_component_tokens
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "capture"
+#: Garner's published kit, the kit the measured tokens are minted into here.
+GARNER_KIT = Path(__file__).resolve().parent / "fixtures" / "ingestion" / "garner_kit.json"
 
 #: Every marked element's look, in one evaluate: an element that has left the page is simply absent.
 LOOKS_JS = (
@@ -205,27 +209,19 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     assert not {"box_shadow", "transform"} & set(pulse["disabled"]), pulse["disabled"]
     assert run["after"] == ["", "pulse"], "the animation is given back"
 
-    styles = {s.variant: s for s in parse_geometry({**run["geometry"], "states": run["result"]},
-                                                    page_url="https://fixture.test/").styles}
+    parsed = parse_geometry({**run["geometry"], "states": run["result"]}, page_url="https://fixture.test/")
+    styles = {s.variant: s for s in parsed.styles}
     assert styles["solid.047464"].rest.box_shadow is None and styles["solid.047464"].rest.transform is None
 
     # An entrance that has finished keeps its last frame (opaque, no offset): the CTA the page shows,
-    # not its authored start (`opacity: 0`, 16px down).
+    # not its authored start (`opacity: 0`, 16px down). The identity it ends on is no transform, so
+    # none is minted for it.
     fade = run["by_id"]["b-fade"]
-    assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] == "matrix(1, 0, 0, 1, 0, 0)", fade["rest"]
+    assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] is None, fade["rest"]
     assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
-
-
-def _in_place(transform: str | None) -> bool:
-    """No offset: none, or a translation within a hundredth of a pixel of none. An entrance still
-    running is held one millisecond before its end (FX-C2, so its end handlers do not run): that frame
-    is where it ends to within a sub-pixel residue (`matrix(1, 0, 0, 1, 0, 1.88911e-06)` for the 4 s
-    fade here), never its authored start, 16px down."""
-    if transform is None:
-        return True
-    match = re.fullmatch(r"matrix\((.*)\)", transform)
-    values = [float(value) for value in match.group(1).split(",")] if match else []
-    return len(values) == 6 and values[:4] == [1, 0, 0, 1] and all(abs(value) < 0.01 for value in values[4:])
+    minted = mint_component_tokens(json.loads(GARNER_KIT.read_text()), parsed.styles, MotionEvidence())
+    (fade_recipe,) = [r for r in minted.section["styles"] if r["variant"] == "solid.28241e"]
+    assert "transform" not in fade_recipe["rest"], fade_recipe["rest"]
 
 
 def test_an_entrance_still_running_is_read_where_it_ends() -> None:
@@ -241,7 +237,7 @@ def test_an_entrance_still_running_is_read_where_it_ends() -> None:
         run = asyncio.run(_capture("playwright", fixture="entrance_ctas.html", before_probe=before_probe))
         for key in ("b-slow", "b-late"):
             rest = run["by_id"][key]["rest"]
-            assert rest["opacity"] == 1 and _in_place(rest["transform"]), (before_probe, key, rest)
+            assert rest["opacity"] == 1 and rest["transform"] is None, (before_probe, key, rest)
         assert run["by_id"]["b-slow"]["hover"] == {"background": "rgb(3, 90, 78)"}
 
 
@@ -314,6 +310,17 @@ def test_an_entrance_ending_is_not_caused_by_the_capture() -> None:
     styles = {s.variant for s in parse_geometry({**run["geometry"], "states": run["result"]},
                                                 page_url="https://fixture.test/").styles if s.surface == "button"}
     assert styles == {"solid.047464", "solid.28241e"}, styles
+
+
+def test_a_reveal_that_ends_on_a_leftover_has_settled() -> None:
+    """A reveal read a hair before its transition lands (a sub-pixel translate left) has settled: its
+    transform is compared as evidence is, not as the raw string."""
+    before = [{"tag": "section", "opacity": 0, "transform": "matrix(1, 0, 0, 1, 0, 24)", "classes": "reveal"}]
+    after = [{"tag": "section", "opacity": 1, "transform": "matrix(1, 0, 0, 1, 0, 0.0004)", "classes": "reveal is-in",
+              "where": "section#reveal.reveal",
+              "transitions": [{"property": "transform", "duration_ms": 600, "easing": "ease", "delay_ms": 0}]}]
+    (reveal,) = states_module._reveals(before, after)
+    assert reveal["from_transform"] == "matrix(1, 0, 0, 1, 0, 24)" and reveal["trigger"] == ["is-in"]
 
 
 def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:
