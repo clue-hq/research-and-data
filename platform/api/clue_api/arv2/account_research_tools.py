@@ -121,8 +121,6 @@ from clue_api.arv2.media_feeds_client import (
     find_episode,
     is_youtube,
     reject_native_video,
-    youtube_metadata,
-    youtube_words,
 )
 from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.person_compliance import apply_person_floor
@@ -569,10 +567,6 @@ class ToolRuntime:
             from clue_api.arv2.media_resolution import PublicMediaTransport
 
             transport = PublicMediaTransport()
-        if provider == "media_youtube" and isinstance(transport, HttpxTransport):
-            from clue_api.arv2.media_recording import YouTubeAudioTransport
-
-            transport = YouTubeAudioTransport()
         caller = ProviderCaller(
             transport=transport,
             raw_sink=raw,
@@ -2025,36 +2019,18 @@ def _podcast_hop(
 def _youtube_hop(
     runtime: ToolRuntime, args: ReadMediaFeedsArgs, watch_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed.
+    """Retired 2026-10-13: this read YouTube's watch page, which YouTube's terms do not allow.
 
-    The watch page is passed in for the same reason the feed is: the caller owns the candidate
-    order, the hop owns one URL.
+    Spec docs/superpowers/specs/2026-10-13-legitimate-media-sources-design.md §2. The current
+    ``read_media`` tool finds the video's podcast episode or reads it through the official route.
     """
+    del runtime, args, watch_url
 
     def hop(caller: ProviderCaller) -> _MediaItem:
-        reject_native_video(watch_url)
-        meta = youtube_metadata(watch_url, caller)
-        exa = runtime.clients.exa(caller)
-
-        def page_text(urls: Sequence[str]) -> Mapping[str, str]:
-            fetched = exa.contents(list(urls), text_max_chars=_VERIFY_TEXT_MAX_CHARS)
-            return {hit.url: hit.text or "" for hit in fetched.results if hit.url}
-
-        words = youtube_words(watch_url, page_text, title=meta.title)
-        return _MediaItem(
-            kind="youtube",
-            url=watch_url,
-            title=meta.title,
-            duration_s=meta.length_s,
-            transcript_model=None,
-            transcript_text="",
-            # Indexed page text is not attributed speech: nothing here proves the subject said any
-            # of it, so the item is recorded unverified and quotes must come from elsewhere.
-            speaker_verified=False,
-            speaker_evidence="page text is not attributed speech",
-            quotes=(),
-            words=words.text,
-            costs=(meta.cost,),
+        raise RefusalError(
+            "youtube_read_retired",
+            "YouTube pages are no longer read directly (2026-10-13). Use read_media: it finds the "
+            "video's podcast episode or reads the public video through the official route.",
         )
 
     return hop

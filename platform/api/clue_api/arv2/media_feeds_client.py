@@ -1,9 +1,8 @@
-"""Podcast RSS and the YouTube probe — resolving a media mention to a fetchable artifact.
+"""Podcast RSS — resolving a media mention to a fetchable artifact.
 
 This is the free, deterministic half of the media lane. Nothing here transcribes or reasons: it
-turns "Sanaz was on the Boardroom Club podcast" into an MP3 URL with a known duration, and
-"Nick Fisher is Cocktail Chemistry" into a video id with a known length, so the paid Gemini pass
-downstream knows exactly what it is about to spend media-seconds on.
+turns "Sanaz was on the Boardroom Club podcast" into an MP3 URL with a known duration, so the paid
+transcription downstream knows exactly what it is about to spend media-seconds on.
 
 Three of Appendix A's laws shape the module:
 
@@ -17,17 +16,14 @@ Three of Appendix A's laws shape the module:
 * **Law 11's walled-media clause — LinkedIn-native and X-native video is never fetched.**
   :func:`reject_native_video` is the refusal, raised before any request is built.
 
-The YouTube caption endpoint (``timedtext``) is **dead** — HTTP 200 with an empty body on every
-documented form — so it is not called. Indexed page text comes from a
-:data:`PageTextFetcher` the caller supplies instead.
+YouTube watch pages are never read here (spec 2026-10-13-legitimate-media-sources-design §2): a
+video's details come from the official YouTube Data API in ``media_sources``.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -83,14 +79,6 @@ _VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/|/live/)([A-Za-z0-9_-]{11})")
 #: purpose: a bare number anywhere in a title is a year, a headcount or a funding round far more
 #: often than it is an episode number.
 _TITLE_NUMBER_RE = re.compile(r"^\s*(?:#|ep(?:isode)?\.?\s*#?)\s*(\d+)\b", re.IGNORECASE)
-
-#: Both spellings of the player-response assignment seen in served watch-page HTML.
-_PLAYER_RESPONSE_RE = re.compile(r'ytInitialPlayerResponse(?:"\])?\s*=\s*\{')
-
-#: Maps each requested URL to the indexed page text a contents provider holds for it. The Exa
-#: contents client satisfies this; so does a ten-line test fetcher. Declaring the seam this way
-#: is what keeps this module free of any provider knowledge at all.
-PageTextFetcher = Callable[[Sequence[str]], Mapping[str, str]]
 
 
 class UnsupportedMediaHost(Arv2Error):
@@ -192,38 +180,6 @@ class AudioFile:
     sha256: str
     duration_s: int | None
     content_type: str | None
-    cost: CallCost | None = None
-
-
-@dataclass(frozen=True)
-class YouTubeMeta:
-    """What the watch page's own player response says about a video.
-
-    ``cost`` is the watch-page fetch's money view — free (law 9), so ``cost_source='free'``.
-    """
-
-    video_id: str | None
-    title: str | None
-    length_s: int | None
-    cost: CallCost
-
-
-@dataclass(frozen=True)
-class YouTubeWords:
-    """Indexed page text for a watch page — the transcript substitute when captions are dead.
-
-    ``title`` is optional because a :data:`PageTextFetcher` yields URL-keyed text and nothing
-    else; a caller that also ran :func:`youtube_metadata` passes the real title in.
-
-    ``cost`` is ``None`` unless the caller supplied it. This is the one value in the lane whose
-    request this module does not make: the page text comes from a caller-supplied
-    :data:`PageTextFetcher`, so only the caller knows what its own provider charged. A fabricated
-    zero here would be a claim about a call we never saw.
-    """
-
-    url: str
-    title: str | None
-    text: str
     cost: CallCost | None = None
 
 
@@ -570,121 +526,3 @@ def video_id(url: str) -> str | None:
     """The eleven-character video id in a watch, ``youtu.be`` or ``/live/`` URL."""
     match = _VIDEO_ID_RE.search(url)
     return match.group(1) if match else None
-
-
-def _json_object_at(text: str, start: int) -> str | None:
-    """The balanced ``{...}`` beginning at ``start``, or ``None`` if it never closes.
-
-    String- and escape-aware on purpose: a watch page's player response is full of titles
-    containing braces, and a naive depth counter (or a non-greedy regex) truncates the object
-    mid-way and turns a perfectly good page into a parse error.
-    """
-    depth = 0
-    in_string = False
-    escaped = False
-    for index in range(start, len(text)):
-        char = text[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : index + 1]
-    return None
-
-
-def extract_player_response(html: str) -> Mapping[str, object] | None:
-    """The ``ytInitialPlayerResponse`` object embedded in a watch page, or ``None``."""
-    match = _PLAYER_RESPONSE_RE.search(html)
-    if match is None:
-        return None
-    blob = _json_object_at(html, match.end() - 1)
-    if blob is None:
-        return None
-    try:
-        parsed = json.loads(blob)
-    except ValueError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def youtube_metadata(watch_url: str, caller: ProviderCaller) -> YouTubeMeta:
-    """Read a video's title and length from its own watch page. Free (law 9), no API key.
-
-    The caption endpoint is not touched: YouTube's public ``timedtext`` service answers 200 with
-    an empty body on every documented form, so calling it would only manufacture a raw record of
-    nothing. A page that serves no ``ytInitialPlayerResponse`` (a consent wall, a bot check)
-    raises :class:`RawParseError` naming the saved record, because the served HTML is the
-    evidence and it is already on disk.
-    """
-    reject_native_video(watch_url)
-    spec = CallSpec(
-        provider="youtube",
-        operation="watch",
-        label=video_id(watch_url) or _label_for(watch_url),
-        request=HttpRequest(
-            method="GET",
-            url=watch_url,
-            headers={"User-Agent": BROWSER_USER_AGENT, "Accept": "text/html,*/*;q=0.8"},
-            timeout_s=WATCH_TIMEOUT_S,
-        ),
-    )
-    result = caller.call(spec)
-    if not 200 <= result.response.status < 300:
-        raise MediaFetchError(watch_url, result.response.status, result.raw_ref)
-
-    player = extract_player_response(result.text())
-    if player is None:
-        raise RawParseError(result.raw_ref, "ytInitialPlayerResponse not present in served HTML")
-
-    details = player.get("videoDetails")
-    details = details if isinstance(details, dict) else {}
-    raw_title = details.get("title")
-    raw_length = details.get("lengthSeconds")
-    try:
-        length_s = int(raw_length) if raw_length is not None else None
-    except (TypeError, ValueError):
-        length_s = None
-    return YouTubeMeta(
-        video_id=video_id(watch_url),
-        title=raw_title if isinstance(raw_title, str) else None,
-        length_s=length_s,
-        cost=result.call_cost,
-    )
-
-
-def youtube_words(
-    watch_url: str,
-    page_text: PageTextFetcher,
-    *,
-    title: str | None = None,
-    cost: CallCost | None = None,
-) -> YouTubeWords:
-    """Indexed page text for a watch page, via a caller-supplied contents fetcher.
-
-    This is the caption fallback: ``timedtext`` is dead, so the words — when there are any — come
-    from a provider's indexed copy of the page. An empty result is a legitimate terminal answer
-    (law 12), returned as empty text rather than raised: plenty of watch pages carry no indexed
-    transcript, and that is a fact about the video, not a failure of the fetch.
-
-    ``title`` is optional because a :data:`PageTextFetcher` returns URL-keyed text only; a caller
-    that already ran :func:`youtube_metadata` passes the real title through. ``cost`` is the same
-    kind of pass-through: the fetcher makes the request, so only its owner can say what it cost,
-    and this function will not invent a number for a call it did not make.
-    """
-    if not is_youtube(watch_url):
-        raise ValueError(f"youtube_words expects a YouTube watch URL, got {watch_url!r}")
-    fetched = page_text([watch_url])
-    normalized = {key.rstrip("/"): value for key, value in fetched.items()}
-    text = normalized.get(watch_url.rstrip("/")) or ""
-    return YouTubeWords(url=watch_url, title=title, text=text, cost=cost)

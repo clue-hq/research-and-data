@@ -416,3 +416,59 @@ def test_the_linkedin_refusal_points_to_other_places():
 
     message = str(UnsupportedMediaHost("https://www.linkedin.com/posts/x", "linkedin.com"))
     assert "never fetched" in message and "YouTube" in message and "event" in message
+
+
+# --- Task 6: what a worker lacks for media -------------------------------------------------------
+
+
+def test_a_worker_names_what_it_lacks_for_media(monkeypatch):
+    import shutil
+
+    from clue_api.arv2 import account_research_driver as driver
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        driver.shutil, "which", lambda name: None if name == "ffprobe" else real_which(name)
+    )
+    # Explicit, so the test never depends on the keys a developer's environment carries.
+    bare = Secrets(_env_file=None).model_copy(
+        update={"deepgram_api_key": None, "youtube_data_api_key": None}
+    )
+    assert driver.media_lane_missing(bare) == [
+        "ffprobe",
+        "CLUE_DEEPGRAM_API_KEY",
+        "CLUE_YOUTUBE_DATA_API_KEY",
+    ]
+    monkeypatch.setattr(driver.shutil, "which", lambda name: f"/usr/bin/{name}")
+    full = bare.model_copy(
+        update={
+            "deepgram_api_key": SecretStr("dg"),
+            "youtube_data_api_key": SecretStr("yt"),
+        }
+    )
+    assert driver.media_lane_missing(full) == []
+
+
+def test_live_clients_carry_media_keys_and_readiness():
+    from clue_api.arv2.account_research_driver import _LiveClients
+    from clue_config import Settings
+
+    def clients(**keys):
+        return _LiveClients(
+            settings=Settings(_env_file=None),
+            exa_api_key=SecretStr("e"),
+            ai_ark_api_key=SecretStr("a"),
+            gemini_api_key=SecretStr("g"),
+            openrouter_api_key=SecretStr("o"),
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            **keys,
+        )
+
+    assert not clients().transcription_ready
+    ready = clients(deepgram_api_key=SecretStr("dg"), youtube_data_api_key=SecretStr("yt"))
+    assert ready.transcription_ready
+    from clue_api.arv2.gemini_media_client import MediaBudget
+
+    job = ready.for_job(media_budget=MediaBudget(60))
+    assert job.media_source_keys.youtube_api_key.get_secret_value() == "yt"
+    assert job.transcription_ready

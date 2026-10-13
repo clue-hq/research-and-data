@@ -172,6 +172,7 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
 async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
     url = args.url
     selected: Candidate | None = None
+    video: dict[str, Any] | None = None
     if args.candidate_ref:
         async with runtime._conn_factory() as conn:
             candidate_row = await store.get_attempt(runtime, conn, args.candidate_ref)
@@ -192,7 +193,9 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 resolved = await store.cached_resolution(runtime, conn, target)
             if resolved is None or args.repair_version:
                 resolved = (
-                    Resolution("resolved", (selected,))
+                    await acquisition.attach_feed_transcript(
+                        runtime, Resolution("resolved", (selected,))
+                    )
                     if selected and target == url
                     else await acquisition.resolve_url(runtime, target, args.episode_hint)
                 )
@@ -273,6 +276,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 )
                 return result
             gaps.append(result.get("gap", result["state"]))
+            video = result.get("video") or video
             if (
                 result["state"] in {"unknown", "dispatched", "reserved", "unavailable"}
                 and "operation_ref" in result
@@ -305,6 +309,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
     return {
         "state": "unavailable",
         "gaps": gaps,
+        **({"video": video} if video else {}),
         "source_text_is_untrusted": True,
         "next_action": "No transcript obtained through this route. Use the reported gaps to "
         "distinguish recording resolution, retrieval and transcription failures. A publisher "

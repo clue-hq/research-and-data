@@ -42,7 +42,14 @@ REACTIONS: dict[str, str] = {
         "Skip this item; the reservation was released; do not shorten and retry."
     ),
     "enclosure_too_large": "Skip this item; do not retry with another URL for the same episode.",
-    "native_video_rejected": "Use the YouTube words path (page text), never a video download.",
+    "native_video_rejected": (
+        "Look for the same talk elsewhere (YouTube, Vimeo, the event's own page or a podcast) and "
+        "read it with read_media; never a video download."
+    ),
+    "youtube_read_retired": (
+        "Call read_media with the YouTube link: it finds the video's podcast episode or reads the "
+        "public video through the official route."
+    ),
     "speaker_unverified": (
         "Quote nothing from this transcript; record the item as unattributed media."
     ),

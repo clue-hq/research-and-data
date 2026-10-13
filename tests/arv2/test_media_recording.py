@@ -7,7 +7,6 @@ import wave
 import pytest
 
 from clue_api.arv2 import media_recording as recording
-from clue_spend.transport import HttpRequest
 
 
 def test_lossless_wav_passes_through_without_resampling(tmp_path):
@@ -54,25 +53,8 @@ def test_video_first_audio_track_is_extracted_without_channel_or_sample_changes(
     assert "-ar" not in calls[1] and "-ac" not in calls[1]
 
 
-def test_youtube_acquisition_is_exact_public_single_recording(monkeypatch):
-    monkeypatch.setattr(recording, "find_spec", lambda _: object())
-    monkeypatch.setattr(recording.shutil, "which", lambda _: "/bin/node")
-    calls = []
-
-    def command(args):
-        calls.append(args)
-        if "--dump-single-json" in args:
-            return json.dumps({"availability": "public", "id": "abcdefghijk"})
-        from pathlib import Path
-
-        Path(args[args.index("-o") + 1].replace("%(ext)s", "webm")).write_bytes(b"audio")
-        return ""
-
-    monkeypatch.setattr(recording, "command", command)
-    response = recording.YouTubeAudioTransport().send(
-        HttpRequest("GET", "https://youtu.be/abcdefghijk")
-    )
-    assert response.body == b"audio"
-    assert all("--ignore-config" in args and "--no-playlist" in args for args in calls)
-    with pytest.raises(ValueError):
-        recording.YouTubeAudioTransport().send(HttpRequest("GET", "http://localhost/audio"))
+def test_youtube_is_never_downloaded():
+    """Spec 2026-10-13 §2: no yt-dlp anywhere; YouTube is read by Gemini from its public link."""
+    assert not hasattr(recording, "download_youtube")
+    assert not hasattr(recording, "YouTubeAudioTransport")
+    assert not hasattr(recording, "fetch_youtube")

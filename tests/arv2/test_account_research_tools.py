@@ -70,8 +70,6 @@ from clue_api.arv2.media_feeds_client import (
     Episode,
     MediaFetchError,
     Podcast,
-    YouTubeMeta,
-    YouTubeWords,
 )
 from clue_api.arv2.structuring_client import (
     FieldCatalog,
@@ -1786,11 +1784,7 @@ def test_read_media_feeds_prefers_the_feed_over_the_watch_page_when_both_are_giv
         calls.append(url)
         return stubbed_fetch(url, caller)
 
-    def never(url: str, caller: Any) -> Any:
-        raise AssertionError("the watch page is a fallback, not a second call")
-
     monkeypatch.setattr(tools, "fetch_feed", fetch)
-    monkeypatch.setattr(tools, "youtube_metadata", never)
     runtime, _, _, _ = _runtime()
 
     found = _call(
@@ -1867,35 +1861,20 @@ def test_read_media_feeds_needs_one_of_the_two_urls() -> None:
     assert refused["code"] == "invalid_arguments"
 
 
-def test_read_media_feeds_takes_the_youtube_words_path_without_transcribing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime, clients, writer, _ = _runtime()
-    monkeypatch.setattr(
-        tools,
-        "youtube_metadata",
-        lambda url, caller: YouTubeMeta(
-            video_id="v1", title="Nick on ABM", length_s=900, cost=_cost(provider="youtube")
-        ),
-    )
-    monkeypatch.setattr(
-        tools,
-        "youtube_words",
-        lambda url, page_text, *, title=None, cost=None: YouTubeWords(
-            url=url, title=title, text="indexed words about ABM", cost=cost
-        ),
-    )
+def test_read_media_feeds_no_longer_reads_youtube_pages() -> None:
+    """Spec 2026-10-13 §2: the legacy tool's watch-page scrape is retired; it refuses instead."""
+    runtime, clients, writer, transport = _runtime()
 
-    found = _call(
+    refused = _call(
         runtime,
         "read_media_feeds",
         person_name="Nick Fisher",
         youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
     )
 
-    assert found["words"] == "indexed words about ABM"
-    assert clients.media_client.short_calls == [], "the words path never transcribes"
-    assert [d.field_key for d in writer.drafts] == ["account.media_layer_index"]
+    assert refused["code"] == "youtube_read_retired"
+    assert clients.media_client.short_calls == []
+    assert writer.drafts == []
 
 
 # -- verify_links ---------------------------------------------------------------------------------

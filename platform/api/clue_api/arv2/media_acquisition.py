@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import shutil
 import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -17,14 +18,17 @@ from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
 from clue_api.arv2.deepgram_media_client import DeepgramTranscript, parameters, parse_response
 from clue_api.arv2.gemini_media_client import (
+    SpeakerContext,
     Transcript,
     detect_loops,
+    join_windows,
     sentence_lines,
+    youtube_windows,
 )
-from clue_api.arv2.media_recording import fetch_youtube, prepare_audio
-from clue_api.arv2.media_resolution import Resolution, fetch, resolve
+from clue_api.arv2.media_recording import prepare_audio
+from clue_api.arv2.media_resolution import Resolution, fetch, resolve, with_feed_transcript
 from clue_api.arv2.media_sources import media_keys_of
-from clue_api.arv2.media_types import Quality, Segment, canonical_text
+from clue_api.arv2.media_types import Candidate, Quality, Segment, canonical_text
 from clue_storage import read_verified_artifact
 
 
@@ -209,6 +213,19 @@ async def acquire(
                 raise store.unavailable(
                     "repair reference must be the current version of this recording"
                 )
+    if candidate.family == "youtube" and not resolution.transcript:
+        return await _acquire_youtube(
+            runtime,
+            item=item,
+            candidate=candidate,
+            resolution=resolution,
+            purpose=purpose,
+            repair_version=repair_version,
+        )
+    if not resolution.transcript and (gap := media_lane_gap(runtime)):
+        async with runtime._conn_factory() as conn:
+            await store.release_item(runtime, conn, item["item_id"])
+        return {"state": "unavailable", "gap": gap}
     language = runtime.settings.arv2_deepgram_language
     request = {
         "recipe": "deepgram-transcript-v1"
@@ -223,7 +240,7 @@ async def acquire(
     expected_hash = None
     remote_url = None
     with tempfile.TemporaryDirectory(prefix="arv2-media-") as directory:
-        if not resolution.transcript and (candidate.media_url or candidate.family == "youtube"):
+        if not resolution.transcript and candidate.media_url:
             # Download is independently journalled and retained as an artifact for repairs.
             async with runtime._conn_factory() as conn:
                 download, won = await ops.begin(
@@ -234,15 +251,12 @@ async def acquire(
                     request={"url": candidate.media_url or candidate.url},
                 )
             if won:
+                media_url = candidate.media_url
                 response = await ops.call(
                     runtime,
                     download,
-                    "media_youtube" if candidate.family == "youtube" else "media_public",
-                    lambda caller: (
-                        fetch_youtube(caller, candidate.url)
-                        if candidate.family == "youtube"
-                        else fetch(caller, candidate.media_url or candidate.url, binary=True)
-                    ),
+                    "media_public",
+                    lambda caller: fetch(caller, media_url, binary=True),
                 )
                 mime = response.headers.get("content-type", "").split(";")[0].lower()
                 if not mime.startswith(("audio/", "video/")):
@@ -385,61 +399,221 @@ async def acquire(
             )
         if transcript is None:
             raise store.unavailable("unsupported acquisition route")
-        value, segments, quality = assess_transcript(transcript)
-        if resolution.transcript:
-            # Only actual publisher caption cues carry source-supplied timing.
-            segments = list(resolution.segments) or segments
-        async with runtime._conn_factory() as conn:
-            if not value.strip():
-                # Paid processing still consumed seconds even when no speech was returned.
-                await ops.finish(
-                    runtime, conn, op, result={"empty_transcript": True, "acquisition": request}
-                )
-                await store.release_item(runtime, conn, item["item_id"])
-                await store.attempt(
-                    runtime,
-                    conn,
-                    kind="read",
-                    outcome="empty_transcript",
-                    item_id=item["item_id"],
-                    purpose=purpose,
-                )
-                return {"state": "empty", "gap": "empty_transcript"}
-            version = await store.save_transcript(
-                runtime,
-                conn,
-                item_id=item["item_id"],
-                value=value,
-                segments=segments,
-                quality=quality,
-                method="publisher_transcript" if resolution.transcript else candidate.family,
-                operation_id=op["operation_id"],
-                supersedes=repair_version,
-                recognized=[("linkedin:" + url, url) for url in candidate.recognized_subject_urls],
-            )
+        return await _save_transcript(
+            runtime,
+            op=op,
+            item=item,
+            candidate=candidate,
+            resolution=resolution,
+            transcript=transcript,
+            request=request,
+            purpose=purpose,
+            repair_version=repair_version,
+            method="publisher_transcript" if resolution.transcript else candidate.family,
+        )
+
+
+async def _save_transcript(
+    runtime: Any,
+    *,
+    op: dict[str, Any],
+    item: dict[str, Any],
+    candidate: Candidate,
+    resolution: Resolution,
+    transcript: Transcript | DeepgramTranscript,
+    request: dict[str, Any],
+    purpose: str,
+    repair_version: UUID | None,
+    method: str,
+) -> dict[str, Any]:
+    """Assess, save and index-ready a paid or published transcript, and record the read."""
+    value, segments, quality = assess_transcript(transcript)
+    if resolution.transcript:
+        # Only actual publisher caption cues carry source-supplied timing.
+        segments = list(resolution.segments) or segments
+    async with runtime._conn_factory() as conn:
+        if not value.strip():
+            # Paid processing still consumed seconds even when no speech was returned.
             await ops.finish(
-                runtime,
-                conn,
-                op,
-                result={
-                    "version_ref": str(version),
-                    "acquisition": request,
-                    "quotes": [{**asdict(q), "usable": False} for q in transcript.quotes],
-                },
+                runtime, conn, op, result={"empty_transcript": True, "acquisition": request}
             )
+            await store.release_item(runtime, conn, item["item_id"])
             await store.attempt(
                 runtime,
                 conn,
                 kind="read",
-                outcome="acquired",
+                outcome="empty_transcript",
                 item_id=item["item_id"],
-                version_id=version,
                 purpose=purpose,
             )
-            saved = await store.load_transcript(runtime, conn, version)
-        return receipt(
-            saved, reused=False, quotes=[{**asdict(q), "usable": False} for q in transcript.quotes]
+            return {"state": "empty", "gap": "empty_transcript"}
+        version = await store.save_transcript(
+            runtime,
+            conn,
+            item_id=item["item_id"],
+            value=value,
+            segments=segments,
+            quality=quality,
+            method=method,
+            operation_id=op["operation_id"],
+            supersedes=repair_version,
+            recognized=[("linkedin:" + url, url) for url in candidate.recognized_subject_urls],
         )
+        await ops.finish(
+            runtime,
+            conn,
+            op,
+            result={
+                "version_ref": str(version),
+                "acquisition": request,
+                "quotes": [{**asdict(q), "usable": False} for q in transcript.quotes],
+            },
+        )
+        await store.attempt(
+            runtime,
+            conn,
+            kind="read",
+            outcome="acquired",
+            item_id=item["item_id"],
+            version_id=version,
+            purpose=purpose,
+        )
+        saved = await store.load_transcript(runtime, conn, version)
+    return receipt(
+        saved, reused=False, quotes=[{**asdict(q), "usable": False} for q in transcript.quotes]
+    )
+
+
+def media_lane_gap(runtime: Any) -> str | None:
+    """What this worker lacks to transcribe a recording, named, or ``None`` (spec §4)."""
+    missing = [tool for tool in ("ffprobe", "ffmpeg") if shutil.which(tool) is None]
+    if not getattr(runtime.clients, "transcription_ready", True):
+        missing.append("Deepgram key")
+    return f"media_lane_unavailable_on_worker: {', '.join(missing)} missing" if missing else None
+
+
+async def attach_feed_transcript(runtime: Any, resolution: Resolution) -> Resolution:
+    """A chosen feed episode still gets its publisher transcript before any audio is bought."""
+    candidate = resolution.candidates[0] if resolution.candidates else None
+    if candidate is None or not candidate.transcript_url or resolution.transcript:
+        return resolution
+    return cast(
+        Resolution,
+        await runtime.call_provider(
+            "media_public", lambda caller: with_feed_transcript(caller, resolution)
+        ),
+    )
+
+
+def video_details(candidate: Candidate) -> dict[str, Any]:
+    """What the agent learns about a video it could not get words from."""
+    return {
+        "title": candidate.title,
+        "published_at": candidate.published_at.isoformat() if candidate.published_at else None,
+        "duration_s": candidate.duration_s,
+        "description": candidate.description[:1200],
+        "url": candidate.url,
+    }
+
+
+async def _acquire_youtube(
+    runtime: Any,
+    *,
+    item: dict[str, Any],
+    candidate: Candidate,
+    resolution: Resolution,
+    purpose: str,
+    repair_version: UUID | None,
+) -> dict[str, Any]:
+    """Spec §3 step 3: Gemini reads the public link in windows; nothing is downloaded."""
+    if not runtime.settings.arv2_media_youtube_gemini_enabled:
+        async with runtime._conn_factory() as conn:
+            await store.release_item(runtime, conn, item["item_id"])
+        return {
+            "state": "unavailable",
+            "gap": "youtube_transcription_disabled",
+            "video": video_details(candidate),
+        }
+    duration = candidate.duration_s or 0
+    budget = runtime.media_budget
+    if duration <= 0 or budget.used_s + duration > budget.ceiling_s:
+        # Refused before any window is paid, never cut off after the first one.
+        async with runtime._conn_factory() as conn:
+            await store.release_item(runtime, conn, item["item_id"])
+        return {
+            "state": "unavailable",
+            "gap": "media_budget_exhausted" if duration > 0 else "duration_unknown",
+            "video": video_details(candidate),
+        }
+    windows = youtube_windows(duration, runtime.settings.arv2_media_gemini_window_seconds)
+    request: dict[str, Any] = {
+        "recipe": "gemini-youtube-v1",
+        "model": runtime.settings.arv2_media_video_model,
+        "windows": windows,
+        "repair": str(repair_version) if repair_version else None,
+    }
+    async with runtime._conn_factory() as conn:
+        op, won = await ops.begin(
+            runtime,
+            conn,
+            item_id=item["item_id"],
+            stage="transcribe",
+            request=request,
+            seconds=duration,
+        )
+    if not won:
+        if op["state"] == "succeeded" and op["result"].get("version_ref"):
+            async with runtime._conn_factory() as conn:
+                await store.consume_reused_item(runtime, conn, item["item_id"])
+                saved = await store.load_transcript(
+                    runtime, conn, UUID(op["result"]["version_ref"])
+                )
+            return receipt(saved, reused=True)
+        return {
+            "state": op["state"],
+            "operation_ref": str(op["operation_id"]),
+            "gap": "acquisition_not_ready_no_automatic_repurchase",
+        }
+    person = runtime.scope.person_name or ""
+    context = SpeakerContext(
+        person_name=person,
+        person_role=runtime.scope.person_title or "",
+        organisation=runtime.scope.account_name or "",
+        named_in_metadata=bool(person)
+        and person.casefold() in f"{candidate.title} {candidate.description}".casefold(),
+    )
+
+    def hop(caller: Any) -> Transcript:
+        client = runtime.clients.media(caller, runtime.ledger_of(caller))
+        return join_windows(
+            [
+                (
+                    start,
+                    client.transcribe_video(
+                        candidate.url,
+                        duration_s=end - start,
+                        start_s=start,
+                        end_s=end,
+                        context=context,
+                    ),
+                )
+                for start, end in windows
+            ]
+        )
+
+    transcript = await ops.call(runtime, op, "gemini", hop)
+    return await _save_transcript(
+        runtime,
+        op=op,
+        item=item,
+        candidate=candidate,
+        resolution=resolution,
+        transcript=transcript,
+        request=request,
+        purpose=purpose,
+        repair_version=repair_version,
+        method="gemini_youtube",
+    )
 
 
 def receipt(

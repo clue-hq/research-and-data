@@ -25,8 +25,6 @@ dependencies = [
     # ARV2 (R1): the one HTTP library behind clue_api.arv2.transport.HttpxTransport —
     # every ARV2 provider call goes over plain HTTP through the wrapper, never a vendor SDK.
     "httpx>=0.28",
-    # Public YouTube audio extraction; EJS support matches the successful Deepgram trial.
-    "yt-dlp[default]>=2026.8.19",
     # ARV2 onboarding (O2): YAML front matter on the knowledge documents.
     "pyyaml>=6,<7",
     # Custom-domain publishing S2: DNS lookups for the CNAME verification check.

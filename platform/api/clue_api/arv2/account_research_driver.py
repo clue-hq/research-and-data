@@ -32,6 +32,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -2452,6 +2453,11 @@ class _LiveClients:
         )
 
     @property
+    def transcription_ready(self) -> bool:
+        """Whether recordings can be sent to Deepgram from this worker (a key is configured)."""
+        return _present(self._deepgram_api_key)
+
+    @property
     def media_source_keys(self) -> MediaSourceKeys:
         """Keys for the official and public media lookups (spec 2026-10-13 §3 step 2)."""
         return MediaSourceKeys(
@@ -2562,6 +2568,17 @@ def build_arv2_account_research_handler(
         )
         return None
 
+    lacking = media_lane_missing(secrets)
+    if lacking:
+        log.warning(
+            "arv2.media_lane_degraded",
+            missing=lacking,
+            detail=(
+                "research media on this worker reports these as missing: recordings cannot be "
+                "transcribed without ffmpeg/ffprobe and a Deepgram key, and YouTube links cannot "
+                "be resolved without the YouTube Data API key"
+            ),
+        )
     return Arv2AccountResearchWorkHandler(
         settings=settings,
         conn_factory=conn_factory,
@@ -2597,6 +2614,16 @@ def build_arv2_account_research_handler(
         # and says so (``arv2.committee_jobs_not_enqueued``).
         queue=queue,
     )
+
+
+def media_lane_missing(secrets: Secrets) -> list[str]:
+    """What this worker lacks for research media (spec 2026-10-13 §4), in a stable order."""
+    missing = [tool for tool in ("ffprobe", "ffmpeg") if shutil.which(tool) is None]
+    if not _present(secrets.deepgram_api_key):
+        missing.append("CLUE_DEEPGRAM_API_KEY")
+    if not _present(secrets.youtube_data_api_key):
+        missing.append("CLUE_YOUTUBE_DATA_API_KEY")
+    return missing
 
 
 def _present(value: SecretStr | None) -> bool:

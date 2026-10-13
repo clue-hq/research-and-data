@@ -1,14 +1,18 @@
 """Real Postgres media evidence/replay/privacy contracts. All provider inputs are offline."""
 
+import json
 from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
 from clue_api.arv2.account_research_refusals import RefusalError
+from clue_api.arv2.gemini_media_client import MediaBudget
+from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.media_types import Candidate, Quality, Segment
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 from tests.api.test_stage0_setup_db import _MemoryStorage
@@ -41,7 +45,7 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
             speech = "UNIQUE_TRANSCRIPT_MARKER must stay out of structured logs."
             wire = ScriptedTransport(
                 [
-                    video_metadata(),
+                    offline_audio(),
                     offline_audio(),
                     deepgram_speech(speech),
                     HttpResponse(500, body=b'{"error":"embedding unavailable"}'),
@@ -55,7 +59,7 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                     propagate_trace(trace_name="arv2.account_research"),
                 ):
                     config = {"callbacks": [ClueLangfuseHandler(LangfuseRunRegistry())]}
-                    args = {"url": "https://youtu.be/abcdefghijk", "purpose": "Study priorities"}
+                    args = {"url": "https://example.com/talk.mp3", "purpose": "Study priorities"}
                     first = json.loads(await tool.ainvoke(args, config=config))
                     assert first["state"] == "available" and first["index"]["state"] == "lexical"
                     replay = json.loads(await tool.ainvoke(args, config=config))
@@ -617,6 +621,9 @@ def test_integrated_publisher_read_index_search_open_and_reuse():
 
 
 class MediaClients:
+    media_source_keys = MediaSourceKeys(youtube_api_key=SecretStr("yt-key"))
+    transcription_ready = True
+
     def transcription(self, caller):
         from pydantic import SecretStr
 
@@ -650,21 +657,40 @@ def json_response(value):
     return HttpResponse(200, {"content-type": "application/json"}, json.dumps(value).encode())
 
 
-def video_metadata():
-    import json
+def youtube_data(duration="PT1M"):
+    return json_response(
+        {
+            "items": [
+                {
+                    "id": "abcdefghijk",
+                    "snippet": {
+                        "publishedAt": "2026-04-08T15:00:00Z",
+                        "title": "Research interview",
+                        "channelTitle": "Interview channel",
+                        "description": "",
+                        "liveBroadcastContent": "none",
+                    },
+                    "contentDetails": {"duration": duration},
+                    "status": {"privacyStatus": "public"},
+                }
+            ]
+        }
+    )
 
-    value = {
-        "playabilityStatus": {"status": "OK"},
-        "videoDetails": {
-            "videoId": "abcdefghijk",
-            "title": "Research interview",
-            "lengthSeconds": "60",
-        },
-    }
-    return HttpResponse(
-        200,
-        {"content-type": "text/html"},
-        ("var ytInitialPlayerResponse = " + json.dumps(value) + ";").encode(),
+
+def no_shows():
+    return json_response({"results": []})
+
+
+def gemini_window(text):
+    return json_response(
+        {
+            "responseId": "native-1",
+            "usageMetadata": {"promptTokenCount": 6000, "candidatesTokenCount": 200},
+            "candidates": [
+                {"finishReason": "STOP", "content": {"parts": [{"text": "## TRANSCRIPT\n" + text}]}}
+            ],
+        }
     )
 
 
@@ -777,9 +803,10 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
             rt.clients = MediaClients()
             wire = ScriptedTransport(
                 [
-                    video_metadata(),
-                    offline_audio(),
-                    deepgram_speech("We evaluate vendors by evidence quality."),
+                    youtube_data(),
+                    no_shows(),
+                    no_shows(),
+                    gemini_window("[00:05] Guest: We evaluate vendors by evidence quality."),
                     embeddings(),
                     embeddings(),
                 ]
@@ -789,10 +816,21 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
                 rt, ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Buying behavior")
             )
             assert result["index"]["state"] == "ready"
+            # Nothing was downloaded and no YouTube page was read: the Data API, two directory
+            # searches and one Gemini window over the public link.
+            assert not any("youtube.com/watch" in r.url for r in wire.requests[:3])
+            assert ":generateContent" in wire.requests[3].url
+            method = (
+                await conn.execute(
+                    text("SELECT source_method FROM arv2_media_transcript WHERE version_id=:v"),
+                    {"v": UUID(result["version_ref"])},
+                )
+            ).scalar_one()
+            assert method == "gemini_youtube"
             found = await search(rt, "criteria for evaluating suppliers")
             assert found["mode"] == "hybrid" and found["results"]
             assert found["results"][0]["rank_components"]["semantic"] == 1
-            assert len(wire.requests) == 5
+            assert len(wire.requests) == 6
             old_job = rt.scope.job_id
             original_run = await job_store.read_run(conn, run_id=rt.scope.run_id)
             run2 = replace(original_run, run_id=uuid4(), request_sha256="d" * 64)
@@ -815,7 +853,7 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
                     url="https://youtube.com/embed/abcdefghijk", purpose="Separate project question"
                 ),
             )
-            assert reused["reused"] and len(wire.requests) == 5
+            assert reused["reused"] and len(wire.requests) == 6
             owner = (
                 await conn.execute(
                     text("SELECT owner_job FROM arv2_media_operation WHERE stage='transcribe'")
@@ -835,7 +873,7 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
             rt.clients = MediaClients()
             wire = ScriptedTransport(
                 [
-                    video_metadata(),
+                    offline_audio(),
                     offline_audio(),
                     deepgram_speech("Our buying process needs reliable evidence."),
                     embeddings(),
@@ -849,7 +887,7 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
                 raise RuntimeError("simulated persistence failure after paid response drain")
 
             monkeypatch.setattr(store, "save_transcript", fail_once)
-            args = ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Recover evidence")
+            args = ReadMediaArgs(url="https://example.com/talk.mp3", purpose="Recover evidence")
             with pytest.raises(RuntimeError):
                 await read_media(rt, args)
             recovered = await read_media(rt, args)
@@ -904,5 +942,168 @@ def test_expiry_is_unavailable_then_explicit_refresh_but_dsar_never_refreshes():
             )
             with pytest.raises(RefusalError, match="privacy"):
                 await read_media(rt, args.model_copy(update={"refresh_expired": True}))
+
+    run_async(scenario())
+
+
+def test_a_long_video_is_read_in_windows_and_joined():
+    from clue_api.arv2.media_tools import (
+        OpenTranscriptArgs,
+        ReadMediaArgs,
+        open_transcript,
+        read_media,
+    )
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            rt.settings = rt.settings.model_copy(update={"arv2_media_gemini_window_seconds": 2400})
+            # The shared test runtime allows 100 media seconds; a run's real ceiling is 9000.
+            rt.media_budget = MediaBudget(9000)
+            wire = ScriptedTransport(
+                [
+                    youtube_data("PT1H10M"),
+                    no_shows(),
+                    no_shows(),
+                    gemini_window("[00:10] Guest: First part."),
+                    gemini_window("[00:20] Guest: Second part."),
+                    embeddings(),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Long talk")
+            )
+            assert result["state"] == "available"
+            bodies = [json.loads(r.body) for r in wire.requests if ":generateContent" in r.url]
+            metadata = [b["contents"][0]["parts"][0]["videoMetadata"] for b in bodies]
+            assert [(m["startOffset"], m["endOffset"]) for m in metadata] == [
+                ("0s", "2400s"),
+                ("2400s", "4200s"),
+            ]
+            opened = await open_transcript(
+                rt, OpenTranscriptArgs(version_ref=UUID(result["version_ref"]))
+            )
+            text_value = json.dumps(opened)
+            assert "First part." in text_value and "Second part." in text_value
+
+    run_async(scenario())
+
+
+def test_a_video_over_the_remaining_budget_is_refused_before_any_window():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            rt.media_budget.reserve(rt.media_budget.ceiling_s - 60)
+            wire = ScriptedTransport([youtube_data("PT10M"), no_shows(), no_shows()])
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Over budget")
+            )
+            assert result["state"] == "unavailable"
+            assert "media_budget_exhausted" in json.dumps(result)
+            assert not any(":generateContent" in r.url for r in wire.requests)
+
+    run_async(scenario())
+
+
+def test_gemini_switched_off_returns_the_video_details():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            rt.settings = rt.settings.model_copy(
+                update={"arv2_media_youtube_gemini_enabled": False}
+            )
+            wire = ScriptedTransport([youtube_data(), no_shows(), no_shows()])
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Switched off")
+            )
+            assert result["state"] == "unavailable"
+            assert "youtube_transcription_disabled" in result["gaps"]
+            assert result["video"]["title"] == "Research interview"
+            assert not any(":generateContent" in r.url for r in wire.requests)
+
+    run_async(scenario())
+
+
+def test_a_worker_without_ffprobe_reports_the_media_lane_unavailable(monkeypatch):
+    import shutil
+
+    from clue_api.arv2 import media_acquisition
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    real_which = shutil.which
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            monkeypatch.setattr(
+                media_acquisition.shutil,
+                "which",
+                lambda name: None if name == "ffprobe" else real_which(name),
+            )
+            feed = """<rss><channel><item><guid>ep-1</guid><title>E</title>
+              <enclosure url="https://example.com/a.mp3" type="audio/mpeg"/>
+              </item></channel></rss>"""
+            wire = ScriptedTransport(
+                [HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode())]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt,
+                ReadMediaArgs(url="https://example.com/feed", episode_hint="ep-1", purpose="Lane"),
+            )
+            assert result["state"] == "unavailable"
+            assert "media_lane_unavailable_on_worker: ffprobe missing" in json.dumps(result)
+            assert len(wire.requests) == 1  # nothing downloaded, nothing sent to Deepgram
+
+    run_async(scenario())
+
+
+def test_a_chosen_episode_still_uses_its_feed_transcript():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            feed = """<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel>
+              <item><guid>a</guid><title>Pricing evidence part 1</title>
+              <enclosure url="https://example.com/a.mp3" type="audio/mpeg"/>
+              <podcast:transcript url="https://example.com/a.vtt" type="text/vtt"/></item>
+              <item><guid>b</guid><title>Pricing evidence part 2</title>
+              <enclosure url="https://example.com/b.mp3" type="audio/mpeg"/></item>
+              </channel></rss>"""
+            vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nWe price on evidence.\n"
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
+                    HttpResponse(200, {"content-type": "text/vtt"}, vtt.encode()),
+                    embeddings(),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            listed = await read_media(
+                rt,
+                ReadMediaArgs(
+                    url="https://example.com/feed", episode_hint="Pricing", purpose="Pricing"
+                ),
+            )
+            assert listed["state"] == "ambiguous"
+            first = next(c for c in listed["candidates"] if c["title"].endswith("part 1"))
+            result = await read_media(
+                rt, ReadMediaArgs(candidate_ref=UUID(first["candidate_ref"]), purpose="Pricing")
+            )
+            assert result["state"] == "available"
+            assert not any(r.url.endswith(".mp3") for r in wire.requests)
 
     run_async(scenario())
