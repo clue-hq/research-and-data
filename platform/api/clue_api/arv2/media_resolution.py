@@ -366,6 +366,135 @@ def caption_text(value: str) -> tuple[str, tuple[Segment, ...]]:
     return "".join(words), tuple(segments)
 
 
+#: A publisher transcript's formats in the order they are preferred: timed cues first.
+TRANSCRIPT_TYPES = (
+    "text/vtt",
+    "application/x-subrip",
+    "application/srt",
+    "application/json",
+    "text/plain",
+    "text/html",
+)
+
+
+def preferred_transcript(transcripts: tuple[tuple[str, str], ...]) -> tuple[str, str] | None:
+    """The best declared ``(url, type)``; an unknown type ranks after every known one."""
+    if not transcripts:
+        return None
+
+    def rank(item: tuple[str, str]) -> int:
+        kind = item[1].split(";")[0].strip().lower()
+        return TRANSCRIPT_TYPES.index(kind) if kind in TRANSCRIPT_TYPES else len(TRANSCRIPT_TYPES)
+
+    return min(transcripts, key=rank)
+
+
+def json_transcript(body: str) -> tuple[str, tuple[Segment, ...]]:
+    """The Podcasting 2.0 JSON transcript: ``segments[]`` of speaker, startTime and body."""
+    data = json.loads(body)
+    rows = data.get("segments") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        raise ValueError("json transcript has no segments")
+    parts: list[str] = []
+    segments: list[Segment] = []
+    cursor = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        text = canonical_text(str(row.get("body") or "")).strip()
+        if not text:
+            continue
+        if parts:
+            parts.append("\n")
+            cursor += 1
+        start = row.get("startTime")
+        seconds = (
+            float(start)
+            if isinstance(start, int | float) and not isinstance(start, bool) and start >= 0
+            else None
+        )
+        speaker = row.get("speaker")
+        segments.append(
+            Segment(
+                start=cursor,
+                end=cursor + len(text),
+                speaker=str(speaker) if speaker else None,
+                attribution="metadata" if speaker else "unknown",
+                time_s=seconds,
+                timing="source_supplied" if seconds is not None else "unavailable",
+            )
+        )
+        parts.append(text)
+        cursor += len(text)
+    return "".join(parts), tuple(segments)
+
+
+class _TextOnly(HTMLParser):
+    """Visible text of an HTML transcript; script and style bodies are dropped."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style"}:
+            self._skip += 1
+        elif tag in {"p", "br", "div", "li", "tr"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"} and self._skip:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
+
+
+def html_text(body: str) -> str:
+    parser = _TextOnly()
+    parser.feed(body)
+    return re.sub(r"\n\s*\n+", "\n", "".join(parser.parts)).strip()
+
+
+def publisher_transcript(
+    caller: ProviderCaller, url: str, declared_type: str | None
+) -> tuple[str, tuple[Segment, ...]]:
+    """Fetch a transcript the publisher declared and read it in its own format."""
+    result = fetch(caller, url)
+    kind = (declared_type or result.headers.get("content-type", "")).split(";")[0].lower()
+    body = result.body.decode("utf-8", errors="replace")
+    if kind == "application/json" or body.lstrip().startswith("{"):
+        return json_transcript(body)
+    if kind == "text/html":
+        return caption_text(html_text(body))
+    return caption_text(body)
+
+
+def with_feed_transcript(caller: ProviderCaller, resolution: Resolution) -> Resolution:
+    """Use the matched episode's own transcript when its feed declares one; else keep the audio."""
+    if resolution.state != "resolved" or resolution.transcript or not resolution.candidates:
+        return resolution
+    candidate = resolution.candidates[0]
+    if not candidate.transcript_url:
+        return resolution
+    try:
+        value, segments = publisher_transcript(
+            caller, candidate.transcript_url, candidate.transcript_type
+        )
+    except (ValueError, KeyError) as exc:
+        return replace(resolution, gaps=(*resolution.gaps, f"feed_transcript_unavailable: {exc}"))
+    if not value.strip():
+        return replace(resolution, gaps=(*resolution.gaps, "feed_transcript_empty"))
+    return replace(
+        resolution,
+        transcript=value,
+        segments=segments,
+        aliases=tuple(dict.fromkeys((*resolution.aliases, candidate.transcript_url))),
+    )
+
+
 def feed_candidates(xml: str, url: str) -> list[Candidate]:
     if re.search(r"<!\s*(DOCTYPE|ENTITY)", xml, re.I):
         raise ValueError("XML entities/doctype not supported")
@@ -403,6 +532,7 @@ def feed_candidates(xml: str, url: str) -> list[Candidate]:
         if not ep.enclosure_url:
             continue
         guid = raw.findtext("guid")
+        chosen = preferred_transcript(ep.transcripts)
         result.append(
             Candidate(
                 url=ep.link or ep.enclosure_url,
@@ -415,6 +545,9 @@ def feed_candidates(xml: str, url: str) -> list[Candidate]:
                 media_url=urljoin(url, ep.enclosure_url),
                 canonical_key="rss:" + content_hash(url + ":" + (guid or ep.enclosure_url)),
                 identity_evidence=[f"feed:{url}", f"episode_number:{ep.number}"],
+                published_at=ep.published_at,
+                transcript_url=urljoin(url, chosen[0]) if chosen else None,
+                transcript_type=chosen[1] or None if chosen else None,
             )
         )
     return result
@@ -560,7 +693,7 @@ def resolve(
         "application/xml",
         "text/xml",
     } or re.match(r"\s*(?:<\?xml[^>]+>\s*)?<(rss|feed)\b", body):
-        return match_episode(feed_candidates(body, url), hint, url)
+        return with_feed_transcript(caller, match_episode(feed_candidates(body, url), hint, url))
     parser = PageLinks()
     parser.feed(body)
     for obj in objects(parser.documents):

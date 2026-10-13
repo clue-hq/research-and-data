@@ -46,6 +46,9 @@ FEED_ACCEPT = "application/rss+xml,application/xml;q=0.9,*/*;q=0.8"
 #: The iTunes podcast namespace — where the episode number and the duration actually live.
 ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
 
+#: The Podcasting 2.0 namespace, where a publisher's own transcript links live.
+PODCAST_NS = "https://podcastindex.org/namespace/1.0"
+
 #: The Atom namespace, for the ``rel="self"`` link a feed uses to name its own canonical URL.
 ATOM_NS = "http://www.w3.org/2005/Atom"
 
@@ -146,6 +149,8 @@ class Episode:
     published_at: datetime | None
     link: str | None
     description: str | None
+    #: ``(url, type)`` of every ``<podcast:transcript>`` the publisher declared, in feed order.
+    transcripts: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -294,6 +299,11 @@ def _parse_item(item: ET.Element) -> Episode:
     if number is None:
         number = episode_number_from_title(title)
 
+    transcripts = tuple(
+        (str(node.get("url")), str(node.get("type") or ""))
+        for node in item.findall(f"{{{PODCAST_NS}}}transcript")
+        if node.get("url")
+    )
     return Episode(
         number=number,
         title=title,
@@ -303,6 +313,7 @@ def _parse_item(item: ET.Element) -> Episode:
         published_at=_published(_text(item.find("pubDate"))),
         link=_text(item.find("link")),
         description=_text(item.find("description")),
+        transcripts=transcripts,
     )
 
 
