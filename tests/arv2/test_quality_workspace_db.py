@@ -104,3 +104,31 @@ def test_original_continuation_and_revocation_on_every_virtual_read(tmp_path):
             assert (await backend.als("/evidence")).error
 
     run_async(case())
+
+
+def test_recipe_26_reads_a_source_as_plain_text_and_recipe_25_keeps_segments(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            scope, _ = await seed(conn, storage)
+            original = "Dialpad's field marketing team is hiring.\n" * 40
+            await save(conn, storage, scope, original)
+            grant = await grant_manifest(conn, scope, consumer_id=uuid4())
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            index = await EvidenceWorkspace(connections, storage, grant).aread(
+                "/evidence/index.json"
+            )
+            path = json.loads(index.file_data["content"])["sources"][0]["path"]
+            plain = await EvidenceWorkspace(connections, storage, grant, recipe=26).aread(path)
+            content = plain.file_data["content"]
+            assert content.startswith(f"# {path}\n")
+            assert content.endswith(original) and "text_segments" not in content
+            assert '\\"' not in content
+            old = await EvidenceWorkspace(connections, storage, grant, recipe=25).aread(path)
+            assert "text_segments" in old.file_data["content"]
+
+    run_async(case())

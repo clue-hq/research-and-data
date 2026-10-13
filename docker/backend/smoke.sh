@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Static smoke test of a built backend image: every service imports, the helper runs, the fonts
-# and Tailwind toolchain are present, Chromium launches, and the image runs as non-root.
+# and Tailwind toolchain are present, Chromium launches, ffmpeg/ffprobe run (research media), and
+# the image runs as non-root.
 # Every check runs even when an earlier one fails, so one run reports every problem; the script
 # exits non-zero if any check failed.
 # Usage: docker/backend/smoke.sh <image>
@@ -26,6 +27,8 @@ check "font manifest" run test -f /app/subsystems/clue-design/apps/api/font-libr
 check "tailwind toolchain" run test -d /app/subsystems/clue-design/apps/editor/node_modules/@tailwindcss/node
 check "tailwind browser runtime" run test -f /app/subsystems/clue-design/apps/editor/public/vendor/tailwind-browser.js
 check "node" run node --version
+check "ffmpeg" quiet run ffmpeg -version
+check "ffprobe" quiet run ffprobe -version
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
 check "non-root (uid 1000)" runs_as_uid_1000

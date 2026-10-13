@@ -285,6 +285,212 @@ def test_account_rewrite_after_people_sees_their_findings_and_settles_the_genera
     run_async(case())
 
 
+class Pages:
+    """Answers the seller brief with prose and each page call with that subject's pages."""
+
+    def __init__(self, account: Mapping[str, object], contact: Mapping[str, object]) -> None:
+        self.account, self.contact = account, contact
+        self.calls: list[str] = []
+        self.contact_requests: list[str] = []
+
+    async def __call__(self, messages: Sequence[Mapping[str, str]], json_mode: bool) -> str:
+        from clue_api.arv2.page_writer import contact_system
+
+        if not json_mode:
+            self.calls.append("brief")
+            return "The seller sells care navigation."
+        subject = "contact" if messages[0]["content"] == contact_system() else "account"
+        self.calls.append(subject)
+        if subject == "contact":
+            self.contact_requests.append(messages[1]["content"])
+        return json.dumps(self.contact if subject == "contact" else self.account)
+
+
+async def _recipe_26_generation(conn, tmp_path, *, imported=True):
+    """An account (imported unless told otherwise) and one settled person whose contact page
+    was deferred."""
+    from clue_api.arv2.quality_generation import read_generation, record_child_result
+
+    parent, child, cid, storage, ctx, gen, path = await initial(conn, tmp_path)
+    parent = replace(parent, input_refs={"quality_recipe_version": 26})
+    child = replace(child, input_refs={**child.input_refs, "quality_recipe_version": 26})
+    await load_display_recipes(conn)
+    if imported:
+        await invoke(FinishDossierTool, parent, storage, ctx, DossierInput())
+    op = OperationScope(child.workspace_id, child.run_id, child.job_id, child.account_id)
+    eid = await execution(conn, op, child.project_id)
+    await bind_execution(
+        conn,
+        op,
+        execution_id=eid,
+        context_id=cid,
+        role="account_research",
+        limits=Allowance(100, 100, 10),
+    )
+    childctx = replace(ctx, execution_id=ExecutionId(eid), operation_id=OperationId(uuid4()))
+    await invoke(
+        SaveDossierSectionTool,
+        child,
+        storage,
+        childctx,
+        SaveSectionInput(section="Voice", findings=[finding(source_paths=[path])]),
+    )
+    await invoke(FinishDossierTool, child, storage, childctx, DossierInput())
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET status='completed',finished_at=now(),"
+            "finalization_json=CAST(:fin AS jsonb) WHERE job_id=:id"
+        ),
+        {"id": child.job_id, "fin": json.dumps({"coverage": {"deferred_pages": ["contact"]}})},
+    )
+    await record_child_result(conn, workspace_id=child.workspace_id, job_id=child.job_id)
+    revision = (
+        await read_generation(
+            conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+        )
+    ).input_revision
+    model = Pages(
+        result(
+            ["overview", "insights"],
+            {"why-they-fit": section("why-they-fit", "Account with its people.", ["P1:F001"])},
+        ),
+        result(
+            ["contact"],
+            {
+                "why-this-person": section(
+                    "why-this-person",
+                    "Why this person.",
+                    ["F001", "A:F001"] if imported else ["F001"],
+                )
+            },
+        ),
+    )
+    return parent, child, cid, storage, gen, revision, model
+
+
+def test_final_step_writes_the_account_then_its_deferred_contact_pages(tmp_path):
+    from clue_api.arv2.page_writer_runtime import PageWriterModels, rewrite_account_pages
+    from clue_api.arv2.quality_generation import deferred_contact_jobs, read_generation
+
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, gen, revision, model = await _recipe_26_generation(
+                conn, tmp_path
+            )
+            waiting = await deferred_contact_jobs(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            )
+            assert waiting == [child.job_id]
+            out = await rewrite_account_pages(
+                conn_factory=connections(conn),
+                storage=storage,
+                scope=parent,
+                context_id=cid,
+                generation_id=gen.generation_id,
+                revision=revision,
+                models=PageWriterModels(call_for=lambda scope: model, model_id="test/model"),
+                deferred=(child,),
+            )
+            assert out["applied"] is True and out["contact_pages"] == 1
+            # The account first, so each contact page is written against the account's new story.
+            assert [c for c in model.calls if c != "brief"] == ["account", "contact"]
+            assert "Account with its people." in model.contact_requests[0]
+            # Written once: a later revision does not select the person again.
+            assert not await deferred_contact_jobs(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            )
+            contact = await read_page(conn, child, context_id=cid, page="contact")
+            assert any(s["key"] == "why-this-person" for s in contact["display_block"]["sections"])
+            overview = await read_page(conn, parent, context_id=cid, page="overview")
+            fit = next(
+                s for s in overview["display_block"]["sections"] if s["key"] == "why-they-fit"
+            )
+            assert fit["intro"][0]["text"] == "Account with its people."
+            settled = await read_generation(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            )
+            assert settled.reconciled_revision == revision
+
+    run_async(case())
+
+
+def test_a_deferred_contact_page_is_written_even_if_the_account_never_imported(tmp_path):
+    """Review I1: the people's pages must not wait forever on an account that ended without
+    an import; they are written from the person's own findings and the revision needs review."""
+    from clue_api.arv2.page_writer_runtime import PageWriterModels, rewrite_account_pages
+    from clue_api.arv2.quality_generation import read_generation
+
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, gen, revision, model = await _recipe_26_generation(
+                conn, tmp_path, imported=False
+            )
+            out = await rewrite_account_pages(
+                conn_factory=connections(conn),
+                storage=storage,
+                scope=parent,
+                context_id=cid,
+                generation_id=gen.generation_id,
+                revision=revision,
+                models=PageWriterModels(call_for=lambda scope: model, model_id="test/model"),
+                deferred=(child,),
+            )
+            assert out["skipped"] == "account_dossier_not_imported"
+            assert out["contact_pages"] == 1
+            assert [c for c in model.calls if c != "brief"] == ["contact"]
+            contact = await read_page(conn, child, context_id=cid, page="contact")
+            assert any(s["key"] == "why-this-person" for s in contact["display_block"]["sections"])
+            settled = await read_generation(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            )
+            assert settled.reconciled_revision == revision
+
+    run_async(case())
+
+
+def test_rewrite_with_identical_inputs_settles_without_a_model_call(tmp_path):
+    from clue_api.arv2.page_writer_runtime import PageWriterModels, rewrite_account_pages
+    from clue_api.arv2.quality_generation import read_generation, signal
+
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, gen, revision, model = await _recipe_26_generation(
+                conn, tmp_path
+            )
+            models = PageWriterModels(call_for=lambda scope: model, model_id="test/model")
+
+            async def rewrite(rev):
+                return await rewrite_account_pages(
+                    conn_factory=connections(conn),
+                    storage=storage,
+                    scope=parent,
+                    context_id=cid,
+                    generation_id=gen.generation_id,
+                    revision=rev,
+                    models=models,
+                )
+
+            assert (await rewrite(revision))["applied"] is True
+            calls = len(model.calls)
+            later = await signal(
+                conn,
+                workspace_id=parent.workspace_id,
+                generation_id=gen.generation_id,
+                event_id=uuid4(),
+                reason="claim_changed",
+            )
+            assert later > revision
+            out = await rewrite(later)
+            assert out["applied"] is True and out["unchanged"] is True
+            assert len(model.calls) == calls
+            settled = await read_generation(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            )
+            assert settled.reconciled_revision == later
+
+    run_async(case())
+
+
 def test_rewrite_skips_an_account_whose_research_never_imported(tmp_path):
     from clue_api.arv2.page_writer_runtime import PageWriterModels, rewrite_account_pages
     from clue_api.arv2.quality_generation import read_generation

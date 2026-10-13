@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from decimal import ROUND_CEILING, Decimal
@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
+from langchain_core.messages import SystemMessage
 from pydantic import JsonValue
 from sqlalchemy import text
 
@@ -48,7 +49,9 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_agents.catalog import FolderProfileCatalog, FolderPromptCatalog, FolderSkillCatalog
+from clue_agents.compaction import CompactionSettings
 from clue_agents.ports import SpillSink
+from clue_agents.tool_result_clearing import BatchedToolResultClearing
 from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
@@ -105,7 +108,9 @@ from clue_api.arv2.quality_json_dossier import (
     DiscardDossierRevisionTool,
     FinishDossierTool,
     SaveDossierSectionTool,
+    SaveDossierSectionToolV2,
     UpdateDossierFindingsTool,
+    UpdateDossierFindingsToolV2,
     ValidateDossierTool,
     uses_json_dossier,
     validate_dossier_handoff,
@@ -122,7 +127,8 @@ from clue_api.arv2.quality_page_tools import (
     PublishResearchPageTool,
     ReadPageInputsTool,
 )
-from clue_api.arv2.quality_provider_tools import AcquireResearchTool
+from clue_api.arv2.quality_provider_tools import AcquireResearchTool, AcquireResearchToolV2
+from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
     CorrectResearchClaimTool,
@@ -242,13 +248,16 @@ def quality_tools(
         DiscardDossierRevisionTool,
         BeginDossierRevisionTool,
         SaveDossierSectionTool,
+        SaveDossierSectionToolV2,
         UpdateDossierFindingsTool,
+        UpdateDossierFindingsToolV2,
         ValidateDossierTool,
         FinishDossierTool,
     ):
         tool = cls(scope, storage, purge_unevidenced=purge)
         registry.register(tool, make_default=tool.version == "1")
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
+    registry.register(AcquireResearchToolV2(acquisition_runtime), make_default=False)
     return registry
 
 
@@ -310,7 +319,11 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v25-person" if person else "v25")
+            role: ("v27-person" if person else "v27")
+            if version >= 27 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v26-person" if person else "v26")
+            if version >= 26 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v25-person" if person else "v25")
             if version >= 25 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v24-person" if person else "v24")
             if version >= 24 and role == AgentRole.ACCOUNT_RESEARCH
@@ -350,6 +363,42 @@ def quality_profiles(
     )
 
 
+def research_compaction_for(
+    scope: JobScope, settings: Settings
+) -> Callable[[str], CompactionSettings]:
+    """Recipe 26+: research compacts at a fixed token count as a backstop to result clearing.
+
+    The shared rule (90% of the model's window: 450k for Grok 4.6) never fired on research,
+    whose conversations peaked around 205k tokens (2026-10-06).
+    """
+    if not at_least(scope, RECIPE_26):
+        return compaction_for
+    research = CompactionSettings(
+        trigger_fraction=0.90,
+        keep_fraction=0.10,
+        trigger_tokens=settings.arv2_research_compact_trigger_tokens,
+        keep_messages=settings.arv2_research_compact_keep_messages,
+        context_window=None,
+    )
+    return lambda model_id: research
+
+
+def drop_identity_echo(context: AssembledAgentContext, identity: str) -> AssembledAgentContext:
+    """Recipe 26+: the runtime already sends the identity as the system message.
+
+    The L1 identity layer also opened the conversation with the same text as a
+    ``SystemMessage``, so every call carried the prompt and resource map twice (a third copy
+    after a reconciliation continuation). The manifest still records the layer; only the
+    duplicate message is not sent.
+    """
+    kept = tuple(
+        m for m in context.messages if not (isinstance(m, SystemMessage) and m.content == identity)
+    )
+    if kept == context.messages:
+        return context
+    return context.model_copy(update={"messages": kept})
+
+
 class _Contexts:
     def __init__(self, runtime: ResearchUnitRuntime):
         self.runtime = runtime
@@ -365,7 +414,7 @@ class _Contexts:
         if configured != profile:
             raise ValueError("Research context profile differs beyond model configuration")
         resolved = replace(resolved, profile=configured)
-        return await build_agent_context_assembler(
+        assembled = await build_agent_context_assembler(
             resolved_profile=resolved,
             artifacts=runtime.artifacts,
             cards=_PinnedContextOnly(),
@@ -384,6 +433,9 @@ class _Contexts:
             ),
             conn_factory=runtime.connections,
         ).assemble(request=request, profile=profile, history=history)
+        if at_least(runtime.scope, RECIPE_26):
+            assembled = drop_identity_echo(assembled, resolved.system_prompt)
+        return assembled
 
 
 class _ChildExecutions(DbSpecialistExecutionJournal):
@@ -533,6 +585,7 @@ class ResearchUnitRuntime:
         self.artifacts = ResearchArtifacts(storage=storage, conn_factory=connections)
         self.artifacts.scope = scope
         self.artifacts.context_id = context_id
+        self.artifacts.step_retention_days = settings.arv2_research_step_retention_days
         self.turns = DbAgentTurnJournal(conn_factory=connections)
         self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 5))
         self.profiles = quality_profiles(
@@ -741,6 +794,16 @@ class ResearchUnitRuntime:
                 ).capabilities(),
             ),
             middleware=(
+                *(
+                    (
+                        BatchedToolResultClearing(
+                            trigger_tokens=self.settings.arv2_research_clear_trigger_tokens,
+                            target_tokens=self.settings.arv2_research_clear_target_tokens,
+                        ),
+                    )
+                    if at_least(self.scope, RECIPE_26)
+                    else ()
+                ),
                 *dossier_middleware,
                 SharedResearchAllowance(
                     self.connections,
@@ -1087,7 +1150,7 @@ class ResearchUnitRuntime:
                         tool.description += "\n\n" + COMPLETION_INSTRUCTIONS
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
-                    compaction_for=compaction_for,
+                    compaction_for=research_compaction_for(self.scope, self.settings),
                     models=self.models,
                     execution=adapter,
                     max_runtime_s=(

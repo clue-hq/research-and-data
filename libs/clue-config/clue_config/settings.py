@@ -401,6 +401,31 @@ class Settings(BaseSettings):
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5
+    # Free a provider's concurrency slot as soon as the provider answers, and index the result
+    # afterwards (the next call no longer waits ~11 s for indexing); AI Ark's pacing gap then runs
+    # from the answer, with indexing inside it. ``false`` restores the old order. The pacing lock
+    # is held until both the gap and that indexing are done, so the next AI Ark call starts at
+    # max(gap, indexing) after the answer — the gap alone whenever indexing is shorter (review M-1).
+    # Env: ``CLUE_ARV2_DRAIN_OUTSIDE_SLOT``.
+    arv2_drain_outside_slot: bool = True
+    # Run the evidence recovery check after an evidence call that bought and indexed its own
+    # result. Off by default (W2-17): that call's result is already indexed, so the check finds
+    # nothing; a replayed call still runs it, and the job's settle runs it once before coverage,
+    # so a result whose indexing was cut short is still repaired. Until then (a replay or the
+    # settle) the agent researches without that one result's evidence; a job that never settles
+    # and never replays keeps it unrepaired, as before (review M-5).
+    # Env: ``CLUE_ARV2_RECOVER_ON_SUCCESS``.
+    arv2_recover_on_success: bool = False
+    # W2-15 option B (prototype): store an evidence call's raw response and source files before
+    # taking the worker's database connection, so that connection's lock covers database work
+    # only. Off until the replay benchmark and a live run have been read (2026-10-08).
+    # Env: ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK``.
+    arv2_upload_outside_lock: bool = False
+    # How many evidence calls of one worker process may do that early work at once (storing the
+    # response, the privacy check, the uploads). It bounds the process's own resources — its
+    # database pool, which also carries the fleet heartbeat, and its storage connections — not
+    # what the agent may ask for. Env: ``CLUE_ARV2_EARLY_UPLOAD_CONCURRENCY``.
+    arv2_early_upload_concurrency: int = Field(default=4, ge=1)
     # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
     # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
     arv2_structuring_model: str = "openai/gpt-5-mini"
@@ -431,6 +456,18 @@ class Settings(BaseSettings):
     # Above this duration a media item is not eligible for the cheap short-model pass.
     # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
     arv2_media_short_max_seconds: int = 600
+    # Research media from legitimate sources only (spec
+    # docs/superpowers/specs/2026-10-13-legitimate-media-sources-design.md). A public YouTube video
+    # is transcribed by Gemini from its link (Google reads the video, nothing is downloaded) in
+    # back-to-back windows, so a long video is not cut off at one call's output cap.
+    # Env: ``CLUE_ARV2_MEDIA_YOUTUBE_GEMINI_ENABLED`` / ``CLUE_ARV2_MEDIA_GEMINI_WINDOW_SECONDS``.
+    arv2_media_youtube_gemini_enabled: bool = True
+    arv2_media_gemini_window_seconds: int = Field(default=2400, ge=300, le=3600)
+    # Paid-tier price of the video model per million tokens (Gemini 3.5 Flash-Lite, checked
+    # 2026-10-13), so YouTube transcription is priced rather than recorded as unpriced.
+    # Env: ``CLUE_ARV2_MEDIA_VIDEO_USD_PER_M_INPUT`` / ``CLUE_ARV2_MEDIA_VIDEO_USD_PER_M_OUTPUT``.
+    arv2_media_video_usd_per_m_input: Decimal = Field(default=Decimal("0.30"), ge=0)
+    arv2_media_video_usd_per_m_output: Decimal = Field(default=Decimal("2.50"), ge=0)
     # Where the file raw sink and the JSONL ledger write in development and tests (production
     # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``),
     # and — in every environment — where research downloads podcast audio, deleted once
@@ -452,6 +489,30 @@ class Settings(BaseSettings):
     # ``agent_long_turn_alert_s`` still warns when a job runs long.
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
     arv2_account_max_runtime_s: int = Field(default=0, ge=0)
+    # Recipe 26+ research conversations (docs/superpowers/plans/2026-10-07-research-cost-phase1.md).
+    # Past CLEAR_TRIGGER tokens, the oldest processed tool results are shown to the model as a
+    # short "re-read <path>" placeholder, in steps of (trigger - target) so the prompt stays
+    # cached between steps. COMPACT_* is the summarising backstop for research only (the shared
+    # rule compacts at 90% of the model window, which research never reached).
+    # Counted in the model's real tokens, system prompt and tool schemas included.
+    # Every cut change re-writes the whole request into the provider's cache at the cache-write
+    # price (GPT-6.1-Sol: $2.50/M against $0.10/M to re-read what was cleared), so clearing is
+    # rare and large: one 260k → 130k step, just under Sol's 272k long-context tier (2x input and
+    # cache rates, 1.5x output, for the whole request). Run 6 (2026-10-12) cleared 160k → 110k,
+    # spent $9.49 of $17.73 on cut re-writes, and would have needed no step at all under this
+    # rule (longest uncleared conversation 259k). CLEAR_TRIGGER 0 turns clearing off. The 400k
+    # compaction backstop fits the 500k Grok and 1.05M Sol windows.
+    # Env: ``CLUE_ARV2_RESEARCH_CLEAR_TRIGGER_TOKENS`` / ``_CLEAR_TARGET_TOKENS`` /
+    # ``_COMPACT_TRIGGER_TOKENS`` / ``_COMPACT_KEEP_MESSAGES``.
+    arv2_research_clear_trigger_tokens: int = Field(default=260_000, ge=0)
+    arv2_research_clear_target_tokens: int = Field(default=130_000, ge=1)
+    arv2_research_compact_trigger_tokens: int = Field(default=400_000, ge=1)
+    arv2_research_compact_keep_messages: int = Field(default=40, ge=1)
+    # Days a research step's audit files (model requests and replies, tool results, plans) are
+    # kept before the storage sweep purges them; 0 keeps them. Evidence, dossiers, claims and
+    # pages never expire (founder ruling 2026-10-12). Env:
+    # ``CLUE_ARV2_RESEARCH_STEP_RETENTION_DAYS``.
+    arv2_research_step_retention_days: int = Field(default=90, ge=0)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
@@ -593,6 +654,10 @@ class Settings(BaseSettings):
     # role's (``RESEARCH_NARRATIVE_AGENT_MODEL`` / ``_EFFORT``), falling back to
     # ``arv2_display_model``. Env: ``CLUE_ARV2_PAGE_WRITER_TIMEOUT_S``.
     arv2_page_writer_timeout_s: float = 900.0
+    # The page writer's guides: v2 shows the writer the researcher's interpretation of a finding
+    # and writes each page's argument first; v1 is the previous guides and section order.
+    # Env: ``CLUE_ARV2_PAGE_GUIDE_VERSION``.
+    arv2_page_guide_version: Literal["v1", "v2"] = "v2"
     # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
     # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
     arv2_display_client_pitch: str = (
@@ -993,12 +1058,16 @@ class Settings(BaseSettings):
     scrape_backend: Literal["firecrawl", "scrapling"] = "firecrawl"
 
     # --- orphan-blob sweep cadence (Phase B2 review-hardening; append-only per treaty §3.2) ---
-    # How often the fleet worker process runs ``clue_storage.sweep_orphan_blobs`` in the background
-    # (the orphan leg the retention sweep does not cover — an abandoned rolled-back upload leaves a
-    # blob with no ``artifact`` row). ``0`` (or any non-positive value) disables the loop. Sized
-    # well above any transaction lifetime; the sweep's own grace window is the actual race guard.
-    # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
-    storage_orphan_sweep_interval_s: float = 21600.0  # 6h
+    # How often the FLEET runs its storage sweep (purge erased/expired artifacts, then
+    # ``clue_storage.sweep_orphan_blobs`` — an abandoned rolled-back upload leaves a blob with no
+    # ``artifact`` row). One sweep per interval for the whole fleet, its last run kept in
+    # ``maintenance_run`` so deploys never reset it (2026-10-09; it was every 6 h in every worker
+    # process). ``0`` (or any non-positive value) disables it. The sweep's own grace window is the
+    # actual race guard. Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
+    storage_orphan_sweep_interval_s: float = 172800.0  # 48h
+    # How often each fleet worker process asks whether that sweep is due (one small query).
+    # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_CHECK_INTERVAL_S``.
+    storage_orphan_sweep_check_interval_s: float = 3600.0  # 1h
 
     # --- fleet run-start composition (PB-B4 slice 1; append-only per treaty §3.2) ---
     # LRU capacity of the ``ComposingRunDriver``'s per-``(workspace_id, icp_key, icp_version)``

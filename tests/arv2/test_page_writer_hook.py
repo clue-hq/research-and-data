@@ -38,13 +38,16 @@ def handler(models: PageWriterModels | None) -> Arv2AccountResearchWorkHandler:
     )
 
 
-def composition(recipe: int) -> Any:
+def composition(recipe: int, *, person: bool = False) -> Any:
+    refs: dict[str, Any] = {"quality_recipe_version": recipe}
+    if person:
+        refs["parent_job_id"] = str(uuid4())
     scope = SimpleNamespace(
         catalog_version="v4",
-        input_refs={"quality_recipe_version": recipe},
+        input_refs=refs,
         job_id=uuid4(),
         workspace_id="ws",
-        person_subject_id=None,
+        person_subject_id=uuid4() if person else None,
     )
     return SimpleNamespace(scope=scope, run=SimpleNamespace(context_id=uuid4()))
 
@@ -101,6 +104,37 @@ def test_an_uncomposed_writer_sends_the_job_to_review(writes: list[dict[str, Any
     assert writes == []
 
 
+@pytest.mark.parametrize("imported", [False, True])
+def test_recipe_26_person_defers_its_page_until_the_parent_imports(
+    writes: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch, imported: bool
+) -> None:
+    import clue_api.arv2.quality_person_release as release
+
+    async def ready(conn: Any, scope: Any) -> bool:
+        return imported
+
+    monkeypatch.setattr(release, "parent_dossier_ready", ready)
+    settled = asyncio.run(handler(MODELS)._write_pages(composition(26, person=True), outcome()))
+    assert settled.status == "completed"
+    if imported:
+        assert len(writes) == 1 and settled.deferred_pages == ()
+    else:
+        assert writes == [] and settled.deferred_pages == ("contact",)
+
+
+def test_a_recipe_25_person_still_writes_its_page_at_once(
+    writes: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import clue_api.arv2.quality_person_release as release
+
+    async def ready(conn: Any, scope: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(release, "parent_dossier_ready", ready)
+    settled = asyncio.run(handler(MODELS)._write_pages(composition(25, person=True), outcome()))
+    assert len(writes) == 1 and settled.deferred_pages == ()
+
+
 def work_context() -> Any:
     return SimpleNamespace(stop_requested=asyncio.Event(), lease_lost=asyncio.Event())
 
@@ -144,6 +178,31 @@ def test_the_account_rewrite_runs_the_writer_for_the_revision(
     call = rewrites["rewrites"][0]
     assert call["generation_id"] == generation_id and call["revision"] == 3
     assert call["models"] is MODELS and rewrites["settled"] == []
+
+
+@pytest.mark.parametrize("recipe", [25, 26])
+def test_the_final_step_passes_the_deferred_contact_pages(
+    rewrites: dict[str, list[Any]], monkeypatch: pytest.MonkeyPatch, recipe: int
+) -> None:
+    job = composition(recipe)
+    person = composition(recipe, person=True).scope
+    asked: list[Any] = []
+
+    async def deferred(self: Any, scope: Any, generation_id: Any) -> tuple[Any, ...]:
+        asked.append(generation_id)
+        return (person,)
+
+    monkeypatch.setattr(Arv2AccountResearchWorkHandler, "_deferred_contacts", deferred)
+    generation_id = uuid4()
+    out = asyncio.run(
+        handler(MODELS)._rewrite_account(
+            work_context(), job.scope, job.run.context_id, generation_id, 3, leased
+        )
+    )
+    assert out.outcome == "completed"
+    passed = rewrites["rewrites"][0].get("deferred", ())
+    assert passed == ((person,) if recipe >= 26 else ())
+    assert asked == ([generation_id] if recipe >= 26 else [])
 
 
 def test_a_failed_rewrite_sends_the_generation_to_review(

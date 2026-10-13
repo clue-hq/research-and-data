@@ -8,11 +8,20 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from deepagents.backends.protocol import BackendProtocol, FileInfo, GlobResult, LsResult, ReadResult
+from deepagents.backends.protocol import (
+    BackendProtocol,
+    FileInfo,
+    GlobResult,
+    GrepMatch,
+    GrepResult,
+    LsResult,
+    ReadResult,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -22,16 +31,20 @@ from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_person_release import (
     PARENT_DOSSIER_PATH,
+    RELEASE_AT_NOMINATION,
+    parent_dossier_ready,
     read_parent_dossier,
     releases_after_import,
 )
 from clue_api.arv2.quality_policy import advisory_research
+from clue_api.arv2.quality_recipe import RECIPE_26, at_least, recipe_of
 from clue_api.arv2.quality_relationships import read_committee
-from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_view
+from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_text, render_view
 from clue_db import ConnFactory
 from clue_research.claimstore.quality import eligible_sql
 from clue_storage import StorageBackend, StorageError, read_verified_artifact
 
+_GREP_MAX_MATCHES = 1000  # deepagents' own agent-facing grep cap
 _DOCUMENT = re.compile(r"/documents/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CLAIM = re.compile(r"/claim/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
@@ -42,9 +55,26 @@ _PERSON_BRIEF = re.compile(r"/person-brief/(0|[1-9][0-9]*)\.json\Z")
 _SOURCE_REVIEW = re.compile(r"/source-review/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 
 
-def _passage(body: str, start: int, path: str) -> dict[str, object]:
+class PlainView(str):
+    """A recipe-26 research view: the document text itself, plus one header line."""
+
+    header: str
+
+    def __new__(cls, text: str, header: str) -> PlainView:
+        value = super().__new__(cls, text)
+        value.header = header
+        return value
+
+
+def passage_view(body: str, start: int, path: str, *, recipe: int) -> dict[str, object] | PlainView:
+    """A long text view. Recipe 26+ serves the document as plain text; earlier recipes keep the
+    256-character segment envelope they were pinned with."""
     if start > len(body):
         raise ValueError("offset exceeds the document; start at 0")
+    if recipe >= RECIPE_26:
+        suffix = f", from character {start}" if start else ""
+        header = f"# /research/{path}/{start}.json ({len(body)} characters{suffix})"
+        return PlainView(body[start:], header)
     end = len(body)
     return {
         "start": start,
@@ -55,6 +85,13 @@ def _passage(body: str, start: int, path: str) -> dict[str, object]:
         ],
         "next_path": f"/research/{path}/{end}.json" if end < len(body) else None,
     }
+
+
+def _passage(body: str, start: int, path: str) -> dict[str, object]:
+    """The pre-recipe-26 segment envelope (kept for pinned recipes and their tests)."""
+    view = passage_view(body, start, path, recipe=0)
+    assert isinstance(view, dict)
+    return view
 
 
 class ResearchViewMount(EvidenceWorkspace):
@@ -89,20 +126,57 @@ class ResearchViewMount(EvidenceWorkspace):
                 authority = await resolve_authority(conn, self._scope, self._execution_id)
                 if not self._evidence:
                     value = await self._view(conn, authority, file_path)
+                    if isinstance(value, PlainView):
+                        return render_text(value.header, str(value), offset=offset, limit=limit)
                     return render_view(value, offset=offset, limit=limit)
             # EvidenceWorkspace opens its own short transaction and rechecks the same grant.
-            return await EvidenceWorkspace(self._connections, self._storage, authority.grant).aread(
-                "/evidence" + file_path, offset=offset, limit=limit
-            )
+            return await EvidenceWorkspace(
+                self._connections,
+                self._storage,
+                authority.grant,
+                recipe=recipe_of(authority.scope),
+            ).aread("/evidence" + file_path, offset=offset, limit=limit)
         except (ValueError, StorageError):
             return ReadResult(
                 error="Research view unavailable; inspect scope or request a new authorized task."
             )
 
+    async def agrep(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> GrepResult:
+        """Recipe 26+: a literal search inside one research or evidence file.
+
+        Earlier recipes refuse every grep and point to search_evidence, which cannot open a
+        research view; the agent then failed search_evidence and could not finish
+        (2026-10-06). The search runs over the whole file exactly as ``aread`` serves it.
+        """
+        if not at_least(self._scope, RECIPE_26):
+            return await super().agrep(pattern, path, glob)
+        if not path or path.endswith("/") or not path.endswith(".json"):
+            return GrepResult(
+                error="Grep one file: give the exact path of a research view or an evidence "
+                "source (for example a path listed in /evidence/index.json)."
+            )
+        if not pattern:
+            return GrepResult(error="Give a literal text to search for.")
+        # The whole file (an explicit window), not the first part a default read returns.
+        result = await self.aread(path, limit=sys.maxsize)
+        if result.error:
+            return GrepResult(error=result.error)
+        file_data: dict[str, Any] = dict(result.file_data or {})
+        content = str(file_data.get("content", ""))
+        matches: list[GrepMatch] = [
+            GrepMatch(path=path, line=number, text=line)
+            for number, line in enumerate(content.splitlines(), start=1)
+            if pattern in line
+        ][:_GREP_MAX_MATCHES]
+        return GrepResult(matches=matches)
+
     async def _view(
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | PlainView:
         scope = authority.scope
+        recipe = recipe_of(scope)
         if path == "/parent-account-dossier.json":
             return await read_parent_dossier(conn, self._storage, scope, authority.context_id)
         if path == "/dossier/latest.json":
@@ -138,8 +212,11 @@ class ResearchViewMount(EvidenceWorkspace):
                     "state": "no_person_specific_brief",
                     "context_path": "/research/context.json",
                 }
-            return _passage(
-                json.dumps(brief, ensure_ascii=False), int(brief_match[1]), "person-brief"
+            return passage_view(
+                json.dumps(brief, ensure_ascii=False, indent=1 if recipe >= RECIPE_26 else None),
+                int(brief_match[1]),
+                "person-brief",
+                recipe=recipe,
             )
         transcript = _TRANSCRIPT.fullmatch(path)
         if transcript:
@@ -208,8 +285,15 @@ class ResearchViewMount(EvidenceWorkspace):
             return {**dict(row), "person_jobs": [dict(r) for r in children]}
         match = _CAPABILITIES.fullmatch(path)
         if match and authority.role == "account_research":
-            return _passage(
-                json.dumps(self._capabilities, ensure_ascii=False), int(match[1]), "capabilities"
+            return passage_view(
+                json.dumps(
+                    self._capabilities,
+                    ensure_ascii=False,
+                    indent=1 if recipe >= RECIPE_26 else None,
+                ),
+                int(match[1]),
+                "capabilities",
+                recipe=recipe,
             )
         match = _OPERATION.fullmatch(path)
         if match and authority.role == "account_research":
@@ -234,7 +318,12 @@ class ResearchViewMount(EvidenceWorkspace):
             _, raw = await read_verified_artifact(
                 conn, self._storage, workspace_id=scope.workspace_id, storage_key=key
             )
-            return _passage(raw.decode(), int(match[2]), f"operations/{match[1]}")
+            body = raw.decode()
+            if recipe >= RECIPE_26:
+                # Stored compact; serve the document itself (not an escaped string) one key
+                # per line so a literal grep still lands on a short line.
+                body = json.dumps(json.loads(body), ensure_ascii=False, indent=1)
+            return passage_view(body, int(match[2]), f"operations/{match[1]}", recipe=recipe)
         if path == "/context.json" or _DOCUMENT.fullmatch(path):
             context = await read_context(
                 conn,
@@ -253,7 +342,7 @@ class ResearchViewMount(EvidenceWorkspace):
                 body = await read_document(
                     conn, self._storage, workspace_id=scope.workspace_id, pin=document
                 )
-                return _passage(body, int(match[2]), f"documents/{match[1]}")
+                return passage_view(body, int(match[2]), f"documents/{match[1]}", recipe=recipe)
             result = context.model_dump(mode="json", exclude={"field_catalog"})
             result["context_id"] = str(authority.context_id)
             result["document_paths"] = {
@@ -296,7 +385,15 @@ class ResearchViewMount(EvidenceWorkspace):
                     "findings": "/research/claims/0.json",
                     "original_reports_pages_and_transcripts": "/evidence/index.json",
                 }
-                if releases_after_import(scope) and (scope.input_refs or {}).get("parent_job_id"):
+                if (
+                    releases_after_import(scope)
+                    and (scope.input_refs or {}).get("parent_job_id")
+                    # Recipe 26: listed only once the account has imported it.
+                    and (
+                        not at_least(scope, RELEASE_AT_NOMINATION)
+                        or await parent_dossier_ready(conn, scope)
+                    )
+                ):
                     result["account_research_references"]["dossier"] = PARENT_DOSSIER_PATH
             if advisory_research(scope):
                 result["review_policy"] = {
@@ -392,10 +489,16 @@ class ResearchViewMount(EvidenceWorkspace):
                 for k in ("value_json", "evidence_span", "write_markers"):
                     value.pop(k, None)
             if claim_match:
-                return _passage(
-                    json.dumps(value, ensure_ascii=False, default=str, indent=2),
+                return passage_view(
+                    json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        default=str,
+                        indent=1 if recipe >= RECIPE_26 else 2,
+                    ),
                     int(claim_match[2]),
                     f"claim/{claim_match[1]}",
+                    recipe=recipe,
                 )
             items.append(
                 {
@@ -437,6 +540,14 @@ class ResearchViewMount(EvidenceWorkspace):
         try:
             async with self._connections() as conn:
                 await resolve_authority(conn, self._scope, self._execution_id)
+                parent_listed = bool(
+                    self._scope.person_subject_id
+                    and releases_after_import(self._scope)
+                    and (self._scope.input_refs or {}).get("parent_job_id")
+                ) and (
+                    not at_least(self._scope, RELEASE_AT_NOMINATION)
+                    or await parent_dossier_ready(conn, self._scope)
+                )
         except (ValueError, StorageError):
             return LsResult(error="Research authority unavailable.")
         if path.rstrip("/") == "/dossier":
@@ -452,13 +563,7 @@ class ResearchViewMount(EvidenceWorkspace):
                         "/catalog/0.json",
                         "/claims/0.json",
                         "/dossier/latest.json",
-                        *(
-                            ("/parent-account-dossier.json",)
-                            if self._scope.person_subject_id
-                            and releases_after_import(self._scope)
-                            and (self._scope.input_refs or {}).get("parent_job_id")
-                            else ()
-                        ),
+                        *(("/parent-account-dossier.json",) if parent_listed else ()),
                     )
                 )
             ]

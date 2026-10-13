@@ -59,6 +59,7 @@ from clue_api.arv2.quality_page_inputs import page_inputs
 from clue_api.arv2.quality_pages import PageDraft, publish_page
 from clue_api.arv2.quality_person_release import read_parent_dossier
 from clue_api.arv2.quality_policy import SEPARATE_WRITER_RECIPE, writes_pages_separately
+from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.transport import HttpxTransport
 from clue_api.execution_wiring import ExecutionRunEventWriter
@@ -139,7 +140,7 @@ def provider_model_call(
         spec = CallSpec(
             provider="openrouter",
             operation="chat/completions",
-            label=f"page-writer-{purpose}-{GUIDE_VERSION}",
+            label=f"page-writer-{purpose}-{settings.arv2_page_guide_version}",
             request=request,
             estimate=SpendEstimate(usd=Decimal("0.20")),
             cost_reader=openrouter_cost_reader,
@@ -176,8 +177,10 @@ def provider_model_call(
     return call
 
 
-def _guides_sha() -> str:
-    body = "\n".join([seller_brief_system(), account_system(), contact_system(), GUIDE_VERSION])
+def _guides_sha(version: str = GUIDE_VERSION) -> str:
+    body = "\n".join(
+        [seller_brief_system(version), account_system(version), contact_system(version), version]
+    )
     return hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -234,9 +237,10 @@ async def seller_brief(
     *,
     scope: JobScope,
     context_id: UUID,
+    guide_version: str = GUIDE_VERSION,
 ) -> str:
     """The project's seller brief: written once per context pin and guide version, then reused."""
-    reference_id = f"{context_id}:{_guides_sha()[:16]}"
+    reference_id = f"{context_id}:{_guides_sha(guide_version)[:16]}"
     async with conn_factory() as conn:
         key = (
             await conn.execute(
@@ -274,7 +278,7 @@ async def seller_brief(
     brief = (
         await model(
             [
-                {"role": "system", "content": seller_brief_system()},
+                {"role": "system", "content": seller_brief_system(guide_version)},
                 {"role": "user", "content": request},
             ],
             False,
@@ -289,7 +293,11 @@ async def seller_brief(
             scope,
             kind=_BRIEF_KIND,
             reference_id=reference_id,
-            value={"brief": brief, "context_id": str(context_id), "guides": _guides_sha()},
+            value={
+                "brief": brief,
+                "context_id": str(context_id),
+                "guides": _guides_sha(guide_version),
+            },
         )
     return brief
 
@@ -412,7 +420,14 @@ async def _account_dossier_for_person(
     research context; with none, the page is written from the person's own findings alone.
     """
     if (scope.input_refs or {}).get("parent_job_id"):
-        return await read_parent_dossier(conn, storage, scope, context_id)
+        try:
+            return await read_parent_dossier(conn, storage, scope, context_id)
+        except ValueError:
+            # Recipe 26: a contact page written at the account's final step whose account never
+            # imported is written from the person's own findings.
+            if not at_least(scope, RECIPE_26):
+                raise
+            return {}
     jobs = (
         await conn.execute(
             text("""SELECT j.job_id FROM arv2_research_job j
@@ -464,9 +479,17 @@ async def write_pages(
     *,
     scope: JobScope,
     context_id: UUID,
+    guide_version: str = GUIDE_VERSION,
 ) -> WrittenPages:
     """Write (not publish) this job's pages from its durable inputs."""
-    brief = await seller_brief(conn_factory, storage, model, scope=scope, context_id=context_id)
+    brief = await seller_brief(
+        conn_factory,
+        storage,
+        model,
+        scope=scope,
+        context_id=context_id,
+        guide_version=guide_version,
+    )
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
         if scope.person_subject_id is not None:
@@ -488,6 +511,7 @@ async def write_pages(
                 dossier=own,
             ),
             account_dossier=parent,
+            guide_version=guide_version,
         )
     return await write_account_pages(
         model,
@@ -495,6 +519,7 @@ async def write_pages(
         account_name=scope.account_name,
         account_dossier=own,
         people=people,
+        guide_version=guide_version,
     )
 
 
@@ -519,8 +544,14 @@ async def publish_written(
     context_id: UUID,
     written: WrittenPages,
     model_id: str,
+    input_sha256: str | None = None,
+    guide_version: str = GUIDE_VERSION,
 ) -> tuple[UUID, ...]:
-    """Publish written pages under the writer's own execution, in the caller's transaction."""
+    """Publish written pages under the writer's own execution, in the caller's transaction.
+
+    ``input_sha256`` (the writer request's hash) is kept with the reply, so a later write from
+    identical input can be skipped.
+    """
     reply = json.dumps(written.result, sort_keys=True, default=str)
     execution_id = uuid5(
         NAMESPACE_URL,
@@ -540,7 +571,12 @@ async def publish_written(
         scope,
         kind=_WRITER_KIND,
         reference_id=f"{scope.job_id}:{execution_id}",
-        value={"result": written.result, "attempts": written.attempts, "guides": _guides_sha()},
+        value={
+            "result": written.result,
+            "attempts": written.attempts,
+            "guides": _guides_sha(guide_version),
+            **({"input_sha256": input_sha256} if input_sha256 else {}),
+        },
         subjects=sorted(subjects),
     )
     inserted = (
@@ -556,7 +592,7 @@ async def publish_written(
                 "project": scope.project_id,
                 "key": key,
                 "sha": key.rsplit("/", 1)[-1],
-                "pin": _guides_sha(),
+                "pin": _guides_sha(guide_version),
             },
         )
     ).scalar_one_or_none()
@@ -593,6 +629,8 @@ class PageWriterModels:
 
     call_for: Callable[[JobScope], ModelCall]
     model_id: str
+    #: The writer guides (``CLUE_ARV2_PAGE_GUIDE_VERSION``); ``v1`` rolls back.
+    guide_version: str = GUIDE_VERSION
 
 
 def page_writer_models(
@@ -612,7 +650,41 @@ def page_writer_models(
             purpose="contact" if scope.person_subject_id is not None else "account",
         )
 
-    return PageWriterModels(call_for=call_for, model_id=writer_model_id(settings))
+    return PageWriterModels(
+        call_for=call_for,
+        model_id=writer_model_id(settings),
+        guide_version=settings.arv2_page_guide_version,
+    )
+
+
+class _Unchanged(Exception):
+    """The writer request is identical to the one behind the job's newest pages."""
+
+
+def _input_sha256(messages: Sequence[Mapping[str, str]]) -> str:
+    system, user = messages[0]["content"], messages[1]["content"]
+    return hashlib.sha256(f"{system}\x00{user}".encode()).hexdigest()
+
+
+async def _last_input_sha256(
+    conn: AsyncConnection, storage: StorageBackend, scope: JobScope
+) -> str | None:
+    """The request hash kept with this job's newest written pages, if any."""
+    key = (
+        await conn.execute(
+            text("""SELECT storage_key FROM artifact_reference WHERE workspace_id=:ws
+            AND reference_kind=:kind AND reference_id LIKE :job||':%'
+            ORDER BY created_at DESC, storage_key DESC LIMIT 1"""),
+            {"ws": scope.workspace_id, "kind": _WRITER_KIND, "job": str(scope.job_id)},
+        )
+    ).scalar_one_or_none()
+    if key is None:
+        return None
+    _, raw = await read_verified_artifact(
+        conn, storage, workspace_id=scope.workspace_id, storage_key=key
+    )
+    value = json.loads(raw).get("input_sha256")
+    return str(value) if value else None
 
 
 async def write_job_pages(
@@ -629,7 +701,49 @@ async def write_job_pages(
     ``after_publish`` runs in the publishing transaction, so bookkeeping that depends on the
     pages (settling an account generation) commits with them or not at all.
     """
+    ids, _ = await _write_job_pages(
+        conn_factory=conn_factory,
+        storage=storage,
+        scope=scope,
+        context_id=context_id,
+        models=models,
+        after_publish=after_publish,
+    )
+    return ids
+
+
+async def _write_job_pages(
+    *,
+    conn_factory: ConnFactory,
+    storage: StorageBackend,
+    scope: JobScope,
+    context_id: UUID,
+    models: PageWriterModels,
+    after_publish: Callable[[AsyncConnection], Awaitable[None]] | None = None,
+    skip_if_unchanged: bool = False,
+) -> tuple[tuple[UUID, ...], bool]:
+    """``write_job_pages``, also reporting whether it skipped an unchanged write.
+
+    With ``skip_if_unchanged`` (recipe 26), the first writer request is hashed before it is sent;
+    when it equals the hash kept with the job's newest pages, no model call is made, the pages
+    stay as they are and ``after_publish`` still runs.
+    """
     subject = "contact" if scope.person_subject_id is not None else "account"
+    previous: str | None = None
+    if skip_if_unchanged:
+        async with conn_factory() as conn:
+            previous = await _last_input_sha256(conn, storage, scope)
+    hashed: list[str] = []
+    model = models.call_for(scope)
+
+    async def watched(messages: Sequence[Mapping[str, str]], json_mode: bool) -> str:
+        # The first page request (the seller brief is prose; repairs carry the reply).
+        if json_mode and len(messages) == 2 and not hashed:
+            hashed.append(_input_sha256(messages))
+            if previous is not None and hashed[0] == previous:
+                raise _Unchanged
+        return await model(messages, json_mode)
+
     with observation(
         "research.page_writer",
         as_type="span",
@@ -639,9 +753,21 @@ async def write_job_pages(
             "subject": subject,
         },
     ):
-        written = await write_pages(
-            models.call_for(scope), conn_factory, storage, scope=scope, context_id=context_id
-        )
+        try:
+            written = await write_pages(
+                watched,
+                conn_factory,
+                storage,
+                scope=scope,
+                context_id=context_id,
+                guide_version=models.guide_version,
+            )
+        except _Unchanged:
+            if after_publish is not None:
+                async with conn_factory() as conn:
+                    await after_publish(conn)
+            log.info("arv2.page_writer.unchanged", job_id=str(scope.job_id), subject=subject)
+            return (), True
         async with conn_factory() as conn:
             ids = await publish_written(
                 conn,
@@ -650,6 +776,8 @@ async def write_job_pages(
                 context_id=context_id,
                 written=written,
                 model_id=models.model_id,
+                input_sha256=hashed[0] if hashed else None,
+                guide_version=models.guide_version,
             )
             if after_publish is not None:
                 await after_publish(conn)
@@ -661,7 +789,7 @@ async def write_job_pages(
         blocks=len(ids),
         attempts=written.attempts,
     )
-    return ids
+    return ids, False
 
 
 async def rewrite_account_pages(
@@ -673,6 +801,7 @@ async def rewrite_account_pages(
     generation_id: UUID,
     revision: int,
     models: PageWriterModels,
+    deferred: Sequence[JobScope] = (),
 ) -> dict[str, Any]:
     """Rewrite the account's pages once its people have settled, and settle that revision.
 
@@ -683,7 +812,25 @@ async def rewrite_account_pages(
     An account whose own research never imported (it failed before ``finish_dossier``) has
     nothing to write from: the revision settles ``needs_review`` and its pages stay as they are,
     rather than being replaced by a page of gaps.
+
+    Recipe 26: this is the generation's one final page step. The account's pages are written
+    first, then the ``deferred`` contact pages (people who finished before the account
+    imported), together, so each is written against the account's new story; then the revision
+    settles. Each write is skipped when its request is identical to the last one. Deferred
+    contact pages are written even when the account never imported (from the person's own
+    findings) or its write failed; any of those settles the revision ``needs_review``.
     """
+    if at_least(scope, RECIPE_26):
+        return await _final_page_step(
+            conn_factory=conn_factory,
+            storage=storage,
+            scope=scope,
+            context_id=context_id,
+            generation_id=generation_id,
+            revision=revision,
+            models=models,
+            deferred=deferred,
+        )
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
         if own.get("state") != "complete":
@@ -726,4 +873,84 @@ async def rewrite_account_pages(
         "input_revision": revision,
         "applied": applied,
         "blocks": len(ids),
+    }
+
+
+async def _final_page_step(
+    *,
+    conn_factory: ConnFactory,
+    storage: StorageBackend,
+    scope: JobScope,
+    context_id: UUID,
+    generation_id: UUID,
+    revision: int,
+    models: PageWriterModels,
+    deferred: Sequence[JobScope],
+) -> dict[str, Any]:
+    async with conn_factory() as conn:
+        own = await read_json_dossier(conn, storage, scope, context_id)
+    imported = own.get("state") == "complete"
+    ids: tuple[UUID, ...] = ()
+    unchanged = False
+    account_error: Exception | None = None
+    if imported:
+        try:
+            ids, unchanged = await _write_job_pages(
+                conn_factory=conn_factory,
+                storage=storage,
+                scope=scope,
+                context_id=context_id,
+                models=models,
+                skip_if_unchanged=True,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            account_error = error
+    contacts = await asyncio.gather(
+        *(
+            _write_job_pages(
+                conn_factory=conn_factory,
+                storage=storage,
+                scope=person,
+                context_id=context_id,
+                models=models,
+                skip_if_unchanged=True,
+            )
+            for person in deferred
+        ),
+        return_exceptions=True,
+    )
+    failed = 0
+    for person, outcome in zip(deferred, contacts, strict=True):
+        if isinstance(outcome, asyncio.CancelledError):
+            raise outcome
+        if isinstance(outcome, BaseException):
+            failed += 1
+            log.error(
+                "arv2.page_writer.deferred_contact_failed",
+                job_id=str(person.job_id),
+                error=type(outcome).__name__,
+            )
+    if account_error is not None:
+        # The caller settles the revision needs_review; the contact pages are already written.
+        raise account_error
+    async with conn_factory() as conn:
+        applied = await reconcile_generation(
+            conn,
+            workspace_id=scope.workspace_id,
+            generation_id=generation_id,
+            expected_revision=revision,
+            processed_snapshot=True,
+            needs_review=not imported or bool(failed),
+        )
+    return {
+        "generation_id": str(generation_id),
+        "input_revision": revision,
+        "applied": applied,
+        "blocks": len(ids),
+        "unchanged": unchanged,
+        "contact_pages": len(deferred) - failed,
+        "contact_page_failures": failed,
+        **({} if imported else {"skipped": "account_dossier_not_imported"}),
     }

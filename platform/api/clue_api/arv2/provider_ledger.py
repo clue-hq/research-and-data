@@ -29,11 +29,13 @@ from clue_spend.ledger import (  # noqa: F401
     BufferedRawSink,
     DrainReport,
     FailureHook,
+    HeldDrain,
     LedgerStamp,
     _ledger_params,
     _stamped_failure,
     _surface_for,
     artifact_payload,
+    hold_drain,
     ledger_id_for,
 )
 from clue_spend.ledger import drain_provider_calls as _drain
@@ -46,9 +48,11 @@ __all__ = [
     "BufferedRawSink",
     "DrainReport",
     "FailureHook",
+    "HeldDrain",
     "LedgerStamp",
     "artifact_payload",
     "drain_provider_calls",
+    "hold_drain",
     "ledger_id_for",
 ]
 
@@ -60,8 +64,12 @@ async def drain_provider_calls(
     ledger: BufferedLedger,
     artifacts: ArtifactSink | None,
     stamp: LedgerStamp,
+    held: HeldDrain | None = None,
 ) -> DrainReport:
     """The shared drain, plus the platform's provider-incident bookkeeping.
+
+    ``held`` is a :func:`hold_drain` already run outside the caller's connection (W2-15 option B):
+    its bodies are stored, so only its rows are written here.
 
     ``artifacts=None`` is the design lane (lane 3 slice 5): its bodies are not persisted to the
     platform's artifact store, so its rows land citing nothing there — but its failures still open
@@ -98,7 +106,13 @@ async def drain_provider_calls(
         )
 
     report = await _drain(
-        conn, raw=raw, ledger=ledger, artifacts=artifacts, stamp=stamp, on_failure=on_failure
+        conn,
+        raw=raw,
+        ledger=ledger,
+        artifacts=artifacts,
+        stamp=stamp,
+        on_failure=on_failure,
+        held=held,
     )
 
     last_ok_at: dict[str, datetime] = {}

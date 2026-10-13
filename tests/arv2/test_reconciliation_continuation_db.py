@@ -5,9 +5,10 @@ import json
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
+import deepagents.graph as deep_graph
 import pytest
 from langchain.agents.middleware.types import AgentMiddleware
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import text
@@ -18,6 +19,8 @@ from clue_agents import (
     ScriptedAgentChatModel,
     WorkspaceRootPolicy,
 )
+from clue_agents.compaction import ClueSummarizationMiddleware
+from clue_agents.tool_result_clearing import BatchedToolResultClearing
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.quality_execution import Allowance
 from clue_api.arv2.quality_reconciliation import run_reconciliation
@@ -36,10 +39,18 @@ from tests.claimstore.conftest import (  # noqa: F401
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
+IDENTITY = "You are the account research analyst on the seller's account-based marketing team"
+
+
+def identity_copies(messages):
+    return sum(str(m.content).count(IDENTITY) for m in messages if isinstance(m, SystemMessage))
+
+
+@pytest.mark.parametrize("recipe", [24, 26])
 @pytest.mark.parametrize("compacted", [False, True])
 @pytest.mark.parametrize("persistent", [False, True])
 def test_account_continues_native_history_repairs_submission_and_replays(
-    tmp_path, monkeypatch, compacted, persistent
+    tmp_path, monkeypatch, compacted, persistent, recipe
 ):
     captured = []
     generate = ScriptedAgentChatModel._generate
@@ -49,6 +60,14 @@ def test_account_continues_native_history_repairs_submission_and_replays(
         return generate(self, messages, *args, **kwargs)
 
     monkeypatch.setattr(ScriptedAgentChatModel, "_generate", capture)
+    stacks = []
+    create_agent = deep_graph.create_agent
+
+    def spy(*args, **kwargs):
+        stacks.append(list(kwargs["middleware"]))
+        return create_agent(*args, **kwargs)
+
+    monkeypatch.setattr(deep_graph, "create_agent", spy)
     original_bindings = ResearchUnitRuntime.bindings
 
     class SavedSummary(AgentMiddleware):
@@ -84,6 +103,18 @@ def test_account_continues_native_history_repairs_submission_and_replays(
                 saver = InMemorySaver()
             conn = await stack.enter_async_context(rollback_conn())
             scope, child, cid, storage, gen, rev, _ = await fixture(conn, tmp_path)
+            if recipe != 24:
+                scope = replace(
+                    scope, input_refs={**scope.input_refs, "quality_recipe_version": recipe}
+                )
+                await conn.execute(
+                    text(
+                        "UPDATE arv2_research_job SET input_refs=input_refs || "
+                        "jsonb_build_object('quality_recipe_version',CAST(:r AS int)) "
+                        "WHERE job_id=:id"
+                    ),
+                    {"r": recipe, "id": scope.job_id},
+                )
             lock = asyncio.Lock()
 
             @asynccontextmanager
@@ -275,6 +306,22 @@ def test_account_continues_native_history_repairs_submission_and_replays(
                 page = await read_page(conn, scope, context_id=cid, page="overview")
                 assert "Their own public statement matters." in str(page)
             assert len(replay_models) == 1
+            # Recipe 26 sends the identity prompt once per request: first turn and continuation.
+            assert captured
+            copies = {identity_copies(batch) for batch in captured}
+            assert copies == {1} if recipe >= 26 else max(copies) >= 2
+            # Recipe 26: batched clearing runs outside the summariser, which compacts at 400k.
+            assert stacks
+            for stack in stacks:
+                kinds = [type(m) for m in stack]
+                summariser = next(m for m in stack if isinstance(m, ClueSummarizationMiddleware))
+                if recipe >= 26:
+                    clearing = kinds.index(BatchedToolResultClearing)
+                    assert clearing < kinds.index(ClueSummarizationMiddleware)
+                    assert summariser._lc_helper.trigger == ("tokens", 400_000)
+                else:
+                    assert BatchedToolResultClearing not in kinds
+                    assert summariser._lc_helper.trigger != ("tokens", 400_000)
             combined = "\n".join(str(m.content) for batch in captured for m in batch)
             assert "distinctive workflow" in combined
             assert "Retained account memory." in combined

@@ -46,6 +46,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from uuid import UUID
 
 from clue_agents.ports import AgentModelProvider
@@ -177,7 +178,7 @@ from clue_api.run_composition import (
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
-from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
+from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep_if_due
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
@@ -236,17 +237,23 @@ async def _orphan_sweep_loop(
     conn_factory: ConnFactory = transaction,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
 ) -> None:
-    """Run :func:`~clue_api.storage_wiring.run_orphan_blob_sweep` every
-    ``storage_orphan_sweep_interval_s`` seconds until cancelled. Each pass is fully isolated: a
-    sweep fault is logged and the loop continues — the orphan sweep must never sink the worker."""
-    interval = settings.storage_orphan_sweep_interval_s
+    """Every ``storage_orphan_sweep_check_interval_s`` seconds, ask whether the FLEET is due its
+    storage sweep (purge erased artifacts, then orphan blobs) and run it if so, until cancelled.
+
+    The interval ``storage_orphan_sweep_interval_s`` belongs to the fleet, not to this process:
+    :func:`~clue_api.storage_wiring.run_orphan_blob_sweep_if_due` keeps the last run in the
+    database, so a restart never resets it and one process sweeps (2026-10-09; it used to be every
+    6 h in every process, on a timer each deploy reset). Each pass is fully isolated: a sweep fault
+    is logged and the loop continues — the sweep must never sink the worker."""
+    every = timedelta(seconds=settings.storage_orphan_sweep_interval_s)
+    check = settings.storage_orphan_sweep_check_interval_s
     while True:
-        await sleep(interval)
+        await sleep(check)
         try:
             async with conn_factory() as conn:
-                deleted = await run_orphan_blob_sweep(conn, storage=storage)
-            if deleted:
-                log.info("fleet.orphan_sweep.deleted", count=len(deleted))
+                deleted = await run_orphan_blob_sweep_if_due(conn, every=every, storage=storage)
+            if deleted is not None:
+                log.info("fleet.orphan_sweep.ran", deleted=len(deleted))
         except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.orphan_sweep.error", exc_info=True)
             capture(exc)
@@ -254,8 +261,12 @@ async def _orphan_sweep_loop(
 
 def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.Task[None] | None:
     """Start the background orphan-sweep task, or ``None`` when disabled
-    (``storage_orphan_sweep_interval_s <= 0``). Must be called with a running event loop."""
-    if settings.storage_orphan_sweep_interval_s <= 0:
+    (``storage_orphan_sweep_interval_s`` or its check interval ``<= 0``). Must be called with a
+    running event loop."""
+    if (
+        settings.storage_orphan_sweep_interval_s <= 0
+        or settings.storage_orphan_sweep_check_interval_s <= 0
+    ):
         log.info("fleet.orphan_sweep.disabled")
         return None
     return asyncio.create_task(_orphan_sweep_loop(settings, storage))

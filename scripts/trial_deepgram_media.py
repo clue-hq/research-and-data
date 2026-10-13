@@ -21,7 +21,6 @@ from urllib.parse import urlencode
 from dotenv import dotenv_values
 
 from clue_api.arv2.deepgram_media_client import parameters, read_cost, speaker_segments
-from clue_api.arv2.media_recording import download_youtube as acquire_youtube
 from clue_api.arv2.media_recording import prepare_audio
 from clue_api.arv2.media_resolution import (
     PublicMediaTransport,
@@ -85,10 +84,9 @@ def command(args, out, label):
     return result.stdout
 
 
-def download_youtube(url, out):
-    path, metadata = acquire_youtube(url, out)
-    save(out / "youtube.json", metadata)
-    return path, metadata.get("title", "")
+#: YouTube is never downloaded (spec 2026-10-13-legitimate-media-sources-design §2); research
+#: reads it through its podcast twin or Gemini on the public link (``read_media``).
+YOUTUBE_REFUSAL = "YouTube is never downloaded; use read_media for a YouTube link"
 
 
 def prepare(source, out, episode=None):
@@ -103,9 +101,8 @@ def prepare(source, out, episode=None):
         shutil.copyfile(local, acquired)
         info["title"] = local.name
     elif source.startswith(("http://", "https://")):
-        yt = youtube_url(source)
-        if yt:
-            acquired, info["title"] = download_youtube(yt[0], out)
+        if youtube_url(source):
+            raise ValueError(YOUTUBE_REFUSAL)
         else:
             transport = CachedPublicTransport()
             public = caller(out, transport)
@@ -127,7 +124,7 @@ def prepare(source, out, episode=None):
             info["candidate"] = candidate.model_dump(mode="json")
             info["title"] = candidate.title
             if candidate.family == "youtube":
-                acquired, info["title"] = download_youtube(candidate.url, out)
+                raise ValueError(YOUTUBE_REFUSAL)
             elif candidate.media_url:
                 # A resolver may have already fetched the enclosure while following a page.
                 response = transport.media.get(candidate.media_url)

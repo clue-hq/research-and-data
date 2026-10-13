@@ -23,7 +23,8 @@ from deepagents.backends.protocol import (
     ReadResult,
     WriteResult,
 )
-from deepagents.backends.utils import slice_read_response
+from deepagents.backends.utils import MAX_LINE_LENGTH, slice_read_response
+from deepagents.middleware.filesystem import DEFAULT_READ_LIMIT
 
 from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH
 from clue_api.arv2.quality_evidence import (
@@ -33,6 +34,7 @@ from clue_api.arv2.quality_evidence import (
     read_source,
     resolve_source,
 )
+from clue_api.arv2.quality_recipe import RECIPE_26
 from clue_db import ConnFactory
 from clue_storage import StorageBackend, StorageError
 
@@ -40,28 +42,89 @@ _READ_ONLY = "permission_denied: evidence originals are read-only"
 _ASYNC = "Use the asynchronous research runtime for authorized evidence access."
 
 
-def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
-    """Return the complete view by default; explicit positive line windows remain optional.
+#: Deep Agents cuts any read over 80,000 characters (its 20,000-token limit, which
+#: ``create_deep_agent`` does not let us change), counted after it adds a line-number column,
+#: and points at a shell tool research agents do not have. A whole-file read therefore comes
+#: back in parts that stay well under that limit, each ending with the offset to read next.
+READ_PART_CHARS = 64_000
+#: Deep Agents' line-number column (``%6d`` and a tab), plus margin, per line or line chunk.
+_GUTTER_CHARS = 8
+CONTINUES = "\n[This file continues. Read it again with offset={offset} to see the rest.]"
 
-    Deep Agents supplies 2000 when the caller omits its line limit. Treat that framework
-    default, and nonpositive limits, as unbounded for these research views.
+
+def _window(rendered: str, *, offset: int, limit: int) -> ReadResult:
+    """Return the file from ``offset``: whole by default, in parts when it is very long.
+
+    Deep Agents fills an omitted line limit with its own default (``DEFAULT_READ_LIMIT``, 100 in
+    0.6.12; 2000 in older releases). Treat that framework default, the old one, and nonpositive
+    limits as "the rest of the file" for these research views. A model that explicitly asks for
+    exactly the default window gets the same; the two calls are indistinguishable here. An
+    explicit window is returned as asked. A single line longer than a part cannot be split by
+    line offset and is returned as it is.
     """
-    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    if limit <= 0 or limit == 2000:
-        limit = max(1, len(rendered.splitlines()))
+    lines = rendered.splitlines(keepends=True)
+    more_at: int | None = None
+    if limit <= 0 or limit in (DEFAULT_READ_LIMIT, 2000):
+        end, used = offset, 0
+        while end < len(lines):
+            cost = len(lines[end]) + _GUTTER_CHARS * (1 + len(lines[end]) // MAX_LINE_LENGTH)
+            if used + cost > READ_PART_CHARS and end > offset:
+                break
+            used += cost
+            end += 1
+        limit = max(1, end - offset)
+        more_at = end if end < len(lines) else None
     sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
     if isinstance(sliced, ReadResult):
         return sliced
+    if more_at is not None:
+        sliced = sliced.removesuffix("\n") + CONTINUES.format(offset=more_at)
     return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
+
+
+def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
+    """A research view as JSON, read by the rules of ``_window``."""
+    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    return _window(rendered, offset=offset, limit=limit)
+
+
+def render_text(header: str, body: str, *, offset: int, limit: int) -> ReadResult:
+    """A research view as plain text: header line(s), then the document exactly as stored.
+
+    Recipe 26+. Read by the rules of ``_window``.
+    """
+    return _window(f"{header}\n{body}", offset=offset, limit=limit)
+
+
+def plain_source(source: dict[str, Any]) -> tuple[str, str]:
+    """An evidence source as ``key: value`` header lines plus its unsegmented text."""
+    fields = {k: v for k, v in source.items() if k not in {"text", "metadata", "next_path"}}
+    fields.update({k: v for k, v in (source.get("metadata") or {}).items() if k not in fields})
+    lines = [f"# {fields.pop('path', '/evidence')}"]
+    lines += [
+        f"{key}: {value}"
+        for key, value in fields.items()
+        if value is not None and not isinstance(value, (dict, list))
+    ]
+    return "\n".join(lines), str(source.get("text") or "")
 
 
 class EvidenceWorkspace(BackendProtocol):
     """Mount at /evidence on an isolated governed workspace; provides no shell or host paths."""
 
-    def __init__(self, conn_factory: ConnFactory, storage: StorageBackend, grant: EvidenceGrant):
+    def __init__(
+        self,
+        conn_factory: ConnFactory,
+        storage: StorageBackend,
+        grant: EvidenceGrant,
+        *,
+        recipe: int = 0,
+    ):
         self._connections = conn_factory
         self._storage = storage
         self._grant = grant
+        # Recipe 26+: sources are served as plain text (see quality_recipe.py).
+        self._recipe = recipe
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         if offset < 0:
@@ -75,6 +138,9 @@ class EvidenceWorkspace(BackendProtocol):
                     ref = await resolve_source(conn, self._grant, file_path)
                     result = await read_source(conn, self._storage, self._grant, ref.source_id)
                     result["next_path"] = None
+                    if self._recipe >= RECIPE_26:
+                        header, body = plain_source(result)
+                        return render_text(header, body, offset=offset, limit=limit)
                     # Segment long lines without changing the original bytes.
                     body = result.pop("text")
                     result["text_segments"] = [

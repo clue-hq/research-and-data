@@ -176,6 +176,9 @@ class QualityJobOutcome:
     report: ResearchUnitReport | None
     failure_code: str | None
     reconciliation_reply: dict[str, Any] | None = None
+    #: Recipe 26+: pages left for the account's final page step (a person's ``contact`` page
+    #: while the account has not imported yet). Coverage does not count them as missing.
+    deferred_pages: tuple[str, ...] = ()
 
 
 class QualityJobRunner(Protocol):

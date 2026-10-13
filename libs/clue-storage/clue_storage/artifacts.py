@@ -26,6 +26,13 @@ resurrection handled by one design):
   ``erased_at``/``purged_at`` in :func:`record_artifact` (the row again owns a live blob, put
   *after* the row write); conversely the purge re-checks the refcount under its lock and
   *un-erases* instead of deleting when a claim re-cited the snapshot in the window.
+* **The one writer that puts first.** Research with ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK`` (W2-15
+  option B) puts its source files before it takes the worker's database lock, so the row-first
+  guarantee above does not cover them. :func:`record_uploaded_artifact` says when its recording
+  brought an erased or purged row back, and the writer then puts the blob again under the row
+  lock; it never puts a privacy-erased row's blob, and deletes one that turns out privacy-erased;
+  files it put that nothing recorded are deleted by the writer, and the purge sweep re-deletes
+  the files of recently privacy-purged rows.
 * **Rollback orphans converge.** A transaction that put a blob and then rolled back leaves a
   blob with no row; a retry re-records/re-puts the same content-addressed key, and
   :func:`sweep_orphan_blobs` collects abandoned ones (blobs older than a grace window with no
@@ -120,6 +127,66 @@ async def record_artifact(
     surfaces the winner's row is committed, so the retry resolves through the arbiter and keeps the
     resurrect/row-lock guarantees above intact.
     """
+    record, _ = await _record_artifact(
+        conn,
+        storage_key=storage_key,
+        workspace_id=workspace_id,
+        content_sha256=content_sha256,
+        media_type=media_type,
+        size_bytes=size_bytes,
+        source_key=source_key,
+        source_url=source_url,
+        report_restored=False,
+    )
+    return record
+
+
+async def record_uploaded_artifact(
+    conn: AsyncConnection,
+    *,
+    storage_key: str,
+    workspace_id: str | None,
+    content_sha256: str,
+    media_type: str,
+    size_bytes: int,
+    source_key: str | None = None,
+    source_url: str | None = None,
+) -> tuple[ArtifactRecord, bool]:
+    """:func:`record_artifact` for a writer that put the blob BEFORE recording it (W2-15 option B:
+    research uploads its source files before it takes the worker's database lock).
+
+    That order gives up the guarantee the row lock gives :func:`record_artifact`'s callers: a
+    purge of an erased row can delete the blob between the caller's put and this call. So the
+    second value says whether this call made an erased or purged row live again; when it is
+    ``True`` the caller must put the blob once more before its transaction ends — the row lock is
+    held until then, so no purge can run in between. A privacy-erased row is refused exactly as in
+    :func:`record_artifact`; a caller that already put that blob must delete it.
+    """
+    return await _record_artifact(
+        conn,
+        storage_key=storage_key,
+        workspace_id=workspace_id,
+        content_sha256=content_sha256,
+        media_type=media_type,
+        size_bytes=size_bytes,
+        source_key=source_key,
+        source_url=source_url,
+        report_restored=True,
+    )
+
+
+async def _record_artifact(
+    conn: AsyncConnection,
+    *,
+    storage_key: str,
+    workspace_id: str | None,
+    content_sha256: str,
+    media_type: str,
+    size_bytes: int,
+    source_key: str | None,
+    source_url: str | None,
+    report_restored: bool,
+) -> tuple[ArtifactRecord, bool]:
     live = (
         (
             await conn.execute(
@@ -144,7 +211,7 @@ async def record_artifact(
     if live is not None:
         data = dict(live)
         data["artifact_id"] = str(data["artifact_id"])
-        return ArtifactRecord.model_validate(data)
+        return ArtifactRecord.model_validate(data), False
 
     statement = text(
         "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
@@ -163,6 +230,21 @@ async def record_artifact(
         "source_key": source_key,
         "source_url": source_url,
     }
+    restored = False
+    if report_restored:
+        # The upsert takes this row lock anyway; taking it one statement earlier lets the caller
+        # learn whether the row was erased or purged before this call made it live again.
+        restored = bool(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT erased_at IS NOT NULL OR purged_at IS NOT NULL FROM artifact "
+                        "WHERE storage_key=:key AND NOT privacy_erased FOR UPDATE"
+                    ),
+                    {"key": storage_key},
+                )
+            ).scalar_one_or_none()
+        )
     try:
         async with conn.begin_nested():
             await conn.execute(statement, parameters)
@@ -173,7 +255,7 @@ async def record_artifact(
         raise RuntimeError(f"artifact {storage_key!r} vanished during record")
     if record.privacy_erased:
         raise ArtifactIntegrityError("privacy-erased artifact cannot be restored")
-    return record
+    return record, restored
 
 
 async def get_artifact(conn: AsyncConnection, storage_key: str) -> ArtifactRecord | None:
@@ -198,6 +280,32 @@ async def read_verified_artifact(
 ) -> tuple[ArtifactRecord, bytes]:
     """Read a live workspace artifact and verify its row, key, size, and content digest."""
 
+    record = await _live_record(conn, storage_key=storage_key, workspace_id=workspace_id)
+    try:
+        data = await storage.get(storage_key)
+    except StorageError as exc:
+        raise ArtifactIntegrityError("artifact blob is missing") from exc
+    _check_bytes(record, storage_key=storage_key, workspace_id=workspace_id, data=data)
+    return record, data
+
+
+async def verify_artifact_bytes(
+    conn: AsyncConnection, *, storage_key: str, workspace_id: str, data: bytes
+) -> ArtifactRecord:
+    """Every check :func:`read_verified_artifact` makes, against bytes the caller already holds.
+
+    For a writer that has just stored ``data`` under ``storage_key`` (a provider drain): the row
+    must exist in this workspace, be live (not erased, expired or purged), and match the bytes'
+    digest and size — without downloading them again.
+    """
+    record = await _live_record(conn, storage_key=storage_key, workspace_id=workspace_id)
+    _check_bytes(record, storage_key=storage_key, workspace_id=workspace_id, data=data)
+    return record
+
+
+async def _live_record(
+    conn: AsyncConnection, *, storage_key: str, workspace_id: str
+) -> ArtifactRecord:
     record = await get_artifact(conn, storage_key)
     if record is None:
         raise ArtifactIntegrityError(f"artifact row is missing for {storage_key!r}")
@@ -209,10 +317,12 @@ async def read_verified_artifact(
         or (record.expires_at is not None and record.expires_at <= datetime.now(UTC))
     ):
         raise ArtifactIntegrityError("artifact was erased, expired or purged")
-    try:
-        data = await storage.get(storage_key)
-    except StorageError as exc:
-        raise ArtifactIntegrityError("artifact blob is missing") from exc
+    return record
+
+
+def _check_bytes(
+    record: ArtifactRecord, *, storage_key: str, workspace_id: str, data: bytes
+) -> None:
     digest = content_address(data)
     expected_key = artifact_key(workspace_id, digest)
     if (
@@ -224,7 +334,6 @@ async def read_verified_artifact(
         raise ArtifactIntegrityError(
             "artifact bytes do not match durable content-addressed metadata"
         )
-    return record, data
 
 
 async def live_claim_count(conn: AsyncConnection, storage_key: str) -> int:
@@ -352,6 +461,7 @@ async def purge_erased_artifacts(
     storage: StorageBackend,
     *,
     keys: tuple[str, ...] | None = None,
+    privacy_purged_since: datetime | None = None,
 ) -> PurgeResult:
     """Phase 2 of erasure: physically delete the blobs of erased-but-unpurged rows and stamp
     ``purged_at``. Run in a **fresh transaction after** the transaction that stamped
@@ -412,6 +522,23 @@ async def purge_erased_artifacts(
             {"storage_key": storage_key},
         )
         purged.append(storage_key)
+    if keys is None:
+        # A writer that uploads before recording (W2-15 option B) can, in a crash window, put
+        # bytes back just after their row was privacy-purged; nothing would record them again,
+        # and the orphan sweep skips keys that have a row. So the sweep re-deletes the files of
+        # rows privacy-purged since ``privacy_purged_since`` — the fleet sweep passes its previous
+        # run less a margin; default one day — skipping what this pass has just deleted (review
+        # N-2; ``artifact_privacy_purged`` keeps the lookup off the whole table). Idempotent.
+        since = privacy_purged_since or datetime.now(UTC) - timedelta(days=1)
+        recent = await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact WHERE privacy_erased AND purged_at > :since "
+                "AND NOT (storage_key = ANY(:done))"
+            ),
+            {"since": since, "done": purged},
+        )
+        for (storage_key,) in recent.all():
+            await storage.delete(storage_key)
     return PurgeResult(purged_keys=tuple(purged), resurrected_keys=tuple(resurrected))
 
 
@@ -430,6 +557,11 @@ async def sweep_orphan_blobs(
     Writers record the row *before* putting the blob, so a legitimately in-flight blob's row is
     already inserted (just not yet committed/visible) — the grace window (default 24h, far
     beyond any transaction lifetime) is what keeps this sweep from racing an open transaction.
+    One writer breaks the row-first order on purpose: research with
+    ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK`` puts its source files before it takes the worker's database
+    lock and records them after (W2-15 option B; see :func:`record_uploaded_artifact`). Its
+    blobs exist without a row for that lock wait — seconds to minutes — so the grace must stay far
+    longer than any such wait.
     Purged rows keep their row forever, so an erased blob's key never reads as an orphan."""
     cutoff = (now or datetime.now(UTC)) - grace
     deleted: list[str] = []

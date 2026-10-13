@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -51,6 +51,34 @@ class Entry(Finding):
         )
         data["review"]["conflicts_with"] = [mapping[k] for k in self.review.conflicts_with]
         return Finding.model_validate(data)
+
+
+ReviewStatus = Literal[
+    "supported", "duplicate", "wrong_entity", "insufficient_context", "potential_conflict"
+]
+
+
+class EntryReviewV2(EntryReview):
+    """The v2 save schema shows the allowed review statuses (v1 typed ``status`` as a free
+    string, so the model could not see them; 2026-10-06 every rejected save lacked a review)."""
+
+    status: ReviewStatus = Field(
+        description="Required. supported: the cited material supports it. duplicate: adds "
+        "nothing to duplicate_of. wrong_entity: about someone or something else. "
+        "insufficient_context: kept, but what remains unclear is in reason. "
+        "potential_conflict: disagrees with conflicts_with."
+    )
+    reason: str = Field(min_length=1, description="Required. Why this status applies.")
+
+
+class EntryV2(Entry):
+    """``review`` may be omitted at the argument layer so a mixed batch reaches the tool; the
+    tool refuses each finding without one by ID instead of rejecting the whole call."""
+
+    review: EntryReviewV2 | None = None  # type: ignore[assignment]
+
+    def dependencies(self) -> set[str]:
+        return super().dependencies() if self.review is not None else set()
 
 
 @dataclass(frozen=True)
