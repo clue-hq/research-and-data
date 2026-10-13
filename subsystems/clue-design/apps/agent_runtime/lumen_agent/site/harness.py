@@ -508,7 +508,8 @@ def run_site_turn(
         return SiteTurnResult("applied", summary, dict(site), turn_limits.stop_reason, [], calls())
     if turn_limits.stop_reason is not None:
         check = tools._validate_raw()
-        if not check["valid"]:
+        # Unavailable is no verdict on the page (FinishGuard's rule): the save decides.
+        if not check["valid"] and not check.get("unavailable"):
             errors = list(check["errors"])
             return SiteTurnResult("failed", INVALID_SUMMARY.format(error=errors[0] if errors else ""),
                                   dict(site), "site_invalid", errors, calls())

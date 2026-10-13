@@ -198,6 +198,29 @@ def test_a_validator_that_cannot_run_at_the_finish_leaves_the_verdict_to_the_sav
     assert "Lower medical spend for Syracuse" in json.dumps(result.site["pages"]["/"])
 
 
+def test_a_limit_stop_while_the_validator_cannot_run_leaves_the_verdict_to_the_save(tmp_path: Path, monkeypatch) -> None:
+    """BV1a fix round 2: the round limit stops an edited request while the site-kit validator
+    cannot run. That is no verdict on the page, so the request is not site_invalid: the edited site
+    goes back with the limit's stop reason and the executor's save decides."""
+
+    from lumen_agent.site import tools as site_tools
+    from lumen_api.site_kit_cli import SiteKitCliError
+
+    def bundle_missing(*args, **kwargs):
+        raise SiteKitCliError("site_kit.validator_unavailable", "site-kit validator bundle missing")
+
+    monkeypatch.setattr(site_tools, "validate_site_files", bundle_missing)
+    result = _run(tmp_path, [
+        AIMessage(content="", tool_calls=[call("edit_file", {
+            "file_path": "/page.json", "old_string": "Lower medical spend for SCSD",
+            "new_string": "Lower medical spend for Syracuse"}, 1)]),
+        AIMessage(content="", tool_calls=[call("ls", {"path": "/"}, 2)]),
+        AIMessage(content="", tool_calls=[call("ls", {"path": "/"}, 3)]),
+    ], limits=TurnLimitsConfig(max_rounds=2))
+    assert result.status == "applied" and result.stop_reason == "round_limit" and result.errors == []
+    assert "Lower medical spend for Syracuse" in json.dumps(result.site["pages"]["/"])
+
+
 def test_a_cancelled_request_never_calls_the_model(tmp_path: Path) -> None:
     result = _run(tmp_path, [], cancel_requested=lambda: True)
     assert result.status == "failed" and result.stop_reason == "cancelled_by_request"
