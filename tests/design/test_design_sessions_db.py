@@ -215,10 +215,15 @@ def test_include_failed_reads_a_failed_turns_manifest_and_the_default_does_not()
                     ("failed", '{"summary": "crashed before a snapshot"}'),
                 ):
                     run_id = f"run_{uuid4().hex}"
-                    await design_runs.create_run(conn, workspace_id=ws, run_id=run_id, document_id=doc)
+                    await design_runs.create_run(
+                        conn, workspace_id=ws, run_id=run_id, document_id=doc
+                    )
                     await _terminalize(conn, run_id=run_id, status=status, result=result)
 
-                assert await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=doc) == "aa"
+                assert (
+                    await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=doc)
+                    == "aa"
+                )
                 assert (
                     await latest_session_manifest_sha256(
                         conn, workspace_id=ws, document_id=doc, include_failed=True
