@@ -41,7 +41,7 @@ function harness({ adopt = true } = {}) {
     return result.promise;
   };
   const headingOf = (value: SiteDocument) =>
-    String((value.pages["/"].content[0].props as { heading: string }).heading);
+    String(value.pages["/"].content[0].props.heading);
   const repository: Pick<SiteRepository, "save" | "undo" | "redo" | "restore"> = {
     save: (_id, request) => {
       calls.push({ op: "save", base: request.baseVersion, heading: headingOf(request.site) });
