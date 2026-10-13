@@ -64,6 +64,18 @@ def test_an_outline_of_another_colour_is_another_style() -> None:
     assert shape_key(dark) != shape_key(white)
 
 
+def test_a_transparent_border_is_no_border() -> None:
+    # Bootstrap's `.btn { border: 1px solid transparent }`, Tailwind's `border-transparent`: the probe
+    # reads the width and the style, and no colour (or a colour that paints nothing).
+    dark = _el(color="rgb(13, 43, 37)", border=(1, 1, 1, 1), style="solid")
+    red = _el(color="rgb(198, 40, 40)", border=(1, 1, 1, 1), style="solid")
+    assert sorted(_names([dark, red], ("button",))) == ["ghost.0d2b25", "ghost.c62828"]
+    clear = _el(color="rgb(13, 43, 37)", border=(1, 1, 1, 1), border_color="rgba(255, 255, 255, 0)", style="solid")
+    assert _names([clear], ("button",)) == ["ghost.0d2b25"]
+    drawn = _el(color="rgb(13, 43, 37)", border=(1, 1, 1, 1), border_color="rgb(13, 43, 37)", style="solid")
+    assert _names([drawn], ("button",)) == ["outline.0d2b25"]
+
+
 def test_the_same_look_has_the_same_name_in_the_shape_records_and_the_state_pass() -> None:
     harvest = json.loads(STRIPE.read_text())
     parsed = parse_geometry(harvest, page_url="https://stripe.com/")

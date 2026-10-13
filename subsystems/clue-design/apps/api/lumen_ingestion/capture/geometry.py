@@ -146,6 +146,9 @@ GEOMETRY_JS = r"""
     + ' a[class*="btn"], a[class*="Btn"], a[class*="button"], a[class*="Button"],'
     + ' .btn, .button';
   const CTA_CONTENT = 'img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol, table, article';
+  // An anchor holding block content or taller than a control (a card wrapped in <a>, a menu entry
+  // with a heading and a line of text) is neither a button nor a text link.
+  const blockAnchor = (el) => !!el.querySelector(CTA_CONTENT) || el.getBoundingClientRect().height > 80;
   // Tailwind-style CTAs carry no button class; a short padded anchor with a visible box — a fill
   // that stands out or a full border — is a button.
   const ctaAnchor = (el) => {
@@ -153,8 +156,8 @@ GEOMETRY_JS = r"""
     if (num(cs.paddingLeft) + num(cs.paddingRight) < 12) return false;
     const text = (el.textContent || '').trim();
     const h = el.getBoundingClientRect().height;
-    if (text.length < 1 || text.length > 40 || h < 20 || h > 80) return false;
-    if (el.querySelector(CTA_CONTENT)) return false;
+    if (text.length < 1 || text.length > 40 || h < 20) return false;
+    if (blockAnchor(el)) return false;
     const fill = opaque(cs.backgroundColor);
     const behind = effectiveBg(el.parentElement) || 'rgb(255, 255, 255)';  // the canvas default
     if (fill && fill !== behind) return true;
@@ -180,12 +183,12 @@ GEOMETRY_JS = r"""
     ['nav_link', 'nav a[href], header a[href]'],
     ['link', 'a[href]'],
   ];
-  // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
-  // chrome; a nav item is one inside it. Both are measured for their states and motion only.
+  // Text links and navigation items (Wave 2 A9): a link is an inline anchor with words outside the
+  // page chrome; a nav item is one inside it. Both are measured for their states and motion only.
   const FILTERS = {
     button: (el) => el.matches(BUTTON) || ctaAnchor(el),
-    nav_link: (el) => !!(el.textContent || '').trim(),
-    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
+    nav_link: (el) => !!(el.textContent || '').trim() && !blockAnchor(el),
+    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer') && !blockAnchor(el),
   };
 
   const seen = new Set();
@@ -709,12 +712,15 @@ def _identity_colour(entry: dict, fill: str) -> str | None:
 def shape_key(entry: dict) -> tuple:
     """The one grouping key: fill kind, corners, border weight, shadow, background, and the colour the
     look is told by (founder Q-A9-6: an outline's border colour and a text-only look's text colour
-    make it another look)."""
+    make it another look). A border that paints nothing (Bootstrap's `1px solid transparent`) is no
+    border, as in `_rest_look` and the minting."""
     radius = _numbers(entry.get("radius"))
     border = _numbers(entry.get("border"))
     bg = _hex(entry.get("bg"))
     style = str(entry.get("borderStyle") or "none").lower()
-    has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
+    has_border = (
+        style not in ("none", "hidden") and any(v > 0 for v in border) and bool(_opaque_hex(entry.get("borderColor")))
+    )
     fill = "solid" if bg else ("outline" if has_border else "ghost")
     return (
         str(entry.get("cls") or ""), fill, tuple(radius), bool(entry.get("pill")), tuple(border),

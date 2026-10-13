@@ -4,7 +4,7 @@ The real probe in headless Chromium — Playwright's and patchright's (the steal
 local fixture page: CSS hover, press and focus-visible, a script-driven hover, a transform under a
 transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
 CSS reveal, a keyframe animation and a scripted animation; and pages that fight the pass — buttons
-that leave the page after they were marked, a pulsing call to action. No network.
+that leave the page after they were marked, a pulsing call to action, cards wrapped in anchors. No network.
 """
 
 from __future__ import annotations
@@ -208,3 +208,13 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] == "matrix(1, 0, 0, 1, 0, 0)", fade["rest"]
     assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
 
+
+def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:
+    """Six anchor-wrapped feature cards outnumber the two inline links; the link style is still the
+    inline links' look, and a menu entry wrapped in an anchor is not a nav item."""
+    run = asyncio.run(_capture("playwright", fixture="anchor_cards.html"))
+    parsed = parse_geometry({**run["geometry"], "states": run["result"]}, page_url="https://fixture.test/")
+    links = [(s.variant, s.count, s.probed) for s in parsed.styles if s.surface == "link"]
+    assert links == [("ghost.0b5cad", 2, "pointer")], links
+    assert run["by_id"]["l-docs"]["hover"]["color"] == "rgb(8, 66, 124)"
+    assert {s.variant for s in parsed.styles if s.surface == "nav_link"} == {"ghost.0d2b25"}
