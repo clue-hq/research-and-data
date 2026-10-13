@@ -31,7 +31,7 @@ test("Buttons: the standard button and each style with its values and token name
 });
 
 test("Conduit's demo button reads warm dark once measured, and says what is drawn before", () => {
-  assert.ok(row(md("conduit"), "solid.2").includes("| not in the kit; drawn: #7CE4FC (surface.brand), the standard button's fill |"));
+  assert.ok(row(md("conduit"), "solid.2").includes("| not in the kit; drawn: #7CE4FC (surface.brand), the standard button's fill | not in the kit; drawn: #29251E (text.primary), the standard button's label |"), row(md("conduit"), "solid.2"));
   const minted = row(md("conduit.minted"), "solid.28241e");
   assert.ok(minted.startsWith("| solid.28241e | filled | #28241E (surface.band.28241e) | #FFFFFF (text.inverse) |"), minted);
   assert.ok(!minted.includes("#7CE4FC"));

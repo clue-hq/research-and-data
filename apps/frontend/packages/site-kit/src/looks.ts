@@ -5,10 +5,10 @@
 // fallback last — and `Drawn.source` says which, for brand.md.
 import type { BrandData } from "./brand";
 import {
-  FALLBACKS, colorOf, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf, ratioOf, shadowOf,
-  styleOf, transformOf, trim, typographyOf,
+  FALLBACKS, alphaOf, colorOf, contrast, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf,
+  ratioOf, shadowOf, styleOf, transformOf, trim, typographyOf,
 } from "./brand-values";
-import { inkRole } from "./surfaces";
+import { inkRole, readableInk } from "./surfaces";
 
 export type State = "hover" | "pressed" | "focus" | "disabled";
 export const STATES: State[] = ["hover", "pressed", "focus", "disabled"];
@@ -252,6 +252,30 @@ export function standardButton(brand: BrandData): Drawn {
   return drawn;
 }
 
+/** A fill a label is read through rather than on: none, transparent, or less than half opaque (a
+ * "glass" button, Tailwind's `bg-white/10`). Its label has to read on the surface behind it. */
+export const isClearFill = (fill: string | undefined) =>
+  !fill || fill === "transparent" || (fill.startsWith("#") && alphaOf(fill) < 0.5);
+
+/** A fill and a label that were never seen together — one the standard button's, the other the
+ * kit's or measured — and do not read together (4.5:1): the label becomes the text colour that reads
+ * on that fill, the standard button's own label on the standard's fill, else the better of
+ * text.primary and text.inverse. A pair from one source is never changed. */
+function readableLabel(brand: BrandData, drawn: Drawn) {
+  const { fill, label } = drawn.parts;
+  const sources = [drawn.source.fill, drawn.source.label];
+  const mixed = sources.includes("standard") && (sources.includes("kit") || sources.includes("measured"));
+  if (!mixed || isClearFill(fill) || !fill?.startsWith("#") || !label?.startsWith("#")) return;
+  if (contrast(fill.slice(0, 7), label.slice(0, 7)) >= 4.5) return;
+  if (drawn.source.fill === "standard") {
+    const std = standardButton(brand);
+    put(drawn, "label", std.parts.label, std.tokens.label, "standard");
+  } else {
+    const ink = readableInk(brand, fill.slice(0, 7));
+    put(drawn, "label", colorOf(brand, ink), ink, "kit");
+  }
+}
+
 /** How a look is drawn at rest. */
 export function drawnButton(brand: BrandData, look: Look | null): Drawn {
   const drawn = standardButton(brand);
@@ -269,6 +293,7 @@ export function drawnButton(brand: BrandData, look: Look | null): Drawn {
   }
   apply(drawn, partsFromRecipe(brand, look.recipe), "kit");
   apply(drawn, partsFromSlots(brand, look.measured?.rest), "measured");
+  readableLabel(brand, drawn);
   return drawn;
 }
 
