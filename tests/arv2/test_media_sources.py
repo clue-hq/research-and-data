@@ -231,7 +231,7 @@ def test_the_description_link_leads_to_the_matching_episode():
         ]
     )
     details = video(description="Listen: https://podcasts.apple.com/us/podcast/rr/id123456")
-    matches, gaps = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
+    matches, _, gaps = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
     assert [m.episode_id for m in matches] == ["ep-41"] and gaps == []
 
 
@@ -256,7 +256,7 @@ def test_two_episodes_in_the_window_are_both_returned():
         ]
     )
     details = video(description="https://podcasts.apple.com/us/podcast/rr/id123456")
-    matches, _ = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
+    matches, _, _ = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
     assert sorted(m.episode_id for m in matches) == ["ep-41", "ep-42"]
 
 
@@ -267,7 +267,7 @@ def test_without_links_the_channel_is_searched_in_apples_directory():
         ]
     }
     wire = ScriptedTransport([json_reply(search), feed_xml(EP41)])
-    matches, _ = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    matches, _, _ = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert [m.episode_id for m in matches] == ["ep-41"]
     assert "term=Revenue+Room" in wire.requests[0].url and "media=podcast" in wire.requests[0].url
 
@@ -283,14 +283,14 @@ def test_podcast_index_is_searched_too_when_its_keys_are_set():
             feed_xml(EP41),
         ]
     )
-    matches, _ = podcast_twin(caller(wire), video(), keys, visited=frozenset())
+    matches, _, _ = podcast_twin(caller(wire), video(), keys, visited=frozenset())
     assert [m.episode_id for m in matches] == ["ep-41"]
     assert "api.podcastindex.org" in wire.requests[1].url
 
 
 def test_no_show_found_is_a_gap_not_an_error():
     wire = ScriptedTransport([empty_search(), empty_search()])
-    matches, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    matches, _, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert matches == [] and gaps == ["no_podcast_show_found"]
 
 
@@ -303,7 +303,7 @@ def test_an_unreadable_feed_is_a_gap():
     wire = ScriptedTransport(
         [json_reply(search), response("<rss><channel>broken", "application/rss+xml")]
     )
-    matches, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    matches, _, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert matches == [] and any(g.startswith("podcast_feed_unreadable") for g in gaps)
 
 
@@ -472,3 +472,41 @@ def test_live_clients_carry_media_keys_and_readiness():
     job = ready.for_job(media_budget=MediaBudget(60))
     assert job.media_source_keys.youtube_api_key.get_secret_value() == "yt"
     assert job.transcription_ready
+
+
+# --- Final review: an episode whose feed gives no duration is never used automatically ----------
+
+
+def feed_without_duration(guid, title, date):
+    return response(
+        '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>RR</title>'
+        f"<item><guid>{guid}</guid><title>{title}</title><pubDate>{date}</pubDate>"
+        f'<enclosure url="https://example.com/{guid}.mp3" type="audio/mpeg"/></item>'
+        "</channel></rss>",
+        "application/rss+xml",
+    )
+
+
+def test_an_episode_without_a_duration_goes_back_to_the_agent():
+    wire = ScriptedTransport(
+        [
+            data_api(),
+            apple_lookup(),
+            feed_without_duration(
+                "ep-41", "Scaling field ABM with Emily Wall", "Tue, 07 Apr 2026 10:00:00 GMT"
+            ),
+        ]
+    )
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    assert result.state == "ambiguous" and [c.episode_id for c in result.candidates] == ["ep-41"]
+    assert "podcast_episode_duration_unknown" in result.gaps
+
+
+def test_matches_and_possible_matches_are_kept_apart():
+    from clue_api.arv2.media_sources import episode_match
+
+    day = datetime(2026, 4, 7, 10, tzinfo=UTC)
+    title = "Scaling field ABM with Emily Wall"
+    assert episode_match(episode(title, day), video()) == "match"
+    assert episode_match(episode(title, day, duration=None), video()) == "possible"
+    assert episode_match(episode("Quarterly earnings recap", day, duration=None), video()) is None

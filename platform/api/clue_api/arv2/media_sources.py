@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote_plus, urlsplit
 
 from pydantic import SecretStr
@@ -305,19 +305,26 @@ def title_words(text: str) -> frozenset[str]:
     )
 
 
-def same_episode(episode: Candidate, video: VideoDetails) -> bool:
-    """Date, duration and title together (spec §3 step 2.4); title words alone never decide."""
+def episode_match(episode: Candidate, video: VideoDetails) -> Literal["match", "possible"] | None:
+    """Spec §3 step 2.4: date, duration and title together make a ``match``; title words alone
+    never decide. An episode whose feed gives no duration can only be ``possible``: it goes back
+    to the agent to choose, never used automatically."""
     published, posted = _utc(episode.published_at), _utc(video.published_at)
     if published is None or posted is None or abs(published - posted) > EPISODE_DATE_WINDOW:
-        return False
-    if episode.duration_s and abs(episode.duration_s - video.duration_s) > max(
-        EPISODE_DURATION_FLOOR_S, video.duration_s * EPISODE_DURATION_SHARE
-    ):
-        return False
+        return None
     ours, theirs = title_words(video.title), title_words(episode.title)
     shared = ours & theirs
     shorter = min(len(ours), len(theirs))
-    return len(shared) >= 2 or (shorter > 0 and 2 * len(shared) >= shorter)
+    if not (len(shared) >= 2 or (shorter > 0 and 2 * len(shared) >= shorter)):
+        return None
+    if not episode.duration_s:
+        return "possible"
+    tolerance = max(EPISODE_DURATION_FLOOR_S, video.duration_s * EPISODE_DURATION_SHARE)
+    return "match" if abs(episode.duration_s - video.duration_s) <= tolerance else None
+
+
+def same_episode(episode: Candidate, video: VideoDetails) -> bool:
+    return episode_match(episode, video) == "match"
 
 
 def _feeds_from_links(caller: ProviderCaller, video: VideoDetails, gaps: list[str]) -> list[str]:
@@ -366,8 +373,9 @@ def _feeds_from_directories(
 
 def podcast_twin(
     caller: ProviderCaller, video: VideoDetails, keys: MediaSourceKeys, *, visited: frozenset[str]
-) -> tuple[list[Candidate], list[str]]:
-    """Episodes of a podcast feed that are the same recording as this video, and why not."""
+) -> tuple[list[Candidate], list[Candidate], list[str]]:
+    """Feed episodes that are the same recording as this video (``match``), episodes that could be
+    but whose feed gives no duration (``possible``), and the gaps met on the way."""
     from clue_api.arv2.media_resolution import feed_candidates, fetch
 
     gaps: list[str] = []
@@ -376,8 +384,9 @@ def podcast_twin(
     )
     if not feeds:
         gaps.append("no_podcast_show_found")
-        return [], gaps
+        return [], [], gaps
     matches: dict[str, Candidate] = {}
+    possible: dict[str, Candidate] = {}
     for feed in [f for f in dict.fromkeys(feeds) if f not in visited][:MAX_FEEDS]:
         try:
             body = fetch(caller, feed).body.decode("utf-8", errors="replace")
@@ -386,11 +395,14 @@ def podcast_twin(
             gaps.append(f"podcast_feed_unreadable: {exc}")
             continue
         for candidate in candidates:
-            if same_episode(candidate, video):
+            verdict = episode_match(candidate, video)
+            if verdict == "match":
                 matches[candidate.canonical_key or candidate.url] = candidate
-    if not matches:
+            elif verdict == "possible":
+                possible[candidate.canonical_key or candidate.url] = candidate
+    if not matches and not possible:
         gaps.append("no_podcast_episode_match")
-    return list(matches.values()), gaps
+    return list(matches.values()), list(possible.values()), gaps
 
 
 _LINKEDIN_PROFILE = re.compile(r"https://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+/?")
@@ -425,7 +437,7 @@ def resolve_youtube(
         return Resolution("unavailable", gaps=("youtube_not_public",))
     if video.live:
         return Resolution("unavailable", gaps=("youtube_live_or_upcoming",))
-    matches, gaps = podcast_twin(caller, video, keys, visited=visited)
+    matches, possible, gaps = podcast_twin(caller, video, keys, visited=visited)
     if len(matches) == 1:
         twin = matches[0].model_copy(
             update={
@@ -445,6 +457,14 @@ def resolve_youtube(
             "ambiguous",
             tuple(matches),
             gaps=("multiple_podcast_episode_matches",),
+            aliases=(source_url,),
+        )
+    if possible:
+        # Date and title fit but the feed gives no length: the agent chooses, the code never does.
+        return Resolution(
+            "ambiguous",
+            tuple(possible),
+            gaps=("podcast_episode_duration_unknown",),
             aliases=(source_url,),
         )
     return Resolution(
