@@ -10,14 +10,14 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass, replace
+from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
 from clue_api.arv2.media_feeds_client import (
-    extract_player_response,
     parse_feed,
     reject_native_video,
 )
@@ -31,6 +31,9 @@ from clue_research.official_site.safety import (
 )
 from clue_research.official_site.url_policy import ConservativeUrlPolicy, UrlPolicyConfig
 
+if TYPE_CHECKING:
+    from clue_api.arv2.media_sources import MediaSourceKeys
+
 MAX_MEDIA_BYTES = 200 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5_000_000
 YT_HOSTS = {
@@ -41,6 +44,38 @@ YT_HOSTS = {
     "youtube-nocookie.com",
     "www.youtube-nocookie.com",
 }
+
+
+#: Ordinary browser request headers. Some public hosts refuse a request that names no acceptable
+#: type (iHeart answered 406 without ``Accept``; run 7 replay, 2026-10-13).
+PUBLIC_HEADERS = {
+    "User-Agent": BROWSER_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+#: Private request header: when the answer is audio or video, the transport returns its headers
+#: and no body. Resolution needs only the type; acquisition downloads the recording once. The
+#: header is removed before the request leaves the process.
+PROBE_HEADER = "x-arv2-probe"
+RECORDING_SUFFIXES = (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac", ".mp4", ".webm", ".mov")
+
+
+def read_body(response: Any, *, probe: bool) -> bytes:
+    """A streamed response's body within the byte ceiling; a probed recording is not read."""
+    mime = response.headers.get("content-type", "").split(";")[0].lower()
+    media = mime.startswith(("audio/", "video/"))
+    limit = MAX_MEDIA_BYTES if media else MAX_DOCUMENT_BYTES
+    if int(response.headers.get("content-length", "0") or 0) > limit:
+        raise ValueError("media response exceeds byte ceiling")
+    if probe and media:
+        return b""
+    chunks, size = [], 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if size > limit:
+            raise ValueError("media response exceeds byte ceiling")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def public_url(url: str) -> str:
@@ -120,7 +155,11 @@ class PublicMediaTransport:
                 if parts.port:
                     address += f":{parts.port}"
                 pinned = urlunsplit((parts.scheme, address, parts.path, parts.query, ""))
-                headers = {**request.headers, "Host": parts.netloc}
+                probe = request.headers.get(PROBE_HEADER) == "1"
+                headers = {
+                    **{k: v for k, v in request.headers.items() if k.lower() != PROBE_HEADER},
+                    "Host": parts.netloc,
+                }
                 with (
                     httpx.Client(
                         follow_redirects=False, trust_env=False, timeout=request.timeout_s
@@ -132,22 +171,10 @@ class PublicMediaTransport:
                         extensions={"sni_hostname": parts.hostname},
                     ) as response,
                 ):
-                    mime = response.headers.get("content-type", "").split(";")[0].lower()
-                    limit = (
-                        MAX_MEDIA_BYTES
-                        if mime.startswith(("audio/", "video/"))
-                        else MAX_DOCUMENT_BYTES
-                    )
-                    if int(response.headers.get("content-length", "0")) > limit:
-                        raise ValueError("media response exceeds byte ceiling")
-                    chunks, size = [], 0
-                    for chunk in response.iter_bytes():
-                        size += len(chunk)
-                        if size > limit:
-                            raise ValueError("media response exceeds byte ceiling")
-                        chunks.append(chunk)
                     return HttpResponse(
-                        response.status_code, dict(response.headers), b"".join(chunks)
+                        response.status_code,
+                        dict(response.headers),
+                        read_body(response, probe=probe),
                     )
 
             async def checked_fetch(url: str = url) -> object:
@@ -167,16 +194,18 @@ class PublicMediaTransport:
         raise ValueError("redirect ceiling exceeded")
 
 
-def fetch(caller: ProviderCaller, url: str, *, binary: bool = False) -> HttpResponse:
+def fetch(
+    caller: ProviderCaller, url: str, *, binary: bool = False, probe: bool = False
+) -> HttpResponse:
+    """One public GET. ``probe`` asks for the headers only when the answer is a recording."""
     url = public_url(url)
+    headers = {**PUBLIC_HEADERS, **({PROBE_HEADER: "1"} if probe else {})}
     result = caller.call(
         CallSpec(
             provider="public_media",
             operation="GET",
             label="media.resolve",
-            request=HttpRequest(
-                method="GET", url=url, headers={"User-Agent": BROWSER_USER_AGENT}, timeout_s=60
-            ),
+            request=HttpRequest(method="GET", url=url, headers=headers, timeout_s=60),
             binary=binary,
             max_attempts=1,
         )
@@ -281,7 +310,9 @@ def recording_links(parser: PageLinks, page_url: str) -> dict[str, list[str]]:
     )
     if value := parser.player_metadata.get(key):
         parser.add_media(value, f"html:meta:{key}")
+    page = urlsplit(page_url)
     links: dict[str, list[str]] = {}
+    files: dict[tuple[str, str], str] = {}
     for value in parser.media:
         target = urljoin(page_url, value.strip())
         parts = urlsplit(target)
@@ -289,29 +320,39 @@ def recording_links(parser: PageLinks, page_url: str) -> dict[str, list[str]]:
             continue
         if parts.hostname in {"googletagmanager.com", "www.googletagmanager.com"}:
             continue
+        # The page itself, or its own embed (``?embed=true``), is not a recording on it.
+        if (parts.hostname, parts.path.rstrip("/")) == (page.hostname, page.path.rstrip("/")):
+            continue
         # Embed/watch forms of the same YouTube ID are one recording, not two choices.
         with suppress(ValueError):
             if yt := youtube_url(target):
                 target = yt[0]
+        # One media file behind different tracking parameters is one recording.
+        if parts.path.lower().endswith(RECORDING_SUFFIXES):
+            target = files.setdefault((parts.hostname or "", parts.path), target)
         origins = links.setdefault(target, [])
         origins.extend(o for o in parser.media_origins[value] if o not in origins)
     return links
 
 
-def unresolved_recording(url: str, page_url: str, origins: list[str]) -> Candidate:
-    """Type hints help selection; the actual media is still resolved on the next call."""
-    family: Literal["page", "youtube", "audio", "video"] = "page"
+def recording_family(url: str) -> Literal["page", "youtube", "audio", "video"]:
+    """What a link's form says it is; the next resolution still checks what it actually is."""
     with suppress(ValueError):
         if youtube_url(url):
-            family = "youtube"
+            return "youtube"
     path = urlsplit(url).path.lower()
     if path.endswith((".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac")):
-        family = "audio"
-    elif path.endswith((".mp4", ".webm", ".mov")):
-        family = "video"
+        return "audio"
+    if path.endswith((".mp4", ".webm", ".mov")):
+        return "video"
+    return "page"
+
+
+def unresolved_recording(url: str, page_url: str, origins: list[str]) -> Candidate:
+    """Type hints help selection; the actual media is still resolved on the next call."""
     return Candidate(
         url=url,
-        family=family,
+        family=recording_family(url),
         identity_evidence=[f"explicit_embed:{page_url}", *origins],
     )
 
@@ -366,6 +407,135 @@ def caption_text(value: str) -> tuple[str, tuple[Segment, ...]]:
     return "".join(words), tuple(segments)
 
 
+#: A publisher transcript's formats in the order they are preferred: timed cues first.
+TRANSCRIPT_TYPES = (
+    "text/vtt",
+    "application/x-subrip",
+    "application/srt",
+    "application/json",
+    "text/plain",
+    "text/html",
+)
+
+
+def preferred_transcript(transcripts: tuple[tuple[str, str], ...]) -> tuple[str, str] | None:
+    """The best declared ``(url, type)``; an unknown type ranks after every known one."""
+    if not transcripts:
+        return None
+
+    def rank(item: tuple[str, str]) -> int:
+        kind = item[1].split(";")[0].strip().lower()
+        return TRANSCRIPT_TYPES.index(kind) if kind in TRANSCRIPT_TYPES else len(TRANSCRIPT_TYPES)
+
+    return min(transcripts, key=rank)
+
+
+def json_transcript(body: str) -> tuple[str, tuple[Segment, ...]]:
+    """The Podcasting 2.0 JSON transcript: ``segments[]`` of speaker, startTime and body."""
+    data = json.loads(body)
+    rows = data.get("segments") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        raise ValueError("json transcript has no segments")
+    parts: list[str] = []
+    segments: list[Segment] = []
+    cursor = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        text = canonical_text(str(row.get("body") or "")).strip()
+        if not text:
+            continue
+        if parts:
+            parts.append("\n")
+            cursor += 1
+        start = row.get("startTime")
+        seconds = (
+            float(start)
+            if isinstance(start, int | float) and not isinstance(start, bool) and start >= 0
+            else None
+        )
+        speaker = row.get("speaker")
+        segments.append(
+            Segment(
+                start=cursor,
+                end=cursor + len(text),
+                speaker=str(speaker) if speaker else None,
+                attribution="metadata" if speaker else "unknown",
+                time_s=seconds,
+                timing="source_supplied" if seconds is not None else "unavailable",
+            )
+        )
+        parts.append(text)
+        cursor += len(text)
+    return "".join(parts), tuple(segments)
+
+
+class _TextOnly(HTMLParser):
+    """Visible text of an HTML transcript; script and style bodies are dropped."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style"}:
+            self._skip += 1
+        elif tag in {"p", "br", "div", "li", "tr"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"} and self._skip:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
+
+
+def html_text(body: str) -> str:
+    parser = _TextOnly()
+    parser.feed(body)
+    return re.sub(r"\n\s*\n+", "\n", "".join(parser.parts)).strip()
+
+
+def publisher_transcript(
+    caller: ProviderCaller, url: str, declared_type: str | None
+) -> tuple[str, tuple[Segment, ...]]:
+    """Fetch a transcript the publisher declared and read it in its own format."""
+    result = fetch(caller, url)
+    kind = (declared_type or result.headers.get("content-type", "")).split(";")[0].lower()
+    body = result.body.decode("utf-8", errors="replace")
+    if kind == "application/json" or body.lstrip().startswith("{"):
+        return json_transcript(body)
+    if kind == "text/html":
+        return caption_text(html_text(body))
+    return caption_text(body)
+
+
+def with_feed_transcript(caller: ProviderCaller, resolution: Resolution) -> Resolution:
+    """Use the matched episode's own transcript when its feed declares one; else keep the audio."""
+    if resolution.state != "resolved" or resolution.transcript or not resolution.candidates:
+        return resolution
+    candidate = resolution.candidates[0]
+    if not candidate.transcript_url:
+        return resolution
+    try:
+        value, segments = publisher_transcript(
+            caller, candidate.transcript_url, candidate.transcript_type
+        )
+    except (ValueError, KeyError) as exc:
+        return replace(resolution, gaps=(*resolution.gaps, f"feed_transcript_unavailable: {exc}"))
+    if not value.strip():
+        return replace(resolution, gaps=(*resolution.gaps, "feed_transcript_empty"))
+    return replace(
+        resolution,
+        transcript=value,
+        segments=segments,
+        aliases=tuple(dict.fromkeys((*resolution.aliases, candidate.transcript_url))),
+    )
+
+
 def feed_candidates(xml: str, url: str) -> list[Candidate]:
     if re.search(r"<!\s*(DOCTYPE|ENTITY)", xml, re.I):
         raise ValueError("XML entities/doctype not supported")
@@ -403,6 +573,7 @@ def feed_candidates(xml: str, url: str) -> list[Candidate]:
         if not ep.enclosure_url:
             continue
         guid = raw.findtext("guid")
+        chosen = preferred_transcript(ep.transcripts)
         result.append(
             Candidate(
                 url=ep.link or ep.enclosure_url,
@@ -415,9 +586,31 @@ def feed_candidates(xml: str, url: str) -> list[Candidate]:
                 media_url=urljoin(url, ep.enclosure_url),
                 canonical_key="rss:" + content_hash(url + ":" + (guid or ep.enclosure_url)),
                 identity_evidence=[f"feed:{url}", f"episode_number:{ep.number}"],
+                published_at=ep.published_at,
+                transcript_url=urljoin(url, chosen[0]) if chosen else None,
+                transcript_type=chosen[1] or None if chosen else None,
             )
         )
     return result
+
+
+_QUOTES = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+    }
+)
+
+
+def _folded(value: str) -> str:
+    """Text compared for a hint: straight quotes, single spaces, case folded."""
+    return " ".join(value.translate(_QUOTES).split()).casefold()
 
 
 def match_episode(candidates: list[Candidate], hint: str | None, source_url: str) -> Resolution:
@@ -434,9 +627,7 @@ def match_episode(candidates: list[Candidate], hint: str | None, source_url: str
             ]
         else:
             exact = [
-                c
-                for c in candidates
-                if hint.casefold() in (c.title + " " + c.description).casefold()
+                c for c in candidates if _folded(hint) in _folded(c.title + " " + c.description)
             ]
     if not exact and len(candidates) == 1 and hint is None:
         exact = candidates
@@ -447,6 +638,81 @@ def match_episode(candidates: list[Candidate], hint: str | None, source_url: str
     return Resolution("no_match", tuple(candidates), gaps=("no_exact_episode_match",))
 
 
+def apple_feed_url(caller: ProviderCaller, url: str) -> str | None:
+    """The RSS feed Apple's directory lists for a podcasts.apple.com show or episode link."""
+    match = re.search(r"/id(\d+)", urlsplit(url).path)
+    if not match:
+        raise ValueError("apple_show_id_missing")
+    lookup = json.loads(
+        fetch(caller, f"https://itunes.apple.com/lookup?id={match[1]}&entity=podcast").body
+    )
+    return next(
+        (
+            r["feedUrl"]
+            for r in lookup.get("results", [])
+            if str(r.get("collectionId")) == match[1] and isinstance(r.get("feedUrl"), str)
+        ),
+        None,
+    )
+
+
+def apple_episode(caller: ProviderCaller, url: str) -> dict[str, Any] | None:
+    """Apple's own record of the episode a ``podcasts.apple.com/...?i=<id>`` link names.
+
+    Apple lists a show's most recent 200 episodes; an older one is not found here and the link
+    falls back to matching the feed by its hint."""
+    show = re.search(r"/id(\d+)", urlsplit(url).path)
+    episode = parse_qs(urlsplit(url).query).get("i", [""])[0]
+    if not show or not episode.isdigit():
+        return None
+    lookup = json.loads(
+        fetch(
+            caller,
+            f"https://itunes.apple.com/lookup?id={show[1]}&entity=podcastEpisode&limit=200",
+        ).body
+    )
+    return next(
+        (
+            r
+            for r in lookup.get("results", [])
+            if isinstance(r, dict) and str(r.get("trackId")) == episode
+        ),
+        None,
+    )
+
+
+def apple_episode_candidate(record: dict[str, Any], url: str, feed: str | None) -> Candidate | None:
+    """The episode from Apple's directory record: its audio link, length, date and guid."""
+    media = record.get("episodeUrl")
+    if not isinstance(media, str) or not media:
+        return None
+    guid = record.get("episodeGuid") if isinstance(record.get("episodeGuid"), str) else None
+    millis = record.get("trackTimeMillis")
+    released = record.get("releaseDate")
+    published = None
+    if isinstance(released, str):
+        with suppress(ValueError):
+            published = datetime.fromisoformat(released.replace("Z", "+00:00"))
+    key = (
+        "rss:" + content_hash(public_url(feed) + ":" + guid)
+        if feed and guid
+        else "apple:" + str(record.get("trackId"))
+    )
+    return Candidate(
+        url=url,
+        title=str(record.get("trackName") or ""),
+        description=str(record.get("description") or "")[:4000],
+        family="audio",
+        duration_s=int(millis) // 1000 if isinstance(millis, int) and millis >= 1000 else None,
+        feed_url=feed,
+        episode_id=guid,
+        media_url=media,
+        canonical_key=key,
+        identity_evidence=[f"apple_episode:{record.get('trackId')}", "apple_directory_lookup"],
+        published_at=published,
+    )
+
+
 def resolve(
     caller: ProviderCaller,
     url: str,
@@ -454,6 +720,7 @@ def resolve(
     hint: str | None = None,
     visited: frozenset[str] = frozenset(),
     _response: HttpResponse | None = None,
+    keys: MediaSourceKeys | None = None,
 ) -> Resolution:
     url = public_url(url)
     if url in visited:
@@ -461,78 +728,39 @@ def resolve(
     visited = visited | {url}
     yt = youtube_url(url)
     if yt:
-        watch, key = yt
-        response = _response or fetch(caller, watch)
-        player = extract_player_response(response.body.decode("utf-8", errors="replace")) or {}
-        raw_details = player.get("videoDetails")
-        details = raw_details if isinstance(raw_details, dict) else {}
-        raw_status = player.get("playabilityStatus")
-        status = raw_status if isinstance(raw_status, dict) else {}
-        raw_microformat = player.get("microformat")
-        microformat = (
-            raw_microformat.get("playerMicroformatRenderer", {})
-            if isinstance(raw_microformat, dict)
-            else {}
-        )
-        if (
-            status.get("status") != "OK"
-            or details.get("videoId") != key.removeprefix("youtube:")
-            or details.get("isPrivate")
-            or details.get("isUnlisted")
-            or microformat.get("isUnlisted")
-        ):
-            return Resolution("unavailable", gaps=("youtube_public_access_unverified",))
-        duration = int(details.get("lengthSeconds") or 0)
-        if duration <= 0:
-            return Resolution("unavailable", gaps=("duration_unknown",))
-        return Resolution(
-            "resolved",
-            (
-                Candidate(
-                    url=watch,
-                    title=details.get("title", ""),
-                    description=details.get("shortDescription", ""),
-                    family="youtube",
-                    canonical_key=key,
-                    duration_s=duration,
-                    identity_evidence=[url],
-                    recognized_subject_urls=list(
-                        dict.fromkeys(
-                            re.findall(
-                                r"https://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+/?",
-                                str(details.get("shortDescription", "")),
-                            )
-                        )
-                    ),
-                ),
+        from clue_api.arv2.media_sources import NO_KEYS, resolve_youtube
+
+        return cast(
+            Resolution,
+            resolve_youtube(
+                caller, yt[0], yt[1], url, keys=keys or NO_KEYS, hint=hint, visited=visited
             ),
-            aliases=(url,),
         )
     if urlsplit(url).hostname == "podcasts.apple.com":
-        match = re.search(r"/id(\d+)", urlsplit(url).path)
-        if not match:
-            return Resolution("unsupported", gaps=("apple_show_id_missing",))
-        lookup = json.loads(
-            fetch(caller, f"https://itunes.apple.com/lookup?id={match[1]}&entity=podcast").body
-        )
-        feed = next(
-            (
-                r.get("feedUrl")
-                for r in lookup.get("results", [])
-                if str(r.get("collectionId")) == match[1]
-            ),
-            None,
-        )
+        try:
+            feed = apple_feed_url(caller, url)
+            record = apple_episode(caller, url)
+        except ValueError as exc:
+            return Resolution("unsupported", gaps=(str(exc),))
+        if record and feed and isinstance(record.get("episodeGuid"), str):
+            # The link names one episode: match the feed on its guid, never on a title.
+            found = resolve(caller, feed, hint=record["episodeGuid"], visited=visited, keys=keys)
+            if found.state == "resolved":
+                return replace(found, aliases=tuple(dict.fromkeys((url, *found.aliases))))
+        if record and (chosen := apple_episode_candidate(record, url, feed)):
+            return with_feed_transcript(caller, Resolution("resolved", (chosen,), aliases=(url,)))
         if feed:
             # An Apple episode id is not an RSS guid or an episode number. Unless the feed
             # explicitly links it (or the caller supplied an exact hint), do not guess.
             episode_hint = hint or (url if parse_qs(urlsplit(url).query).get("i") else None)
-            return resolve(caller, feed, hint=episode_hint, visited=visited)
+            return resolve(caller, feed, hint=episode_hint, visited=visited, keys=keys)
         return Resolution("no_match", gaps=("apple_feed_missing",))
-    response = _response or fetch(caller, url, binary=True)
+    response = _response or fetch(caller, url, binary=True, probe=True)
     final_url = public_url(response.headers.get("x-arv2-final-url", url))
     if final_url != url:
-        result = resolve(caller, final_url, hint=hint, visited=visited, _response=response)
+        result = resolve(
+            caller, final_url, hint=hint, visited=visited, _response=response, keys=keys
+        )
         if (
             result.state == "resolved"
             and result.candidates
@@ -560,7 +788,7 @@ def resolve(
         "application/xml",
         "text/xml",
     } or re.match(r"\s*(?:<\?xml[^>]+>\s*)?<(rss|feed)\b", body):
-        return match_episode(feed_candidates(body, url), hint, url)
+        return with_feed_transcript(caller, match_episode(feed_candidates(body, url), hint, url))
     parser = PageLinks()
     parser.feed(body)
     for obj in objects(parser.documents):
@@ -636,7 +864,7 @@ def resolve(
         if target in visited:
             continue
         try:
-            result = resolve(caller, target, hint=hint or url, visited=visited)
+            result = resolve(caller, target, hint=hint or url, visited=visited, keys=keys)
         except ValueError as exc:
             gaps.append(str(exc))
             continue

@@ -45,10 +45,13 @@ from .ledger import (
     BufferedRawSink,
     DrainReport,
     FailureHook,
+    HeldDrain,
     LedgerStamp,
     artifact_payload,
     drain_provider_calls,
+    hold_drain,
     ledger_id_for,
+    record_drain,
 )
 from .openrouter import openrouter_cost_reader, openrouter_halt_rule
 from .sinks import (
@@ -135,6 +138,9 @@ __all__ = [
     "TransportFailure",
     "artifact_payload",
     "drain_provider_calls",
+    "HeldDrain",
+    "hold_drain",
+    "record_drain",
     "json_request",
     "ledger_id_for",
     "lower_headers",

@@ -27,7 +27,7 @@ threads the resulting backend into the four B2 seams:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -56,6 +56,7 @@ __all__ = [
     "build_data_subject_rights",
     "DurableContactResearchPrivacyStopper",
     "run_orphan_blob_sweep",
+    "run_orphan_blob_sweep_if_due",
     "DEFAULT_ORPHAN_SWEEP_GRACE",
 ]
 
@@ -214,6 +215,7 @@ async def run_orphan_blob_sweep(
     storage: StorageBackend | None = None,
     grace: timedelta = DEFAULT_ORPHAN_SWEEP_GRACE,
     now: datetime | None = None,
+    privacy_purged_since: datetime | None = None,
 ) -> tuple[str, ...]:
     """Purge expired/erased artifacts, then abandoned orphan blobs older than ``grace``.
 
@@ -223,8 +225,9 @@ async def run_orphan_blob_sweep(
     back and is never retried can leave a blob with no row — invisible to the DB, unreachable by
     DSAR. :func:`clue_storage.sweep_orphan_blobs` collects those; the grace window (default 24h)
     keeps it from racing an open transaction. This is the orphan leg the retention sweep does not
-    cover; schedule it alongside ``RetentionSweep`` at the ops layer (the fleet worker process runs
-    it on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``; see :mod:`clue_api.fleet_main`).
+    cover; schedule it alongside ``RetentionSweep`` at the ops layer (the fleet runs it once per
+    ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S`` through :func:`run_orphan_blob_sweep_if_due`).
+    ``privacy_purged_since`` is passed to the purge's write-back re-delete.
 
     **Compose-if-None asymmetry (deliberate).** Unlike the production *registration* surfaces
     (:func:`~clue_api.deep.composition.register_deep_phase_handler`,
@@ -236,8 +239,66 @@ async def run_orphan_blob_sweep(
     hazard in the default — the sweep only ever *deletes* orphans, so the worst case of a wrong
     backend is a no-op, not a leak. Pass ``storage`` explicitly to sweep a specific backend."""
     backend = storage if storage is not None else build_storage_backend()
-    await purge_erased_artifacts(conn, backend)
+    await purge_erased_artifacts(conn, backend, privacy_purged_since=privacy_purged_since)
     return await sweep_orphan_blobs(conn, backend, grace=grace, now=now)
+
+
+#: The ``maintenance_run`` row and advisory-lock key of the fleet-wide storage sweep.
+STORAGE_SWEEP = "storage_sweep"
+_STORAGE_SWEEP_LOCK = "storage-sweep"
+#: How far before the previous sweep the write-back re-delete still looks: a file written back
+#: after a privacy purge lands within minutes of it, so a day covers any sweep that ran meanwhile.
+_PRIVACY_REDELETE_MARGIN = timedelta(days=1)
+
+
+async def run_orphan_blob_sweep_if_due(
+    conn: AsyncConnection,
+    *,
+    every: timedelta,
+    storage: StorageBackend | None = None,
+    grace: timedelta = DEFAULT_ORPHAN_SWEEP_GRACE,
+    now: datetime | None = None,
+) -> tuple[str, ...] | None:
+    """Run :func:`run_orphan_blob_sweep` for the whole fleet when the last run is ``every`` old.
+
+    Every fleet worker process calls this on its check interval. The time of the last run lives in
+    ``maintenance_run``, so a deploy never resets it; a transaction-scoped advisory lock means one
+    process sweeps while the others skip. The sweep and the new time commit together, so a sweep
+    that fails is retried at the next check. Returns ``None`` when nothing ran (not due, or another
+    process is sweeping), else the deleted orphan keys.
+    """
+    now = now or datetime.now(UTC)
+    won = (
+        await conn.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": _STORAGE_SWEEP_LOCK},
+        )
+    ).scalar_one()
+    if not won:
+        return None
+    last = (
+        await conn.execute(
+            text("SELECT last_run_at FROM maintenance_run WHERE name = :name"),
+            {"name": STORAGE_SWEEP},
+        )
+    ).scalar_one_or_none()
+    if last is not None and now - last < every:
+        return None
+    deleted = await run_orphan_blob_sweep(
+        conn,
+        storage=storage,
+        grace=grace,
+        now=now,
+        privacy_purged_since=(last if last is not None else now - every) - _PRIVACY_REDELETE_MARGIN,
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+            "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
+        ),
+        {"name": STORAGE_SWEEP, "at": now},
+    )
+    return deleted
 
 
 # Static-time conformance: the snapshot-binding wrapper is itself a ``core.PhaseHandler`` (drop-in

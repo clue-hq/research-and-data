@@ -1,27 +1,12 @@
 """Regression shapes observed in the saved Oktane and podcast pages; no live calls."""
 
-import json
+from pydantic import SecretStr
 
 from clue_api.arv2.media_resolution import resolve
+from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.transport import ScriptedTransport
 from tests.arv2.test_media_research import caller, response
-
-
-def youtube_player():
-    return response(
-        "var ytInitialPlayerResponse = "
-        + json.dumps(
-            {
-                "videoDetails": {
-                    "videoId": "abcdefghijk",
-                    "lengthSeconds": "60",
-                    "title": "Interview",
-                },
-                "playabilityStatus": {"status": "OK"},
-            }
-        )
-        + ";"
-    )
+from tests.arv2.test_media_sources import data_api, empty_search
 
 
 def test_analytics_frame_and_duplicate_youtube_forms_are_not_recording_choices():
@@ -29,12 +14,16 @@ def test_analytics_frame_and_duplicate_youtube_forms_are_not_recording_choices()
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-example"></iframe>
     <iframe src="about:blank"></iframe>
     <meta property="og:video" content="https://www.youtube.com/watch?v=abcdefghijk">"""
-    wire = ScriptedTransport([response(page), youtube_player()])
-    result = resolve(caller(wire), "https://example.com/interview")
+    wire = ScriptedTransport(
+        [response(page), data_api(snippet={"description": ""}), empty_search(), empty_search()]
+    )
+    keys = MediaSourceKeys(youtube_api_key=SecretStr("k"))
+    result = resolve(caller(wire), "https://example.com/interview", keys=keys)
     assert result.state == "resolved"
     assert result.candidates[0].family == "youtube"
-    assert len(wire.requests) == 2
-    assert wire.requests[1].url == "https://www.youtube.com/watch?v=abcdefghijk"
+    assert len(wire.requests) == 4
+    assert wire.requests[1].url.startswith("https://www.googleapis.com/youtube/v3/videos?")
+    assert not any("youtube.com/watch" in r.url for r in wire.requests)
     assert "html:iframe:src" in result.candidates[0].identity_evidence
     assert "html:meta:og:video" in result.candidates[0].identity_evidence
 

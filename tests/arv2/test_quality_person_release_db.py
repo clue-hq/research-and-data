@@ -24,6 +24,7 @@ from clue_api.arv2.quality_json_dossier import (
 from clue_api.arv2.quality_person_release import (
     PARENT_DOSSIER_PATH,
     READY_KIND,
+    parent_dossier_ready,
     read_parent_dossier,
     ready_person_jobs,
 )
@@ -98,6 +99,44 @@ async def initial(conn, tmp_path):
         SaveSectionInput(section="Voice", findings=[finding(source_paths=[path])]),
     )
     return parent, child, cid, storage, ctx, gen, path
+
+
+def test_recipe_26_people_are_ready_at_nomination_before_any_account_import(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            parent, older, cid, storage, ctx, gen, path = await initial(conn, tmp_path)
+            nominated = await child_job(conn, storage, parent, cid, gen, version=26)
+            stopped = await child_job(conn, storage, parent, cid, gen, version=26)
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET input_refs=input_refs || "
+                    "jsonb_build_object('privacy_stopped',true) WHERE job_id=:id"
+                ),
+                {"id": stopped.job_id},
+            )
+            # The parent is still researching and has imported nothing.
+            assert not await parent_dossier_ready(conn, nominated)
+            assert {r["job_id"] for r in await ready_person_jobs(conn)} == {nominated.job_id}
+            # An earlier recipe still waits for the import; the parent's guards still hold.
+            await conn.execute(
+                text("UPDATE arv2_research_job SET status='suspended' WHERE job_id=:id"),
+                {"id": parent.job_id},
+            )
+            assert not await ready_person_jobs(conn)
+            await conn.execute(
+                text("UPDATE arv2_research_job SET status='in_progress' WHERE job_id=:id"),
+                {"id": parent.job_id},
+            )
+            assert (await invoke(FinishDossierTool, parent, storage, ctx, DossierInput()))[
+                "finished"
+            ]
+            assert await parent_dossier_ready(conn, nominated)
+            assert {r["job_id"] for r in await ready_person_jobs(conn)} == {
+                older.job_id,
+                nominated.job_id,
+            }
+
+    run_async(case())
 
 
 def test_ready_before_account_settlement_and_published_parent_view(tmp_path):
@@ -375,6 +414,49 @@ def test_person_workspace_exposes_parent_dossier_and_rejects_writes(tmp_path):
                 brief, account_dossier_available=True
             )
             assert PARENT_DOSSIER_PATH not in person_task_instruction(brief)
+
+    run_async(case())
+
+
+def test_recipe_26_person_sees_the_parent_dossier_only_once_it_is_imported(tmp_path):
+    from deepagents.backends.protocol import BackendProtocol
+
+    from clue_api.arv2.quality_execution import Allowance, bind_execution
+    from clue_api.arv2.quality_views import research_backend
+    from tests.arv2.test_quality_execution_db import execution
+    from tests.arv2.test_quality_tools_db import read
+
+    async def case():
+        async with rollback_conn() as conn:
+            parent, _, cid, storage, ctx, gen, path = await initial(conn, tmp_path)
+            child = await child_job(conn, storage, parent, cid, gen, version=26)
+            op = OperationScope(child.workspace_id, child.run_id, child.job_id, child.account_id)
+            eid = await execution(conn, op, child.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=eid,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(100, 100, 10),
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            backend = research_backend(BackendProtocol(), connections, storage, child, eid)
+
+            async def listed():
+                context = await read(backend, "/research/context.json")
+                in_context = "dossier" in context["account_research_references"]
+                listing = await backend.als("/research/")
+                in_listing = any(e["path"].endswith(PARENT_DOSSIER_PATH) for e in listing.entries)
+                return in_context, in_listing
+
+            assert await listed() == (False, False)
+            await invoke(FinishDossierTool, parent, storage, ctx, DossierInput())
+            assert await listed() == (True, True)
 
     run_async(case())
 

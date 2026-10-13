@@ -405,6 +405,57 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
     assert str(system.content).endswith("## End resolved resource and capability map")
 
 
+class _HeaderRecordingModel(ScriptedAgentChatModel):
+    async def _agenerate(self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs):
+        _SEEN_HEADERS.append(kwargs.get("extra_headers"))
+        return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+_SEEN_HEADERS: list[Any] = []
+
+
+class _HeaderRecordingModels:
+    def build(self, **kwargs: Any) -> _HeaderRecordingModel:
+        del kwargs
+        return _HeaderRecordingModel(
+            responses=(AIMessage(content="One."), AIMessage(content="Two."))
+        )
+
+
+def test_every_model_call_names_its_conversation_for_prompt_cache_routing() -> None:
+    """Run 3 (2026-10-09): ten calls re-sent a byte-identical prompt and missed the cache, because
+    nothing kept the conversation on one server. Each call now carries the agent execution id as
+    OpenRouter's ``x-session-id``: one conversation, one routing key."""
+    _SEEN_HEADERS.clear()
+    request, resolved = _request()
+    execution = _Execution()
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+
+    run_async(
+        DeepAgentTurnRuntime(
+            models=_HeaderRecordingModels(), execution=execution, max_runtime_s=5
+        ).run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(), messages=(HumanMessage(content="Do the work."),)
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert len(_SEEN_HEADERS) == 2
+    assert [{"x-session-id": str(request.constitution.execution_id)}] * 2 == _SEEN_HEADERS
+
+
 def test_compaction_settings_are_read_off_the_event_loop() -> None:
     """2026-10-05: ``compaction_for`` reads the model catalogue over the network. Called on the
     event loop it froze a fleet worker for 105 s, long enough to lose every lease it held, so the

@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
@@ -21,12 +21,12 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from langchain_openai import ChatOpenAI
 from openai import APIConnectionError
 from pydantic import ConfigDict, SecretStr, model_validator
 
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import TokenUsage
+from clue_core.openrouter_cost import openrouter_charged_usd
 from clue_gateway.metadata import (
     ANSWERING_MODEL_KEY,
     COST_CENTS_KEY,
@@ -36,6 +36,7 @@ from clue_gateway.metadata import (
     CostSource,
 )
 from clue_gateway.openrouter_chat import OpenRouterChatModel
+from clue_gateway.openrouter_responses import OpenRouterResponsesModel, ResponseUsage
 from clue_gateway.tracing import record_model_call
 from clue_obs import get_logger
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
@@ -381,13 +382,17 @@ class OpenRouterGenerationCost:
             payload = response.json()
         except Exception as error:  # noqa: BLE001 - a malformed body is a failed lookup
             return self._gave_up(generation_id, reason=repr(error))
-        total = (payload or {}).get("data", {}).get("total_cost")
-        if total is None or isinstance(total, bool) or not isinstance(total, int | float | str):
+        data = (payload or {}).get("data") or {}
+        # The record spells the usage block flat; the charged amount follows the same rule.
+        charged = openrouter_charged_usd(
+            {
+                "cost": data.get("total_cost"),
+                "cost_details": {"upstream_inference_cost": data.get("upstream_inference_cost")},
+            }
+        )
+        if charged is None:
             return self._gave_up(generation_id, reason="no_total_cost")
-        try:
-            return Decimal(str(total)) * 100
-        except InvalidOperation:
-            return self._gave_up(generation_id, reason="unparseable_total_cost")
+        return charged * 100
 
     @staticmethod
     def _gave_up(generation_id: str, *, reason: str) -> None:
@@ -395,6 +400,27 @@ class OpenRouterGenerationCost:
         # reconciliation can fetch what this call could not.
         log.warning("gateway.cost_lookup_failed", generation_id=generation_id, reason=reason)
         return None
+
+
+class _ReplyUsageFirst:
+    """Price a generation from its own reply's usage block, else ask ``/generation``.
+
+    The Responses route's reply carries OpenRouter's cost, which LangChain drops; the
+    ``/generation`` record appears only about twelve seconds later, so asking it first left every
+    Responses call ``unpriced`` (Sol smoke test, 2026-10-09).
+    """
+
+    def __init__(self, usage: ResponseUsage, lookup: GenerationCostLookup) -> None:
+        self._usage = usage
+        self._lookup = lookup
+
+    def cost_cents(self, generation_id: str) -> Decimal | None:
+        charged = self._usage.charged_cents(generation_id)
+        return charged if charged is not None else self._lookup.cost_cents(generation_id)
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None:
+        charged = self._usage.charged_cents(generation_id)
+        return charged if charged is not None else await self._lookup.acost_cents(generation_id)
 
 
 def _generation_id(message: BaseMessage | None, payload: Mapping[str, Any] | None) -> str | None:
@@ -1011,6 +1037,9 @@ class OpenRouterAgentModelProvider:
         self._http_client = http_client
         self._http_async_client = http_async_client
         self._model_capabilities: dict[str, bool] | None = None
+        # One store per provider: its Responses models keep each reply's usage block in it, and
+        # the cost lookup of every model it builds reads from it first.
+        self._reply_usage = ResponseUsage()
 
     def build(
         self,
@@ -1068,11 +1097,14 @@ class OpenRouterAgentModelProvider:
             call_deadline_s=call_deadline_s,
             # The meter for the paths that do not carry a cost back. Built here because this is
             # where the key and the HTTP clients live; the model itself holds no credential.
-            cost_lookup=OpenRouterGenerationCost(
-                base_url=self._config.base_url,
-                api_key=self._api_key,
-                http_client=self._http_client,
-                http_async_client=self._http_async_client,
+            cost_lookup=_ReplyUsageFirst(
+                self._reply_usage,
+                OpenRouterGenerationCost(
+                    base_url=self._config.base_url,
+                    api_key=self._api_key,
+                    http_client=self._http_client,
+                    http_async_client=self._http_async_client,
+                ),
             ),
         )
 
@@ -1130,6 +1162,10 @@ class OpenRouterAgentModelProvider:
             extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
         if self._config.openrouter_usage_include:
             extra_body["usage"] = {"include": True}
+        if model_id.startswith("anthropic/"):
+            # Anthropic caches only when asked; OpenRouter places this top-level breakpoint at the
+            # end of the prompt on every call. xAI, OpenAI and Gemini cache on their own.
+            extra_body["cache_control"] = {"type": "ephemeral"}
         if self._config.openrouter_chat_completions_fallback and not model_id.startswith("openai/"):
             # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects the
             # platform conversation's array-shaped message content (grok-4.6 400s
@@ -1158,7 +1194,7 @@ class OpenRouterAgentModelProvider:
                 extra_body=extra_body or None,
             )
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
-        return ChatOpenAI(  # type: ignore[call-arg]
+        return OpenRouterResponsesModel(  # type: ignore[call-arg]
             model=model_id,
             api_key=self._api_key,
             base_url=self._config.base_url,
@@ -1173,6 +1209,7 @@ class OpenRouterAgentModelProvider:
             http_async_client=self._http_async_client,
             reasoning=reasoning,
             extra_body=extra_body or None,
+            usage=self._reply_usage,
         )
 
 
@@ -1253,13 +1290,9 @@ def _reported_cost_cents(*sources: Mapping[str, Any] | None) -> Decimal | None:
         token_usage = source.get("token_usage")
         if not isinstance(token_usage, Mapping):
             continue
-        cost = token_usage.get("cost")
-        if cost is None or isinstance(cost, bool) or not isinstance(cost, int | float | str):
-            continue
-        try:
-            return Decimal(str(cost)) * 100
-        except InvalidOperation:
-            continue
+        charged = openrouter_charged_usd(token_usage)
+        if charged is not None:
+            return charged * 100
     return None
 
 

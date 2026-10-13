@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
@@ -27,6 +28,7 @@ from clue_api.arv2.committee_discovery import (
     DiscoverPeopleArgs,
     EnrichContactArgs,
     ReadPeopleResultArgs,
+    company_lock,
     discover_people,
     enrich_contact,
     load_person_seed,
@@ -356,6 +358,49 @@ def test_search_before_account_deep_spends_nothing():
                     ),
                 )
             assert not wire.requests
+
+    run_async(scenario())
+
+
+def test_recipe_27_searches_people_in_the_opening_rounds_before_account_deep():
+    """Recipe 27 aligns the tool with the prompt: people search no longer waits for deep research
+    (run 4, 2026-10-10: the prompt said "opening rounds", the tool refused, the agent nominated from
+    web results instead)."""
+
+    async def scenario():
+        async with rollback_conn(seed_pack=True) as conn:
+            run, account, job_id = await _seed(conn)
+            scope = replace(
+                _scope(run, account),
+                job_id=job_id,
+                catalog_version="v2",
+                input_refs={"quality_recipe_version": 27},
+            )
+            wire = ScriptedTransport(
+                [
+                    response(
+                        {
+                            "content": [
+                                {
+                                    "id": "company-1",
+                                    "link": {"domain": "probook.ai"},
+                                    "summary": {"name": "Probook"},
+                                }
+                            ]
+                        }
+                    ),
+                    response(
+                        {"content": [person()], "last": True, "totalPages": 1, "totalElements": 1}
+                    ),
+                ]
+            )
+            rt = runtime(conn, scope, _MemoryStorage(), wire)
+            result = await discover_people(
+                rt,
+                DiscoverPeopleArgs(role_key="growth", rationale="Relevant role", titles=["CMO"]),
+            )
+            assert result["returned"] == 1
+            assert len(wire.requests) == 2
 
     run_async(scenario())
 
@@ -1049,13 +1094,20 @@ def test_equivalent_concurrent_operation_has_one_owner_and_reuses_receipt():
             owner = asyncio.create_task(rt.operate("ai_ark", "people_roles", request, provider))
             try:
                 assert await asyncio.to_thread(started.wait, 5)
-                with pytest.raises(RefusalError, match="running"):
-                    await rt.operate("ai_ark", "people_roles", request, provider)
+                # Since 2026-10-13 the equivalent call waits for the owner instead of being refused
+                # (run 7 lost its only people search to that refusal), and reads the same result.
+                second = asyncio.create_task(
+                    rt.operate("ai_ark", "people_roles", request, provider)
+                )
+                await asyncio.sleep(0.2)
+                assert not second.done()
             finally:
                 release.set()
-            receipt, _ = await owner
+            receipt, body = await owner
+            waited, waited_body = await second
             replay, _ = await rt.operate("ai_ark", "people_roles", request, provider)
-            assert receipt.operation_id == replay.operation_id and len(wire.requests) == 1
+            assert receipt.operation_id == waited.operation_id == replay.operation_id
+            assert waited_body == body and len(wire.requests) == 1
 
     run_async(scenario())
 
@@ -1388,5 +1440,92 @@ def test_web_selected_person_keeps_parent_for_queue_redelivery_without_provider_
                 ScriptedTransport([]),
             )
             assert await load_person_seed(prt) is None
+
+    run_async(scenario())
+
+
+class _HeldTransport(ScriptedTransport):
+    """Scripted responses, with the first request held open until the test releases it."""
+
+    def __init__(self, script):
+        super().__init__(script)
+        self.release = threading.Event()
+
+    def send(self, request):
+        if not self.requests:
+            self.requests.append(request)
+            assert self.release.wait(10), "the held request was never released"
+            self.requests.pop()
+        return super().send(request)
+
+
+def test_a_people_search_waits_for_the_company_lookup_another_tool_started():
+    """Run 7 (2026-10-12): the agent called lookup_company and discover_people in one round. Both
+    make the same AI Ark company request, so they share one saved operation, and discover_people
+    read it 45 ms after lookup_company started it. It was refused ("saved operation is running: in
+    flight; do not repeat uncertain spending; record the gap"), the refusal was saved under the
+    search's own arguments, and the agent never searched AI Ark for people again. The second
+    caller now waits for the first and reads its saved result; the company is bought once."""
+
+    async def scenario():
+        async with rollback_conn(seed_pack=True) as conn:
+            run, account, job_id = await _seed(conn)
+            scope = replace(_scope(run, account), job_id=job_id, catalog_version="v4")
+            company = {
+                "content": [
+                    {"id": "company-1", "link": {"domain": "probook.ai"}, "summary": {"name": "P"}}
+                ]
+            }
+            people = {"content": [person()], "last": True, "totalPages": 1, "totalElements": 1}
+            wire = _HeldTransport([response(company), response(people)])
+            rt = runtime(
+                conn,
+                replace(scope, input_refs={"quality_recipe_version": 27}),
+                _MemoryStorage(),
+                wire,
+            )
+            lookup = asyncio.create_task(company_lock(rt))
+            while not wire.requests:  # lookup_company's company request is on the wire
+                await asyncio.sleep(0.01)
+            search = asyncio.create_task(
+                discover_people(
+                    rt,
+                    DiscoverPeopleArgs(
+                        role_key="growth", rationale="Owns demand", titles=["VP Marketing"]
+                    ),
+                )
+            )
+            await asyncio.sleep(0.2)
+            assert not search.done(), "the search must wait for the running company lookup"
+            wire.release.set()
+            lock, found = await asyncio.gather(lookup, search)
+            assert lock["company_id"] == "company-1"
+            assert found["company_lock"]["company_id"] == "company-1"
+            assert [p["name"] for p in found["people"]] == ["Dana Test"]
+            assert [r.url.rsplit("/", 1)[-1] for r in wire.requests] == ["companies", "people"]
+
+    run_async(scenario())
+
+
+def test_a_request_left_running_by_a_crashed_attempt_is_still_refused_not_bought_again():
+    """Waiting only covers a call this runtime is making itself. An operation still marked running
+    by another process (a worker that died mid-call) has an unknown outcome: it stays refused, and
+    the provider is not called a second time."""
+
+    async def scenario():
+        async with rollback_conn(seed_pack=True) as conn:
+            run, account, job_id = await _seed(conn)
+            scope = replace(_scope(run, account), job_id=job_id, catalog_version="v4")
+            wire = ScriptedTransport([])
+            rt = runtime(
+                conn,
+                replace(scope, input_refs={"quality_recipe_version": 27}),
+                _MemoryStorage(),
+                wire,
+            )
+            await ops.begin(conn, rt.operation_scope, "company_lock", {"domain": "probook.ai"})
+            with pytest.raises(RefusalError, match="saved operation is running"):
+                await asyncio.wait_for(company_lock(rt), timeout=5)
+            assert wire.requests == []
 
     run_async(scenario())

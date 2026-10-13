@@ -22,7 +22,6 @@ from clue_api.arv2.media_feeds_client import (
     _label_for,
     download_enclosure,
     episode_number_from_title,
-    extract_player_response,
     find_episode,
     is_youtube,
     parse_duration,
@@ -271,36 +270,6 @@ def test_the_ledger_label_stays_short_enough_to_be_a_filename() -> None:
     assert len(_label_for(enclosure)) <= MAX_LABEL_CHARS
     assert _label_for(BOARDROOM_FEED_URL) == "anchor.fm-rss"
     assert _label_for("https://example.test/") == "example.test"
-
-
-def test_extract_player_response_survives_braces_inside_strings() -> None:
-    """A naive depth counter (or a non-greedy regex) truncates here; the scanner must not."""
-    html = (
-        "<script>var meta = {};"
-        'ytInitialPlayerResponse = {"videoDetails":{"title":"a } brace \\" and {more}",'
-        '"lengthSeconds":"254"}};var after = 1;</script>'
-    )
-
-    player = extract_player_response(html)
-
-    assert player is not None
-    details = player["videoDetails"]
-    assert isinstance(details, dict)
-    assert details["lengthSeconds"] == "254"
-    assert details["title"] == 'a } brace " and {more}'
-
-
-def test_extract_player_response_reads_the_bracketed_assignment_form() -> None:
-    html = 'window["ytInitialPlayerResponse"] = {"videoDetails":{"title":"x"}};'
-
-    player = extract_player_response(html)
-
-    assert player is not None and "videoDetails" in player
-
-
-def test_extract_player_response_is_none_on_a_consent_wall() -> None:
-    assert extract_player_response("<html>Sign in to confirm you are not a bot</html>") is None
-    assert extract_player_response('ytInitialPlayerResponse = {"unclosed": 1') is None
 
 
 def test_an_oversized_feed_is_refused_before_it_is_parsed() -> None:

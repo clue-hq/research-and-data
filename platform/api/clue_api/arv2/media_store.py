@@ -612,3 +612,54 @@ async def persist(runtime: Any, conn: Any, data: bytes, mime: str, item: dict[st
     )
     await runtime.storage.put(key, data, media_type=mime)
     return key
+
+
+async def run_media_summary(conn: Any, *, workspace_id: str, run_id: UUID) -> dict[str, Any]:
+    """What one research run did with media: found, attempted, transcribed by method, and why
+    the rest failed (spec 2026-10-13-legitimate-media-sources-design §4)."""
+    rows = (
+        (
+            await conn.execute(
+                text("""
+        SELECT a.kind, a.outcome, a.data, t.source_method
+        FROM arv2_media_attempt a
+        JOIN arv2_research_job j ON j.job_id=a.job_id AND j.workspace_id=a.workspace_id
+        LEFT JOIN arv2_media_transcript t
+          ON t.workspace_id=a.workspace_id AND t.version_id=a.version_id
+        WHERE a.workspace_id=:ws AND j.run_id=:run
+    """),
+                {"ws": workspace_id, "run": run_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    transcribed: dict[str, int] = {}
+    unavailable: dict[str, int] = {}
+    not_ready: dict[str, int] = {}
+    discovered = attempted = 0
+    for row in rows:
+        if row["kind"] == "candidate" and row["outcome"] == "unverified":
+            discovered += 1
+        if row["kind"] != "read":
+            continue
+        attempted += 1
+        data = row["data"]
+        data = json.loads(data) if isinstance(data, str | bytes) else data or {}
+        if row["outcome"] == "not_ready":
+            state = str(data.get("state") or "unknown")
+            not_ready[state] = not_ready.get(state, 0) + 1
+        elif row["outcome"] in {"acquired", "reused"} and row["source_method"]:
+            method = str(row["source_method"])
+            transcribed[method] = transcribed.get(method, 0) + 1
+        elif row["outcome"] == "unavailable":
+            for gap in data.get("gaps", []):
+                key = str(gap).split(":", 1)[0]
+                unavailable[key] = unavailable.get(key, 0) + 1
+    return {
+        "discovered": discovered,
+        "attempted": attempted,
+        "transcribed": transcribed,
+        "unavailable": unavailable,
+        "not_ready": not_ready,
+    }

@@ -133,13 +133,9 @@ from clue_api.arv2.media_feeds_client import (
     Episode,
     Podcast,
     UnsupportedMediaHost,
-    YouTubeMeta,
-    YouTubeWords,
     download_enclosure,
     fetch_feed,
     find_episode,
-    youtube_metadata,
-    youtube_words,
 )
 from clue_api.arv2.openrouter import (
     openrouter_chat_request,
@@ -373,8 +369,6 @@ __all__ = [
     "WebsetItemsResult",
     "WebsetSearchView",
     "WebsetView",
-    "YouTubeMeta",
-    "YouTubeWords",
     "author_icp_document",
     "authored_document_id",
     "build_arv2_discovery_tools",
@@ -413,6 +407,4 @@ __all__ = [
     "transcription_input_from_enclosure",
     "websets_halt_rule",
     "websets_items_cost",
-    "youtube_metadata",
-    "youtube_words",
 ]

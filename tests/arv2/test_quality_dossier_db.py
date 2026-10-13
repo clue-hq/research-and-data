@@ -159,15 +159,22 @@ def test_file_save_survives_failed_child_versioning_source_inventory_and_revocat
             await revoke_grant(conn, authority.grant)
             view = research_backend(BackendProtocol(), connections, storage, job, child)
             assert (await view.aread("/research/account-dossier/latest.json")).error
-            # Existing artifact erasure lineage includes report and source inventory.
+            # Erasing a source the report used erases the report (its lineage watermark, since
+            # 2026-10-12; previously one derivation link per source).
+            savepoint = await conn.begin_nested()
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now() WHERE storage_key=:source"
+                ),
+                {"source": used.artifact_key},
+            )
             assert (
                 await conn.execute(
-                    text(
-                        "SELECT count(*) FROM artifact_derivation "
-                        "WHERE parent_key=:source AND child_key=:report"
-                    ),
-                    {"source": used.artifact_key, "report": first["report"]["artifact_key"]},
+                    text("SELECT privacy_erased FROM artifact WHERE storage_key=:report"),
+                    {"report": first["report"]["artifact_key"]},
                 )
-            ).scalar_one() == 1
+            ).scalar_one()
+            await savepoint.rollback()
 
     run_async(case())

@@ -26,6 +26,7 @@ from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
 from clue_gateway import agent_model as agent_model
 from clue_gateway.agent_model import (
+    GenerationCostLookup,
     GovernedAgentChatModel,
     OpenRouterGenerationCost,
     provider_compatible_tool_schema,
@@ -1262,7 +1263,8 @@ def test_the_provider_injects_the_generation_lookup_so_a_built_model_can_price_i
     )
 
     assert isinstance(model, GovernedAgentChatModel)
-    assert isinstance(model.cost_lookup, OpenRouterGenerationCost)
+    # Reads the reply's own usage block first, then OpenRouter's /generation record.
+    assert isinstance(model.cost_lookup, GenerationCostLookup)
 
 
 def test_the_async_path_awaits_the_generation_lookup_rather_than_blocking_the_loop() -> None:

@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
+import structlog
 from langchain.tools import ToolRuntime
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.messages import BaseMessage
@@ -88,6 +89,8 @@ from clue_toolbelt import ToolEffectClass, ToolRegistry
 PROJECT_DOCUMENT_OBJECT_TYPE = "project_document"
 
 __all__ = [
+    "MESSAGE_MEDIA_TYPE",
+    "MODEL_INPUT_MEDIA_TYPE",
     "PROJECT_DOCUMENT_OBJECT_TYPE",
     "AgentFinalizationAuthority",
     "DurableAgentModelCallHandler",
@@ -96,9 +99,53 @@ __all__ = [
     "GovernedAgentToolFactory",
     "GovernedToolFailure",
     "ModelFinalizeRequest",
+    "rebuild_model_input",
 ]
 
 log = get_logger("clue_api.agent_runtime_wiring")
+
+#: A model call's saved input. Since 2026-10-13 it is a manifest (``MODEL_INPUT_FORMAT``) naming
+#: the request's messages, each saved once as ``MESSAGE_MEDIA_TYPE``; before, it was the whole
+#: request, which made every call re-save the conversation so far (spec 2026-10-12 §4.2).
+MODEL_INPUT_MEDIA_TYPE = "application/vnd.clue.agent-model-input+json"
+MESSAGE_MEDIA_TYPE = "application/vnd.clue.agent-message+json"
+MODEL_INPUT_FORMAT = "clue.agent-model-input.v2"
+
+
+def _message_bytes(message: BaseMessage) -> bytes:
+    return json.dumps(
+        message.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode()
+
+
+def _request_bytes(batches: Sequence[Sequence[bytes]]) -> bytes:
+    """The whole request as one JSON array of message batches, exactly as it was saved before
+    the manifest format (JSON arrays with these separators are their elements joined by ``,``)."""
+    return b"[" + b",".join(b"[" + b",".join(batch) + b"]" for batch in batches) + b"]"
+
+
+async def rebuild_model_input(saved: bytes, read: Callable[[str], Awaitable[bytes]]) -> bytes:
+    """The request bytes a saved model input stands for.
+
+    A manifest is resolved through ``read`` (artifact key to bytes) and checked against the
+    request digest it recorded; an input saved before the manifest format is returned as it is.
+    """
+    try:
+        document = json.loads(saved)
+    except ValueError:
+        return saved
+    if not isinstance(document, dict) or document.get("format") != MODEL_INPUT_FORMAT:
+        return saved
+    batches = [[await read(key) for key in batch] for batch in document["messages"]]
+    request = _request_bytes(batches)
+    if hashlib.sha256(request).hexdigest() != document["request_sha256"]:
+        raise ValueError("saved messages do not match the request digest in the manifest")
+    return request
+
 
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
@@ -134,8 +181,44 @@ def resolve_model_call_role(
     return constitution_role
 
 
+log = structlog.get_logger(__name__)
+
+#: Above this many input tokens the model bills the whole request at 2x input and cache rates
+#: and 1.5x output (OpenAI model page for GPT-6.1 Sol, read 2026-10-13).
+LONG_CONTEXT_INPUT_TOKENS: Mapping[str, int] = {"openai/gpt-6.1-sol": 272_000}
+#: An appended request that reads less than this share of the previous request from the
+#: provider's cache is reported: the prefix was re-written at the cache-write price.
+CACHE_HIT_FLOOR = 0.5
+#: Below this previous request size a miss costs too little to report.
+CACHE_AUDIT_MIN_TOKENS = 20_000
+
+
+def request_shape(previous: Sequence[str], current: Sequence[str]) -> tuple[str, int, int]:
+    """How a model request relates to the previous one of its turn.
+
+    ``("append", n, n)`` when the previous request's ``n`` messages are a prefix of this one
+    (the provider can serve them from its cache); ``("changed", i, n)`` when message ``i`` of the
+    previous ``n`` differs (every message from ``i`` on is re-written); ``("first", 0, 0)`` for
+    the turn's first request.
+    """
+    if not previous:
+        return ("first", 0, 0)
+    common = 0
+    while common < min(len(previous), len(current)) and previous[common] == current[common]:
+        common += 1
+    if common == len(previous):
+        return ("append", common, len(previous))
+    return ("changed", common, len(previous))
+
+
 class DurableAgentModelCallHandler(AsyncCallbackHandler):
-    """Persist model bodies as artifacts and append a body-free call receipt."""
+    """Persist model bodies as artifacts and append a body-free call receipt.
+
+    It also audits the provider's prompt cache on every call (2026-10-13): whether the request
+    appended to the previous one, how much of it the provider read from its cache, and whether
+    it crossed the model's long-context price tier. Run 6 (2026-10-12) paid $9.49 of $17.73 in
+    cache re-writes that nothing reported until the bill; each would have been one warning here.
+    """
 
     def __init__(
         self,
@@ -159,6 +242,14 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         self._incidents_conn_factory = incidents_conn_factory
         self._lock = asyncio.Lock()
         self._pending: dict[UUID, tuple[int, datetime, float, ArtifactRef]] = {}
+        # Messages this handler saved, by content digest: a conversation is append-only, so each
+        # message is saved once per turn and every later call only names it.
+        self._saved_messages: dict[str, str] = {}
+        # The cache audit: the previous call's message keys and real input size, and each
+        # pending call's shape against them.
+        self._previous_keys: list[str] = []
+        self._previous_input_tokens = 0
+        self._shapes: dict[UUID, tuple[str, int, int]] = {}
 
     async def on_chat_model_start(
         self,
@@ -173,17 +264,33 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         if owner is not None and owner != str(self._request.constitution.execution_id):
             return
         workspace_id = self._request.constitution.workspace_id
-        body = json.dumps(
-            [[message.model_dump(mode="json") for message in batch] for batch in messages],
+        batches = [[_message_bytes(message) for message in batch] for batch in messages]
+        keys: list[list[str]] = []
+        for batch in batches:
+            row = []
+            for body in batch:
+                digest = hashlib.sha256(body).hexdigest()
+                key = self._saved_messages.get(digest)
+                if key is None:
+                    ref = await self._artifacts.persist_body(
+                        workspace_id=workspace_id, data=body, media_type=MESSAGE_MEDIA_TYPE
+                    )
+                    key = self._saved_messages[digest] = ref.artifact_key
+                row.append(key)
+            keys.append(row)
+        request = _request_bytes(batches)
+        manifest = json.dumps(
+            {
+                "format": MODEL_INPUT_FORMAT,
+                "messages": keys,
+                "request_bytes": len(request),
+                "request_sha256": hashlib.sha256(request).hexdigest(),
+            },
             sort_keys=True,
             separators=(",", ":"),
-            ensure_ascii=False,
-            default=str,
         ).encode()
         input_ref = await self._artifacts.persist_body(
-            workspace_id=workspace_id,
-            data=body,
-            media_type="application/vnd.clue.agent-model-input+json",
+            workspace_id=workspace_id, data=manifest, media_type=MODEL_INPUT_MEDIA_TYPE
         )
         async with self._lock:
             sequence = self._next_sequence
@@ -194,6 +301,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
                 time.monotonic(),
                 input_ref,
             )
+            flat = [key for row in keys for key in row]
+            self._shapes[run_id] = request_shape(self._previous_keys, flat)
+            self._previous_keys = flat
 
     async def on_llm_end(
         self,
@@ -237,6 +347,12 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         # Decimal; USD is the unit every cost read reports in, at the column's six places.
         cents, cost_source = cost_cents_from_metadata(response_metadata)
         cost_usd = None if cents is None else (cents / Decimal(100)).quantize(Decimal("0.000001"))
+        self._audit_cache(
+            sequence=pending[0],
+            run_id=run_id,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            cache_read_tokens=cache_read_tokens,
+        )
         output_ref = await self._artifacts.persist_body(
             workspace_id=self._request.constitution.workspace_id,
             data=response.model_dump_json().encode(),
@@ -271,6 +387,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
     ) -> None:
         del kwargs
         pending = self._pending.pop(run_id, None)
+        self._shapes.pop(run_id, None)
         if pending is None:
             return
         # What the provider did, when it is the provider that did something: a refusal or a
@@ -301,6 +418,42 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
                 ),
                 what="open",
             )
+
+    def _audit_cache(
+        self, *, sequence: int, run_id: UUID, input_tokens: int, cache_read_tokens: int
+    ) -> None:
+        """Report a request the provider could not serve from its cache, or one past the
+        long-context price tier (class docstring)."""
+        shape, position, previous_messages = self._shapes.pop(run_id, ("first", 0, 0))
+        previous_input = self._previous_input_tokens
+        self._previous_input_tokens = input_tokens
+        fields: dict[str, Any] = {
+            "execution_id": str(self._request.constitution.execution_id),
+            "sequence": sequence,
+            "model": self._requested_model,
+            "shape": shape,
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": cache_read_tokens,
+            "previous_input_tokens": previous_input,
+        }
+        if shape == "changed":
+            log.warning(
+                "model_call.request_not_append",
+                changed_at=position,
+                previous_messages=previous_messages,
+                **fields,
+            )
+        elif (
+            shape == "append"
+            and previous_input >= CACHE_AUDIT_MIN_TOKENS
+            and cache_read_tokens < previous_input * CACHE_HIT_FLOOR
+        ):
+            log.warning("model_call.cache_miss_on_append", **fields)
+        else:
+            log.info("model_call.cache", **fields)
+        limit = LONG_CONTEXT_INPUT_TOKENS.get(self._requested_model)
+        if limit is not None and input_tokens > limit:
+            log.warning("model_call.long_context_tier", limit=limit, **fields)
 
     async def _with_incidents(
         self, action: Callable[[AsyncConnection], Awaitable[object]], *, what: str

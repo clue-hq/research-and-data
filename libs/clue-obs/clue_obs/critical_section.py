@@ -17,12 +17,17 @@ from contextlib import contextmanager
 
 from clue_obs.config import get_logger
 
-__all__ = ["CRITICAL_SECTION_LOG_MS_ENV", "critical_section"]
+__all__ = ["CRITICAL_SECTION_LOG_MS_ENV", "critical_section", "slow_threshold_ms"]
 
 CRITICAL_SECTION_LOG_MS_ENV = "CLUE_DB_CRITICAL_SECTION_LOG_MS"
 _DEFAULT_THRESHOLD_MS = 500.0
 
 log = get_logger("clue_obs.critical_section")
+
+
+def slow_threshold_ms() -> float:
+    """The ``CLUE_DB_CRITICAL_SECTION_LOG_MS`` threshold, for callers timing their own waits."""
+    return _threshold_ms()
 
 
 def _threshold_ms() -> float:

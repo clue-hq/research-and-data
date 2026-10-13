@@ -11,9 +11,10 @@ import json
 from typing import Any, ClassVar, Literal, cast, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import BaseModel, Field, JsonValue, ValidationError
 from sqlalchemy import text
 
+from clue_agents.execution import SPILL_THRESHOLD_BYTES
 from clue_api.arv2 import research_operations as operations
 from clue_api.arv2.account_exa_brief import uses_account_discovery
 from clue_api.arv2.account_research_tools import (
@@ -313,11 +314,19 @@ class AcquireResearchTool(Tool):
                     "code": code,
                 },
             )
+        return self.settled_receipt(
+            operation.operation_id, value, unknown=unknown, refused=refused, code=code
+        )
+
+    def settled_receipt(
+        self, operation_id: UUID, value: Any, *, unknown: bool, refused: bool, code: str | None
+    ) -> ToolResult:
+        """The receipt for a freshly settled operation (v2 adds a preview of what came back)."""
         return self.receipt(
             AcquireResearchReceipt(
-                operation_id=operation.operation_id,
+                operation_id=operation_id,
                 status="outcome_unknown" if unknown else "refused" if refused else "completed",
-                result_path=f"/research/operations/{operation.operation_id}/0.json",
+                result_path=f"/research/operations/{operation_id}/0.json",
                 error_code=code,
                 recovery=value.get("recovery") if isinstance(value, dict) else None,
             )
@@ -326,4 +335,163 @@ class AcquireResearchTool(Tool):
     def receipt(self, value: AcquireResearchReceipt) -> ToolResult:
         return ToolResult(
             tool=self.name, version=self.version, references=value.model_dump(mode="json")
+        )
+
+
+PREVIEW_SNIPPET = 300
+#: Every entry is previewed (founder ruling 2026-10-10). The preview stays this far under the spill
+#: line, leaving room for the rest of the receipt, so a long result list is never replaced by a file
+#: pointer; when it would not fit, the snippets shorten in these steps and no entry is dropped.
+PREVIEW_MAX_BYTES = SPILL_THRESHOLD_BYTES - 2 * 1024
+#: (snippet, title) lengths, tried in order: snippets go first, titles only after them.
+_SHORTENING_STEPS = (
+    (PREVIEW_SNIPPET, 300),
+    (200, 300),
+    (120, 300),
+    (60, 300),
+    (0, 300),
+    (0, 120),
+    (0, 60),
+)
+
+
+class ReceiptHit(BaseModel):
+    title: str | None = None
+    url: str | None = None
+    published: str | None = None
+    path: str | None = None
+    snippet: str | None = None
+
+
+class AcquireResearchReceiptV2(AcquireResearchReceipt):
+    status: Literal["completed", "empty", "refused", "outcome_unknown"]  # type: ignore[assignment]
+    result_count: int | None = None
+    preview: list[ReceiptHit] = Field(default_factory=list)
+
+
+def _snippet(*parts: Any, limit: int = PREVIEW_SNIPPET) -> str | None:
+    if limit <= 0:
+        return None
+    for part in parts:
+        if isinstance(part, list):
+            part = " ".join(str(p) for p in part if p)
+        if isinstance(part, str) and part.strip():
+            text = " ".join(part.split())
+            return text[: limit - 1] + "…" if len(text) > limit else text
+    return None
+
+
+def receipt_preview(value: Any) -> tuple[list[dict[str, str | None]], int | None, bool]:
+    """``(hits, result_count, empty)`` for a settled acquisition body.
+
+    One entry per result, in the provider's order, so the agent sees everything that came back
+    without spending a model round opening the result file. Every entry is kept; only the snippets
+    shorten, and only as far as the spill line needs (2026-10-10: run 3's preview, capped at eight
+    saved files, showed four of ten results and hid the account's ABM case study).
+    """
+    if not isinstance(value, dict):
+        return [], None, False
+    sources = [
+        s
+        for s in (value.get("source_navigation") or {}).get("sources") or []
+        if isinstance(s, dict) and s.get("url")
+    ]
+    # A result is saved as its provider record and then its page snapshot: the last file for a
+    # link is the page text, the one worth opening.
+    by_url = {str(s.get("url")): s for s in sources}
+    rows = value.get("results") or value.get("hits") or []
+    entries: list[tuple[dict[str, str | None], tuple[Any, ...]]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        url = row.get("url")
+        source = by_url.get(str(url), {})
+        entries.append(
+            (
+                {
+                    "title": _snippet(row.get("title"), source.get("title")),
+                    "url": url,
+                    "published": row.get("published")
+                    or row.get("publishedDate")
+                    or source.get("published_at"),
+                    "path": source.get("path"),
+                },
+                (row.get("highlights"), row.get("summary"), row.get("text"), row.get("text_head")),
+            )
+        )
+    if not entries:
+        entries = [
+            (
+                {
+                    "title": _snippet(s.get("title")),
+                    "url": url,
+                    "published": s.get("published_at"),
+                    "path": s.get("path"),
+                },
+                (),
+            )
+            for url, s in by_url.items()
+        ]
+    report = value.get("report")
+    if isinstance(report, str) and report.strip():
+        entries.insert(
+            0, ({"title": "Report", "url": None, "published": None, "path": None}, (report,))
+        )
+    count = value.get("n_results")
+    if not isinstance(count, int):
+        count = len(rows) if isinstance(rows, list) and rows else len(by_url) or None
+    # Only a body that lists results (a search, page read or report) can come back empty; an
+    # enrichment profile, a queued job or a media item always came back with something.
+    listed = any(key in value for key in ("results", "hits", "n_results", "report"))
+    empty = listed and (
+        (count == 0) or (not entries and not (isinstance(report, str) and report.strip()))
+    )
+    hits: list[dict[str, str | None]] = []
+    for snippet_limit, title_limit in _SHORTENING_STEPS:
+        hits = [
+            ReceiptHit(
+                **{**fields, "title": _snippet(fields["title"], limit=title_limit)},
+                snippet=_snippet(*parts, limit=snippet_limit),
+            ).model_dump()
+            for fields, parts in entries
+        ]
+        if len(json.dumps(hits, default=str)) <= PREVIEW_MAX_BYTES:
+            break
+    return hits, count, empty
+
+
+class AcquireResearchToolV2(AcquireResearchTool):
+    """Recipe 26: the receipt previews what came back and says ``empty`` when nothing did."""
+
+    version = "2"
+    output_model: ClassVar[type[ToolOutput]] = AcquireResearchReceiptV2
+    model_description = (
+        AcquireResearchTool.model_description
+        + " Each receipt previews what came back (titles, links, evidence paths, snippets); "
+        "read result_path only when you need the full text. status empty means nothing came back."
+    )
+
+    def settled_receipt(
+        self, operation_id: UUID, value: Any, *, unknown: bool, refused: bool, code: str | None
+    ) -> ToolResult:
+        hits, count, empty = receipt_preview(value)
+        status: Literal["completed", "empty", "refused", "outcome_unknown"]
+        if unknown:
+            status = "outcome_unknown"
+        elif refused:
+            status = "refused"
+        elif empty:
+            status = "empty"
+        else:
+            status = "completed"
+        return self.receipt(
+            AcquireResearchReceiptV2(
+                operation_id=operation_id,
+                status=status,
+                result_path=f"/research/operations/{operation_id}/0.json",
+                error_code=code,
+                recovery=value.get("recovery") if isinstance(value, dict) else None,
+                result_count=count,
+                preview=[ReceiptHit.model_validate(h) for h in hits],
+            )
         )

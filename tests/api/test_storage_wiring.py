@@ -191,8 +191,8 @@ def test_each_run_gets_a_fresh_sink() -> None:
 def test_orphan_sweep_runner_uses_the_given_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, object] = {}
 
-    async def _purge(conn: object, storage: object) -> None:
-        calls.update(purge_conn=conn, purge_storage=storage)
+    async def _purge(conn: object, storage: object, *, privacy_purged_since: object) -> None:
+        calls.update(purge_conn=conn, purge_storage=storage, since=privacy_purged_since)
 
     async def _spy(conn: object, storage: object, *, grace: timedelta, now: object = None) -> tuple:
         assert calls["purge_conn"] is conn
@@ -208,6 +208,7 @@ def test_orphan_sweep_runner_uses_the_given_storage(monkeypatch: pytest.MonkeyPa
     assert calls["storage"] is storage
     assert calls["purge_storage"] is storage
     assert calls["grace"] == DEFAULT_ORPHAN_SWEEP_GRACE
+    assert calls["since"] is None  # the purge's own default look-back
 
 
 def test_orphan_sweep_runner_defaults_to_the_composed_backend(
@@ -216,7 +217,7 @@ def test_orphan_sweep_runner_defaults_to_the_composed_backend(
     sentinel = FakeStorage()
     seen: dict[str, object] = {}
 
-    async def _purge(conn: object, storage: object) -> None:
+    async def _purge(conn: object, storage: object, *, privacy_purged_since: object) -> None:
         seen["purge_storage"] = storage
 
     async def _spy(conn: object, storage: object, *, grace: timedelta, now: object = None) -> tuple:

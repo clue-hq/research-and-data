@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -76,6 +77,8 @@ class Candidate(MediaModel):
     identity_evidence: list[str] = Field(default_factory=list)
     exclusions: list[str] = Field(default_factory=list)
     recognized_subject_urls: list[str] = Field(default_factory=list)
+    published_at: datetime | None = None
+    transcript_type: str | None = None
 
 
 class EmbeddingContract(MediaModel):

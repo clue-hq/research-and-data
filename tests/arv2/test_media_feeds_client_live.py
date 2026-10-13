@@ -12,15 +12,14 @@ The ~40 MB enclosure download is deliberate and costs nothing: it is the only wa
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller, SpendEstimate
-from clue_api.arv2.exa_client import CONTENTS_ESTIMATE_USD_PER_URL, exa_cost_reader
+from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.media_feeds_client import (
     EnclosureTooLarge,
     UnsupportedMediaHost,
@@ -28,20 +27,12 @@ from clue_api.arv2.media_feeds_client import (
     fetch_feed,
     find_episode,
     reject_native_video,
-    youtube_metadata,
-    youtube_words,
 )
-from clue_api.arv2.transport import BROWSER_USER_AGENT, json_request
-from clue_config import Secrets
-from tests.arv2.conftest import require_secret
 
 #: Global Constraint 11's answer key: the Boardroom Club feed and Sanaz Yashar's episode.
 BOARDROOM_RSS = "https://anchor.fm/s/f695d6d8/podcast/rss"
 SANAZ_DURATION_S = 2569
 SANAZ_ENCLOSURE_PREFIX = "https://anchor.fm/s/f695d6d8/podcast/play/"
-
-#: Nick Fisher's Cocktail Chemistry video (04:14 per the answer key).
-COCKTAIL_CHEMISTRY_WATCH = "https://www.youtube.com/watch?v=avcD5WVLCYs"
 
 #: A LinkedIn post carrying native video — the thing that must never be fetched (law 11).
 LINKEDIN_NATIVE_VIDEO = (
@@ -52,56 +43,6 @@ LINKEDIN_NATIVE_VIDEO = (
 #: Two hundred megabytes: comfortably above a long interview, far below anything a research run
 #: should be pulling down by accident.
 MAX_ENCLOSURE_BYTES = 200 * 1024 * 1024
-
-
-def _exa_page_text(
-    caller: ProviderCaller, api_key: str, costs: list[CallCost]
-) -> Callable[[Sequence[str]], Mapping[str, str]]:
-    """The ten-line ``PageTextFetcher`` this test supplies — the only Exa knowledge in Task 5.
-
-    It goes through the wrapper like every other call, so its raw record and cost row land in the
-    same ledger as the free ones. Task 3's Exa client will satisfy the same protocol.
-
-    It appends each call's :class:`CallCost` to ``costs``, because ``youtube_words`` cannot know
-    what a fetcher it was merely handed charged — only the fetcher's owner can, which is why the
-    cost is a pass-through there rather than something the function invents.
-    """
-
-    def fetch(urls: Sequence[str]) -> Mapping[str, str]:
-        request = json_request(
-            "POST",
-            "https://api.exa.ai/contents",
-            headers={"x-api-key": api_key, "User-Agent": BROWSER_USER_AGENT},
-            json_body={"urls": list(urls), "text": {"maxCharacters": 8000}},
-            timeout_s=180.0,
-        )
-        result = caller.call(
-            CallSpec(
-                provider="exa",
-                operation="contents",
-                label="media-words",
-                request=request,
-                # Exa charges for /contents, so the spec has to say so: a paid call declared with
-                # no reader and no reservation is labelled `free` by the wrapper, which would
-                # write this spend off. The real reader and estimate are the ones Task 3's client
-                # uses, so this fixture meters exactly the way production does.
-                estimate=SpendEstimate(usd=CONTENTS_ESTIMATE_USD_PER_URL * len(urls)),
-                cost_reader=exa_cost_reader,
-            )
-        )
-        costs.append(result.call_cost)
-        body = result.json()
-        assert isinstance(body, dict)
-        print(f"exa /contents cost: {(body.get('costDollars') or {}).get('total')}")
-        results = body.get("results") or []
-        assert isinstance(results, list)
-        return {
-            str(item["url"]): str(item.get("text") or "")
-            for item in results
-            if isinstance(item, dict) and item.get("url")
-        }
-
-    return fetch
 
 
 def test_the_boardroom_feed_yields_sanaz_yashars_episode_at_the_recorded_duration(
@@ -193,51 +134,6 @@ def test_an_undeclared_enclosure_is_refused_on_a_real_head_before_a_byte_is_down
     assert excinfo.value.size_bytes > 10 * 1024 * 1024
     assert not (tmp_path / "never.mp3").exists()
     print(f"HEAD refused {excinfo.value.size_bytes} bytes against a 1-byte budget")
-
-
-def test_a_real_watch_page_yields_its_title_and_length(
-    make_caller: Callable[..., ProviderCaller],
-) -> None:
-    """The watch page's own ``ytInitialPlayerResponse``: no API key, no caption endpoint."""
-    caller = make_caller()
-
-    meta = youtube_metadata(COCKTAIL_CHEMISTRY_WATCH, caller)
-
-    assert meta.video_id == "avcD5WVLCYs"
-    assert meta.title
-    assert meta.length_s is not None
-    assert 250 <= meta.length_s <= 260, f"answer key says 04:14, page says {meta.length_s}"
-    assert meta.cost.cost_source == "free"
-    assert (meta.cost.provider, meta.cost.operation) == ("youtube", "watch")
-    print(f"youtube: id={meta.video_id} title={meta.title!r} length_s={meta.length_s}")
-
-
-def test_indexed_page_text_comes_back_for_a_real_watch_page(
-    make_caller: Callable[..., ProviderCaller], live_secrets: Secrets
-) -> None:
-    """The caption fallback over a real contents provider, through the wrapper like everything."""
-    api_key = require_secret(live_secrets, "exa_api_key")
-    caller = make_caller()
-    costs: list[CallCost] = []
-
-    fetcher = _exa_page_text(caller, api_key, costs)
-    text_by_url = fetcher([COCKTAIL_CHEMISTRY_WATCH])
-    words = youtube_words(
-        COCKTAIL_CHEMISTRY_WATCH,
-        lambda _urls: text_by_url,
-        title="Cocktail Chemistry",
-        cost=costs[-1],
-    )
-
-    assert words.url == COCKTAIL_CHEMISTRY_WATCH
-    assert words.title == "Cocktail Chemistry"
-    assert words.text.strip(), "the contents provider returned no indexed text at all"
-    # This is the one paid call in the file, and it is the *caller's* call: the fetcher owns it,
-    # so the cost is passed in rather than fabricated by a function that never saw the request.
-    assert words.cost is costs[-1]
-    assert words.cost.cost_source == "metered", "Exa meters /contents"
-    assert words.cost.provider == "exa"
-    print(f"indexed text: {len(words.text)} chars; head={words.text[:120]!r}")
 
 
 def test_a_linkedin_native_video_is_refused_before_anything_is_fetched() -> None:

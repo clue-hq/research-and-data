@@ -1,7 +1,8 @@
-"""ResearchArtifacts.persist_body: upload before the project lock, one derivation statement.
+"""ResearchArtifacts.persist_body: upload before the project lock; nothing kept if it fails.
 
 Production 2026-10-03: every research save took the project lock, uploaded to R2 inside it and
-inserted one derivation row per evidence source, holding the lock 3-18 s.
+inserted one derivation row per evidence source, holding the lock 3-18 s. The per-source rows were
+replaced by one lineage watermark per save on 2026-10-12 (tests/api/test_research_lineage_db.py).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from sqlalchemy import event, text
+from sqlalchemy import text
 
 from clue_api.agent_turn_wiring import PROJECT_ARTIFACTS_LOCK
 from clue_api.quality_research_artifacts import ResearchArtifacts
@@ -91,55 +92,6 @@ def test_upload_happens_before_the_project_lock_and_the_lock_is_shared_after(tmp
     run_async(case())
 
 
-def test_derivation_edges_are_one_statement_with_the_same_rows(tmp_path) -> None:
-    async def case() -> None:
-        async with rollback_conn() as conn:
-            fs = FsStorage(tmp_path)
-            op, job, cid = await setup(conn, fs)
-            for i in range(25):
-                await save(conn, fs, op, f"Source body number {i}.", url=f"https://e.test/{i}")
-            parents = set(
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT artifact_key FROM arv2_evidence_source "
-                            "WHERE workspace_id=:ws AND run_id=:run AND account_id=:account"
-                        ),
-                        {"ws": op.workspace_id, "run": op.run_id, "account": op.account_id},
-                    )
-                ).scalars()
-            )
-            statements: list[str] = []
-
-            def count(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
-                if "INSERT INTO artifact_derivation" in statement:
-                    statements.append(statement)
-
-            event.listen(conn.sync_connection, "before_cursor_execute", count)
-            try:
-                ref = await _sink(conn, fs, job, cid).persist_body(
-                    workspace_id=job.workspace_id, data=b'{"y":2}', media_type="application/json"
-                )
-            finally:
-                event.remove(conn.sync_connection, "before_cursor_execute", count)
-            assert len(statements) == 1
-            linked = set(
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT parent_key FROM artifact_derivation "
-                            "WHERE workspace_id=:ws AND child_key=:key"
-                        ),
-                        {"ws": job.workspace_id, "key": ref.artifact_key},
-                    )
-                ).scalars()
-            )
-            assert len(parents) >= 25
-            assert parents <= linked
-
-    run_async(case())
-
-
 def test_a_failed_upload_leaves_no_binding_or_derivation(tmp_path) -> None:
     async def case() -> None:
         async with rollback_conn() as conn:
@@ -147,20 +99,24 @@ def test_a_failed_upload_leaves_no_binding_or_derivation(tmp_path) -> None:
             op, job, cid = await setup(conn, fs)
             await save(conn, fs, op, "Only source.", url="https://e.test/only")
 
-            async def counts() -> tuple[int, int]:
-                bound = (
-                    await conn.execute(
-                        text("SELECT count(*) FROM agent_artifact_project WHERE workspace_id=:ws"),
-                        {"ws": job.workspace_id},
-                    )
-                ).scalar_one()
-                derived = (
-                    await conn.execute(
-                        text("SELECT count(*) FROM artifact_derivation WHERE workspace_id=:ws"),
-                        {"ws": job.workspace_id},
-                    )
-                ).scalar_one()
-                return bound, derived
+            async def counts() -> tuple[int, ...]:
+                tables = (
+                    "agent_artifact_project",
+                    "artifact_derivation",
+                    "artifact_evidence_watermark",
+                    "artifact_context_lineage",
+                )
+                return tuple(
+                    [
+                        (
+                            await conn.execute(
+                                text(f"SELECT count(*) FROM {table} WHERE workspace_id=:ws"),
+                                {"ws": job.workspace_id},
+                            )
+                        ).scalar_one()
+                        for table in tables
+                    ]
+                )
 
             before = await counts()
             sink = _sink(conn, _LockProbeStorage(fs, conn, _scope(job), fail=True), job, cid)

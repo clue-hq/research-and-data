@@ -26,11 +26,12 @@ import contextlib
 import hashlib
 import json
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from langchain_core.messages import ToolMessage
@@ -120,8 +121,6 @@ from clue_api.arv2.media_feeds_client import (
     find_episode,
     is_youtube,
     reject_native_video,
-    youtube_metadata,
-    youtube_words,
 )
 from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.person_compliance import apply_person_floor
@@ -134,8 +133,10 @@ from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
     BufferedRawSink,
+    HeldDrain,
     LedgerStamp,
     drain_provider_calls,
+    hold_drain,
 )
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import (
@@ -214,6 +215,18 @@ PERSON_TOOL_NAMES: tuple[str, ...] = (
 #: concurrent call would defeat the pacing and earn a 429), and media work is measured in minutes of
 #: audio against one enforced ceiling, so two at once would race the reservation.
 _SERIAL_PROVIDERS: frozenset[str] = frozenset({"ai_ark", "media"})
+
+
+@dataclass
+class _Dispatched:
+    """One provider call's buffers and outcome, between dispatch and landing (W1-7)."""
+
+    raw: BufferedRawSink
+    ledger: BufferedLedger
+    result: Any = None
+    error_code: str | None = None
+    error: BaseException | None = None
+
 
 #: How much of a job posting's body the model is shown inline. Enough to judge whether the role is
 #: an ABM/GTM signal; the whole description is on the claim.
@@ -370,6 +383,7 @@ class ToolRuntime:
         now: Callable[[], datetime] = _utcnow,
         storage: StorageBackend | None = None,
         pacing_conn_factory: ConnFactory | None = None,
+        early_gate: asyncio.Semaphore | None = None,
     ) -> None:
         self.storage = storage
         self.scope = scope
@@ -384,6 +398,10 @@ class ToolRuntime:
         # driver's serialized data-connection lock: the hop checks authority and drains
         # receipts through that same data connection before it can finish.
         self._pacing_conn_factory = pacing_conn_factory or conn_factory
+        # W2-15 option B: the work an evidence call does before the worker lock is bounded per
+        # PROCESS — the driver hands every job's runtime the same gate. A runtime built on its
+        # own (tests, tools) gets its own.
+        self._early_gate = early_gate or asyncio.Semaphore(settings.arv2_early_upload_concurrency)
         self._artifacts = artifacts
         self._writer = writer
         self._transport_factory = transport_factory
@@ -392,6 +410,9 @@ class ToolRuntime:
         #: provider → why it stopped selling. Job-level: once a provider halts, every later call to
         #: it is refused without a wire (master plan §2 item 3 — money truth blocks).
         self.halted: dict[str, str] = {}
+        #: One lock per identical saved request (:meth:`operate`): a second caller waits for the
+        #: first instead of reading its operation while it is still running.
+        self._request_locks: dict[tuple[str, str], asyncio.Lock] = {}
         #: What ``finalize_research`` accepted. Set once; every other tool is closed afterwards.
         self.finalization: dict[str, Any] | None = None
         #: Tool calls this job has made, for the stop policy the driver enforces.
@@ -469,6 +490,7 @@ class ToolRuntime:
         if provider != "ai_ark" or not token:
             return await self._perform_hop(provider, fn, operation)
         started = asyncio.get_running_loop().time()
+        gap = self.settings.arv2_ai_ark_min_gap_s
         while True:
             async with self._pacing_conn_factory() as pacing_conn:
                 won = (
@@ -483,12 +505,15 @@ class ToolRuntime:
                         job_id=str(self.scope.job_id),
                         provider=provider,
                         wait_ms=round((asyncio.get_running_loop().time() - started) * 1000),
-                        cooldown_s=self.settings.arv2_ai_ark_min_gap_s,
+                        cooldown_s=gap,
                     )
+                    if self.settings.arv2_drain_outside_slot:
+                        # The gap runs from the provider's answer; indexing happens inside it.
+                        return await self._perform_hop(provider, fn, operation, cooldown_s=gap)
                     try:
                         return await self._perform_hop(provider, fn, operation)
                     finally:
-                        await asyncio.sleep(self.settings.arv2_ai_ark_min_gap_s)
+                        await asyncio.sleep(gap)
             await asyncio.sleep(0.1)
 
     async def _perform_hop[T](
@@ -496,73 +521,115 @@ class ToolRuntime:
         provider: str,
         fn: Callable[[ProviderCaller], T],
         operation: operations.Operation | None = None,
+        *,
+        cooldown_s: float | None = None,
     ) -> T:
-        async with self._semaphore(provider):
-            raw, ledger = BufferedRawSink(), BufferedLedger()
-            transport = self._transport_factory()
-            if provider == "media_public" and isinstance(transport, HttpxTransport):
-                from clue_api.arv2.media_resolution import PublicMediaTransport
+        """Dispatch under the provider's slot, then land the money trail and the evidence.
 
-                transport = PublicMediaTransport()
-            if provider == "media_youtube" and isinstance(transport, HttpxTransport):
-                from clue_api.arv2.media_recording import YouTubeAudioTransport
-
-                transport = YouTubeAudioTransport()
-            caller = ProviderCaller(
-                transport=transport,
-                raw_sink=raw,
-                ledger=ledger,
-                now=self._now,
-            )
-            self._ledgers[id(caller)] = ledger
-            result = None
-            error_code = None
-            try:
-                if has_capability(self.scope.catalog_version, "committee_discovery"):
-                    async with self._conn_factory() as conn:
-                        available = await operations.job_available(
-                            conn, self.operation_scope, operation.kind if operation else None
-                        )
-                    if not available:
-                        error_code = "privacy_stopped"
-                        raise RefusalError("tool_error", "research authority was withdrawn")
-                if provider in self.halted:
-                    error_code = "provider_halted_pre_dispatch"
-                    raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
-                result = await asyncio.to_thread(fn, caller)
-                return result
-            except ProviderHalted as halted:
-                error_code = "provider_halted"
-                detail = str(halted)
-                self.halted[provider] = detail
-                # Latch the *wire* provider as well as the tool's label for it. One media hop can
-                # spend on OpenRouter, so "OpenRouter is out of credit" learned inside a media call
-                # must also stop the structuring calls, which reach the same account under their
-                # own label. Money truth blocks whoever meets it first.
-                self.halted.setdefault(halted.provider, detail)
-                raise RefusalError(f"provider_halted:{provider}", detail) from halted
-            except BaseException as error:
-                error_code = error_code or type(error).__name__
-                raise
-            finally:
-                self._ledgers.pop(id(caller), None)
-                cost = getattr(result, "cost", None)
-                await self._drain(
-                    raw,
-                    ledger,
-                    operation=operation,
-                    error=error_code,
-                    preferred_row=getattr(cost, "ledger_row_id", None),
-                    semantic_empty=(
-                        provider == "ai_ark"
-                        and result is not None
-                        and (
-                            (hasattr(result, "people") and not result.people)
-                            or (hasattr(result, "numbers") and not result.numbers)
-                            or (hasattr(result, "found") and not result.found)
-                        )
-                    ),
+        With ``arv2_drain_outside_slot`` the slot is freed as soon as the provider answers, so the
+        next call does not wait for this one's indexing (W1-7); otherwise both run inside it.
+        """
+        slot = self._semaphore(provider)
+        await slot.acquire()
+        held = True
+        try:
+            dispatched = await self._dispatch(provider, fn, operation)
+            if self.settings.arv2_drain_outside_slot:
+                slot.release()
+                held = False
+            if cooldown_s is None:
+                await self._land(provider, dispatched, operation)
+            else:
+                landed, _ = await asyncio.gather(
+                    self._land(provider, dispatched, operation),
+                    asyncio.sleep(cooldown_s),
+                    return_exceptions=True,
                 )
+                if isinstance(landed, BaseException):
+                    raise landed
+        finally:
+            if held:
+                slot.release()
+        if dispatched.error is not None:
+            raise dispatched.error
+        return cast(T, dispatched.result)
+
+    async def _dispatch[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None,
+    ) -> _Dispatched:
+        """Call the provider once. Never raises: the outcome, or the error, rides the result."""
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        transport = self._transport_factory()
+        if provider == "media_public" and isinstance(transport, HttpxTransport):
+            from clue_api.arv2.media_resolution import PublicMediaTransport
+
+            transport = PublicMediaTransport()
+        caller = ProviderCaller(
+            transport=transport,
+            raw_sink=raw,
+            ledger=ledger,
+            now=self._now,
+        )
+        self._ledgers[id(caller)] = ledger
+        dispatched = _Dispatched(raw=raw, ledger=ledger)
+        try:
+            if has_capability(self.scope.catalog_version, "committee_discovery"):
+                async with self._conn_factory() as conn:
+                    available = await operations.job_available(
+                        conn, self.operation_scope, operation.kind if operation else None
+                    )
+                if not available:
+                    dispatched.error_code = "privacy_stopped"
+                    raise RefusalError("tool_error", "research authority was withdrawn")
+            if provider in self.halted:
+                dispatched.error_code = "provider_halted_pre_dispatch"
+                raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+            dispatched.result = await asyncio.to_thread(fn, caller)
+        except ProviderHalted as halted:
+            dispatched.error_code = "provider_halted"
+            detail = str(halted)
+            self.halted[provider] = detail
+            # Latch the *wire* provider as well as the tool's label for it. One media hop can
+            # spend on OpenRouter, so "OpenRouter is out of credit" learned inside a media call
+            # must also stop the structuring calls, which reach the same account under their
+            # own label. Money truth blocks whoever meets it first.
+            self.halted.setdefault(halted.provider, detail)
+            refusal = RefusalError(f"provider_halted:{provider}", detail)
+            refusal.__cause__ = halted
+            dispatched.error = refusal
+        except BaseException as error:
+            dispatched.error_code = dispatched.error_code or type(error).__name__
+            dispatched.error = error
+        finally:
+            self._ledgers.pop(id(caller), None)
+        return dispatched
+
+    async def _land(
+        self, provider: str, dispatched: _Dispatched, operation: operations.Operation | None
+    ) -> None:
+        """Drain one dispatched call's raw bodies and ledger rows, then index its evidence."""
+        result = dispatched.result
+        cost = getattr(result, "cost", None)
+        await self._drain(
+            dispatched.raw,
+            dispatched.ledger,
+            provider=provider,
+            operation=operation,
+            error=dispatched.error_code,
+            preferred_row=getattr(cost, "ledger_row_id", None),
+            semantic_empty=(
+                provider == "ai_ark"
+                and result is not None
+                and (
+                    (hasattr(result, "people") and not result.people)
+                    or (hasattr(result, "numbers") and not result.numbers)
+                    or (hasattr(result, "found") and not result.found)
+                )
+            ),
+        )
 
     def _semaphore(self, provider: str) -> asyncio.Semaphore:
         if provider not in self._semaphores:
@@ -598,93 +665,168 @@ class ToolRuntime:
         raw: BufferedRawSink,
         ledger: BufferedLedger,
         *,
+        provider: str | None = None,
         operation: operations.Operation | None = None,
         error: str | None = None,
         preferred_row: str | None = None,
         semantic_empty: bool = False,
     ) -> None:
-        async with self._conn_factory() as conn:
-            report = await drain_provider_calls(
-                conn,
-                raw=raw,
-                ledger=ledger,
-                artifacts=self._artifacts,
-                stamp=LedgerStamp(
-                    workspace_id=self.scope.workspace_id,
-                    project_id=self.scope.project_id,
-                    project_run_id=str(self.scope.project_run_id),
-                    job_id=self.scope.job_id,
-                ),
-            )
+        # W2-20: time the money trail and the evidence indexing that follow every provider call.
+        started = time.monotonic()
+        drain_ms: float | None = None
+        index_ms: float | None = None
+        index_started: float | None = None
+        early_ms: float | None = None
+        stamp = LedgerStamp(
+            workspace_id=self.scope.workspace_id,
+            project_id=self.scope.project_id,
+            project_run_id=str(self.scope.project_run_id),
+            job_id=self.scope.job_id,
+        )
+        from clue_api.arv2.quality_acquisition import EarlyUploads
 
-            if (
-                has_capability(self.scope.catalog_version, "committee_discovery")
-                and self.storage is not None
-            ):
-                # Register every attempt, including unselected people and unsuccessful responses.
-                from clue_api.arv2.committee_discovery import index_provider_artifacts
+        held: HeldDrain | None = None
+        early = EarlyUploads()
+        indexed = False
+        try:
+            if self.settings.arv2_upload_outside_lock:
+                # W2-15 option B: store the raw response and the source files BEFORE taking the
+                # worker's database connection, so the lock below covers database work only.
+                # The per-process gate bounds how many calls do this at once (pool, storage).
+                async with self._early_gate:
+                    held = await hold_drain(
+                        raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=stamp
+                    )
+                    if (
+                        has_capability(self.scope.catalog_version, "research_quality")
+                        and self.storage is not None
+                    ):
+                        from clue_api.arv2.quality_acquisition import upload_sources_early
 
-                await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
-            if has_capability(
-                self.scope.catalog_version, "committee_discovery"
-            ) and not await operations.job_available(
-                conn, self.operation_scope, operation.kind if operation else None
-            ):
-                await conn.execute(
-                    text(
-                        "UPDATE artifact SET "
-                        "privacy_erased=true,erasure_reason='privacy',"
-                        "erased_at=now(),source_url=NULL WHERE "
-                        "workspace_id=:ws AND storage_key=ANY(:keys)"
-                    ),
-                    {
-                        "ws": self.scope.workspace_id,
-                        "keys": list(report.raw_artifact_keys.values()),
-                    },
-                )
-            if has_capability(self.scope.catalog_version, "media_research"):
-                from clue_api.arv2.media_operations import attach_receipts
-                from clue_api.arv2.provider_ledger import ledger_id_for
-
-                if operation is not None and operation.kind == "media_discovery":
-                    from clue_api.arv2.media_store import subjects
-
-                    for key in report.raw_artifact_keys.values():
-                        await subjects(self, conn, key, [])
-                await attach_receipts(
-                    self,
-                    conn,
-                    list(report.raw_artifact_keys.values()),
-                    [ledger_id_for(r.row_id) for r in report.result_rows],
-                    error,
-                )
-            if operation is not None:
-                await operations.finish(
-                    conn,
-                    self.operation_scope,
-                    operation,
-                    report.result_rows,
-                    error=error,
-                    preferred_row=preferred_row,
-                    semantic_empty=semantic_empty,
-                )
-        # A failed evidence normalization must never roll back the paid provider ledger.
-        # The separate transaction still completes before a source handle reaches an agent.
-        if has_capability(self.scope.catalog_version, "research_quality"):
+                        early = await upload_sources_early(
+                            self._pacing_conn_factory,
+                            self.storage,
+                            self.operation_scope,
+                            held.result_rows,
+                            held.raw_artifact_keys,
+                            held.raw_bodies,
+                        )
+                early_ms = (time.monotonic() - started) * 1000
             async with self._conn_factory() as conn:
-                from clue_api.arv2.quality_acquisition import index_acquisition
-
-                if self.storage is None:
-                    raise RuntimeError("quality research requires durable source storage")
-                if not await operations.job_available(conn, self.operation_scope):
-                    return
-                await index_acquisition(
+                report = await drain_provider_calls(
                     conn,
-                    self.storage,
-                    self.operation_scope,
-                    report,
-                    operation_id=operation.operation_id if operation else None,
+                    raw=raw,
+                    ledger=ledger,
+                    artifacts=self._artifacts,
+                    stamp=stamp,
+                    held=held,
                 )
+
+                if (
+                    has_capability(self.scope.catalog_version, "committee_discovery")
+                    and self.storage is not None
+                ):
+                    # Register every attempt, including unselected people and unsuccessful
+                    # responses.
+                    from clue_api.arv2.committee_discovery import index_provider_artifacts
+
+                    await index_provider_artifacts(
+                        self, conn, report.raw_artifact_keys.values(), report.raw_bodies
+                    )
+                if has_capability(
+                    self.scope.catalog_version, "committee_discovery"
+                ) and not await operations.job_available(
+                    conn, self.operation_scope, operation.kind if operation else None
+                ):
+                    await conn.execute(
+                        text(
+                            "UPDATE artifact SET "
+                            "privacy_erased=true,erasure_reason='privacy',"
+                            "erased_at=now(),source_url=NULL WHERE "
+                            "workspace_id=:ws AND storage_key=ANY(:keys)"
+                        ),
+                        {
+                            "ws": self.scope.workspace_id,
+                            "keys": list(report.raw_artifact_keys.values()),
+                        },
+                    )
+                if has_capability(self.scope.catalog_version, "media_research"):
+                    from clue_api.arv2.media_operations import attach_receipts
+                    from clue_api.arv2.provider_ledger import ledger_id_for
+
+                    if operation is not None and operation.kind == "media_discovery":
+                        from clue_api.arv2.media_store import subjects
+
+                        for key in report.raw_artifact_keys.values():
+                            await subjects(self, conn, key, [])
+                    await attach_receipts(
+                        self,
+                        conn,
+                        list(report.raw_artifact_keys.values()),
+                        [ledger_id_for(r.row_id) for r in report.result_rows],
+                        error,
+                    )
+                if operation is not None:
+                    await operations.finish(
+                        conn,
+                        self.operation_scope,
+                        operation,
+                        report.result_rows,
+                        error=error,
+                        preferred_row=preferred_row,
+                        semantic_empty=semantic_empty,
+                    )
+            drain_ms = (time.monotonic() - started) * 1000
+            # A failed evidence normalization must never roll back the paid provider ledger.
+            # The separate transaction still completes before a source handle reaches an agent.
+            index_started = time.monotonic()
+            if has_capability(self.scope.catalog_version, "research_quality"):
+                async with self._conn_factory() as conn:
+                    from clue_api.arv2.quality_acquisition import index_acquisition
+
+                    if self.storage is None:
+                        raise RuntimeError("quality research requires durable source storage")
+                    if not await operations.job_available(conn, self.operation_scope):
+                        return
+                    await index_acquisition(
+                        conn,
+                        self.storage,
+                        self.operation_scope,
+                        report,
+                        operation_id=operation.operation_id if operation else None,
+                        uploaded=early.keys,
+                    )
+                indexed = True  # the indexing transaction committed
+        finally:
+            finished = time.monotonic()
+            if early.fresh and not indexed and self.storage is not None:
+                # Review I-1: files put before the lock that indexing never recorded. Only the
+                # ones new to the workspace (N-1); timed and logged on their own (N-3).
+                from clue_api.arv2.quality_acquisition import discard_early_uploads
+
+                discarded = await discard_early_uploads(
+                    self._pacing_conn_factory, self.storage, early.fresh
+                )
+                log.info(
+                    "arv2.early_uploads_discarded",
+                    job_id=str(self.scope.job_id),
+                    provider=provider,
+                    uploaded=len(early.keys),
+                    discarded=len(discarded),
+                    discard_ms=round((time.monotonic() - finished) * 1000, 1),
+                )
+            if index_started is not None:
+                index_ms = (finished - index_started) * 1000
+            log.info(
+                "arv2.drain_completed",
+                job_id=str(self.scope.job_id),
+                provider=provider,
+                operation=operation.kind if operation else None,
+                early_ms=None if early_ms is None else round(early_ms, 1),
+                drain_ms=None if drain_ms is None else round(drain_ms, 1),
+                index_ms=None if index_ms is None else round(index_ms, 1),
+                total_ms=round((finished - started) * 1000, 1),
+            )
 
     @property
     def operation_scope(self) -> operations.OperationScope:
@@ -702,8 +844,31 @@ class ToolRuntime:
         request: Mapping[str, Any],
         fn: Callable[[ProviderCaller], Any],
     ) -> tuple[operations.Operation, dict[str, Any]]:
+        """Make a saved provider request once per job, and return its saved result.
+
+        Identical requests share one saved operation, and two tools can make the same one: run 7
+        (2026-10-12) called ``lookup_company`` and ``discover_people`` in one round, both asked AI
+        Ark for the company, and the people search read the shared operation 45 ms in, while it
+        was still running, and was refused. So a caller waits here for any call of this runtime
+        already making the same request, then reads its saved result; the provider is paid once.
+        An operation left running by another process (a crashed earlier attempt) is still an
+        unknown outcome and is refused, never re-bought.
+        """
         if self.storage is None:
             raise RuntimeError("v2 research requires verified artifact storage")
+        key = (kind, operations.fingerprint(request))
+        lock = self._request_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            return await self._operate(provider, kind, request, fn)
+
+    async def _operate(
+        self,
+        provider: str,
+        kind: str,
+        request: Mapping[str, Any],
+        fn: Callable[[ProviderCaller], Any],
+    ) -> tuple[operations.Operation, dict[str, Any]]:
+        assert self.storage is not None
         async with self._conn_factory() as conn:
             operation, won = await operations.begin(conn, self.operation_scope, kind, request)
         if won:
@@ -719,10 +884,22 @@ class ToolRuntime:
                 raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
             await self.call_provider(provider, fn, operation=operation)
         async with self._conn_factory() as conn:
-            if has_capability(self.scope.catalog_version, "research_quality"):
+            # W2-17: a call that won its operation has just indexed its own result, so the check
+            # only runs on a replay (or when the setting asks); the job's settle runs it once.
+            if has_capability(self.scope.catalog_version, "research_quality") and (
+                not won or self.settings.arv2_recover_on_success
+            ):
                 from clue_api.arv2.quality_acquisition import recover_acquisitions
 
+                started = time.monotonic()
                 await recover_acquisitions(conn, self.storage, self.operation_scope)
+                log.info(
+                    "arv2.acquisition_recovered",
+                    job_id=str(self.scope.job_id),
+                    operation=kind,
+                    replayed=not won,
+                    recover_ms=round((time.monotonic() - started) * 1000, 1),
+                )
             return await operations.body(
                 conn, self.storage, self.operation_scope, operation.operation_id
             )
@@ -1441,7 +1618,13 @@ async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, An
                 else f"search-{runtime.scope.account_domain}",
             ),
         )
-        return {"result_ref": str(operation.operation_id), "n_results": len(raw.get("results", []))}
+        from clue_api.arv2.exa_client import exa_result_rows
+
+        return {
+            "result_ref": str(operation.operation_id),
+            "n_results": len(raw.get("results", [])),
+            "results": exa_result_rows(raw),
+        }
 
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).search(
@@ -1836,36 +2019,20 @@ def _podcast_hop(
 def _youtube_hop(
     runtime: ToolRuntime, args: ReadMediaFeedsArgs, watch_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed.
+    """Retired 2026-10-13: this read YouTube's watch page, which YouTube's terms do not allow.
 
-    The watch page is passed in for the same reason the feed is: the caller owns the candidate
-    order, the hop owns one URL.
+    Spec docs/superpowers/specs/2026-10-13-legitimate-media-sources-design.md §2. The current
+    ``read_media`` tool finds the video's podcast episode or reads it through the official route.
     """
+    del runtime, args, watch_url
 
     def hop(caller: ProviderCaller) -> _MediaItem:
-        reject_native_video(watch_url)
-        meta = youtube_metadata(watch_url, caller)
-        exa = runtime.clients.exa(caller)
-
-        def page_text(urls: Sequence[str]) -> Mapping[str, str]:
-            fetched = exa.contents(list(urls), text_max_chars=_VERIFY_TEXT_MAX_CHARS)
-            return {hit.url: hit.text or "" for hit in fetched.results if hit.url}
-
-        words = youtube_words(watch_url, page_text, title=meta.title)
-        return _MediaItem(
-            kind="youtube",
-            url=watch_url,
-            title=meta.title,
-            duration_s=meta.length_s,
-            transcript_model=None,
-            transcript_text="",
-            # Indexed page text is not attributed speech: nothing here proves the subject said any
-            # of it, so the item is recorded unverified and quotes must come from elsewhere.
-            speaker_verified=False,
-            speaker_evidence="page text is not attributed speech",
-            quotes=(),
-            words=words.text,
-            costs=(meta.cost,),
+        # An existing manual code: the frozen v1-v3 manuals name every code this tool may emit.
+        raise RefusalError(
+            "invalid_arguments",
+            "youtube_url is no longer admitted: YouTube pages are not read directly (2026-10-13). "
+            "Use read_media: it finds the video's podcast episode or reads the public video "
+            "through the official route.",
         )
 
     return hop
@@ -2025,13 +2192,14 @@ async def _research_deep(
                 **person_args, label=f"person-deep-{scope.account_domain}"
             ),
         )
-        from clue_api.arv2.exa_client import read_deep_report
+        from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
 
         report = read_deep_report(raw, text_output=True) or ""
         return {
             "report": report,
             "result_ref": str(operation.operation_id),
             "n_results": len(raw.get("results", [])),
+            "results": exa_result_rows(raw),
             "source_artifact_key": operation.artifact_key,
             "source_from_saved_response": True,
             "gaps": [] if report.strip() else ["deep_report_empty_review_returned_sources"],

@@ -399,6 +399,77 @@ def test_batch_waits_for_all_imports_or_failures_and_scope_is_enforced(tmp_path)
     run_async(case())
 
 
+async def _pin(conn, version, *job_ids):
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET input_refs=input_refs || "
+            "jsonb_build_object('quality_recipe_version',CAST(:v AS int)) WHERE job_id=ANY(:ids)"
+        ),
+        {"v": version, "ids": list(job_ids)},
+    )
+
+
+async def _status(conn, job_id, status):
+    await conn.execute(
+        text("UPDATE arv2_research_job SET status=:s WHERE job_id=:id"),
+        {"s": status, "id": job_id},
+    )
+
+
+def test_recipe_26_gate_waits_for_every_person(tmp_path):
+    async def case():
+        from tests.arv2.test_quality_person_release_db import child_job
+
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, gen, rev, _ = await fixture(conn, tmp_path)
+            await _pin(conn, 26, parent.job_id, child.job_id)
+            # Imported but still researching: the import alone no longer opens the gate.
+            await _status(conn, child.job_id, "in_progress")
+            assert not await pending_continuations(conn)
+            # A privacy-stopped person never settles and must not hold the gate shut.
+            stopped = await child_job(conn, storage, parent, cid, gen, version=26)
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET input_refs=input_refs || "
+                    "jsonb_build_object('privacy_stopped',true) WHERE job_id=:id"
+                ),
+                {"id": stopped.job_id},
+            )
+            await finish_seeded_job(
+                conn,
+                job_id=child.job_id,
+                status="completed",
+                model_rounds=0,
+                tool_calls=0,
+                cost_usd=Decimal(0),
+                credits=Decimal(0),
+                media_seconds=0,
+                finalization={"coverage": {"deferred_pages": ["contact"]}},
+            )
+            pending = await pending_continuations(conn)
+            assert [g.generation_id for g in pending] == [gen.generation_id]
+            # The final step finds the people whose contact page waits for it.
+            from clue_api.arv2.quality_generation import deferred_contact_jobs
+
+            assert await deferred_contact_jobs(
+                conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
+            ) == [child.job_id]
+
+    run_async(case())
+
+
+def test_recipe_25_gate_is_unchanged(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, gen, rev, _ = await fixture(conn, tmp_path)
+            await _pin(conn, 25, parent.job_id, child.job_id)
+            await _status(conn, child.job_id, "in_progress")
+            # As today: the person's import opens the gate before the person settles.
+            assert len(await pending_continuations(conn)) == 1
+
+    run_async(case())
+
+
 @pytest.mark.parametrize("bad_lease", [False, True])
 def test_fleet_routes_to_editor_and_fences_lease(tmp_path, bad_lease, monkeypatch):
     from unittest.mock import AsyncMock

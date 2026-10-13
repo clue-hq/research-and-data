@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from clue_db import db_lifespan
 from clue_storage import (
+    ArtifactIntegrityError,
     FsStorage,
     artifact_key,
     content_address,
@@ -28,6 +29,7 @@ from clue_storage import (
     mark_erased,
     purge_erased_artifacts,
     record_artifact,
+    record_uploaded_artifact,
     retain_artifact,
     sweep_orphan_blobs,
 )
@@ -420,6 +422,149 @@ def test_record_resurrects_an_erased_row() -> None:
             assert revived.artifact_id == record.artifact_id  # same row, resurrected
             assert revived.erased_at is None
             assert revived.purged_at is None
+
+    run_async(scenario())
+
+
+async def _record_uploaded(conn: AsyncConnection, data: bytes, workspace_id: str = "ws_t"):
+    sha = content_address(data)
+    return await record_uploaded_artifact(
+        conn,
+        storage_key=artifact_key(workspace_id, sha),
+        workspace_id=workspace_id,
+        content_sha256=sha,
+        media_type="text/markdown",
+        size_bytes=len(data),
+    )
+
+
+def test_recording_a_blob_put_beforehand_says_when_it_brought_an_erased_row_back() -> None:
+    """W2-15 option B: a writer that uploaded BEFORE recording must upload again, under the row
+    lock, whenever its recording resurrected an erased or purged row — a purge may have deleted
+    the blob between the upload and the recording."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fresh, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is False and fresh.erased_at is None
+
+            live, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is False and live.artifact_id == fresh.artifact_id
+
+            await mark_erased(conn, fresh.storage_key)
+            revived, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is True and revived.erased_at is None
+
+            await mark_erased(conn, fresh.storage_key)
+            await conn.execute(
+                text("UPDATE artifact SET purged_at = now() WHERE storage_key = :k"),
+                {"k": fresh.storage_key},
+            )
+            revived, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is True and revived.purged_at is None
+
+    run_async(scenario())
+
+
+def test_recording_a_blob_put_beforehand_refuses_a_privacy_erased_row() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            record, _ = await _record_uploaded(conn, b"private bytes")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            with pytest.raises(ArtifactIntegrityError):
+                await _record_uploaded(conn, b"private bytes")
+
+    run_async(scenario())
+
+
+def test_the_purge_sweep_removes_a_file_written_back_after_a_privacy_purge(
+    tmp_path: object,
+) -> None:
+    """Review M-4: a writer that uploads before recording (W2-15 option B) can, in a crash
+    window, put bytes back just after their row was privacy-purged. Nothing records them again,
+    and the orphan sweep skips keys that have a row, so the purge sweep re-deletes the files of
+    recently privacy-purged rows (deleting a missing file is a no-op)."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path)  # type: ignore[arg-type]
+        async with rollback_conn() as conn:
+            record = await _record(conn, b"withdrawn person")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now(), purged_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            await storage.put(record.storage_key, b"withdrawn person", media_type="text/markdown")
+            await purge_erased_artifacts(conn, storage)
+            assert not await storage.exists(record.storage_key)
+
+    run_async(scenario())
+
+
+class _CountingDeletes(FsStorage):
+    """Counts deletes per key (review N-2)."""
+
+    def __init__(self, root: object) -> None:
+        super().__init__(root)  # type: ignore[arg-type]
+        self.deleted: dict[str, int] = {}
+
+    async def delete(self, key: str) -> None:
+        self.deleted[key] = self.deleted.get(key, 0) + 1
+        await super().delete(key)
+
+
+def test_a_purge_pass_deletes_each_file_once(tmp_path: object) -> None:
+    """Review N-2: the write-back re-delete skips the files the same pass has just purged."""
+
+    async def scenario() -> None:
+        storage = _CountingDeletes(tmp_path)
+        async with rollback_conn() as conn:
+            record = await _record(conn, b"privacy erased, not yet purged")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            await purge_erased_artifacts(conn, storage)
+            assert storage.deleted[record.storage_key] == 1
+
+    run_async(scenario())
+
+
+def test_the_write_back_check_looks_back_only_to_the_time_it_is_given(tmp_path: object) -> None:
+    """The fleet sweep passes the time of its last run (less a margin), so a longer sweep
+    interval never leaves a gap; rows purged before that time were checked by an earlier pass."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path)  # type: ignore[arg-type]
+        async with rollback_conn() as conn:
+            old = await _record(conn, b"purged three days ago")
+            new = await _record(conn, b"purged an hour ago")
+            for record, age in ((old, timedelta(days=3)), (new, timedelta(hours=1))):
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                        "erased_at=now(), purged_at=now() - CAST(:age AS interval) "
+                        "WHERE storage_key=:k"
+                    ),
+                    {"k": record.storage_key, "age": age},
+                )
+                await storage.put(record.storage_key, b"x", media_type="text/markdown")
+            await purge_erased_artifacts(
+                conn, storage, privacy_purged_since=datetime.now(UTC) - timedelta(days=2)
+            )
+            assert not await storage.exists(new.storage_key)
+            assert await storage.exists(old.storage_key)
 
     run_async(scenario())
 

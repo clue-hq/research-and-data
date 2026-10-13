@@ -40,13 +40,14 @@ from clue_api.arv2.ai_ark_client import (
 )
 from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.claim_writer import WriteReceipt
-from clue_api.arv2.exa_client import read_deep_report
+from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
+from clue_api.arv2.quality_recipe import RECIPE_27, at_least
 from clue_core import ExtractionMethod
 from clue_research.identity.provider import (
     register_provider_subjects,
     resolve_provider_contact,
 )
-from clue_storage import read_verified_artifact
+from clue_storage import read_verified_artifact, verify_artifact_bytes
 
 if TYPE_CHECKING:
     from langchain_core.tools import StructuredTool
@@ -133,20 +134,41 @@ def reference_data(op: operations.Operation, subject: str, parent_job_id: UUID) 
     }
 
 
+def _ai_ark_people(record: Mapping[str, Any]) -> bool:
+    # Companies have IDs too, but are not personal-data subjects.
+    return record.get("provider") == "ai_ark" and "people" in str(record.get("operation", ""))
+
+
 async def index_provider_artifacts(
-    runtime: ToolRuntime, conn: AsyncConnection, keys: Iterable[str]
+    runtime: ToolRuntime,
+    conn: AsyncConnection,
+    keys: Iterable[str],
+    bodies: Mapping[str, bytes] | None = None,
 ) -> None:
+    """Register the people in AI Ark responses as provider subjects.
+
+    ``bodies`` are responses the caller has just stored (key -> bytes, W2-16): a response that is
+    not an AI Ark people result is skipped without a download, and an AI Ark one is checked
+    against its row without one.
+    """
     assert runtime.storage is not None
     for key in keys:
-        _, data = await read_verified_artifact(
-            conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
-        )
+        held = (bodies or {}).get(key)
+        if held is not None:
+            record = json.loads(held).get("record", {})
+            if not _ai_ark_people(record):
+                continue
+            await verify_artifact_bytes(
+                conn, storage_key=key, workspace_id=runtime.scope.workspace_id, data=held
+            )
+            data = held
+        else:
+            _, data = await read_verified_artifact(
+                conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
+            )
         envelope = json.loads(data)
         record = envelope.get("record", {})
-        if record.get("provider") != "ai_ark":
-            continue
-        # Companies have IDs too, but are not personal-data subjects.
-        if "people" not in str(record.get("operation", "")):
+        if not _ai_ark_people(record):
             continue
         try:
             response = json.loads(envelope.get("body_utf8", "null"))
@@ -241,8 +263,12 @@ async def discover_people(runtime: ToolRuntime, args: DiscoverPeopleArgs) -> dic
         )
     except ValueError as error:
         raise RefusalError("invalid_arguments", str(error)) from error
+    # Recipe 27 searches for people in the opening rounds, as its prompt says (it nominates once
+    # the map is built); earlier recipes keep their rule that the account's deep research comes
+    # first.
+    early = at_least(runtime.scope, RECIPE_27)
     async with runtime._conn_factory() as conn:
-        attempted = await operations.deep_attempted(conn, runtime.operation_scope)
+        attempted = early or await operations.deep_attempted(conn, runtime.operation_scope)
     if not attempted:
         raise RefusalError(
             "invalid_arguments",
@@ -548,6 +574,7 @@ def deep_result(
         "report": report,
         "result_ref": str(op.operation_id),
         "n_results": len(raw.get("results", [])),
+        "results": exa_result_rows(raw),
         "source_artifact_key": op.artifact_key,
         "source_from_saved_response": True,
     }
@@ -773,6 +800,28 @@ async def lookup_bound_person(runtime: ToolRuntime, args: Any) -> dict[str, Any]
     }
 
 
+_DISCOVER_PEOPLE_BEFORE_27 = (
+    "Discover unknown people at this exact account through SMART job titles"
+    " after account deep research. Choose role-specific titles, optional "
+    "filters, page and size. Each result is reusable without another "
+    "purchase. Choose this or web search according to the account evidence; "
+    "neither discovery method is only a fallback."
+)
+_DISCOVER_PEOPLE = (
+    "Find people at this exact account by job title, using AI Ark SMART matching. SMART loosens "
+    "wording but not role or seniority, and matches each person's current title only. Send several "
+    "titles per role cluster: titles you have seen in sources, plus short terms for the function "
+    'itself (for example "procurement", "clinical operations", "information security", '
+    '"marketing operations"). Results are saved and reusable without another purchase. Use it '
+    "alongside web research; neither is only a fallback."
+)
+
+
+def discover_people_description(scope: Any) -> str:
+    """The people-search description the agent reads, as its recipe pinned it."""
+    return _DISCOVER_PEOPLE if at_least(scope, RECIPE_27) else _DISCOVER_PEOPLE_BEFORE_27
+
+
 def account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     from clue_api.arv2.account_research_tools import _tool
 
@@ -780,13 +829,7 @@ def account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         _tool(
             runtime,
             name="discover_people",
-            description=(
-                "Discover unknown people at this exact account through SMART job titles"
-                " after account deep research. Choose role-specific titles, optional "
-                "filters, page and size. Each result is reusable without another "
-                "purchase. Choose this or web search according to the account evidence; "
-                "neither discovery method is only a fallback."
-            ),
+            description=discover_people_description(runtime.scope),
             model=DiscoverPeopleArgs,
             body=discover_people,
         ),

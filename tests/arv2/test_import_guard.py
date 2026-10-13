@@ -197,8 +197,6 @@ def test_every_client_return_type_carries_the_cost_of_the_request_behind_it() ->
         ExaAgentRun,
         media_feeds_client.Podcast,
         media_feeds_client.AudioFile,
-        media_feeds_client.YouTubeMeta,
-        media_feeds_client.YouTubeWords,
         gemini_media_client.Transcript,
         gemini_media_client.MinedQuotes,
         gemini_media_client.EmbeddedTranscript,

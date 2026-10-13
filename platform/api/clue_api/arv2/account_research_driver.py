@@ -32,6 +32,8 @@ import asyncio
 import json
 import os
 import re
+import shutil
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -90,6 +92,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
+from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
@@ -97,6 +100,9 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
+from clue_api.arv2.quality_generation import FINAL_PAGE_STEP
+from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
+from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
@@ -107,11 +113,15 @@ from clue_db import ConnFactory, transaction
 from clue_fleet import FleetTaskKind, WorkId, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
+from clue_obs.critical_section import slow_threshold_ms
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.identity import get_account, get_contact
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
 
 log = get_logger("clue_api.arv2.account_research_driver")
+
+#: How long a settling quality job waits for provider calls still landing (as the old lane does).
+_INFLIGHT_LANDING_S = 60.0
 
 __all__ = [
     "ARV2_ACCOUNT_DEDUP_PREFIX",
@@ -502,6 +512,8 @@ class Arv2AccountResearchWorkHandler:
         self._person_catalog_root = person_catalog_root
         self._clock = clock
         self._db_lock = asyncio.Lock()
+        # W2-15 option B: one bound for this process on evidence work done before the lock.
+        self._early_gate = asyncio.Semaphore(settings.arv2_early_upload_concurrency)
         self._jobs = asyncio.Semaphore(settings.arv2_account_max_parallel_jobs)
 
     @property
@@ -874,6 +886,11 @@ class Arv2AccountResearchWorkHandler:
         try:
             if self._page_writer is None:
                 raise RuntimeError("page_writer_not_composed")
+            deferred = (
+                await self._deferred_contacts(scope, generation_id)
+                if at_least(scope, FINAL_PAGE_STEP)
+                else ()
+            )
             async with self._jobs:
                 result = await page_writer_runtime.rewrite_account_pages(
                     conn_factory=leased,
@@ -883,6 +900,7 @@ class Arv2AccountResearchWorkHandler:
                     generation_id=generation_id,
                     revision=revision,
                     models=self._page_writer,
+                    **({"deferred": deferred} if deferred else {}),
                 )
             return WorkResult(outcome="completed", references=cast(dict[str, JsonValue], result))
         except asyncio.CancelledError:
@@ -903,6 +921,23 @@ class Arv2AccountResearchWorkHandler:
                     needs_review=True,
                 )
             return WorkResult(outcome="failed", references={"error": str(error)[:400]})
+
+    async def _deferred_contacts(
+        self, scope: JobScope, generation_id: UUID
+    ) -> tuple[JobScope, ...]:
+        """Recipe 26: the composed scopes of the people whose contact page waits for the
+        generation's final page step."""
+        from clue_api.arv2.quality_generation import deferred_contact_jobs
+
+        scopes: list[JobScope] = []
+        async with self._connection() as conn:
+            for job_id in await deferred_contact_jobs(
+                conn, workspace_id=scope.workspace_id, generation_id=generation_id
+            ):
+                job = await self._store.read_job(conn, job_id=job_id)
+                if job is not None:
+                    scopes.append((await self._compose(conn, job)).scope)
+        return tuple(scopes)
 
     async def sweep_quality(self) -> int:
         """Recover result signals and lost offers; all external effects follow DB commit."""
@@ -1015,8 +1050,15 @@ class Arv2AccountResearchWorkHandler:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
-        async with self._db_lock, self._conn_factory() as conn:
-            yield conn
+        # Every research job in this worker shares this one connection (W2-20: measure the wait
+        # before deciding whether to remove the lock). Logged above CLUE_DB_CRITICAL_SECTION_LOG_MS.
+        started = time.monotonic()
+        async with self._db_lock:
+            waited_ms = (time.monotonic() - started) * 1000
+            if waited_ms >= slow_threshold_ms():
+                log.info("arv2.db_lock_waited", wait_ms=round(waited_ms, 1))
+            async with self._conn_factory() as conn:
+                yield conn
 
     async def _suspend(self, scope: _Scope, *, attempt: int) -> None:
         """Park this attempt's job for requeue. A failure here is logged, never raised into the
@@ -1188,6 +1230,11 @@ class Arv2AccountResearchWorkHandler:
                     objective=composition.task_instruction,
                     model_id=composition.model_id,
                 )
+                # Review I-2: a provider call can still be landing when the agent stops (hops are
+                # shielded from its cancellation). Let it land before the pages are written and the
+                # job settles, so neither runs without its evidence and the settle's recovery
+                # never races the call's own indexing.
+                await runtime.wait_for_inflight(timeout_s=_INFLIGHT_LANDING_S)
                 result = await self._write_pages(composition, result)
             return await self._settle_quality(composition, result)
         if has_capability(composition.scope.catalog_version, "committee_discovery"):
@@ -1262,6 +1309,7 @@ class Arv2AccountResearchWorkHandler:
             clients=_clients_for_job(self._clients, media_budget),
             conn_factory=self._connection,
             pacing_conn_factory=self._conn_factory,
+            early_gate=self._early_gate,
             artifacts=self._artifacts,
             storage=self._storage,
             writer=self._writer,
@@ -1409,6 +1457,10 @@ class Arv2AccountResearchWorkHandler:
                 account_dossier_available=(
                     quality_input_refs["quality_recipe_version"] >= 18
                     and bool(quality_input_refs.get("parent_job_id"))
+                    and (
+                        quality_input_refs["quality_recipe_version"] < RELEASE_AT_NOMINATION
+                        or await parent_dossier_ready(conn, scope)
+                    )
                 ),
             )
             if person_brief
@@ -1812,6 +1864,15 @@ class Arv2AccountResearchWorkHandler:
             or context_id is None
         ):
             return result
+        if scope.person_subject_id and at_least(scope, RELEASE_AT_NOMINATION):
+            from clue_api.arv2 import quality_person_release
+
+            async with self._connection() as conn:
+                imported = await quality_person_release.parent_dossier_ready(conn, scope)
+            if (scope.input_refs or {}).get("parent_job_id") and not imported:
+                # Recipe 26: the account has not imported yet; the account's final page step
+                # writes this contact page.
+                return replace(result, deferred_pages=("contact",))
         if self._page_writer is None:
             log.error("arv2.page_writer_not_composed", job_id=str(scope.job_id))
             return replace(result, status="needs_review", failure_code="page_writer_not_composed")
@@ -1842,10 +1903,35 @@ class Arv2AccountResearchWorkHandler:
             meter = await usage(
                 conn, workspace_id=composition.run.workspace_id, job_id=composition.job.job_id
             )
+            from clue_api.arv2.quality_acquisition import recover_acquisitions
             from clue_api.arv2.quality_coverage import coverage
 
+            # W2-17: evidence calls that indexed their own result skip the recovery check, so it
+            # runs once here — any paid result whose indexing was cut short is indexed before
+            # coverage is measured.
+            if self._storage is not None:
+                started = time.monotonic()
+                await recover_acquisitions(
+                    conn,
+                    self._storage,
+                    OperationScope(
+                        composition.run.workspace_id,
+                        composition.run.run_id,
+                        composition.job.job_id,
+                        composition.job.account_entity_id,
+                    ),
+                )
+                log.info(
+                    "arv2.acquisition_recovered",
+                    job_id=str(composition.job.job_id),
+                    operation="settle",
+                    replayed=False,
+                    recover_ms=round((time.monotonic() - started) * 1000, 1),
+                )
             assert composition.run.context_id is not None
-            measured = await coverage(conn, composition.scope, composition.run.context_id)
+            measured = await coverage(
+                conn, composition.scope, composition.run.context_id, deferred=result.deferred_pages
+            )
             if measured["needs_review"]:
                 status = "needs_review"
             finalization = {
@@ -2334,8 +2420,14 @@ class _LiveClients:
         openrouter_base_url: str,
         media_budget: MediaBudget | None = None,
         deepgram_api_key: SecretStr | None = None,
+        youtube_data_api_key: SecretStr | None = None,
+        podcast_index_api_key: SecretStr | None = None,
+        podcast_index_api_secret: SecretStr | None = None,
     ) -> None:
         self._settings = settings
+        self._youtube_data_api_key = youtube_data_api_key
+        self._podcast_index_api_key = podcast_index_api_key
+        self._podcast_index_api_secret = podcast_index_api_secret
         self._exa_api_key = exa_api_key
         self._ai_ark_api_key = ai_ark_api_key
         self._gemini_api_key = gemini_api_key
@@ -2355,6 +2447,23 @@ class _LiveClients:
             openrouter_base_url=self._openrouter_base_url,
             media_budget=media_budget,
             deepgram_api_key=self._deepgram_api_key,
+            youtube_data_api_key=self._youtube_data_api_key,
+            podcast_index_api_key=self._podcast_index_api_key,
+            podcast_index_api_secret=self._podcast_index_api_secret,
+        )
+
+    @property
+    def transcription_ready(self) -> bool:
+        """Whether recordings can be sent to Deepgram from this worker (a key is configured)."""
+        return _present(self._deepgram_api_key)
+
+    @property
+    def media_source_keys(self) -> MediaSourceKeys:
+        """Keys for the official and public media lookups (spec 2026-10-13 §3 step 2)."""
+        return MediaSourceKeys(
+            youtube_api_key=self._youtube_data_api_key,
+            podcast_index_key=self._podcast_index_api_key,
+            podcast_index_secret=self._podcast_index_api_secret,
         )
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
@@ -2396,6 +2505,8 @@ class _LiveClients:
             media_budget=self._media_budget,
             short_max_seconds=self._settings.arv2_media_short_max_seconds,
             ledger=ledger,
+            video_input_usd_per_1m=self._settings.arv2_media_video_usd_per_m_input,
+            video_output_usd_per_1m=self._settings.arv2_media_video_usd_per_m_output,
         )
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient:
@@ -2457,6 +2568,17 @@ def build_arv2_account_research_handler(
         )
         return None
 
+    lacking = media_lane_missing(secrets)
+    if lacking:
+        log.warning(
+            "arv2.media_lane_degraded",
+            missing=lacking,
+            detail=(
+                "research media on this worker reports these as missing: recordings cannot be "
+                "transcribed without ffmpeg/ffprobe and a Deepgram key, and YouTube links cannot "
+                "be resolved without the YouTube Data API key"
+            ),
+        )
     return Arv2AccountResearchWorkHandler(
         settings=settings,
         conn_factory=conn_factory,
@@ -2468,6 +2590,9 @@ def build_arv2_account_research_handler(
             ai_ark_api_key=_secret(keys["CLUE_AI_ARK_API_KEY"]),
             gemini_api_key=_secret(keys["CLUE_GEMINI_API_KEY"]),
             deepgram_api_key=secrets.deepgram_api_key,
+            youtube_data_api_key=secrets.youtube_data_api_key,
+            podcast_index_api_key=secrets.podcast_index_api_key,
+            podcast_index_api_secret=secrets.podcast_index_api_secret,
             openrouter_api_key=_secret(keys["CLUE_OPENROUTER_API_KEY"]),
             # The OpenRouter URL is gateway policy, read from the config's own default rather than
             # spelled again here: the two ARV2 clients that speak to OpenRouter directly (media,
@@ -2489,6 +2614,16 @@ def build_arv2_account_research_handler(
         # and says so (``arv2.committee_jobs_not_enqueued``).
         queue=queue,
     )
+
+
+def media_lane_missing(secrets: Secrets) -> list[str]:
+    """What this worker lacks for research media (spec 2026-10-13 §4), in a stable order."""
+    missing = [tool for tool in ("ffprobe", "ffmpeg") if shutil.which(tool) is None]
+    if not _present(secrets.deepgram_api_key):
+        missing.append("CLUE_DEEPGRAM_API_KEY")
+    if not _present(secrets.youtube_data_api_key):
+        missing.append("CLUE_YOUTUBE_DATA_API_KEY")
+    return missing
 
 
 def _present(value: SecretStr | None) -> bool:

@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory, ScriptedAgentChatModel, WorkspaceRootPolicy
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2 import quality_acquisition
 from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
 from clue_api.arv2.account_research_launch import launch_arv2_account_research
@@ -67,7 +68,25 @@ def work(job, run, ws):
     )
 
 
-def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tmp_path):
+def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
+    tmp_path, monkeypatch
+):
+    # W2-17: the settle runs the evidence recovery check once for the job, whatever the per-call
+    # setting, so a result whose indexing was cut short is repaired before coverage is measured.
+    #
+    # Review I-2: the agent may stop while a provider call is still landing; the driver waits for
+    # it before the pages are written and the job settles, so neither runs without its evidence.
+    recovered: list = []
+    events: list[str] = []
+    real_recover = quality_acquisition.recover_acquisitions
+
+    async def counting_recover(conn, storage, scope):
+        recovered.append(scope.job_id)
+        events.append("recovered")
+        return await real_recover(conn, storage, scope)
+
+    monkeypatch.setattr(quality_acquisition, "recover_acquisitions", counting_recover)
+
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
@@ -278,6 +297,12 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                     checkpointer_factory=checkpoints,
                 )
                 result = await owner.run(objective=objective)
+
+                async def still_landing():
+                    await asyncio.sleep(0.2)
+                    events.append("landed")
+
+                runtime._inflight.add(asyncio.create_task(still_landing()))
                 return QualityJobOutcome(
                     result.execution_id,
                     result.status.value,
@@ -290,6 +315,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def writer_model(messages, json_mode):
                 writes.append(json_mode)
+                events.append("page")
                 if not json_mode:
                     return "The seller sells account-based marketing."
                 return json.dumps(
@@ -338,6 +364,8 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             )
             jid = launch.job_ids[0]
             result = await handler.handle(work(jid, launch.run_id, fixture.workspace_id))
+            assert recovered == [jid]
+            assert events[0] == "landed", events
             initial = await read_job(conn, job_id=jid)
             # Recipe 25: the researcher finalizes without pages; the driver's page writer
             # writes them (one seller-brief call, one page call) before the job settles.
@@ -370,16 +398,18 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                 stop_requested=asyncio.Event(),
                 lease_lost=asyncio.Event(),
             )
-            # Once the people settle, the account is rewritten by the writer (the seller brief is
-            # reused), not by continuing the researcher.
+            # Once the people settle, the account's pages are the writer's (the seller brief is
+            # reused), not the researcher's. Recipe 26: nothing changed since the first write, so
+            # the revision settles without another model call.
             rewrite = await handler.handle(continuation)
             assert rewrite.outcome == "completed" and rewrite.references["applied"] is True
-            assert writes == [False, True, True]
+            assert rewrite.references["unchanged"] is True
+            assert writes == [False, True]
             overview = await read_page(conn, scopes[0], context_id=run.context_id, page="overview")
             fit = next(
                 s for s in overview["display_block"]["sections"] if s["key"] == "why-they-fit"
             )
-            assert fit["intro"][0]["text"] == "Story 3."
+            assert fit["intro"][0]["text"] == "Story 2."
             assert (await read_job(conn, job_id=jid)).finalization == initial.finalization
             assert (
                 await conn.execute(
@@ -392,7 +422,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             ).scalar_one() == "reconciled"
             # A redelivered continuation is a no-op: no second rewrite, no researcher call.
             assert (await handler.handle(continuation)).outcome == "completed"
-            assert writes == [False, True, True]
+            assert writes == [False, True]
             assert len(calls) == 1
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1

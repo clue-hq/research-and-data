@@ -195,6 +195,9 @@ def test_transcript_speaker_qualification_repair_and_refusal_replay(tmp_path, at
             )
             measured = await coverage(conn, job, context)
             assert measured["missing_pages"] == ["contact"]
+            # Recipe 26: a contact page deferred to the account's final page step is not missing.
+            deferred = await coverage(conn, job, context, deferred=("contact",))
+            assert deferred["missing_pages"] == [] and deferred["deferred_pages"] == ["contact"]
             assert any(
                 r["status"] == "refused" and r["count"] == 1 for r in measured["proposal_outcomes"]
             )
