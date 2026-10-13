@@ -42,6 +42,10 @@ const CSS_OF: Record<Part, string> = {
 const ICON_PARTS = new Set<Part>(["iconColor", "iconTransform", "iconOpacity"]);
 /** A relative asset path: the only font file a face's url("…") may hold. */
 const ASSET_PATH = /^[A-Za-z0-9._~/-]+$/;
+/** The only values a face's font-style and font-weight are written with. */
+const FONT_STYLES = new Set(["normal", "italic", "oblique"]);
+const fontWeightOk = (weight: unknown) =>
+  weight === null || weight === undefined || (typeof weight === "number" && Number.isFinite(weight) && weight >= 1 && weight <= 1000);
 const OUTLINE_PARTS = new Set<Part>(["outlineColor", "outlineWidth", "outlineStyle", "outlineOffset"]);
 type Swap = Partial<Record<"fill" | "label" | "border", string>>;
 type Swaps = { parts: Set<Part>; bySurface: Map<string, Swap> };
@@ -121,9 +125,10 @@ function lookSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: str
 export function themeCss(brand: BrandData): string {
   const lines: string[] = [];
   for (const face of brand.fonts) {
-    // A face's file is written into url("…") only as a relative asset path; otherwise the face is skipped.
+    // A face is written only with a relative asset path for its file, a plain style and a numeric weight;
+    // otherwise the whole face is skipped.
     const family = cssString(face.family);
-    if (!family || !ASSET_PATH.test(face.file)) continue;
+    if (!family || !ASSET_PATH.test(face.file) || !FONT_STYLES.has(face.style) || !fontWeightOk(face.weight)) continue;
     lines.push(`@font-face{font-family:"${family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
   }
 

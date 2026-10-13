@@ -185,6 +185,20 @@ test("E1: a font face whose file is not a relative asset path is skipped whole",
   assert.deepEqual(faces, ['@font-face{font-family:"Probe Sans";src:url("/asset-store/abc123");font-weight:700;font-style:normal;font-display:swap}']);
 });
 
+test("E1: a font face whose style or weight is not a plain CSS value is skipped whole", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  brand.fonts = [
+    { family: "Probe Sans", weight: 400, style: "normal}</style><script>alert(1)</script>", file: "/asset-store/abc123" },
+    { family: "Probe Sans", weight: "400;}</style>" as unknown as number, style: "normal", file: "/asset-store/abc123" },
+    { family: "Probe Sans", weight: 700, style: "italic", file: "/asset-store/abc123" },
+  ];
+  const css = themeCss(brand);
+  assert.doesNotMatch(css, /<\/style/i);
+  assert.doesNotMatch(css, /<script/i);
+  const faces = css.split("\n").filter((line) => line.startsWith("@font-face"));
+  assert.deepEqual(faces, ['@font-face{font-family:"Probe Sans";src:url("/asset-store/abc123");font-weight:700;font-style:italic;font-display:swap}']);
+});
+
 test("E1: a token key outside the engine's token-path charset reaches no selector, variable or class", () => {
   const brand = structuredClone(kitBrand("probe.minted"));
   (brand.kit as FontKit).tokens.colors["surface.x</style>{"] = { value: { default: { kind: "hex", value: "#123456" } } };
