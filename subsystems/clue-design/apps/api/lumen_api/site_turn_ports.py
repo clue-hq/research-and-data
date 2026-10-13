@@ -69,7 +69,7 @@ class PlatformSiteRenderer:
             raise SiteRenderPortError("render.failed", f"the renderer returned no page {route}")
         return page.html, result.css, list(result.warnings)
 
-    def screenshot(self, html: str, css: str, *, width: int) -> bytes:
+    def screenshot(self, html: str, css: str, *, width: int, section_only: bool = False) -> bytes:
         from . import site_render
 
         if self.read_blob is not None:
@@ -77,7 +77,12 @@ class PlatformSiteRenderer:
 
             html, _missing = inline_asset_store_refs(html, self.read_blob, cache=self._inlined)
             css, _missing = inline_asset_store_refs(css, self.read_blob, cache=self._inlined)
-        return site_render.capture_site_screenshot(site_render.RenderedPage(route="/", html=html), css, width=width, full_page=True)
+        return site_render.capture_site_screenshot(
+            site_render.RenderedPage(route="/", html=html), css, width=width, full_page=True,
+            # A shell-less scratch site's one section sits alone inside site-kit's .brand-root (the
+            # theme gives it no min-height), so an element shot of it is the section, cut to size.
+            clip_selector=".brand-root" if section_only else None,
+        )
 
 
 class SiteAssetError(RuntimeError):

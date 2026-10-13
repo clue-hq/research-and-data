@@ -60,8 +60,8 @@ def _fake_site_render(monkeypatch: pytest.MonkeyPatch, calls: list) -> None:
         calls.append(("render_site", base_path, routes, [s.name for s in sections]))
         return SiteRender(pages=[RenderedPage(route=r, html=f"<main>{r}</main>") for r in routes or ["/"]], css="b{}", warnings=["w"])
 
-    def capture_site_screenshot(page, css, *, width, full_page=True):
-        calls.append(("capture", page.html, css, width, full_page))
+    def capture_site_screenshot(page, css, *, width, full_page=True, clip_selector=None):
+        calls.append(("capture", page.html, css, width, full_page, clip_selector))
         return b"png"
 
     module.render_site = render_site
@@ -77,7 +77,43 @@ def test_the_renderer_port_drives_lane_as_render_and_screenshot(monkeypatch: pyt
     renderer = PlatformSiteRenderer()
     assert renderer.render({"pages": {}}, {"assets": {}}, [section], route="/analysis") == ("<main>/analysis</main>", "b{}", ["w"])
     assert renderer.screenshot("<main/>", "b{}", width=375) == b"png"
-    assert calls == [("render_site", "", ["/analysis"], ["StepsBand"]), ("capture", "<main/>", "b{}", 375, True)]
+    assert calls == [("render_site", "", ["/analysis"], ["StepsBand"]), ("capture", "<main/>", "b{}", 375, True, None)]
+
+
+def test_a_section_only_screenshot_is_cut_to_the_brand_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """view_clone and compare_section draw one section alone on a shell-less scratch site: its
+    picture is an element shot of site-kit's .brand-root, not the page padded to the viewport."""
+
+    calls: list = []
+    _fake_site_render(monkeypatch, calls)
+    renderer = PlatformSiteRenderer()
+    renderer.screenshot("<main/>", "b{}", width=1440, section_only=True)
+    renderer.screenshot("<main/>", "b{}", width=375)
+    assert [call[5] for call in calls] == [".brand-root", None]
+
+
+def test_a_real_section_only_shot_is_the_section_and_a_full_page_shot_fills_the_viewport() -> None:
+    """Lane A's real renderer and Chromium: one CtaBand on the Garner brand with no shell."""
+
+    from io import BytesIO
+
+    from PIL import Image
+
+    from site_kit_support import chromium_available, ensure_site_kit_dist, garner_brand
+
+    if not chromium_available():
+        pytest.skip("playwright chromium not installed")
+    ensure_site_kit_dist()
+    site = {"id": "doc_scratch", "title": "scratch", "theme": {}, "shell": None, "agent_sections": {},
+            "pages": {"/": {"root": {"props": {"title": "scratch"}}, "content": [{"type": "CtaBand", "props": {
+                "id": "c", "surface": "brand", "heading": "Hello", "buttonLabel": "Book a demo",
+                "buttonHref": "https://seller.example/demo"}}]}}}
+    renderer = PlatformSiteRenderer()
+    html, css, _warnings = renderer.render(site, garner_brand(), [], route="/")
+    section = Image.open(BytesIO(renderer.screenshot(html, css, width=1440, section_only=True)))
+    page = Image.open(BytesIO(renderer.screenshot(html, css, width=1440)))
+    assert 0 < section.height < 900 and section.width <= 1440
+    assert page.height >= 900
 
 
 def test_the_screenshot_gets_images_and_fonts_inlined_first(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,7 +125,7 @@ def test_the_screenshot_gets_images_and_fonts_inlined_first(monkeypatch: pytest.
     digest = "a" * 64
     renderer = PlatformSiteRenderer(read_blob=lambda d: ("image/png", b"\x89PNG"))
     renderer.screenshot(f'<img src="/asset-store/{digest}">', f"@font-face{{src:url(/asset-store/{digest})}}", width=1440)
-    (_, html, css, width, _) = calls[-1]
+    (_, html, css, width, _, _) = calls[-1]
     assert "/asset-store/" not in html and "data:image/png;base64," in html
     assert "/asset-store/" not in css and width == 1440
 

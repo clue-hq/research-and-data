@@ -119,8 +119,8 @@ class FakeRenderer:
             raise error
         return self.html, ".x{}", list(self.warnings)
 
-    def screenshot(self, html, css, *, width):
-        self.calls.append(("screenshot", width))
+    def screenshot(self, html, css, *, width, section_only=False):
+        self.calls.append(("screenshot", width, section_only))
         return self.shot or png("white", (width, 2000))
 
 

@@ -7,12 +7,14 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from lumen_agent.site.inputs import SiteSection
 from lumen_agent.site.tools import SiteTools
 from lumen_agent.site.workspace import materialize_workspace
-from site_fixtures import garner_brand, garner_site, inputs_for
+from lumen_api.site_kit_cli import site_kit_toolchain_missing
+from site_fixtures import FakeAssets, FakeRenderer, garner_brand, garner_site, inputs_for, png
 
 SCHEMA = {"type": "object", "properties": {"id": {"type": "string"}, "surface": {"type": "string"}, "heading": {"type": "string"}}}
 
@@ -24,6 +26,7 @@ class DrawingRenderer:
 
     brand: dict
     calls: list = field(default_factory=list)
+    shots: list = field(default_factory=list)
 
     def render(self, site, brand, sections, *, route):
         (item,) = site["pages"][route]["content"]
@@ -32,7 +35,8 @@ class DrawingRenderer:
             return f"<main>{self.brand['clones'][item['props']['fragmentId']]['html']}</main>", "", []
         return f"<main><h2>{item['props'].get('heading', '')}</h2></main>", "", []
 
-    def screenshot(self, html, css, *, width):
+    def screenshot(self, html, css, *, width, section_only=False):
+        self.shots.append((width, section_only))
         buffer = io.BytesIO()
         Image.new("RGB", (width, 400), "grey" if "<h2>" not in html else "white").save(buffer, format="PNG")
         return buffer.getvalue()
@@ -58,6 +62,7 @@ def test_view_clone_draws_the_section_alone_at_both_widths(tmp_path: Path) -> No
     assert texts[1].startswith("The original at 1440 wide, in 1 part(s)") and texts[2].startswith("The original at 375 wide")
     assert [call[:3] for call in renderer.calls] == [("render", "ClonedSection", None)]
     assert sum(1 for block in blocks if block["type"] == "image") == 2
+    assert renderer.shots == [(1440, True), (375, True)]  # the section cut out, not a viewport-padded page
 
 
 def test_view_clone_names_a_clone_that_does_not_exist(tmp_path: Path) -> None:
@@ -72,6 +77,7 @@ def test_compare_section_scores_the_difference_and_lists_missing_words(tmp_path:
     assert "Words of the original missing from yours: " in summary and "375 wide:" in summary
     rebuilt = [call for call in renderer.calls if call[1] == "HeroRebuilt"]
     assert rebuilt and rebuilt[0][3] == ["HeroRebuilt"]
+    assert renderer.shots and all(section_only for _width, section_only in renderer.shots)
 
 
 def test_compare_section_needs_a_written_component(tmp_path: Path) -> None:
@@ -90,3 +96,14 @@ def test_a_render_that_fails_reads_as_the_spikes_sentence(tmp_path: Path) -> Non
         "Could not compare: the preview did not show both sections. Check that the props fit "
         "HeroRebuilt's schema (catalog/seller-components.md)."
     )
+
+
+@pytest.mark.skipif(site_kit_toolchain_missing() is not None, reason="site-kit toolchain missing")
+def test_render_page_still_shows_the_whole_page(tmp_path: Path) -> None:
+    """Only the R2 tools cut the section out; render_page shows a page as a reader sees it."""
+    renderer = FakeRenderer()
+    workspace = tmp_path / "workspace"
+    inputs = inputs_for(renderer=renderer, assets=FakeAssets(blobs={"a" * 64: ("image/png", png())}))
+    materialize_workspace(workspace, inputs, site=garner_site())
+    SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site(), retry_delay_s=0).render_page("/")
+    assert [call for call in renderer.calls if call[0] == "screenshot"] == [("screenshot", 1440, False), ("screenshot", 375, False)]

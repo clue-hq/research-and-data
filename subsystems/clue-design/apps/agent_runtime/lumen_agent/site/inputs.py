@@ -87,8 +87,9 @@ class SiteRenderPort(Protocol):
     ) -> tuple[str, str, list[str]]:
         """``(sanitized html of route, css, warnings)``; raises with a ``code`` attribute."""
 
-    def screenshot(self, html: str, css: str, *, width: int) -> bytes:
-        """A full-page PNG of rendered HTML at ``width``, network blocked."""
+    def screenshot(self, html: str, css: str, *, width: int, section_only: bool = False) -> bytes:
+        """A full-page PNG of rendered HTML at ``width``, network blocked; with ``section_only``, a
+        PNG of the page's one section alone (a shell-less scratch site), not padded to the viewport."""
 
 
 @dataclass(frozen=True)

@@ -285,7 +285,7 @@ class SiteTools:
 
     def _shot(self, drawn: tuple[str, str], width: int) -> bytes | None:
         try:
-            return self.inputs.renderer.screenshot(drawn[0], drawn[1], width=width)
+            return self.inputs.renderer.screenshot(drawn[0], drawn[1], width=width, section_only=True)
         except Exception:  # noqa: BLE001
             return None
 
