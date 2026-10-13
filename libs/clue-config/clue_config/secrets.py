@@ -125,6 +125,13 @@ class Secrets(BaseSettings):
             "CLUE_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY", "deepgram_api_key"
         ),
     )
+    # Env: CLUE_YOUTUBE_DATA_API_KEY. YouTube Data API v3 ``videos.list``: a video's title,
+    # channel, date, length and whether it is public. Sent as ``x-goog-api-key`` (redacted).
+    youtube_data_api_key: SecretStr | None = None
+    # Env: CLUE_PODCAST_INDEX_API_KEY / CLUE_PODCAST_INDEX_API_SECRET. Podcast Index show search;
+    # without them only Apple's directory is searched.
+    podcast_index_api_key: SecretStr | None = None
+    podcast_index_api_secret: SecretStr | None = None
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).

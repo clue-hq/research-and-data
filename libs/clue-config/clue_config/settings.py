@@ -456,6 +456,18 @@ class Settings(BaseSettings):
     # Above this duration a media item is not eligible for the cheap short-model pass.
     # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
     arv2_media_short_max_seconds: int = 600
+    # Research media from legitimate sources only (spec
+    # docs/superpowers/specs/2026-10-13-legitimate-media-sources-design.md). A public YouTube video
+    # is transcribed by Gemini from its link (Google reads the video, nothing is downloaded) in
+    # back-to-back windows, so a long video is not cut off at one call's output cap.
+    # Env: ``CLUE_ARV2_MEDIA_YOUTUBE_GEMINI_ENABLED`` / ``CLUE_ARV2_MEDIA_GEMINI_WINDOW_SECONDS``.
+    arv2_media_youtube_gemini_enabled: bool = True
+    arv2_media_gemini_window_seconds: int = Field(default=2400, ge=300, le=3600)
+    # Paid-tier price of the video model per million tokens (Gemini 3.5 Flash-Lite, checked
+    # 2026-10-13), so YouTube transcription is priced rather than recorded as unpriced.
+    # Env: ``CLUE_ARV2_MEDIA_VIDEO_USD_PER_M_INPUT`` / ``CLUE_ARV2_MEDIA_VIDEO_USD_PER_M_OUTPUT``.
+    arv2_media_video_usd_per_m_input: Decimal = Field(default=Decimal("0.30"), ge=0)
+    arv2_media_video_usd_per_m_output: Decimal = Field(default=Decimal("2.50"), ge=0)
     # Where the file raw sink and the JSONL ledger write in development and tests (production
     # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``),
     # and — in every environment — where research downloads podcast audio, deleted once
