@@ -5,13 +5,15 @@ local fixture page: CSS hover, press and focus-visible, a script-driven hover, a
 transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
 CSS reveal, a keyframe animation and a scripted animation; and pages that fight the pass — buttons
 that leave the page after they were marked (one replaced by a clone of itself), a pulsing call to
-action, entrances still running, twin pulses a phase apart, cards wrapped in anchors. No network.
+action, entrances still running, twin pulses a phase apart, script-driven (Web Animations) pulses,
+entrances whose end the page handles, cards wrapped in anchors. No network.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import time
 from pathlib import Path
 
@@ -214,8 +216,16 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
 
 
-#: A transform with no offset: none, or the identity an entrance that ends on `transform: none` holds.
-_NO_OFFSET = (None, "matrix(1, 0, 0, 1, 0, 0)")
+def _in_place(transform: str | None) -> bool:
+    """No offset: none, or a translation within a hundredth of a pixel of none. An entrance still
+    running is held one millisecond before its end (FX-C2, so its end handlers do not run): that frame
+    is where it ends to within a sub-pixel residue (`matrix(1, 0, 0, 1, 0, 1.88911e-06)` for the 4 s
+    fade here), never its authored start, 16px down."""
+    if transform is None:
+        return True
+    match = re.fullmatch(r"matrix\((.*)\)", transform)
+    values = [float(value) for value in match.group(1).split(",")] if match else []
+    return len(values) == 6 and values[:4] == [1, 0, 0, 1] and all(abs(value) < 0.01 for value in values[4:])
 
 
 def test_an_entrance_still_running_is_read_where_it_ends() -> None:
@@ -231,7 +241,7 @@ def test_an_entrance_still_running_is_read_where_it_ends() -> None:
         run = asyncio.run(_capture("playwright", fixture="entrance_ctas.html", before_probe=before_probe))
         for key in ("b-slow", "b-late"):
             rest = run["by_id"][key]["rest"]
-            assert rest["opacity"] == 1 and rest["transform"] in _NO_OFFSET, (before_probe, key, rest)
+            assert rest["opacity"] == 1 and _in_place(rest["transform"]), (before_probe, key, rest)
         assert run["by_id"]["b-slow"]["hover"] == {"background": "rgb(3, 90, 78)"}
 
 
@@ -247,6 +257,64 @@ def test_twin_pulses_a_phase_apart_are_one_style_with_one_name() -> None:
         assert [s["shadow"] for s in run["geometry"]["surfaces"] if s["cls"] == "button"] == [None, None]
         assert any(a["name"] == "pulse" for a in run["geometry"]["animations"])
         assert run["by_id"]["b-first"]["rest"]["box_shadow"] is None
+
+
+def test_a_script_driven_pulse_is_not_read_as_a_state() -> None:
+    """Two CTAs pulsing a box-shadow and a scale forever through the Web Animations API (no CSS
+    animation-name: what Framer Motion, GSAP and anime.js produce), a phase apart. Same rule as a CSS
+    pulse: rest is the authored static look, hover is the fill alone, no frame of the pulse becomes a
+    state, and the two are one style with one plain name on every extraction. The pulses run again
+    afterwards."""
+
+    async def pulses_after(page) -> list:
+        return await page.evaluate(
+            "() => ['b-first', 'b-second'].map((id) => document.getElementById(id).getAnimations()"
+            ".map((a) => a.playState))"
+        )
+
+    runs = [asyncio.run(_capture("playwright", fixture="waapi_pulse.html", after_probe=pulses_after))
+            for _ in range(2)]
+    names = [[(name, len(members)) for name, members in shape_groups(run["geometry"]["surfaces"], ("button",))]
+             for run in runs]
+    assert names[0] == names[1] == [("solid.047464", 2)], names
+    for run in runs:
+        assert [s["shadow"] for s in run["geometry"]["surfaces"] if s["cls"] == "button"] == [None, None]
+        first = run["by_id"]["b-first"]
+        assert first["rest"]["box_shadow"] is None and first["rest"]["transform"] is None, first["rest"]
+        assert first["how"] == "pointer", "a still element takes the real pointer"
+        assert first["hover"] == {"background": "rgb(3, 90, 78)"}
+        assert not {"box_shadow", "transform"} & set(first["pressed"]), first["pressed"]
+        assert not {"box_shadow", "transform"} & set(first["disabled"]), first["disabled"]
+        assert run["after"] == [["running"], ["running"]], "the pulses are given back"
+
+
+def test_an_entrance_ending_is_not_caused_by_the_capture() -> None:
+    """Two CTAs still in a slow (20 s) entrance, whose page swaps their fill (`.ready`) when it ENDS:
+    one a CSS animation with an `animationend` handler, one a script animation with a `finish`
+    handler. Each is held at its end frame without being ended, so neither handler runs during the
+    capture and the geometry probe (which names the style) and the state pass (whose rest every state
+    is read against) see the same look."""
+
+    async def ended_after(page) -> list:
+        return await page.evaluate(
+            "() => [window.__ended, document.getElementById('b-css').className,"
+            " document.getElementById('b-script').className]"
+        )
+
+    run = asyncio.run(_capture("playwright", fixture="animationend_side_effect.html", after_probe=ended_after))
+    assert run["after"] == [0, "cta css", "cta script"], "no end handler ran during the capture"
+    fills = {"b-css": "rgb(4, 116, 100)", "b-script": "rgb(40, 36, 30)"}
+    measured = {surface["idx"]: surface for surface in run["geometry"]["surfaces"]}
+    for key, fill in fills.items():
+        record = run["by_id"][key]
+        assert measured[record["idx"]]["bg"] == fill, (key, measured[record["idx"]]["bg"])
+        assert record["rest"]["background"] == fill and record["rest"]["opacity"] == 1, (key, record["rest"])
+    assert run["by_id"]["b-css"]["hover"] == {"background": "rgb(3, 90, 78)"}
+    assert run["by_id"]["b-script"]["hover"] == {"background": "rgb(0, 0, 0)"}
+    styles = {s.variant for s in parse_geometry({**run["geometry"], "states": run["result"]},
+                                                page_url="https://fixture.test/").styles if s.surface == "button"}
+    assert styles == {"solid.047464", "solid.28241e"}, styles
+
 
 def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:
     """Six anchor-wrapped feature cards outnumber the two inline links; the link style is still the

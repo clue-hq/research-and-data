@@ -67,15 +67,27 @@ _CANDIDATES_PER_STYLE = 3
 
 
 #: One motion rule for every look read, shared by this probe's `record` and the state pass's
-#: FREEZE_JS / THAW_JS (states.py), over an element and its first 15 descendants in document order:
-#: a CSS animation that ENDS is finished, so the read is the frame it ends on (a CTA fading in from an
-#: authored `opacity: 0` is read opaque and in place, even while its entrance or its delay is still
-#: running); one that never ends is switched off inline, so the read is the authored static look and
-#: no frame of it (a pulse's halo, a wiggle) is taken for the element's own; transitions are switched
-#: off, so a running one reads its end value. `thawMotion` restores the inline values it changed, and
-#: removes a `style` attribute the freeze created.
-#: Finishing is not undone: both probes run after the screenshot and the captured HTML, and the page
-#: would have reached that frame by itself.
+#: FREEZE_JS / THAW_JS (states.py), over an element and its first 15 descendants in document order.
+#: Each running animation the element carries (`getAnimations()`) is one of three kinds:
+#: - a transition: switched off with `transition: none`, so a running one reads its end value;
+#: - a CSS animation (it has an `animationName`): one that ends is HELD at its end frame, so a CTA
+#:   fading in from an authored `opacity: 0` is read opaque and in place, even while its entrance or its
+#:   delay is still running; one that never ends is switched off with `animation: none` on its node, so
+#:   the read is the authored static look and no frame of it (a pulse's halo, a wiggle) is taken for the
+#:   element's own;
+#: - any other animation, made by a script through the Web Animations API (`el.animate`, what Framer
+#:   Motion and similar libraries produce): one that ends is held at its end frame; one that never ends
+#:   is cancelled for the read (its effect is removed, so the read is the static look).
+#: Holding is `pause()` at one millisecond before the end (`endTime - 1`): the end frame, without
+#: reaching the end, so the page's `animationend` / `finish` handlers never run during a capture (a
+#: handler that swaps a class would otherwise change the look between this probe, which names the
+#: style, and the state pass, which reads its states). An animation that has already finished shows its
+#: end frame and is left alone. An animation that cannot be held falls back: a CSS one is switched off
+#: with its node, a script one is cancelled.
+#: `thawMotion` gives back what the freeze changed: the inline values (and a `style` attribute the
+#: freeze created), and each held or cancelled animation at the time it was at, running again unless it
+#: was paused. The freeze returns the animations themselves, so the thaw touches exactly those, and a
+#: held one the page has cancelled in the meantime stays cancelled.
 FREEZE_MOTION_FN = r"""
   const motionNodes = (el) => {
     const nodes = [el];
@@ -83,21 +95,35 @@ FREEZE_MOTION_FN = r"""
     while (nodes.length < 16 && walker.nextNode()) nodes.push(walker.currentNode);
     return nodes;
   };
+  const endOf = (animation) => (animation.effect ? animation.effect.getComputedTiming().endTime : Infinity);
   const freezeMotion = (el) => motionNodes(el).map((node) => {
-    let endless = false;
-    for (const animation of node.getAnimations()) {
-      if (animation.animationName === undefined) continue;  // a transition: switched off below
-      const end = animation.effect ? animation.effect.getComputedTiming().endTime : Infinity;
-      if (end === Infinity) { endless = true; continue; }
-      try { animation.finish(); } catch (e) { endless = true; }  // a zero playback rate cannot finish
+    const prior = { attribute: node.hasAttribute('style'), values: {}, held: [], cancelled: [] };
+    const moving = node.getAnimations().filter((animation) => !(animation instanceof CSSTransition)
+      && animation.transitionProperty === undefined && animation.playState !== 'finished');
+    let off = moving.some((animation) => animation.animationName !== undefined && endOf(animation) === Infinity);
+    for (const animation of moving) {
+      const css = animation.animationName !== undefined;
+      if (css && off) continue;  // switched off below, with the node's other CSS animations
+      const was = [animation, animation.currentTime, animation.playState === 'paused'];
+      if (endOf(animation) !== Infinity) {
+        prior.held.push(was);
+        try { animation.pause(); animation.currentTime = endOf(animation) - 1; continue; } catch (e) {
+          if (css) { off = true; continue; }
+        }
+      }
+      animation.cancel();
+      prior.cancelled.push(was);
     }
-    const prior = { attribute: node.hasAttribute('style'), values: {} };
-    for (const name of endless ? ['transition', 'animation'] : ['transition']) {
+    for (const name of off ? ['transition', 'animation'] : ['transition']) {
       prior.values[name] = [node.style.getPropertyValue(name), node.style.getPropertyPriority(name)];
       node.style.setProperty(name, 'none', 'important');
     }
     return prior;
   });
+  const resume = ([animation, time, paused]) => {
+    if (time !== null) animation.currentTime = time;
+    if (!paused) animation.play();
+  };
   const thawMotion = (el, priors) => motionNodes(el).forEach((node, i) => {
     const prior = priors[i];
     if (!prior) return;
@@ -106,6 +132,8 @@ FREEZE_MOTION_FN = r"""
     }
     // A style attribute the freeze created goes again once it is empty (an icon's markup is read later).
     if (!prior.attribute && node.getAttribute('style') === '') node.removeAttribute('style');
+    prior.held.forEach((was) => { if (was[0].playState !== 'idle') resume(was); });
+    prior.cancelled.forEach(resume);
   });
 """
 
@@ -157,7 +185,7 @@ GEOMETRY_JS = r"""
   };
 
   // A candidate's look is read with its motion held still (FREEZE_MOTION_FN), and its inline styles
-  // are given back right after the read.
+  // and animations are given back right after the read.
   const record = (el, cls) => {
     const priors = freezeMotion(el);
     try { return look(el, cls); } finally { thawMotion(el, priors); }

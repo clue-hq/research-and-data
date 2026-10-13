@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Entrance end handlers fixture</title>
+<!-- Wave 2 A9 FX-C2 (from the verifier's animationend_side_effect.html): two calls to action whose slow
+     (20 s) entrance is still running when the probes reach them, and whose page swaps their look when
+     the entrance ENDS — one a CSS animation with an `animationend` handler, one a script animation
+     (`el.animate`) with a `finish` handler, each adding `.ready` (a new fill). Holding an entrance at
+     its end frame must not end it: both probes read the look before `.ready`, and no handler runs
+     during the capture. Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .cta { display: inline-flex; padding: 12px 24px; border-radius: 8px; border: 0; color: #fff;
+         font: 500 14px/1.4 Arial; cursor: pointer; }
+  .css { background: #047464; opacity: 0; animation: fade-in 20s ease-out forwards; }
+  .css:hover { background: #035a4e; }
+  .script { background: #28241e; }
+  .script:hover { background: #000; }
+  .cta.ready { background: #7c4cff; }
+  @keyframes fade-in { to { opacity: 1; } }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="cta css" id="b-css">Book now</button>
+    <button class="cta script" id="b-script">See the plans</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+<script>
+  window.__ended = 0;
+  const css = document.getElementById('b-css');
+  css.addEventListener('animationend', () => { css.classList.add('ready'); window.__ended += 1; });
+  const script = document.getElementById('b-script');
+  const entrance = script.animate(
+    [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }],
+    { duration: 20000, easing: 'ease-out', fill: 'forwards' });
+  entrance.onfinish = () => { script.classList.add('ready'); window.__ended += 1; };
+</script>
+</body></html>

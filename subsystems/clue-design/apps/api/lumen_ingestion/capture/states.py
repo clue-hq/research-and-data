@@ -20,13 +20,15 @@ recorded in docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.m
   restored, so the site's `:disabled` / `[aria-disabled]` rules show.
 
 The element and its descendants are held still first, by the one motion rule the geometry probe
-also reads with (`geometry.FREEZE_MOTION_FN`), through the CSSOM (a page CSP cannot block a CSSOM
-write): transitions are switched off, so each read is the state's end look; a CSS animation that ends
-is finished, so an entrance still running (or still in its delay) is read where it ends, never from
-its authored start; one that never ends is switched off, so no frame of it (a pulsing CTA's halo, a
-wiggling icon) is read as a state and the rest look is the authored static look (the animation is
-page motion, captured by the geometry probe). The rest look is read after that. A script-driven
-hover is read every 50 ms until two reads agree. Inline styles are restored afterwards.
+also reads with (`geometry.FREEZE_MOTION_FN`), through the CSSOM and the Web Animations API (a page
+CSP blocks neither): transitions are switched off, so each read is the state's end look; an animation
+that ends, CSS or script-made, is held one millisecond before its end, so an entrance still running
+(or still in its delay) is read where it ends, never from its authored start, and the page's end
+handlers do not run; one that never ends is switched off (CSS) or cancelled (script), so no frame of
+it (a pulsing CTA's halo, a wiggling icon) is read as a state and the rest look is the authored static
+look (the animation is page motion, captured by the geometry probe). The rest look is read after
+that. A script-driven hover is read every 50 ms until two reads agree. Inline styles and animations
+are given back afterwards.
 
 Bounded like the geometry probe, for the same reason (an ingestion is one job among many): at most
 `STATE_TARGET_CAPS` styles, an 8-second wall clock for the whole pass (checked before each style and
@@ -41,6 +43,7 @@ session the pointer hovers are still measured; nothing here can fail a capture.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Any
 
@@ -188,8 +191,9 @@ MOTION_JS = r"""
 """
 
 #: The element held still by the motion rule the geometry probe shares (`FREEZE_MOTION_FN`): an
-#: animation that ends is finished, one that never ends is switched off, transitions are off. Returns
-#: each node's prior inline values for `THAW_JS`, which gives them back (finishing is not undone).
+#: animation that ends is held at its end frame, one that never ends is switched off or cancelled,
+#: transitions are off. Returns each node's prior inline values and the animations it held or
+#: cancelled, kept in the page (`evaluate_handle`) for `THAW_JS`, which gives them back.
 FREEZE_JS = r"""
 (el) => {
 """ + FREEZE_MOTION_FN + r"""
@@ -377,7 +381,7 @@ async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: 
     _in_time(deadline)
     handle = await page.locator(f'[data-lumen-probe="{idx}"]').element_handle(timeout=HOVER_TIMEOUT_MS)
     motion = await handle.evaluate(MOTION_JS)  # reads the transitions, so before they are frozen
-    priors = await handle.evaluate(FREEZE_JS)
+    priors = await handle.evaluate_handle(FREEZE_JS)  # the animations themselves, so the thaw finds them
     try:
         rest = await handle.evaluate(LOOK_JS)
         record: dict[str, Any] = {"idx": idx, "motion": motion, "rest": rest}
@@ -413,6 +417,8 @@ async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: 
             await _restore(handle, ENABLE_JS, prior)
     finally:
         await _restore(handle, THAW_JS, priors)
+        with contextlib.suppress(Exception):
+            await priors.dispose()
     return record
 
 

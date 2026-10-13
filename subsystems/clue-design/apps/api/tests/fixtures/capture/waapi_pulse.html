@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Script-driven pulse fixture</title>
+<!-- Wave 2 A9 FX-C2 (from the verifier's waapi_pulse.html): two identical calls to action, each pulsing
+     a box-shadow and a scale forever through the Web Animations API (`el.animate`, the shape Framer
+     Motion, GSAP and anime.js produce: no CSS animation-name), a phase apart. The pulse is page motion,
+     not the buttons' look: their rest look is the authored static look, the hover is the fill alone,
+     and they are one style with one plain name on every extraction.
+     Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .cta { display: inline-flex; padding: 12px 24px; border-radius: 8px; background: #047464; color: #fff;
+         border: 0; font: 500 14px/1.4 Arial; cursor: pointer; }
+  .cta:hover { background: #035a4e; }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="cta" id="b-first">Book now</button>
+    <button class="cta" id="b-second">Book now</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+<script>
+  const pulse = [
+    { boxShadow: '0 0 0 0 rgba(4, 116, 100, .6)', transform: 'scale(1)' },
+    { boxShadow: '0 0 0 14px rgba(4, 116, 100, 0)', transform: 'scale(1.04)' },
+  ];
+  document.getElementById('b-first').animate(pulse, { duration: 1200, iterations: Infinity, easing: 'ease-in-out', delay: -300 });
+  document.getElementById('b-second').animate(pulse, { duration: 1200, iterations: Infinity, easing: 'ease-in-out', delay: -900 });
+</script>
+</body></html>
