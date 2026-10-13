@@ -123,3 +123,24 @@ scenario `test_a_a_real_site_turn_end_to_end` updated for A9's new brand.md "cla
   layer works; K4-2 is not in this fix pass, and live site runs on trenton may proceed meanwhile.
 - Next: verify S1's report, then S2–S8 two at a time (founder), each reviewed adversarially and
   thoroughly; then one fix pass, each fix test-first, then re-review the fix diffs only.
+
+## 2026-10-14 — S units done; the whole review verified
+- Area review complete: `docs/superpowers/verification/2026-10-14-wave2-area-review-findings.md` (every S
+  finding in plain words, the cross-cutting analysis in seven groups, a suggested fix order, the privacy-sprint
+  list and the unproven suspicions). Companion: the K write-up in the same folder.
+- Before dispatch: a coverage check over all 474 Wave 2 files found ~4k non-test lines in no unit (folded
+  into S3/S5/S6/S7/S2b); S2 split into S2a/S2b; REVIEWER.md gained S-unit rules (no cap, coverage table,
+  verdict per ruling/focus/minor, prove C+I, privacy findings separate). Units ran two at a time, one
+  test-DB user per pair.
+- Totals: S = 60 (3C/18I/39M); with K's 35 open → **95 open (6C/36I/53M)**; K4-2 parked (privacy sprint).
+  Controller re-grades: S2a-1 → Critical (matches S1-1), S5-1 → Important (controller found `require()`
+  inlines host files into a section and render prints them).
+- The six Criticals: K1-1, K3-1 (founder choosing the simple fix), K4-2 (parked), S1-1 (Puck's
+  module-global resolveData cache resets clone slots across pages and saves), S2a-1 (⌘Z in a clone slot runs
+  Puck's own history and saves an old page), S7-1 (Chromium sandbox can't start in the backend container
+  under Docker's default seccomp: smoke.sh blocks every backend release).
+- Blockers before any live walk / merge to main: S2b-2 (React StrictMode disposes the site save controller:
+  NO site save works on any dev stack), S7-1.
+- Next: the founder's calls (K3-1 fix, K1-7 wording, K6-4, S7-1 posture), then one fix pass in the doc's §5
+  order, each fix test-first, then re-review the fix diffs; then the behavioural pass (must publish a site
+  through the real route — S8: no automated test does).
