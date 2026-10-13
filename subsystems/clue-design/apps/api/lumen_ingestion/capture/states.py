@@ -19,15 +19,22 @@ recorded in docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.m
 * disabled — the element's own `disabled` (form controls) or `aria-disabled="true"`, set and
   restored, so the site's `:disabled` / `[aria-disabled]` rules show.
 
-Transitions on the element and its descendants are switched off inline through the CSSOM first (a
-page CSP cannot block a CSSOM write), so each read is the state's end look; a script-driven hover is
-read every 50 ms until two reads agree. Everything is restored afterwards.
+Transitions and running CSS animations on the element and its descendants are switched off inline
+through the CSSOM first (a page CSP cannot block a CSSOM write), so each read is the state's end look
+and no animation frame (a pulsing CTA's halo, a wiggling icon) is read as a state; the rest look is
+read after that, so it is the element's authored static look (its animation is page motion, captured
+by the geometry probe). A finished animation keeps its last frame, which is what the page shows at
+rest. A script-driven hover is read every 50 ms until two reads agree. Everything is restored
+afterwards.
 
 Bounded like the geometry probe, for the same reason (an ingestion is one job among many): at most
-`STATE_TARGET_CAPS` styles, an 8-second wall clock for the whole pass, a 1.2-second pointer attempt,
-a 0.6-second settle, 240 characters per value, 8 transitions per element. Fail-soft: a target that
-throws is skipped; without a CDP session the pointer hovers are still measured; nothing here can fail
-a capture.
+`STATE_TARGET_CAPS` styles, an 8-second wall clock for the whole pass (checked before each style and
+each state; a style it cuts short is dropped whole), a 1.2-second pointer attempt, a 0.6-second
+settle, 240 characters per value, 8 transitions per element. Each element is resolved once, and read
+through that handle: a handle never waits, so an element the page replaced after it was marked (a
+carousel, a re-hydrating framework, a menu re-rendering on hover) fails at once instead of holding
+the pass for the page's default timeout. Fail-soft: a target that throws is skipped; without a CDP
+session the pointer hovers are still measured; nothing here can fail a capture.
 """
 
 from __future__ import annotations
@@ -73,9 +80,12 @@ _TRANSITIONS_FN = r"""
   };
 """
 
-#: One element's look: its box, the element that paints its words, and its icon.
+#: One element's look: its box, the element that paints its words, and its icon. An element that has
+#: left the page throws: a handle evaluates a detached element without complaint, and every value it
+#: computes there is empty.
 LOOK_JS = r"""
 (el) => {
+  if (!el.isConnected) throw new Error('the element has left the page');
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; };
   const cut = (v) => (v === undefined || v === null || v === '') ? null : String(v).slice(0, 240);
   const host = (() => {
@@ -176,18 +186,27 @@ MOTION_JS = r"""
 }
 """
 
+#: Transitions off, and every CSS animation that has not finished (each read would catch another of
+#: its frames); each node's prior inline values are returned for `THAW_JS`. A finished animation is
+#: left on: it holds its last frame, which is the look the page shows at rest (an entrance that fades
+#: a CTA in from an authored `opacity: 0` ends there).
 FREEZE_JS = r"""
 (el) => [el, ...el.querySelectorAll('*')].slice(0, 16).map((node) => {
-  const prior = [node.style.getPropertyValue('transition'), node.style.getPropertyPriority('transition')];
-  node.style.setProperty('transition', 'none', 'important');
+  const moving = node.getAnimations().some((a) => a.animationName !== undefined && a.playState !== 'finished');
+  const prior = {};
+  for (const name of moving ? ['transition', 'animation'] : ['transition']) {
+    prior[name] = [node.style.getPropertyValue(name), node.style.getPropertyPriority(name)];
+    node.style.setProperty(name, 'none', 'important');
+  }
   return prior;
 })
 """
 
 THAW_JS = r"""
 (el, priors) => [el, ...el.querySelectorAll('*')].slice(0, 16).forEach((node, i) => {
-  const [value, priority] = priors[i] || ['', ''];
-  if (value) node.style.setProperty('transition', value, priority); else node.style.removeProperty('transition');
+  for (const [name, [value, priority]] of Object.entries(priors[i] || {})) {
+    if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
+  }
 })
 """
 
@@ -316,12 +335,12 @@ def look_delta(rest: dict, other: dict) -> dict:
     return out
 
 
-async def _settled(locator: Any) -> dict:
+async def _settled(handle: Any) -> dict:
     deadline = time.monotonic() + SETTLE_LIMIT_S
-    previous = await locator.evaluate(LOOK_JS)
+    previous = await handle.evaluate(LOOK_JS)
     while time.monotonic() < deadline:
         await asyncio.sleep(SETTLE_STEP_S)
-        current = await locator.evaluate(LOOK_JS)
+        current = await handle.evaluate(LOOK_JS)
         if current == previous:
             return current
         previous = current
@@ -333,8 +352,8 @@ async def _force(cdp: Any, root: int, idx: int, classes: list[str]) -> None:
     await cdp.send("CSS.forcePseudoState", {"nodeId": node["nodeId"], "forcedPseudoClasses": classes})
 
 
-async def _pointer_away(page: Any, locator: Any) -> None:
-    box = await locator.bounding_box()
+async def _pointer_away(page: Any, handle: Any) -> None:
+    box = await handle.bounding_box()
     viewport = page.viewport_size or {"width": 1440, "height": 900}
     point = (0, 0)
     if box and box["x"] <= 0 <= box["x"] + box["width"] and box["y"] <= 0 <= box["y"] + box["height"]:
@@ -342,41 +361,64 @@ async def _pointer_away(page: Any, locator: Any) -> None:
     await page.mouse.move(*point)
 
 
-async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int) -> dict:
-    locator = page.locator(f'[data-lumen-probe="{idx}"]')
-    motion = await locator.evaluate(MOTION_JS)
-    rest = await locator.evaluate(LOOK_JS)
-    priors = await locator.evaluate(FREEZE_JS)
-    record: dict[str, Any] = {"idx": idx, "motion": motion, "rest": rest}
+class _PastDeadline(Exception):
+    """The pass's wall clock ran out inside a style: the style is dropped whole, never half-measured."""
+
+
+def _in_time(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise _PastDeadline
+
+
+async def _restore(handle: Any, script: str, prior: Any) -> None:
+    """Undo a change to the element. An element that has left the page needs no restoring, and a failed
+    restore must not replace the error that ended the read."""
     try:
+        await handle.evaluate(script, prior)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: float) -> dict:
+    _in_time(deadline)
+    handle = await page.locator(f'[data-lumen-probe="{idx}"]').element_handle(timeout=HOVER_TIMEOUT_MS)
+    motion = await handle.evaluate(MOTION_JS)  # reads the transitions, so before they are frozen
+    priors = await handle.evaluate(FREEZE_JS)
+    try:
+        rest = await handle.evaluate(LOOK_JS)
+        record: dict[str, Any] = {"idx": idx, "motion": motion, "rest": rest}
+        _in_time(deadline)
         try:
-            await locator.hover(timeout=HOVER_TIMEOUT_MS)
-            hover = await _settled(locator)
+            await handle.hover(timeout=HOVER_TIMEOUT_MS)
+            hover = await _settled(handle)
             record["how"] = "pointer"
         except Exception:  # noqa: BLE001 — covered or pointer-proof: read the CSS hover
             if cdp is None:
                 raise
             await _force(cdp, root, idx, ["hover"])
-            hover = await locator.evaluate(LOOK_JS)
+            hover = await handle.evaluate(LOOK_JS)
             await _force(cdp, root, idx, [])
             record["how"] = "forced"
         record["hover"] = look_delta(rest, hover)
         if cdp is not None:
+            _in_time(deadline)
             await _force(cdp, root, idx, ["hover", "active"])
-            record["pressed"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+            record["pressed"] = look_delta(rest, await handle.evaluate(LOOK_JS))
             await _force(cdp, root, idx, [])
-            await _pointer_away(page, locator)
+            await _pointer_away(page, handle)
+            _in_time(deadline)
             await _force(cdp, root, idx, ["focus", "focus-visible"])
-            record["focus"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+            record["focus"] = look_delta(rest, await handle.evaluate(LOOK_JS))
             await _force(cdp, root, idx, [])
-        await _pointer_away(page, locator)
-        prior = await locator.evaluate(DISABLE_JS)
+        await _pointer_away(page, handle)
+        _in_time(deadline)
+        prior = await handle.evaluate(DISABLE_JS)
         try:
-            record["disabled"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+            record["disabled"] = look_delta(rest, await handle.evaluate(LOOK_JS))
         finally:
-            await locator.evaluate(ENABLE_JS, prior)
+            await _restore(handle, ENABLE_JS, prior)
     finally:
-        await locator.evaluate(THAW_JS, priors)
+        await _restore(handle, THAW_JS, priors)
     return record
 
 
@@ -431,7 +473,10 @@ async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None,
                 break
             for idx in candidates:
                 try:
-                    result["styles"].append(await _probe_one(page, cdp, root, idx))
+                    result["styles"].append(await _probe_one(page, cdp, root, idx, deadline))
+                    break
+                except _PastDeadline:  # the style is dropped whole; the check above ends the pass
+                    result["truncated"] = True
                     break
                 except Exception:  # noqa: BLE001 — try the style's next element
                     continue

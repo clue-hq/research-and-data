@@ -3,25 +3,33 @@
 The real probe in headless Chromium — Playwright's and patchright's (the stealth backend's) — over a
 local fixture page: CSS hover, press and focus-visible, a script-driven hover, a transform under a
 transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
-CSS reveal, a keyframe animation and a scripted animation. No network.
+CSS reveal, a keyframe animation and a scripted animation; and pages that fight the pass — buttons
+that leave the page after they were marked, a pulsing call to action. No network.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from pathlib import Path
 
 import pytest
 
 from lumen_ingestion.capture import states as states_module
-from lumen_ingestion.capture.geometry import GEOMETRY_JS
-from lumen_ingestion.capture.states import LOOK_JS, REVEAL_BEFORE_JS, probe_states
+from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry
+from lumen_ingestion.capture.states import LOOK_JS, REVEAL_BEFORE_JS, STATE_PASS_DEADLINE_S, probe_states
 
-FIXTURE = (Path(__file__).resolve().parent / "fixtures" / "capture" / "style_states.html").as_uri()
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "capture"
+
+#: Every marked element's look, in one evaluate: an element that has left the page is simply absent.
+LOOKS_JS = (
+    "() => Object.fromEntries([...document.querySelectorAll('[data-lumen-probe]')]"
+    f".map((el) => [el.dataset.lumenProbe, ({LOOK_JS})(el)]))"
+)
 
 
-async def _capture(engine: str, *, before_probe=None) -> dict:
+async def _capture(engine: str, *, fixture: str = "style_states.html", before_probe=None, after_probe=None) -> dict:
     if engine == "patchright":
         from patchright.async_api import async_playwright
     else:
@@ -34,7 +42,7 @@ async def _capture(engine: str, *, before_probe=None) -> dict:
             pytest.skip(f"{engine} chromium unavailable: {error}")
         try:
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            await page.goto(FIXTURE)
+            await page.goto((FIXTURES / fixture).as_uri())
             reveal_before = await page.evaluate(REVEAL_BEFORE_JS)
             for y in range(0, 4200, 600):
                 await page.evaluate(f"window.scrollTo(0, {y})")
@@ -48,23 +56,23 @@ async def _capture(engine: str, *, before_probe=None) -> dict:
             )
             if before_probe is not None:
                 await before_probe(page)
-            looks_before = {
-                idx: await page.locator(f'[data-lumen-probe="{idx}"]').evaluate(LOOK_JS) for idx in ids
-            }
+            looks_before = await page.evaluate(LOOKS_JS)
             shot_before = hashlib.sha256(await page.screenshot(full_page=True)).hexdigest()
+            started = time.monotonic()
             result = await probe_states(page, geometry, reveal_before=reveal_before, diagnostics=diagnostics)
+            elapsed = time.monotonic() - started
+            after = await after_probe(page) if after_probe is not None else None
             await page.evaluate("window.scrollTo(0, 0)")
-            looks_after = {
-                idx: await page.locator(f'[data-lumen-probe="{idx}"]').evaluate(LOOK_JS) for idx in ids
-            }
+            looks_after = await page.evaluate(LOOKS_JS)
             shot_after = hashlib.sha256(await page.screenshot(full_page=True)).hexdigest()
             clicked = await page.evaluate("window.__clicked || 0")
         finally:
             await browser.close()
     by_id = {ids.get(str(record["idx"])): record for record in result["styles"]}
     return {
-        "geometry": geometry, "result": result, "by_id": by_id, "diagnostics": diagnostics,
-        "same_looks": looks_before == looks_after, "same_shot": shot_before == shot_after, "clicked": clicked,
+        "geometry": geometry, "result": result, "by_id": by_id, "diagnostics": diagnostics, "elapsed": elapsed,
+        "after": after, "same_looks": looks_before == looks_after, "same_shot": shot_before == shot_after,
+        "clicked": clicked,
     }
 
 
@@ -149,3 +157,54 @@ def test_the_pass_stops_at_its_deadline(monkeypatch) -> None:
     run = asyncio.run(_capture("playwright"))
     assert run["result"]["styles"] == [] and run["result"]["truncated"] is True
     assert any(d["code"] == "LUMI0544" for d in run["diagnostics"])
+
+
+def test_a_target_that_leaves_the_page_costs_no_more_than_the_deadline() -> None:
+    """A carousel or a re-hydrating framework replaces a marked element: the pass skips it at once and
+    measures the rest, inside its wall clock (a wait on the vanished element took the page's default
+    timeout, 30 s here and 90 s under the stealth backend)."""
+
+    async def rerender_after_marking(page) -> None:
+        await page.evaluate("window.__rerender(document.getElementById('b-gone'))")
+
+    run = asyncio.run(_capture("playwright", fixture="vanishing_targets.html", before_probe=rerender_after_marking))
+    assert run["elapsed"] < STATE_PASS_DEADLINE_S + 3, f"state pass took {run['elapsed']:.1f}s"
+    assert run["result"]["truncated"] is False
+    stay = run["by_id"]["b-stay"]
+    assert stay["how"] == "pointer" and stay["hover"]["background"] == "rgb(3, 90, 78)"
+    assert run["by_id"]["n-home"]["how"] == "pointer", "the styles after the vanished ones are measured too"
+    # The element re-rendered under the pointer is not measured by half: no record rather than the
+    # empty reads of a detached element.
+    assert "b-gone" not in run["by_id"] and "b-rerender" not in run["by_id"]
+
+
+def test_a_running_animation_is_not_read_as_a_state() -> None:
+    """A pulsing CTA: rest is the authored static look, hover is the fill alone, and no frame of the
+    pulse (its halo, its scale) becomes the rest, hover or disabled look. A CTA that faded in on load
+    is read as it ended, not from its authored `opacity: 0`."""
+
+    async def pulse_after(page) -> list:
+        return await page.evaluate(
+            "() => { const el = document.getElementById('b-pulse');"
+            " return [el.style.cssText, getComputedStyle(el).animationName]; }"
+        )
+
+    run = asyncio.run(_capture("playwright", fixture="animated_cta.html", after_probe=pulse_after))
+    pulse = run["by_id"]["b-pulse"]
+    assert pulse["rest"]["box_shadow"] is None and pulse["rest"]["transform"] is None, pulse["rest"]
+    assert pulse["how"] == "pointer", "a still element takes the real pointer"
+    assert pulse["hover"] == {"background": "rgb(3, 90, 78)"}
+    assert not {"box_shadow", "transform"} & set(pulse["pressed"]), pulse["pressed"]
+    assert not {"box_shadow", "transform"} & set(pulse["disabled"]), pulse["disabled"]
+    assert run["after"] == ["", "pulse"], "the animation is given back"
+
+    styles = {s.variant: s for s in parse_geometry({**run["geometry"], "states": run["result"]},
+                                                    page_url="https://fixture.test/").styles}
+    assert styles["solid.047464"].rest.box_shadow is None and styles["solid.047464"].rest.transform is None
+
+    # An entrance that has finished keeps its last frame (opaque, no offset): the CTA the page shows,
+    # not its authored start (`opacity: 0`, 16px down).
+    fade = run["by_id"]["b-fade"]
+    assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] == "matrix(1, 0, 0, 1, 0, 0)", fade["rest"]
+    assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
+

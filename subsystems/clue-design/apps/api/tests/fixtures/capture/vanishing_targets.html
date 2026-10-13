@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vanishing targets fixture</title>
+<!-- Wave 2 A9 FX-C1: buttons that leave the page after the geometry probe marked them. #b-gone is
+     re-rendered by the test right after marking; #b-rerender re-renders itself the first time the
+     pointer enters it (a menu or carousel re-rendering on hover). A re-render is a fresh element in
+     the old one's place, with the same look and without the probe's mark, as a framework draws it.
+     #b-stay never moves. Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .btn { display: inline-flex; padding: 12px 24px; border-radius: 8px; border: 0; color: #fff;
+         font: 500 14px/1.4 Arial; cursor: pointer; }
+  .stay { background: #047464; }
+  .stay:hover { background: #035a4e; }
+  .rerender { background: #1f4e79; }
+  .rerender:hover { background: #163a5a; }
+  .gone { background: #7c4cff; }
+  .gone:hover { background: #5a2fd6; }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="btn stay" id="b-stay">Stay</button>
+    <button class="btn rerender" id="b-rerender">Re-render on hover</button>
+    <button class="btn gone" id="b-gone">Gone</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+<script>
+  window.__rerender = (el) => {
+    const fresh = document.createElement(el.tagName);
+    fresh.id = el.id; fresh.className = el.className; fresh.textContent = el.textContent;
+    el.replaceWith(fresh);
+  };
+  const target = document.getElementById('b-rerender');
+  target.addEventListener('mouseenter', () => window.__rerender(target), { once: true });
+</script>
+</body></html>
