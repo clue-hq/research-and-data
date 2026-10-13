@@ -1872,7 +1872,8 @@ def test_read_media_feeds_no_longer_reads_youtube_pages() -> None:
         youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
     )
 
-    assert refused["code"] == "youtube_read_retired"
+    assert refused["code"] == "invalid_arguments"
+    assert "read_media" in json.dumps(refused)
     assert clients.media_client.short_calls == []
     assert writer.drafts == []
 

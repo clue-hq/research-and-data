@@ -2027,10 +2027,12 @@ def _youtube_hop(
     del runtime, args, watch_url
 
     def hop(caller: ProviderCaller) -> _MediaItem:
+        # An existing manual code: the frozen v1-v3 manuals name every code this tool may emit.
         raise RefusalError(
-            "youtube_read_retired",
-            "YouTube pages are no longer read directly (2026-10-13). Use read_media: it finds the "
-            "video's podcast episode or reads the public video through the official route.",
+            "invalid_arguments",
+            "youtube_url is no longer admitted: YouTube pages are not read directly (2026-10-13). "
+            "Use read_media: it finds the video's podcast episode or reads the public video "
+            "through the official route.",
         )
 
     return hop
