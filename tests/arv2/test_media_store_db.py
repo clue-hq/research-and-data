@@ -631,6 +631,11 @@ class MediaClients:
 
         return DeepgramMediaClient(caller, SecretStr("fixture"))
 
+    def exa(self, caller):
+        from clue_api.arv2.exa_client import ExaClient
+
+        return ExaClient(caller, SecretStr("fixture"))
+
     def media(self, caller, ledger):
         from pydantic import SecretStr
 
@@ -1105,5 +1110,114 @@ def test_a_chosen_episode_still_uses_its_feed_transcript():
             )
             assert result["state"] == "available"
             assert not any(r.url.endswith(".mp3") for r in wire.requests)
+
+    run_async(scenario())
+
+
+def exa_links(*links, url="https://events.example.com/talk", text="Session page"):
+    return json_response(
+        {
+            "requestId": "exa-links-1",
+            "results": [{"url": url, "id": url, "text": text, "extras": {"links": list(links)}}],
+            "statuses": [{"id": url, "status": "success"}],
+            "costDollars": {"total": 0.001},
+        }
+    )
+
+
+def test_page_recordings_keeps_only_recording_links_in_order():
+    from clue_api.arv2.media_tools import page_recordings
+
+    links = [
+        "https://example.com/about",
+        "https://www.youtube.com/embed/abcdefghijk",
+        "https://cdn.example.com/talk.mp3",
+        "https://podcasts.apple.com/us/podcast/x/id1",
+        "https://www.youtube.com/watch?v=abcdefghijk",
+        "https://www.youtube.com/@channel",
+    ]
+    assert page_recordings(links) == [
+        "https://www.youtube.com/watch?v=abcdefghijk",
+        "https://cdn.example.com/talk.mp3",
+        "https://podcasts.apple.com/us/podcast/x/id1",
+    ]
+
+
+def test_a_blocked_page_is_read_through_exa_and_its_one_recording_is_used():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(403, {"content-type": "text/html"}, b"blocked"),
+                    exa_links("https://cdn.example.com/talk.mp3", "https://example.com/about"),
+                    offline_audio(60),
+                    offline_audio(60),
+                    deepgram_speech("We hire for evidence."),
+                    embeddings(),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/talk", purpose="Blocked page")
+            )
+            assert result["state"] == "available"
+            exa = next(r for r in wire.requests if r.url.endswith("/contents"))
+            assert json.loads(exa.body)["extras"] == {"links": 200}
+
+    run_async(scenario())
+
+
+def test_several_recordings_on_a_blocked_page_go_back_to_the_agent():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(403, {"content-type": "text/html"}, b"blocked"),
+                    exa_links("https://cdn.example.com/a.mp3", "https://cdn.example.com/b.mp3"),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/talk", purpose="Two talks")
+            )
+            assert result["state"] == "ambiguous"
+            assert {c["url"] for c in result["candidates"]} == {
+                "https://cdn.example.com/a.mp3",
+                "https://cdn.example.com/b.mp3",
+            }
+            assert not any(r.url.endswith(".mp3") for r in wire.requests)
+
+    run_async(scenario())
+
+
+def test_a_page_with_no_recording_anywhere_tells_the_agent_where_else_to_look():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(200, {"content-type": "text/html"}, b"<p>Show notes only</p>"),
+                    exa_links("https://example.com/about"),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/notes", purpose="Notes page")
+            )
+            assert result["state"] == "unavailable"
+            assert "no_recording_link_on_page_through_exa" in result["gaps"]
+            assert "fetch_page" in result["next_action"]
+            assert "podcast" in result["next_action"] and "LinkedIn" in result["next_action"]
 
     run_async(scenario())

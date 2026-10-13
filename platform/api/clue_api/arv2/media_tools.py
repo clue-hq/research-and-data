@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID, uuid5
 
 from pydantic import Field, model_validator
@@ -16,9 +18,71 @@ from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.account_research_refusals import RefusalError
 from clue_api.arv2.deepgram_media_client import DeepgramMediaError
 from clue_api.arv2.gemini_media_client import GeminiMediaError
-from clue_api.arv2.media_resolution import Resolution
+from clue_api.arv2.media_resolution import Resolution, unresolved_recording, youtube_url
 from clue_api.arv2.media_types import Candidate, MediaModel
 from clue_api.arv2.research_operations import fingerprint
+
+#: Gaps after which a page is read through Exa: blocked, or no recording in its plain HTML (a
+#: player built by JavaScript). Spec 2026-10-13-legitimate-media-sources-design §3 step 1.
+_RETRY_THROUGH_EXA = (
+    "public source HTTP 401",
+    "public source HTTP 403",
+    "no_supported_recording_link",
+)
+_RECORDING_SUFFIXES = (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac", ".mp4", ".webm", ".mov")
+
+UNAVAILABLE_NEXT_ACTION = (
+    "No transcript obtained through this route; the gaps say which step failed. If the page "
+    "itself prints a transcript, read it with fetch_page. Look for the same recording as a "
+    "podcast episode, on YouTube, or on the event's own page, and pass that link. LinkedIn and X "
+    "video is never read: find the same talk elsewhere. An unrecognised link does not prove the "
+    "recording is unavailable."
+)
+
+
+def page_recordings(links: list[str]) -> list[str]:
+    """Recording links among a page's links, deduplicated (YouTube by video id), in page order."""
+    from clue_api.arv2.media_sources import podcast_links
+
+    found: list[str] = []
+    for link in links:
+        try:
+            yt = youtube_url(link)
+        except ValueError:
+            continue  # a YouTube channel or playlist page, not one recording
+        if yt:
+            found.append(yt[0])
+        elif urlsplit(link).path.lower().endswith(_RECORDING_SUFFIXES) or podcast_links(link):
+            found.append(link)
+    return list(dict.fromkeys(found))
+
+
+async def _resolve_or_gap(runtime: Any, url: str, hint: str | None) -> Resolution:
+    """A page the plain fetch could not read (blocked, refused) is an unavailable resolution
+    carrying the reason, so the Exa fallback below still gets its chance."""
+    try:
+        return await acquisition.resolve_url(runtime, url, hint)
+    except ValueError as exc:
+        return Resolution("unavailable", gaps=(str(exc),))
+
+
+async def _links_through_exa(runtime: Any, url: str) -> list[str]:
+    """A page's links as Exa's crawler sees them (it renders scripts and is rarely blocked)."""
+    from clue_api.arv2.exa_client import contents_body
+
+    body = contents_body([url], text_max_chars=2000, extras={"links": 200})
+    _, raw = await runtime.operate(
+        "exa",
+        "media_page_links",
+        body,
+        lambda caller: runtime.clients.exa(caller).contents(
+            [url], text_max_chars=2000, extras={"links": 200}, label="media.page_links"
+        ),
+    )
+    results = raw.get("results") or []
+    first = results[0] if results and isinstance(results[0], dict) else {}
+    extras = first.get("extras") or {}
+    return [str(link) for link in extras.get("links") or [] if isinstance(link, str)]
 
 
 class DiscoverMediaArgs(MediaModel):
@@ -197,8 +261,28 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                         runtime, Resolution("resolved", (selected,))
                     )
                     if selected and target == url
-                    else await acquisition.resolve_url(runtime, target, args.episode_hint)
+                    else await _resolve_or_gap(runtime, target, args.episode_hint)
                 )
+            if resolved.state in {"unsupported", "unavailable"} and any(
+                gap.startswith(_RETRY_THROUGH_EXA) for gap in resolved.gaps
+            ):
+                recordings = page_recordings(await _links_through_exa(runtime, target))
+                if len(recordings) == 1:
+                    found = await _resolve_or_gap(runtime, recordings[0], args.episode_hint)
+                    resolved = replace(found, gaps=(*resolved.gaps, *found.gaps))
+                elif len(recordings) > 1:
+                    resolved = Resolution(
+                        "ambiguous",
+                        tuple(
+                            unresolved_recording(link, target, ["exa:page_links"])
+                            for link in recordings
+                        ),
+                        gaps=("multiple_explicit_recordings",),
+                    )
+                else:
+                    resolved = replace(
+                        resolved, gaps=(*resolved.gaps, "no_recording_link_on_page_through_exa")
+                    )
             if resolved.state == "ambiguous":
                 candidates = []
                 async with runtime._conn_factory() as conn:
@@ -311,10 +395,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
         "gaps": gaps,
         **({"video": video} if video else {}),
         "source_text_is_untrusted": True,
-        "next_action": "No transcript obtained through this route. Use the reported gaps to "
-        "distinguish recording resolution, retrieval and transcription failures. A publisher "
-        "player, feed, indexed transcript or targeted search may offer a useful alternative; "
-        "an unrecognized recording link does not prove the recording is unavailable.",
+        "next_action": UNAVAILABLE_NEXT_ACTION,
     }
 
 
