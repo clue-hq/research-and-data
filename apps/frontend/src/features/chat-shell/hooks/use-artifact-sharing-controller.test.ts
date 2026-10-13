@@ -9,6 +9,7 @@ import {
   type WebPublishRepository,
 } from "../../design-editor/data/web-publish.repository";
 import { AGENT_RUN_PUBLISH_NOTE } from "../model/agent-run-lock";
+import type { ChatShellArtifactKind } from "../model/chat-shell";
 import {
   pageLinkRows,
   publishWithRepository,
@@ -199,7 +200,12 @@ type SharingController = ReturnType<typeof useArtifactSharingController>["contro
 
 /** Mount the real hook in a DOM (the menu's controller, exactly as the header
  * builds it) and hand back every render's controller. */
-type SharingProps = { publishLocked: boolean; repository: WebPublishRepository };
+type SharingProps = {
+  kind?: ChatShellArtifactKind;
+  publishLocked: boolean;
+  /** Absent: the hook builds its own HTTP seam over the BFF, as the header does. */
+  repository?: WebPublishRepository;
+};
 
 async function withSharingController(
   initial: SharingProps,
@@ -225,9 +231,10 @@ async function withSharingController(
     seen.push(
       useArtifactSharingController({
         documentId: "doc_1",
-        kind: "web",
+        kind: props.kind ?? "web",
+        publishLocked: props.publishLocked,
+        repository: props.repository,
         title: "Spring launch",
-        ...props,
       }).controller,
     );
     return null;
@@ -323,4 +330,40 @@ test("with no run in the way, publishing is unchanged", async () => {
     assert.equal(latest().statusMessage, "Published");
     assert.equal(latest().publishLockNote, null);
   });
+});
+
+test("the Share menu reads and publishes a site through the site routes, and a web page through the web ones", async () => {
+  for (const kind of ["site", "web"] as const) {
+    const calls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${String(input instanceof Request ? input.url : input)}`);
+      const body =
+        method === "POST"
+          ? {
+              custom_page_urls: {},
+              page_urls: { "/": "http://pages.localhost/spring-launch" },
+              routes: ["/"],
+              schema_version: 1,
+              slug: "spring-launch",
+              url: "http://pages.localhost/spring-launch",
+            }
+          : { custom_origin: null, public_origin: "http://pages.localhost", published: false, schema_version: 1 };
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, status: 200 });
+    }) as typeof fetch;
+    try {
+      await withSharingController({ kind, publishLocked: false }, async (latest) => {
+        await act(async () => latest().toggleMenu());
+        await act(async () => latest().publishAsset());
+        assert.equal(latest().publishStatus, "published", kind);
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    const route = `/api/clue/design/documents/doc_1/${kind}/publish`;
+    assert.ok(calls.length >= 2, `${kind}: ${calls.join(" | ")}`);
+    assert.ok(calls.every((call) => call.endsWith(` ${route}`)), `${kind}: ${calls.join(" | ")}`);
+    assert.equal(calls.filter((call) => call.startsWith("POST ")).length, 1, kind);
+  }
 });

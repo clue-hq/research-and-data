@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { designBffConfig } from "@/features/design-editor/data/design-bff";
 import {
   createHttpWebPublishRepository,
+  type PublishKind,
   WebPublishError,
   type WebPublishRepository,
 } from "@/features/design-editor/data/web-publish.repository";
@@ -211,17 +212,21 @@ export function useArtifactSharingController({
   const [view, setView] = useState<ArtifactShareView>("main");
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const httpRepositoryRef = useRef<WebPublishRepository | null>(null);
+  const httpRepositoriesRef = useRef<Partial<Record<PublishKind, WebPublishRepository>>>({});
 
   /** The seam, built lazily: `designBffConfig()` reads `window`, so it may only
-   * run in an event handler or an effect — never during a server render. */
+   * run in an event handler or an effect — never during a server render. A site
+   * publishes through its own routes (the web routes refuse it), so there is
+   * one seam per kind. */
   const resolveRepository = useCallback(() => {
     if (repository) return repository;
-    httpRepositoryRef.current ??= createHttpWebPublishRepository(
+    const publishKind: PublishKind = kind === "site" ? "site" : "web";
+    httpRepositoriesRef.current[publishKind] ??= createHttpWebPublishRepository(
       designBffConfig(),
+      publishKind,
     );
-    return httpRepositoryRef.current;
-  }, [repository]);
+    return httpRepositoriesRef.current[publishKind];
+  }, [kind, repository]);
 
   const publishable = isWebsiteKind(kind) && Boolean(documentId);
 

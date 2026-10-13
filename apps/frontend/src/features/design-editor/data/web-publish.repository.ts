@@ -3,10 +3,11 @@ import {
   fetchWebPublishInfo,
   publishWebDocument,
   unpublishWebSite,
+  type PublishKind,
   type WebPublishState,
 } from "../engine/webDocuments";
 
-export { WebPublishError } from "../engine/webDocuments";
+export { WebPublishError, type PublishKind } from "../engine/webDocuments";
 
 /** What a publish just put on the air.
  *
@@ -117,14 +118,18 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
  *
  * Pass `designBffConfig()` in the browser: `apiBaseUrl` is the page origin and
  * its `fetchImpl` re-mounts every engine URL under `/api/clue/design`, where
- * the proxy stamps the workspace header server-side.
+ * the proxy stamps the workspace header server-side. `kind` picks the
+ * document's own publish and state routes (a site's are `/site/publish`);
+ * unpublish is the same for both.
  */
 export function createHttpWebPublishRepository(
   config: DesignEditorConfig,
+  kind: PublishKind = "web",
 ): WebPublishRepository {
   return {
     async publish(documentId, { noindex, slug }) {
       const result = await publishWebDocument(config, documentId, slug, {
+        kind,
         noindex,
       });
       return {
@@ -146,7 +151,7 @@ export function createHttpWebPublishRepository(
       };
     },
     async state(documentId) {
-      return fetchWebPublishInfo(config, documentId);
+      return fetchWebPublishInfo(config, documentId, kind);
     },
     async unpublish(slug) {
       await unpublishWebSite(config, slug);

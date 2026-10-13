@@ -2070,14 +2070,22 @@ export interface WebPublishState {
   customPageUrls: Record<string, string>;
 }
 
+/** Which publish routes a document uses: a web page publishes through
+ * `/documents/{id}/web/publish`, a Puck site through `/documents/{id}/site/publish`.
+ * The two take the same body and answer the same shapes; each refuses the other
+ * kind (`document.kind_unsupported`). Unpublish and rollback are shared
+ * (`/web/publishes/{slug}`). */
+export type PublishKind = "web" | "site";
+
 /** Read the document's publish state. Throws (with the server message) on any
  * non-2xx so the dialog surfaces it inline. */
 export async function fetchWebPublishInfo(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
-  documentId: string
+  documentId: string,
+  kind: PublishKind = "web"
 ): Promise<WebPublishState> {
   const response = await fetchImpl(
-    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl)
+    new URL(`/documents/${encodeURIComponent(documentId)}/${kind}/publish`, apiBaseUrl)
   );
   if (!response.ok) {
     throw new Error(
@@ -2197,7 +2205,8 @@ export class WebPublishError extends Error {
   }
 }
 
-/** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
+/** Publish (or republish) a website (`POST /documents/{id}/web/publish`, or
+ * `/site/publish` for a Puck site — `options.kind`, see {@link PublishKind}). Pass
  * the desired slug; omit it to let the server keep the current one. A 422 (bad
  * slug) or 409 (slug taken by another document) throws a {@link WebPublishError}
  * with the server's message so the dialog can surface it inline.
@@ -2209,7 +2218,7 @@ export async function publishWebDocument(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
   slug?: string,
-  options: { noindex?: boolean } = {}
+  options: { noindex?: boolean; kind?: PublishKind } = {}
 ): Promise<WebPublishResult> {
   const body: Record<string, unknown> = {};
   if (slug != null && slug.length > 0) {
@@ -2219,7 +2228,7 @@ export async function publishWebDocument(
     body.noindex = options.noindex;
   }
   const response = await fetchImpl(
-    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl),
+    new URL(`/documents/${encodeURIComponent(documentId)}/${options.kind ?? "web"}/publish`, apiBaseUrl),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
