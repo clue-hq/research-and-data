@@ -2,6 +2,13 @@
 // stored kit and clones by the caller (the design API, the agent harness or the editor).
 import type { Clone } from "./clone";
 
+/** One font file of the kit, written as an `@font-face` rule by `themeCss` (theme.ts). `themeCss`
+ * writes a face only when all three of these hold, and otherwise skips the whole face without a
+ * word, so a builder must pass the values in exactly these forms:
+ * - `file` is a relative asset path made only of letters, digits and `. _ ~ / -`
+ *   (`^[A-Za-z0-9._~/-]+$`): no query string (`?v=2`), no `#`, no spaces, no quotes;
+ * - `style` is exactly `normal`, `italic` or `oblique` (not `oblique 10deg`, not `Regular` or `Bold`);
+ * - `weight` is `null` (written as 400) or a finite number from 1 to 1000 (not a string like `"700"`). */
 export type FontFace = { family: string; weight: number | null; style: string; file: string };
 export type BrandAsset = {
   kind: string;
