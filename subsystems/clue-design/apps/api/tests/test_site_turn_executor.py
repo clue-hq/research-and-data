@@ -355,3 +355,37 @@ def test_the_selection_block_follows_the_persons_words(tmp_path, design_storage)
 
     _run(app, store, document, runner, [], prompt="No selection.")
     assert seen["prompt"].endswith("No selection.")
+
+
+def test_a_site_turn_spends_inside_its_own_stamped_scope_and_drains_it(tmp_path, design_storage, _agent_workspace_in_tmp, monkeypatch) -> None:
+    """B7 (Lane B Task 17): the request runs inside a spend scope stamped with its workspace and
+    run, and that scope is drained once when the request ends. Recorded on a run row the way the
+    fleet records it (create → execute → complete), like ``_run``."""
+
+    from uuid import UUID
+
+    from lumen_api import main as api_main
+    from lumen_api import spend
+    from lumen_api.main import execute_site_turn_job
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+    seen: dict = {}
+    drained: list = []
+    monkeypatch.setattr(api_main, "_drain_spend", lambda scope: drained.append(scope))
+
+    def runner(prompt, *, document, workspace, run_id, callbacks):
+        seen["scope"] = spend.current_scope()
+        return SiteTurnResult("applied", "No change.", document["scene"], None, [], [])
+
+    envelope = _envelope(document["id"], store.workspace_id)
+    run_id = str(uuid4())
+    envelope = envelope.model_copy(update={"run_id": run_id, "checkpoint_thread_id": run_id})
+    store.create_run(run_id, document["id"], kind="site_turn", payload={})
+    outcome = execute_site_turn_job(envelope, store=store, host=_host(app, runner), event_sink=lambda *_: None)
+    store.complete_run(run_id, *outcome)
+    assert outcome[0] == "succeeded"
+    assert seen["scope"] is not None and drained == [seen["scope"]]
+    assert seen["scope"].stamp.workspace_id == store.workspace_id
+    assert seen["scope"].stamp.job_id == UUID(run_id)
