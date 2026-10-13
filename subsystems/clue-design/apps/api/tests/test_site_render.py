@@ -9,6 +9,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -434,6 +435,187 @@ def test_a_timed_out_render_leaves_no_browser_behind() -> None:
     while len(_browser_processes()) > len(before) and time.monotonic() < deadline:
         time.sleep(0.1)
     assert len(_browser_processes()) == len(before)
+
+
+# --- Every step of a render is bounded by its time limit ------------------------------------------
+# A section may start a busy loop at any moment: before its render answers, a few milliseconds
+# after, or while the renderer is reading the answer. Each test runs the render on its own thread
+# and waits for it with a join timeout, so a render that hangs fails the test instead of hanging
+# the suite.
+
+SPIN_TIMEOUT_S = 4
+#: Long enough to tell a hang from a slow render; a hang fails the test at this point.
+HANG_AFTER_S = SPIN_TIMEOUT_S + 15
+#: A microtask queued in render() runs once the render has answered and before anything else can
+#: run in the page — before any read can arrive. It swaps the answer's pages for a getter that
+#: never returns, so the busy loop starts inside the renderer's own read of the result. This is
+#: the deterministic form of "a section that spins a few milliseconds after its render".
+SPIN_ON_READ = 'queueMicrotask(() => { Object.defineProperty(window.__clueRender.result, "pages", { get() { for (;;) {} } }); });'
+
+
+class _Bounded:
+    """Runs ``call`` on its own thread; ``outcome(within)`` waits at most ``within`` seconds and
+    returns what the call returned or raised, and how long it took."""
+
+    def __init__(self, call: Callable[[], object]) -> None:
+        self._call = call
+        self._outcome: dict[str, object] = {}
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        started = time.monotonic()
+        try:
+            self._outcome["value"] = self._call()
+        except BaseException as error:  # noqa: BLE001 - the test asserts on it
+            self._outcome["value"] = error
+        self._outcome["elapsed"] = time.monotonic() - started
+
+    def outcome(self, within: float = HANG_AFTER_S) -> tuple[object, float]:
+        self._thread.join(within)
+        assert not self._thread.is_alive(), f"the render was still running after {within:g}s: it hung"
+        return self._outcome["value"], float(self._outcome["elapsed"])  # type: ignore[arg-type]
+
+
+def _assert_timed_out(value: object, elapsed: float, timeout_s: float = SPIN_TIMEOUT_S) -> None:
+    assert isinstance(value, SiteRenderError), value
+    assert (value.code, value.message) == (RENDER_TIMEOUT, f"the site did not render within {timeout_s:g}s")
+    assert elapsed < timeout_s + 3, elapsed
+
+
+def _assert_no_browser_left(before: list[tuple[int, str]]) -> None:
+    deadline = time.monotonic() + 5
+    while len(_browser_processes()) > len(before) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert len(_browser_processes()) == len(before)
+
+
+def _assert_the_next_render_works() -> None:
+    again, _elapsed = _Bounded(lambda: render_site(garner_site("doc_after_spin"), garner_brand(), [], base_path="")).outcome(60)
+    assert not isinstance(again, BaseException), again
+    assert [page.route for page in again.pages] == ["/", "/analysis"]  # type: ignore[attr-defined]
+
+
+def _spinning_section(name: str, spin: str):
+    return hostile(name, f'export function render(props, kit) {{ {spin} return jsx("div", {{ children: "spun" }}); }}\n')
+
+
+@pytest.mark.parametrize(
+    ("spin", "may_be_read_first"),
+    [
+        ("setTimeout(() => { for (;;) {} }, 5);", True),
+        # Runs once the render has answered and before anything else can run: never read first.
+        ("queueMicrotask(() => { for (;;) {} });", False),
+        ("requestAnimationFrame(() => { for (;;) {} });", True),
+    ],
+    ids=["timeout", "microtask", "animation-frame"],
+)
+def test_a_section_that_spins_just_after_its_render_cannot_hang_the_render(spin: str, may_be_read_first: bool) -> None:
+    """The section renders normally and starts a busy loop a moment later. Wherever the loop lands
+    (before the render's answer is seen, or between the reads of it), the render ends at its time
+    limit as a typed timeout, its browser is gone, and the next render in the process works.
+
+    A loop on a timer or an animation frame can, rarely, start only after the renderer has read the
+    whole answer. Then the render has finished, correctly, and the loop dies with the browser; the
+    test accepts that outcome for those two (not seen in 49 timer and animation-frame runs on
+    2026-10-13, but not ruled out)."""
+    before = _browser_processes()
+    site, module = _spinning_section("SpinAfter", spin)
+    value, elapsed = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=SPIN_TIMEOUT_S)).outcome()
+    if may_be_read_first and not isinstance(value, BaseException):
+        assert '<div data-agent-section="SpinAfter"><div>spun</div></div>' in value.pages[0].html  # type: ignore[attr-defined]
+    else:
+        _assert_timed_out(value, elapsed)
+    _assert_no_browser_left(before)
+    _assert_the_next_render_works()
+
+
+def test_a_section_that_spins_while_its_answer_is_read_still_times_out() -> None:
+    """The busy loop starts inside the renderer's read of the result (``SPIN_ON_READ``). That read
+    is bounded by the render's time limit like every other call into the page."""
+    before = _browser_processes()
+    site, module = _spinning_section("SpinOnRead", SPIN_ON_READ)
+    value, elapsed = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=SPIN_TIMEOUT_S)).outcome()
+    _assert_timed_out(value, elapsed)
+    _assert_no_browser_left(before)
+    _assert_the_next_render_works()
+
+
+@pytest.mark.parametrize(
+    ("spin", "may_be_read_first"),
+    [
+        ("setTimeout(() => { for (;;) {} }, 5);", True),
+        # Fires once the module has loaded and the schema has been answered (both happen in the
+        # microtasks right after the module runs), so the loop starts inside the read of it.
+        ('setTimeout(() => { Object.defineProperty(window.__clueRender.result, "props", { get() { for (;;) {} } }); }, 0);', False),
+    ],
+    ids=["timeout", "spin-on-read"],
+)
+def test_read_section_schema_of_a_module_that_spins_after_loading_is_bounded(spin: str, may_be_read_first: bool) -> None:
+    """The same bounds for the compile-time schema read (it runs the same render page). As above,
+    a timer loop may, rarely, start only after the schema has been read: then the read succeeds."""
+    before = _browser_processes()
+    value, elapsed = _Bounded(lambda: read_section_schema(QUOTE_JS + spin + "\n", timeout_s=SPIN_TIMEOUT_S)).outcome()
+    if may_be_read_first and not isinstance(value, BaseException):
+        assert sorted(value["properties"]) == ["id", "quote", "surface"]  # type: ignore[index]
+    else:
+        _assert_timed_out(value, elapsed)
+    _assert_no_browser_left(before)
+
+
+def test_a_spinning_render_does_not_hold_up_a_normal_render_beside_it() -> None:
+    """Two renders at once on two threads: the hostile one (its loop starts while its answer is
+    read) times out at its own limit; the normal one finishes normally within its own."""
+    before = _browser_processes()
+    site, module = _spinning_section("SpinBeside", SPIN_ON_READ)
+    spinning = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=SPIN_TIMEOUT_S))
+    normal = _Bounded(lambda: render_site(garner_site("doc_beside"), garner_brand(), [], base_path="/acme-site", timeout_s=20))
+    rendered, normal_elapsed = normal.outcome()
+    value, elapsed = spinning.outcome()
+    assert not isinstance(rendered, BaseException), rendered
+    assert [page.route for page in rendered.pages] == ["/", "/analysis"]  # type: ignore[attr-defined]
+    assert normal_elapsed < 20, normal_elapsed
+    _assert_timed_out(value, elapsed)
+    _assert_no_browser_left(before)
+
+
+def test_a_javascript_url_that_replaces_the_document_fails_fast() -> None:
+    """A ``javascript:`` URL whose script returns a string replaces the render document with that
+    string, and Chromium reports no navigation for it. The render notices that the page no longer
+    shows the document the shell pinned, and refuses at once and by name, never a stall until
+    ``timeout_s``."""
+    body = (
+        "location.href = \"javascript:'<p>replaced</p>'\";\n"
+        "await new Promise((resolve) => setTimeout(resolve, 400));\n"
+        'export function render(props, kit) { return jsx("div", { children: "replaced" }); }\n'
+    )
+    site, module = hostile("JsUrl", body)
+    value, elapsed = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=20)).outcome(40)
+    assert isinstance(value, SiteRenderError), value
+    assert value.code == RENDER_FAILED
+    assert "a section navigated the render page away" in value.message
+    assert "a section may not navigate or reload the page" in value.message
+    assert elapsed < 5, elapsed
+
+
+@pytest.mark.parametrize(
+    "call",
+    ['document.open(); document.write("<p>x</p>"); document.close();', "location.href = \"javascript:document.write('x')\";"],
+    ids=["document-open-and-write", "javascript-url-that-only-writes"],
+)
+def test_a_section_that_rewrites_the_document_in_place_renders_normally(call: str) -> None:
+    """Ruling 2026-10-13 (Lane A Task 29): ``document.open()``/``write()``, called directly or from
+    a ``javascript:`` URL whose script returns nothing, keeps the same Document and Window and loads
+    nothing. The render's output comes from react-dom/server, not from the DOM, so the render is
+    unaffected: it is neither refused nor warned about. (Only a ``javascript:`` URL that RETURNS a
+    string replaces the document; see the test above.) The wait lets the rewrite land before the
+    render answers."""
+    body = call + '\nawait new Promise((resolve) => setTimeout(resolve, 400));\nexport function render(props, kit) { return jsx("div", { children: "rewritten" }); }\n'
+    site, module = hostile("Rewrite", body)
+    value, elapsed = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=8)).outcome(30)
+    assert not isinstance(value, BaseException), value
+    assert '<div data-agent-section="Rewrite"><div>rewritten</div></div>' in value.pages[0].html  # type: ignore[attr-defined]
+    assert value.warnings == []  # type: ignore[attr-defined]
 
 
 def test_the_sandbox_switch_reaches_the_browser_launch(monkeypatch: pytest.MonkeyPatch) -> None:

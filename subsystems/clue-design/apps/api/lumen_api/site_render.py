@@ -127,7 +127,13 @@ _RENDER_CSP = (
     "font-src 'none'; media-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; "
     "worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'"
 )
-_DONE = "() => { const c = window.__clueRender; return !!c && c.done === true; }"
+#: Polled until the render answers: ``true`` once it has; ``'replaced'`` once the page shows a
+#: document other than the one the shell pinned (a ``javascript:`` URL whose script returns a string
+#: replaces it, and Chromium reports no navigation for that, so only this question catches it).
+_DONE = (
+    "() => { if (window.__clueRenderDocument !== document) return 'replaced';"
+    " const c = window.__clueRender; return !!c && c.done === true; }"
+)
 #: The channel's head, plus the shell's URL-change log (read in the same call, so the reads after
 #: the render answers take no extra round trip).
 _HEAD = (
@@ -163,9 +169,44 @@ _URL_CHANGE_SHIM = (
     " })();"
 )
 #: Whether the main frame still shows the document the shell pinned. Asked through
-#: ``wait_for_function`` (which answers at once, either way) rather than ``evaluate``, because
-#: ``evaluate`` has no time limit and a section may be spinning the page.
+#: ``wait_for_function``, which answers at once either way.
 _SAME_DOCUMENT = "() => window.__clueRenderDocument === document ? 'same' : 'replaced'"
+
+
+class _CloseAtDeadline:
+    """Closes ``page`` at ``deadline`` (``time.monotonic()``), even while this thread is waiting
+    inside a call into it, so that call returns.
+
+    A section may start a busy loop at any moment. A call into the page that is already waiting
+    when the loop starts never gets its answer, and no Playwright timeout fully covers that:
+    ``evaluate`` has no time limit, and ``wait_for_function``'s own timeout still waits on the page
+    to cancel its poll (Playwright 1.61, probed 2026-10-13). Closing the page ends every call into
+    it at once; the browser is closed as usual when the render's block ends.
+
+    The sync API waits on a call by running its asyncio loop on this same thread, so the close is
+    scheduled on that loop (``_loop`` and ``_impl_obj`` are the sync wrapper's private links to it
+    and to the async page). It needs no second thread."""
+
+    def __init__(self, page: Any, deadline: float) -> None:
+        from playwright.sync_api import Error as PlaywrightError
+
+        impl, loop = page._impl_obj, page._loop
+        self.fired = False
+
+        async def close() -> None:
+            try:
+                await impl.close()
+            except PlaywrightError:
+                pass  # closed already: nothing left to stop
+
+        def fire() -> None:
+            self.fired = True
+            loop.create_task(close())
+
+        self._timer = loop.call_at(loop.time() + max(0.0, deadline - time.monotonic()), fire)
+
+    def disarm(self) -> None:
+        self._timer.cancel()
 
 
 @functools.lru_cache(maxsize=4)
@@ -217,6 +258,7 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
     def remaining_ms() -> float:
         return max(1.0, (deadline - time.monotonic()) * 1000)
 
+    closer: _CloseAtDeadline | None = None
     try:
         with hardened_page(javascript=True) as (page, blocked):
             page.set_content(
@@ -236,6 +278,10 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
             #   over and is refused at once and by name.
             # Each move is told apart by asking the page whether it still shows the document the
             # shell pinned. (Not by the input element: the bundle removes it before any section runs.)
+            # One replacement fires no framenavigated at all (a javascript: URL whose script returns
+            # a string), so the poll for the render's answer asks the same question each time.
+            # document.open()/write() keeps the document and loads nothing, and the render's output
+            # does not come from the DOM, so it changes nothing here (ruling 2026-10-13).
             moved: list[str] = []
             hash_changes: list[str] = []
 
@@ -249,19 +295,22 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
                 except PlaywrightTimeout:
                     raise  # the page is busy past the time limit: a timeout, as anywhere else
                 except PlaywrightError:
+                    if closer.fired:
+                        raise  # closed at the deadline: a timeout, not a navigation
                     return False  # the page was mid-navigation: its document is being replaced
                 return handle.json_value() == "same"  # a primitive: no second call to the page
+
+            def navigated_away(where: str) -> SiteRenderError:
+                return SiteRenderError(
+                    RENDER_FAILED, f"a section navigated the render page away ({where}); a section may not navigate or reload the page"
+                )
 
             def refuse_if_moved() -> None:
                 if not moved:
                     return
                 checked = len(moved)
                 if not still_the_render_document():
-                    raise SiteRenderError(
-                        RENDER_FAILED,
-                        f"a section navigated the render page away (to {moved[-1][:160]}); "
-                        "a section may not navigate or reload the page",
-                    )
+                    raise navigated_away(f"to {moved[-1][:160]}")
                 for url in moved[:checked]:
                     fragment = (url[url.index("#") :] if "#" in url else url)[:160]
                     if fragment not in hash_changes and len(hash_changes) < _MAX_URL_CHANGES:
@@ -269,16 +318,22 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
                 del moved[:checked]
 
             page.on("framenavigated", on_navigated)
+            # From here sections run: nothing waits on the page past the deadline (it is closed
+            # then, under whatever call is waiting).
+            closer = _CloseAtDeadline(page, deadline)
             try:
                 page.add_script_tag(content=bundle)
                 while True:
                     refuse_if_moved()
                     try:
-                        page.wait_for_function(_DONE, timeout=min(_NAVIGATION_CHECK_MS, remaining_ms()), polling=50)
+                        answer = page.wait_for_function(_DONE, timeout=min(_NAVIGATION_CHECK_MS, remaining_ms()), polling=50)
                         break
                     except PlaywrightTimeout:
                         if time.monotonic() >= deadline:
                             raise
+                if answer.json_value() == "replaced":  # true or 'replaced': a primitive, no second call
+                    refuse_if_moved()  # a move Chromium reported is named by its URL, as before
+                    raise navigated_away("it replaced the render document")
                 refuse_if_moved()
                 head = page.evaluate(_HEAD)
                 if not isinstance(head, dict) or head.get("nonce") != nonce:
@@ -293,16 +348,19 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
             except PlaywrightTimeout:
                 raise  # the time limit: no time is left to ask the page anything
             except PlaywrightError:
-                refuse_if_moved()  # a call the page moved out from under: name the move, not the call
+                if not closer.fired:
+                    refuse_if_moved()  # a call the page moved out from under: name the move, not the call
                 raise
+            finally:
+                closer.disarm()
             logged = head.get("urlChanges")
             history_changes = json.loads(logged) if isinstance(logged, str) else []
             changes = [("hash", fragment) for fragment in hash_changes] + [(method, url) for method, url in history_changes]
             url_changes = list(dict.fromkeys(_url_change_warning(method, url) for method, url in changes))
             return (result if isinstance(result, dict) else {}), list(blocked), url_changes
-    except PlaywrightTimeout as error:
-        raise SiteRenderError(RENDER_TIMEOUT, f"the site did not render within {timeout_s:g}s") from error
     except PlaywrightError as error:
+        if isinstance(error, PlaywrightTimeout) or (closer is not None and closer.fired):
+            raise SiteRenderError(RENDER_TIMEOUT, f"the site did not render within {timeout_s:g}s") from error
         raise SiteRenderError(RENDER_FAILED, str(error)) from error
     except HardenedBrowserUnavailable as error:
         raise SiteRenderError(RENDER_FAILED, str(error)) from error
