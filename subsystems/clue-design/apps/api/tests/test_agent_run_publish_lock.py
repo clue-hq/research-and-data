@@ -14,9 +14,13 @@ What the lock does NOT cover, each pinned here:
   tool would deadlock the run against itself, the same reason the manual-write lock lives on the
   routes only.
 
-And the ABM batch, which publishes one page per account: an account page the agent is working on is
-that account's failure on the batch manifest — nothing derived onto it, nothing published — while
-every other account publishes as before.
+And the ABM batch, which derives (and may publish) one page per account from a template:
+
+* while the agent works on the TEMPLATE, batch create and resume refuse with the same 409 — every
+  account page would be built from a half-edited template (fix round 1);
+* an account page the agent is working on is that account's failure on the batch manifest, publish
+  or not — nothing derived onto it, nothing published ("no mid-run manual editing, ever"; the
+  re-derive is a person's write) — while every other account carries on as before.
 
 Each scenario runs the real composed app over the Postgres test database, the blob store and (for a
 site) the site-kit bundles and Chromium, through the HTTP routes; the run is a REAL leg run row,
@@ -33,13 +37,13 @@ from fastapi.testclient import TestClient
 from py_lumen_config import settings
 
 from conftest import is_served, make_client, published, published_html
-from lumen_api.design_store import HybridRepository
-from lumen_api.main import abm_derived_document_id, create_app
+from lumen_api.design_store import HybridRepository, NotFoundError
+from lumen_api.main import abm_derived_document_id, create_app, new_id
 from site_kit_support import chromium_available, ensure_site_kit_dist, garner_site_without_clones
 
 from test_abm_batch_publish import _abm_template, _account
 from test_agent_run_write_lock import assert_locked, finish_run, start_leg_run
-from test_site_publish_routes import revisions, save_site, stored, with_home_heading
+from test_site_publish_routes import revisions, save_site, sql, stored, with_home_heading
 from test_web_export import find_node, get_document, seed_document
 
 MARKER = "Marker heading two for Syracuse"
@@ -236,3 +240,122 @@ def test_an_abm_batch_leaves_the_account_page_the_agent_is_working_on_alone(
     # The run is over: the next batch publishes the account page again.
     again = batch()
     assert again[busy]["status"] == "published" and again[busy]["slug"] == busy_slug
+
+
+def test_a_derive_only_abm_batch_never_re_derives_onto_the_account_page_the_agent_is_editing(
+    client: TestClient, workspace_id: str, design_storage, tmp_path: Path
+) -> None:
+    """Fix round 1: the re-derive is a person's write onto the page, so it waits whether or not
+    the batch publishes — the founder's standing "no mid-run manual editing, ever"."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    busy = _account(client, "Goodman Campbell")
+    free = _account(client, "Harbor Sage")
+
+    def derive_only() -> dict[str, dict]:
+        body = ok(
+            client.post(
+                f"/documents/{template}/web/batch",
+                json={"account_ids": [busy, free], "publish": False, "abm": True},
+            )
+        )
+        return {row["account_id"]: row for row in body["manifest"]}
+
+    assert {row["status"] for row in derive_only().values()} == {"derived"}
+    busy_document = abm_derived_document_id(template, busy)
+    free_document = abm_derived_document_id(template, free)
+    repo = HybridRepository()
+    busy_version = repo.require_document(busy_document)["current_version"]
+    free_version = repo.require_document(free_document)["current_version"]
+
+    run_id = start_leg_run(repo, busy_document)
+    try:
+        rows = derive_only()
+        assert rows[busy]["status"] == "failed"
+        assert "document.agent_run_active" in rows[busy]["error"]
+        assert run_id in rows[busy]["error"]
+        # Nothing was written onto the page the agent is editing...
+        assert repo.require_document(busy_document)["current_version"] == busy_version
+        # ...and the other account's page was re-derived as before.
+        assert rows[free]["status"] == "derived"
+        assert repo.require_document(free_document)["current_version"] > free_version
+    finally:
+        finish_run(repo, run_id)
+
+    assert derive_only()[busy]["status"] == "derived"
+    assert repo.require_document(busy_document)["current_version"] > busy_version
+
+
+# --- a batch whose TEMPLATE the agent is working on (fix round 1) ---------------------------------
+
+
+def _batches_of(template: str) -> list[dict]:
+    return sql(
+        "SELECT batch_id FROM design_web_batch WHERE workspace_id = :w AND template_document_id = :t",
+        t=template,
+    )
+
+
+def _derived(template: str, account_id: str) -> bool:
+    try:
+        HybridRepository().require_document(abm_derived_document_id(template, account_id))
+    except NotFoundError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize("publish", [True, False])
+def test_a_batch_cannot_start_while_the_agent_works_on_its_template(
+    client: TestClient, workspace_id: str, design_storage, tmp_path: Path, publish: bool
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Goodman Campbell")
+    body = {"account_ids": [account], "publish": publish, "abm": True}
+    repo = HybridRepository()
+
+    run_id = start_leg_run(repo, template)
+    try:
+        assert_locked(client.post(f"/documents/{template}/web/batch", json=body), run_id)
+        # Refused before anything is derived or written: no account page, no batch row.
+        assert not _derived(template, account)
+        assert _batches_of(template) == []
+    finally:
+        finish_run(repo, run_id)
+
+    row = ok(client.post(f"/documents/{template}/web/batch", json=body))["manifest"][0]
+    assert row["status"] == ("published" if publish else "derived")
+    assert _derived(template, account)
+
+
+def test_a_batch_cannot_resume_while_the_agent_works_on_its_template(
+    client: TestClient, workspace_id: str, design_storage, tmp_path: Path
+) -> None:
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Goodman Campbell")
+    repo = HybridRepository()
+    # A batch left "partial" before its first account, as if the process had been interrupted.
+    batch_id = repo.create_web_batch(
+        {
+            "batch_id": new_id("wbatch"),
+            "template_document_id": template,
+            "template_doc_version": repo.require_document(template)["current_version"],
+            "status": "partial",
+            "account_ids": [account],
+            "publish": True,
+            "slug_base": "abm",
+            "cursor": 0,
+            "manifest": [],
+        }
+    )["batch_id"]
+    before = repo.require_web_batch(batch_id)
+
+    run_id = start_leg_run(repo, template)
+    try:
+        assert_locked(client.post(f"/web/batches/{batch_id}/resume"), run_id)
+        assert repo.require_web_batch(batch_id) == before
+        assert not _derived(template, account)
+    finally:
+        finish_run(repo, run_id)
+
+    resumed = ok(client.post(f"/web/batches/{batch_id}/resume"))
+    assert (resumed["status"], resumed["cursor"]) == ("completed", 1)
+    assert resumed["manifest"][0]["status"] == "published"

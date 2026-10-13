@@ -5807,11 +5807,13 @@ def create_app(
                     existing = repo.require_document(new_document_id)
                 except NotFoundError:
                     existing = None
-            if publish and existing is not None:
-                # Founder ruling 2026-10-13: a person's publish waits while the design agent works
-                # on the document. An account page the agent is editing is THIS account's failure
-                # (the 409 lands on its manifest row through the `except` below), checked before
-                # the re-derive so nothing is written onto the page the agent is editing either.
+            if existing is not None:
+                # The re-derive below is a person's write onto this account's page, so it waits
+                # while the design agent works on the page — publish or not (the founder's
+                # standing "no mid-run manual editing, ever"; and 2026-10-13: a person's publish
+                # waits for the run). An account page the agent is editing is THIS account's
+                # failure: the 409 lands on its manifest row through the `except` below, before
+                # anything is derived onto or published from the page, and the batch carries on.
                 # A fresh document (a first ABM run, every generic run) has no run to wait for.
                 _refuse_if_agent_running(new_document_id, repo)
             result = app.state.core.web_derive(
@@ -5972,6 +5974,10 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
+        # Founder ruling 2026-10-13: every account page is built from this template, so a batch
+        # started while the design agent works on it would copy a half-edited page N times.
+        # Refused before anything is derived or written — no batch row, no account page.
+        _refuse_if_agent_running(document_id, repo)
         # Unknown accounts are NOT pre-validated: a missing account is a
         # per-account failure on its manifest row, never a batch-level error.
         requested_base = (payload.slug_base or "").strip()
@@ -6053,6 +6059,9 @@ def create_app(
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
             return web_batch_response(batch)
+        # The same rule as the create route: the rest of the batch would be derived from a
+        # template the design agent is still editing. Refused with the batch untouched.
+        _refuse_if_agent_running(batch["template_document_id"], repo)
         batch = _process_web_batch(repo, batch)
         return web_batch_response(batch)
 
@@ -8274,11 +8283,18 @@ def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
     scene through is closed while the agent is moving it.
 
     It also guards the two PUBLISH routes — ``POST /documents/{id}/web/publish`` and
-    ``POST /documents/{id}/site/publish`` — and the ABM batch's per-account publish (founder ruling
-    2026-10-13: a person's publish waits for the run to finish). A publish taken mid-run ships a
-    half-edited page: the run commits checkpoints as it goes, so the version on the air would be
-    whatever the agent happened to have written so far. Reading the publish state, unpublish and
-    rollback stay open — they change what is live, not the document the agent is editing.
+    ``POST /documents/{id}/site/publish`` (founder ruling 2026-10-13: a person's publish waits for
+    the run to finish). A publish taken mid-run ships a half-edited page: the run commits
+    checkpoints as it goes, so the version on the air would be whatever the agent happened to have
+    written so far. Reading the publish state, unpublish and rollback stay open — they change what
+    is live, not the document the agent is editing.
+
+    And the website batch (``POST /documents/{id}/web/batch``, ``POST /web/batches/{id}/resume``):
+    both refuse while the agent works on the batch's TEMPLATE (every account page would be built
+    from a half-edited template), and an existing account page the agent is editing is that
+    account's failure on the manifest, publish or not — the re-derive is a person's write. The
+    instance batches (``/template-revisions/{id}/batches``) derive from a frozen template revision
+    the agent cannot be editing, so they are not guarded.
 
     The agent's own writes go through the governed ``design_apply_operations`` tool
     (``_LegSceneCommitter``), never through these routes — a lock that reached the tool would
