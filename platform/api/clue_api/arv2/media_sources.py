@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
+from itertools import zip_longest
 from typing import Any, Literal
 from urllib.parse import quote_plus, urlsplit
 
@@ -255,6 +256,8 @@ def podcast_index_shows(
 
 
 _URL = re.compile(r"https?://[^\s<>()\"']+")
+#: A "/feed" or "/rss" path segment ("/feed", "/rss/", "/podcast/feed.xml"), never "/feedback".
+_FEED_SEGMENT = re.compile(r"/(?:feed|rss)(?:[/.]|$)")
 
 
 def podcast_links(text: str) -> list[str]:
@@ -269,8 +272,7 @@ def podcast_links(text: str) -> list[str]:
             host == "podcasts.apple.com"
             or (host == "open.spotify.com" and path.startswith(("/show/", "/episode/")))
             or path.endswith((".rss", ".xml"))
-            or "/feed" in path
-            or "/rss" in path
+            or _FEED_SEGMENT.search(path)
         ):
             found.append(url)
     return list(dict.fromkeys(found))
@@ -351,24 +353,27 @@ def _feeds_from_links(caller: ProviderCaller, video: VideoDetails, gaps: list[st
 def _feeds_from_directories(
     caller: ProviderCaller, video: VideoDetails, keys: MediaSourceKeys, gaps: list[str]
 ) -> list[str]:
-    feeds: list[str] = []
+    """Shows found by the channel name and by the video title, taken in turn from each search so
+    unrelated hits for one term cannot crowd out the other's within :data:`MAX_FEEDS`."""
+    found: list[list[str]] = []
     for term in dict.fromkeys(t.strip() for t in (video.channel, video.title) if t.strip()):
-        shows: list[Show] = []
         try:
-            shows = apple_shows(caller, term)
+            found.append([s.feed_url for s in apple_shows(caller, term)])
         except ValueError as exc:
             gaps.append(f"podcast_directory_unavailable: {exc}")
         if keys.podcast_index_key and keys.podcast_index_secret:
             try:
-                shows += podcast_index_shows(
-                    caller, term, keys.podcast_index_key, keys.podcast_index_secret
+                found.append(
+                    [
+                        s.feed_url
+                        for s in podcast_index_shows(
+                            caller, term, keys.podcast_index_key, keys.podcast_index_secret
+                        )
+                    ]
                 )
             except ValueError as exc:
                 gaps.append(f"podcast_directory_unavailable: {exc}")
-        feeds.extend(s.feed_url for s in shows)
-        if feeds:
-            break
-    return feeds
+    return [feed for rank in zip_longest(*found) for feed in rank if feed is not None]
 
 
 def podcast_twin(
@@ -433,10 +438,22 @@ def resolve_youtube(
     if keys.youtube_api_key is None:
         return Resolution("unavailable", gaps=("youtube_data_api_key_missing",))
     video = youtube_details(caller, key.removeprefix("youtube:"), keys.youtube_api_key)
+    found = Candidate(
+        url=watch,
+        title=video.title,
+        description=video.description[:4000],
+        family="youtube",
+        canonical_key=key,
+        duration_s=video.duration_s,
+        published_at=video.published_at,
+        identity_evidence=[source_url, "youtube_data_api"],
+        recognized_subject_urls=linkedin_profiles(video.description),
+    )
+    # An unreadable video still answers with its details: the agent can look for it elsewhere.
     if not video.public:
-        return Resolution("unavailable", gaps=("youtube_not_public",))
+        return Resolution("unavailable", (found,), gaps=("youtube_not_public",))
     if video.live:
-        return Resolution("unavailable", gaps=("youtube_live_or_upcoming",))
+        return Resolution("unavailable", (found,), gaps=("youtube_live_or_upcoming",))
     matches, possible, gaps = podcast_twin(caller, video, keys, visited=visited)
     if len(matches) == 1:
         twin = matches[0].model_copy(
@@ -467,21 +484,4 @@ def resolve_youtube(
             gaps=("podcast_episode_duration_unknown",),
             aliases=(source_url,),
         )
-    return Resolution(
-        "resolved",
-        (
-            Candidate(
-                url=watch,
-                title=video.title,
-                description=video.description[:4000],
-                family="youtube",
-                canonical_key=key,
-                duration_s=video.duration_s,
-                published_at=video.published_at,
-                identity_evidence=[source_url, "youtube_data_api"],
-                recognized_subject_urls=linkedin_profiles(video.description),
-            ),
-        ),
-        gaps=tuple(gaps),
-        aliases=(source_url,),
-    )
+    return Resolution("resolved", (found,), gaps=tuple(gaps), aliases=(source_url,))

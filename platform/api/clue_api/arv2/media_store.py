@@ -636,6 +636,7 @@ async def run_media_summary(conn: Any, *, workspace_id: str, run_id: UUID) -> di
     )
     transcribed: dict[str, int] = {}
     unavailable: dict[str, int] = {}
+    not_ready: dict[str, int] = {}
     discovered = attempted = 0
     for row in rows:
         if row["kind"] == "candidate" and row["outcome"] == "unverified":
@@ -643,12 +644,15 @@ async def run_media_summary(conn: Any, *, workspace_id: str, run_id: UUID) -> di
         if row["kind"] != "read":
             continue
         attempted += 1
-        if row["outcome"] in {"acquired", "reused"} and row["source_method"]:
+        data = row["data"]
+        data = json.loads(data) if isinstance(data, str | bytes) else data or {}
+        if row["outcome"] == "not_ready":
+            state = str(data.get("state") or "unknown")
+            not_ready[state] = not_ready.get(state, 0) + 1
+        elif row["outcome"] in {"acquired", "reused"} and row["source_method"]:
             method = str(row["source_method"])
             transcribed[method] = transcribed.get(method, 0) + 1
         elif row["outcome"] == "unavailable":
-            data = row["data"]
-            data = json.loads(data) if isinstance(data, str | bytes) else data or {}
             for gap in data.get("gaps", []):
                 key = str(gap).split(":", 1)[0]
                 unavailable[key] = unavailable.get(key, 0) + 1
@@ -657,4 +661,5 @@ async def run_media_summary(conn: Any, *, workspace_id: str, run_id: UUID) -> di
         "attempted": attempted,
         "transcribed": transcribed,
         "unavailable": unavailable,
+        "not_ready": not_ready,
     }

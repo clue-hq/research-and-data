@@ -1311,3 +1311,194 @@ def test_paid_gemini_windows_are_recovered_when_saving_failed(monkeypatch):
             assert method == "gemini_youtube"
 
     run_async(scenario())
+
+
+# --- Run 7 replay defects (2026-10-13) --------------------------------------------------------
+
+
+def test_a_feed_with_no_matching_episode_returns_its_episodes_to_choose_from():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            feed = """<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+              <channel><title>Show</title>
+              <item><guid>ep-2</guid><title>Second talk</title><itunes:duration>60</itunes:duration>
+              <enclosure url="https://example.com/2.mp3" type="audio/mpeg"/></item>
+              <item><guid>ep-1</guid><title>First talk</title><itunes:duration>60</itunes:duration>
+              <enclosure url="https://example.com/1.mp3" type="audio/mpeg"/></item>
+              </channel></rss>"""
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
+                    offline_audio(60),
+                    deepgram_speech("The first talk."),
+                    embeddings(),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            listed = await read_media(
+                rt,
+                ReadMediaArgs(
+                    url="https://example.com/feed", episode_hint="Third talk", purpose="Feed"
+                ),
+            )
+            assert listed["state"] == "ambiguous"
+            assert "no_exact_episode_match" in listed["resolution_gaps"]
+            assert [c["title"] for c in listed["candidates"]] == ["Second talk", "First talk"]
+            chosen = await read_media(
+                rt,
+                ReadMediaArgs(
+                    candidate_ref=UUID(listed["candidates"][1]["candidate_ref"]), purpose="Feed"
+                ),
+            )
+            assert chosen["state"] == "available"
+            assert any(r.url == "https://example.com/1.mp3" for r in wire.requests)
+
+    run_async(scenario())
+
+
+def test_a_page_refusing_with_406_is_read_through_exa():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(406, {"content-type": "text/html"}, b"not acceptable"),
+                    exa_links("https://example.com/about"),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/talk", purpose="406 page")
+            )
+            assert any(r.url.endswith("/contents") for r in wire.requests)
+            assert "no_recording_link_on_page_through_exa" in result["gaps"]
+
+    run_async(scenario())
+
+
+def test_a_refused_page_keeps_its_saved_response_as_evidence():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(403, {"content-type": "text/html"}, b"blocked"),
+                    exa_links("https://example.com/about"),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/talk", purpose="Blocked")
+            )
+            data = (
+                await conn.execute(
+                    text(
+                        "SELECT data FROM arv2_media_attempt WHERE workspace_id=:ws "
+                        "AND kind='resolution'"
+                    ),
+                    {"ws": rt.scope.workspace_id},
+                )
+            ).scalar_one()
+            data = json.loads(data) if isinstance(data, str) else data
+            assert data["raw_keys"], data
+
+    run_async(scenario())
+
+
+def test_discovery_leaves_out_linkedin_and_x_and_labels_recording_links():
+    from clue_api.arv2.media_tools import DiscoverMediaArgs, discover_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            found = [
+                "https://www.linkedin.com/posts/someone_talk-activity-1",
+                "https://linkedin.com/in/someone",
+                "https://x.com/someone/status/1",
+                "https://cdn.example.com/talk.mp3",
+                "https://www.youtube.com/watch?v=abcdefghijk",
+                "https://example.com/episode",
+            ]
+            wire = ScriptedTransport(
+                [
+                    json_response(
+                        {
+                            "results": [{"url": u, "title": u, "text": ""} for u in found],
+                            "costDollars": {"total": 0.001},
+                        }
+                    )
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            page = await discover_media(
+                rt, DiscoverMediaArgs(query="Someone interview", purpose="Find talks")
+            )
+            assert [(c["url"], c["family"]) for c in page["candidates"]] == [
+                ("https://cdn.example.com/talk.mp3", "audio"),
+                ("https://www.youtube.com/watch?v=abcdefghijk", "youtube"),
+                ("https://example.com/episode", "page"),
+            ]
+            assert page["left_out_walled_hosts"] == 3
+
+    run_async(scenario())
+
+
+def test_a_private_youtube_video_still_returns_its_details():
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            private = json.loads(youtube_data().body)
+            private["items"][0]["status"]["privacyStatus"] = "unlisted"
+            wire = ScriptedTransport([json_response(private)])
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Private")
+            )
+            assert result["state"] == "unavailable"
+            assert "youtube_not_public" in result["gaps"]
+            assert result["video"]["title"] == "Research interview"
+
+    run_async(scenario())
+
+
+def test_a_read_still_in_flight_counts_as_attempted(monkeypatch):
+    from clue_api.arv2 import media_acquisition
+    from clue_api.arv2.media_store import run_media_summary
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def in_flight(*_args, **_kwargs):
+        return {"state": "dispatched", "operation_ref": str(uuid4()), "gap": "download_not_ready"}
+
+    monkeypatch.setattr(media_acquisition, "acquire", in_flight)
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            wire = ScriptedTransport([offline_audio(60)])
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt, ReadMediaArgs(url="https://cdn.example.com/talk.mp3", purpose="Pending")
+            )
+            assert result["state"] == "dispatched"
+            summary = await run_media_summary(
+                conn, workspace_id=rt.scope.workspace_id, run_id=rt.scope.run_id
+            )
+            assert summary["attempted"] == 1
+            assert summary["not_ready"] == {"dispatched": 1}
+
+    run_async(scenario())

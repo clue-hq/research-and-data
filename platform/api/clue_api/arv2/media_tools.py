@@ -18,7 +18,14 @@ from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.account_research_refusals import RefusalError
 from clue_api.arv2.deepgram_media_client import DeepgramMediaError
 from clue_api.arv2.gemini_media_client import GeminiMediaError
-from clue_api.arv2.media_resolution import Resolution, unresolved_recording, youtube_url
+from clue_api.arv2.media_feeds_client import UnsupportedMediaHost, reject_native_video
+from clue_api.arv2.media_resolution import (
+    RECORDING_SUFFIXES,
+    Resolution,
+    recording_family,
+    unresolved_recording,
+    youtube_url,
+)
 from clue_api.arv2.media_types import Candidate, MediaModel
 from clue_api.arv2.research_operations import fingerprint
 
@@ -27,9 +34,9 @@ from clue_api.arv2.research_operations import fingerprint
 _RETRY_THROUGH_EXA = (
     "public source HTTP 401",
     "public source HTTP 403",
+    "public source HTTP 406",
     "no_supported_recording_link",
 )
-_RECORDING_SUFFIXES = (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac", ".mp4", ".webm", ".mov")
 
 UNAVAILABLE_NEXT_ACTION = (
     "No transcript obtained through this route; the gaps say which step failed. If the page "
@@ -52,7 +59,7 @@ def page_recordings(links: list[str]) -> list[str]:
             continue  # a YouTube channel or playlist page, not one recording
         if yt:
             found.append(yt[0])
-        elif urlsplit(link).path.lower().endswith(_RECORDING_SUFFIXES) or podcast_links(link):
+        elif urlsplit(link).path.lower().endswith(RECORDING_SUFFIXES) or podcast_links(link):
             found.append(link)
     return list(dict.fromkeys(found))
 
@@ -60,10 +67,16 @@ def page_recordings(links: list[str]) -> list[str]:
 async def _resolve_or_gap(runtime: Any, url: str, hint: str | None) -> Resolution:
     """A page the plain fetch could not read (blocked, refused) is an unavailable resolution
     carrying the reason, so the Exa fallback below still gets its chance."""
+    return await acquisition.resolve_url(runtime, url, hint)
+
+
+def _walled(url: str) -> bool:
+    """LinkedIn and X: read_media never reads them, so discovery does not offer them."""
     try:
-        return await acquisition.resolve_url(runtime, url, hint)
-    except ValueError as exc:
-        return Resolution("unavailable", gaps=(str(exc),))
+        reject_native_video(url)
+    except UnsupportedMediaHost:
+        return True
+    return False
 
 
 async def _links_through_exa(runtime: Any, url: str) -> list[str]:
@@ -129,6 +142,7 @@ class OpenTranscriptArgs(MediaModel):
 
 
 async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any]:
+    walled = 0
     if args.discovery_ref:
         async with runtime._conn_factory() as conn:
             saved = await store.get_attempt(runtime, conn, args.discovery_ref)
@@ -136,6 +150,7 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
             raise store.unavailable("not a discovery reference")
         aid = args.discovery_ref
         ids = saved["data"]["candidates"]
+        walled = int(saved["data"].get("left_out_walled_hosts") or 0)
     else:
         request = {
             "query": " ".join(args.query.split()),
@@ -156,6 +171,7 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
         if existing:
             return await discover_media(runtime, args.model_copy(update={"discovery_ref": aid}))
         candidates = []
+        walled = 0
         if args.known_urls:
             candidates = [Candidate(url=url) for url in args.known_urls]
         else:
@@ -172,9 +188,13 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
             )
             for result in body.get("results", []):
                 if isinstance(result, dict) and result.get("url"):
+                    if _walled(str(result["url"])):
+                        walled += 1
+                        continue
                     candidates.append(
                         Candidate(
                             url=result["url"],
+                            family=recording_family(str(result["url"])),
                             title=str(result.get("title") or "")[:500],
                             description=str(result.get("text") or "")[:1200],
                             identity_evidence=["discovery_result:" + str(op.operation_id)],
@@ -200,7 +220,7 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
                 kind="discovery",
                 outcome="found" if ids else "empty",
                 purpose=args.purpose,
-                data={"candidates": ids},
+                data={"candidates": ids, "left_out_walled_hosts": walled},
                 attempt_id=aid,
             )
     output: list[dict[str, Any]] = []
@@ -228,6 +248,7 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
         "candidates": output,
         "next_offset": stop if stop < len(ids) else None,
         "total_saved": len(ids),
+        **({"left_out_walled_hosts": walled} if walled else {}),
         "source_text_is_untrusted": True,
         "coverage": "searched_query_only",
     }
@@ -250,6 +271,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
     assert url is not None
     gaps: list[str] = []
     for target in [url, *args.alternate_urls]:
+        resolved: Resolution | None = None
         try:
             async with runtime._conn_factory() as conn:
                 if args.refresh_expired:
@@ -283,6 +305,9 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                     resolved = replace(
                         resolved, gaps=(*resolved.gaps, "no_recording_link_on_page_through_exa")
                     )
+            if resolved.state == "no_match" and resolved.candidates:
+                # The feed has no episode matching the hint: its episodes are the choices.
+                resolved = replace(resolved, state="ambiguous")
             if resolved.state == "ambiguous":
                 candidates = []
                 async with runtime._conn_factory() as conn:
@@ -316,13 +341,17 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                     **page,
                     "state": "ambiguous",
                     "gap": "choose_an_exact_episode",
+                    "resolution_gaps": [*gaps, *resolved.gaps],
                     "next_action": "Inspect candidate titles, URLs, types and origins. Select a "
-                    "relevant candidate_ref or URL and call read_media again with a purpose "
-                    "and episode_hint if useful. These candidates have not yet been attempted; "
-                    "do not repeat the unchanged landing page or treat ambiguity as failure.",
+                    "relevant candidate and call read_media again with its candidate_ref (it "
+                    "reads exactly that recording) and a purpose. These candidates have not yet "
+                    "been attempted; do not repeat the unchanged landing page or treat ambiguity "
+                    "as failure.",
                 }
             if resolved.state != "resolved":
                 gaps.extend(resolved.gaps)
+                if resolved.candidates and resolved.candidates[0].family == "youtube":
+                    video = acquisition.video_details(resolved.candidates[0])
                 async with runtime._conn_factory() as conn:
                     await store.attempt(
                         runtime,
@@ -330,7 +359,11 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                         kind="resolution",
                         outcome=resolved.state,
                         purpose=args.purpose,
-                        data={"url": target, "gaps": resolved.gaps},
+                        data={
+                            "url": target,
+                            "gaps": resolved.gaps,
+                            "raw_keys": list(resolved.raw_keys),
+                        },
                     )
                 continue
             result = await acquisition.acquire(
@@ -365,6 +398,15 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 result["state"] in {"unknown", "dispatched", "reserved", "unavailable"}
                 and "operation_ref" in result
             ):
+                async with runtime._conn_factory() as conn:
+                    await store.attempt(
+                        runtime,
+                        conn,
+                        kind="read",
+                        outcome="not_ready",
+                        purpose=args.purpose,
+                        data={"state": result["state"], "gap": result.get("gap")},
+                    )
                 return {
                     **result,
                     "resolution_gaps": gaps,
@@ -379,6 +421,9 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
             if exc.http_status not in {400, 404, 413, 415, 422}:
                 return {"state": "unknown", "gap": "acquisition_outcome_unknown"}
             gaps.append(f"transcription_rejected_http_{exc.http_status}")
+            chosen = resolved.candidates[0] if resolved and resolved.candidates else None
+            if chosen and chosen.family == "youtube":
+                video = acquisition.video_details(chosen)
         except (ValueError, KeyError) as exc:
             gaps.append(str(exc))
     async with runtime._conn_factory() as conn:

@@ -127,6 +127,8 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
 
 
 async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
+    """Resolve one link. A page that could not be read (blocked, refused, malformed) is an
+    unavailable resolution carrying the reason and the saved responses as its evidence."""
     raw_keys: list[str] = []
     token = ops.active_resolution.set(raw_keys)
     media_keys = media_keys_of(runtime)
@@ -138,6 +140,8 @@ async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
             ),
         )
         return replace(result, raw_keys=tuple(raw_keys))
+    except ValueError as exc:
+        return Resolution("unavailable", gaps=(str(exc),), raw_keys=tuple(raw_keys))
     finally:
         ops.active_resolution.reset(token)
 

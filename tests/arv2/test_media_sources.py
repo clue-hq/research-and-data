@@ -266,10 +266,33 @@ def test_without_links_the_channel_is_searched_in_apples_directory():
             {"collectionName": "Revenue Room", "feedUrl": "https://feeds.example.com/rr.xml"}
         ]
     }
-    wire = ScriptedTransport([json_reply(search), feed_xml(EP41)])
+    wire = ScriptedTransport([json_reply(search), empty_search(), feed_xml(EP41)])
     matches, _, _ = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert [m.episode_id for m in matches] == ["ep-41"]
     assert "term=Revenue+Room" in wire.requests[0].url and "media=podcast" in wire.requests[0].url
+
+
+def test_unrelated_channel_hits_do_not_starve_the_title_search():
+    unrelated = {
+        "results": [
+            {"collectionName": "Room Tone", "feedUrl": "https://feeds.example.com/a.xml"},
+            {"collectionName": "Revenue Radio", "feedUrl": "https://feeds.example.com/b.xml"},
+        ]
+    }
+    titled = {
+        "results": [{"collectionName": "Field ABM", "feedUrl": "https://feeds.example.com/c.xml"}]
+    }
+    other = ("ep-1", "Something else entirely", "Tue, 07 Apr 2026 10:00:00 GMT", 100)
+    wire = ScriptedTransport(
+        [json_reply(unrelated), json_reply(titled), feed_xml(other), feed_xml(EP41), feed_xml()]
+    )
+    matches, _, _ = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    assert [m.episode_id for m in matches] == ["ep-41"]
+    assert [r.url for r in wire.requests[2:]] == [
+        "https://feeds.example.com/a.xml",
+        "https://feeds.example.com/c.xml",
+        "https://feeds.example.com/b.xml",
+    ]
 
 
 def test_podcast_index_is_searched_too_when_its_keys_are_set():
@@ -280,6 +303,8 @@ def test_podcast_index_is_searched_too_when_its_keys_are_set():
             json_reply(
                 {"feeds": [{"title": "Revenue Room", "url": "https://feeds.example.com/rr.xml"}]}
             ),
+            empty_search(),
+            json_reply({"feeds": []}),
             feed_xml(EP41),
         ]
     )
@@ -301,7 +326,11 @@ def test_an_unreadable_feed_is_a_gap():
         ]
     }
     wire = ScriptedTransport(
-        [json_reply(search), response("<rss><channel>broken", "application/rss+xml")]
+        [
+            json_reply(search),
+            empty_search(),
+            response("<rss><channel>broken", "application/rss+xml"),
+        ]
     )
     matches, _, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert matches == [] and any(g.startswith("podcast_feed_unreadable") for g in gaps)
