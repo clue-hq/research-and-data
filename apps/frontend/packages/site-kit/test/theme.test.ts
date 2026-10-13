@@ -37,9 +37,11 @@ test("a filled look that would vanish on a dark surface takes the light version 
   const brand = kitBrand("conduit.minted");
   const index = lookNamed(brand, "button", "solid.28241e")!.index;
   const css = themeCss(brand);
-  assert.match(ruleOf(css, ".bg-surface-band-28241e"), new RegExp(`--bs-${index}-fill:var\\(--brand-button-light-fill\\)`));
+  // Of the page (#FFFFFF) and the inverse surface (#121212), the page stands out from the #28241E band.
+  const band = ruleOf(css, ".bg-surface-band-28241e");
+  assert.match(band, new RegExp(`--bs-${index}-fill:var\\(--brand-surface-page\\)`));
+  assert.match(band, new RegExp(`--bs-${index}-label:var\\(--brand-on-surface-page\\)`));
   assert.match(ruleOf(css, ".bg-surface-page"), new RegExp(`--bs-${index}-fill:initial`));
-  assert.match(ruleOf(css, ".brand-root"), /--brand-button-light-fill:var\(--brand-surface-page\)/);
 });
 
 test("an outline look on a dark band takes the band's text colour", () => {

@@ -327,6 +327,7 @@ function cardsSection(brand: BrandData): string[] {
   const looks = cardLooks(brand);
   const std = drawnCard(brand, null);
   const fill = partCell(brand, std, "fill", "card's fill");
+  const text = partCell(brand, std, "label", "card's text");
   const corners = partCell(brand, std, "radius", "card's corners");
   const padding = partCell(brand, std, "padding", "card's padding");
   if (!looks.length) {
@@ -334,7 +335,7 @@ function cardsSection(brand: BrandData): string[] {
   }
   const rows = looks.map((look) => {
     const drawn = drawnCard(brand, look);
-    return `| ${look.name} | ${KIND_WORD[look.kind]} | ${partCell(brand, drawn, "fill", "card's fill")} | ${borderCell(brand, drawn, "card's border")} | ${partCell(brand, drawn, "radius", "card's corners")} | ${partCell(brand, drawn, "padding", "card's padding")} | ${look.recipe.confidence ?? "low"} | ${cellText((look.recipe.unmapped ?? []).join(" "))} |`;
+    return `| ${look.name} | ${KIND_WORD[look.kind]} | ${partCell(brand, drawn, "fill", "card's fill")} | ${partCell(brand, drawn, "label", "card's text")} | ${borderCell(brand, drawn, "card's border")} | ${partCell(brand, drawn, "radius", "card's corners")} | ${partCell(brand, drawn, "padding", "card's padding")} | ${look.recipe.confidence ?? "low"} | ${cellText((look.recipe.unmapped ?? []).join(" "))} |`;
   });
   return [
     "## Cards",
@@ -342,9 +343,9 @@ function cardsSection(brand: BrandData): string[] {
     `its brand kit recorded them, and the kit's standard card. Choose one with \`look\``,
     `(\`kit.Card look="${looks[0].name}"\`), or leave it out for the standard card. Give it \`href\` to make`,
     "the whole card a link; it then takes the style's hover and focus looks from the seller's site.",
-    "| look | kind | fill | border | corners | padding | confidence | notes from the brand kit |",
-    "|---|---|---|---|---|---|---|---|",
-    `| (none) | the kit's standard card | ${fill} | none | ${corners} | ${padding} | — | Used when you name no look. |`,
+    "| look | kind | fill | text | border | corners | padding | confidence | notes from the brand kit |",
+    "|---|---|---|---|---|---|---|---|---|",
+    `| (none) | the kit's standard card | ${fill} | ${text} | none | ${corners} | ${padding} | — | Used when you name no look. |`,
     ...rows,
     "",
   ];
