@@ -12,7 +12,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from html import unescape
 from html.parser import HTMLParser
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
@@ -30,6 +30,9 @@ from clue_research.official_site.safety import (
     make_pinned_resolver,
 )
 from clue_research.official_site.url_policy import ConservativeUrlPolicy, UrlPolicyConfig
+
+if TYPE_CHECKING:
+    from clue_api.arv2.media_sources import MediaSourceKeys
 
 MAX_MEDIA_BYTES = 200 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5_000_000
@@ -580,6 +583,24 @@ def match_episode(candidates: list[Candidate], hint: str | None, source_url: str
     return Resolution("no_match", tuple(candidates), gaps=("no_exact_episode_match",))
 
 
+def apple_feed_url(caller: ProviderCaller, url: str) -> str | None:
+    """The RSS feed Apple's directory lists for a podcasts.apple.com show or episode link."""
+    match = re.search(r"/id(\d+)", urlsplit(url).path)
+    if not match:
+        raise ValueError("apple_show_id_missing")
+    lookup = json.loads(
+        fetch(caller, f"https://itunes.apple.com/lookup?id={match[1]}&entity=podcast").body
+    )
+    return next(
+        (
+            r["feedUrl"]
+            for r in lookup.get("results", [])
+            if str(r.get("collectionId")) == match[1] and isinstance(r.get("feedUrl"), str)
+        ),
+        None,
+    )
+
+
 def resolve(
     caller: ProviderCaller,
     url: str,
@@ -587,6 +608,7 @@ def resolve(
     hint: str | None = None,
     visited: frozenset[str] = frozenset(),
     _response: HttpResponse | None = None,
+    keys: MediaSourceKeys | None = None,
 ) -> Resolution:
     url = public_url(url)
     if url in visited:
@@ -642,30 +664,22 @@ def resolve(
             aliases=(url,),
         )
     if urlsplit(url).hostname == "podcasts.apple.com":
-        match = re.search(r"/id(\d+)", urlsplit(url).path)
-        if not match:
-            return Resolution("unsupported", gaps=("apple_show_id_missing",))
-        lookup = json.loads(
-            fetch(caller, f"https://itunes.apple.com/lookup?id={match[1]}&entity=podcast").body
-        )
-        feed = next(
-            (
-                r.get("feedUrl")
-                for r in lookup.get("results", [])
-                if str(r.get("collectionId")) == match[1]
-            ),
-            None,
-        )
+        try:
+            feed = apple_feed_url(caller, url)
+        except ValueError as exc:
+            return Resolution("unsupported", gaps=(str(exc),))
         if feed:
             # An Apple episode id is not an RSS guid or an episode number. Unless the feed
             # explicitly links it (or the caller supplied an exact hint), do not guess.
             episode_hint = hint or (url if parse_qs(urlsplit(url).query).get("i") else None)
-            return resolve(caller, feed, hint=episode_hint, visited=visited)
+            return resolve(caller, feed, hint=episode_hint, visited=visited, keys=keys)
         return Resolution("no_match", gaps=("apple_feed_missing",))
     response = _response or fetch(caller, url, binary=True)
     final_url = public_url(response.headers.get("x-arv2-final-url", url))
     if final_url != url:
-        result = resolve(caller, final_url, hint=hint, visited=visited, _response=response)
+        result = resolve(
+            caller, final_url, hint=hint, visited=visited, _response=response, keys=keys
+        )
         if (
             result.state == "resolved"
             and result.candidates
@@ -769,7 +783,7 @@ def resolve(
         if target in visited:
             continue
         try:
-            result = resolve(caller, target, hint=hint or url, visited=visited)
+            result = resolve(caller, target, hint=hint or url, visited=visited, keys=keys)
         except ValueError as exc:
             gaps.append(str(exc))
             continue

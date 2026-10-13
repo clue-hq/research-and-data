@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from clue_config.secrets import Secrets
 from clue_spend import redact_headers
 
@@ -22,3 +24,284 @@ def test_podcast_index_key_header_is_redacted_in_raw_records():
     )
     assert headers["X-Auth-Key"] == "***" and headers["Authorization"] == "***"
     assert headers["X-Auth-Date"] == "1700000000"
+
+
+# --- Task 3: official and public lookups and episode matching ---------------------------------
+
+import hashlib  # noqa: E402
+import json  # noqa: E402
+from dataclasses import replace  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+from pydantic import SecretStr  # noqa: E402
+
+from clue_api.arv2.media_sources import (  # noqa: E402
+    MediaSourceKeys,
+    VideoDetails,
+    iso_duration_seconds,
+    podcast_index_shows,
+    podcast_links,
+    podcast_twin,
+    same_episode,
+    spotify_show_name,
+    youtube_details,
+)
+from clue_api.arv2.media_types import Candidate  # noqa: E402
+from clue_api.arv2.transport import HttpResponse, ScriptedTransport  # noqa: E402
+from tests.arv2.test_media_research import caller, response  # noqa: E402
+
+VIDEO_ID = "abcdefghijk"
+
+
+def json_reply(value, status=200):
+    return HttpResponse(status, {"content-type": "application/json"}, json.dumps(value).encode())
+
+
+def data_api(**overrides):
+    item = {
+        "id": VIDEO_ID,
+        "snippet": {
+            "publishedAt": "2026-04-08T15:00:00Z",
+            "title": "Scaling field ABM with Emily Wall",
+            "channelTitle": "Revenue Room",
+            "description": "Listen: https://podcasts.apple.com/us/podcast/revenue-room/id123456",
+            "liveBroadcastContent": "none",
+        },
+        "contentDetails": {"duration": "PT41M12S"},
+        "status": {"privacyStatus": "public"},
+    }
+    for key, value in overrides.items():
+        item[key] = {**item[key], **value}
+    return json_reply({"items": [item]})
+
+
+def video(**changes):
+    base = VideoDetails(
+        video_id=VIDEO_ID,
+        title="Scaling field ABM with Emily Wall",
+        channel="Revenue Room",
+        description="",
+        published_at=datetime(2026, 4, 8, 15, tzinfo=UTC),
+        duration_s=2472,
+        public=True,
+        live=False,
+    )
+    return replace(base, **changes)
+
+
+def episode(title, published, duration=2470):
+    return Candidate(
+        url=f"https://example.com/{title.replace(' ', '-')}",
+        title=title,
+        family="audio",
+        media_url="https://example.com/a.mp3",
+        canonical_key="rss:" + title,
+        duration_s=duration,
+        published_at=published,
+    )
+
+
+def empty_search():
+    return json_reply({"results": []})
+
+
+def apple_lookup():
+    return json_reply(
+        {"results": [{"collectionId": 123456, "feedUrl": "https://feeds.example.com/rr.xml"}]}
+    )
+
+
+def feed_xml(*items):
+    rows = "".join(
+        f"<item><guid>{guid}</guid><title>{title}</title><pubDate>{date}</pubDate>"
+        f"<itunes:duration>{seconds}</itunes:duration>"
+        f'<enclosure url="https://example.com/{guid}.mp3" type="audio/mpeg"/></item>'
+        for guid, title, date, seconds in items
+    )
+    return response(
+        '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
+        f"<title>Revenue Room</title>{rows}</channel></rss>",
+        "application/rss+xml",
+    )
+
+
+EP41 = ("ep-41", "Scaling field ABM with Emily Wall", "Tue, 07 Apr 2026 10:00:00 GMT", 2470)
+
+
+def test_iso_durations():
+    assert iso_duration_seconds("PT41M12S") == 2472
+    assert iso_duration_seconds("PT1H") == 3600
+    assert iso_duration_seconds("P1DT2S") == 86402
+    assert iso_duration_seconds("") is None and iso_duration_seconds("PT") is None
+
+
+def test_youtube_details_come_from_the_data_api_with_the_key_in_a_header():
+    wire = ScriptedTransport([data_api()])
+    details = youtube_details(caller(wire), VIDEO_ID, SecretStr("yt-key"))
+    assert details.duration_s == 2472 and details.public and not details.live
+    assert details.channel == "Revenue Room"
+    assert details.published_at == datetime(2026, 4, 8, 15, tzinfo=UTC)
+    request = wire.requests[0]
+    assert "key=" not in request.url and request.headers["x-goog-api-key"] == "yt-key"
+    assert "part=snippet,contentDetails,status" in request.url and f"id={VIDEO_ID}" in request.url
+
+
+def test_an_unlisted_or_live_video_is_flagged():
+    unlisted = youtube_details(
+        caller(ScriptedTransport([data_api(status={"privacyStatus": "unlisted"})])),
+        VIDEO_ID,
+        SecretStr("k"),
+    )
+    live = youtube_details(
+        caller(ScriptedTransport([data_api(snippet={"liveBroadcastContent": "live"})])),
+        VIDEO_ID,
+        SecretStr("k"),
+    )
+    assert not unlisted.public and live.live
+
+
+def test_a_missing_video_is_a_value_error():
+    with pytest.raises(ValueError, match="youtube_video_not_found"):
+        youtube_details(
+            caller(ScriptedTransport([json_reply({"items": []})])), VIDEO_ID, SecretStr("k")
+        )
+
+
+def test_podcast_index_signs_each_request():
+    wire = ScriptedTransport(
+        [
+            json_reply(
+                {"feeds": [{"title": "Revenue Room", "url": "https://feeds.example.com/rr.xml"}]}
+            )
+        ]
+    )
+    shows = podcast_index_shows(
+        caller(wire), "Revenue Room", SecretStr("key"), SecretStr("secret"), now=lambda: 1700000000
+    )
+    assert [s.feed_url for s in shows] == ["https://feeds.example.com/rr.xml"]
+    headers = wire.requests[0].headers
+    expected = hashlib.sha1(b"keysecret1700000000", usedforsecurity=False).hexdigest()
+    assert headers["Authorization"] == expected and headers["X-Auth-Date"] == "1700000000"
+    assert headers["X-Auth-Key"] == "key" and "q=Revenue+Room" in wire.requests[0].url
+
+
+def test_podcast_links_in_a_description():
+    text = (
+        "Apple: https://podcasts.apple.com/us/podcast/x/id1. Spotify: "
+        "https://open.spotify.com/episode/abc. RSS https://feeds.example.com/show.xml, "
+        "site https://example.com/about"
+    )
+    assert podcast_links(text) == [
+        "https://podcasts.apple.com/us/podcast/x/id1",
+        "https://open.spotify.com/episode/abc",
+        "https://feeds.example.com/show.xml",
+    ]
+
+
+def test_spotify_page_names_the_show():
+    html = (
+        '<meta property="og:description" '
+        'content="Listen to this episode from Revenue Room on Spotify. More.">'
+    )
+    assert spotify_show_name(html) == "Revenue Room"
+    assert spotify_show_name("<html></html>") is None
+
+
+def test_same_episode_needs_date_duration_and_title_together():
+    day = datetime(2026, 4, 7, 10, tzinfo=UTC)
+    title = "Scaling field ABM with Emily Wall"
+    assert same_episode(episode(title, day), video())
+    assert not same_episode(episode(title, day - timedelta(days=9)), video())
+    assert not same_episode(episode(title, day, duration=1800), video())
+    assert not same_episode(episode("Quarterly earnings recap", day), video())
+    assert not same_episode(episode(title, None), video())
+
+
+def test_naive_feed_dates_compare_as_utc():
+    assert same_episode(
+        episode("Scaling field ABM with Emily Wall", datetime(2026, 4, 7, 10)), video()
+    )
+
+
+def test_the_description_link_leads_to_the_matching_episode():
+    wire = ScriptedTransport(
+        [
+            apple_lookup(),
+            feed_xml(EP41, ("ep-40", "Pricing pages", "Tue, 31 Mar 2026 10:00:00 GMT", 2400)),
+        ]
+    )
+    details = video(description="Listen: https://podcasts.apple.com/us/podcast/rr/id123456")
+    matches, gaps = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
+    assert [m.episode_id for m in matches] == ["ep-41"] and gaps == []
+
+
+def test_two_episodes_in_the_window_are_both_returned():
+    wire = ScriptedTransport(
+        [
+            apple_lookup(),
+            feed_xml(
+                (
+                    "ep-41",
+                    "Scaling field ABM with Emily Wall part 1",
+                    "Tue, 07 Apr 2026 10:00:00 GMT",
+                    2470,
+                ),
+                (
+                    "ep-42",
+                    "Scaling field ABM with Emily Wall part 2",
+                    "Thu, 09 Apr 2026 10:00:00 GMT",
+                    2480,
+                ),
+            ),
+        ]
+    )
+    details = video(description="https://podcasts.apple.com/us/podcast/rr/id123456")
+    matches, _ = podcast_twin(caller(wire), details, MediaSourceKeys(), visited=frozenset())
+    assert sorted(m.episode_id for m in matches) == ["ep-41", "ep-42"]
+
+
+def test_without_links_the_channel_is_searched_in_apples_directory():
+    search = {
+        "results": [
+            {"collectionName": "Revenue Room", "feedUrl": "https://feeds.example.com/rr.xml"}
+        ]
+    }
+    wire = ScriptedTransport([json_reply(search), feed_xml(EP41)])
+    matches, _ = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    assert [m.episode_id for m in matches] == ["ep-41"]
+    assert "term=Revenue+Room" in wire.requests[0].url and "media=podcast" in wire.requests[0].url
+
+
+def test_podcast_index_is_searched_too_when_its_keys_are_set():
+    keys = MediaSourceKeys(podcast_index_key=SecretStr("k"), podcast_index_secret=SecretStr("s"))
+    wire = ScriptedTransport(
+        [
+            empty_search(),
+            json_reply(
+                {"feeds": [{"title": "Revenue Room", "url": "https://feeds.example.com/rr.xml"}]}
+            ),
+            feed_xml(EP41),
+        ]
+    )
+    matches, _ = podcast_twin(caller(wire), video(), keys, visited=frozenset())
+    assert [m.episode_id for m in matches] == ["ep-41"]
+    assert "api.podcastindex.org" in wire.requests[1].url
+
+
+def test_no_show_found_is_a_gap_not_an_error():
+    wire = ScriptedTransport([empty_search(), empty_search()])
+    matches, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    assert matches == [] and gaps == ["no_podcast_show_found"]
+
+
+def test_an_unreadable_feed_is_a_gap():
+    search = {
+        "results": [
+            {"collectionName": "Revenue Room", "feedUrl": "https://feeds.example.com/rr.xml"}
+        ]
+    }
+    wire = ScriptedTransport(
+        [json_reply(search), response("<rss><channel>broken", "application/rss+xml")]
+    )
+    matches, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
+    assert matches == [] and any(g.startswith("podcast_feed_unreadable") for g in gaps)
