@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -164,47 +165,64 @@ def test_source_qualifications_are_context_and_cannot_be_quoted_as_evidence():
     assert source_of_span([source], "Real speech.") is source
 
 
-def test_public_video_calls_native_transcription_instead_of_indexed_text():
-    body = {
-        "responseId": "native-request-1",
-        "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 50},
-        "candidates": [
-            {
-                "finishReason": "STOP",
-                "content": {
-                    "parts": [
-                        {
-                            "text": "## TRANSCRIPT\n[00:01] Host: Why?\n"
-                            "[00:03] Guest: We need better evidence."
-                        }
-                    ]
-                },
-            }
-        ],
+def native_body(text, *, request_id="native-request-1", finish="STOP"):
+    return {
+        "responseId": request_id,
+        "usageMetadata": {"promptTokenCount": 120000, "candidatesTokenCount": 4000},
+        "candidates": [{"finishReason": finish, "content": {"parts": [{"text": text}]}}],
     }
+
+
+def test_public_video_is_read_by_gemini_from_its_link_in_a_window_and_priced():
+    body = native_body("## TRANSCRIPT\n[00:01] Host: Why?\n[00:03] Guest: We need better evidence.")
     wire = ScriptedTransport([HttpResponse(200, body=json.dumps(body).encode())])
     ledger = MemoryLedger()
-    client = _client(wire, ledger, ceiling_s=600)
+    client = _client(wire, ledger, ceiling_s=3600)
     transcript = client.transcribe_video(
         "https://youtu.be/abcdefghijk",
-        duration_s=60,
+        duration_s=2400,
+        start_s=2400,
+        end_s=4800,
         context=SpeakerContext(person_name="Known Guest"),
     )
     request = json.loads(wire.requests[0].body)
-    assert (
-        request["contents"][0]["parts"][0]["fileData"]["fileUri"]
-        == "https://www.youtube.com/watch?v=abcdefghijk"
-    )
-    assert "We need better evidence." in transcript.text
+    part = request["contents"][0]["parts"][0]
+    assert part["fileData"]["fileUri"] == "https://www.youtube.com/watch?v=abcdefghijk"
+    assert part["videoMetadata"] == {"startOffset": "2400s", "endOffset": "4800s", "fps": 0.2}
+    assert request["generationConfig"]["mediaResolution"] == "MEDIA_RESOLUTION_LOW"
     result = next(row for row in ledger.rows if row.phase == "result")
     assert result.provider_request_id == "native-request-1"
-    assert result.cost_usd is None and result.extras["cost_source"] == "unpriced"
-    assert result.extras["prompt_tokens"] == 120 and result.extras["completion_tokens"] == 50
-    assert result.extras["model"] == transcript.model and result.media_seconds == 60
+    # 120,000 input tokens at $0.30/M plus 4,000 output tokens at $2.50/M.
+    assert result.cost_usd == Decimal("0.046") and result.media_seconds == 2400
+    assert "usd_unpriced" not in result.extras
+    assert result.extras["prompt_tokens"] == 120000 and result.extras["completion_tokens"] == 4000
+    assert "We need better evidence." in transcript.text
     text, segments, quality = assess_transcript(transcript)
     assert all(s.attribution != "evidence_backed" for s in segments)
     assert quality.coverage == "unknown"
     assert any(s.timing == "model_estimated" for s in segments)
+
+
+def test_windows_cover_the_whole_video_and_join_in_order():
+    from clue_api.arv2.gemini_media_client import join_windows, youtube_windows
+
+    assert youtube_windows(5000, 2400) == [(0, 2400), (2400, 4800), (4800, 5000)]
+    assert youtube_windows(600, 2400) == [(0, 600)]
+    with pytest.raises(ValueError):
+        youtube_windows(0, 2400)
+    first = Transcript(model="m", text="Hello.", lines=(TranscriptLine(5, "Host", "Hello."),))
+    second = Transcript(
+        model="m",
+        text="Goodbye.",
+        lines=(TranscriptLine(10, "Host", "Goodbye."),),
+        finish_reason="MAX_TOKENS",
+    )
+    joined = join_windows([(0, first), (2400, second)])
+    assert joined.text == "Hello.\nGoodbye."
+    assert [line.ts_s for line in joined.lines] == [5, 2410]
+    assert joined.finish_reason == "MAX_TOKENS"
+    _, segments, quality = assess_transcript(joined)
+    assert quality.coverage == "partial" and segments[-1].time_s == 2410
 
 
 def test_loop_truncation_and_nullable_timing_are_independent():

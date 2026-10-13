@@ -85,6 +85,13 @@ AUDIO_TOKENS_PER_SECOND = 32
 #: Transcript output runs ~2.7 words/s of speech; four tokens per second is the estimate's headroom.
 OUTPUT_TOKENS_PER_MEDIA_SECOND = 4
 _PER_MILLION = Decimal(1_000_000)
+#: Gemini 3.5 Flash-Lite paid-tier video rates (checked 2026-10-13); settings override them.
+VIDEO_INPUT_USD_PER_1M = Decimal("0.30")
+VIDEO_OUTPUT_USD_PER_1M = Decimal("2.50")
+#: Input tokens per second of video at low media resolution (Google's video docs).
+VIDEO_TOKENS_PER_SECOND = 100
+#: Frames per second sent for a YouTube transcript: speech is what matters, frames cost tokens.
+YOUTUBE_FPS = 0.2
 
 # -- loop-detector thresholds (the ``z4b`` measurement) ---------------------------------------
 #: Three identical lines in a row is a stuck decoder, whatever the rest of the transcript says.
@@ -630,7 +637,11 @@ def gemini_usage_cost(usage: Mapping[str, object]) -> Decimal:
 
 
 def gemini_cost_reader(
-    media_seconds: int, *, model: str | None = None, video: bool = False
+    media_seconds: int,
+    *,
+    model: str | None = None,
+    video: bool = False,
+    video_rates: tuple[Decimal, Decimal] | None = None,
 ) -> CostReader:
     """A cost reader for a native ``generateContent`` response, stamping the media seconds."""
 
@@ -642,7 +653,7 @@ def gemini_cost_reader(
         extras: dict[str, object] = {"usage": usage}
         if model:
             extras["model"] = model
-        if video:
+        if video and video_rates is None:
             extras["usd_unpriced"] = True
         for source, target in (
             ("promptTokenCount", "prompt_tokens"),
@@ -653,13 +664,78 @@ def gemini_cost_reader(
             if isinstance(value, int) and value >= 0:
                 extras[target] = value
         return CostReading(
-            cost_usd=None if video else gemini_usage_cost(usage),
+            cost_usd=(
+                video_usage_cost(usage, input_rate=video_rates[0], output_rate=video_rates[1])
+                if video and video_rates is not None
+                else None
+                if video
+                else gemini_usage_cost(usage)
+            ),
             provider_request_id=request_id if isinstance(request_id, str) else None,
             media_seconds=media_seconds,
             extras=extras,
         )
 
     return read
+
+
+def video_usage_cost(
+    usage: Mapping[str, object], *, input_rate: Decimal, output_rate: Decimal
+) -> Decimal:
+    """A native video call's price from its own token counts (prompt and output, incl. thinking)."""
+    prompt = usage.get("promptTokenCount")
+    prompt_tokens = prompt if isinstance(prompt, int) else 0
+    output_tokens = 0
+    for key in ("candidatesTokenCount", "thoughtsTokenCount"):
+        value = usage.get(key)
+        output_tokens += value if isinstance(value, int) else 0
+    return (
+        Decimal(prompt_tokens) / _PER_MILLION * input_rate
+        + Decimal(output_tokens) / _PER_MILLION * output_rate
+    )
+
+
+def youtube_windows(duration_s: int, window_s: int) -> list[tuple[int, int]]:
+    """Back-to-back ``(start, end)`` windows covering the whole video."""
+    if duration_s <= 0 or window_s <= 0:
+        raise ValueError("positive duration and window required")
+    return [(start, min(start + window_s, duration_s)) for start in range(0, duration_s, window_s)]
+
+
+def join_windows(parts: Sequence[tuple[int, Transcript]]) -> Transcript:
+    """One transcript from windows in order; each window's timestamps shift by its start.
+
+    The first window that did not finish normally sets ``finish_reason``, so a cut-off window
+    marks the whole transcript partial.
+    """
+    if not parts:
+        raise ValueError("no windows to join")
+    lines: list[TranscriptLine] = []
+    quotes: list[QuoteCandidate] = []
+    texts: list[str] = []
+    finish: str | None = "STOP"
+    for start, part in parts:
+        texts.append(part.text)
+        lines.extend(
+            replace(line, ts_s=None if line.ts_s is None else line.ts_s + start)
+            for line in part.lines
+        )
+        quotes.extend(
+            replace(quote, ts_s=None if quote.ts_s is None else quote.ts_s + start)
+            for quote in part.quotes
+        )
+        if finish == "STOP" and part.finish_reason not in {None, "STOP", "stop"}:
+            finish = part.finish_reason
+    first = parts[0][1]
+    return Transcript(
+        model=first.model,
+        text="\n".join(text for text in texts if text),
+        lines=tuple(lines),
+        meta=dict(first.meta),
+        quotes=tuple(quotes),
+        has_timestamps=any(part.has_timestamps for _, part in parts),
+        finish_reason=finish,
+    )
 
 
 def with_media_seconds(reader: CostReader, media_seconds: int) -> CostReader:
@@ -1017,8 +1093,12 @@ class GeminiMediaClient:
         video_model: str = "gemini-3.5-flash-lite",
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] = _utcnow,
+        video_input_usd_per_1m: Decimal = VIDEO_INPUT_USD_PER_1M,
+        video_output_usd_per_1m: Decimal = VIDEO_OUTPUT_USD_PER_1M,
     ) -> None:
         self._video_model = video_model
+        self._video_input_usd_per_1m = video_input_usd_per_1m
+        self._video_output_usd_per_1m = video_output_usd_per_1m
         self._caller = caller
         self._openrouter_api_key = openrouter_api_key
         self._openrouter_base_url = openrouter_base_url
@@ -1350,19 +1430,49 @@ class GeminiMediaClient:
             file_uri, mime_type=mime_type, duration_s=duration_s, context=context, video=video
         )
 
-    def transcribe_video(self, url: str, *, duration_s: int, context: SpeakerContext) -> Transcript:
-        """Native public-YouTube input. The resolver proves public access and duration first."""
+    def transcribe_video(
+        self,
+        url: str,
+        *,
+        duration_s: int,
+        context: SpeakerContext,
+        start_s: int = 0,
+        end_s: int | None = None,
+    ) -> Transcript:
+        """Gemini reads a public YouTube link on Google's side; nothing is downloaded.
+
+        The resolver proves public access and duration first (YouTube Data API). ``start_s`` and
+        ``end_s`` clip one window (``videoMetadata``); ``duration_s`` is that window's length,
+        reserved against the media budget and priced from the response's own token counts.
+        """
         from clue_api.arv2.media_resolution import youtube_url
 
         normalized = youtube_url(url)
         if normalized is None:
             raise ValueError("public YouTube URL required")
+        end = start_s + duration_s if end_s is None else end_s
         return self.transcribe_native(
-            normalized[0], mime_type="video/mp4", duration_s=duration_s, context=context, video=True
+            normalized[0],
+            mime_type="video/mp4",
+            duration_s=duration_s,
+            context=context,
+            video=True,
+            video_metadata={
+                "startOffset": f"{start_s}s",
+                "endOffset": f"{end}s",
+                "fps": YOUTUBE_FPS,
+            },
         )
 
     def transcribe_native(
-        self, uri: str, *, mime_type: str, duration_s: int, context: SpeakerContext, video: bool
+        self,
+        uri: str,
+        *,
+        mime_type: str,
+        duration_s: int,
+        context: SpeakerContext,
+        video: bool,
+        video_metadata: Mapping[str, object] | None = None,
     ) -> Transcript:
         if duration_s <= 0:
             raise ValueError("verified media duration required")
@@ -1396,7 +1506,14 @@ class GeminiMediaClient:
                         "contents": [
                             {
                                 "parts": [
-                                    {"fileData": {"fileUri": uri, "mimeType": mime_type}},
+                                    {
+                                        "fileData": {"fileUri": uri, "mimeType": mime_type},
+                                        **(
+                                            {"videoMetadata": dict(video_metadata)}
+                                            if video_metadata
+                                            else {}
+                                        ),
+                                    },
                                     {"text": prompt},
                                 ]
                             }
@@ -1404,19 +1521,33 @@ class GeminiMediaClient:
                         "generationConfig": {
                             "temperature": 0,
                             "maxOutputTokens": LONG_MAX_OUTPUT_TOKENS,
+                            # Speech is what a transcript needs; low resolution keeps a video at
+                            # about 100 tokens a second instead of about 300.
+                            **({"mediaResolution": "MEDIA_RESOLUTION_LOW"} if video else {}),
                         },
                     },
                     timeout_s=GENERATE_TIMEOUT_S,
                 ),
-                # Video billing must be calibrated in the founder-triggered canary. Never apply the
-                # dedicated audio model's price to video. The ledger explicitly records unknown USD.
+                # Video is priced from the response's own token counts at the configured paid-tier
+                # rates (2026-10-13); the estimate assumes about 100 input tokens a second.
                 estimate=SpendEstimate(
                     media_seconds=duration_s,
-                    usd=Decimal(0) if video else estimate_media_usd(duration_s),
+                    usd=(
+                        Decimal(duration_s * VIDEO_TOKENS_PER_SECOND)
+                        / _PER_MILLION
+                        * self._video_input_usd_per_1m
+                    )
+                    if video
+                    else estimate_media_usd(duration_s),
                 ),
-                # Stamp the spec too: malformed metering must not turn unknown USD into zero.
-                extras={"usd_unpriced": True} if video else {},
-                cost_reader=gemini_cost_reader(duration_s, model=model, video=video),
+                cost_reader=gemini_cost_reader(
+                    duration_s,
+                    model=model,
+                    video=video,
+                    video_rates=(self._video_input_usd_per_1m, self._video_output_usd_per_1m)
+                    if video
+                    else None,
+                ),
                 halt_rule=gemini_native_halt_rule,
                 max_attempts=1,
             )

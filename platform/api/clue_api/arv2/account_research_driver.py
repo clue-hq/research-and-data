@@ -2499,6 +2499,8 @@ class _LiveClients:
             media_budget=self._media_budget,
             short_max_seconds=self._settings.arv2_media_short_max_seconds,
             ledger=ledger,
+            video_input_usd_per_1m=self._settings.arv2_media_video_usd_per_m_input,
+            video_output_usd_per_1m=self._settings.arv2_media_video_usd_per_m_output,
         )
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient:
