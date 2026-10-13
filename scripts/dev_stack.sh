@@ -72,6 +72,9 @@
 #   DEV_STACK_PLATFORM_PORT          platform API port           (default 8020)
 #   DEV_STACK_PLATFORM2_PORT         platform API twin's port    (default 8030)
 #   DEV_STACK_EDITOR_PORT            site editor port             (default 3120)
+#   DEV_STACK_PAGES_PORT             page origin port             (default: the checkout's own
+#                                    .env CLUE_PAGES_ORIGIN_PORT, else 8040). The page links the
+#                                    APIs build (CLUE_PAGES_PUBLIC_PORT) follow the same port.
 #
 # THE AGENT CODE SANDBOX (added 2026-09-20; spec docs/superpowers/specs/2026-09-19-agent-code-
 # execution-and-document-attachments-design.md). Head-of-ABM's `run_python@1` runs the agent's
@@ -99,6 +102,12 @@ DESIGN_PORT="${DEV_STACK_DESIGN_PORT:-8010}"
 PLATFORM_PORT="${DEV_STACK_PLATFORM_PORT:-8020}"
 PLATFORM2_PORT="${DEV_STACK_PLATFORM2_PORT:-8030}"
 EDITOR_PORT="${DEV_STACK_EDITOR_PORT:-3120}"
+# The page origin's port: the knob, else this checkout's own CLUE_PAGES_ORIGIN_PORT (the page
+# origin's port setting; read from .env alone, without sourcing the rest), else the runbook's 8040.
+# Lanes running side by side each name their own (charter 2026-10-12 §8), so one lane's page links
+# never reach another lane's page origin.
+PAGES_PORT="${DEV_STACK_PAGES_PORT:-$( { [ -f "$ROOT/.env" ] && sed -n 's/^CLUE_PAGES_ORIGIN_PORT=//p' "$ROOT/.env" | tail -1 | tr -d "\"' "; } || true )}"
+PAGES_PORT="${PAGES_PORT:-8040}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"
   CLUE_DESIGN_RUNTIME_ENABLED=1
@@ -110,7 +119,8 @@ PLATFORM_ENV=(
   # front of it locally. The repo `.env` keeps the PRODUCTION defaults; these override per process.
   CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost
   CLUE_PAGES_PUBLIC_SCHEME=http
-  CLUE_PAGES_PUBLIC_PORT=8040
+  CLUE_PAGES_PUBLIC_PORT="$PAGES_PORT"
+  CLUE_PAGES_ORIGIN_PORT="$PAGES_PORT"
   CLUE_PAGES_TRUST_HOST_HEADER=true
   CLUE_PAGES_EDGE_SECRET=
 )
@@ -160,9 +170,9 @@ start_platform_api() {  # both twins; a settings change (.env) needs both restar
       > "${LOG}_platform_api.log" 2>&1 & )
 }
 
-start_page_origin() {  # public page origin — serves http://<label>.pages.localhost:8040/<slug>
+start_page_origin() {  # public page origin — serves http://<label>.pages.localhost:$PAGES_PORT/<slug>
   ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port 8040 \
+      "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port "$PAGES_PORT" \
       > "${LOG}_page_origin.log" 2>&1 & )
 }
 
@@ -204,7 +214,7 @@ restart_api() {
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m uvicorn --factory clue_page_origin.main:build_application" 2>/dev/null || true
   for _ in $(seq 1 20); do
-    lsof -iTCP:"$PLATFORM_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PLATFORM2_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8040 -sTCP:LISTEN >/dev/null 2>&1 || break
+    lsof -iTCP:"$PLATFORM_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PLATFORM2_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PAGES_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
   done
   start_platform_api
@@ -321,7 +331,7 @@ down() {
 }
 
 status() {
-  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "8040 page-origin" "$EDITOR_PORT site-editor"; do
+  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "$PAGES_PORT page-origin" "$EDITOR_PORT site-editor"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"

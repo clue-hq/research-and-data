@@ -16,6 +16,7 @@
 #   8029  platform API
 #   8019  design API
 #   8039  platform API twin
+#   8049  page origin     http://<label>.pages.localhost:8049/<slug> (.env CLUE_PAGES_ORIGIN_PORT)
 #   3129  site editor     http://<label>.editor.localhost:3129
 #
 # The ports MUST also match what .env and apps/frontend/.env.local name for the BFF origin
