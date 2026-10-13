@@ -4,8 +4,8 @@ The real probe in headless Chromium — Playwright's and patchright's (the steal
 local fixture page: CSS hover, press and focus-visible, a script-driven hover, a transform under a
 transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
 CSS reveal, a keyframe animation and a scripted animation; and pages that fight the pass — buttons
-that leave the page after they were marked, a pulsing call to action, entrances still running, twin
-pulses a phase apart, cards wrapped in anchors. No network.
+that leave the page after they were marked (one replaced by a clone of itself), a pulsing call to
+action, entrances still running, twin pulses a phase apart, cards wrapped in anchors. No network.
 """
 
 from __future__ import annotations
@@ -178,6 +178,9 @@ def test_a_target_that_leaves_the_page_costs_no_more_than_the_deadline() -> None
     # The element re-rendered under the pointer is not measured by half: no record rather than the
     # empty reads of a detached element.
     assert "b-gone" not in run["by_id"] and "b-rerender" not in run["by_id"]
+    # Nor is one replaced by a clone of itself: the clone keeps the probe's mark, so the forced states
+    # still find a marked element, and only the read of the detached one it holds can refuse it.
+    assert "b-clone" not in run["by_id"], run["by_id"].get("b-clone")
 
 
 def test_a_running_animation_is_not_read_as_a_state() -> None:

@@ -4,7 +4,10 @@
      re-rendered by the test right after marking; #b-rerender re-renders itself the first time the
      pointer enters it (a menu or carousel re-rendering on hover). A re-render is a fresh element in
      the old one's place, with the same look and without the probe's mark, as a framework draws it.
-     #b-stay never moves. Opened from file://; never a real site. -->
+     #b-clone (FX-C2) replaces itself with a clone of itself the first time the pointer enters it, so
+     the clone KEEPS the mark: the state pass then still finds a marked element, and only the reads
+     tell it that the one it holds has left the page. #b-stay never moves.
+     Opened from file://; never a real site. -->
 <style>
   body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
   header { display: flex; gap: 24px; padding: 16px 40px; }
@@ -18,6 +21,8 @@
   .rerender:hover { background: #163a5a; }
   .gone { background: #7c4cff; }
   .gone:hover { background: #5a2fd6; }
+  .clone { background: #9c2f5a; }
+  .clone:hover { background: #7a2446; }
   section.band { padding: 60px 40px; background: #014036; color: #fff; }
 </style></head>
 <body>
@@ -27,6 +32,7 @@
     <button class="btn stay" id="b-stay">Stay</button>
     <button class="btn rerender" id="b-rerender">Re-render on hover</button>
     <button class="btn gone" id="b-gone">Gone</button>
+    <button class="btn clone" id="b-clone">Clone on hover</button>
   </div>
 </main>
 <section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
@@ -38,5 +44,8 @@
   };
   const target = document.getElementById('b-rerender');
   target.addEventListener('mouseenter', () => window.__rerender(target), { once: true });
+  document.getElementById('b-clone').addEventListener('mouseenter', function () {
+    this.replaceWith(this.cloneNode(true));
+  }, { once: true });
 </script>
 </body></html>
