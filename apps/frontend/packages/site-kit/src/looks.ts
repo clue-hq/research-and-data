@@ -6,7 +6,7 @@
 import type { BrandData } from "./brand";
 import {
   FALLBACKS, alphaOf, colorOf, contrast, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf,
-  ratioOf, shadowOf, styleOf, transformOf, trim, typographyOf,
+  ratioOf, shadowOf, styleOf, tokenEntry, transformOf, trim, typographyOf,
 } from "./brand-values";
 import { inkRole, readableInk } from "./surfaces";
 
@@ -422,7 +422,7 @@ export function motionEntries(brand: BrandData): MotionEntry[] {
         + `@media (prefers-reduced-motion:no-preference){.brand-motion-${slug}{animation:brand-kf-${slug} ${duration} ${easing} ${delay} ${value.iterations} ${value.direction} ${value.fill_mode}}}`,
       describe: `${changes.join(", ")}; ${repeat}${direction}`,
       timing: `${seconds(duration)} ${easing}`,
-      where: (brand.kit as { tokens?: { styles?: Record<string, { description?: string | null }> } }).tokens?.styles?.[token]?.description ?? "",
+      where: tokenEntry(brand, "styles", token)?.description ?? "",
     });
   }
   for (const token of motion?.reveals ?? []) {
@@ -441,7 +441,7 @@ export function motionEntries(brand: BrandData): MotionEntry[] {
         + `@supports (animation-timeline:view()){@media (prefers-reduced-motion:no-preference){.brand-motion-reveal-${slug}{animation:brand-kf-reveal-${slug} ${easing} both;animation-timeline:view();animation-range:entry 0% entry 100%}}}`,
       describe: `${said} as it scrolls into view`,
       timing: easing,
-      where: (brand.kit as { tokens?: { styles?: Record<string, { description?: string | null }> } }).tokens?.styles?.[token]?.description ?? "",
+      where: tokenEntry(brand, "styles", token)?.description ?? "",
     });
   }
   return entries;

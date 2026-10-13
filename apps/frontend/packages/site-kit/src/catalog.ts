@@ -240,10 +240,9 @@ function surfacesSection(brand: BrandData): string[] {
 }
 
 function typeSection(brand: BrandData): string[] {
-  const typography = ((brand.kit as { tokens?: { typography?: Record<string, TypeToken> } }).tokens?.typography) ?? {};
   const rows = TYPE_ROLES.map((role) => {
     const classes = `\`font-${typeVar(role)} text-${typeVar(role)}\``;
-    const token = typography[`type.${role}`];
+    const token = tokenEntry(brand, "typography", `type.${role}`) as TypeToken | undefined;
     if (!token) return `| ${role} | ${classes} | not in this kit | | | | | |`;
     const style = token.value.default;
     const colourRole = typographyOf(brand, `type.${role}`)?.color;

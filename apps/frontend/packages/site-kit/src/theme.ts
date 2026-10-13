@@ -7,7 +7,7 @@
 // kit's (brand-values.ts) or one of FALLBACKS; clones keep their own captured CSS.
 import type { BrandData } from "./brand";
 import {
-  FALLBACKS, colorOf, contrast, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
+  FALLBACKS, colorOf, contrast, cssString, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
   pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
 } from "./brand-values";
 import {
@@ -40,6 +40,8 @@ const CSS_OF: Record<Part, string> = {
   iconOpacity: "opacity",
 };
 const ICON_PARTS = new Set<Part>(["iconColor", "iconTransform", "iconOpacity"]);
+/** A relative asset path: the only font file a face's url("…") may hold. */
+const ASSET_PATH = /^[A-Za-z0-9._~/-]+$/;
 const OUTLINE_PARTS = new Set<Part>(["outlineColor", "outlineWidth", "outlineStyle", "outlineOffset"]);
 type Swap = Partial<Record<"fill" | "label" | "border", string>>;
 type Swaps = { parts: Set<Part>; bySurface: Map<string, Swap> };
@@ -119,7 +121,10 @@ function lookSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: str
 export function themeCss(brand: BrandData): string {
   const lines: string[] = [];
   for (const face of brand.fonts) {
-    lines.push(`@font-face{font-family:"${face.family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
+    // A face's file is written into url("…") only as a relative asset path; otherwise the face is skipped.
+    const family = cssString(face.family);
+    if (!family || !ASSET_PATH.test(face.file)) continue;
+    lines.push(`@font-face{font-family:"${family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
   }
 
   const root: Record<string, string> = {};
