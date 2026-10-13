@@ -37,7 +37,8 @@ test("an old kit draws a look from its recipe's tokens, and the standard button 
   assert.equal(drawn.source.fill, "standard");
   // The recipe's white label (text.inverse) does not read on that light cyan (1.46:1), so the label is
   // the standard button's own; a recipe label that reads is drawn (garner's solid.2, white on #047464).
-  assert.deepEqual([drawn.parts.label, drawn.tokens.label, drawn.source.label], ["#29251E", "text.primary", "standard"]);
+  assert.deepEqual([drawn.parts.label, drawn.tokens.label, drawn.source.label], ["#29251E", "text.primary", "readable"]);
+  assert.equal(drawn.replaced?.label, "#FFFFFF (text.inverse)");
   assert.equal(drawn.parts.radius, "8px 8px 8px 8px");
   const garner = drawnButton(kitBrand("garner"), lookNamed(kitBrand("garner"), "button", "solid.2"));
   assert.deepEqual([garner.parts.label, garner.tokens.label, garner.source.label], ["#FFFFFF", "text.inverse", "kit"]);

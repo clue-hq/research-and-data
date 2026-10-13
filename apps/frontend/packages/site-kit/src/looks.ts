@@ -105,8 +105,12 @@ export type Part =
   | "outlineColor" | "outlineWidth" | "outlineStyle" | "outlineOffset" | "iconColor" | "iconTransform" | "iconOpacity";
 /** CSS values; four-sided parts list top right bottom left (corners: tl tr br bl). */
 export type Parts = Partial<Record<Part, string>>;
-export type Source = "measured" | "kit" | "standard" | "fallback" | "none" | "inherit";
-export type Drawn = { parts: Parts; tokens: Partial<Record<Part, string>>; source: Partial<Record<Part, Source>> };
+/** Where a drawn part came from; `readable`: put in place of one that does not read (readableLabel). */
+export type Source = "measured" | "kit" | "standard" | "fallback" | "none" | "inherit" | "readable";
+/** `replaced`: a `readable` part's own value before it was replaced, named as brand.md names it. */
+export type Drawn = {
+  parts: Parts; tokens: Partial<Record<Part, string>>; source: Partial<Record<Part, Source>>; replaced?: Partial<Record<Part, string>>;
+};
 
 const SIDES = ["top", "right", "bottom", "left"] as const;
 const CORNERS = ["tl", "tr", "br", "bl"] as const;
@@ -260,20 +264,20 @@ export const isClearFill = (fill: string | undefined) =>
 /** A fill and a label that were never seen together — one the standard button's, the other the
  * kit's or measured — and do not read together (4.5:1): the label becomes the text colour that reads
  * on that fill, the standard button's own label on the standard's fill, else the better of
- * text.primary and text.inverse. A pair from one source is never changed. */
+ * text.primary and text.inverse, with source `readable` and the label it replaced kept in `replaced`
+ * (brand.md says both). A pair from one source is never changed. */
 function readableLabel(brand: BrandData, drawn: Drawn) {
   const { fill, label } = drawn.parts;
   const sources = [drawn.source.fill, drawn.source.label];
   const mixed = sources.includes("standard") && (sources.includes("kit") || sources.includes("measured"));
   if (!mixed || isClearFill(fill) || !fill?.startsWith("#") || !label?.startsWith("#")) return;
   if (contrast(fill.slice(0, 7), label.slice(0, 7)) >= 4.5) return;
-  if (drawn.source.fill === "standard") {
-    const std = standardButton(brand);
-    put(drawn, "label", std.parts.label, std.tokens.label, "standard");
-  } else {
-    const ink = readableInk(brand, fill.slice(0, 7));
-    put(drawn, "label", colorOf(brand, ink), ink, "kit");
-  }
+  const std = standardButton(brand);
+  const ink = readableInk(brand, fill.slice(0, 7));
+  const [value, token] = drawn.source.fill === "standard" ? [std.parts.label, std.tokens.label] : [colorOf(brand, ink), ink];
+  if (!value) return;
+  drawn.replaced = { ...drawn.replaced, label: drawn.tokens.label ? `${label} (${drawn.tokens.label})` : label };
+  put(drawn, "label", value, token, "readable");
 }
 
 /** How a look is drawn at rest. */

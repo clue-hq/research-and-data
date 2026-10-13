@@ -31,12 +31,24 @@ test("Buttons: the standard button and each style with its values and token name
 });
 
 test("Conduit's demo button reads warm dark once measured, and says what is drawn before", () => {
-  assert.ok(row(md("conduit"), "solid.2").includes("| not in the kit; drawn: #7CE4FC (surface.brand), the standard button's fill | not in the kit; drawn: #29251E (text.primary), the standard button's label |"), row(md("conduit"), "solid.2"));
+  const demo = row(md("conduit"), "solid.2").split(" | ");
+  assert.equal(demo[2], "not in the kit; drawn: #7CE4FC (surface.brand), the standard button's fill");
+  assert.equal(demo[3], "the kit's #FFFFFF (text.inverse) does not read on this fill; drawn: #29251E (text.primary)");
   const minted = row(md("conduit.minted"), "solid.28241e");
   assert.ok(minted.startsWith("| solid.28241e | filled | #28241E (surface.band.28241e) | #FFFFFF (text.inverse) |"), minted);
   assert.ok(!minted.includes("#7CE4FC"));
   assert.ok(!md("conduit.minted").includes("This kit was made before button styles were measured"));
   assert.ok(md("altcarbon").includes('kit.Button look="solid.1"'));
+});
+
+test("Buttons says a filled button's light version is the page or the inverse colour, whichever stands out", () => {
+  const text = md("conduit").replace(/\n/g, " ");
+  assert.ok(text.includes("take their light version (the kit's page or inverse colour, whichever stands out more on that surface, with its text colour). Every other button"), text);
+});
+
+test("Cards says a text-only or outline card's text takes the surface's text colour where its own would not stand out", () => {
+  const text = md("conduit").replace(/\n/g, " ");
+  assert.ok(text.includes("it then takes the style's hover and focus looks from the seller's site. A text-only or outline card's text takes the surface's text colour on any surface where its own would not stand out. |"), text);
 });
 
 test("Surfaces: one table, our six and every other surface with where it came from", () => {

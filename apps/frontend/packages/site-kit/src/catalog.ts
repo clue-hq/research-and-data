@@ -201,6 +201,7 @@ function partCell(brand: BrandData, drawn: Drawn, part: Part, what: string): str
   if (value === "inherit" || value === "currentColor") return "the surrounding text's colour";
   if (value.startsWith("clamp(") && token) value = pxOf(brand, token) ?? value;
   const named = token ? `${value} (${token})` : value;
+  if (drawn.source[part] === "readable") return `the kit's ${drawn.replaced?.[part]} does not read on this fill; drawn: ${named}`;
   if (drawn.source[part] === "standard") return `not in the kit; drawn: ${named}, the standard ${what}`;
   if (drawn.source[part] === "fallback") return `not in the kit; drawn: ${named}, site-kit's default`;
   return named;
@@ -284,8 +285,8 @@ function buttonsSection(brand: BrandData): string[] {
   const dark = [
     "A button whose text or fill would not stand out from its surface changes: outline and text-only",
     "styles take the surface's text colour on any surface, and on a dark surface filled styles and the",
-    "standard button take their light version (the kit's page colour, with its text colour). Every other",
-    "button is drawn as the seller's site draws it.",
+    "standard button take their light version (the kit's page or inverse colour, whichever stands out",
+    "more on that surface, with its text colour). Every other button is drawn as the seller's site draws it.",
   ];
   if (!looks.length) {
     return ["## Buttons", `This brand's kit records no button styles, so every button is the kit's standard button: ${fill}, ${label}, ${corners}.`, "", ...dark, ""];
@@ -343,6 +344,8 @@ function cardsSection(brand: BrandData): string[] {
     `its brand kit recorded them, and the kit's standard card. Choose one with \`look\``,
     `(\`kit.Card look="${looks[0].name}"\`), or leave it out for the standard card. Give it \`href\` to make`,
     "the whole card a link; it then takes the style's hover and focus looks from the seller's site.",
+    "A text-only or outline card's text takes the surface's text colour on any surface where its own",
+    "would not stand out.",
     "| look | kind | fill | text | border | corners | padding | confidence | notes from the brand kit |",
     "|---|---|---|---|---|---|---|---|---|",
     `| (none) | the kit's standard card | ${fill} | ${text} | none | ${corners} | ${padding} | — | Used when you name no look. |`,

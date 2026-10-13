@@ -141,14 +141,16 @@ test("A4: a fill and a label from different sources that do not read together: t
   const demo = drawnButton(conduit, lookNamed(conduit, "button", "solid.2"));
   const std = drawnButton(conduit, null);
   assert.equal(demo.parts.fill, "#7CE4FC");
-  assert.deepEqual([demo.parts.label, demo.tokens.label, demo.source.label], [std.parts.label, std.tokens.label, "standard"]);
+  assert.deepEqual([demo.parts.label, demo.tokens.label, demo.source.label], [std.parts.label, std.tokens.label, "readable"]);
+  assert.equal(demo.replaced?.label, "#FFFFFF (text.inverse)");
   assert.ok(ratio(demo.parts.label!, "#7CE4FC") >= 4.5);
   // A measured light fill with no measured label: the better of the kit's two text colours.
   const probe = kitBrand("probe.minted");
   const lightFill = withColors(probe, { [measuredRest(probe, "button", "solid.7c4cff").fill]: "#F5F5F5" });
   delete measuredRest(lightFill, "button", "solid.7c4cff").label;
   const light = drawnButton(lightFill, lookNamed(lightFill, "button", "solid.7c4cff"));
-  assert.deepEqual([light.parts.label, light.tokens.label, light.source.label], ["#0E1110", "text.primary", "kit"]);
+  assert.deepEqual([light.parts.label, light.tokens.label, light.source.label], ["#0E1110", "text.primary", "readable"]);
+  assert.equal(light.replaced?.label, "#FFFFFF (text.inverse)", "the standard button's label it replaced");
   // A pair the seller drew (fill and label both measured) is drawn as measured, readable or not.
   const drawnPair = withColors(probe, { [measuredRest(probe, "button", "solid.7c4cff").fill]: "#F5F5F5" });
   const pair = drawnButton(drawnPair, lookNamed(drawnPair, "button", "solid.7c4cff"));
