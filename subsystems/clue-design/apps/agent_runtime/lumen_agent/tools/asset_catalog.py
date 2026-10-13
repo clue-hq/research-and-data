@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List
+from typing import Any, List, Optional
 from lumen_api.agent_account_logos import is_fetched_logo
 
 from ..engine_mirror import record_pixel_dims
@@ -193,3 +193,71 @@ def materialize_asset(config, record: dict) -> None:
     loader = getattr(config, "asset_materializer", None)
     if callable(loader):
         loader(record.get("id"))
+
+
+def one_line(text: Any, limit: int = 220) -> Optional[str]:
+    """An asset description's first sentence, capped — `search_assets` results stay compact;
+    `view("asset:<id>")` carries the full analysis."""
+    if not text:
+        return None
+    flat = " ".join(str(text).split())
+    end = flat.find(". ")
+    first = flat[: end + 1] if 0 < end < limit else flat
+    return first if len(first) <= limit else first[: limit - 1].rstrip() + "…"
+
+
+def visual_asset_ranking(query: str, candidates: dict, kind: str, embeddings: Optional[dict]) -> tuple[list[str], str]:
+    """Candidate ids closest to the query by CLIP image vector, and a plain status line.
+
+    Visual search is an addition, never a requirement: no vectors for this library, no
+    model on this host, or a failed query embedding each return [] with the reason, and the
+    caller ranks by keyword alone.
+    """
+    if not embeddings:
+        return [], "off: this library has no image vectors yet"
+    try:
+        from lumen_api.asset_embeddings import EmbeddingUnavailable, embed_query, visual_ranking
+    except Exception as error:  # noqa: BLE001 - the API package may be absent in a bare runtime
+        return [], f"off: visual search is not installed here ({type(error).__name__})"
+    try:
+        vector = embed_query(query)
+    except EmbeddingUnavailable as error:
+        return [], f"off: {error}"
+    eligible = [aid for aid, (entry, _) in candidates.items()
+                if _asset_kind_matches(entry.get("record") or {}, kind)]
+    ranking = visual_ranking(vector, embeddings, eligible)
+    return ranking, ("on" if ranking else "off: none of these images has a vector yet")
+
+
+def hybrid_search(candidates: dict, q: str, kind: Optional[str], limit: int, embeddings: Optional[dict]) -> dict:
+    """`search_assets`' payload: exact ids first, then keyword and look fused (founder ruling 2026-10-05)."""
+    if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
+        return {"status": "error", "message": "Supply a query and limit 1..20"}
+    query, wanted_kind = q.strip(), (kind or "").lower()
+    ranked = rank_assets(candidates, query.lower(), wanted_kind)
+    named = [row[0] for row in ranked if row[3]]
+    keyword = [row[0] for row in ranked if not row[3]]
+    visual, visual_status = visual_asset_ranking(query, candidates, wanted_kind, embeddings)
+    if visual:
+        from lumen_api.asset_embeddings import FUSION_DEPTH, hybrid_ranking
+
+        fused = [aid for aid in hybrid_ranking(keyword, visual) if aid not in named]
+        keyword_set, visual_set = set(keyword[:FUSION_DEPTH]), set(visual[:FUSION_DEPTH])
+    else:
+        fused = keyword
+        keyword_set, visual_set = set(keyword), set()
+    results = []
+    for aid in (named + fused)[:limit]:
+        entry, origin = candidates[aid]
+        results.append({
+            "asset_id": aid, "origin": origin, "title": entry.get("title"),
+            "description": one_line(entry.get("description")), "usage": entry.get("usage"),
+            "view": f"asset:{aid}", **asset_summary(entry),
+            "match": ("id" if aid in named else
+                      "words and look" if aid in keyword_set and aid in visual_set else
+                      "words" if aid in keyword_set else
+                      "look" if aid in visual_set else
+                      "words" if aid in keyword else "look"),
+        })
+    return {"status": "ok", "results": results, "count": len(results),
+            "inventory_count": len(candidates), "visual_search": visual_status}

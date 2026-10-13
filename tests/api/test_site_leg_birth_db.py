@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -10,9 +11,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents import AgentExecutionStatus
+from clue_agents import DomainObjectRef
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.design_leg_tools import OpenDesignLegTool
+from clue_api.design_leg_wiring import _exit_judge_artifact_lines, design_leg_run_id
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
 from clue_design.documents import create_document, get_document
@@ -25,12 +27,10 @@ from tests.api.test_genad_leg_document_birth_db import (
 )
 from tests.api.test_genweb_leg_document_birth_db import engine_web_doc
 from tests.api.test_genweb_web_turn_dispatch_db import (
-    APPLIED_WEB_RESULT,
     _FakeLane,
     _run_turn,
     _seed_leg_conversation,
     _submit_message,
-    _turn_facts,
 )
 from tests.db.conftest import run_async
 from tests.profiling.conftest import migrated_db, rollback_conn  # noqa: F401
@@ -94,7 +94,7 @@ def test_an_unlisted_workspace_births_a_webdoc_unchanged(tmp_path: Path, migrate
     run_async(scenario())
 
 
-# --- Review focus 3: a site document's turn refuses until the site runtime lands (B5) ------------
+# --- Lane B (Contract 7): a site document runs a site_turn on a fresh thread ---------------------
 
 
 async def _seed_site_leg(
@@ -127,45 +127,176 @@ async def _seed_site_leg(
     return seeds, document
 
 
-def test_a_site_document_turn_refuses_until_the_site_runtime_lands(
+#: What the site executor returns for a saved request (Contract 7), with one collected model call.
+APPLIED_SITE_RESULT: dict[str, Any] = {
+    "schema_version": 1,
+    "status": "applied",
+    "outcome": "saved",
+    "summary": "Built the landing page.",
+    "doc_kind": "site",
+    "current_version": 1,
+    "saved_version": 1,
+    "stop_reason": None,
+    "model_calls": [
+        {
+            "run_id": "8f0f1f51-0b5d-4a43-9d39-1d3c5d2f0a11",
+            "sequence": 1,
+            "requested_model": "openai:test/model",
+            "answering_model": "test/model",
+            "status": "completed",
+            "role": "design_site",
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 0,
+            "cost_cents": "0.5",
+            "cost_source": "metered",
+            "langfuse_trace_id": None,
+            "langfuse_observation_id": None,
+            "latency_ms": 12.0,
+            "error_code": None,
+            "started_at": datetime(2026, 10, 11, 9, 0, tzinfo=UTC).isoformat(),
+            "completed_at": datetime(2026, 10, 11, 9, 0, 1, tzinfo=UTC).isoformat(),
+        }
+    ],
+}
+
+
+def test_a_site_document_leg_dispatches_a_site_turn_on_a_fresh_thread(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """A site document must never fall into the scene runtime (the ``else "agent_turn"`` arm):
-    the turn refuses with the typed site-runtime code BEFORE any design run row is written,
-    and the leg stays open for the user's next message."""
+    """Contract 7: doc_kind='site' -> kind='site_turn'; fresh session per request (thread = run);
+    the summary names the website; the run's model calls reach agent_model_call."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            seeds, _document = await _seed_site_leg(conn, storage_root=tmp_path, label="siteturn")
+            seeds, document = await _seed_site_leg(conn, storage_root=tmp_path, label="siteturn")
             with hermetic_flag_env():
                 registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
-            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_SITE_RESULT)
             submission = await _submit_message(
                 conn, seeds, label="siteturn", message="Build the landing page."
             )
-            result = await _run_turn(conn, seeds, registry, lane, submission)
+            await _run_turn(conn, seeds, registry, lane, submission)
 
-            assert result.outcome.status is AgentExecutionStatus.FAILED
-            assert result.outcome.failure_code == "design_leg_site_runtime_not_composed"
-            assert result.assistant_message is None
-            assert lane.envelopes == []  # nothing was dispatched
-            facts = await _turn_facts(conn, seeds, submission.turn_id)
-            assert facts == {
-                "runs": 0,
-                "roles": ["user"],
-                "commits": 0,
-                "leg_state": "open_awaiting_user",
+            envelope = lane.envelopes[0]
+            run_id = design_leg_run_id(submission.turn_id)
+            assert envelope.kind == "site_turn" and envelope.document_id == document["id"]
+            assert envelope.checkpoint_thread_id == envelope.run_id == run_id
+            assert envelope.config["request"] == {
+                "prompt": "Build the landing page.",
+                "base_version": document["current_version"],
             }
-            no_rows = (
+            assert "ad_lane" not in envelope.config and "design_memory" not in envelope.config
+            assert "document_base_version" not in envelope.config["leg"]
+            kind = (
                 await conn.execute(
-                    text("SELECT count(*) FROM design_agent_run WHERE workspace_id = :ws"),
-                    {"ws": seeds["workspace_id"]},
+                    text(
+                        "SELECT kind FROM design_agent_run "
+                        "WHERE run_id = :run AND workspace_id = :ws"
+                    ),
+                    {"run": run_id, "ws": seeds["workspace_id"]},
                 )
             ).scalar_one()
-            assert int(no_rows) == 0
+            assert str(kind) == "site_turn"
+            reply = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT role FROM agent_thread_message "
+                            "WHERE workspace_id = :ws AND thread_id = :t "
+                            "ORDER BY sequence"
+                        ),
+                        {"ws": seeds["workspace_id"], "t": seeds["thread_id"]},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert list(reply)[-1] == "assistant"
+            calls = (
+                await conn.execute(
+                    text("SELECT count(*) FROM agent_model_call WHERE turn_id = :turn"),
+                    {"turn": submission.turn_id},
+                )
+            ).scalar_one()
+            assert int(calls) == 1
+
+    run_async(scenario())
+
+
+def test_the_exit_judge_calls_a_site_a_web_page(tmp_path: Path, migrated_db: bool) -> None:  # noqa: F811
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_site_leg(conn, storage_root=tmp_path, label="sitelabel")
+            lines = await _exit_judge_artifact_lines(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                leg_documents=[
+                    {
+                        "document_id": document["id"],
+                        "doc_kind": "site",
+                        "title": "Harbor & Sage",
+                        "position": 0,
+                    }
+                ],
+            )
+            assert lines[0].startswith('1. "Harbor & Sage" (web page)')
+
+    run_async(scenario())
+
+
+def test_site_annotations_ride_the_request_as_targets_in_order(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Ruling R9: the parts the person pointed at reach the site turn, in submission order, with
+    their notes. (A targetless site request staying exactly {prompt, base_version} is pinned by
+    Task 13's `test_a_site_document_leg_dispatches_a_site_turn_on_a_fresh_thread`.)"""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_site_leg(conn, storage_root=tmp_path, label="sitetargets")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_SITE_RESULT)
+
+            def ref(object_type: str, object_id: str, note: str | None = None) -> DomainObjectRef:
+                return DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type=object_type,
+                    object_id=object_id,
+                    note=note,
+                )
+
+            submission = await _submit_message(
+                conn, seeds, label="sitetargets", message="Two fixes, please."
+            )
+            await _run_turn(
+                conn,
+                seeds,
+                registry,
+                lane,
+                submission,
+                focus_refs=(
+                    ref("design_document", document["id"]),
+                    ref("design_node", "site:/#hero.title", "1. Make it warmer."),
+                    ref("design_node", "site:shell#header"),
+                ),
+            )
+            request = lane.envelopes[0].config["request"]
+            assert request["prompt"] == "Two fixes, please."
+            assert request["targets"] == [
+                {"object_id": "site:/#hero.title", "note": "1. Make it warmer."},
+                {"object_id": "site:shell#header", "note": None},
+            ]
 
     run_async(scenario())

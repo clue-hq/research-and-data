@@ -163,6 +163,9 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     "record_creatives": ("method", ("lumen_ingestion/ad_library/store.py",)),
     "create_card_version": ("method", ("lumen_ingestion/ad_library/store.py",)),
     "link_pregenerated_assets": ("method", ("lumen_ingestion/ad_library/store.py",)),
+    # --- Wave 2 Lane B: agent-written Puck sections --------------------------------------------
+    "record_site_section": ("method", ("lumen_api/design_store.py",)),
+    "record_site_section_bytes": ("function", ()),
 }
 
 #: Design store mutations that are deliberately NOT behind a tool, each with its justification.
@@ -259,6 +262,7 @@ def test_every_governed_name_actually_exists() -> None:
     from lumen_api.toolbelt import personalization as toolbelt_personalization
     from lumen_api.toolbelt import publishes as toolbelt_publishes
     from lumen_api.toolbelt import site_documents as toolbelt_site_documents
+    from lumen_api.toolbelt import site_sections as toolbelt_site_sections
     from lumen_api.toolbelt import web_documents as toolbelt_web_documents
     from lumen_ingestion.ad_library.store import AdAssetsStore
     from lumen_ingestion.describe import DescriptionStore
@@ -289,6 +293,7 @@ def test_every_governed_name_actually_exists() -> None:
                     toolbelt_site_documents,
                     site_publish,
                     toolbelt_publishes,
+                    toolbelt_site_sections,
                 )
             ), f"{name} is not a known design operation core"
 
@@ -406,6 +411,7 @@ def test_design_tool_names_are_stable() -> None:
         "design_record_ad_creatives",
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",
+        "design_record_site_section",
     }
 
 

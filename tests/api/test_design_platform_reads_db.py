@@ -643,3 +643,36 @@ def test_calling_from_the_platform_loop_is_refused(tmp_path: Path, migrated_db: 
                 reads.seller_knowledge()
 
     run_async(scenario())
+
+
+def test_the_cited_claims_read_reaches_the_design_side(tmp_path: Path, migrated_db: bool) -> None:
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import build_design_platform_reads_factory
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="cited")
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            envelope = _leg_envelope(
+                seeds["workspace_id"], seeds["project"].project_id, seeds["opening_turn"]
+            )
+            reads = await asyncio.to_thread(factory, envelope)
+            assert reads is not None
+            missing = str(uuid4())
+            answer = await asyncio.to_thread(
+                reads.read_cited_claims,
+                entity_id=str(seeds["account_id"]),
+                claim_ids=[missing],
+            )
+            assert answer == {
+                "entity_id": str(seeds["account_id"]),
+                "claims": [],
+                "dispositions": {missing: "not_found"},
+            }
+
+    run_async(scenario())

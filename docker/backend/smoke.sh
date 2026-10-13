@@ -26,6 +26,8 @@ check "font manifest" run test -f /app/subsystems/clue-design/apps/api/font-libr
 check "tailwind toolchain" run test -d /app/subsystems/clue-design/apps/editor/node_modules/@tailwindcss/node
 check "tailwind browser runtime" run test -f /app/subsystems/clue-design/apps/editor/public/vendor/tailwind-browser.js
 check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/render-browser.js -a -f /app/apps/frontend/packages/site-kit/dist/validate-site.mjs
+check "site-kit section toolchain" run test -d /app/apps/frontend/node_modules/typescript -a -d /app/apps/frontend/node_modules/esbuild -a -d /app/apps/frontend/node_modules/tsx
+check "site-kit section check folder writable" run test -w /app/apps/frontend/packages/site-kit/.section-check
 check "node" run node --version
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"

@@ -470,10 +470,12 @@ def capture_site_screenshot(
     height: int = 900,
     scale: float = 1.0,
     timeout_s: float = 20.0,
+    clip_selector: str | None = None,
 ) -> bytes:
     """A PNG of ``page`` styled by ``css``, sanitized, in a hardened page with JavaScript OFF and
     the network blocked. Its images and fonts must already be ``data:`` URIs
-    (``web_pdf.inline_asset_store_refs``): nothing else can load."""
+    (``web_pdf.inline_asset_store_refs``): nothing else can load. With ``clip_selector``, the PNG is
+    an element shot of the first element it matches (a refusal when nothing matches)."""
     from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
     from .site_sanitize import sanitize_site_html
@@ -491,6 +493,11 @@ def capture_site_screenshot(
         ) as (shot, _blocked):
             shot.set_content(html, wait_until="load", timeout=timeout_ms)
             shot.wait_for_timeout(_FONT_SETTLE_MS)
+            if clip_selector is not None:
+                target = shot.locator(clip_selector)
+                if target.count() == 0:
+                    raise SiteRenderError(RENDER_FAILED, f"nothing to draw: {clip_selector}")
+                return target.first.screenshot(type="png", timeout=timeout_ms)
             return shot.screenshot(type="png", full_page=full_page, timeout=timeout_ms)
     except PlaywrightTimeout as error:
         raise SiteRenderError(RENDER_TIMEOUT, f"the screenshot did not finish within {timeout_s:g}s") from error

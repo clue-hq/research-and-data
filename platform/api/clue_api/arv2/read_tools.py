@@ -62,6 +62,7 @@ from clue_core import Claim, EntityId, UseClass, VerificationStatus
 from clue_db import ConnFactory, transaction
 from clue_obs.langfuse import tag_entities
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
+from clue_research.claimstore.quality import inspectable_claims_by_ids
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_spine import get_project
 from clue_toolbelt import (
@@ -87,13 +88,16 @@ __all__ = [
     "EVIDENCE_CHARS",
     "MAX_ACCOUNTS",
     "MAX_CANDIDATES",
+    "MAX_CITED_CLAIMS",
     "MAX_CLAIMS",
     "READ_REFERENCES_BUDGET_BYTES",
+    "UNVERIFIED_FINDING_FIELDS",
     "AccountClaimView",
     "AccountOverviewSection",
     "AccountResearch",
     "Arv2ReadRefused",
     "Arv2ReadService",
+    "CitedClaimsPage",
     "ClaimsQueryPage",
     "DbArv2ReadService",
     "DiscoveryCandidateV3View",
@@ -106,6 +110,9 @@ __all__ = [
     "ReadAccountResearchTool",
     "ReadAccountResearchV2Input",
     "ReadAccountResearchV2Tool",
+    "ReadCitedClaimsInput",
+    "ReadCitedClaimsOutput",
+    "ReadCitedClaimsTool",
     "ReadClaimsInput",
     "ReadClaimsOutput",
     "ReadClaimsTool",
@@ -123,12 +130,14 @@ __all__ = [
     "ReadProjectAccountsTool",
     "build_arv2_paged_read_tools",
     "build_arv2_read_tools",
+    "claim_gate_reason",
     "claim_prefixes",
     "claims_page",
     "gate_claims",
     "list_project_accounts",
     "parse_since",
     "read_account_research",
+    "read_cited_claims",
     "read_claims",
     "read_discovery_run",
     "receipt_bytes",
@@ -1017,6 +1026,23 @@ def _unsafe_only_until_verified(claim: Claim, settings: Settings) -> bool:
     return str(claim.field_key) in UNVERIFIED_ONLY_UNSAFE_FIELDS
 
 
+def claim_gate_reason(claim: Claim, *, settings: Settings) -> str | None:
+    """Why the display gate holds ``claim`` back — ``sensitive``, ``unverified`` or
+    ``outreach_unsafe`` — or ``None`` when a read may serve it.
+
+    The one decision :func:`gate_claims` counts and :func:`read_cited_claims` reports per id, so
+    the two can never disagree about a claim.
+    """
+
+    if _is_sensitive(claim):
+        return "sensitive"
+    if settings.verification_enabled and _is_unverified_synthesis(claim):
+        return "unverified"
+    if not claim.outreach_safe and not _unsafe_only_until_verified(claim, settings):
+        return "outreach_unsafe"
+    return None
+
+
 def gate_claims(
     claims: Iterable[Claim], *, settings: Settings
 ) -> tuple[list[Claim], dict[str, int]]:
@@ -1044,16 +1070,11 @@ def gate_claims(
     excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
     servable: list[Claim] = []
     for claim in claims:
-        if _is_sensitive(claim):
-            excluded["sensitive"] += 1
-            continue
-        if settings.verification_enabled and _is_unverified_synthesis(claim):
-            excluded["unverified"] += 1
-            continue
-        if not claim.outreach_safe and not _unsafe_only_until_verified(claim, settings):
-            excluded["outreach_unsafe"] += 1
-            continue
-        servable.append(claim)
+        reason = claim_gate_reason(claim, settings=settings)
+        if reason is None:
+            servable.append(claim)
+        else:
+            excluded[reason] += 1
     return servable, excluded
 
 
@@ -1706,6 +1727,89 @@ async def read_claims(
     )
 
 
+#: The most claim ids one cited-claims read takes (Contract 5, plan 2026-10-09 Wave 2).
+MAX_CITED_CLAIMS = 200
+
+#: Findings whose outreach-unsafe flag says only "nobody has verified this yet". A research
+#: statement resting on one stays in the design agent's research files; a statement resting on a
+#: claim held back by a real rule (a reputation risk, a biography, a sensitive fact) does not.
+#: The Puck spike's rule (`trials/puck-spike/agent/run_agent.py:93`), now reported per id.
+UNVERIFIED_FINDING_FIELDS = frozenset({"contact.research_finding", *UNVERIFIED_ONLY_UNSAFE_FIELDS})
+
+
+@dataclass(frozen=True, slots=True)
+class CitedClaimsPage:
+    """The claims an entity's research cites: the served ones, and what happened to every id."""
+
+    entity_id: str
+    claims: tuple[AccountClaimView, ...]
+    #: One entry per requested id, in request order: ``served``, ``held:<reason>`` or
+    #: ``not_found``. ``<reason>`` is ``sensitive``, ``unverified``, ``outreach_unsafe``,
+    #: ``unverified_finding`` or ``other_entity``.
+    dispositions: dict[str, str]
+
+
+async def read_cited_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    entity_id: str,
+    claim_ids: Sequence[str],
+    settings: Settings,
+) -> CitedClaimsPage:
+    """The claims an account's research pages cite, by id, gated as the account pages gate them.
+
+    Read through :func:`inspectable_claims_by_ids` — the source drawer's read — so a qualified
+    finding the research cites is readable here although ``read_claims`` (which serves only
+    supported claims) would drop it. Every id gets a disposition, because the design agent's
+    research files must leave out a statement that rests on a claim held back by a real rule, and
+    keep one that rests on a finding held back only because nobody verified it yet.
+
+    Unpaged by contract (at most :data:`MAX_CITED_CLAIMS` ids): it is called through the design
+    read seam, which records no 16 KiB receipt, and each served claim's evidence is clipped.
+    """
+
+    entity_uuid, _entity_type = await _entity_in_workspace(
+        conn, workspace_id=workspace_id, entity_id=entity_id
+    )
+    requested = list(dict.fromkeys(str(claim_id) for claim_id in claim_ids))
+    parsed: dict[str, UUID] = {}
+    for raw in requested:
+        try:
+            parsed[raw] = UUID(raw)
+        except ValueError:
+            continue
+    found = (
+        await inspectable_claims_by_ids(
+            conn, workspace_id=workspace_id, claim_ids=list(parsed.values())
+        )
+        if parsed
+        else {}
+    )
+    by_id = {str(claim.id): claim for claim in found.values()}
+    served: list[AccountClaimView] = []
+    dispositions: dict[str, str] = {}
+    for raw in requested:
+        claim = by_id.get(str(parsed[raw])) if raw in parsed else None
+        if claim is None:
+            dispositions[raw] = "not_found"
+            continue
+        reason = claim_gate_reason(claim, settings=settings)
+        if reason is not None:
+            if reason != "sensitive" and str(claim.field_key) in UNVERIFIED_FINDING_FIELDS:
+                reason = "unverified_finding"
+            dispositions[raw] = f"held:{reason}"
+            continue
+        if claim.entity_id != entity_uuid:
+            dispositions[raw] = "held:other_entity"
+            continue
+        dispositions[raw] = "served"
+        served.append(_claim_view(claim))
+    return CitedClaimsPage(
+        entity_id=str(entity_uuid), claims=tuple(served), dispositions=dispositions
+    )
+
+
 # =================================================================================================
 # the service seam + its production implementation
 # =================================================================================================
@@ -1765,6 +1869,10 @@ class Arv2ReadService(Protocol):
         offset: int,
         limit: int,
     ) -> ClaimsQueryPage: ...
+
+    async def read_cited_claims(
+        self, *, workspace_id: str, entity_id: str, claim_ids: Sequence[str]
+    ) -> CitedClaimsPage: ...
 
 
 class DbArv2ReadService:
@@ -1869,6 +1977,18 @@ class DbArv2ReadService:
                 settings=self._settings,
                 offset=offset,
                 limit=limit,
+            )
+
+    async def read_cited_claims(
+        self, *, workspace_id: str, entity_id: str, claim_ids: Sequence[str]
+    ) -> CitedClaimsPage:
+        async with self._conn_factory() as conn:
+            return await read_cited_claims(
+                conn,
+                workspace_id=workspace_id,
+                entity_id=entity_id,
+                claim_ids=claim_ids,
+                settings=self._settings,
             )
 
 
@@ -2603,6 +2723,70 @@ class ReadClaimsTool(Tool):
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 
 
+class ReadCitedClaimsInput(ToolInput):
+    #: The account (or contact) whose research cites these claims.
+    entity_id: str
+    #: The ids the research's statements cite, at most :data:`MAX_CITED_CLAIMS`.
+    claim_ids: list[str] = Field(min_length=1, max_length=MAX_CITED_CLAIMS)
+
+
+class ReadCitedClaimsOutput(ToolOutput):
+    entity_id: str
+    #: The served claims about ``entity_id`` (``AccountClaimView`` is the shape for any entity).
+    claims: tuple[AccountClaimView, ...]
+    #: Every requested id: ``served``, ``held:<reason>`` or ``not_found``.
+    dispositions: dict[str, str]
+
+
+class ReadCitedClaimsTool(Tool):
+    """Read the claims a research page cites, with what happened to each id."""
+
+    name = "read_cited_claims"
+    version = "1"
+    model_description = (
+        "Read the claims a research page cites, by id, gated as the account pages gate them: "
+        "each id comes back served, held back (with the reason) or not found. Effect-free."
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadCitedClaimsInput
+    output_model: ClassVar[type[ToolOutput]] = ReadCitedClaimsOutput
+    effect_class = ToolEffectClass.READ
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="the cited claims' live rows",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("entity_id",))
+    #: ``project`` is the spine row the execution is bound to — a replay identity, as for the
+    #: other ARV2 reads.
+    pin_requirements = ("project",)
+
+    def __init__(self, service: Arv2ReadService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        del inputs, ctx
+        return _not_composed() if self._service is None else ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadCitedClaimsInput)
+        assert self._service is not None
+        try:
+            page = await self._service.read_cited_claims(
+                workspace_id=ctx.workspace_id,
+                entity_id=inputs.entity_id,
+                claim_ids=list(inputs.claim_ids),
+            )
+        except Arv2ReadRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        tag_entities([page.entity_id])
+        output = ReadCitedClaimsOutput(
+            entity_id=page.entity_id, claims=page.claims, dispositions=page.dispositions
+        )
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
 def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     """The lane's read surface. Registered always; composed wherever there is a database.
 
@@ -2619,6 +2803,9 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     Two of the four register WITHOUT their name-only alias: `head-of-abm@v56` pins the paged
     ``@2`` of ``read_account_research`` and ``read_discovery_run``, so those defaults belong to
     :func:`build_arv2_paged_read_tools`. The composition root decides that, not this function.
+
+    ``read_cited_claims`` (2026-10-11) is the fifth: the design agent's cited-claims read
+    (Contract 5); it holds the name-only alias, being the only version of itself.
     """
 
     return (
@@ -2626,6 +2813,7 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
         ReadAccountResearchTool(service),
         ReadDiscoveryRunTool(service),
         ReadClaimsTool(service),
+        ReadCitedClaimsTool(service),
     )
 
 

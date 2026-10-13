@@ -81,6 +81,7 @@ from tests.api.test_genweb_web_turn_dispatch_db import (
     _submit_message,
     _turn_facts,
 )
+from tests.api.test_site_leg_birth_db import APPLIED_SITE_RESULT
 from tests.api.test_stage0_setup_db import _MemoryStorage
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -733,14 +734,11 @@ async def _vanish_account(conn: Any, document_id: str) -> None:
 
 
 def test_the_leg_turn_resolves_a_sites_account_card_before_dispatch(tmp_path: Path) -> None:
-    """G2 through the real leg turn runner. The site runtime is not composed on this branch, so a
-    site turn always ends refused BEFORE dispatch — which is exactly where G2 has already run. A
-    site whose account resolves reaches the site-runtime refusal (G2 passed); a site whose account
-    does not resolve stops at G2's own refusal (G2 read the site's account id); a scene ad naming
-    the same unresolvable account is ignored by G2 and dispatches (scene ads carry no card).
-
-    When Lane B composes the site runtime (B5), the resolvable case dispatches instead and should
-    then assert the envelope's ``account_card`` (as the genweb suite does for web)."""
+    """G2 through the real leg turn runner. A site whose account resolves dispatches a
+    ``site_turn`` whose envelope carries the account card frozen by value (Lane B composed the site
+    runtime; the genweb suite asserts the same for web); a site whose account does not resolve
+    stops at G2's own refusal before dispatch (G2 read the site's account id); a scene ad naming
+    the same unresolvable account is ignored by G2 and dispatches (scene ads carry no card)."""
 
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
@@ -749,19 +747,24 @@ def test_the_leg_turn_resolves_a_sites_account_card_before_dispatch(tmp_path: Pa
             seeds, _document = await _leg_with_document(
                 conn, tmp_path / "ok", label="sitecard", doc_kind="site", account_id="acct_harbor"
             )
-            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_SITE_RESULT)
             submission = await _submit_message(
                 conn, seeds, label="sitecard", message="Build the page for Northwind."
             )
             result = await _run_turn(conn, seeds, registry, lane, submission)
-            assert result.outcome.status is AgentExecutionStatus.FAILED
-            assert result.outcome.failure_code == "design_leg_site_runtime_not_composed"
-            assert lane.envelopes == []
-            assert await _turn_facts(conn, seeds, submission.turn_id) == {
-                "runs": 0,
-                "roles": ["user"],
-                "commits": 0,
-                "leg_state": "open_awaiting_user",
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            assert result.outcome.failure_code is None
+            assert len(lane.envelopes) == 1
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "site_turn"
+            # The design route's card, key for key — the executor reads only this key.
+            assert envelope.config["account_card"] == {
+                "account_id": "acct_harbor",
+                "name": "Northwind Logistics",
+                "domain": "northwind.example",
+                "logo_asset_id": None,
+                "data": {"industry": "freight", "hq": "Rotterdam"},
+                "notes": "Prefers plain language; no jargon.",
             }
 
     async def unresolvable_site() -> None:

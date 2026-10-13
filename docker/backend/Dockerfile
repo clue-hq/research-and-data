@@ -64,13 +64,19 @@ COPY --from=helper /usr/local/bin/lumen-api-helper /app/subsystems/clue-design/t
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
 COPY --from=editor /src/subsystems/clue-design/apps/editor/public/vendor /app/subsystems/clue-design/apps/editor/public/vendor
 COPY --from=sitekit /src/apps/frontend/packages/site-kit/dist /app/apps/frontend/packages/site-kit/dist
+# Lane B (Contract 4): the section compiler needs the frontend toolchain at run time (tsc with the
+# react and zod types, esbuild, tsx); the site-kit sources come with `COPY . /app`.
+COPY --from=sitekit /src/apps/frontend/node_modules /app/apps/frontend/node_modules
 # CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings
 # default, .artifacts/arv2, is relative and would land under the root-owned /app.
 ENV LUMEN_CORE_HELPER=/app/subsystems/clue-design/target/release/lumen-api-helper \
     LUMEN_FONT_LIBRARY_MANIFEST_PATH=/app/subsystems/clue-design/apps/api/font-library/manifest.json \
     CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw
 COPY docker/backend/entrypoint.sh /usr/local/bin/clue
+# The section compiler (Lane B, Contract 4) type-checks each agent section in a throwaway folder
+# inside site-kit, where react and zod resolve; the runtime user must be able to create it.
 RUN useradd --uid 1000 --create-home clue && chown -R clue:clue /app/subsystems/clue-design \
-    && mkdir -p /var/lib/clue/arv2-raw && chown -R 1000:1000 /var/lib/clue/arv2-raw
+    && mkdir -p /var/lib/clue/arv2-raw && chown -R 1000:1000 /var/lib/clue/arv2-raw \
+    && mkdir -p /app/apps/frontend/packages/site-kit/.section-check && chown 1000:1000 /app/apps/frontend/packages/site-kit/.section-check
 USER 1000:1000
 ENTRYPOINT ["clue"]

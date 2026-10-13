@@ -195,6 +195,26 @@ class WebTurnRequest(BaseModel):
     account_id: Optional[str] = None
 
 
+class SiteTurnTarget(BaseModel):
+    """One part of the site the person pointed at (ruling R9): its composer object id, as submitted."""
+
+    object_id: str
+    note: Optional[str] = None
+
+
+class SiteTurnRequest(BaseModel):
+    """A Puck site agent turn (Lane B, Contract 7) against one stored site document.
+
+    ``base_version`` records what the platform saw when it offered the turn; the executor re-reads
+    the document and persists under CAS on the version it actually read.
+    """
+
+    prompt: str
+    base_version: int = 0
+    #: The parts the person pointed at, in submission order (empty when they pointed at nothing).
+    targets: list[SiteTurnTarget] = Field(default_factory=list)
+
+
 class WebOperationsRequest(BaseModel):
     """A manual website-mode edit: a batch of typed WebOperations applied to the
     stored WebDoc through the checked-apply helper. `base_version` gates on the
@@ -605,3 +625,10 @@ class BrandCompatibilityRequest(BaseModel):
     from_ref: Optional[BrandKitRefRequest] = None
     to_ref: Optional[BrandKitRefRequest] = None
     persist_report: bool = True
+
+
+class SiteSectionLinksRequest(BaseModel):
+    """POST /documents/{id}/site/section-links (Wave 2 Contract 4). ``digests`` names the sections
+    to link; omitted = every section the document places."""
+
+    digests: Optional[List[str]] = None

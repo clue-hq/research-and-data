@@ -55,7 +55,11 @@ GOOD_PLATFORM = {
     "CLUE_APP_ORIGIN": "https://app.cluehq.ai",
     "CLUE_DESIGN_API_BASE_URL": "http://design-api.railway.internal:8010",
 }
-GOOD_DESIGN = {**GOOD_APP, "LUMEN_EMBEDDED_FLEET_WORKER": "0"}
+GOOD_DESIGN = {
+    **GOOD_APP,
+    "LUMEN_EMBEDDED_FLEET_WORKER": "0",
+    "CLUE_SITE_SECTION_LINK_SECRET": "section-link",
+}
 GOOD_WORKER = {
     **GOOD_APP,
     "CLUE_REDIS_URL": "rediss://default:p@proxy.example:41235/0?ssl_cert_reqs=none",
@@ -196,6 +200,23 @@ def test_page_origin_needs_the_edge_secret() -> None:
 def test_no_other_service_needs_the_edge_secret(role: str) -> None:
     """Only page-origin reads it; a secret lives in as few places as possible."""
     assert "CLUE_PAGES_EDGE_SECRET" not in GOOD[role]
+    assert check.problems(GOOD[role], role) == []
+
+
+def test_the_design_api_needs_the_section_link_secret() -> None:
+    """Wave 2 Contract 4: without it every editor section load answers 503."""
+    for env in (
+        {k: v for k, v in GOOD_DESIGN.items() if k != "CLUE_SITE_SECTION_LINK_SECRET"},
+        {**GOOD_DESIGN, "CLUE_SITE_SECTION_LINK_SECRET": ""},
+    ):
+        assert "CLUE_SITE_SECTION_LINK_SECRET must be set" in check.problems(env, "design-api")
+    assert check.problems(GOOD_DESIGN, "design-api") == []
+
+
+@pytest.mark.parametrize("role", ["platform-api", "worker", "page-origin"])
+def test_no_other_service_needs_the_section_link_secret(role: str) -> None:
+    """Only the design API mints and serves section links."""
+    assert "CLUE_SITE_SECTION_LINK_SECRET" not in GOOD[role]
     assert check.problems(GOOD[role], role) == []
 
 

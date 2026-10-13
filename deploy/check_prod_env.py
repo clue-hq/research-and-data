@@ -45,6 +45,9 @@ REQUIRED = (
     "CLUE_PAGES_SYSTEM_SUFFIX",
 )
 APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY", "CLUE_METRICS_OTLP_ENDPOINT")
+#: ... and for the design API alone. Wave 2 Contract 4: without it every editor section load
+#: answers 503 site_section_links.unconfigured.
+DESIGN_API_REQUIRED = ("CLUE_SITE_SECTION_LINK_SECRET",)
 #: Sumble switches that make a service refuse to start without CLUE_SUMBLE_API_KEY, and whether
 #: CLUE_PRODUCT_PATH=integration_pilot turns them on when unset (clue_config.settings overlay).
 SUMBLE_SWITCHES = {
@@ -99,7 +102,11 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     for name, wanted in {**EXACT, **(APP_EXACT if app else {})}.items():
         if env.get(name, "") != wanted:
             found.append(f"{name} must be {wanted!r} in production (is {env.get(name)!r})")
-    required = (*REQUIRED, *(APP_REQUIRED if app else ("CLUE_PAGES_EDGE_SECRET",)))
+    required = (
+        *REQUIRED,
+        *(APP_REQUIRED if app else ("CLUE_PAGES_EDGE_SECRET",)),
+        *(DESIGN_API_REQUIRED if role == "design-api" else ()),
+    )
     for name in required:
         if not env.get(name):
             found.append(f"{name} must be set")

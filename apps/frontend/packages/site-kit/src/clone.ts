@@ -21,6 +21,11 @@ export type Clone = {
   html: string;
   css: string;
   slots: Record<string, CloneSlot>;
+  /** The registry's sentence when this captured section is marked broken (degraded); absent otherwise. */
+  degraded_note?: string | null;
+  /** false: a section the page already uses that the catalog no longer offers (superseded by a
+   * repair, or retired). It still draws, validates and publishes; the agent is not offered it anew. */
+  in_catalog?: boolean;
 };
 
 export type SlotValues = Record<string, string | boolean | undefined>;

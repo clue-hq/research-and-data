@@ -122,6 +122,7 @@ from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import sessions as design_sessions
+from clue_design import site_sections as design_site_sections
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -2220,18 +2221,19 @@ class HybridRepository:
             )
         )
 
-    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+    def latest_session_manifest_sha256(self, document_id: str, *, include_failed: bool = False) -> str | None:
         """The digest of the newest session-folder manifest this document's session stored, or
         ``None``.
 
         Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
         that lands anywhere else restores it from this manifest before the agent sees its
         workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
-        the same one-transaction bridge every other read here uses.
+        the same one-transaction bridge every other read here uses; ``include_failed`` is passed
+        through as it is documented there.
         """
         return self._bridge._run(
             lambda conn: design_sessions.latest_session_manifest_sha256(
-                conn, workspace_id=self.workspace_id, document_id=document_id
+                conn, workspace_id=self.workspace_id, document_id=document_id, include_failed=include_failed
             )
         )
 
@@ -2308,6 +2310,47 @@ class HybridRepository:
                 workspace_id=self.workspace_id,
                 document_id=document_id,
                 batch_id=batch_id,
+            )
+        )
+
+    def get_site_sections(self, digests: List[str]) -> List[JsonObject]:
+        """This workspace's agent-written sections for ``digests`` (Contract 4), in order."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.get_site_sections(
+                conn, workspace_id=self.workspace_id, digests=digests
+            )
+        )
+
+    def list_latest_site_sections(self) -> List[JsonObject]:
+        """The newest agent-written section of each name in this workspace."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.list_latest_site_sections(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def record_site_section(
+        self,
+        *,
+        digest: str,
+        name: str,
+        source_sha256: str,
+        css_sha256: str,
+        props_schema: JsonObject,
+        created_by_run_id: Optional[str],
+    ) -> JsonObject:
+        """Record one compiled agent section (Lane B, Contract 4). Governed: only
+        ``toolbelt/site_sections.py`` calls it (test_write_path_governance)."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.record_site_section(
+                conn,
+                workspace_id=self.workspace_id,
+                digest=digest,
+                name=name,
+                source_sha256=source_sha256,
+                css_sha256=css_sha256,
+                props_schema=props_schema,
+                created_by_run_id=created_by_run_id,
             )
         )
 
