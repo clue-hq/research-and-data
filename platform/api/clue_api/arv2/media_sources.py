@@ -391,3 +391,77 @@ def podcast_twin(
     if not matches:
         gaps.append("no_podcast_episode_match")
     return list(matches.values()), gaps
+
+
+_LINKEDIN_PROFILE = re.compile(r"https://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+/?")
+
+
+def linkedin_profiles(text: str) -> list[str]:
+    return list(dict.fromkeys(_LINKEDIN_PROFILE.findall(text or "")))
+
+
+def resolve_youtube(
+    caller: ProviderCaller,
+    watch: str,
+    key: str,
+    source_url: str,
+    *,
+    keys: MediaSourceKeys,
+    hint: str | None,
+    visited: frozenset[str],
+) -> Any:
+    """Spec §3 step 2 for a YouTube link: its podcast twin first, else the video for Gemini.
+
+    The video's details come from the official Data API, never the watch page. ``hint`` is
+    unused: a twin is matched on the video's own date, length and title, never a guess.
+    """
+    from clue_api.arv2.media_resolution import Resolution, with_feed_transcript
+
+    del hint
+    if keys.youtube_api_key is None:
+        return Resolution("unavailable", gaps=("youtube_data_api_key_missing",))
+    video = youtube_details(caller, key.removeprefix("youtube:"), keys.youtube_api_key)
+    if not video.public:
+        return Resolution("unavailable", gaps=("youtube_not_public",))
+    if video.live:
+        return Resolution("unavailable", gaps=("youtube_live_or_upcoming",))
+    matches, gaps = podcast_twin(caller, video, keys, visited=visited)
+    if len(matches) == 1:
+        twin = matches[0].model_copy(
+            update={
+                "identity_evidence": [
+                    *matches[0].identity_evidence,
+                    f"podcast_twin_of:{watch}",
+                    "matched_on:date,duration,title",
+                ]
+            }
+        )
+        return with_feed_transcript(
+            caller,
+            Resolution("resolved", (twin,), aliases=tuple(dict.fromkeys((source_url, watch)))),
+        )
+    if len(matches) > 1:
+        return Resolution(
+            "ambiguous",
+            tuple(matches),
+            gaps=("multiple_podcast_episode_matches",),
+            aliases=(source_url,),
+        )
+    return Resolution(
+        "resolved",
+        (
+            Candidate(
+                url=watch,
+                title=video.title,
+                description=video.description[:4000],
+                family="youtube",
+                canonical_key=key,
+                duration_s=video.duration_s,
+                published_at=video.published_at,
+                identity_evidence=[source_url, "youtube_data_api"],
+                recognized_subject_urls=linkedin_profiles(video.description),
+            ),
+        ),
+        gaps=tuple(gaps),
+        aliases=(source_url,),
+    )

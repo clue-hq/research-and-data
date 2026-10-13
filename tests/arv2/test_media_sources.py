@@ -305,3 +305,114 @@ def test_an_unreadable_feed_is_a_gap():
     )
     matches, gaps = podcast_twin(caller(wire), video(), MediaSourceKeys(), visited=frozenset())
     assert matches == [] and any(g.startswith("podcast_feed_unreadable") for g in gaps)
+
+
+# --- Task 4: YouTube resolution without the watch page -----------------------------------------
+
+from clue_api.arv2.media_resolution import resolve  # noqa: E402
+
+KEYS = MediaSourceKeys(youtube_api_key=SecretStr("yt-key"))
+WATCH = "https://www.youtube.com/watch?v=abcdefghijk"
+
+
+def test_without_a_youtube_key_the_gap_says_so():
+    wire = ScriptedTransport([])
+    result = resolve(caller(wire), "https://youtu.be/abcdefghijk")
+    assert result.state == "unavailable" and result.gaps == ("youtube_data_api_key_missing",)
+    assert wire.requests == []
+
+
+def test_a_video_with_a_podcast_twin_resolves_to_the_episode():
+    wire = ScriptedTransport([data_api(), apple_lookup(), feed_xml(EP41)])
+    result = resolve(caller(wire), "https://youtu.be/abcdefghijk", keys=KEYS)
+    assert result.state == "resolved" and result.candidates[0].family == "audio"
+    assert result.candidates[0].media_url == "https://example.com/ep-41.mp3"
+    assert "https://youtu.be/abcdefghijk" in result.aliases
+    assert "podcast_twin_of:" + WATCH in result.candidates[0].identity_evidence
+    assert not any("youtube.com/watch" in r.url for r in wire.requests)
+
+
+def test_a_twin_with_its_own_transcript_needs_no_audio():
+    feed = response(
+        '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" '
+        'xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>RR</title>'
+        "<item><guid>ep-41</guid><title>Scaling field ABM with Emily Wall</title>"
+        "<pubDate>Tue, 07 Apr 2026 10:00:00 GMT</pubDate><itunes:duration>2470</itunes:duration>"
+        '<enclosure url="https://example.com/ep-41.mp3" type="audio/mpeg"/>'
+        '<podcast:transcript url="https://example.com/ep-41.vtt" type="text/vtt"/>'
+        "</item></channel></rss>",
+        "application/rss+xml",
+    )
+    vtt = response("WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nWe run field ABM.\n", "text/vtt")
+    wire = ScriptedTransport([data_api(), apple_lookup(), feed, vtt])
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    assert result.state == "resolved" and result.transcript == "We run field ABM."
+
+
+def test_a_video_without_a_twin_resolves_to_a_youtube_candidate_with_its_details():
+    wire = ScriptedTransport(
+        [
+            data_api(snippet={"description": "Talk at HumanX https://linkedin.com/in/ewall"}),
+            empty_search(),
+            empty_search(),
+        ]
+    )
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    candidate = result.candidates[0]
+    assert result.state == "resolved" and candidate.family == "youtube"
+    assert candidate.duration_s == 2472 and candidate.title.startswith("Scaling field ABM")
+    assert candidate.published_at == datetime(2026, 4, 8, 15, tzinfo=UTC)
+    assert candidate.recognized_subject_urls == ["https://linkedin.com/in/ewall"]
+    assert "no_podcast_show_found" in result.gaps
+
+
+def test_several_twins_go_back_to_the_agent():
+    wire = ScriptedTransport(
+        [
+            data_api(),
+            apple_lookup(),
+            feed_xml(
+                (
+                    "ep-41",
+                    "Scaling field ABM with Emily Wall part 1",
+                    "Tue, 07 Apr 2026 10:00:00 GMT",
+                    2470,
+                ),
+                (
+                    "ep-42",
+                    "Scaling field ABM with Emily Wall part 2",
+                    "Thu, 09 Apr 2026 10:00:00 GMT",
+                    2480,
+                ),
+            ),
+        ]
+    )
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    assert result.state == "ambiguous" and len(result.candidates) == 2
+
+
+def test_an_unlisted_video_is_never_read():
+    wire = ScriptedTransport([data_api(status={"privacyStatus": "unlisted"})])
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    assert result.state == "unavailable" and result.gaps == ("youtube_not_public",)
+
+
+def test_a_directory_outage_falls_through_to_gemini():
+    down = HttpResponse(503, {"content-type": "text/plain"}, b"down")
+    wire = ScriptedTransport(
+        [data_api(snippet={"description": ""}), down, down, json_reply_text("not json")]
+    )
+    result = resolve(caller(wire), WATCH, keys=KEYS)
+    assert result.state == "resolved" and result.candidates[0].family == "youtube"
+    assert any(g.startswith("podcast_directory_unavailable") for g in result.gaps)
+
+
+def json_reply_text(body):
+    return HttpResponse(200, {"content-type": "application/json"}, body.encode())
+
+
+def test_the_linkedin_refusal_points_to_other_places():
+    from clue_api.arv2.media_feeds_client import UnsupportedMediaHost
+
+    message = str(UnsupportedMediaHost("https://www.linkedin.com/posts/x", "linkedin.com"))
+    assert "never fetched" in message and "YouTube" in message and "event" in message

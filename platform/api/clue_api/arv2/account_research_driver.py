@@ -91,6 +91,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
+from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
@@ -2418,8 +2419,14 @@ class _LiveClients:
         openrouter_base_url: str,
         media_budget: MediaBudget | None = None,
         deepgram_api_key: SecretStr | None = None,
+        youtube_data_api_key: SecretStr | None = None,
+        podcast_index_api_key: SecretStr | None = None,
+        podcast_index_api_secret: SecretStr | None = None,
     ) -> None:
         self._settings = settings
+        self._youtube_data_api_key = youtube_data_api_key
+        self._podcast_index_api_key = podcast_index_api_key
+        self._podcast_index_api_secret = podcast_index_api_secret
         self._exa_api_key = exa_api_key
         self._ai_ark_api_key = ai_ark_api_key
         self._gemini_api_key = gemini_api_key
@@ -2439,6 +2446,18 @@ class _LiveClients:
             openrouter_base_url=self._openrouter_base_url,
             media_budget=media_budget,
             deepgram_api_key=self._deepgram_api_key,
+            youtube_data_api_key=self._youtube_data_api_key,
+            podcast_index_api_key=self._podcast_index_api_key,
+            podcast_index_api_secret=self._podcast_index_api_secret,
+        )
+
+    @property
+    def media_source_keys(self) -> MediaSourceKeys:
+        """Keys for the official and public media lookups (spec 2026-10-13 §3 step 2)."""
+        return MediaSourceKeys(
+            youtube_api_key=self._youtube_data_api_key,
+            podcast_index_key=self._podcast_index_api_key,
+            podcast_index_secret=self._podcast_index_api_secret,
         )
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
@@ -2552,6 +2571,9 @@ def build_arv2_account_research_handler(
             ai_ark_api_key=_secret(keys["CLUE_AI_ARK_API_KEY"]),
             gemini_api_key=_secret(keys["CLUE_GEMINI_API_KEY"]),
             deepgram_api_key=secrets.deepgram_api_key,
+            youtube_data_api_key=secrets.youtube_data_api_key,
+            podcast_index_api_key=secrets.podcast_index_api_key,
+            podcast_index_api_secret=secrets.podcast_index_api_secret,
             openrouter_api_key=_secret(keys["CLUE_OPENROUTER_API_KEY"]),
             # The OpenRouter URL is gateway policy, read from the config's own default rather than
             # spelled again here: the two ARV2 clients that speak to OpenRouter directly (media,

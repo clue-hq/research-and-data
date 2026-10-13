@@ -12,12 +12,11 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from html import unescape
 from html.parser import HTMLParser
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
 from clue_api.arv2.media_feeds_client import (
-    extract_player_response,
     parse_feed,
     reject_native_video,
 )
@@ -616,52 +615,13 @@ def resolve(
     visited = visited | {url}
     yt = youtube_url(url)
     if yt:
-        watch, key = yt
-        response = _response or fetch(caller, watch)
-        player = extract_player_response(response.body.decode("utf-8", errors="replace")) or {}
-        raw_details = player.get("videoDetails")
-        details = raw_details if isinstance(raw_details, dict) else {}
-        raw_status = player.get("playabilityStatus")
-        status = raw_status if isinstance(raw_status, dict) else {}
-        raw_microformat = player.get("microformat")
-        microformat = (
-            raw_microformat.get("playerMicroformatRenderer", {})
-            if isinstance(raw_microformat, dict)
-            else {}
-        )
-        if (
-            status.get("status") != "OK"
-            or details.get("videoId") != key.removeprefix("youtube:")
-            or details.get("isPrivate")
-            or details.get("isUnlisted")
-            or microformat.get("isUnlisted")
-        ):
-            return Resolution("unavailable", gaps=("youtube_public_access_unverified",))
-        duration = int(details.get("lengthSeconds") or 0)
-        if duration <= 0:
-            return Resolution("unavailable", gaps=("duration_unknown",))
-        return Resolution(
-            "resolved",
-            (
-                Candidate(
-                    url=watch,
-                    title=details.get("title", ""),
-                    description=details.get("shortDescription", ""),
-                    family="youtube",
-                    canonical_key=key,
-                    duration_s=duration,
-                    identity_evidence=[url],
-                    recognized_subject_urls=list(
-                        dict.fromkeys(
-                            re.findall(
-                                r"https://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+/?",
-                                str(details.get("shortDescription", "")),
-                            )
-                        )
-                    ),
-                ),
+        from clue_api.arv2.media_sources import NO_KEYS, resolve_youtube
+
+        return cast(
+            Resolution,
+            resolve_youtube(
+                caller, yt[0], yt[1], url, keys=keys or NO_KEYS, hint=hint, visited=visited
             ),
-            aliases=(url,),
         )
     if urlsplit(url).hostname == "podcasts.apple.com":
         try:

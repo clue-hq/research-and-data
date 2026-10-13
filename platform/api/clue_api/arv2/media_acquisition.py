@@ -23,6 +23,7 @@ from clue_api.arv2.gemini_media_client import (
 )
 from clue_api.arv2.media_recording import fetch_youtube, prepare_audio
 from clue_api.arv2.media_resolution import Resolution, fetch, resolve
+from clue_api.arv2.media_sources import media_keys_of
 from clue_api.arv2.media_types import Quality, Segment, canonical_text
 from clue_storage import read_verified_artifact
 
@@ -121,16 +122,17 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
 
 
 async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
-    keys: list[str] = []
-    token = ops.active_resolution.set(keys)
+    raw_keys: list[str] = []
+    token = ops.active_resolution.set(raw_keys)
+    media_keys = media_keys_of(runtime)
     try:
         result = cast(
             Resolution,
             await runtime.call_provider(
-                "media_public", lambda caller: resolve(caller, url, hint=hint)
+                "media_public", lambda caller: resolve(caller, url, hint=hint, keys=media_keys)
             ),
         )
-        return replace(result, raw_keys=tuple(keys))
+        return replace(result, raw_keys=tuple(raw_keys))
     finally:
         ops.active_resolution.reset(token)
 

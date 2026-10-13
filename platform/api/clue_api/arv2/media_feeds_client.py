@@ -101,7 +101,10 @@ class UnsupportedMediaHost(Arv2Error):
     """
 
     def __init__(self, url: str, host: str) -> None:
-        super().__init__(f"{host} serves only native video, which is never fetched: {url}")
+        super().__init__(
+            f"{host} serves only native video, which is never fetched: {url}. Look for the same "
+            "talk elsewhere: YouTube, Vimeo, the event's own page or a podcast."
+        )
         self.url = url
         self.host = host
 
