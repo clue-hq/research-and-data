@@ -110,3 +110,16 @@ reopened for a fix wave after its merge and the first tag missed 21 commits.
 After the fix-wave merge: site-kit 167/173 (6 skip), site-editor 37/37, frontend 3377/0 fail, lint 0
 errors, build ok; the fix wave's Python files and site render/publish/thumbnails/A9 scenarios green; Lane B
 scenario `test_a_a_real_site_turn_end_to_end` updated for A9's new brand.md "classes" column (`ca2c66702`).
+
+## 2026-10-14 — K units done, founder rulings, S units next
+- All six contract units (K1–K6) reviewed and every finding verified first-hand: 35 open (3 Critical /
+  18 Important / 14 Minor), 4 resolved by A9's fix wave, 1 duplicate (K4-4 = K3-3). Durable write-up:
+  `docs/superpowers/verification/2026-10-14-wave2-contract-review-findings.md` (plain language; where,
+  proof, fix direction per finding). The review folder stays the raw record.
+- **K3-1 (founder):** no per-section isolation — decision D2 of 2026-10-09 stands (it rejected a sandbox
+  per section). Take a simple fix now and harden later; WHICH simple fix is pending the founder. Do not
+  re-offer per-section frames.
+- **K4-2 (founder):** parked. Privacy and verification guards get a dedicated sprint after the basic
+  layer works; K4-2 is not in this fix pass, and live site runs on trenton may proceed meanwhile.
+- Next: verify S1's report, then S2–S8 two at a time (founder), each reviewed adversarially and
+  thoroughly; then one fix pass, each fix test-first, then re-review the fix diffs only.
