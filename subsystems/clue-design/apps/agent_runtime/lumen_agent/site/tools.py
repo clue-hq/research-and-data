@@ -117,6 +117,49 @@ def digest_of_file(file: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _difference(original: bytes, rebuilt: bytes) -> tuple[float, bytes, tuple[int, int]]:
+    """Share of pixels that differ noticeably (after matching widths and padding heights), and a
+    side-by-side picture: original left, rebuilt right."""
+    from PIL import Image, ImageChops
+
+    a = Image.open(io.BytesIO(original)).convert("RGB")
+    b = Image.open(io.BytesIO(rebuilt)).convert("RGB")
+    if b.width != a.width:
+        b = b.resize((a.width, round(b.height * a.width / b.width)))
+    height = max(a.height, b.height)
+    pa, pb = Image.new("RGB", (a.width, height), "white"), Image.new("RGB", (a.width, height), "white")
+    pa.paste(a, (0, 0))
+    pb.paste(b, (0, 0))
+    diff = ImageChops.difference(pa, pb).convert("L").point(lambda v: 255 if v > 40 else 0)
+    score = sum(diff.histogram()[255:]) / (a.width * height)
+    pair = Image.new("RGB", (a.width * 2 + 24, height), (200, 200, 200))
+    pair.paste(pa, (0, 0))
+    pair.paste(pb, (a.width + 24, 0))
+    buffer = io.BytesIO()
+    pair.save(buffer, format="PNG")
+    return score, buffer.getvalue(), (a.height, b.height)
+
+
+def _missing_words(original: str, rebuilt: str) -> list[str]:
+    """Words (four letters or more) the original shows that the rebuilt section does not."""
+    words = lambda text: re.findall(r"[A-Za-z][A-Za-z'’-]{3,}", text.lower())  # noqa: E731
+    have = set(words(rebuilt))
+    seen: list[str] = []
+    for word in words(original):
+        if word not in have and word not in seen:
+            seen.append(word)
+    return seen
+
+
+def _visible_text(html: str) -> str:
+    """The words a rendered section shows (tags and scripts dropped), for _missing_words."""
+
+    import html as html_lib
+
+    body = re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.S | re.I)
+    return html_lib.unescape(re.sub(r"<[^>]+>", " ", body))
+
+
 class SiteTools:
     def __init__(
         self,
@@ -215,6 +258,96 @@ class SiteTools:
         self._record("section_written", name=name, digest=section.digest)
         return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
                 f"these props:\n{json.dumps(section.props_schema, indent=1)[:4000]}")
+
+    # --- rebuilding the seller's sections (R2) ----------------------------------------------------
+
+    def _scratch_site(self, item: dict, sections: list[SiteSection]) -> dict:
+        """A one-page site holding just this section, with no shell, so the page IS the section."""
+
+        return {
+            **copy.deepcopy(self.base_site),
+            "shell": None,
+            "agent_sections": {section.name: section.digest for section in sections},
+            "pages": {"/": {"root": {"props": {"title": "scratch"}}, "content": [item]}},
+        }
+
+    def _draw(self, item: dict, sections: list[SiteSection]) -> tuple[str, str] | None:
+        """``(html, css)`` of the section drawn alone, or None when it could not be drawn."""
+
+        renderer = self.inputs.renderer
+        if renderer is None:
+            return None
+        try:
+            html, css, _warnings = renderer.render(self._scratch_site(item, sections), self.brand, sections, route="/")
+        except Exception:  # noqa: BLE001 - the caller answers with the spike's sentence
+            return None
+        return html, css
+
+    def _shot(self, drawn: tuple[str, str], width: int) -> bytes | None:
+        try:
+            return self.inputs.renderer.screenshot(drawn[0], drawn[1], width=width)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _original(fragment_id: str) -> dict:
+        return {"type": "ClonedSection", "props": {
+            "id": "original", "fragmentId": fragment_id, "slots": {}, "replacements": [], "links": []}}
+
+    def view_clone(self, fragment_id: str) -> list[dict] | str:
+        """Look at one of the seller's sections on its own: desktop and mobile pictures, plus its card."""
+
+        if fragment_id not in (self.brand.get("clones") or {}):
+            return f"No clone {fragment_id}; see catalog/index.md."
+        card_path = self.workspace / "catalog" / "clones" / f"{fragment_id}.md"
+        blocks: list[dict] = [{"type": "text", "text": card_path.read_text()[:4000] if card_path.exists() else fragment_id}]
+        drawn = self._draw(self._original(fragment_id), [])
+        if drawn is None:
+            return f"Could not show {fragment_id} (the preview did not render)."
+        for width in (1440, 375):
+            shot = self._shot(drawn, width)
+            if shot is None:
+                return f"Could not show {fragment_id} (the preview did not render)."
+            tiles = self._tiles(shot, SCALE_BY_WIDTH.get(width, 1.0))
+            blocks.append({"type": "text", "text": f"The original at {width} wide, in {len(tiles)} part(s), top to bottom."})
+            blocks.extend(tiles)
+        self._record("view_clone", fragment_id=fragment_id)
+        return blocks
+
+    def compare_section(self, name: str, fragment_id: str, props: dict) -> list[dict] | str:
+        """Show the original section and your component side by side, with a difference score and
+        the original's words your version is missing."""
+
+        section = self.sections.get(name)
+        if section is None:
+            return f"No component {name} on this site yet; write it with write_section first."
+        could_not = (f"Could not compare: the preview did not show both sections. Check that the props fit "
+                     f"{name}'s schema (catalog/seller-components.md).")
+        original = self._draw(self._original(fragment_id), [])
+        rebuilt = self._draw({"type": name, "props": {"id": "rebuilt", "surface": "page", **(props or {})}}, [section])
+        if original is None or rebuilt is None:
+            return could_not
+        blocks: list[dict] = []
+        summary: list[str] = []
+        scores: dict[int, float] = {}
+        for width in (1440, 375):
+            original_shot, rebuilt_shot = self._shot(original, width), self._shot(rebuilt, width)
+            if original_shot is None or rebuilt_shot is None:
+                return could_not
+            score, pair, heights = _difference(original_shot, rebuilt_shot)
+            scores[width] = score
+            summary.append(f"{width} wide: {score:.0%} of the area differs; heights {heights[0]}px (original) "
+                           f"and {heights[1]}px (yours).")
+            if width == 1440:
+                missing = _missing_words(_visible_text(original[0]), _visible_text(rebuilt[0]))
+                summary.append("Words of the original missing from yours: "
+                               + (", ".join(missing[:40]) if missing else "none") + ".")
+            tiles = self._tiles(pair, 0.5 if width == 1440 else 1.0)
+            blocks.append({"type": "text", "text": f"Side by side at {width} wide (original left, yours right), "
+                                                   f"in {len(tiles)} part(s)."})
+            blocks.extend(tiles)
+        self._record("compare", name=name, fragment_id=fragment_id, scores=scores)
+        return [{"type": "text", "text": "\n".join(summary)}] + blocks
 
     # --- validate ------------------------------------------------------------------------------
 
