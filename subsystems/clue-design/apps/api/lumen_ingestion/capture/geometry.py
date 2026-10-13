@@ -78,8 +78,9 @@ _CANDIDATES_PER_STYLE = 3
 #: - any other animation, made by a script through the Web Animations API (`el.animate`, what Framer
 #:   Motion and similar libraries produce): one that ends is held at its end frame; one that never ends
 #:   is cancelled for the read (its effect is removed, so the read is the static look).
-#: Holding is `pause()` at one millisecond before the end (`endTime - 1`): the end frame, without
-#: reaching the end, so the page's `animationend` / `finish` handlers never run during a capture (a
+#: Holding is `pause()` at one millisecond from the end the animation is heading to (`endTime - 1`, or
+#: `1` for one playing backwards, which ends on its time-0 frame): the end frame, without reaching the
+#: end, so the page's `animationend` / `finish` handlers never run during a capture (a
 #: handler that swaps a class would otherwise change the look between this probe, which names the
 #: style, and the state pass, which reads its states). An animation that has already finished shows its
 #: end frame and is left alone. An animation that cannot be held falls back: a CSS one is switched off
@@ -107,7 +108,9 @@ FREEZE_MOTION_FN = r"""
       const was = [animation, animation.currentTime, animation.playState === 'paused'];
       if (endOf(animation) !== Infinity) {
         prior.held.push(was);
-        try { animation.pause(); animation.currentTime = endOf(animation) - 1; continue; } catch (e) {
+        try {  // one millisecond from the end it is heading to: time 0 when it plays backwards
+          animation.pause(); animation.currentTime = animation.playbackRate < 0 ? 1 : endOf(animation) - 1; continue;
+        } catch (e) {
           if (css) { off = true; continue; }
         }
       }

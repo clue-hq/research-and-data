@@ -241,6 +241,26 @@ def test_an_entrance_still_running_is_read_where_it_ends() -> None:
         assert run["by_id"]["b-slow"]["hover"] == {"background": "rgb(3, 90, 78)"}
 
 
+def test_a_reversed_entrance_is_read_where_it_ends() -> None:
+    """An exit played backwards as an entrance (`playbackRate` -1), a script animation and a CSS one,
+    still moving when the probes reach them: each ends on its time-0 frame, so each is read there
+    (opaque, in place), never at its endTime frame (`opacity: 0`, 16px down), and is given back still
+    running backwards."""
+
+    async def rates_after(page) -> list:
+        return await page.evaluate(
+            "() => ['b-script-rev', 'b-css-rev'].map((id) => document.getElementById(id).getAnimations()"
+            ".map((a) => [a.playState, a.playbackRate]))"
+        )
+
+    run = asyncio.run(_capture("playwright", fixture="reversed_entrance.html", after_probe=rates_after))
+    for key, hover in (("b-script-rev", "rgb(3, 90, 78)"), ("b-css-rev", "rgb(0, 0, 0)")):
+        rest = run["by_id"][key]["rest"]
+        assert rest["opacity"] == 1 and rest["transform"] is None, (key, rest)
+        assert run["by_id"][key]["hover"] == {"background": hover}, (key, run["by_id"][key]["hover"])
+    assert run["after"] == [[["running", -1]], [["running", -1]]], "both are given back, still reversed"
+
+
 def test_twin_pulses_a_phase_apart_are_one_style_with_one_name() -> None:
     """Two identical buttons pulsing a box-shadow forever, a phase apart: the geometry probe reads each
     without its pulse, so they are one look with one plain name, the same on every extraction, and the
@@ -321,6 +341,17 @@ def test_a_reveal_that_ends_on_a_leftover_has_settled() -> None:
               "transitions": [{"property": "transform", "duration_ms": 600, "easing": "ease", "delay_ms": 0}]}]
     (reveal,) = states_module._reveals(before, after)
     assert reveal["from_transform"] == "matrix(1, 0, 0, 1, 0, 24)" and reveal["trigger"] == ["is-in"]
+
+
+def test_a_reveal_starts_from_its_start_transform_as_evidence() -> None:
+    """A reveal's start transform is rounded like every other transform: a sub-pixel leftover is no start
+    transform, and a real slide-up start (`translateY(24px)`) is kept."""
+    after = {"tag": "section", "opacity": 1, "transform": "none", "classes": "reveal is-in", "where": "section.reveal",
+             "transitions": [{"property": "all", "duration_ms": 600, "easing": "ease", "delay_ms": 0}]}
+    starts = ["matrix(1, 0, 0, 1, 0, 0.000412)", "matrix(1, 0, 0, 1, 0, 24)"]
+    before = [{"tag": "section", "opacity": 0, "transform": start, "classes": "reveal"} for start in starts]
+    reveals = states_module._reveals(before, [after, after])
+    assert [r["from_transform"] for r in reveals] == [None, "matrix(1, 0, 0, 1, 0, 24)"], reveals
 
 
 def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:

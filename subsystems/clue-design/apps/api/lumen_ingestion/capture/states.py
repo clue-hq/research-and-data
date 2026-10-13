@@ -448,11 +448,12 @@ def _reveals(before: list, after: list) -> list[dict]:
             if t.get("property") in ("all", "opacity", "transform", "translate")
         ]
         added = sorted(set(str(now.get("classes") or "").split()) - set(str(prior.get("classes") or "").split()))
+        start = normalize_transform(prior.get("transform"))  # rounded like every transform the evidence keeps
         out.append({
             "kind": "css" if transitions else "scripted",
             "where": str(now.get("where") or "")[:120],
             "from_opacity": prior.get("opacity"),
-            "from_transform": prior.get("transform") if prior.get("transform") not in (None, "none") else None,
+            "from_transform": start if start not in (None, "none") else None,
             "transitions": transitions,
             "trigger": [name[:40] for name in added[:3]],
         })
