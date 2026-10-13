@@ -64,6 +64,7 @@ export function ArtifactHeader({
   onRequestExportPreview,
   onZoomChange,
   pages,
+  publishLocked = false,
   redoDisabled,
   title,
   undoDisabled,
@@ -127,6 +128,10 @@ export function ArtifactHeader({
   /** F5 task 18: the active web document's pages. Empty/absent → the switcher
    * is not rendered at all (an ad, or a document with no pages yet). */
   pages?: readonly ArtifactPageOption[];
+  /** Task 28 (founder 2026-10-13): a design run is working on this website, so
+   * the Share menu's Publish is inert and says why. Absent leaves publishing as
+   * it is (the server still refuses mid-run). */
+  publishLocked?: boolean;
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
   title: string;
@@ -160,7 +165,7 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ documentId, kind, title });
+  } = useArtifactSharingController({ documentId, kind, publishLocked, title });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,

@@ -6,6 +6,8 @@ import {
   type WebPublishState,
 } from "../engine/webDocuments";
 
+export { WebPublishError } from "../engine/webDocuments";
+
 /** What a publish just put on the air.
  *
  * Deliberately narrower than the engine's `WebPublishResult`: the sharing
@@ -37,7 +39,8 @@ export interface WebPublishOutcome {
 export interface WebPublishRepository {
   /** The document's durable publish state (`GET /documents/{id}/web/publish`). */
   state(documentId: string): Promise<WebPublishState>;
-  /** Publish or republish (`POST /documents/{id}/web/publish`). */
+  /** Publish or republish (`POST /documents/{id}/web/publish`). A server
+   * refusal rejects with a `WebPublishError` carrying its status and code. */
   publish(
     documentId: string,
     input: { slug: string; noindex: boolean },

@@ -1233,7 +1233,8 @@
 }
 
 .shareAdvancedFields > p,
-.shareCustomHtmlField > p {
+.shareCustomHtmlField > p,
+.sharePublishNote {
   margin: 0;
   color: var(--chat-shell-subtle);
   font-size: 12px;

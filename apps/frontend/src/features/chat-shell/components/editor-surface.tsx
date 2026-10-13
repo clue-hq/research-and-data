@@ -12,7 +12,7 @@ import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
-import { chatShellKindForCard } from "../model/artifact-kind";
+import { chatShellKindForCard, isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
@@ -100,6 +100,19 @@ export function EditorSurface({
     enabled: controller.artifactKind === "ad",
   });
   const sceneLocked = agentRun.active;
+  // Task 28 (founder 2026-10-13): a person's publish waits while the design
+  // agent works on the page, and the Share menu says so. This route has no turn
+  // stream, so the website lane reads the same document-scoped agent-busy poll
+  // the ad lane's lock reads — for PUBLISHING only. Its reload counter is not
+  // consumed: editing and rendering on the website lane are unchanged here.
+  const websiteDocumentId =
+    isWebsiteKind(controller.artifactKind) && controller.activeArtifactId
+      ? (documentIds?.[controller.activeArtifactId] ?? null)
+      : null;
+  const websiteAgentRun = useDocumentAgentRun({
+    documentId: websiteDocumentId,
+    enabled: isWebsiteKind(controller.artifactKind),
+  });
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
     // Task 4 (scene live-streaming rung A), closed here: the lock is the
@@ -308,6 +321,7 @@ export function EditorSurface({
         // read polled at the top of this component (ruling R1), not a turn
         // stream this route does not have.
         sceneGestureDisabled={sceneLocked}
+        publishLocked={websiteAgentRun.active}
         onSceneLockedEdit={sceneSession.onLockedEdit}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.

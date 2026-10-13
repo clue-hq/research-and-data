@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import test from "node:test";
 import { buildSync } from "esbuild";
+import { AGENT_RUN_PUBLISH_NOTE } from "../model/agent-run-lock";
 
 // Founder ruling 2026-10-13: a website (web or site) has no ZIP or PDF download —
 // hosting on the platform is the only delivery. Render the real menu (CSS modules
@@ -29,7 +30,8 @@ function websiteController(overrides: Record<string, unknown> = {}): Record<stri
   return {
     advancedTab: "page", allowIndexing: true, beginSlugEdit: noop, closeMenu: noop, copied: false,
     copyLink: noop, customHtml: "", description: "", editingSlug: false, menuOpen: true, pageUrls: {},
-    previewExternally: noop, publishAsset: async () => {}, publishStatus: "draft",
+    previewExternally: noop, publishAsset: async () => {}, publishLocked: false, publishLockNote: null,
+    publishStatus: "draft",
     regenerateDescriptionOnPublish: false, requestDescriptionGeneration: noop, saveAdvancedSettings: noop,
     saveSlug: noop, setAdvancedTab: noop, setAllowIndexing: noop, setCustomHtml: noop, setDescription: noop,
     setRegenerateDescriptionOnPublish: noop, setShareTitle: noop, setSlugDraft: noop, setView: noop,
@@ -56,4 +58,38 @@ test("a published website's share menu offers its link and no download", () => {
   assert.match(html, /Copy link/);
   assert.match(html, /Preview externally/);
   assert.doesNotMatch(html, /Export|ZIP|PDF/);
+});
+
+// Task 28 (founder 2026-10-13): while the design agent works on the page, Publish is inert and the
+// founder's sentence sits directly under it.
+
+const PUBLISH_BUTTON = /<button[^>]*>Publish asset<\/button>/;
+
+test("while the agent works the Publish button is disabled and the note sits right under it", () => {
+  const html = renderedModule.exports.render(websiteController({
+    publishLocked: true,
+    publishLockNote: AGENT_RUN_PUBLISH_NOTE,
+  }));
+  const button = html.match(PUBLISH_BUTTON)?.[0] ?? "";
+  assert.match(button, /disabled=""/);
+  const after = html.slice(html.indexOf(button) + button.length);
+  assert.match(after, /^<p[^>]*>The design agent is working — publishing unlocks when it finishes\.<\/p>/);
+});
+
+test("a refused publish (a run that started after the menu opened) shows the same note, button live", () => {
+  const html = renderedModule.exports.render(websiteController({
+    publishLocked: false,
+    publishLockNote: AGENT_RUN_PUBLISH_NOTE,
+  }));
+  const button = html.match(PUBLISH_BUTTON)?.[0] ?? "";
+  assert.doesNotMatch(button, /disabled/);
+  assert.equal(html.split(AGENT_RUN_PUBLISH_NOTE).length - 1, 1);
+  assert.doesNotMatch(html, /agent_run_active/);
+});
+
+test("with no run in the way the Publish button is live and there is no note", () => {
+  const html = renderedModule.exports.render(websiteController());
+  const button = html.match(PUBLISH_BUTTON)?.[0] ?? "";
+  assert.doesNotMatch(button, /disabled/);
+  assert.doesNotMatch(html, /design agent is working/);
 });

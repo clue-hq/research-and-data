@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createFixtureWebPublishRepository,
   createHttpWebPublishRepository,
+  WebPublishError,
 } from "./web-publish.repository";
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -226,6 +227,21 @@ test("the http repository surfaces the server's refusal message", async () => {
   await assert.rejects(
     repository.publish("doc_1", { slug: "acme", noindex: false }),
     /Slug already in use\./,
+  );
+});
+
+test("a refusal carries the server's status and code, so a caller need not parse prose", async () => {
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl: async () =>
+      jsonResponse(409, { detail: { code: "document.agent_run_active", run_id: "run_42" } }),
+  });
+  await assert.rejects(
+    repository.publish("doc_1", { slug: "acme", noindex: false }),
+    (error: unknown) =>
+      error instanceof WebPublishError &&
+      error.status === 409 &&
+      error.code === "document.agent_run_active",
   );
 });
 

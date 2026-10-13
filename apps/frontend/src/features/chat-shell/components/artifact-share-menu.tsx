@@ -113,6 +113,8 @@ function ShareMainView({ controller }: { controller: ShareController }) {
     editingSlug,
     previewExternally,
     publishAsset,
+    publishLocked,
+    publishLockNote,
     publishStatus,
     saveSlug,
     setSlugDraft,
@@ -192,18 +194,25 @@ function ShareMainView({ controller }: { controller: ShareController }) {
           </button>
         </div>
       ) : (
-        <button
-          className={styles.sharePrimaryButtonWide}
-          disabled={publishing}
-          onClick={() => void publishAsset()}
-          type="button"
-        >
-          {publishing
-            ? "Publishing…"
-            : slugDirty
-              ? "Republish"
-              : "Publish asset"}
-        </button>
+        <>
+          <button
+            className={styles.sharePrimaryButtonWide}
+            // Task 28 (founder 2026-10-13): inert while the design agent works
+            // on the page — a publish now would ship it half-edited.
+            disabled={publishing || publishLocked}
+            onClick={() => void publishAsset()}
+            type="button"
+          >
+            {publishing
+              ? "Publishing…"
+              : slugDirty
+                ? "Republish"
+                : "Publish asset"}
+          </button>
+          {publishLockNote ? (
+            <p className={styles.sharePublishNote}>{publishLockNote}</p>
+          ) : null}
+        </>
       )}
 
       <div className={styles.shareSettingsList}>

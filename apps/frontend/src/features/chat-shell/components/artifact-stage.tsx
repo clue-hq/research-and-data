@@ -114,6 +114,7 @@ export function ArtifactStage({
   onOpenGalleryArtifact,
   onPageChange,
   pages,
+  publishLocked = false,
   onRenameArtifact,
   onRenameArtifactFor,
   onSceneChange,
@@ -245,6 +246,11 @@ export function ArtifactStage({
   onPageChange?: (pageId: string) => void;
   /** F5 task 18: the active web document's pages, for that switcher. */
   pages?: readonly ArtifactPageOption[];
+  /** Task 28 (founder 2026-10-13): a design run is working on this website, so
+   * the Share menu's Publish waits — `chat-surface.tsx`'s `publishLocked` (off
+   * the turn stream), or the standalone artifact route's document-scoped
+   * agent-busy poll (`editor-surface.tsx`). Absent leaves publishing as it is. */
+  publishLocked?: boolean;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
   /** AD2.7: the rendered ad scene, mirrored up for the shared editing
@@ -461,6 +467,7 @@ export function ArtifactStage({
             onPageChange={onPageChange}
             onRename={onRenameArtifact}
             pages={pages}
+            publishLocked={publishLocked}
             onRequestExportPreview={onRequestExportPreview}
             onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}
