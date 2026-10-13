@@ -396,9 +396,16 @@ def test_f_a_link_to_a_page_the_site_lacks_is_refused(client: TestClient, worksp
     nothing_published(workspace_id, "site_badlink", "badlink-site")
 
 
-def test_f_the_default_brand_loader_refuses_with_503(client: TestClient, workspace_id: str) -> None:
+def test_f_an_uncomposed_brand_loader_refuses_with_503(
+    client: TestClient, workspace_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Lane B composes the app's real loader (site_workspace_view.site_brand_loader_for), so the app
+    # default no longer refuses; a deployment without that composition still must, and says so.
+    from lumen_api.site_doc_inputs import brand_loader_not_composed
+
+    monkeypatch.setattr(client.app.state, "site_brand_loader", brand_loader_not_composed)
     site, _brand = hold_site_images(garner_site_without_clones("site_nobrand"), garner_brand(), make_blob_store(client.app))
-    store_site(site)  # and no install_site_inputs: the app's own loaders, which Lane B composes
+    store_site(site)
     refused(publish(client, "site_nobrand", slug="nobrand-site"), 503, "site_inputs.unavailable")
     nothing_published(workspace_id, "site_nobrand", "nobrand-site")
 
