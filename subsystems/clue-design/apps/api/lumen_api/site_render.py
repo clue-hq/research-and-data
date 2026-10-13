@@ -253,14 +253,16 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
         raise SiteRenderError(RENDER_FAILED, "playwright is not installed") from error
     bundle = _render_bundle()
     nonce = secrets.token_hex(16)
-    deadline = time.monotonic() + timeout_s
-
-    def remaining_ms() -> float:
-        return max(1.0, (deadline - time.monotonic()) * 1000)
-
     closer: _CloseAtDeadline | None = None
     try:
         with hardened_page(javascript=True) as (page, blocked):
+            # The time limit starts now that the page is ready: it bounds the page's work, not the
+            # wait for a capture slot or the browser launch (that has its own launch timeout).
+            deadline = time.monotonic() + timeout_s
+
+            def remaining_ms() -> float:
+                return max(1.0, (deadline - time.monotonic()) * 1000)
+
             page.set_content(
                 _shell_html({**payload, "nonce": nonce, "maxOutputBytes": max_output_bytes}),
                 wait_until="domcontentloaded",

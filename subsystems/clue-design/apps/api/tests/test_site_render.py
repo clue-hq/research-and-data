@@ -17,6 +17,7 @@ import pytest
 from PIL import Image
 
 from lumen_api import web_export
+from lumen_api.document_thumbnails import _CAPTURE_SLOTS
 from lumen_api.hardened_browser import CHROMIUM_SANDBOX_ENV, chromium_sandbox_enabled
 from lumen_api.site_render import (
     OUTPUT_TOO_LARGE,
@@ -577,6 +578,33 @@ def test_a_spinning_render_does_not_hold_up_a_normal_render_beside_it() -> None:
     assert normal_elapsed < 20, normal_elapsed
     _assert_timed_out(value, elapsed)
     _assert_no_browser_left(before)
+
+
+def test_the_time_limit_starts_when_the_page_is_ready_not_while_waiting_for_a_slot() -> None:
+    """``timeout_s`` bounds the page's work, not the wait for a capture slot or the browser launch.
+    A normal render queued behind busy capture slots (thumbnails, PDFs and other renders share
+    them) gets its whole time limit once its page is ready: it is not refused as a timeout."""
+    held = threading.Event()
+
+    def hold_every_slot() -> None:
+        taken = 0
+        try:
+            while _CAPTURE_SLOTS.acquire(blocking=False):
+                taken += 1
+            held.set()
+            time.sleep(2.5)
+        finally:
+            for _ in range(taken):
+                _CAPTURE_SLOTS.release()
+
+    holder = threading.Thread(target=hold_every_slot, daemon=True)
+    holder.start()
+    assert held.wait(10)
+    rendered, elapsed = _Bounded(lambda: render_site(garner_site("doc_queued"), garner_brand(), [], base_path="", timeout_s=2)).outcome(60)
+    holder.join(10)
+    assert not isinstance(rendered, BaseException), rendered
+    assert [page.route for page in rendered.pages] == ["/", "/analysis"]  # type: ignore[attr-defined]
+    assert elapsed > 2.4, elapsed  # it did wait for a slot, longer than its whole time limit
 
 
 def test_a_javascript_url_that_replaces_the_document_fails_fast() -> None:
