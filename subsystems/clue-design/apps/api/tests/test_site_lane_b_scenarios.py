@@ -469,7 +469,7 @@ def test_a_a_real_site_turn_end_to_end(client: TestClient, model: ModelSeam, gar
 
     # The brand the agent read is Garner's stored kit (its measured teal), not a default.
     workspace = session_folder(_agent_root, store.workspace_id, document_id) / "workspace"
-    assert "| brand | Brand | surface.brand | #047464 |" in (workspace / "brand" / "brand.md").read_text()
+    assert "| brand | Brand | surface.brand | `bg-surface-brand text-on-surface-brand` | #047464 |" in (workspace / "brand" / "brand.md").read_text()
 
     # Version 1 holds the new heading; nothing else moved.
     stored = store.require_document(document_id)
