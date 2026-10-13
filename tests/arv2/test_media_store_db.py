@@ -1221,3 +1221,49 @@ def test_a_page_with_no_recording_anywhere_tells_the_agent_where_else_to_look():
             assert "podcast" in result["next_action"] and "LinkedIn" in result["next_action"]
 
     run_async(scenario())
+
+
+def test_run_media_summary_counts_reads_by_method_and_gap():
+    from clue_api.arv2.media_store import run_media_summary
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            feed = """<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+              <channel><title>Source show</title><item><guid>ep-1</guid><title>Evidence</title>
+              <link>https://example.com/episode-1</link><itunes:duration>60</itunes:duration>
+              <enclosure url="https://example.com/source.mp3" type="audio/mpeg"/>
+              </item></channel></rss>"""
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
+                    offline_audio(60),
+                    deepgram_speech("We require reliable evidence."),
+                    embeddings(),
+                    HttpResponse(200, {"content-type": "text/html"}, b"<p>Show notes only</p>"),
+                    exa_links("https://example.com/about"),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            read = await read_media(
+                rt,
+                ReadMediaArgs(url="https://example.com/feed", episode_hint="ep-1", purpose="Feed"),
+            )
+            assert read["state"] == "available"
+            missed = await read_media(
+                rt, ReadMediaArgs(url="https://events.example.com/notes", purpose="Notes")
+            )
+            assert missed["state"] == "unavailable"
+            summary = await run_media_summary(
+                conn, workspace_id=rt.scope.workspace_id, run_id=rt.scope.run_id
+            )
+            assert summary["attempted"] == 2
+            assert summary["transcribed"] == {"audio": 1}
+            assert summary["unavailable"] == {
+                "no_supported_recording_link": 1,
+                "no_recording_link_on_page_through_exa": 1,
+            }
+
+    run_async(scenario())
