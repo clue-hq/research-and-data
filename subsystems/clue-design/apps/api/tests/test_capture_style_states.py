@@ -4,7 +4,8 @@ The real probe in headless Chromium — Playwright's and patchright's (the steal
 local fixture page: CSS hover, press and focus-visible, a script-driven hover, a transform under a
 transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
 CSS reveal, a keyframe animation and a scripted animation; and pages that fight the pass — buttons
-that leave the page after they were marked, a pulsing call to action, cards wrapped in anchors. No network.
+that leave the page after they were marked, a pulsing call to action, entrances still running, twin
+pulses a phase apart, cards wrapped in anchors. No network.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from lumen_ingestion.capture import states as states_module
-from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry
+from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry, shape_groups
 from lumen_ingestion.capture.states import LOOK_JS, REVEAL_BEFORE_JS, STATE_PASS_DEADLINE_S, probe_states
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "capture"
@@ -98,6 +99,7 @@ def test_each_style_is_measured_in_every_state(engine: str) -> None:
         ("background-color", 200, "ease-out", 0), ("transform", 150, "ease", 0), ("box-shadow", 300, "ease", 50),
     ]
     assert solid["motion"]["icon"]["kind"] == "svg" and solid["motion"]["icon"]["position"] == "end"
+    assert "style=" not in solid["motion"]["icon"]["svg"], "the geometry probe's motion hold leaves no trace"
     assert solid["rest"]["text_transform"] == "uppercase" and solid["rest"]["letter_spacing"] == 0.28
 
     outline = run["by_id"]["b-outline"]
@@ -208,6 +210,40 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] == "matrix(1, 0, 0, 1, 0, 0)", fade["rest"]
     assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
 
+
+#: A transform with no offset: none, or the identity an entrance that ends on `transform: none` holds.
+_NO_OFFSET = (None, "matrix(1, 0, 0, 1, 0, 0)")
+
+
+def test_an_entrance_still_running_is_read_where_it_ends() -> None:
+    """A CTA fading in over 4 s, and one waiting out a 3 s delay before a short fade, are still moving
+    when the probes reach them: each is read at rest as the page will show it (opaque, in place), never
+    from its authored start (`opacity: 0`, 16px down). Run as the capture runs it, and again with every
+    animation rewound to its start just before the state pass, so the state pass's own rule is held to it."""
+
+    async def rewind(page) -> None:
+        await page.evaluate("() => document.getAnimations().forEach((a) => { a.currentTime = 0; })")
+
+    for before_probe in (None, rewind):
+        run = asyncio.run(_capture("playwright", fixture="entrance_ctas.html", before_probe=before_probe))
+        for key in ("b-slow", "b-late"):
+            rest = run["by_id"][key]["rest"]
+            assert rest["opacity"] == 1 and rest["transform"] in _NO_OFFSET, (before_probe, key, rest)
+        assert run["by_id"]["b-slow"]["hover"] == {"background": "rgb(3, 90, 78)"}
+
+
+def test_twin_pulses_a_phase_apart_are_one_style_with_one_name() -> None:
+    """Two identical buttons pulsing a box-shadow forever, a phase apart: the geometry probe reads each
+    without its pulse, so they are one look with one plain name, the same on every extraction, and the
+    pulse is still captured as page motion."""
+    runs = [asyncio.run(_capture("playwright", fixture="pulse_twins.html")) for _ in range(2)]
+    names = [[(name, len(members)) for name, members in shape_groups(run["geometry"]["surfaces"], ("button",))]
+             for run in runs]
+    assert names[0] == names[1] == [("solid.047464", 2)], names
+    for run in runs:
+        assert [s["shadow"] for s in run["geometry"]["surfaces"] if s["cls"] == "button"] == [None, None]
+        assert any(a["name"] == "pulse" for a in run["geometry"]["animations"])
+        assert run["by_id"]["b-first"]["rest"]["box_shadow"] is None
 
 def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:
     """Six anchor-wrapped feature cards outnumber the two inline links; the link style is still the

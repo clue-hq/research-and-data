@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pulse twins fixture</title>
+<!-- Wave 2 A9 FX-C fix round 1: two identical buttons, each pulsing a box-shadow forever, a phase
+     apart (negative delays, so the offset holds from the first frame). The pulse is page motion, not
+     the buttons' look: they are one style with one plain name on every extraction.
+     Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .cta { display: inline-flex; padding: 12px 24px; border-radius: 8px; background: #047464; color: #fff;
+         border: 0; font: 500 14px/1.4 Arial; cursor: pointer; animation: pulse 1.2s ease-in-out infinite; }
+  .cta:hover { background: #035a4e; }
+  #b-first { animation-delay: -0.3s; }
+  #b-second { animation-delay: -0.9s; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(4, 116, 100, .6); }
+    100% { box-shadow: 0 0 0 14px rgba(4, 116, 100, 0); }
+  }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="cta" id="b-first">Book now</button>
+    <button class="cta" id="b-second">Book now</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

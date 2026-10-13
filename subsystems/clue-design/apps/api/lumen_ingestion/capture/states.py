@@ -19,13 +19,14 @@ recorded in docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.m
 * disabled — the element's own `disabled` (form controls) or `aria-disabled="true"`, set and
   restored, so the site's `:disabled` / `[aria-disabled]` rules show.
 
-Transitions and running CSS animations on the element and its descendants are switched off inline
-through the CSSOM first (a page CSP cannot block a CSSOM write), so each read is the state's end look
-and no animation frame (a pulsing CTA's halo, a wiggling icon) is read as a state; the rest look is
-read after that, so it is the element's authored static look (its animation is page motion, captured
-by the geometry probe). A finished animation keeps its last frame, which is what the page shows at
-rest. A script-driven hover is read every 50 ms until two reads agree. Everything is restored
-afterwards.
+The element and its descendants are held still first, by the one motion rule the geometry probe
+also reads with (`geometry.FREEZE_MOTION_FN`), through the CSSOM (a page CSP cannot block a CSSOM
+write): transitions are switched off, so each read is the state's end look; a CSS animation that ends
+is finished, so an entrance still running (or still in its delay) is read where it ends, never from
+its authored start; one that never ends is switched off, so no frame of it (a pulsing CTA's halo, a
+wiggling icon) is read as a state and the rest look is the authored static look (the animation is
+page motion, captured by the geometry probe). The rest look is read after that. A script-driven
+hover is read every 50 ms until two reads agree. Inline styles are restored afterwards.
 
 Bounded like the geometry probe, for the same reason (an ingestion is one job among many): at most
 `STATE_TARGET_CAPS` styles, an 8-second wall clock for the whole pass (checked before each style and
@@ -43,7 +44,7 @@ import asyncio
 import time
 from typing import Any
 
-from .geometry import state_targets
+from .geometry import FREEZE_MOTION_FN, state_targets
 
 #: The whole pass's wall clock. Ten buttons and a dozen other styles take about 2.5 s at the
 #: measured 100-140 ms each; the rest is headroom for covered elements (1.2 s each).
@@ -186,28 +187,21 @@ MOTION_JS = r"""
 }
 """
 
-#: Transitions off, and every CSS animation that has not finished (each read would catch another of
-#: its frames); each node's prior inline values are returned for `THAW_JS`. A finished animation is
-#: left on: it holds its last frame, which is the look the page shows at rest (an entrance that fades
-#: a CTA in from an authored `opacity: 0` ends there).
+#: The element held still by the motion rule the geometry probe shares (`FREEZE_MOTION_FN`): an
+#: animation that ends is finished, one that never ends is switched off, transitions are off. Returns
+#: each node's prior inline values for `THAW_JS`, which gives them back (finishing is not undone).
 FREEZE_JS = r"""
-(el) => [el, ...el.querySelectorAll('*')].slice(0, 16).map((node) => {
-  const moving = node.getAnimations().some((a) => a.animationName !== undefined && a.playState !== 'finished');
-  const prior = {};
-  for (const name of moving ? ['transition', 'animation'] : ['transition']) {
-    prior[name] = [node.style.getPropertyValue(name), node.style.getPropertyPriority(name)];
-    node.style.setProperty(name, 'none', 'important');
-  }
-  return prior;
-})
+(el) => {
+""" + FREEZE_MOTION_FN + r"""
+  return freezeMotion(el);
+}
 """
 
 THAW_JS = r"""
-(el, priors) => [el, ...el.querySelectorAll('*')].slice(0, 16).forEach((node, i) => {
-  for (const [name, [value, priority]] of Object.entries(priors[i] || {})) {
-    if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
-  }
-})
+(el, priors) => {
+""" + FREEZE_MOTION_FN + r"""
+  thawMotion(el, priors);
+}
 """
 
 DISABLE_JS = r"""

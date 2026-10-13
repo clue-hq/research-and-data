@@ -66,12 +66,57 @@ STATE_TARGET_CAPS = {"button": 10, "link": 2, "nav_link": 2, "card": 4, "chip": 
 _CANDIDATES_PER_STYLE = 3
 
 
+#: One motion rule for every look read, shared by this probe's `record` and the state pass's
+#: FREEZE_JS / THAW_JS (states.py), over an element and its first 15 descendants in document order:
+#: a CSS animation that ENDS is finished, so the read is the frame it ends on (a CTA fading in from an
+#: authored `opacity: 0` is read opaque and in place, even while its entrance or its delay is still
+#: running); one that never ends is switched off inline, so the read is the authored static look and
+#: no frame of it (a pulse's halo, a wiggle) is taken for the element's own; transitions are switched
+#: off, so a running one reads its end value. `thawMotion` restores the inline values it changed, and
+#: removes a `style` attribute the freeze created.
+#: Finishing is not undone: both probes run after the screenshot and the captured HTML, and the page
+#: would have reached that frame by itself.
+FREEZE_MOTION_FN = r"""
+  const motionNodes = (el) => {
+    const nodes = [el];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
+    while (nodes.length < 16 && walker.nextNode()) nodes.push(walker.currentNode);
+    return nodes;
+  };
+  const freezeMotion = (el) => motionNodes(el).map((node) => {
+    let endless = false;
+    for (const animation of node.getAnimations()) {
+      if (animation.animationName === undefined) continue;  // a transition: switched off below
+      const end = animation.effect ? animation.effect.getComputedTiming().endTime : Infinity;
+      if (end === Infinity) { endless = true; continue; }
+      try { animation.finish(); } catch (e) { endless = true; }  // a zero playback rate cannot finish
+    }
+    const prior = { attribute: node.hasAttribute('style'), values: {} };
+    for (const name of endless ? ['transition', 'animation'] : ['transition']) {
+      prior.values[name] = [node.style.getPropertyValue(name), node.style.getPropertyPriority(name)];
+      node.style.setProperty(name, 'none', 'important');
+    }
+    return prior;
+  });
+  const thawMotion = (el, priors) => motionNodes(el).forEach((node, i) => {
+    const prior = priors[i];
+    if (!prior) return;
+    for (const [name, [value, priority]] of Object.entries(prior.values)) {
+      if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
+    }
+    // A style attribute the freeze created goes again once it is empty (an icon's markup is read later).
+    if (!prior.attribute && node.getAttribute('style') === '') node.removeAttribute('style');
+  });
+"""
+
+
 # The browser-side probe. One expression, evaluated in the page; every number it
 # returns is a *used* value read from getComputedStyle, so nothing here needs a
 # CSS parser. Bounded on purpose (a 10k-node marketing page must not ship a
 # multi-megabyte harvest through the job row).
 GEOMETRY_JS = r"""
 () => {
+""" + FREEZE_MOTION_FN + r"""
   const MAX_PER_CLASS = 60;
   const MAX_SURFACES = 320;
   const MAX_SECTIONS = 40;
@@ -111,7 +156,13 @@ GEOMETRY_JS = r"""
     return null;
   };
 
+  // A candidate's look is read with its motion held still (FREEZE_MOTION_FN), and its inline styles
+  // are given back right after the read.
   const record = (el, cls) => {
+    const priors = freezeMotion(el);
+    try { return look(el, cls); } finally { thawMotion(el, priors); }
+  };
+  const look = (el, cls) => {
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return null;
     const rect = el.getBoundingClientRect();
