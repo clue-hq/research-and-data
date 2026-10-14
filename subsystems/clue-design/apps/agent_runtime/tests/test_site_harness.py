@@ -358,6 +358,14 @@ def test_the_skills_ride_in_the_system_prompt_with_the_e5_skills_by_default(tmp_
     assert "### Skill: writing-a-section" not in system_prompt_with_skills(workspace, allow_new_sections=False)
 
 
+def test_live_workspaces_get_the_interactive_skill_and_others_do_not(tmp_path: Path) -> None:
+    on = system_prompt_with_skills(tmp_path, live=True)
+    off = system_prompt_with_skills(tmp_path, live=False)
+    assert "### Skill: making-a-section-interactive" in on
+    assert "making-a-section-interactive" not in off
+    assert off == system_prompt_with_skills(tmp_path)  # flag off: byte-identical
+
+
 def test_the_prompt_names_the_claims_file_only_when_the_workspace_has_one(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     materialize_workspace(workspace, inputs_for(), site=garner_site())

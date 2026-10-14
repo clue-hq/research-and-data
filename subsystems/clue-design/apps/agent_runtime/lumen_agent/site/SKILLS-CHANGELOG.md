@@ -75,3 +75,8 @@ fails without it).
 - 2026-10-12 · page-review: render_page no longer reports console errors (the production
   screenshot runs no script, so the count could never change); section crashes arrive as render
   notes or NOT RENDERED instead.
+- 2026-10-15 · new skill making-a-section-interactive (skills-live, loaded only in workspaces on
+  LUMEN_SITE_LIVE_WORKSPACES; publishing live sites, phase 1; approved by the founder 2026-10-15):
+  state, handlers, timers and effects; draw the same thing on the server and in the browser; stay
+  still while `kit.editing`; stay on the brand; an accordion example. No failing case: live sites
+  give sections a browser to run in for the first time.

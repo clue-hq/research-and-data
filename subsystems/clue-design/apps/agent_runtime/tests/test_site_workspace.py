@@ -125,6 +125,14 @@ def test_materialize_rebuilds_inputs_but_keeps_memory(tmp_path: Path) -> None:
     assert "plan.md" not in ws.SESSION_REGENERATED and "fetched" not in ws.SESSION_REGENERATED
 
 
+def test_only_a_live_workspace_gets_the_live_skills_and_they_are_rebuilt_every_request(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    ws.materialize_workspace(workspace, inputs_for(live_sites=True), site=garner_site())
+    assert (workspace / "skills-live/making-a-section-interactive/SKILL.md").is_file()
+    ws.materialize_workspace(workspace, inputs_for(), site=garner_site())
+    assert not (workspace / "skills-live").exists()
+
+
 def test_the_account_logos_are_listed_in_brand_md_and_join_the_turn_brand(tmp_path: Path) -> None:
     light = AccountLogo(cell="light_lockup", file="/asset-store/" + "1" * 64, content_type="image/svg+xml")
     other = AccountLogo(cell="unclassified", file="/asset-store/" + "2" * 64, content_type="image/png",

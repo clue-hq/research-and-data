@@ -288,3 +288,14 @@ test("the live skill's accordion passes interactive mode with Garner's options",
   );
   assert.deepEqual(lint(accordion, { ...lintOptionsFor(kitBrand("garner")), interactive: true }), []);
 });
+
+test("the making-a-section-interactive skill's example lints clean in interactive mode with Garner's options", () => {
+  // The skill must never teach something the check refuses (publishing live sites, Task 11).
+  const skill = fs.readFileSync(
+    new URL("../../../../../subsystems/clue-design/apps/agent_runtime/lumen_agent/site/skills-live/making-a-section-interactive/SKILL.md", import.meta.url),
+    "utf-8",
+  );
+  const example = /```tsx\n([\s\S]*?)```/.exec(skill)?.[1];
+  assert.ok(example, "the skill has a tsx example");
+  assert.deepEqual(lint(example, { ...lintOptionsFor(kitBrand("garner")), interactive: true }), []);
+});
