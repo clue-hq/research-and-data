@@ -694,6 +694,46 @@ def test_a_section_that_draws_differently_in_the_browser_is_reported_by_route() 
     assert all(re.fullmatch(r"hydration on /: mismatch: the server and the browser drew this page differently \(React #4\d\d\)", w) for w in mismatches), mismatches
 
 
+#: How the busy section spins in the agent's live screenshot. It never spins inside the render page
+#: (``window.__clueRender`` is that page's), so the render passes and the loop lands in the
+#: screenshot: "in_effect" spins before the page reports itself alive (the wait for
+#: ``__clueHydrated`` is the call that never answers); "after_hydration" spins 150 ms after its first
+#: commit, once that wait has answered, inside the font settle — the screenshot is the call that
+#: never answers.
+LIVE_SPINS = {
+    "in_effect": "for (;;) {}",
+    "after_hydration": "setTimeout(() => { for (;;) {} }, 150);",
+}
+
+
+@pytest.mark.parametrize("spin", sorted(LIVE_SPINS))
+def test_a_live_screenshot_of_a_page_that_starts_a_busy_loop_ends_at_its_time_limit(spin: str) -> None:
+    """Final review F1: the live screenshot runs the page's JavaScript, so a section may freeze it
+    after the render check has passed. The screenshot ends as a timeout within its time limit; it
+    never stalls the agent's turn."""
+    from lumen_api.site_live import live_preview_document, live_runtime
+
+    module_js = (
+        'import { jsx } from "react/jsx-runtime";\nimport { useEffect } from "react";\nimport { z } from "zod";\n'
+        'export const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n'
+        "function Busy() { useEffect(() => { if (typeof window.__clueRender !== \"object\") { "
+        + LIVE_SPINS[spin]
+        + ' } }, []); return jsx("p", { children: "busy" }); }\n'
+        "export function render() { return jsx(Busy, {}); }\n"
+    )
+    site, sections = site_with_agent_section("Busy", module_js)
+    rendered = render_site(site, garner_brand(), sections, base_path="", routes=["/"], live=True)
+    home = rendered.pages[0]
+    document = live_preview_document(home, rendered.css, sections, live_runtime())
+    timeout_s = 5
+    value, elapsed = _Bounded(
+        lambda: capture_site_screenshot(home, rendered.css, width=1440, timeout_s=timeout_s, live_document=document)
+    ).outcome(timeout_s + 15)
+    assert isinstance(value, SiteRenderError), value
+    assert (value.code, value.message) == (RENDER_TIMEOUT, f"the screenshot did not finish within {timeout_s:g}s")
+    assert elapsed < timeout_s + 3, elapsed
+
+
 def test_review_focus_5_a_stored_module_importing_a_missing_name_fails_by_name() -> None:
     module_js = 'import { useNotAHook } from "react";\nexport const schema = null;\nexport function render() { useNotAHook(); return null; }\n'
     site, sections = site_with_agent_section("Broken", module_js)

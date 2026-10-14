@@ -501,14 +501,17 @@ def capture_site_screenshot(
 
     With ``live_document`` (``site_live.live_preview_document``, publishing live sites), that
     self-contained document is shot instead, with JavaScript ON and the network still blocked,
-    once the page has come alive (``window.__clueHydrated``) — or when the wait runs out, shot
-    anyway."""
+    once the page has come alive (``window.__clueHydrated``) — or when the wait runs out (at most
+    half the time limit), shot anyway. The page's own script may freeze it at any moment, so the
+    whole live shot ends at ``timeout_s`` (counted from when the page is ready): the page is closed
+    then, under whatever call is waiting on it, and the shot is a timeout."""
     from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
     from .site_sanitize import sanitize_site_html
 
     html = live_document if live_document is not None else sanitize_site_html(site_page_html(page, css)).html
     timeout_ms = timeout_s * 1000
+    closer: _CloseAtDeadline | None = None
     try:
         with hardened_page(
             javascript=live_document is not None,
@@ -518,14 +521,34 @@ def capture_site_screenshot(
             # capture (verified 2026-10-12); the theme's reduced-motion rule shows everything in place.
             reduced_motion="reduce",
         ) as (shot, _blocked):
-            started = time.monotonic()
-            shot.set_content(html, wait_until="load", timeout=timeout_ms)
             if live_document is not None:
-                remaining_ms = max(1.0, timeout_ms - (time.monotonic() - started) * 1000)
+                # Each Playwright call's own timeout is not enough here: they would add up, and a
+                # call waiting on a page whose script is spinning may not return at all
+                # (_CloseAtDeadline). One deadline bounds the shot instead.
+                deadline = time.monotonic() + timeout_s
+
+                def remaining_ms() -> float:
+                    return max(1.0, (deadline - time.monotonic()) * 1000)
+
+                closer = _CloseAtDeadline(shot, deadline)
                 try:
-                    shot.wait_for_function("window.__clueHydrated === true", timeout=remaining_ms)
-                except PlaywrightTimeout:
-                    pass  # a page that never comes alive is still what the agent should see
+                    shot.set_content(html, wait_until="load", timeout=remaining_ms())
+                    try:
+                        # At most half the time limit, so a page that never comes alive still has
+                        # the other half to be shot in.
+                        shot.wait_for_function("window.__clueHydrated === true", timeout=min(remaining_ms(), timeout_ms / 2))
+                    except PlaywrightTimeout:
+                        pass  # a page that never comes alive is still what the agent should see
+                    shot.wait_for_timeout(_FONT_SETTLE_MS)
+                    if clip_selector is not None:
+                        target = shot.locator(clip_selector)
+                        if target.count() == 0:
+                            raise SiteRenderError(RENDER_FAILED, f"nothing to draw: {clip_selector}")
+                        return target.first.screenshot(type="png", timeout=remaining_ms())
+                    return shot.screenshot(type="png", full_page=full_page, timeout=remaining_ms())
+                finally:
+                    closer.disarm()
+            shot.set_content(html, wait_until="load", timeout=timeout_ms)
             shot.wait_for_timeout(_FONT_SETTLE_MS)
             if clip_selector is not None:
                 target = shot.locator(clip_selector)
@@ -533,9 +556,9 @@ def capture_site_screenshot(
                     raise SiteRenderError(RENDER_FAILED, f"nothing to draw: {clip_selector}")
                 return target.first.screenshot(type="png", timeout=timeout_ms)
             return shot.screenshot(type="png", full_page=full_page, timeout=timeout_ms)
-    except PlaywrightTimeout as error:
-        raise SiteRenderError(RENDER_TIMEOUT, f"the screenshot did not finish within {timeout_s:g}s") from error
     except PlaywrightError as error:
+        if isinstance(error, PlaywrightTimeout) or (closer is not None and closer.fired):
+            raise SiteRenderError(RENDER_TIMEOUT, f"the screenshot did not finish within {timeout_s:g}s") from error
         raise SiteRenderError(RENDER_FAILED, str(error)) from error
     except HardenedBrowserUnavailable as error:
         raise SiteRenderError(RENDER_FAILED, str(error)) from error
