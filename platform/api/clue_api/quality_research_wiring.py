@@ -19,6 +19,7 @@ from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import JsonValue
 from sqlalchemy import text
 
@@ -38,6 +39,8 @@ from clue_agents import (
     ArtifactRef,
     AssembledAgentContext,
     ContextAssemblyPolicy,
+    ContextAssemblyReceipt,
+    ContextBundleManifest,
     ContextLayer,
     DeepAgentTurnRuntime,
     DelegationRequest,
@@ -67,14 +70,14 @@ from clue_api.agent_runtime_wiring import (
     DurableDeepAgentTurnRunner,
     GovernedAgentToolFactory,
 )
-from clue_api.agent_turn_wiring import DbAgentTurnJournal
+from clue_api.agent_turn_wiring import DbAgentReplayReader, DbAgentTurnJournal
 from clue_api.arv2.account_research_catalog import (
     CONTACT_ENRICHMENT_POLICY,
     RESEARCH_PROVIDER_POLICY,
 )
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
-from clue_api.arv2.job_resume import research_execution_id
+from clue_api.arv2.job_resume import ResearchRestartRequired, research_execution_id
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_committee_tool import (
     NominateBriefedCommitteeTool,
@@ -400,9 +403,34 @@ def drop_identity_echo(context: AssembledAgentContext, identity: str) -> Assembl
     return context.model_copy(update={"messages": kept})
 
 
+class _ResumeReceipts:
+    """Receipt store for a turn that already recorded its opening context.
+
+    A turn has exactly one receipt, so a resumed turn never writes a second. It compares what it
+    would have recorded with what was recorded and keeps the layers that differ, so the runner can
+    log them and decide whether the saved conversation can still be continued.
+    """
+
+    def __init__(self, recorded: ContextBundleManifest) -> None:
+        self.recorded = recorded
+        self.drifted: tuple[str, ...] = ()
+
+    async def record(self, *, request: AgentTurnRequest, receipt: ContextAssemblyReceipt) -> None:
+        del request
+        before = {m.layer.value: m.content_sha256s for m in self.recorded.layers}
+        now = {m.layer.value: m.content_sha256s for m in receipt.manifest.layers}
+        self.drifted = tuple(
+            sorted(
+                layer for layer in before.keys() | now.keys() if before.get(layer) != now.get(layer)
+            )
+        )
+
+
 class _Contexts:
     def __init__(self, runtime: ResearchUnitRuntime):
         self.runtime = runtime
+        #: Layers whose content changed since a resumed turn's receipt, keyed by turn id.
+        self.drift: dict[UUID, tuple[str, ...]] = {}
 
     async def assemble(
         self, *, request: AgentTurnRequest, profile: Any, history: Sequence[Any]
@@ -415,6 +443,10 @@ class _Contexts:
         if configured != profile:
             raise ValueError("Research context profile differs beyond model configuration")
         resolved = replace(resolved, profile=configured)
+        recorded = await runtime.replay.read_context_receipt(
+            workspace_id=request.constitution.workspace_id, turn_id=request.turn_id
+        )
+        receipts = _ResumeReceipts(recorded.manifest) if recorded is not None else None
         assembled = await build_agent_context_assembler(
             resolved_profile=resolved,
             artifacts=runtime.artifacts,
@@ -433,7 +465,19 @@ class _Contexts:
                 ),
             ),
             conn_factory=runtime.connections,
+            receipts=receipts,
         ).assemble(request=request, profile=profile, history=history)
+        if recorded is not None and receipts is not None:
+            self.drift[request.turn_id] = receipts.drifted
+            if receipts.drifted:
+                log.warning(
+                    "arv2.quality.resume_context_drift",
+                    job_id=str(runtime.scope.job_id),
+                    turn_id=str(request.turn_id),
+                    layers=list(receipts.drifted),
+                )
+            # Everything downstream keeps naming the bundle the model actually opened with.
+            assembled = assembled.model_copy(update={"manifest": recorded.manifest})
         if at_least(runtime.scope, RECIPE_26):
             assembled = drop_identity_echo(assembled, resolved.system_prompt)
         return assembled
@@ -583,6 +627,7 @@ class ResearchUnitRuntime:
         self.artifacts.context_id = context_id
         self.artifacts.step_retention_days = settings.arv2_research_step_retention_days
         self.turns = DbAgentTurnJournal(conn_factory=connections)
+        self.replay = DbAgentReplayReader(storage=storage, conn_factory=connections)
         self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 5))
         self.profiles = quality_profiles(
             tools, version=self.resource_version, person=scope.subject_kind == "person"
@@ -639,14 +684,7 @@ class ResearchUnitRuntime:
         parent: ExecutionId | None = None,
         task_ref: ArtifactRef | None = None,
     ) -> None:
-        recipe = await self.recipes.get_by_identity(
-            scope_type=RecipeScopeType.SYSTEM,
-            workspace_id=None,
-            recipe_key=RECIPE,
-            version=self.resource_version,
-        )
-        if recipe is None:
-            raise RuntimeError("research quality recipe is not installed")
+        recipe = await self._recipe()
         parameters: dict[str, JsonValue] = {
             "job_id": str(self.scope.job_id),
             "context_id": str(self.context_id),
@@ -828,6 +866,62 @@ class ResearchUnitRuntime:
             ).scalar_one()
         return int((Decimal(cost) * 100000).to_integral_value(rounding=ROUND_CEILING))
 
+    async def _recipe(self) -> Any:
+        recipe = await self.recipes.get_by_identity(
+            scope_type=RecipeScopeType.SYSTEM,
+            workspace_id=None,
+            recipe_key=RECIPE,
+            version=self.resource_version,
+        )
+        if recipe is None:
+            raise RuntimeError("research quality recipe is not installed")
+        return recipe
+
+    async def _refuse_changed_recipe(self, execution: ExecutionId) -> None:
+        """An execution recorded under another recipe revision is never continued (§3.1)."""
+        recipe = await self._recipe()
+        async with self.connections() as conn:
+            recorded = (
+                await conn.execute(
+                    text("SELECT recipe_revision_id FROM execution WHERE id=:id"),
+                    {"id": execution},
+                )
+            ).scalar_one_or_none()
+        if recorded is not None and str(recorded) != str(recipe.recipe_revision_id):
+            raise ResearchRestartRequired("instructions_changed")
+
+    async def _refuse_changed_instructions(self, request: AgentTurnRequest) -> None:
+        """A turn recorded under other instructions is never continued (spec 2026-10-14 §3.1)."""
+        constitution = request.constitution
+        async with self.connections() as conn:
+            recorded = (
+                await conn.execute(
+                    text(
+                        "SELECT profile_name, profile_version, profile_sha256, "
+                        "resource_manifest_sha256 FROM agent_turn "
+                        "WHERE id=:turn AND workspace_id=:ws"
+                    ),
+                    {"turn": request.turn_id, "ws": constitution.workspace_id},
+                )
+            ).one_or_none()
+        if recorded is not None and tuple(recorded) != (
+            constitution.profile_ref.name,
+            constitution.profile_ref.version,
+            constitution.profile_ref.sha256,
+            constitution.resource_manifest_sha256,
+        ):
+            raise ResearchRestartRequired("instructions_changed")
+
+    async def _has_saved_state(self, execution: ExecutionId) -> bool:
+        async with self.checkpointer_factory(execution) as saver:
+            saved = await saver.aget_tuple(
+                cast(
+                    RunnableConfig,
+                    {"configurable": {"thread_id": str(execution), "checkpoint_ns": ""}},
+                )
+            )
+        return saved is not None
+
     async def artifact(self, value: object, kind: str) -> ArtifactRef:
         return await self.artifacts.persist_body(
             workspace_id=self.scope.workspace_id,
@@ -840,6 +934,7 @@ class ResearchUnitRuntime:
     async def run(self, *, objective: str, model_id: str | None = None) -> AgentTurnOutcome:
         await self.install()
         execution = self.execution_id
+        await self._refuse_changed_recipe(execution)
         await self.prepare(execution)
         resolved = self.profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
         if model_id:
@@ -956,6 +1051,7 @@ class ResearchUnitRuntime:
                 user_message_artifact_ref=task,
                 requested_at=started,
             )
+            await self._refuse_changed_instructions(request)
             await self.turns.create(request=request, profile=resolved.profile)
             bindings = await self.bindings(request, resolved, lease)
             prior = await self.turns.load_committed_outcome(
@@ -1021,6 +1117,11 @@ class ResearchUnitRuntime:
             assembled = await self.contexts.assemble(
                 request=request, profile=resolved.profile, history=()
             )
+            if self.contexts.drift.get(request.turn_id) and not await self._has_saved_state(
+                execution
+            ):
+                # Nothing ran under the recorded context, so a fresh conversation loses nothing.
+                raise ResearchRestartRequired("context_changed_before_start")
             materializer = AgentResourceMaterializer()
             seeds = tuple(
                 WorkspaceSeedFile(
@@ -1162,6 +1263,7 @@ class ResearchUnitRuntime:
                     middleware=bindings.middleware,
                     long_turn_alert_s=self.settings.agent_long_turn_alert_s or None,
                     continuation_config=continuation_config,
+                    resume_saved_turn=True,
                 ),
                 turns=self.turns,
                 artifacts=self.artifacts,

@@ -457,7 +457,10 @@ class FreshWakeSpecialistRunner:
                 before_work=bindings.before_work,
             ).build()
             outcome = await DurableDeepAgentTurnRunner(
+                # A child execution exists per delegation, so saved state on it is always this
+                # delegation's own half-run turn (spec 2026-10-14 §3.3).
                 runtime=DeepAgentTurnRuntime(
+                    resume_saved_turn=True,
                     compaction_for=compaction_for,
                     models=self._models,
                     execution=execution,
