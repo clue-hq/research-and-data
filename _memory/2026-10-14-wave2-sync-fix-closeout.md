@@ -29,3 +29,20 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
   founder's choice, unanswered); Phase 2 instant undo (optimistic undo + prefetched snapshots; measure
   the validator first); founder calls K3-1 / K1-7 / K6-4 / S7-1; remaining fix-pass groups (§5 of the
   area doc).
+
+## Live walk (founder, 2026-10-14) and its one finding
+- Setup: trenton `.env` `CLUE_DESIGN_SITE_ENGINE_WORKSPACES` now lists Conduit AI, Garner Health,
+  Stripe, AltCarbon (it was empty = every website born a legacy `web` doc; the first run built a web
+  page and was stopped). Agent built `doc_5dc514b3…` (site, Garner → Syracuse City School District):
+  one page, five ClonedSections, shell; ~9 min, 22 LLM calls, one `design_write_site`, no errors.
+  Account record's domain `syracusecityschools.com` has no DNS → no logo (data issue, handled).
+- Founder ran the 9-step checklist: 8 pass. Step 5 failed: typing then reloading without leaving the
+  box lost the text. Cause: clone text slots wrote only on blur; no unload warning anywhere.
+- Fixed (test-first, red proven): `48f71eb06` protocol `pending` message + frame `noteTyping` +
+  app beforeunload while frame pending or any site's save in flight (`useSiteSaves.allIdle`);
+  `afb213420` CloneEditor writes 500 ms after the last keystroke, holds the clone's markup while a
+  slot has focus (no redraw under the caret; F7 refocus code removed as unnecessary).
+- Gates: site-kit 171, site-editor 60, app site-editor 92, browser 19/19, frontend gate green
+  (app 3407 pass / 0 fail / 5 skipped).
+- Owed: founder re-check of step 5 on the live stack (reload the app page first — the editor frame
+  bundle was rebuilt). Saves take 2.2–2.7 s each (validator) — measure in Phase 2.
