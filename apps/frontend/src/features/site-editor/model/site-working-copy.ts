@@ -15,6 +15,11 @@ import type { SiteDocument } from "@clue/site-kit/site-document";
  * older revision is refused (the frame is about to receive the newer copy and drops its unsent
  * typing, exactly once). A proposal accepted does not move the revision: the frame already shows it.
  * Revisions come from one counter per instance and never repeat, across documents too.
+ *
+ * Superseded (sync-fix review F1): once a history step lands or a save is refused, the copy is out of
+ * date until the reload arrives. Proposals and app edits made in that window are refused (they would
+ * re-apply what was undone, or resend what was refused), and the reload, when adopted, always moves
+ * the revision so the frame drops whatever it typed meanwhile.
  */
 export interface WorkingCopy {
   documentId: string;
@@ -44,6 +49,7 @@ export function loadDecision(input: { loadedVersion: number; knownVersion: numbe
 export class SiteWorkingCopy {
   private copy: WorkingCopy | null = null;
   private nextRev = 1;
+  private superseded = false;
   private readonly listeners = new Set<() => void>();
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -58,7 +64,9 @@ export class SiteWorkingCopy {
   /** A load the decision allowed. True when the content changed (the revision moved: push it). */
   adoptLoad(documentId: string, site: SiteDocument): boolean {
     const current = this.copy;
-    if (current && current.documentId === documentId && canonicalJson(current.site) === canonicalJson(site)) return false;
+    const resync = this.superseded;
+    this.superseded = false;
+    if (!resync && current && current.documentId === documentId && canonicalJson(current.site) === canonicalJson(site)) return false;
     this.copy = { documentId, rev: this.nextRev++, site };
     this.emit();
     return true;
@@ -67,7 +75,7 @@ export class SiteWorkingCopy {
   /** A canvas edit from the frame, made over revision `baseRev`. */
   propose(documentId: string, site: SiteDocument, baseRev: number): ProposalVerdict {
     const current = this.copy;
-    if (!current || current.documentId !== documentId || current.rev !== baseRev) return "stale";
+    if (this.superseded || !current || current.documentId !== documentId || current.rev !== baseRev) return "stale";
     if (canonicalJson(current.site) === canonicalJson(site)) return "unchanged";
     this.copy = { ...current, site };
     this.emit();
@@ -77,13 +85,19 @@ export class SiteWorkingCopy {
   /** A change the app makes itself (a dock edit, an image placed). Returns the new revision. */
   edit(documentId: string, site: SiteDocument): number | null {
     const current = this.copy;
-    if (!current || current.documentId !== documentId) return null;
+    if (this.superseded || !current || current.documentId !== documentId) return null;
     this.copy = { documentId, rev: this.nextRev++, site };
     this.emit();
     return this.copy.rev;
   }
 
+  /** A history step landed or a save was refused: out of date until the next adopted load. */
+  supersede(): void {
+    this.superseded = true;
+  }
+
   forget(): void {
+    this.superseded = false;
     if (!this.copy) return;
     this.copy = null;
     this.emit();

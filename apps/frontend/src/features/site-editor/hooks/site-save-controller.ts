@@ -50,6 +50,10 @@ export interface SiteSaveControllerDeps {
   lockNote: string;
   onReload: () => void;
   onState: (state: SiteSaveState) => void;
+  /** The copy the canvas shows is out of date until the reload this controller asks for arrives: a
+   * history step landed (the server moved), or a save was refused (the copy holds the refused edit).
+   * The working copy refuses canvas proposals until that reload is adopted (sync-fix review F1). */
+  onSuperseded?: (why: "save" | HistoryStep["kind"]) => void;
   repository: Pick<SiteRepository, "save" | "undo" | "redo" | "restore">;
 }
 
@@ -179,6 +183,7 @@ export class SiteSaveController {
       // would put that older copy back over the step. They are dropped; the step's reload pushes
       // the stepped copy to the canvas, which drops its unsent typing the same way.
       this.queue = this.queue.filter((operation) => operation.kind === "step");
+      this.deps.onSuperseded?.(step.kind);
       this.finish();
       this.deps.onReload();
     } catch (cause) {
@@ -213,38 +218,45 @@ export class SiteSaveController {
   private abandon(): void {
     this.inFlight = false;
     this.queue = [];
-    // Every refusal reloads on its own (refused()), which also serves a deferred reload.
+  }
+
+  /** A refusal that reloads: the copy is superseded, and the reload also serves a deferred one. */
+  private refusedAndReload(operation: "save" | HistoryStep["kind"], patch: Partial<SiteSaveState>): void {
     this.reloadWhenIdle = false;
+    this.deps.onSuperseded?.(operation);
+    this.update(patch);
+    this.deps.onReload();
   }
 
   private refused(cause: unknown, operation: "save" | HistoryStep["kind"]): void {
     const error = cause instanceof SiteRepositoryError ? cause : null;
     if (error?.status === 409 && (error.code === "undo.empty" || error.code === "redo.empty")) {
-      this.update({ busy: false });
-      this.deps.onReload();
+      this.refusedAndReload(operation, { busy: false });
       return;
     }
     if (error?.status === 409 && error.code === "edits.base_version_mismatch") {
-      this.update({ busy: false, note: SITE_MOVED_ON_NOTE, error: null });
-      this.deps.onReload();
+      this.refusedAndReload(operation, { busy: false, note: SITE_MOVED_ON_NOTE, error: null });
       return;
     }
     if (error?.status === 409 && error.code === "document.agent_run_active") {
-      this.update({ busy: false, note: this.deps.lockNote, error: null });
-      this.deps.onReload();
+      this.refusedAndReload(operation, { busy: false, note: this.deps.lockNote, error: null });
       return;
     }
     if (error?.status === 422) {
-      this.update({ busy: false, note: null, error: error.errors[0] ?? error.message });
-      this.deps.onReload();
+      this.refusedAndReload(operation, { busy: false, note: null, error: error.errors[0] ?? error.message });
       return;
     }
     if (error?.status === 404 && operation === "restore") {
-      this.update({ busy: false, note: null, error: SITE_VERSION_GONE });
-      this.deps.onReload();
+      this.refusedAndReload(operation, { busy: false, note: null, error: SITE_VERSION_GONE });
       return;
     }
+    // A transport failure keeps the edit (the next save carries the whole site again) and does not
+    // reload on its own, so a reload deferred behind this save still has to happen (review F3).
     this.update({ busy: false, note: null, error: cause instanceof Error ? cause.message : SITE_SAVE_FAILED });
+    if (this.reloadWhenIdle) {
+      this.reloadWhenIdle = false;
+      this.deps.onReload();
+    }
   }
 
   private update(patch: Partial<SiteSaveState>): void {

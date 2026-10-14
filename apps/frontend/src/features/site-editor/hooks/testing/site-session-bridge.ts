@@ -60,17 +60,18 @@ export interface FakeServer {
   /** Saves whose base was older than the version the server last REPORTED to the client. */
   staleBaseSaves: number;
   reported: number;
-  /** Hold the next request of this kind until `release()` (the validator, a slow network). */
+  /** Hold the next request of this kind until `release(kind)` (the validator, a slow network). */
   hold: { save: boolean; get: boolean };
   /** Refuse saves this function names (a 422 from the validator). */
   refuse: ((site: SiteDocument) => string | null) | null;
-  release(): void;
+  /** Let the oldest held request of this kind answer. */
+  release(kind: "save" | "get"): void;
   /** Another writer (an agent checkpoint, another tab) changes the site on the server. */
   outsideWrite(site: SiteDocument): void;
 }
 
 export function fakeServer(site: SiteDocument = startSite(), version = 5): FakeServer {
-  const gates: (() => void)[] = [];
+  const gates: Record<"save" | "get", (() => void)[]> = { get: [], save: [] };
   const server: FakeServer = {
     site,
     version,
@@ -81,9 +82,10 @@ export function fakeServer(site: SiteDocument = startSite(), version = 5): FakeS
     reported: version,
     hold: { save: false, get: false },
     refuse: null,
-    release() {
-      const next = gates.shift();
-      if (next) next();
+    release(kind) {
+      const next = gates[kind].shift();
+      if (!next) throw new Error(`no held ${kind} to release`);
+      next();
     },
     outsideWrite(next) {
       server.undo.push(server.site);
@@ -93,12 +95,14 @@ export function fakeServer(site: SiteDocument = startSite(), version = 5): FakeS
       server.log.push(`outside write -> v${server.version}`);
     },
   };
-  (server as FakeServer & { gate: () => Promise<void> }).gate = () => new Promise<void>((resolve) => gates.push(resolve));
+  (server as FakeServer & { gate: Gate }).gate = (kind) => new Promise<void>((resolve) => gates[kind].push(resolve));
   return server;
 }
 
-function gate(server: FakeServer): Promise<void> {
-  return (server as FakeServer & { gate: () => Promise<void> }).gate();
+type Gate = (kind: "save" | "get") => Promise<void>;
+
+function gate(server: FakeServer, kind: "save" | "get"): Promise<void> {
+  return (server as FakeServer & { gate: Gate }).gate(kind);
 }
 
 function moved(server: FakeServer): SiteRepositoryError {
@@ -112,7 +116,7 @@ export function fakeRepository(server: FakeServer): SiteRepository {
       if (server.hold.get) {
         server.hold.get = false;
         server.log.push(`GET read v${read.version} (held)`);
-        await gate(server);
+        await gate(server, "get");
       }
       server.reported = Math.max(server.reported, read.version);
       return { documentId, title: "Acme", site: read.site, version: read.version, undoDepth: read.undo, redoDepth: read.redo };
@@ -136,7 +140,7 @@ export function fakeRepository(server: FakeServer): SiteRepository {
       }
       if (server.hold.save) {
         server.hold.save = false;
-        await gate(server);
+        await gate(server, "save");
       }
       server.undo.push(server.site);
       server.redo = [];

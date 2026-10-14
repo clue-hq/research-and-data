@@ -89,3 +89,31 @@ test("subscribers hear every change and nothing else", () => {
   copy.adoptLoad("d", site("E"));
   assert.equal(heard, 4, "adopt, accepted proposal, edit, forget");
 });
+
+// Sync-fix review F1. After a history step lands or a save is refused, the copy is out of date until
+// the reload arrives: canvas proposals and app edits made in that window would re-apply what was
+// undone or resend what was refused, so they are refused; the reload then always moves the revision
+// (even with the same content) so the frame drops whatever it typed meanwhile.
+test("a superseded copy refuses proposals and edits until the next adopted load, which always moves the revision", () => {
+  const copy = new SiteWorkingCopy();
+  copy.adoptLoad("d", site("A"));
+  const rev = copy.get()!.rev;
+  copy.supersede();
+  assert.equal(copy.propose("d", site("typed in the window"), rev), "stale");
+  assert.equal(copy.edit("d", site("dock in the window")), null);
+  assert.equal(copy.get()!.site.pages["/"].content[0].props.heading, "A");
+  assert.equal(copy.adoptLoad("d", site("A")), true, "same content, but the frame must be re-synced");
+  const after = copy.get()!.rev;
+  assert.ok(after > rev);
+  assert.equal(copy.propose("d", site("B"), after), "accepted");
+});
+
+test("forgetting a superseded copy clears the state for the next document", () => {
+  const copy = new SiteWorkingCopy();
+  copy.adoptLoad("d", site("A"));
+  copy.supersede();
+  copy.forget();
+  copy.adoptLoad("e", site("A"));
+  const rev = copy.get()!.rev;
+  assert.equal(copy.propose("e", site("B"), rev), "accepted");
+});

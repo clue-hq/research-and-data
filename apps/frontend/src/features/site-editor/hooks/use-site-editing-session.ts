@@ -89,11 +89,19 @@ export function useSiteEditingSession({
   const [reloadNonce, setReloadNonce] = useState(0);
   const reload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
   const load = useSiteDocument({ documentId: activeDocumentId, reloadNonce, repository });
-  const saves = useSiteSaves({ documentId: activeDocumentId, lockNote: AGENT_RUN_LOCK_NOTE, onReload: reload, repository });
-
   // The app's working copy (ruling: the app holds the site JSON and is the only side that saves).
   // An external store, so every write path reads the CURRENT copy, never a render's closure.
   const [copy] = useState(() => new SiteWorkingCopy());
+  // A history step that lands, or a save refused, makes the copy out of date until its reload is
+  // adopted; canvas proposals and dock edits in that window are refused (sync-fix review F1).
+  const supersede = useCallback(() => copy.supersede(), [copy]);
+  const saves = useSiteSaves({
+    documentId: activeDocumentId,
+    lockNote: AGENT_RUN_LOCK_NOTE,
+    onReload: reload,
+    onSuperseded: supersede,
+    repository,
+  });
   const working = useSyncExternalStore(copy.subscribe, copy.get, copy.get);
   const currentSite = working && working.documentId === activeDocumentId ? working : null;
   useEffect(() => {

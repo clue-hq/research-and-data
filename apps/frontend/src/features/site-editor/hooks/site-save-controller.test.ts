@@ -32,7 +32,7 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-function harness({ adopt = true } = {}) {
+function harness({ adopt = true, onSuperseded }: { adopt?: boolean; onSuperseded?: (why: string) => void } = {}) {
   const calls: { op: string; base: number; heading?: string; batchId?: string }[] = [];
   const pending: ReturnType<typeof deferred<{ version: number }>>[] = [];
   const next = () => {
@@ -69,6 +69,7 @@ function harness({ adopt = true } = {}) {
       reloads += 1;
     },
     onState: (state) => states.push(state),
+    onSuperseded,
     repository,
   });
   if (adopt) controller.adopt({ version: 5, undoDepth: 0, redoDepth: 0 });
@@ -257,4 +258,37 @@ test("a refusal reloads once and satisfies a deferred reload", async () => {
   await h.settle();
   assert.equal(h.reloads(), 1);
   assert.equal(h.controller.isIdle(), true);
+});
+
+// Sync-fix review F3: a reload deferred behind a save must still happen when that save fails on the
+// network (the transport branch keeps the edit and does not reload on its own).
+test("a deferred reload survives a transport failure of the save it waited for", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  h.controller.requestReloadWhenIdle();
+  h.pending[0].reject(new TypeError("Failed to fetch"));
+  await h.settle();
+  assert.equal(h.controller.snapshot.error, "Failed to fetch");
+  assert.equal(h.reloads(), 1);
+});
+
+// Sync-fix review F1: once a history step lands or a save is refused, the copy the canvas shows is
+// out of date until the reload arrives; the controller says so, so the working copy can refuse canvas
+// proposals made in that window (they would re-apply what was undone, or resend what was refused).
+test("a landed history step and a refusal both report that the working copy is superseded", async () => {
+  const superseded: string[] = [];
+  const h = harness({ onSuperseded: (why) => superseded.push(why) });
+  h.controller.undo();
+  h.pending[0].resolve({ version: 6 });
+  await h.settle();
+  h.controller.save(site(""));
+  h.pending[1].reject(new SiteRepositoryError("invalid", { code: "site.invalid", status: 422, errors: ["x"] }));
+  await h.settle();
+  h.controller.save(site("b"));
+  h.pending[2].resolve({ version: 7 });
+  await h.settle();
+  h.controller.save(site("c"));
+  h.pending[3].reject(new TypeError("Failed to fetch"));
+  await h.settle();
+  assert.deepEqual(superseded, ["undo", "save"], "a plain save and a transport failure do not");
 });

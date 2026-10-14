@@ -19,7 +19,7 @@ test("opening a site: the frame shows the server's copy and nothing is saved", a
   await mounted.unmount();
 });
 
-test("review S2b-3, GET answers first: a reload read before our save landed is never adopted", async () => {
+test("review S2b-3, GET answers first: a reload read before our save landed waits for the save, then re-reads", async () => {
   const server = fakeServer();
   const mounted = await mountSiteSession(server);
   server.hold.save = true;
@@ -28,10 +28,13 @@ test("review S2b-3, GET answers first: a reload read before our save landed is n
   server.hold.get = true;
   mounted.latest().stage.url.reload();
   await mounted.settle();
-  server.release(); // the GET (read v5, before the save) answers first
+  server.release("get"); // the GET (read v5, while the save is still with the validator) answers first
   await mounted.settle();
-  server.release(); // then the save lands as v6
-  await mounted.settle();
+  assert.equal(headingOf(mounted.latest().site), "New headline", "the load is deferred, never adopted mid-save");
+  server.release("save"); // then the save lands as v6, and the deferred reload re-reads
+  await mounted.settle(12);
+  assert.equal(server.log.filter((line) => line.startsWith("GET")).length, 1, "the first read was held; the re-read was not");
+  assert.equal(mounted.latest().saves.baseVersion, 6);
   assert.equal(headingOf(mounted.latest().site), "New headline", "the app copy keeps the saved edit");
   await selectCta(mounted);
   mounted.latest().inspector.onCommit("heading", "Book a call");
@@ -53,9 +56,9 @@ test("review S2b-3, PUT answers first: the next edit is based on the newest vers
   server.hold.get = true;
   mounted.latest().stage.url.reload();
   await mounted.settle();
-  server.release(); // the save lands first (v6)…
+  server.release("save"); // the save lands first (v6)…
   await mounted.settle();
-  server.release(); // …then the GET that read v5 answers
+  server.release("get"); // …then the GET that read v5 answers
   await mounted.settle(12);
   await selectCta(mounted);
   mounted.latest().inspector.onCommit("heading", "Book a call");
@@ -82,7 +85,7 @@ test("review S2b-3, tab return: nothing from the earlier visit is adopted or sav
   assert.equal(mounted.latest().saves.note, null, "never refused as 'moved on'");
   assert.equal(headingOf(server.site), "Written while away", "nothing from the earlier visit was saved");
   assert.equal(server.staleBaseSaves, 0);
-  server.release();
+  server.release("get");
   await mounted.settle(12);
   assert.equal(headingOf(mounted.frame.getState().site), "Written while away", "the fresh read is what the canvas shows");
   mounted.typeOnCanvas("cta", "Book a call");
@@ -145,5 +148,54 @@ test("StrictMode: the whole session still saves", async () => {
   mounted.typeOnCanvas("hero", "Under StrictMode");
   await mounted.flushCanvas();
   assert.equal(headingOf(server.site), "Under StrictMode");
+  await mounted.unmount();
+});
+
+// Sync-fix review F1: between a landed undo (or a refusal) and its reload, the canvas still shows the
+// old copy. Typing made there must neither re-apply what was undone nor resend what was refused.
+test("review F1: canvas typing during an undo's reload never re-applies what was undone", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  mounted.typeOnCanvas("hero", "Edit to undo");
+  await mounted.flushCanvas();
+  server.hold.get = true;
+  await mounted.pressUndo(); // the undo lands as v7; its reload is slow
+  mounted.typeOnCanvas("cta", "Typed during the reload");
+  await mounted.flushCanvas();
+  assert.equal(server.version, 7, "nothing was saved over the undo");
+  server.release("get");
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Old headline", "the undo stands");
+  assert.equal(server.redo.length, 1, "redo is still available");
+  assert.equal(headingOf(mounted.frame.getState().site), "Old headline", "the canvas shows the undone copy");
+  assert.equal(headingOf(mounted.frame.getState().site, "cta"), "Talk to us", "the typing in the window is dropped, once");
+  mounted.typeOnCanvas("cta", "After the undo");
+  await mounted.flushCanvas();
+  assert.equal(headingOf(server.site, "cta"), "After the undo");
+  assert.equal(headingOf(server.site), "Old headline");
+  await mounted.unmount();
+});
+
+test("review F1: a refused edit is never sent again by typing made before its reload lands", async () => {
+  const server = fakeServer();
+  const asked: string[] = [];
+  server.refuse = (site) => {
+    asked.push(`hero=${JSON.stringify(headingOf(site))} cta=${headingOf(site, "cta")}`);
+    return headingOf(site) === "" ? "page.content.0(hero).heading: Too small" : null;
+  };
+  const mounted = await mountSiteSession(server);
+  server.hold.get = true;
+  mounted.typeOnCanvas("hero", "");
+  await mounted.flushCanvas(); // refused 422; the reload is slow
+  mounted.typeOnCanvas("cta", "Typed before the reload landed");
+  await mounted.flushCanvas();
+  assert.deepEqual(asked, ['hero="" cta=Talk to us'], "the refused edit was not resent");
+  server.release("get");
+  await mounted.settle(12);
+  assert.equal(headingOf(mounted.frame.getState().site), "Old headline");
+  mounted.typeOnCanvas("cta", "Book a call");
+  await mounted.flushCanvas();
+  assert.equal(headingOf(server.site, "cta"), "Book a call");
+  assert.equal(headingOf(server.site), "Old headline");
   await mounted.unmount();
 });

@@ -71,9 +71,9 @@ test("canvas, app copy and server agree through a whole editing session", async 
   server.hold.get = true;
   mounted.latest().stage.url.reload();
   await mounted.settle();
-  server.release(); // the reload's read (older than the save) answers first
+  server.release("get"); // the reload's read (older than the save) answers first: deferred
   await mounted.settle();
-  server.release(); // then the save lands
+  server.release("save"); // then the save lands, and the deferred reload re-reads
   await agree(mounted, server, "7. a reload racing a slow save");
   assert.equal(headingOf(server.site), "Saved slowly");
 

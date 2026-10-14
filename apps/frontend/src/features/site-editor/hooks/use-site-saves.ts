@@ -24,11 +24,15 @@ export function useSiteSaves({
   documentId,
   lockNote,
   onReload,
+  onSuperseded,
   repository,
 }: {
   documentId: string | null;
   lockNote: string;
   onReload: () => void;
+  /** Called the moment a history step lands or a save is refused (see the controller). Must be
+   * stable: it is handed to the controller, which is rebuilt when it changes. */
+  onSuperseded?: () => void;
   repository: SiteRepository;
 }): SiteSaves {
   // Latest-value ref, written in a passive effect (this repo's react-hooks rule).
@@ -57,10 +61,11 @@ export function useSiteSaves({
             lockNote,
             onReload: () => setReloadRequests((count) => count + 1),
             onState: setState,
+            onSuperseded,
             repository,
           })
         : null,
-    [documentId, lockNote, repository],
+    [documentId, lockNote, onSuperseded, repository],
   );
   // Attach in the effect, not at construction: StrictMode's simulated unmount disposes and then
   // re-attaches the same controller, and a real unmount or document switch leaves it disposed.
