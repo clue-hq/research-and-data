@@ -9,18 +9,15 @@ export interface SiteEditorOrigin {
   origin: string | null;
 }
 
-// One read per page: every mount shares it; a failed read is retried by the next mount.
-let shared: Promise<string | null> | null = null;
 function loadOrigin(): Promise<string | null> {
-  shared ??= fetchSiteEditorSession()
-    .then((session) => session.editorOrigin)
-    .catch((error: unknown) => {
-      shared = null;
-      throw error;
-    });
-  return shared;
+  return fetchSiteEditorSession().then((session) => session.editorOrigin);
 }
 
+/** The workspace's editor address, read once per mount of the editor. Never cached for the page
+ * (review finding K3-4): the address belongs to the workspace, which the browser cannot see (its id
+ * never reaches the client), and switching workspace is a soft navigation — a page-wide cache served
+ * the PREVIOUS workspace's editor after a switch. A switch re-enters the app at its home, which
+ * unmounts every editor, so the next one reads the new workspace's address. */
 export function useSiteEditorOrigin(enabled: boolean): SiteEditorOrigin {
   const [state, setState] = useState<SiteEditorOrigin>({ error: null, loaded: false, origin: null });
   useEffect(() => {
