@@ -19,10 +19,12 @@ from lumen_api.design_store import CustodyState, DesignBlobStore, HybridReposito
 from lumen_api.fragments import create_web_fragment, set_web_fragment_status
 from lumen_api.public_address import PublicSiteAddress
 from lumen_api.site_doc_validate import SiteDocumentInvalid
+from lumen_api.toolbelt.publishes import publish_site_document
 from lumen_api.toolbelt.site_documents import write_site_document
 from lumen_api.site_live import live_page_html, live_runtime, script_hash
 from lumen_api.site_publish import SitePublishRefused, build_site_publish_package
 from lumen_api.site_render import SECTION_MODULE_MISSING, SiteRenderError
+from conftest import published_manifest
 from site_kit_support import (
     QUOTE_JS,
     QUOTE_SCHEMA,
@@ -668,6 +670,49 @@ def test_the_publish_core_persists_a_site_package(blobs: DesignBlobStore) -> Non
     package = build("pub_core", site, brand, [], blobs=blobs)
     web_export.persist_publish_assets(blobs, package.assets, package.manifest["custom_components"].get("assets"))
     assert package.manifest["custom_components"] == {} and package.assets == {}
+
+
+def _publish_through_the_core(blobs: DesignBlobStore, document_id: str) -> None:
+    """Garner's site with the Quote agent section, published at ``acme-site`` through the one
+    publish write sequence (``publish_site_document``), as the publish tool runs it."""
+    site, brand = hold_site_images(garner_site_without_clones(document_id), garner_brand(), blobs)
+    module = section_module("Quote", QUOTE_JS)
+    site["agent_sections"] = {"Quote": module.digest}
+    site["pages"]["/"]["content"].append({"type": "Quote", "props": {"id": "q", "surface": "page", "quote": "Live and well."}})
+    store_site(site)
+    repository = HybridRepository()
+    publish_site_document(
+        repository=repository,
+        blobs=blobs,
+        node_bin="node",
+        brand_loader=lambda repo, store, document: brand,
+        section_loader=lambda repo, store, pins: [m for m in [module] if pins.get(m.name) == m.digest],
+        document=repository.require_document(document_id),
+        slug="acme-site",
+    )
+
+
+def _stored_manifest(blobs: DesignBlobStore) -> dict:
+    return published_manifest(blobs.workspace_id, "acme-site")
+
+
+def test_the_publish_core_persists_a_live_sites_javascript_by_digest(blobs: DesignBlobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", blobs.workspace_id)
+    _publish_through_the_core(blobs, "pub_core_live")
+    manifest = _stored_manifest(blobs)
+    assert manifest["delivery"] == "site_live"
+    assert len(manifest["live"]["assets"]) == 5  # the runtime, three shims and the Quote section
+    for record in manifest["live"]["assets"]:
+        media_type, data = blobs.read_blob(record["digest"])
+        assert media_type == "text/javascript; charset=utf-8"
+        assert hashlib.sha256(data).hexdigest() == record["digest"]
+
+
+def test_a_workspace_off_the_list_publishes_the_static_page_exactly_as_before(blobs: DesignBlobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", "")
+    _publish_through_the_core(blobs, "pub_core_static")
+    manifest = _stored_manifest(blobs)
+    assert manifest["delivery"] == "site" and "live" not in manifest
 
 
 # --- Live sites (publishing live sites, phase 1) ---------------------------------------------------

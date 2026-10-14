@@ -101,10 +101,13 @@ def _commit_publish_package(*, repository: Any, blobs: Any, document: dict[str, 
     from .. import web_export
     from ..database import utc_now
 
+    # A live site's runtime, shims and section modules are recorded under manifest["live"] (their
+    # media type with them); a WebDoc's custom-component bundles under "custom_components".
+    live = package.manifest.get("live") or {}
     web_export.persist_publish_assets(
         blobs,
         package.assets,
-        package.manifest["custom_components"].get("assets"),
+        [*(package.manifest["custom_components"].get("assets") or []), *(live.get("assets") or [])],
     )
     publish_id = f"webpub_{package.package_digest}"
     repository.register_web_publish_revision(
@@ -229,10 +232,13 @@ def publish_site_document(
     slug: str,
     noindex: bool = False,
 ) -> WebPublishRef:
-    """Publish a Puck site (Wave 2): build its package, then the same write sequence as the web."""
+    """Publish a Puck site (Wave 2): build its package — live when the workspace is on
+    ``LUMEN_SITE_LIVE_WORKSPACES`` (``site_live.live_sites_enabled``) — then the same write sequence
+    as the web."""
     from .. import site_publish
     from ..public_pages import site_address
     from ..site_doc_inputs import load_section_modules
+    from ..site_live import live_sites_enabled
 
     noindex = bool(noindex) or bool(document.get("web_noindex"))
     defaults = repository.pages_defaults()
@@ -248,6 +254,9 @@ def publish_site_document(
         default_social_preview_sha256=defaults["social_preview_sha256"],
         noindex=noindex,
         node_bin=node_bin,
+        # Publishing live sites, phase 1: a workspace on LUMEN_SITE_LIVE_WORKSPACES publishes a
+        # live site; every other workspace publishes the static page exactly as before.
+        live=live_sites_enabled(repository.workspace_id),
     )
     return _commit_publish_package(repository=repository, blobs=blobs, document=document, slug=slug, package=package)
 

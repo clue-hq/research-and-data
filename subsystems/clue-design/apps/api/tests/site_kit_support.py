@@ -216,6 +216,32 @@ def site_with_agent_section(name: str, module_js: str) -> tuple[dict[str, Any], 
     return site, [SectionModule(name=name, digest=digest, module_js=module_js, css="", props_schema={})]
 
 
+def build_live_package_with_section(blobs: Any, name: str, module_js: str) -> Any:
+    """The live publish package (``build_site_publish_package(..., live=True)``) of garner-syracuse
+    with the agent section ``name`` on its home page, its images held by ``blobs``, published at
+    ``/acme`` (``link_path == "/acme"``)."""
+    from lumen_api.design_store import HybridRepository
+    from lumen_api.public_address import PublicSiteAddress
+    from lumen_api.site_publish import build_site_publish_package
+
+    site, sections = site_with_agent_section(name, module_js)
+    site, brand = hold_site_images(site, garner_brand(), blobs)
+    store_site(site)
+    address = PublicSiteAddress(origin="https://acme.pages.test", site_path="/acme", asset_origin="https://acme.pages.test")
+    return build_site_publish_package(
+        HybridRepository(),
+        HybridRepository().require_document(site["id"]),
+        blobs=blobs,
+        brand=brand,
+        sections=sections,
+        slug="acme",
+        site_address=address,
+        # garner-syracuse carries the seller's cloned sections: approved in this brand's library.
+        fragment_status=lambda fragment_id: "approved",
+        live=True,
+    )
+
+
 @functools.lru_cache(maxsize=1)
 def chromium_available() -> bool:
     try:
