@@ -49,3 +49,18 @@ this branch's frontend until nashville is switched back.
   `ssh ubuntu@40.160.37.148 'sudo docker exec -i vm-batch1-1 python - --email shank@cluehq.ai --website https://<site> --company-name "<Company>" --app-origin https://app.cluehq.ai' < scripts/provision_additional_workspace.py`
   → read the dry run → repeat with `--apply` → sign in as shank, open the printed link → watch
   setting-up release into the app → check switcher, Brand context, Settings website.
+
+## Proxon Brand context replaced with the client's own product brief and ICP (2026-10-14)
+- Onboarding split Proxon's one platform into 9 "products". Operator writes in production (dry run first, then
+  applied; scripts mirror `save_knowledge_document`: new version, previous superseded, `operator_edit` stamp):
+  - `product/proxon.md` v3 = the client's Agent Context Brief; `product/catalog.md` v3 lists Proxon only
+    (offering_kind platform). 8 feature product rows archived; their pages superseded.
+  - New brand-level `audience/icp-proxon-ai-workforce.md` v1 (proposed; passes `icp_authoring._validate_front`):
+    gates size_50_plus, ai_in_two_functions, desk_based_workforce, accountable_ai_leader, buyable; 7 exclusions;
+    persona_map economic_buyer/champion/user(finance)/blocker(security). Body = client ICP verbatim.
+  - New `audience/persona-proxon-ai-workforce.md` v1. The 3 onboarding ICPs and 3 personas superseded.
+- Gates are judged by the research agent (LLM) from rule/test text; code reads only the gate KEYS to file
+  per-gate verdicts. The current Head of ABM (v70) writes ICPs project-scoped only, so a brand-level ICP
+  needed an operator write.
+- PR #118 (branch `fix/product-picker-skip-archived`): the product-set gate offered archived products;
+  now active only. 17/17 gate tests on a throwaway DB.

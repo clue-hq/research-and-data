@@ -257,10 +257,12 @@ class OpenProductSetSelectionGateTool(Tool):
                     reason_code="product_set_project_unavailable",
                 )
             brand_id = project.brand_id
+            # An archived product stays for history and lineage, but a project can no longer be
+            # pointed at it, so it is not a candidate (project_targeting_tools filters the same).
             candidates = [
                 product
                 for product in await list_products(conn, brand_id)
-                if product.workspace_id == ctx.workspace_id
+                if product.workspace_id == ctx.workspace_id and product.status == "active"
             ]
             if not candidates:
                 raise _SelectionRefused(
