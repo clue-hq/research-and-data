@@ -217,7 +217,7 @@ to the agent (§11).
 
 | Kit piece | What it does |
 |---|---|
-| `kit.Form({ name, fields, submitLabel, successMessage })` | a lead form drawn in the brand's style; posts to `/_clue/forms/{slug}`; shows its own sent and failed states; carries a hidden spam trap |
+| `kit.Form({ name, fields, submitLabel, successMessage })` | a lead form drawn in the brand's style; posts to `/_clue/forms/{slug}`; shows its own sent and failed states |
 | `kit.track(event, props)` | sends one tracking event to `/_clue/events/{slug}`, tagged with the site and account |
 | `kit.Embed({ provider, url, title, aspect })` | frames one approved provider (§8), sized by `aspect`, with a title for accessibility |
 | `kit.editing` | `true` in the editor's Edit mode, `false` in Preview and on the published page (§10) |
@@ -227,15 +227,30 @@ to the agent (§11).
 - **Drawing:** `kit.Form` in agent sections. (A form inside the built-in sections is not in this
   spec.)
 - **Submitting:** `POST /_clue/forms/{slug}` with the form's name and field values. The page origin
-  checks the form is one the publish declared (the manifest lists each form's name and fields), drops
-  bot submissions (filled spam trap, too-fast submission, rate limit), and stores the submission.
+  checks the form is one the publish declared (the manifest lists each form's name and fields) and
+  stores the submission. **No spam filtering in this spec** (founder, 2026-10-15): Cloudflare
+  Turnstile is added when junk leads appear. The route keeps only the protections every public
+  endpoint needs to stay up: a size cap and a generous per-visitor rate limit; it does not judge
+  whether a submission is spam.
 - **Storage (new table `site_form_submission`):** workspace, document, publish, slug, route, form name,
   field values, the account the site was made for, the visitor id, the time. Personal data: scoped to
   the workspace, erasable (a person can delete a submission; the DSAR erasure path covers the table),
   never shown to the agent.
-- **Seeing leads:** there is no designed screen for leads yet. By the presentation-truth rule the
-  screen waits for the co-founder's frames; the backend and the notification (open decision 1) land
-  first.
+- **Lead email (founder, 2026-10-15):** every new lead is emailed to the workspace's admins (the
+  default recipients; choosing other recipients waits for a designed screen). How it works:
+  - storing the submission and sending the email are separate steps. The form route writes the
+    submission and an outbox row in one transaction and answers the visitor at once; a background
+    worker sends the email through a transactional email service's HTTPS API, retrying on failure.
+    A slow or failing email service never slows or loses a lead;
+  - the email names the site, the account and the submitted fields, and links to the site in the app;
+  - the service sends from a dedicated subdomain of `cluehq.ai` (for example `notify.cluehq.ai`),
+    so its sending reputation is kept apart from the main domain; the founder creates the account,
+    adds its DNS records (SPF, DKIM, DMARC) and puts its key in the env (`CLUE_EMAIL_*`, in
+    `.env.example` with defaults from the start);
+  - the email carries the lead's personal data to the email service (a new subprocessor) and to the
+    recipients' inboxes. Erasing a submission cannot recall an email already sent.
+- **Seeing leads in the app:** the founders design the leads screen later; until then leads are
+  stored and emailed.
 
 ## 7. Tracking
 
@@ -326,6 +341,7 @@ to the agent (§11).
 | S1-5 a button inside a linked card | refused by the checker and by the kit while drawing (§5); hydration would otherwise break |
 | S2a-2 agent sections break in Edit mode | before marking a text setting editable on the canvas, the editor draws the section off-screen with a marker word in it, and marks it editable only if the marker appears as visible text, unchanged; surface and style settings become pick-lists of the brand's choices |
 | S2b-8 the brand is read once per site | the brand is read again whenever the loaded site uses a clone the editor's copy lacks |
+| K1-3 a Versions-menu restore is refused because of its clones | the restore's check allows the clones of the version it brings back (the server-side half of S2b-8) |
 | S6-2 button icons sized or coloured by the seller's CSS | site-kit draws the icon at the size the kit stores; capture writes each icon shape's real fill and stroke onto it (existing kits gain this only on a founder-approved re-capture) |
 | S1-4 cleared headline | fixed earlier (sync fix) |
 | state and effects differ between editor and page | gone: both run them |
@@ -361,7 +377,7 @@ Each phase gets its own implementation plan; each ships behind the flag and is t
    (§4.5), the per-site policy without snippets or embeds, the page origin serving `site_live`, the
    relaxed checker (§5), `kit.editing`, and JS-on agent previews.
 2. **Forms and tracking.** `kit.Form`, `kit.track`, the two POST routes, the Worker rule, the two
-   tables, spam protection, erasure.
+   tables, the outbox and the lead email, erasure.
 3. **Embeds.** The provider registry, `kit.Embed`, placeholders, policy from the manifest.
 4. **Snippets.** Storage, the Settings card, host detection, serve-time injection, policy merge, the
    custom-domain note.
@@ -380,24 +396,25 @@ The pages-domain move and Public Suffix List listing (§12) run beside these and
 - Verify-not-strip: a rendered page with a forbidden element is refused with its reason, and a clean
   page passes byte-identical.
 - Forms end to end through the real Worker rule, page origin route and table: a submission is stored
-  with its account; a spam-trap submission and a rate-limited burst are dropped; an undeclared form is
-  refused; erasure removes it.
+  with its account and its lead email is sent through the outbox (a failing email service retries and
+  never loses the lead); an oversized body and a burst past the rate limit are refused; an undeclared
+  form is refused; erasure removes it.
 - Edit mode: an interactive section stays still and a click selects it; Preview runs it.
 - The agent preview reports a hydration mismatch and a publish-check refusal as warnings.
 - Flag off: a publish is byte-identical to today.
 
 ## 18. Open decisions for the founder
 
-1. **Lead notifications:** should a new lead email the workspace (which needs an email provider; the
-   platform has none today), or appear only in the app once the leads screen is designed?
+1. **Lead notifications — decided (founder, 2026-10-15):** every lead is emailed to the workspace's
+   admins (§6). Still open: **which email service** (the founder creates the account).
 2. **Leads and tracking screens — decided (founder, 2026-10-15):** the founders design them later; the
    features (forms, tracking, storage) are built now and collect data from the first live publish.
 3. **The first approved embed providers — decided (founder, 2026-10-15):** Calendly, HubSpot (meetings
    and forms), YouTube, Vimeo, Loom, Wistia.
-4. **Spam protection:** the spam trap plus rate limits (no third party), as proposed; or a challenge
-   service such as Cloudflare Turnstile, which adds an outside host to every page with a form.
-5. **K1-3** (restoring a version from the Versions menu is refused because of the clones it used) is
-   the server-side half of S2b-8: fix it together with group 4.3?
+4. **Spam protection — decided (founder, 2026-10-15):** none in this spec; Cloudflare Turnstile is
+   added when the need appears.
+5. **K1-3 — decided (founder, 2026-10-15):** fixed together with group 4.3 (§13): a restore allows the
+   clones of the version it brings back.
 
 ## 19. Documents to update when this is approved
 
