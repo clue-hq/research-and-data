@@ -251,7 +251,8 @@ to the agent (§11).
 
 - A **code-owned registry** of providers. For each: the URL patterns accepted, how a page URL becomes
   an embed URL, and the policy hosts it needs (`frame-src`, plus `script-src`/`connect-src` only if the
-  provider needs a script). The initial list is open decision 3.
+  provider needs a script). The initial list (founder, 2026-10-15): Calendly, HubSpot (meetings and
+  forms), YouTube, Vimeo, Loom, Wistia.
 - `kit.Embed` refuses a URL that matches no provider (in the checker when the URL is literal; at
   render otherwise), so an unapproved host can never reach the page or its policy.
 - The publish manifest lists the providers the site uses; the policy (§4.6) allows only those.
@@ -389,10 +390,10 @@ The pages-domain move and Public Suffix List listing (§12) run beside these and
 
 1. **Lead notifications:** should a new lead email the workspace (which needs an email provider; the
    platform has none today), or appear only in the app once the leads screen is designed?
-2. **Leads and tracking screens:** the co-founder's frames are needed; until then leads are stored and
-   (if decision 1 says so) emailed.
-3. **The first approved embed providers.** Proposed: Calendly, HubSpot (meetings and forms), YouTube,
-   Vimeo, Loom, Wistia.
+2. **Leads and tracking screens — decided (founder, 2026-10-15):** the founders design them later; the
+   features (forms, tracking, storage) are built now and collect data from the first live publish.
+3. **The first approved embed providers — decided (founder, 2026-10-15):** Calendly, HubSpot (meetings
+   and forms), YouTube, Vimeo, Loom, Wistia.
 4. **Spam protection:** the spam trap plus rate limits (no third party), as proposed; or a challenge
    service such as Cloudflare Turnstile, which adds an outside host to every page with a form.
 5. **K1-3** (restoring a version from the Versions menu is refused because of the clones it used) is
