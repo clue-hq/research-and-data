@@ -60,12 +60,25 @@ def test_a_move_that_would_collide_writes_nothing() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             old, new = _suffixes()
-            name = "Move Same " + uuid4().hex[:4]
-            moving = await create_workspace(conn, name=name, pages_system_suffix=old)
-            await create_workspace(
-                conn, name=name, pages_system_suffix=new
-            )  # the same label, already on the new suffix
+            moving = await create_workspace(
+                conn, name="Move Same " + uuid4().hex[:4], pages_system_suffix=old
+            )
             before = await system_hostname(conn, moving.workspace_id)
+            assert before is not None
+            # Review finding S4-1 made a system label unique on every domain, so the one thing
+            # left that can hold the new hostname is a custom row (the connect route refuses a
+            # hostname under our own domains; the table does not).
+            occupant = await create_workspace(
+                conn, name="Move Occupant " + uuid4().hex[:4], pages_system_suffix=new
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
+                    "cname_target, ownership_txt_name, ownership_txt_value) VALUES "
+                    "(:h, :w, 'custom', 'pending_dns', 'pages.test', 'n', 'v')"
+                ),
+                {"h": before[: -len(old)] + new, "w": occupant.workspace_id},
+            )
             result = await move_system_hostnames(conn, from_suffix=old, to_suffix=new, apply=True)
             assert result["applied"] is False and len(result["collisions"]) == 1
             assert await system_hostname(conn, moving.workspace_id) == before

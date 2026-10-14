@@ -117,6 +117,18 @@ async def _delete_workspaces(workspace_ids: list[str]) -> None:
         )
 
 
+async def _commit_custom_row(hostname: str, workspace_id: str) -> None:
+    async with db_lifespan(), transaction() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
+                "cname_target, ownership_txt_name, ownership_txt_value) VALUES "
+                "(:h, :w, 'custom', 'pending_dns', 'pages.test', 'n', 'v')"
+            ),
+            {"h": hostname, "w": workspace_id},
+        )
+
+
 async def _hostnames_under(*suffixes: str) -> list[str]:
     async with db_lifespan(), transaction() as conn:
         found: list[str] = []
@@ -217,16 +229,23 @@ def test_the_move_script_dry_runs_applies_and_refuses_a_collision(
             assert run_async(_resolve(f"{labels[ws]}.{new}")) == ws
 
         # 3. A collision refuses the whole move: exit 1, REFUSED, and NOTHING moves — not even the
-        # row whose new hostname is free.
-        clash_name = f"Move CLI Clash {tag}"
+        # row whose new hostname is free. Review finding S4-1 made a system label unique on every
+        # domain, so a second workspace can no longer hold the clashing label on the new suffix;
+        # what can still hold the new hostname is a custom row (the connect route refuses one under
+        # our own domains, the table does not), committed here by hand.
         clashing, free, occupant = run_async(
             _create_committed_workspaces(
-                [(clash_name, old), (f"Move CLI Free {tag}", old), (clash_name, new)], created
+                [
+                    (f"Move CLI Clash {tag}", old),
+                    (f"Move CLI Free {tag}", old),
+                    (f"Move CLI Occupant {tag}", new),
+                ],
+                created,
             )
         )
         prepared = run_async(_hostname_rows([clashing, free, occupant]))
-        taken = prepared[occupant]["hostname"]
-        assert taken == f"{_label(prepared[clashing]['hostname'], old)}.{new}"
+        taken = f"{_label(prepared[clashing]['hostname'], old)}.{new}"
+        run_async(_commit_custom_row(taken, occupant))
         refused = _run_move(old=old, new=new, apply=True)
         assert refused.returncode == 1, refused.stdout
         refused_report = json.loads(refused.stdout)

@@ -242,6 +242,15 @@ def validate_label(label: str) -> str:
 
 # --- DAL --------------------------------------------------------------------
 _ROW = "hostname, workspace_id, kind, status, created_at, activated_at, locked_at"
+#: The unique indexes a new system row can lose on because its LABEL is taken: the whole hostname
+#: (the primary key) and, since review finding S4-1, the label on any domain
+#: (``workspace_hostname_system_label_key``). Either moves the allocator to its next candidate.
+_LABEL_TAKEN = frozenset({"workspace_hostname_pkey", "workspace_hostname_system_label_key"})
+
+
+def _violated(error: IntegrityError) -> str | None:
+    """The constraint or unique index an ``IntegrityError`` names (asyncpg ``constraint_name``)."""
+    return getattr(getattr(error.orig, "__cause__", None), "constraint_name", None)
 
 
 async def _system_row(conn: AsyncConnection, workspace_id: str) -> WorkspaceHostname | None:
@@ -258,36 +267,36 @@ async def ensure_system_hostname(
 ) -> WorkspaceHostname:
     """The ONE allocator. Returns the workspace's system row, inserting it on first call.
 
-    Idempotent and race-safe: an existing row wins outright; a hostname collision moves to the
-    next candidate (``ON CONFLICT (hostname) DO NOTHING``); losing the one-system-per-workspace
-    race re-reads the winner. Each attempt runs in a savepoint so a conflict never poisons the
-    caller's transaction. Called by :func:`clue_spine.create_workspace`, the backfill command and
-    the design API's dev workspace scaffolding, so every creator gets a row without knowing about
-    it.
+    Idempotent and race-safe: an existing row wins outright; losing the one-system-per-workspace
+    race re-reads the winner; a label already held — under this suffix or, since review finding
+    S4-1, under ANY domain (a workspace not yet moved to the new pages domain, or one already
+    moved) — moves to the next candidate. Each attempt runs in a savepoint so a conflict never
+    poisons the caller's transaction. Called by :func:`clue_spine.create_workspace`, the backfill
+    command and the design API's dev workspace scaffolding, so every creator gets a row without
+    knowing about it.
     """
     existing = await _system_row(conn, workspace_id)
     if existing is not None:
         return existing
     for label in label_candidates(name, workspace_id):
-        hostname = f"{label}.{suffix}"
         try:
             async with conn.begin_nested():
                 result = await conn.execute(
                     text(
                         "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
-                        "activated_at) VALUES (:h, :w, 'system', 'active', now()) "
-                        f"ON CONFLICT (hostname) DO NOTHING RETURNING {_ROW}"
+                        f"activated_at) VALUES (:h, :w, 'system', 'active', now()) RETURNING {_ROW}"
                     ),
-                    {"h": hostname, "w": workspace_id},
+                    {"h": f"{label}.{suffix}", "w": workspace_id},
                 )
-                row = result.mappings().first()
-        except IntegrityError:
+                row = result.mappings().one()
+        except IntegrityError as error:
             winner = await _system_row(conn, workspace_id)
             if winner is not None:
                 return winner
+            if _violated(error) in _LABEL_TAKEN:
+                continue
             raise
-        if row is not None:
-            return WorkspaceHostname(**dict(row))
+        return WorkspaceHostname(**dict(row))
     raise AssertionError("unreachable: label_candidates is infinite")
 
 
@@ -576,7 +585,10 @@ async def replace_system_label(
 ) -> WorkspaceHostname:
     """Label change (spec §4.1, A1): delete the old system row and insert the new one in ONE
     transaction. The old label is free immediately; there is no redirect. Refused with
-    ``label_locked`` once the workspace has published (:func:`lock_system_hostname`)."""
+    ``label_locked`` once the workspace has published (:func:`lock_system_hostname`), and with
+    ``label_taken`` when another workspace holds the label under ANY domain (review finding S4-1:
+    ``workspace_hostname_system_label_key`` — renaming to a published workspace's label on the
+    other side of a domain move would otherwise receive its old links through the edge's 301)."""
     validate_label(label)
     # FOR UPDATE: a concurrent first publish (lock_system_hostname) waits for this transaction or
     # this read waits for it — the label can never be swapped out from under a publish.
