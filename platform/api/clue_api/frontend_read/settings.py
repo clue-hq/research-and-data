@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.research_fields import register_research_field_routes
+from clue_api.frontend_read.research_jobs import register_research_job_routes
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
 from clue_auth.errors import LifecycleTransitionError, MembershipPermissionError
 from clue_auth.principal import RequestPrincipal
@@ -195,6 +196,7 @@ def register_settings_routes(
     clerk = clerk_api or (ClerkApi(secret.get_secret_value()) if secret else None)
 
     register_research_field_routes(router, conn_factory=conn_factory)
+    register_research_job_routes(router, conn_factory=conn_factory)
 
     @router.get("/settings/profile")
     async def profile(request: Request, workspace_id: WorkspaceDep) -> dict[str, Any]:
