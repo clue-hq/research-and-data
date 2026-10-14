@@ -28,11 +28,31 @@ export function CloneEditor({
   useEffect(() => {
     htmlForRef.current = htmlFor;
   });
+  // The slot the marketer clicked into, from another slot of this clone, while that slot's write was
+  // about to rebuild the clone's markup (sync-fix review F7). Exactly one rebuild follows a write —
+  // React's (the markup changed) or the redraw below (it did not) — and it detaches the clicked slot,
+  // leaving the caret nowhere; after it, the slot with the same key takes the focus back.
+  const resumeKey = useRef<string | null>(null);
 
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
     const cleanups: (() => void)[] = [];
+    const resumeFocus = () => {
+      const key = resumeKey.current;
+      resumeKey.current = null;
+      const document = root.ownerDocument;
+      if (key === null || root.contains(document.activeElement)) return;
+      const slot = root.querySelector<HTMLElement>(`[data-lumen-slot="${CSS.escape(key)}"]`);
+      if (!slot) return;
+      slot.focus();
+      const range = document.createRange();
+      range.selectNodeContents(slot);
+      range.collapse(false);
+      const selection = document.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
     const markSlots = () => {
       for (const element of root.querySelectorAll<HTMLElement>("[data-lumen-slot]")) {
         const key = element.getAttribute("data-lumen-slot") ?? "";
@@ -50,9 +70,12 @@ export function CloneEditor({
         const onFocus = () => {
           atFocus = element.innerText;
         };
-        const onBlur = () => {
+        const onBlur = (event: FocusEvent) => {
           if (atFocus !== null && element.innerText === atFocus) return;
           const value = element.innerText.replace(/\s+/g, " ").trim();
+          // (No `instanceof`: the canvas may live in another frame's realm.)
+          const next = event.relatedTarget as Element | null;
+          resumeKey.current = next && root.contains(next) ? next.getAttribute("data-lumen-slot") : null;
           const { dispatch } = getPuck();
           dispatch({
             type: "setData",
@@ -69,10 +92,16 @@ export function CloneEditor({
           // A write that leaves the markup as it is (an emptied slot shows the clone's own wording;
           // a normalised one is the same text) gets no re-render from React, so the canvas would keep
           // what the marketer typed while the saved page shows something else (review finding S1-4).
-          // Put back exactly the markup that will publish.
+          // Put back exactly the markup that will publish — once the focus has moved (a redraw inside
+          // the blur would detach the slot being clicked), and only if the markup is still this one
+          // (the effect's cleanup cancels it when React rebuilds first).
           if (htmlForRef.current(key, value) === html) {
-            root.innerHTML = html;
-            markSlots();
+            const redraw = root.ownerDocument.defaultView?.setTimeout(() => {
+              root.innerHTML = html;
+              markSlots();
+              resumeFocus();
+            }, 0);
+            cleanups.push(() => root.ownerDocument.defaultView?.clearTimeout(redraw));
           }
         };
         const stop = (event: Event) => event.stopPropagation();
@@ -89,6 +118,8 @@ export function CloneEditor({
       }
     };
     markSlots();
+    // This run follows React rebuilding the markup (a changed `html`): resume a slot clicked meanwhile.
+    resumeFocus();
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [html, clone, itemId, getPuck]);
 

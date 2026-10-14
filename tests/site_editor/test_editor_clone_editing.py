@@ -107,3 +107,64 @@ def test_clearing_a_never_set_clone_headline_shows_what_will_publish(
         '[data-puck-component="hero"] [data-lumen-slot="headline"]'
     ).first.inner_text()
     assert "Top Providers" in text, repr(text)
+
+
+STANDS = '[data-puck-component="stands"] [data-lumen-slot="{key}"]'
+ACTIVE_SLOT = (
+    "document.activeElement && "
+    "(document.activeElement.getAttribute('data-lumen-slot') || document.activeElement.tagName)"
+)
+
+
+def click_into_sibling_and_type(page: Any, frame: Any, text: str) -> str:
+    """Click straight from the stands headline into its body (no blur first), then type."""
+    frame.locator(STANDS.format(key="body")).first.click(force=True)
+    page.wait_for_timeout(400)
+    active = frame.evaluate(ACTIVE_SLOT)
+    page.keyboard.type(text)
+    page.wait_for_timeout(200)
+    return active
+
+
+def assert_typing_reached_the_body(page: Any, frame: Any, active: str, mark: int) -> None:
+    assert active == "body", f"the clicked slot keeps the caret, got {active!r}"
+    assert "ZZTYPED" in frame.locator(STANDS.format(key="body")).first.inner_text()
+    frame.evaluate("document.activeElement && document.activeElement.blur()")
+    page.wait_for_timeout(1500)
+    saved = [
+        e
+        for m in changed_after(page, mark)
+        for e in m["payload"]["site"]["pages"]["/"]["content"]
+        if e["props"]["id"] == "stands"
+    ]
+    assert saved and "ZZTYPED" in saved[-1]["props"]["slots"]["body"], "the typing was saved"
+
+
+def test_clicking_from_a_cleared_clone_slot_into_its_sibling_keeps_the_caret_there(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    """Sync-fix review F7: clearing a never-set slot redraws the clone's markup; that redraw must
+    not detach the sibling slot the marketer just clicked into."""
+    init = garner_init(mode="edit")
+    stands = next(e for e in init["site"]["pages"]["/"]["content"] if e["props"]["id"] == "stands")
+    stands["props"]["slots"].pop("headline")
+    page, frame = open_site(app, browser_page, editor_origin, init)
+    mark = len(received(page))
+    frame.locator(STANDS.format(key="headline")).first.click(force=True)
+    page.keyboard.press("Meta+a")
+    page.keyboard.press("Delete")
+    active = click_into_sibling_and_type(page, frame, "ZZTYPED")
+    assert_typing_reached_the_body(page, frame, active, mark)
+
+
+def test_clicking_from_an_edited_clone_slot_into_its_sibling_keeps_the_caret_there(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    """Sync-fix review F7 (control): a real change re-renders the clone's markup the same way."""
+    page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
+    mark = len(received(page))
+    frame.locator(STANDS.format(key="headline")).first.click(force=True)
+    page.keyboard.press("End")
+    page.keyboard.type(" CHANGED")
+    active = click_into_sibling_and_type(page, frame, "ZZTYPED")
+    assert_typing_reached_the_body(page, frame, active, mark)
