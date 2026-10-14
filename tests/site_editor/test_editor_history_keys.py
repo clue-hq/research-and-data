@@ -154,8 +154,13 @@ def test_on_a_dvorak_layout_cmd_semicolon_runs_nothing(
         }"""
     )
     page.wait_for_timeout(1500)
-    assert changed_after(page, mark) == []
+    # Nothing rewinds the dock edit (the frame may re-propose its copy, which carries it) and no
+    # history step is asked for; the canvas still shows it.
+    assert all(
+        proof_heading(m["payload"]["site"]) == "DOCK EDIT" for m in changed_after(page, mark)
+    )
     assert [m for m in received(page)[mark:] if m["type"] == "shortcut"] == []
+    assert frame.get_by_text("DOCK EDIT").count() > 0
 
 
 def test_cmd_z_in_a_puck_inline_field_keeps_the_dock_edit(
@@ -177,3 +182,4 @@ def test_cmd_z_in_a_puck_inline_field_keeps_the_dock_edit(
     assert all(
         proof_heading(m["payload"]["site"]) == "DOCK EDIT" for m in changed_after(page, mark)
     )
+    assert frame.get_by_text("DOCK EDIT").count() > 0, "the canvas still shows the dock edit"
