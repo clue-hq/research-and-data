@@ -31,6 +31,7 @@ from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_spine import list_products
 from clue_storage import (
     StorageBackend,
     artifact_key,
@@ -77,6 +78,10 @@ class KnowledgeDocumentWire(WireModel):
     updated_at: str
     product_id: str | None
     icp_key: str | None
+    #: Every product the document names (``product_id`` for a page, ``product_ids`` otherwise).
+    product_ids: list[str] = Field(default_factory=list)
+    #: The catalog generated from the product list — read-only in the editor.
+    generated: bool = False
 
 
 class KnowledgeFolderWire(WireModel):
@@ -107,6 +112,8 @@ class KnowledgeDocumentDetailWire(WireModel):
     updated_at: str
     product_id: str | None
     icp_key: str | None
+    product_ids: list[str] = Field(default_factory=list)
+    generated: bool = False
     markdown: str
     front_matter: dict[str, Any]
     sources: list[KnowledgeSourceWire]
@@ -115,6 +122,30 @@ class KnowledgeDocumentDetailWire(WireModel):
 class KnowledgeDocumentUpdate(WireModel):
     body: str = Field(max_length=1_000_000)
     expected_revision: int = Field(ge=1, strict=True)
+    #: The products this document is about (spec 2026-10-15 §4.1), set through the editor's
+    #: picker. ``None`` leaves the document's link as it is; a product page takes exactly one.
+    product_ids: list[str] | None = Field(default=None, max_length=50)
+
+
+_PRODUCT_PAGE_KIND = "product-research"
+
+
+async def _validated_product_link(
+    conn: AsyncConnection, *, brand_id: str, kind: str, ids: list[str]
+) -> list[str]:
+    """The picker's choice, checked: every id an active product of this brand, and exactly one
+    for a product page (a page is about one product)."""
+    chosen = list(dict.fromkeys(ids))
+    active = {p.product_id for p in await list_products(conn, brand_id) if p.status == "active"}
+    if not set(chosen) <= active or (kind == _PRODUCT_PAGE_KIND and len(chosen) != 1):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PRODUCT_LINK_INVALID",
+                "message": "Choose products from this brand's list (one for a product page).",
+            },
+        )
+    return chosen
 
 
 def _revision_conflict() -> HTTPException:
@@ -183,7 +214,29 @@ async def save_knowledge_document(
     ):
         raise _revision_conflict()
     front, original = await _front_and_body(conn, storage, workspace_id=workspace_id, row=row)
-    if original == update.body:
+    if front.get("generated") is True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CATALOG_IS_GENERATED",
+                "message": "The catalog is generated from your products. Rename, merge or "
+                "remove a product to change it.",
+            },
+        )
+    link_changed = False
+    if update.product_ids is not None:
+        linked = await _validated_product_link(
+            conn, brand_id=str(row["brand_id"]), kind=str(row["kind"]), ids=update.product_ids
+        )
+        before = (front.get("product_id"), front.get("product_ids"))
+        if row["kind"] == _PRODUCT_PAGE_KIND:
+            front["product_id"] = linked[0]
+        elif linked:
+            front["product_ids"] = linked
+        else:
+            front.pop("product_ids", None)
+        link_changed = before != (front.get("product_id"), front.get("product_ids"))
+    if original == update.body and not link_changed:
         existing = await read_knowledge_document(
             conn, storage, workspace_id=workspace_id, document_id=document_id
         )
@@ -435,7 +488,16 @@ def _document_wire(
         updated_at=_iso(row["updated_at"]) or "",
         product_id=_optional_str(front, "product_id"),
         icp_key=_optional_str(front, "icp_key"),
+        product_ids=_linked_products(front),
+        generated=front.get("generated") is True,
     )
+
+
+def _linked_products(front: Mapping[str, Any]) -> list[str]:
+    single = _optional_str(front, "product_id")
+    many = front.get("product_ids")
+    listed = [p for p in many if isinstance(p, str) and p] if isinstance(many, list) else []
+    return list(dict.fromkeys([single, *listed] if single else listed))
 
 
 async def read_knowledge_tree(

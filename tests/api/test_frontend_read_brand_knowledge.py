@@ -260,6 +260,9 @@ def test_the_tree_lists_servable_current_documents_in_the_dummy_folder_order() -
                 "updatedAt",
                 "productId",
                 "icpKey",
+                # Spec 2026-10-15 §4: every product the document names, and the generated catalog.
+                "productIds",
+                "generated",
             }
 
     run_async(scenario())
