@@ -50,7 +50,10 @@ export interface FrameState {
 export interface PuckHandle {
   select(componentId: string | null): void;
   setMode(mode: EditorMode): void;
-  showPage(page: SitePage): void;
+  /** Show a page that came from outside Puck (the app's copy). `selectedId` is the page section the
+   * marketer has selected, which Puck must point at by id: Puck keeps a selection by position, so a
+   * section added or removed above it would otherwise move the dock to another section (S2a-4). */
+  showPage(page: SitePage, selectedId: string | null): void;
 }
 
 export type FramePost = <T extends FrameToAppType>(type: T, payload: FrameToAppPayloads[T], documentId: string) => void;
@@ -173,6 +176,14 @@ export class FrameController {
     this.post("deselected", {});
   }
 
+  /** After an outside page, the bridge re-describes the selected section: same id, but its type,
+   * fields and values may be new, so `selected` is posted again even though the id did not move. */
+  reselected(componentId: string, componentType: string, fields: FieldDescription[], props: Record<string, unknown>): void {
+    if (this.state.mode !== "edit") return;
+    this.set({ selection: { componentId, target: this.state.route } });
+    this.post("selected", { componentId, componentType, fields, props, route: this.state.route });
+  }
+
   shellSelected(part: "header" | "footer"): void {
     const site = this.state.site;
     if (this.state.mode !== "edit" || !site?.shell || !this.shellFields) return;
@@ -266,7 +277,7 @@ export class FrameController {
     } else {
       this.set({ rev, selection, site });
       const page = pageFor(site, route);
-      if (page) this.puck?.showPage(page);
+      if (page) this.puck?.showPage(page, this.selectedPageSection());
     }
     if (previous && !selection) this.post("deselected", {});
   }
@@ -321,8 +332,13 @@ export class FrameController {
     this.set({ rev, site });
     if (target === this.state.route) {
       const page = pageFor(site, target);
-      if (page) this.puck?.showPage(page);
+      if (page) this.puck?.showPage(page, this.selectedPageSection());
     }
+  }
+
+  private selectedPageSection(): string | null {
+    const selection = this.state.selection;
+    return selection && selection.target !== SHELL_TARGET ? selection.componentId : null;
   }
 
   private scheduleChange(): void {

@@ -169,12 +169,24 @@ function PuckBridge({ brand, config, controller }: { brand: BrandData; config: C
           ui: mode === "edit" ? { previewMode: "edit" } : { itemSelector: null, previewMode: "interactive" },
         });
       },
-      showPage(page) {
+      showPage(page, selectedId) {
         getPuck().dispatch({ data: page as unknown as Data, recordHistory: false, type: "setData" });
+        const puck = getPuck();
+        // Puck's own history must never hold a snapshot from before an outside change: one entry,
+        // the page as now shown (review finding S2a-1's backstop; its keys never reach Puck).
+        puck.history.setHistories([{ id: `outside-${Date.now()}`, state: puck.appState }]);
+        // Point Puck at the selected section by id, never by position (S2a-4), and re-describe it.
+        const itemSelector = selectedId ? (puck.getSelectorForId(selectedId) ?? null) : null;
+        puck.dispatch({ type: "setUi", ui: { itemSelector } });
+        const item = selectedId && itemSelector ? puck.getItemById(selectedId) : null;
+        if (item && selectedId) {
+          const props = item.props as Record<string, unknown>;
+          controller.reselected(selectedId, item.type, fieldsForComponent(config, brand, item.type, props), props);
+        }
       },
     });
     return () => controller.attachPuck(null);
-  }, [controller, getPuck]);
+  }, [brand, config, controller, getPuck]);
 
   useEffect(() => {
     if (!selectedId) {

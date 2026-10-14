@@ -223,3 +223,39 @@ test("a different whole copy wins over unsent typing; the copy the frame already
   assert.equal(headingOf(h.controller.getState().site), "from the server");
   assert.equal(h.controller.getState().rev, 3);
 });
+
+test("review S2a-4: an outside copy keeps the selection on the same section id and tells Puck which one", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 1 }));
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const shown: (string | null)[] = [];
+  h.controller.attachPuck({ select: () => undefined, setMode: () => undefined, showPage: (_page, selectedId) => shown.push(selectedId) });
+  await h.controller.receive(appToFrame("replace_site", { site: withHeading("World"), rev: 2 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "cta", props: { heading: "Dock", id: "cta" }, route: "/", rev: 3 }, ctx));
+  assert.deepEqual(shown, ["cta", "cta"]);
+  assert.deepEqual(h.controller.getState().selection, { componentId: "cta", target: "/" });
+});
+
+test("an outside copy without the selected section clears the selection and tells Puck nothing is selected", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 1 }));
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const shown: (string | null)[] = [];
+  h.controller.attachPuck({ select: () => undefined, setMode: () => undefined, showPage: (_page, selectedId) => shown.push(selectedId) });
+  const without = SiteDocumentSchema.parse({ ...site, pages: { ...site.pages, "/": { root: { props: { title: "Home" } }, content: [] } } });
+  await h.controller.receive(appToFrame("replace_site", { site: without, rev: 2 }, ctx));
+  assert.deepEqual(shown, [null]);
+  assert.equal(h.controller.getState().selection, null);
+  assert.equal(h.types().at(-1), "deselected");
+});
+
+test("re-describing the selected section after an outside copy posts selected even for the same id", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 1 }));
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const before = h.types().filter((type) => type === "selected").length;
+  h.controller.reselected("cta", "StatsBand", [{ kind: "text", label: "Heading", name: "heading" }], { heading: "World" });
+  const selected = h.posts.filter((post) => post.type === "selected");
+  assert.equal(selected.length, before + 1);
+  assert.equal((selected.at(-1)!.payload as { componentType: string }).componentType, "StatsBand");
+});
