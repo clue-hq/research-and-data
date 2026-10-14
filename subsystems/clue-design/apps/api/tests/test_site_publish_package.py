@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import re
 import uuid
 from pathlib import Path
 
 import pytest
 
-from clue_design.publishes import SITE_DELIVERY_CSP_META
+from clue_design.publishes import SITE_DELIVERY_CSP_META, site_live_csp
 from clue_design.storage import SOURCE_KEY_ASSET, design_storage_key
 from lumen_api import site_publish, web_export
+from lumen_api.database import NotFoundError
 from lumen_api.design_store import CustodyState, DesignBlobStore, HybridRepository
 from lumen_api.fragments import create_web_fragment, set_web_fragment_status
 from lumen_api.public_address import PublicSiteAddress
 from lumen_api.site_doc_validate import SiteDocumentInvalid
 from lumen_api.toolbelt.site_documents import write_site_document
+from lumen_api.site_live import live_page_html, live_runtime, script_hash
 from lumen_api.site_publish import SitePublishRefused, build_site_publish_package
 from lumen_api.site_render import SECTION_MODULE_MISSING, SiteRenderError
 from site_kit_support import (
@@ -665,3 +668,73 @@ def test_the_publish_core_persists_a_site_package(blobs: DesignBlobStore) -> Non
     package = build("pub_core", site, brand, [], blobs=blobs)
     web_export.persist_publish_assets(blobs, package.assets, package.manifest["custom_components"].get("assets"))
     assert package.manifest["custom_components"] == {} and package.assets == {}
+
+
+# --- Live sites (publishing live sites, phase 1) ---------------------------------------------------
+
+
+def _build(blobs: DesignBlobStore, *, live: bool = False, with_agent_section: bool = True):
+    """Garner's site (our own sections, plus the Quote agent section unless told otherwise) through
+    ``build`` on first use, then ``again`` over the stored document, so two calls build the same
+    version."""
+    document_id = "pub_live_quote" if with_agent_section else "pub_live_plain"
+    site, brand = hold_site_images(garner_site_without_clones(document_id), garner_brand(), blobs)
+    sections = []
+    if with_agent_section:
+        module = section_module("Quote", QUOTE_JS)
+        site["agent_sections"] = {"Quote": module.digest}
+        site["pages"]["/"]["content"].append({"type": "Quote", "props": {"id": "q", "surface": "page", "quote": "Live and well."}})
+        sections = [module]
+    try:
+        HybridRepository().require_document(document_id)
+    except NotFoundError:
+        return build(document_id, site, brand, sections, blobs=blobs, live=live)
+    return again(document_id, brand, sections, blobs, live=live)
+
+
+def test_a_live_package_ships_its_runtime_shims_and_sections_and_is_served_under_its_own_policy(blobs: DesignBlobStore) -> None:
+    package = _build(blobs, live=True)
+    manifest = package.manifest
+    assert manifest["delivery"] == "site_live"
+    live = manifest["live"]
+    runtime = live_runtime()
+    assert live["runtime"] == hashlib.sha256(runtime.runtime_js).hexdigest()
+    assert set(package.assets) == {r["digest"] for r in live["assets"]}
+    assert all(r["extension"] == "js" and r["media_type"] == "text/javascript; charset=utf-8" for r in live["assets"])
+    home = next(page for page in package.pages if page.route == "/")
+    import_map = re.search(r'<script type="importmap">(.*?)</script>', home.html).group(1)
+    assert live["script_hashes"] == [script_hash(import_map)]
+    assert f'<meta http-equiv="Content-Security-Policy" content="{web_export._escape_attr(site_live_csp(live["script_hashes"], meta=True))}">' in home.html
+    assert f'<script type="module" src="/p-assets/{live["runtime"]}.js"></script>' in home.html
+    data = json.loads(re.search(r'<script type="application/json" id="clue-page-data">(.*?)</script>', home.html).group(1))
+    assert data["route"] == "/" and data["basePath"] == ADDRESS.link_path
+
+
+def test_review_focus_2_page_data_cannot_end_its_element_early(blobs: DesignBlobStore) -> None:
+    page = live_page_html(
+        "<!doctype html><html><head></head><body><div id=\"clue-site\"></div></body></html>",
+        {"title": "</script><script>alert(1)</script>"},
+        section_urls={}, import_map="{}", runtime_url="/p-assets/x.js",
+    )
+    assert "</script><script>alert(1)" not in page
+    assert "\\u003c/script>" in page
+
+
+def test_review_focus_3_a_live_site_without_agent_sections_still_ships_the_host_shims(blobs: DesignBlobStore) -> None:
+    package = _build(blobs, live=True, with_agent_section=False)
+    assert len(package.manifest["live"]["assets"]) == 4  # the runtime and three shims
+
+
+def test_markup_a_published_page_cannot_carry_refuses_the_live_publish(blobs: DesignBlobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(site_publish, "site_html_problems", lambda html: ("stripped <iframe> and its content",))
+    with pytest.raises(SitePublishRefused) as refused:
+        _build(blobs, live=True)
+    assert refused.value.code == "site_publish.unsafe_markup"
+
+
+def test_a_live_package_is_deterministic(blobs: DesignBlobStore) -> None:
+    assert _build(blobs, live=True).package_digest == _build(blobs, live=True).package_digest
+
+
+def test_without_live_the_package_is_byte_identical(blobs: DesignBlobStore) -> None:
+    assert _build(blobs).package_digest == _build(blobs, live=False).package_digest

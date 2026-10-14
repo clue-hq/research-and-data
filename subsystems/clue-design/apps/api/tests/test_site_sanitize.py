@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lumen_api.site_sanitize import asset_reference_allowed, sanitize_site_html
+from lumen_api.site_sanitize import asset_reference_allowed, sanitize_site_html, site_html_problems
 
 DIGEST = "a" * 64
 
@@ -80,3 +80,36 @@ def test_the_reference_rule() -> None:
         assert asset_reference_allowed(kept), kept
     for refused in ("https://example.com/x.png", "//cdn.example/x.png", "/\\evil.example/x.png", "file:///etc/passwd", "javascript:x()"):
         assert not asset_reference_allowed(refused), refused
+
+
+# --- The live check (publishing live sites, phase 1): checked, never stripped ----------------------
+
+
+def test_a_clean_page_has_no_problems_and_a_forbidden_element_is_named() -> None:
+    assert site_html_problems('<!doctype html><html><head><title>t</title></head><body><p>hi</p></body></html>') == ()
+    problems = site_html_problems('<html><body><iframe src="https://x.example"></iframe><img src="https://t.example/p.gif"></body></html>')
+    assert problems == ("stripped <iframe> and its content", "stripped src=https://t.example/p.gif on <img>")
+
+
+def test_reacts_own_image_preload_is_not_a_problem_on_a_live_page() -> None:
+    """React 19's renderToString hoists a preload for an image it draws; the browser's React expects
+    to find it, and it loads nothing the page would not load anyway."""
+    page = (
+        f'<!doctype html><html><head><link rel="preload" as="image" href="/asset-store/{DIGEST}"/>'
+        f'<link rel="preload" as="image" imageSrcSet="/asset-store/{DIGEST} 1x, /asset-store/{DIGEST} 2x" imageSizes="100vw"/>'
+        f'<title>t</title></head><body><img src="/asset-store/{DIGEST}"></body></html>'
+    )
+    assert site_html_problems(page) == ()
+    # The static cleaner is unchanged: a static page carries no <link> at all.
+    assert "<link" not in sanitize_site_html(page).html
+
+
+def test_a_preload_of_a_foreign_url_and_every_other_link_are_still_problems() -> None:
+    foreign = site_html_problems('<html><head><link rel="preload" as="image" href="https://t.example/p.gif"></head><body></body></html>')
+    assert foreign == ("stripped <link> and its content",)
+    foreign_candidate = site_html_problems(
+        f'<html><head><link rel="preload" as="image" imagesrcset="/asset-store/{DIGEST} 1x, https://t.example/p.gif 2x"></head><body></body></html>'
+    )
+    assert foreign_candidate == ("stripped <link> and its content",)
+    stylesheet = site_html_problems(f'<html><head><link rel="stylesheet" href="/asset-store/{DIGEST}"></head><body></body></html>')
+    assert stylesheet == ("stripped <link> and its content",)

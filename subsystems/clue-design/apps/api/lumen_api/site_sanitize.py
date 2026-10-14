@@ -1,8 +1,11 @@
-"""The published-site cleaner (Wave 2 Contract 3): strip, never refuse.
+"""The published-site cleaner (Wave 2 Contract 3): strip, never refuse — for STATIC site pages.
 
-Every published or thumbnailed Puck site page passes through
+Every static published or thumbnailed Puck site page passes through
 :func:`sanitize_site_html` — the whole page (ruling 2026-10-11): agent sections, the seller's
-clones and our own sections alike. Published sites are script-free. What goes, and why:
+clones and our own sections alike. Static published sites are script-free. A LIVE page (publishing
+live sites, phase 1) is checked with :func:`site_html_problems` instead, and refused when it has
+anything to remove: React takes it over in the browser and must find exactly what it drew. What
+goes, and why:
 
 * elements, with their content: ``script iframe object embed form base meta link`` (the
   contract's list), plus ``noscript template frame frameset applet portal``, SVG's
@@ -22,6 +25,7 @@ runs, so nothing of ours is ever stripped.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from html import escape
 
@@ -112,11 +116,28 @@ def _clean_declarations(declarations: str, removed: list[str]) -> str:
     return tinycss2.serialize(tokens)
 
 
-def _drop_elements(root: LexborNode, removed: list[str]) -> None:
+def _reacts_image_preload(node: LexborNode) -> bool:
+    """React 19's ``renderToString`` hoists ``<link rel="preload" as="image" href=… imagesrcset=…>``
+    for an image it draws. A live page keeps it (its browser React expects it) when it loads only what
+    the page itself may load; every other ``<link>`` is still a problem."""
+    if (node.tag or "").lower() != "link":
+        return False
+    attributes = {name.lower(): value or "" for name, value in node.attributes.items()}
+    if attributes.get("rel", "").strip().lower() != "preload":
+        return False
+    candidates = [url for url, _descriptor in parse_srcset_candidates(attributes.get("imagesrcset", ""))]
+    return all(asset_reference_allowed(url) for url in (attributes.get("href", ""), *candidates))
+
+
+def _drop_elements(root: LexborNode, removed: list[str], *, keep: Callable[[LexborNode], bool]) -> None:
     # Re-scan after each removal: decomposing a node invalidates its descendants.
     while True:
         target = next(
-            (node for node in root.traverse(include_text=False) if (node.tag or "").lower() in STRIPPED_ELEMENTS),
+            (
+                node
+                for node in root.traverse(include_text=False)
+                if (node.tag or "").lower() in STRIPPED_ELEMENTS and not keep(node)
+            ),
             None,
         )
         if target is None:
@@ -173,12 +194,24 @@ def _clean_attributes(node: LexborNode, removed: list[str]) -> None:
 
 def sanitize_site_html(html: str) -> SanitizedHtml:
     """``html`` with everything a published site may not carry stripped (see the module docstring)."""
+    return _sanitize(html, keep=lambda node: False)
+
+
+def site_html_problems(html: str) -> tuple[str, ...]:
+    """What :func:`sanitize_site_html` would remove from ``html``. A LIVE page is checked, never
+    rewritten: React takes the published HTML over in the browser and must find exactly what it drew,
+    so a page with anything to remove is refused instead (publishing live sites, phase 1). React's own
+    image preload is not a problem when it loads only what the page may load (``_reacts_image_preload``)."""
+    return _sanitize(html, keep=_reacts_image_preload).removed
+
+
+def _sanitize(html: str, *, keep: Callable[[LexborNode], bool]) -> SanitizedHtml:
     removed: list[str] = []
     tree = LexborHTMLParser(html)
     root = tree.root
     if root is None:
         return SanitizedHtml(html="", removed=("input had no content",))
-    _drop_elements(root, removed)
+    _drop_elements(root, removed, keep=keep)
     _clean_style_elements(tree, removed)
     for node in root.traverse(include_text=False):
         if node.tag:
