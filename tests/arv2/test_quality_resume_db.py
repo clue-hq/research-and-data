@@ -310,3 +310,56 @@ def test_a_specialist_stopped_mid_turn_resumes_once(tmp_path, prompts):
             assert all(prompt.count(MARKER) <= 1 for prompt in prompts)
 
     run_async(case())
+
+
+def test_a_committed_turn_is_replayed_even_after_the_instructions_changed(tmp_path, prompts):
+    """Spec §3.1 step 1: a committed outcome is replayed before any instruction check, so a job
+    whose research turn completed (and failed later, e.g. writing pages) is never re-paid."""
+
+    async def case():
+        async with _job(tmp_path) as job:
+            models = _ResumableModels(job.source, job.scope, job.context_id)
+            saver = InMemorySaver()
+            first = await _runtime(job, models, saver).run(objective=OBJECTIVE)
+            assert first.status is AgentExecutionStatus.COMPLETED, first
+            calls = len(prompts)
+            changed = replace(job.scope, input_refs={"quality_recipe_version": 14})
+            again = await _runtime(job, models, saver, scope=changed).run(objective=OBJECTIVE)
+            assert again.status is AgentExecutionStatus.COMPLETED
+            assert again.finalization_ref == first.finalization_ref
+            assert len(prompts) == calls
+
+    run_async(case())
+
+
+def test_a_changed_profile_on_the_recorded_turn_asks_for_a_restart(tmp_path, prompts):
+    """The turn-level rule, for changes the recipe revision does not carry (a tool's shape)."""
+
+    async def case():
+        async with _job(tmp_path) as job:
+            models = _ResumableModels(
+                job.source, job.scope, job.context_id, stop_role="account_research", stop_at=3
+            )
+            saver = InMemorySaver()
+            first = await _runtime(job, models, saver).run(objective=OBJECTIVE)
+            assert first.status is AgentExecutionStatus.FAILED
+            # A deploy changed a tool's shape: same recipe revision, different resource manifest.
+            # (agent_turn is append-only, so the change is made on the resolving side.)
+            second = _runtime(job, models, saver)
+            resolve = second.profiles.resolve
+
+            def changed_manifest(role):
+                resolved = resolve(role)
+                return replace(
+                    resolved,
+                    resource_manifest=resolved.resource_manifest.model_copy(
+                        update={"aggregate_sha256": "0" * 64}
+                    ),
+                )
+
+            second.profiles.resolve = changed_manifest
+            with pytest.raises(ResearchRestartRequired) as restart:
+                await second.run(objective=OBJECTIVE)
+            assert restart.value.reason == "instructions_changed"
+
+    run_async(case())

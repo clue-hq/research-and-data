@@ -934,6 +934,17 @@ class ResearchUnitRuntime:
     async def run(self, *, objective: str, model_id: str | None = None) -> AgentTurnOutcome:
         await self.install()
         execution = self.execution_id
+        # Spec 2026-10-14 §3.1 step 1: a committed outcome is replayed before any instruction
+        # check, so a turn that completed (and whose job failed later) is never re-paid because
+        # the deployment changed since.
+        committed = await self.turns.load_committed_outcome(
+            turn_id=uuid5(NAMESPACE_URL, f"research-quality-turn:{execution}"),
+            workspace_id=self.scope.workspace_id,
+        )
+        if committed is not None:
+            if committed.status is AgentExecutionStatus.COMPLETED:
+                await self.complete(execution)
+            return committed
         await self._refuse_changed_recipe(execution)
         await self.prepare(execution)
         resolved = self.profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
