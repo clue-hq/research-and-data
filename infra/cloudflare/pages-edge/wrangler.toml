@@ -12,10 +12,12 @@ routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }]
 SYSTEM_SUFFIX = "pages.cluehq.ai"
 ORIGIN_HOST = "page-origin.cluehq.ai"
 # EDGE_SECRET is a secret: `wrangler secret put EDGE_SECRET` — never in this file.
-# Wave 2 Contract 9 — published pages on their own domain. Empty today. At the move (runbook §8):
-# SYSTEM_SUFFIX becomes the new domain, LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai", and a second
-# route `{ pattern = "*/*", zone_name = "<new domain>" }` joins the one above, so this Worker 301s
-# every <label>.pages.cluehq.ai URL to <label>.<new domain> and serves the new hosts.
+# Wave 2 Contract 9 — published pages on their own domain. Empty today. The move takes TWO deploys
+# of this file (runbook §8): step 2 adds only a second route `{ pattern = "*/*", zone_name = "<new
+# domain>" }` (vars unchanged; the new hosts are forwarded and served at once); step 5, last, sets
+# SYSTEM_SUFFIX to the new domain and LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai", which turns on
+# the 301 from every <label>.pages.cluehq.ai URL to <label>.<new domain>. Never the two in one
+# deploy before the new addresses serve (review finding K3-6).
 LEGACY_SYSTEM_SUFFIXES = ""
 # Review finding K3-8: the site editor's domain. Its hosts always pass through untouched, so a pages
 # domain on the editor's registrable domain can never take every workspace's editor down.
