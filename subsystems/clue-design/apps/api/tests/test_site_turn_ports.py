@@ -180,8 +180,8 @@ def _dark_share(png: bytes) -> float:
 
 
 def test_the_live_preview_is_one_self_contained_document() -> None:
-    """The preview carries its own CSP, the CSS inline, the shims and sections as data: modules and
-    the runtime inline, with any closing script tag in the runtime's text escaped."""
+    """The preview carries its own CSP, the CSS inline, and the shims, the sections and the runtime
+    as data: modules. The runtime is never inlined: its text could end an inline script early."""
 
     from lumen_api.site_live import LiveRuntime, live_preview_document
     from lumen_api.site_render import RenderedPage as Page, SectionModule as Module
@@ -196,8 +196,10 @@ def test_the_live_preview_is_one_self_contained_document() -> None:
     assert document.index("Content-Security-Policy") < document.index('<script type="importmap">')
     assert "b{color:red}" in document and "data:text/javascript;charset=utf-8,export%20default%201%3B" in document
     assert '"Late":"data:text/javascript;charset=utf-8,export%20const%20x%20%3D%201%3B"' in document
-    assert '<script type="module">console.log("<\\/script>"); window.__clueHydrated = true;</script>' in document
-    assert 'src=""' not in document and document.count("</script>") == 3  # import map, page data, runtime
+    runtime_text = runtime.runtime_js.decode("utf-8")
+    assert runtime_text[:200] not in document and "<\\/script>" not in document
+    assert '<script type="module" src="data:text/javascript;charset=utf-8,console.log%28%22%3C/script%3E%22%29' in document
+    assert document.count("</script>") == 3  # import map, page data, runtime
 
 
 class FakeCore:

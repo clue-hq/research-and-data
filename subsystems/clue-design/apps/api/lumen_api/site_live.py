@@ -14,7 +14,6 @@ import base64
 import hashlib
 import json
 import os
-import re
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -122,9 +121,10 @@ def live_preview_document(
     page: RenderedPage, css: str, modules: Sequence[SectionModule], runtime: LiveRuntime
 ) -> str:
     """The live page as one self-contained document for the agent's screenshot inside the hardened
-    page (no network): CSS inline, the shims and sections as ``data:`` modules, the runtime inline.
-    Its own CSP meta sits immediately before the import map, so it covers every script on the page
-    (as on a published live page)."""
+    page (no network): CSS inline; the shims, the sections and the runtime as ``data:`` modules (the
+    runtime is never inlined: its text holds "<!--" and "<script", which can make the HTML parser
+    end an inline script early). Its own CSP meta sits immediately before the import map, so it
+    covers every script on the page (as on a published live page)."""
     import_map = import_map_json(
         {specifier: _data_module(data) for specifier, data in runtime.shims.items()}
     )
@@ -133,13 +133,7 @@ def live_preview_document(
         page.data or {},
         section_urls={module.name: _data_module(module.module_js) for module in modules},
         import_map=import_map,
-        runtime_url="",
-    )
-    # Inline, the runtime's text must not close its own element (the parser ends it at any
-    # "</script", in any case).
-    runtime_js = re.sub(r"</(script)", r"<\\/\1", runtime.runtime_js.decode("utf-8"), flags=re.IGNORECASE)
-    html = html.replace(
-        '<script type="module" src=""></script>', f'<script type="module">{runtime_js}</script>', 1
+        runtime_url=_data_module(runtime.runtime_js),
     )
     meta = f'<meta http-equiv="Content-Security-Policy" content="{_PREVIEW_CSP}">\n'
     element = import_map_element(import_map)
