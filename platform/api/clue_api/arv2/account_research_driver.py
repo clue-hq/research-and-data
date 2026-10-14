@@ -1435,6 +1435,8 @@ class Arv2AccountResearchWorkHandler:
                 OperationScope(run.workspace_id, run.run_id, job.job_id, job.account_entity_id),
                 context_id=run.context_id,
             )
+        # Spec 2026-10-14 §3.2: the counter picks which conversation this job runs.
+        scope = replace(scope, restart_count=job.restart_count)
         from clue_api.arv2.person_research_brief import person_task_instruction, read_person_brief
 
         person_brief = (

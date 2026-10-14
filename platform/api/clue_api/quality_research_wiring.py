@@ -74,6 +74,7 @@ from clue_api.arv2.account_research_catalog import (
 )
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
+from clue_api.arv2.job_resume import research_execution_id
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_committee_tool import (
     NominateBriefedCommitteeTool,
@@ -559,12 +560,7 @@ class ResearchUnitRuntime:
         self._spill_sinks: dict[ExecutionId, SpillSink] = {}
         self.runtime_owner: UUID | None = None
         self.execution_id = ExecutionId(
-            uuid5(
-                NAMESPACE_URL,
-                f"research-quality:{scope.job_id}:{unit_key}"
-                if unit_key
-                else f"research-quality:{scope.job_id}",
-            )
+            research_execution_id(scope.job_id, scope.restart_count, unit_key)
         )
         self.settings, self.storage, self.connections = settings, storage, connections
         self.models, self.workspaces, self.tools, self.limits = models, workspaces, tools, limits
@@ -859,7 +855,7 @@ class ResearchUnitRuntime:
         if self.reconciliation is not None:
             # The source identity is derived from the authorized parent job, never model input.
             source_execution = ExecutionId(
-                uuid5(NAMESPACE_URL, f"research-quality:{self.scope.job_id}")
+                research_execution_id(self.scope.job_id, self.scope.restart_count)
             )
             async with self.connections() as conn:
                 await resolve_authority(conn, self.scope, source_execution)
