@@ -8,6 +8,7 @@ import {
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { siteReloadWanted } from "@/features/design-editor/hooks/document-agent-run.logic";
 import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document-agent-run";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useSiteEditingSession } from "@/features/site-editor/hooks/use-site-editing-session";
@@ -139,15 +140,24 @@ export function EditorSurface({
   // whose `reloadNonce` moves when the document's version does. The persistent site stage takes no
   // reload token, so a moved nonce reloads the site session. The nonce starts at 0 for each
   // document (and resets on a switch), so 0 never reloads; web and ad tabs never reload here.
+  // Only for someone else's write or a finished run: a version the session wrote itself must not
+  // reload the canvas under the marketer's typing (review finding K3-3).
   const agentReloadNonce = agentRun.reloadNonce;
+  const agentActive = agentRun.active;
+  const polledVersion = agentRun.currentVersion;
+  const siteKnownVersion = siteSession.saves.baseVersion;
   const siteOpen = controller.artifactKind === "site";
   const reloadSiteSession = siteSession.reload;
   const seenAgentReloadNonce = useRef(agentReloadNonce);
+  const seenAgentActive = useRef(agentActive);
   useEffect(() => {
-    if (agentReloadNonce === seenAgentReloadNonce.current) return;
+    const runEnded = seenAgentActive.current && !agentActive;
+    seenAgentActive.current = agentActive;
+    const versionMoved = agentReloadNonce !== seenAgentReloadNonce.current;
     seenAgentReloadNonce.current = agentReloadNonce;
-    if (siteOpen && agentReloadNonce > 0) reloadSiteSession();
-  }, [agentReloadNonce, reloadSiteSession, siteOpen]);
+    if (!siteOpen || (!versionMoved && !runEnded)) return;
+    if (siteReloadWanted({ knownVersion: siteKnownVersion, polledVersion, runEnded })) reloadSiteSession();
+  }, [agentActive, agentReloadNonce, polledVersion, reloadSiteSession, siteKnownVersion, siteOpen]);
   // Exactly one lane can be enabled, so this is the active document either way
   // — the canvas branch inside the stage picks the surface by kind.
   const activeDocumentId =
