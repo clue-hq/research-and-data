@@ -144,3 +144,26 @@ scenario `test_a_a_real_site_turn_end_to_end` updated for A9's new brand.md "cla
 - Next: the founder's calls (K3-1 fix, K1-7 wording, K6-4, S7-1 posture), then one fix pass in the doc's §5
   order, each fix test-first, then re-review the fix diffs; then the behavioural pass (must publish a site
   through the real route — S8: no automated test does).
+
+## 2026-10-14 — editor sync fix (review group 1) implemented
+Plan `docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md` (founder approved the design: server
+truth → app working copy with a revision counter → frame displays and proposes edits stamped with
+their base revision; Puck's own state switched off). Commits `7242d51e3..0b9aed43d` (10 commits, after
+the plan `cb24b14e3`), each test-first, each regression proven RED on the previous code:
+- S2b-2 StrictMode (controller attach/dispose) · S2b-4 ordered queue, a landed step drops saves built
+  before it, `requestReloadWhenIdle` · S3-3 routes report the produced version (all four) · S2a-1
+  `keys.ts` (editable text → browser undo, else server undo, Dvorak/QWERTZ safe) + Puck history reset ·
+  S2a-4 selection by id · S1-1 no clone `resolveData` · S1-2 blur only on real change · S1-4 redraw when
+  HTML unchanged · protocol v2 (`rev`/`baseRev`) · K3-5 frame buffers updates while sections load ·
+  K1-4/S2b-3/K3-3 `SiteWorkingCopy` + `loadDecision` + per-visit loads · K3-3 standalone reload only for
+  others' writes (`siteReloadWanted`).
+- Test harness: `apps/frontend/src/features/site-editor/hooks/testing/site-session-bridge.ts` — real
+  session + real FrameController over an in-memory bridge (origin/window/nonce rules kept) + fake server
+  with CAS and gates. Scenario test asserts canvas = app copy = server after every step.
+- Gates green: frontend gate (design-system, lint 0 errors / 7 old warnings, build), app 3395/0,
+  site-kit 170, site-editor 49, typechecks clean, browser harness 14/14 across 5 files, design API
+  site write/publish/scenario files green. Lane C's harness speaks protocol v2.
+- Gotcha: trenton's `site-editor/scripts/dev.ts` watcher rebuilds `dist/` on every source change, so a
+  browser test always sees current source; to prove RED, swap the old file in, rebuild, run, restore.
+- Owed: independent review of the fix diff (running), the live walk on trenton (no site document exists
+  in clue_trenton; making one needs an agent run = founder's go), Phase 2 (instant undo) plan.

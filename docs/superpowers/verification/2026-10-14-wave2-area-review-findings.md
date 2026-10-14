@@ -12,6 +12,10 @@ shorthand and severities.
 durable record.
 
 > Status: **complete**. All nine S units reviewed and every finding verified first-hand (2026-10-14).
+>
+> Update 2026-10-14: the editor sync fix (§4.1) closed 12 findings across both documents: S1-1, S1-2, S1-4,
+> S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. **83 remain open** (4 Critical, 29 Important,
+> 50 Minor).
 
 ---
 
@@ -74,6 +78,10 @@ by re-running the reviewer's probe on the merged tree or reading the code on bot
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
 is parked for the privacy and verification sprint.)
 
+**After the editor sync fix (2026-10-14):** 9 of these 60 and 3 of the contract review's are fixed (§4.1),
+so the area review has **51 open (1 Critical, 14 Important, 36 Minor)** and the whole review **83 open:
+4 Critical, 29 Important, 50 Minor**. Both Critical findings from this document's S1 and S2a are fixed.
+
 Two severities were raised by the controller during verification, each explained at the finding: S2a-1
 (Important → Critical, to match S1-1) and S5-1 (Minor → Important, after finding a second route).
 
@@ -83,8 +91,8 @@ The six Critical findings across the whole review:
 | K1-1 | An account that has a site breaks its Insights, Artifacts and Activity pages |
 | K3-1 | Agent code in the editor frame can save, undo and redo as the marketer (founder choosing the fix) |
 | K4-2 | A long research section reaches the page writer past the privacy filter (parked) |
-| S1-1 | Moving between pages resets a cloned section to the seller's wording, and saves it |
-| S2a-1 | ⌘Z in a cloned section's text rewinds the whole page and saves it |
+| S1-1 | Moving between pages resets a cloned section to the seller's wording, and saves it (**fixed** by the sync fix) |
+| S2a-1 | ⌘Z in a cloned section's text rewinds the whole page and saves it (**fixed** by the sync fix) |
 | S7-1 | Chromium's sandbox can't start in the backend container: every backend release is blocked |
 
 ---
@@ -94,7 +102,7 @@ The six Critical findings across the whole review:
 ### S1 — site-kit (the package the editor, the renderer and the agent all share)
 
 #### S1-1 — Moving between pages resets a cloned section to the seller's original wording, and the editor saves it
-- **Severity:** Critical (silent loss of the agent's copy, saved to the server, in normal use). Status: open.
+- **Severity:** Critical (silent loss of the agent's copy, saved to the server, in normal use). Status: **fixed** 2026-10-14 by the sync fix (`77583fd2e`).
 - **What a person sees:** a 1:1 site has a cloned "hero" on its home page and a different cloned "hero"
   on `/analysis`. The marketer, in edit mode, moves from one page to the other (or opens a second site
   while the editor stays loaded). The second page's hero goes back to the seller's own homepage
@@ -125,7 +133,7 @@ The six Critical findings across the whole review:
   into the stored text.
 
 #### S1-2 — Clicking into a cloned headline and clicking away, without typing, flattens and saves it
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`77583fd2e`).
 - **What a person sees:** Garner's hero headline "Top Providers. / Bottom line results." is on two lines.
   The marketer clicks into it and clicks away without typing. It becomes one line, loses any bold or
   italic inside it, and the change is saved and appears in undo history.
@@ -157,7 +165,7 @@ The six Critical findings across the whole review:
   that only accepts what the renderer can actually replace.
 
 #### S1-4 — Clearing a cloned headline shows it empty in the editor, but the published page shows the seller's headline
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`77583fd2e, 29580ee78`).
 - **Why it happens:** an empty value is treated as "not set", so publishing falls back to the captured
   original. In the editor, the section's HTML string doesn't change, so React does not redraw it and the
   canvas keeps showing the marketer's empty line.
@@ -221,7 +229,7 @@ The six Critical findings across the whole review:
 
 #### S2a-1 — ⌘Z inside a cloned section's text rewinds the whole page to an older copy and saves it
 - **Severity:** Critical (silent overwrite of the agent's work, saved, from an ordinary keystroke).
-  Status: open. **Re-graded up by the controller** from the reviewer's Important, so that it matches S1-1,
+  Status: **fixed** 2026-10-14 by the sync fix (`2f6d7c358, 161477099`). **Re-graded up by the controller** from the reviewer's Important, so that it matches S1-1,
   which has the same kind of consequence.
 - **What a person sees:** the agent rewrites the proof band and the new version arrives. The marketer
   clicks into the hero headline (a cloned section), fixes a word, and presses ⌘Z to take back a typo. The
@@ -275,7 +283,7 @@ The six Critical findings across the whole review:
   on every upstream request.
 
 #### S2a-4 — After a replace, the dock can jump to a section the marketer never picked
-- **Severity:** Minor. Status: open. Puck keeps the selection by position, not by section, so an undo of a
+- **Severity:** Minor. Status: **fixed** 2026-10-14 by the sync fix (`af43b577c`). Puck keeps the selection by position, not by section, so an undo of a
   turn that added a section above shifts the dock to a different section.
 - **Where:** `site-editor/src/client/frame-controller.ts:225-241`; `site-editor/src/client/editor-app.tsx:171-187`.
 
@@ -323,7 +331,7 @@ The six Critical findings across the whole review:
 - **Fix direction:** remember which site the upload started on and refuse to place it on another.
 
 #### S2b-2 — On dev stacks, site saves, undo, redo and restore silently do nothing
-- **Severity:** Important (every dev stack, so every live walk; production unaffected today). Status: open.
+- **Severity:** Important (every dev stack, so every live walk; production unaffected today). Status: **fixed** 2026-10-14 by the sync fix (`7242d51e3`).
 - **What a person sees:** on `next dev` (trenton's 3029 and every lane stack) the marketer edits the site.
   The canvas and dock show the edit, nothing is sent, no error appears, and Undo stays greyed out. A
   reload shows the old site.
@@ -338,7 +346,7 @@ The six Critical findings across the whole review:
 - **Fix direction:** create and shut down the save queue in the same effect; add a StrictMode test.
 
 #### S2b-3 — A reload that is older than the marketer's last save is treated as current
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`2d9caac55, 6aad60d34`).
 - **What a person sees:**
   - the marketer types, then presses the URL bar's Reload; or returns to the site's tab from another tab;
   - their next dock or image edit quietly undoes the text they had just saved, on the server, with no
@@ -353,7 +361,7 @@ The six Critical findings across the whole review:
   copy when the marketer leaves the site.
 
 #### S2b-4 — Two quick ⌘Z presses during a save count as one, and an undo can run after a later edit
-- **Severity:** Minor. Status: open.
+- **Severity:** Minor. Status: **fixed** 2026-10-14 by the sync fix (`45aa7a82f`).
 - **Where:** `features/site-editor/hooks/site-save-controller.ts:104-111,163-177`.
 - **Fix direction:** run queued saves and history steps in the order they were asked.
 
@@ -414,7 +422,7 @@ The six Critical findings across the whole review:
 - **Fix direction:** collect everything to remove in one pass, then remove it.
 
 #### S3-3 — After a save, the server reports the document's newest version, not the one that save made
-- **Severity:** Minor (a narrow timing window, but the loss is silent). Status: open.
+- **Severity:** Minor (a narrow timing window, but the loss is silent). Status: **fixed** 2026-10-14 by the sync fix (`5fe4312e8`).
 - **What could happen:** the marketer's save lands, another tab's rename lands a moment later, and the
   editor is told the rename's version is its own. Its next save then overwrites the rename.
 - **Where:** `lumen_api/main.py:4591-4593` (`_site_document_ref` re-reads the row). The agent's save
@@ -752,6 +760,17 @@ close most of it.
 
 ### 4.1 The editor keeps its own hidden copy of the site, and that copy overwrites the real one
 **Findings:** S1-1 (Critical), S2a-1 (Critical), K1-4, K3-3, K3-5, S2b-3, S2b-4, S3-3, S2a-4.
+
+**Status: fixed (2026-10-14)** by the editor sync fix, plan `docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`, together with S1-2, S1-4 and
+S2b-2. The design the founder approved: the app holds the one working copy, with a revision counter;
+the frame only displays it and proposes canvas edits stamped with the revision they started from; a
+proposal over an older copy is refused; only loads at least as new as what the save queue wrote are
+adopted, and none while saves are on their way; saves and history steps run in order; Puck's own undo,
+hotkeys, load-time refill and index-based selection are switched off; the design API answers each write
+with the version it produced. Every fix began from a failing test, including a scenario test through the
+real session and the real frame logic. An independent review of the fix found 2 Important and 6 Minor
+problems (F1–F8, in the git-ignored review folder's `reports/sync-fix-review.md`); all eight are fixed.
+Phase 2 of the plan (instant undo) is not built yet.
 
 There are three copies of a site while it is being edited: the server's, the app's, and the one inside
 the editor frame, which Puck (the editing library) holds. They are kept in step only by comparing version

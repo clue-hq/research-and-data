@@ -67,14 +67,16 @@ seams down as nine "contracts".
 | | Count | Ids |
 |---|---|---|
 | **Open, Critical** | 3 | K1-1, K3-1, K4-2 (K4-2 parked, see §3) |
-| **Open, Important** | 18 | K1-2, K1-3, K1-4, K1-5, K2-1, K3-2, K3-3, K3-4, K3-5, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-1, K6-2, K6-3 |
+| **Open, Important** | 15 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-4, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-1, K6-2, K6-3 |
 | **Open, Minor** | 14 | K1-6, K1-7, K1-8, K2-2, K3-7, K3-8, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
 | **Resolved** (by A9's fix wave) | 4 | K5-1, K5-3, K5-4, K5-7 |
+| **Fixed** (by the editor sync fix, 2026-10-14) | 3 | K1-4, K3-3, K3-5 |
 | **Duplicate** | 1 | K4-4 (= K3-3) |
 
-Nothing has been fixed yet for the 35 open findings. The plan is to finish the S-unit review first, then
-fix everything in one pass, each fix starting from a failing test, and then re-review only the fix
-changes.
+**Update 2026-10-14:** the editor sync fix (`docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`) closed K1-4, K3-3 and K3-5, each from a failing
+test; **32 K findings remain open** (3 Critical, 15 Important, 14 Minor). The rest are fixed in the fix
+pass that follows the S-unit review, each from a failing test, and only the fix changes are re-reviewed.
+The area document's §4.1 records the sync fix as a whole.
 
 ---
 
@@ -97,7 +99,7 @@ changes.
 | K1-1 | Critical | An account that has a site breaks its Insights, Artifacts and Activity pages | open |
 | K1-2 | Important | The agent can save a site the editor then refuses to open | open |
 | K1-3 | Important | Restoring an older version can be refused because of the clones that version used | open |
-| K1-4 | Important | After a refused save the canvas keeps the refused edit, and nothing typed after it saves | open |
+| K1-4 | Important | After a refused save the canvas keeps the refused edit, and nothing typed after it saves | **fixed** (sync fix) |
 | K1-5 | Important | Renaming a site while the agent works throws away the agent's whole request | open |
 | K1-6 | Minor | Undo, redo and restore quietly undo a rename | open |
 | K1-7 | Minor | The marketer sees the agent's raw validator text and raw server errors | open (wording: founder) |
@@ -106,9 +108,9 @@ changes.
 | K2-2 | Minor | The section checker refuses ordinary copy that contains a class-like word | open (narrowed) |
 | K3-1 | Critical | Agent code in the editor frame can save, undo and redo as the marketer | open (founder deciding the fix) |
 | K3-2 | Important | Agent code can send the editor frame to any website, inside the app | open |
-| K3-3 | Important | On the standalone artifact page, the marketer's own saves wipe what they are typing | open |
+| K3-3 | Important | On the standalone artifact page, the marketer's own saves wipe what they are typing | **fixed** (sync fix) |
 | K3-4 | Important | After switching workspace, sites open on the previous workspace's editor domain | open |
-| K3-5 | Important | An update arriving while the editor loads is lost, and the older site is saved over the newer | open |
+| K3-5 | Important | An update arriving while the editor loads is lost, and the older site is saved over the newer | **fixed** (sync fix) |
 | K3-6 | Important | The domain-move runbook leaves published pages down mid-move | open (operational) |
 | K3-7 | Minor | One workspace's agent code can break every workspace's editor in that browser via cookies | open |
 | K3-8 | Minor | Nothing stops the pages domain sharing the editor's domain | open (config-dependent) |
@@ -207,7 +209,7 @@ between the apps. Lanes A, B and C, plus site-kit's shared schema.
   current and the restored site's clones.
 
 #### K1-4 — After a refused save, the canvas keeps the refused edit and nothing typed after it saves
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`2d9caac55, bb6b4bb40`).
 - **What a person sees:** the person clears a heading before retyping it. 600 ms later the save is refused
   (headings, button labels and stat values may not be empty) and the dock shows the error. The dock goes
   back to the saved heading, but the canvas still shows the empty one. Every later edit on the canvas
@@ -377,7 +379,7 @@ pages domain, custom domains, and the planned move of published pages to a new d
   containment test.
 
 #### K3-3 — On the standalone artifact page, the marketer's own saves wipe what they are typing
-- **Severity:** Important. Status: open. (Found again by K4 as K4-4.)
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`ebe9bcdc5`). (Found again by K4 as K4-4.)
 - **What a person sees:** on `/artifacts/...`, while typing on the canvas, every few seconds the canvas
   snaps back to the last saved text, the cursor jumps, and the words typed since the last save vanish.
   In a worse timing an older copy is saved over a newer one.
@@ -409,7 +411,7 @@ pages domain, custom domains, and the planned move of published pages to a new d
 - **Fix direction:** key the cache by workspace or clear it on a switch, or make the switch a full page load.
 
 #### K3-5 — An update arriving while the editor loads is lost, and the older site is saved over the newer
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 by the sync fix (`e1443761e`).
 - **What a person sees:** nothing at first; then the newer version's changes are silently gone. It needs a
   version change during the few moments the editor spends loading a site's agent sections: an agent save
   arriving as the site opens, an undo right after opening, or Reload after another tab saved.
