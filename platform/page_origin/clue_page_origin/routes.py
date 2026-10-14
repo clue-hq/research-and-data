@@ -42,13 +42,15 @@ def _not_found() -> HTMLResponse:
     )
 
 
-def _page_headers(digest: str, *, noindex: bool, delivery: str = "web") -> dict[str, str]:
+def _page_headers(
+    digest: str, *, noindex: bool, delivery: str = "web", script_hashes: tuple[str, ...] = ()
+) -> dict[str, str]:
     headers = {
         "Cache-Control": _SHORT,
         "ETag": f'"sha256-{digest}"',
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Content-Security-Policy": delivery_csp(delivery=delivery),
+        "Content-Security-Policy": delivery_csp(delivery=delivery, script_hashes=script_hashes),
     }
     if noindex:
         headers["X-Robots-Tag"] = "noindex"
@@ -138,7 +140,10 @@ def build_router(reads: PageReads, gate: EdgeGate) -> APIRouter:
             content=publish.manifest_json,
             media_type="application/json",
             headers=_page_headers(
-                publish.manifest_digest, noindex=publish.noindex, delivery=publish.delivery
+                publish.manifest_digest,
+                noindex=publish.noindex,
+                delivery=publish.delivery,
+                script_hashes=publish.script_hashes,
             ),
         )
 
@@ -152,7 +157,10 @@ def build_router(reads: PageReads, gate: EdgeGate) -> APIRouter:
         return HTMLResponse(
             publish.html,
             headers=_page_headers(
-                publish.html_digest, noindex=publish.noindex, delivery=publish.delivery
+                publish.html_digest,
+                noindex=publish.noindex,
+                delivery=publish.delivery,
+                script_hashes=publish.script_hashes,
             ),
         )
 
@@ -173,7 +181,10 @@ def build_router(reads: PageReads, gate: EdgeGate) -> APIRouter:
         return HTMLResponse(
             served.html,
             headers=_page_headers(
-                served.html_digest, noindex=served.noindex, delivery=served.delivery
+                served.html_digest,
+                noindex=served.noindex,
+                delivery=served.delivery,
+                script_hashes=served.script_hashes,
             ),
         )
 

@@ -36,6 +36,7 @@ from clue_design.publishes import (
     DELIVERY_CSP_HEADER,
     SITE_DELIVERY_CSP_HEADER,
     SITE_DELIVERY_CSP_META,
+    site_live_csp,
 )
 from clue_page_origin import create_page_origin_app
 from clue_page_origin.main import build_gate
@@ -240,6 +241,65 @@ def test_every_route_of_a_site_publish_is_served_under_the_site_policy(tmp_path:
                     **({"robots": "noindex"} if noindex else {}),
                 }
                 assert manifest.headers["content-security-policy"] == SITE_DELIVERY_CSP_HEADER
+                assert manifest.headers["etag"] == f'"sha256-{_sha(manifest.text)}"'
+                if noindex:
+                    assert manifest.headers["x-robots-tag"] == "noindex"
+                else:
+                    assert "x-robots-tag" not in manifest.headers
+
+    run_async(scenario())
+
+
+_LIVE_HASH = "sha256-" + "B" * 43 + "="
+
+
+# --- Review focus 4: the origin follows the publish's manifest, never the rollout flag ---------
+def test_review_focus_4_a_live_publish_stays_live_whatever_the_flag_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``LUMEN_SITE_LIVE_WORKSPACES`` decides how a NEW publish is built; a publish already made
+    live keeps its own policy (its manifest's ``delivery`` + ``live.script_hashes``) whatever the
+    flag says now."""
+    monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", "")
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws, host = await _workspace(conn)
+            site = await _document(conn, ws, doc_kind="site")
+            for slug, robots in (("syracuse", {}), ("syracuse-private", {"robots": "noindex"})):
+                await _publish(
+                    conn,
+                    ws,
+                    slug=slug,
+                    document_id=site,
+                    manifest={
+                        "slug": slug,
+                        "delivery": "site_live",
+                        "live": {"runtime": _sha("runtime"), "script_hashes": [_LIVE_HASH]},
+                        **robots,
+                    },
+                    pages={"/": _site_html("Syracuse"), "/analysis": _site_html("Analysis")},
+                )
+            app = _origin(conn, tmp_path)
+            live_csp = site_live_csp([_LIVE_HASH], meta=False)
+
+            for slug, noindex in (("syracuse", False), ("syracuse-private", True)):
+                home = await _get(app, host, f"/{slug}")
+                _assert_page(home, body=_site_html("Syracuse"), csp=live_csp, noindex=noindex)
+                analysis = await _get(app, host, f"/{slug}/analysis")
+                _assert_page(analysis, body=_site_html("Analysis"), csp=live_csp, noindex=noindex)
+                trailing = await _get(app, host, f"/{slug}/analysis/")
+                assert trailing.status_code == 200
+                assert trailing.headers["content-security-policy"] == live_csp
+                head = await _get(app, host, f"/{slug}/analysis", method="HEAD")
+                assert head.status_code == 200 and head.content == b""
+                assert head.headers["content-security-policy"] == live_csp
+
+                manifest = await _get(app, host, f"/{slug}/manifest.json")
+                assert manifest.status_code == 200, manifest.text
+                assert manifest.json()["delivery"] == "site_live"
+                assert manifest.json()["live"]["script_hashes"] == [_LIVE_HASH]
+                assert manifest.headers["content-security-policy"] == live_csp
                 assert manifest.headers["etag"] == f'"sha256-{_sha(manifest.text)}"'
                 if noindex:
                     assert manifest.headers["x-robots-tag"] == "noindex"

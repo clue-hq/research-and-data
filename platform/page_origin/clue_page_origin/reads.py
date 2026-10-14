@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict
 from clue_db import ConnFactory, transaction
 from clue_design.brand import approved_brand_mark_sha256
 from clue_design.errors import DesignNotFoundError
-from clue_design.publishes import get_web_publish, get_web_publish_page, manifest_delivery
+from clue_design.publishes import (
+    get_web_publish,
+    get_web_publish_page,
+    live_script_hashes,
+    manifest_delivery,
+)
 from clue_design.storage import read_design_blob, read_public_design_blob
 from clue_spine.hostnames import resolve_active_hostname
 from clue_spine.pages_settings import get_pages_settings
@@ -28,8 +33,11 @@ class ServedPublish(BaseModel):
     manifest_json: str
     manifest_digest: str
     noindex: bool
-    #: "site" for a Puck site publish (its manifest says so): served under the site CSP.
+    #: "site" for a Puck site publish, "site_live" for a live one (its manifest says so): each is
+    #: served under its own CSP.
     delivery: str = "web"
+    #: A live site page's allowed inline-script hashes (its import map), from ``manifest["live"]``.
+    script_hashes: tuple[str, ...] = ()
 
 
 class ServedPage(BaseModel):
@@ -41,6 +49,7 @@ class ServedPage(BaseModel):
     html_digest: str
     noindex: bool
     delivery: str = "web"
+    script_hashes: tuple[str, ...] = ()
 
 
 class PageReads(Protocol):
@@ -100,6 +109,7 @@ class DbPageReads:
             manifest_digest=str(publish.get("manifest_digest") or _sha(manifest_json)),
             noindex=manifest.get("robots") == "noindex",
             delivery=manifest_delivery(manifest),
+            script_hashes=live_script_hashes(manifest),
         )
 
     async def active_page(self, workspace_id: str, slug: str, route: str) -> ServedPage | None:
@@ -115,6 +125,7 @@ class DbPageReads:
         manifest = publish.get("manifest")
         noindex = isinstance(manifest, dict) and manifest.get("robots") == "noindex"
         delivery = manifest_delivery(manifest)
+        script_hashes = live_script_hashes(manifest)
         if row is not None:
             html = str(row["html"])
             return ServedPage(
@@ -122,6 +133,7 @@ class DbPageReads:
                 html_digest=str(row.get("html_digest") or _sha(html)),
                 noindex=noindex,
                 delivery=delivery,
+                script_hashes=script_hashes,
             )
         if route == "/":
             html = str(publish["html"])
@@ -130,6 +142,7 @@ class DbPageReads:
                 html_digest=str(publish.get("html_digest") or _sha(html)),
                 noindex=noindex,
                 delivery=delivery,
+                script_hashes=script_hashes,
             )
         return None
 
