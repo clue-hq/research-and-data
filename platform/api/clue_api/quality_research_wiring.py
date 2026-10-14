@@ -22,6 +22,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import JsonValue
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentConstitution,
@@ -100,6 +101,7 @@ from clue_api.arv2.quality_execution import (
     bind_execution,
     finish_runtime,
     reserve,
+    retry_lock_conflict,
     runtime_remaining,
 )
 from clue_api.arv2.quality_findings import (
@@ -493,8 +495,10 @@ class _ChildExecutions(DbSpecialistExecutionJournal):
         runtime = self.runtime
         if project_id != runtime.scope.project_id:
             raise ValueError("specialist belongs to another project")
-        async with runtime.connections() as conn:
+
+        async def authorize(conn: AsyncConnection) -> None:
             await resolve_authority(conn, runtime.scope, request.parent_execution_id)
+            # Replays by delegation id, so a retried attempt cannot reserve twice.
             await reserve(
                 conn,
                 runtime.operation_scope,
@@ -502,6 +506,8 @@ class _ChildExecutions(DbSpecialistExecutionJournal):
                 kind="delegation",
                 activity_id=request.delegation_id,
             )
+
+        await retry_lock_conflict(runtime.connections, authorize)
         await runtime.prepare(
             child_execution_id,
             parent=request.parent_execution_id,
