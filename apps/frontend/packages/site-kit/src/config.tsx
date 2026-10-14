@@ -59,17 +59,21 @@ export type ConfigOptions = {
   agentSections?: Record<string, AgentSectionModule>;
 };
 
-/** One agent section that fails while drawing in the browser takes only itself down: the rest of
- * the page stays alive (Review focus 1 of live publishing). `name` is the section, which the live
- * page's error report reads from the boundary that caught the error (hydrateSite). Renders no
- * element of its own, so the server HTML is unchanged. */
+/** The one error boundary around every agent section, in the editor and on the published page
+ * alike. A section that fails while drawing in the browser — for example because the editor's
+ * policy refused something it tried — takes only itself down and leaves an empty
+ * data-agent-section-failed marker where it was; the rest of the page, and the editor, stay alive
+ * (an uncaught render error unmounts a whole React root; Review focus 1 of live publishing). `name`
+ * is the section, which the live page's error report reads from the boundary that caught the error
+ * (hydrateSite). While nothing fails it renders no element of its own, so the server HTML is
+ * unchanged (boundaries do nothing on the server: a section that throws there fails the render). */
 export class SectionBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   render() {
-    return this.state.failed ? null : this.props.children;
+    return this.state.failed ? <div data-agent-section-failed={this.props.name} /> : this.props.children;
   }
 }
 

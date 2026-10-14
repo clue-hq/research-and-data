@@ -75,10 +75,20 @@ test("Review focus 1: a section that throws only in the browser is lost alone, a
   const container = dom.window.document.createElement("div");
   container.innerHTML = bodyOf(live.pages[0].html);
   dom.window.document.body.appendChild(container);
+  // The page itself (React's hoisted image preload, before it, is dropped by hydration).
+  const serverHtml = container.querySelector(".brand-root")!.outerHTML;
+  assert.ok(serverHtml.includes('<div data-agent-section="Fragile"></div>'), "the server drew the section (empty)");
   const reports: string[] = [];
   const run = hydrateSite({ container, data: live.pages[0].data as LivePageData, agentSections: { Fragile }, report: (m) => reports.push(m) });
   await run.ready;
   assert.ok(reports.some((m) => m.includes("Fragile") && m.includes("reads window while drawing")), JSON.stringify(reports));
-  assert.ok(container.querySelector(".brand-root"), "the rest of the page is still there");
+  // The one boundary (site-kit's, shared with the editor) leaves a marker where the section was.
+  const wrapper = container.querySelector('[data-agent-section="Fragile"]');
+  assert.ok(wrapper?.querySelector('[data-agent-section-failed="Fragile"]'), container.innerHTML.slice(-400));
+  // Everything else on the page is what the server drew (compared as DOM nodes: hydration may
+  // re-set an attribute, which changes only the attribute order in the serialized HTML).
+  const expected = dom.window.document.createElement("template");
+  expected.innerHTML = serverHtml.replace('<div data-agent-section="Fragile"></div>', '<div data-agent-section="Fragile"><div data-agent-section-failed="Fragile"></div></div>');
+  assert.ok(expected.content.firstElementChild!.isEqualNode(container.querySelector(".brand-root")), "the rest of the page is intact");
   run.unmount();
 });

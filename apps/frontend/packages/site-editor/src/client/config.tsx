@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Config, Fields } from "@puckeditor/core";
 import { SURFACES, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
 import { AssetPicker, CloneEditor } from "@clue/site-kit/editor";
@@ -9,27 +9,6 @@ import type { LoadedSection } from "./sections";
 
 type RenderFn = (props: Record<string, unknown>) => ReactNode;
 type MutableConfig = Config & { components: Record<string, { fields?: Fields; render?: RenderFn }> };
-
-/** A broken agent section — one that throws while rendering, for example because the editor's
- * policy refused something it tried — is left out on its own. It never takes the rest of the page,
- * or the editor, down with it (an uncaught render error unmounts a whole React root). */
-class SectionBoundary extends Component<{ children: ReactNode; name: string }, { failed: boolean }> {
-  state = { failed: false };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? <div data-agent-section-failed={this.props.name} /> : this.props.children;
-  }
-}
-
-/** Calls the section's render INSIDE the boundary (a render function called outside it would throw
- * past it). */
-function GuardedRender({ props, render }: { props: Record<string, unknown>; render: RenderFn }) {
-  return <>{render(props)}</>;
-}
 
 const BUILT_IN_SURFACES = new Set<string>(SURFACES);
 
@@ -50,9 +29,11 @@ export function surfaceUtilityCss(brand: BrandData): string {
 }
 
 /** The page config: site-kit's sections, the seller's clones, the shell drawn around every page,
- * and this site's agent sections with fields from their own props schema, each behind its own
- * error boundary. No basePath: internal links stay "/analysis", and the editor intercepts them and
- * switches pages itself. */
+ * and this site's agent sections with fields from their own props schema. Each agent section sits
+ * behind site-kit's own error boundary (its `SectionBoundary`): one that throws is left out on its
+ * own as a `data-agent-section-failed` marker and never takes the page or the editor down. No
+ * basePath: internal links stay "/analysis", and the editor intercepts them and switches pages
+ * itself. */
 export function buildPageConfig(brand: BrandData, shell: SiteShell | null, sections: readonly LoadedSection[]): Config {
   const config = makeConfig(brand, {
     agentSections: Object.fromEntries(sections.map((section) => [section.name, section.module])),
@@ -76,14 +57,6 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
     const component = config.components[section.name];
     if (!component) continue;
     component.fields = puckFieldsFromJsonSchema(section.propsSchema);
-    const render = component.render;
-    if (render) {
-      component.render = (props) => (
-        <SectionBoundary name={section.name}>
-          <GuardedRender props={props} render={render} />
-        </SectionBoundary>
-      );
-    }
   }
   return config;
 }
