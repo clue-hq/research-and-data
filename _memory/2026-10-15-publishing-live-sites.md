@@ -26,3 +26,9 @@ providers, spam protection, whether K1-3 joins group 4.3.
 ## Still open from 2026-10-14
 Group 4.5 (K3-6, S4-1 needs a migration OK, S4-3, S7-3, K3-7); now a prerequisite for production live
 publishing (spec §12).
+
+## Decisions later the same day (spec §18)
+- Leads/tracking screens: founders design later; features built now. Embeds: Calendly, HubSpot,
+  YouTube, Vimeo, Loom, Wistia. Lead email: yes, to workspace admins, via an outbox + background
+  sender; email service not chosen yet (founder creates the account). Spam filtering: none now,
+  Cloudflare Turnstile when needed (route keeps a size cap + rate limit only). K1-3 joins group 4.3.
