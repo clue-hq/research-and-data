@@ -283,6 +283,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.artifacts import register_artifact_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.brand_products import register_brand_product_routes
+    from clue_api.frontend_read.product_notices import register_product_notice_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
@@ -409,6 +410,10 @@ def build_frontend_read_router(
         storage=evidence_storage,
         work_queue=work_queue,
         allow_local_mutations=allow_local_mutations,
+    )
+    # The project chat's "Products changed" notices (spec 2026-10-15 §7).
+    register_product_notice_routes(
+        router, conn_factory=conn_factory, allow_local_mutations=allow_local_mutations
     )
     return router
 
