@@ -201,10 +201,13 @@ type SharingController = ReturnType<typeof useArtifactSharingController>["contro
 /** Mount the real hook in a DOM (the menu's controller, exactly as the header
  * builds it) and hand back every render's controller. */
 type SharingProps = {
+  /** The document on screen (default doc_1, "Spring launch"); a tab switch changes both. */
+  documentId?: string;
   kind?: ChatShellArtifactKind;
   publishLocked: boolean;
   /** Absent: the hook builds its own HTTP seam over the BFF, as the header does. */
   repository?: WebPublishRepository;
+  title?: string;
 };
 
 async function withSharingController(
@@ -230,11 +233,11 @@ async function withSharingController(
   function Probe(props: SharingProps): ReactNode {
     seen.push(
       useArtifactSharingController({
-        documentId: "doc_1",
+        documentId: props.documentId ?? "doc_1",
         kind: props.kind ?? "web",
         publishLocked: props.publishLocked,
         repository: props.repository,
-        title: "Spring launch",
+        title: props.title ?? "Spring launch",
       }).controller,
     );
     return null;
@@ -367,3 +370,90 @@ test("the Share menu reads and publishes a site through the site routes, and a w
     assert.equal(calls.filter((call) => call.startsWith("POST ")).length, 1, kind);
   }
 });
+
+// Review finding K6-1: one Share menu serves every artifact tab, so switching tabs carried one site's
+// Share settings into the next: a never-published site showed the other's address and was refused as
+// "already published by another document", or went live at an address with another account's name;
+// and a publish finishing after the switch landed on the new tab. The controller now resets its
+// per-site state when the document changes, and a publish result lands only on its own site.
+function slugOwnerRepository(published: Map<string, string>, gate?: Promise<void>): WebPublishRepository & { sent: { documentId: string; slug: string }[] } {
+  const sent: { documentId: string; slug: string }[] = [];
+  return {
+    sent,
+    async state(documentId) {
+      const slug = published.get(documentId) ?? null;
+      const url = slug ? `http://acme.pages.localhost:8049/${slug}` : null;
+      return {
+        customOrigin: null, customPageUrls: {}, customUrl: null, docVersion: slug ? 3 : null,
+        htmlDigest: null, manifestDigest: null, packageDigest: null,
+        pageUrls: url ? { "/": url } : {}, pages: [], previousAvailable: false, publishId: null,
+        publicOrigin: "http://acme.pages.localhost:8049", published: Boolean(slug), slug,
+        status: slug ? "active" : null, updatedAt: null, url,
+      };
+    },
+    async publish(documentId, input) {
+      if (gate) await gate;
+      sent.push({ documentId, slug: input.slug });
+      for (const [owner, slug] of published) {
+        if (slug === input.slug && owner !== documentId) throw new Error(`slug '${input.slug}' is already published by another document`);
+      }
+      published.set(documentId, input.slug);
+      const url = `http://acme.pages.localhost:8049/${input.slug}`;
+      return { customPageUrls: {}, customUrl: null, pageUrls: { "/": url }, slug: input.slug, url };
+    },
+    async unpublish() {},
+  } as WebPublishRepository & { sent: { documentId: string; slug: string }[] };
+}
+
+test("K6-1: switching to a never-published site never carries the other site's address", async () => {
+  const repository = slugOwnerRepository(new Map([["doc_A", "acme-q4"]]));
+  const a = { documentId: "doc_A", kind: "site" as const, publishLocked: false, repository, title: "Acme Q4 account page" };
+  await withSharingController(a, async (latest, rerender) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().slug, "acme-q4");
+    await act(async () => latest().toggleMenu());
+    await rerender({ ...a, documentId: "doc_B", title: "Globex account page" });
+    assert.equal(latest().slug, "globex-account-page", "its own address, from its own title");
+    assert.equal(latest().shareUrl, "");
+    assert.equal(latest().publishStatus, "draft");
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(repository.sent, [{ documentId: "doc_B", slug: "globex-account-page" }]);
+    assert.equal(latest().publishStatus, "published");
+  });
+});
+
+test("K6-1: a site published straight after a switch goes live under its own name", async () => {
+  const repository = slugOwnerRepository(new Map());
+  const c = { documentId: "doc_C", kind: "site" as const, publishLocked: false, repository, title: "Initech account page" };
+  await withSharingController(c, async (latest, rerender) => {
+    await rerender({ ...c, documentId: "doc_D", title: "Umbrella account page" });
+    await act(async () => latest().toggleMenu());
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(repository.sent, [{ documentId: "doc_D", slug: "umbrella-account-page" }]);
+  });
+});
+
+test("K6-1: a publish that finishes after switching sites never shows on the new site", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const published = new Map<string, string>();
+  const repository = slugOwnerRepository(published, gate);
+  const e = { documentId: "doc_E", kind: "site" as const, publishLocked: false, repository, title: "Hooli account page" };
+  await withSharingController(e, async (latest, rerender) => {
+    await act(async () => latest().toggleMenu());
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = latest().publishAsset();
+    });
+    await rerender({ ...e, documentId: "doc_F", title: "Pied Piper account page" });
+    await act(async () => {
+      release();
+      await pending;
+    });
+    assert.equal(published.get("doc_E"), "hooli-account-page", "E's publish still happened");
+    assert.equal(latest().publishStatus, "draft", "F was never published");
+    assert.equal(latest().shareUrl, "", "Copy link has nothing of E's");
+    assert.equal(latest().slug, "pied-piper-account-page");
+  });
+});
+

@@ -210,6 +210,38 @@ export function useArtifactSharingController({
   const [slugDraft, setSlugDraft] = useState(slug);
   const [statusMessage, setStatusMessage] = useState("");
   const [view, setView] = useState<ArtifactShareView>("main");
+  // Review finding K6-1: one Share menu serves every artifact tab, so everything above belongs to the
+  // document on screen. A different document starts from its own defaults (its address from its own
+  // title), never the last one's address, link or publish result. React's adjust-state-on-prop
+  // pattern (a render-time comparison), never a setState inside an effect.
+  const [stateFor, setStateFor] = useState(documentId ?? null);
+  if (stateFor !== (documentId ?? null)) {
+    const fresh = slugifyArtifactTitle(title);
+    setStateFor(documentId ?? null);
+    setAdvancedTab("page");
+    setAllowIndexing(true);
+    setCopied(false);
+    setCustomHtml("");
+    setDescription("");
+    setEditingSlug(false);
+    setMenuOpen(false);
+    setPageUrls({});
+    setPublishStatus("draft");
+    setRefusedByAgentRun(false);
+    setRegenerateDescriptionOnPublish(false);
+    setShareTitle(title);
+    setShareUrl("");
+    setSlug(fresh);
+    setSlugDirty(false);
+    setSlugDraft(fresh);
+    setStatusMessage("");
+    setView("main");
+  }
+  // The document on screen now, for a publish that returns after the marketer has switched tabs.
+  const documentRef = useRef(documentId);
+  useEffect(() => {
+    documentRef.current = documentId;
+  });
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const httpRepositoriesRef = useRef<Partial<Record<PublishKind, WebPublishRepository>>>({});
@@ -359,6 +391,9 @@ export function useArtifactSharingController({
       documentId,
       { noindex: !allowIndexing, slug },
     );
+    // The publish happened (or not) for ITS document; if the marketer has switched tabs meanwhile,
+    // it says nothing here. Opening that site's menu again reads its real state.
+    if (documentRef.current !== documentId) return;
     setPublishStatus(outcome.status);
     setStatusMessage(outcome.message);
     setRefusedByAgentRun(outcome.agentWorking);
