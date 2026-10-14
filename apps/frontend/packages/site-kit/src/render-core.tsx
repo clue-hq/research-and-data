@@ -83,6 +83,14 @@ export function sectionPropsSchema(module: { schema?: unknown; render?: unknown 
     const keys = Object.keys(module.schema.shape);
     for (const key of ["className", "style"]) if (keys.includes(key)) errors.push(`the props may not include "${key}"`);
     for (const key of ["id", "surface"]) if (!keys.includes(key)) errors.push(`the props need "${key}" (every section has an id and a surface)`);
+    // Review finding K1-2: the editor opens a site only when every section's id is text. Read as
+    // the INPUT a stored page holds, so an optional id or one filled by a default is refused too.
+    if (keys.includes("id")) {
+      const input = z.toJSONSchema(module.schema, { io: "input" }) as { required?: string[]; properties?: Record<string, { type?: unknown }> };
+      if (!input.required?.includes("id") || input.properties?.id?.type !== "string") {
+        errors.push('"id" must be required text: write `id: z.string()` (no .optional(), no .default(), not a number)');
+      }
+    }
     props = z.toJSONSchema(module.schema);
   }
   if (typeof module.render !== "function") errors.push("`render` must be a function (props, kit) => JSX");

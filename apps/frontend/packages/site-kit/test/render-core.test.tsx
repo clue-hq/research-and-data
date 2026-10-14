@@ -66,3 +66,14 @@ test("sectionPropsSchema reads the props schema and refuses the shapes the check
     errors: ["`schema` must be a zod object (z.object({...}).strict())", "`render` must be a function (props, kit) => JSX"],
   });
 });
+
+// Review finding K1-2: the editor opens a site only when every section has a text id, so a section
+// whose schema lets its id be left out, a number or a default is refused when it is added.
+test("K1-2: a section schema must make its id required text", () => {
+  const render = () => null;
+  for (const id of [z.string().optional(), z.number(), z.string().default("hero")]) {
+    const result = sectionPropsSchema({ schema: z.object({ id, surface: z.string() }).strict(), render });
+    assert.ok("errors" in result && result.errors.some((e) => e.includes('"id" must be required text')), JSON.stringify(result));
+  }
+  assert.ok("props" in sectionPropsSchema({ schema: z.object({ id: z.string(), surface: z.string() }).strict(), render }));
+});

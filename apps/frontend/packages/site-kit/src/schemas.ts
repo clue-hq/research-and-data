@@ -5,6 +5,7 @@
 // object is strict, so a className, style or colour prop cannot be written at all. Text has no
 // length limits (founder ruling 2026-10-04: code checks correctness, not prose length).
 import { z } from "zod";
+import { ComponentIdSchema } from "./site-document";
 
 export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
 export const SURFACE_LABELS: Record<(typeof SURFACES)[number], string> = {
@@ -119,7 +120,6 @@ export const COMPONENT_TYPES = Object.keys(COMPONENT_SCHEMAS) as ComponentType[]
 
 const item = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
 
-const SECTION_ID = /^[A-Za-z0-9_-]{1,200}$/;
 
 /** The page schema, optionally with extra section types (a site's agent-written sections, E5). */
 export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
@@ -135,9 +135,18 @@ export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
   .superRefine((page, ctx) => {
     page.content.forEach((entry, index) => {
       // Controller ruling R10: the editor and the composer address a section as
-      // site:<route>#<id>.<field>, so an id may never carry "#", "." or anything else.
+      // site:<route>#<id>.<field>, so an id may never carry "#", "." or anything else. The rule is
+      // the editor's own (ComponentIdSchema), checked whatever the section's schema says: an agent
+      // section whose id is optional, a number or a default used to save and then fail to open in
+      // the editor (review finding K1-2).
       const sectionId = entry.props.id;
-      if (typeof sectionId === "string" && !SECTION_ID.test(sectionId)) {
+      if (typeof sectionId !== "string" || sectionId === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: 'every section needs an id: letters, digits, "-" and "_" (up to 200 characters)',
+        });
+      } else if (!ComponentIdSchema.safeParse(sectionId).success) {
         ctx.addIssue({
           code: "custom",
           path: ["content", index, "props", "id"],
