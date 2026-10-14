@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import subprocess
 import threading
 import time
@@ -688,6 +689,9 @@ def test_a_section_that_draws_differently_in_the_browser_is_reported_by_route() 
     site, sections = site_with_agent_section("Drift", module_js)
     result = site_render.render_site(site, garner_brand(), sections, base_path="", live=True)
     assert any(w.startswith("hydration on /: mismatch") for w in result.warnings), result.warnings
+    # Production React minifies the message; the agent reads a plain sentence instead (final review F3).
+    mismatches = [w for w in result.warnings if w.startswith("hydration on /: mismatch")]
+    assert all(re.fullmatch(r"hydration on /: mismatch: the server and the browser drew this page differently \(React #4\d\d\)", w) for w in mismatches), mismatches
 
 
 def test_review_focus_5_a_stored_module_importing_a_missing_name_fails_by_name() -> None:

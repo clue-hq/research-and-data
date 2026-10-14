@@ -12,10 +12,12 @@
 //
 // In live mode (publishing live sites) each page is drawn into #clue-site with its page data, and
 // then taken over right here the way the published page's runtime takes it over (hydrateSite): every
-// mismatch or failure becomes a warning "hydration on <route>: <message>", before the answer is
-// written, so the render page's deadline bounds it.
+// mismatch or failure becomes a warning "hydration on <route>: <message>" (a minified hydration error
+// reads as a plain sentence: hydration-notes.ts), before the answer is written, so the render page's
+// deadline bounds it.
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
+import { hydrationNote } from "./hydration-notes";
 import { hydrateSite } from "./live-page";
 import { RenderRefusal, renderSitePages, sectionPropsSchema, type StoredSite } from "./render-core";
 import { HOST_SPECIFIERS, hostExportNames, hostModules, shimSource, type HostSpecifier } from "./section-host";
@@ -109,7 +111,7 @@ async function main(): Promise<void> {
         await Promise.race([run.ready, new Promise((done) => setTimeout(done, HYDRATION_WAIT_MS))]);
         run.unmount();
         container.remove();
-        for (const message of reports) rendered.warnings.push(`hydration on ${page.route}: ${message}`);
+        for (const message of reports) rendered.warnings.push(`hydration on ${page.route}: ${hydrationNote(message)}`);
       }
     }
     finish(nonce, { size: rendered.size, result: { pages: rendered.pages, tailwindTheme: rendered.tailwindTheme, warnings: rendered.warnings } });
