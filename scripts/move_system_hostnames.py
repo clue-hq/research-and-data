@@ -8,8 +8,10 @@
 A DRY RUN unless --apply: it prints how many rows would move, the first five moves and any
 collisions, and writes nothing. With --apply it rewrites `<label>.<from>` to `<label>.<to>` for
 every system row in one transaction, or refuses (exit 1) when a new hostname is already taken.
-Run it after the new domain's DNS, certificate and edge redirect are live
-(docs/specs/pages-hosting-runbook.md §8).
+It also refuses (exit 1, the transaction rolled back, nothing moved) when a row changes while it
+runs or any system row is left on the old suffix afterwards (review finding S4-3). Run it after
+the new domain's DNS and certificate are live and every service serves both suffixes; the edge
+redirect comes after it (docs/specs/pages-hosting-runbook.md §8).
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import json
 import sys
 
 from clue_db import db_lifespan, transaction
-from clue_spine.hostnames import move_system_hostnames
+from clue_spine.hostnames import SystemHostnameMoveIncomplete, move_system_hostnames
 
 
 def _args() -> argparse.Namespace:
@@ -57,7 +59,11 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 def main() -> None:
     args = _args()
-    result = asyncio.run(_run(args))
+    try:
+        result = asyncio.run(_run(args))
+    except SystemHostnameMoveIncomplete as refused:
+        print(f"REFUSED: {refused}; nothing moved.", file=sys.stderr)
+        sys.exit(1)
     print(json.dumps(result, indent=2))
     if result["collisions"]:
         print(

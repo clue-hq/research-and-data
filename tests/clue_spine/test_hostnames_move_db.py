@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_spine import create_workspace
 from clue_spine.hostnames import (
+    SystemHostnameMoveIncomplete,
     lock_system_hostname,
     move_system_hostnames,
     resolve_active_hostname,
@@ -82,5 +85,63 @@ def test_a_move_that_would_collide_writes_nothing() -> None:
             result = await move_system_hostnames(conn, from_suffix=old, to_suffix=new, apply=True)
             assert result["applied"] is False and len(result["collisions"]) == 1
             assert await system_hostname(conn, moving.workspace_id) == before
+
+    run_async(scenario())
+
+
+# --- Review finding S4-3: the move never reports "applied" while a row stayed behind -----------
+class _RenamesBetweenReadAndUpdate:
+    """The finding's probe: the move reads the rows to move, then — before it updates them — one
+    row's label changes (as an admin's label change would). Everything else is the real
+    connection."""
+
+    def __init__(self, conn: AsyncConnection, *, hostname: str, renamed: str) -> None:
+        self._conn = conn
+        self._hostname = hostname
+        self._renamed = renamed
+        self._fired = False
+
+    async def execute(self, statement: Any, parameters: Any = None) -> Any:
+        result = await self._conn.execute(statement, parameters)
+        if not self._fired and str(statement).startswith("SELECT hostname FROM workspace_hostname"):
+            self._fired = True
+            await self._conn.execute(
+                text("UPDATE workspace_hostname SET hostname = :new WHERE hostname = :old"),
+                {"new": self._renamed, "old": self._hostname},
+            )
+        return result
+
+
+def test_s4_3_a_row_changed_mid_move_refuses_the_whole_move() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            old, new = _suffixes()
+            first = await create_workspace(
+                conn, name="Move Kept " + uuid4().hex[:4], pages_system_suffix=old
+            )
+            second = await create_workspace(
+                conn, name="Move Renamed " + uuid4().hex[:4], pages_system_suffix=old
+            )
+            before = {
+                ws.workspace_id: await system_hostname(conn, ws.workspace_id)
+                for ws in (first, second)
+            }
+            probe = _RenamesBetweenReadAndUpdate(
+                conn,
+                hostname=str(before[second.workspace_id]),
+                renamed=f"renamed-{uuid4().hex[:6]}.{old}",
+            )
+            with pytest.raises(SystemHostnameMoveIncomplete) as caught:
+                async with conn.begin_nested():
+                    await move_system_hostnames(
+                        probe,  # type: ignore[arg-type]
+                        from_suffix=old,
+                        to_suffix=new,
+                        apply=True,
+                    )
+            assert str(before[second.workspace_id]) in str(caught.value)
+            # The move's transaction rolled back: nothing moved, not even the untouched row.
+            for ws in (first, second):
+                assert await system_hostname(conn, ws.workspace_id) == before[ws.workspace_id]
 
     run_async(scenario())

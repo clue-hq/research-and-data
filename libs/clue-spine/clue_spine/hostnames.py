@@ -399,24 +399,35 @@ async def backfill_system_hostnames(
     return {"missing": len(missing), "written": written, "off_suffix": len(off_suffix)}
 
 
+class SystemHostnameMoveIncomplete(RuntimeError):
+    """Review finding S4-3: the move would leave a system row behind on the old suffix. Raised
+    before the caller commits, so the caller's transaction rolls back and nothing moves."""
+
+
 async def move_system_hostnames(
     conn: AsyncConnection, *, from_suffix: str, to_suffix: str, apply: bool = False
 ) -> dict[str, object]:
     """Rewrite every system hostname under ``from_suffix`` to the same label under ``to_suffix``
     (Wave 2 Contract 9). The label is kept, so ``locked_at`` keeps its promise; the old host keeps
-    answering through the edge Worker's 301. A dry run unless ``apply``; it refuses to write when
-    any new hostname is already taken, and then nothing moves."""
+    answering (the page origin serves a system address by its label on either domain, and the
+    edge Worker's 301 comes last). A dry run unless ``apply``; it refuses to write when any new
+    hostname is already taken, and then nothing moves.
+
+    Review finding S4-3: the rows it moves are locked as they are read (``FOR UPDATE``: a
+    concurrent label change waits for this transaction), each update must change exactly one
+    row, and afterwards no system row may be left under ``from_suffix``. Any mismatch raises
+    :class:`SystemHostnameMoveIncomplete`, so the caller's transaction rolls back and nothing
+    moves — never "applied" with a row behind."""
     old = from_suffix.lower().strip(".")
     new = to_suffix.lower().strip(".")
     if not old or not new or old == new:
         raise ValueError("from_suffix and to_suffix must be non-empty and different")
-    rows = await conn.execute(
-        text(
-            "SELECT hostname FROM workspace_hostname WHERE kind = 'system' "
-            "AND right(hostname, :n) = :tail ORDER BY hostname"
-        ),
-        {"n": len(old) + 1, "tail": "." + old},
+    under_old = (
+        "SELECT hostname FROM workspace_hostname WHERE kind = 'system' "
+        "AND right(hostname, :n) = :tail ORDER BY hostname"
     )
+    tail = {"n": len(old) + 1, "tail": "." + old}
+    rows = await conn.execute(text(under_old + (" FOR UPDATE" if apply else "")), tail)
     moves = [(str(row[0]), str(row[0])[: -len(old)] + new) for row in rows.all()]
     collisions: list[str] = []
     if moves:
@@ -430,12 +441,23 @@ async def move_system_hostnames(
     applied = bool(apply and moves and not collisions)
     if applied:
         for previous, target in moves:
-            await conn.execute(
+            updated = await conn.execute(
                 text(
                     "UPDATE workspace_hostname SET hostname = :new, updated_at = now() "
                     "WHERE hostname = :old AND kind = 'system'"
                 ),
                 {"new": target, "old": previous},
+            )
+            if updated.rowcount != 1:
+                raise SystemHostnameMoveIncomplete(
+                    f"{previous} changed while the move ran (its update matched "
+                    f"{updated.rowcount} rows), so the whole move is refused"
+                )
+        behind = [str(row[0]) for row in (await conn.execute(text(under_old), tail)).all()]
+        if behind:
+            raise SystemHostnameMoveIncomplete(
+                f"{len(behind)} system hostname(s) are still under {old} after the move "
+                f"({', '.join(behind[:5])}), so the whole move is refused"
             )
     return {
         "from_suffix": old,
