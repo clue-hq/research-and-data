@@ -75,3 +75,19 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
   `setEditing(on)` added.
 - Gates: site-kit 172, site-editor 61, app site/design-editor 2319, browser 21/21, app 3412/0/5skip,
   lint 0 errors, build OK. Review: 80 open, 1 Critical (K4-2, parked).
+
+## Root-cause group §4.4 (wrong-account state) fixed (2026-10-14)
+- K6-1 `8f4a0ba84`: share controller resets per-document state on documentId change (adjust-state
+  pattern) and drops a publish result whose document is no longer shown (documentRef).
+- S2b-1 + S2b-5 `f0433561b`: SiteImageTarget carries documentId; session insertAsset refuses a
+  target for another site; upload/generate say SITE_IMAGE_NOT_PLACED_MOVED; AI state keyed per field
+  (`imageFieldKey`, `imageFieldAi`), runner reject/saveAsNew take the target. Bridge: holdNextUpload.
+- S2b-6 `ee265dac6`: `onScreen` (surface==="artifact" && panelOpen) threaded from chat-surface and
+  editor-surface into site/web/scene sessions; web+ad share `artifactHistoryKey`.
+- K3-4 `1771fd40c`: no page-wide editor-origin cache; read per mount (one session per page).
+- S5-2 `81ccfbb1a`: `refs_for_document` (design_turn_targets.py) — design_node refs only to the run
+  of the message's one design_document; DB scenario in test_multi_artifact_leg_engine_db.py (three
+  template sites). DB tests via `.superpowers/review/2026-10-13-wave2/pytest-keyless.sh` (wave1).
+- Gates: frontend lint 0 errors / build / app 3425 pass 0 fail; browser 21/21; design-leg + site DB
+  suites 48 pass; multi-artifact 13; targets 29. Review: 74 open (1 C parked, 25 I, 48 M).
+- Not in the group but adjacent, still open: S2b-7 (a failed editor-address read latches until reload).

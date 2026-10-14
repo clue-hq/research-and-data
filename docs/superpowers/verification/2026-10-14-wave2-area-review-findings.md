@@ -15,8 +15,9 @@ durable record.
 >
 > Update 2026-10-14: the editor sync fix (§4.1) closed 12 findings across both documents: S1-1, S1-2, S1-4,
 > S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. K1-1 and S7-1 followed the same day.
-> K3-1 was then closed as ruled (fixes 1 and 2). **80 remain open** (1 Critical — K4-2, parked — 29 Important,
-> 50 Minor).
+> K3-1 was then closed as ruled (fixes 1 and 2), and root-cause group §4.4 (one account's state leaking into
+> another's) was fixed: K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6. **74 remain open** (1 Critical — K4-2, parked —
+> 25 Important, 48 Minor).
 
 ---
 
@@ -81,14 +82,14 @@ Still open after the editor sync fix (2026-10-14):
 |---|---|---|---|---|
 | S1 | 0 | 2 | 5 | S1-1, S1-2, S1-4 |
 | S2a | 0 | 2 | 6 | S2a-1, S2a-4 |
-| S2b | 0 | 1 | 6 | S2b-2, S2b-3, S2b-4 |
+| S2b | 0 | 0 | 4 | S2b-2, S2b-3, S2b-4; then S2b-1, S2b-5, S2b-6 (§4.4) |
 | S3 | 0 | 2 | 5 | S3-3 |
 | S4 | 0 | 1 | 2 | — |
-| S5 | 0 | 2 | 1 | — |
+| S5 | 0 | 1 | 1 | S5-2 (§4.4) |
 | S6 | 0 | 3 | 9 | — |
 | S7 | 0 | 1 | 2 | S7-1 (option A) |
 | S8 | 0 | 0 | 0 | — |
-| **Total open** | **0** | **14** | **36** | 10 fixed |
+| **Total open** | **0** | **12** | **34** | 14 fixed |
 
 **60 findings** from the area review, all open. Together with the contract review's 35 open findings, the
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
@@ -336,7 +337,7 @@ The six Critical findings across the whole review:
 ### S2b — The app side of site editing (Lane C, plus Lane A's Share menu)
 
 #### S2b-1 — An image upload that finishes after a tab switch lands on the other account's site
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 (`f0433561b`).
 - **What a person sees:** on Initech's site the marketer uploads a large photo for the hero, and switches
   to Umbrella's tab while it uploads. The photo is placed in Umbrella's hero and saved as Umbrella's next
   version. Initech never gets it. If Umbrella has no section with that name, the upload is lost silently.
@@ -382,12 +383,12 @@ The six Critical findings across the whole review:
 - **Fix direction:** run queued saves and history steps in the order they were asked.
 
 #### S2b-5 — An AI image edit left un-accepted silently blocks every other image edit, on every site
-- **Severity:** Minor. Status: open.
+- **Severity:** Minor. Status: **fixed** 2026-10-14 (`f0433561b`).
 - **Where:** `features/site-editor/hooks/site-images.logic.ts:115`.
 - **Fix direction:** keep pending edits per site and field, or say why a request was ignored.
 
 #### S2b-6 — ⌘Z anywhere on the chat page undoes the open site, even when the site is not on screen
-- **Severity:** Minor (the web and ad lanes behave the same way). Status: open.
+- **Severity:** Minor (the web and ad lanes behave the same way). Status: **fixed** 2026-10-14 (`ee265dac6`).
 - **Where:** `features/site-editor/hooks/use-site-editing-session.ts:367-385`.
 - **Fix direction:** handle undo keys only while the site is shown, for all three lanes together.
 
@@ -555,7 +556,7 @@ The six Critical findings across the whole review:
   files outside the section's own folder.
 
 #### S5-2 — A note drawn on one account's site is applied to every sibling site the turn addresses
-- **Severity:** Important (a wrong-account edit on a page published under that account's name). Status: open.
+- **Severity:** Important (a wrong-account edit on a page published under that account's name). Status: **fixed** 2026-10-14 (`81ccfbb1a`).
 - **What a person sees:** in a design leg holding several 1:1 account sites, the marketer opens Initech's
   site, clicks its hero and notes "shorter headline", then sends. If the turn addresses more than one
   site, Umbrella's hero gets "shorter headline" too, because every addressed site receives the note.
@@ -862,6 +863,13 @@ results: classes resolved, styles computed, elements present. Each of these bugs
 ### 4.4 State that belongs to one account's site leaks into another's
 **Findings:** K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6.
 
+**Status: fixed (2026-10-14)**, each from a failing test: the Share controller resets per document and
+drops a stale publish result (K6-1, `8f4a0ba84`); every image target names its site and the session
+places an image only there, AI image work is kept per field (S2b-1, S2b-5, `f0433561b`); the three
+editors' ⌘Z acts only while the artifact is on screen (S2b-6, `ee265dac6`); the editor address is read
+per mount, never cached across a workspace switch (K3-4, `1771fd40c`); a note reaches only the run of
+the site it was drawn on (S5-2, `81ccfbb1a`).
+
 Wave 2's normal shape is one site per account, open side by side. Several pieces of state are kept in
 shared places with no document key, or are checked against "whatever is open now" when an async step
 finishes:
@@ -926,7 +934,7 @@ One pass, each fix starting from a failing test, then a review of only the fix c
    S2b-2, S2b-3, S2b-4, S3-3, S2a-4, plus S1-2 and S1-4).
 3. ~~**K1-1**~~ — **done 2026-10-14**.
 4. **Security (§4.2):** S5-1, S3-1, K5-5, K3-2, S3-2, S2a-3, S4-2. (K3-1 closed as ruled, 2026-10-14.)
-5. **Wrong-account state (§4.4):** K6-1, S2b-1, S5-2, K3-4, then the minors.
+5. ~~**Wrong-account state (§4.4)**~~ — **done 2026-10-14**.
 6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-5,
    S2a-2, S2b-8, S6-2 (S1-4 is fixed).
 7. **Deploy and configuration (§4.5):** S7-2, S7-4, and, before the pages-domain move is run, K3-6, S4-1

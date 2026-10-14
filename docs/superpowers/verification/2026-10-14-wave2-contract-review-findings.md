@@ -67,16 +67,17 @@ seams down as nine "contracts".
 | | Count | Ids |
 |---|---|---|
 | **Open, Critical** | 1 | K4-2 (parked, see §3) |
-| **Open, Important** | 15 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-4, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-1, K6-2, K6-3 |
+| **Open, Important** | 13 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-2, K6-3 |
 | **Open, Minor** | 14 | K1-6, K1-7, K1-8, K2-2, K3-7, K3-8, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
 | **Resolved** (by A9's fix wave) | 4 | K5-1, K5-3, K5-4, K5-7 |
 | **Fixed** (by the editor sync fix, 2026-10-14) | 3 | K1-4, K3-3, K3-5 |
 | **Fixed** (2026-10-14, after the sync fix) | 1 | K1-1 |
 | **Closed as ruled** (2026-10-14, fixes 1+2, residual accepted) | 1 | K3-1 |
+| **Fixed** (2026-10-14, root-cause group §4.4 of the area document) | 2 | K6-1, K3-4 |
 | **Duplicate** | 1 | K4-4 (= K3-3) |
 
 **Update 2026-10-14:** the editor sync fix (`docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`) closed K1-4, K3-3 and K3-5, each from a failing
-test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). The rest are fixed in the fix
+test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). Then group §4.4 (wrong-account state) closed K6-1 and K3-4: **28 open** (1 Critical, 13 Important, 14 Minor). The rest are fixed in the fix
 pass that follows the S-unit review, each from a failing test, and only the fix changes are re-reviewed.
 The area document's §4.1 records the sync fix as a whole.
 
@@ -111,7 +112,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K3-1 | Critical | Agent code in the editor frame can save, undo and redo as the marketer | **closed as ruled** (fixes 1+2) |
 | K3-2 | Important | Agent code can send the editor frame to any website, inside the app | open |
 | K3-3 | Important | On the standalone artifact page, the marketer's own saves wipe what they are typing | **fixed** (sync fix) |
-| K3-4 | Important | After switching workspace, sites open on the previous workspace's editor domain | open |
+| K3-4 | Important | After switching workspace, sites open on the previous workspace's editor domain | **fixed** |
 | K3-5 | Important | An update arriving while the editor loads is lost, and the older site is saved over the newer | **fixed** (sync fix) |
 | K3-6 | Important | The domain-move runbook leaves published pages down mid-move | open (operational) |
 | K3-7 | Minor | One workspace's agent code can break every workspace's editor in that browser via cookies | open |
@@ -131,7 +132,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K5-5 | Important | Agent code can inject CSS into the published page | open |
 | K5-6 | Minor | site-kit's icon checks are looser than the engine's | open |
 | K5-7 | Minor | The icon cleaner dropped multi-line shapes, leaving empty icons | **resolved** (A9 fix wave) |
-| K6-1 | Important | Switching tabs carries one site's Share settings into the next | open |
+| K6-1 | Important | Switching tabs carries one site's Share settings into the next | **fixed** |
 | K6-2 | Important | After the first publish, Share never offers Republish when the site changes | open |
 | K6-3 | Important | Account sites publish indexable, and a noindex choice is lost | open |
 | K6-4 | Minor | On a phone, a multi-page site has no navigation between pages | open (design call) |
@@ -400,7 +401,7 @@ pages domain, custom domains, and the planned move of published pages to a new d
   matches what the canvas already has.
 
 #### K3-4 — After switching workspace, sites open on the previous workspace's editor domain
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 (`1771fd40c`).
 - **What a person sees:** open a site in workspace A, switch to workspace B from the sidebar, open one of
   B's sites. If it has agent sections: "The section … could not be loaded" until a hard reload. If not, it
   opens, but on A's editor domain, so B's site and brand are sent into the address meant for A.
@@ -639,7 +640,7 @@ The site publish routes, the page origin that serves published pages, hostnames,
 agent's publish tools, the locks and batch publishing.
 
 #### K6-1 — Switching tabs carries one site's Share settings into the next
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-14 (`8f4a0ba84`).
 - **What a person sees** (all three reproduced):
   1. Site A is published at `acme-q4`. Switch to site B, never published, and open Share: the address field
      shows `acme-q4`, and publishing B is refused as "already published by another document".
