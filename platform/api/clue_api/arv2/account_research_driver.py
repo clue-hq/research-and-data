@@ -91,6 +91,7 @@ from clue_api.arv2.fleet_task import (
     arv2_display_work_id,
 )
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
+from clue_api.arv2.job_resume import ResearchRestartRequired, restart_on_claim
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
@@ -568,6 +569,24 @@ class Arv2AccountResearchWorkHandler:
             raise
         except _JobSuperseded:
             ending = self._superseded(scope, claim)
+        except ResearchRestartRequired as restart:
+            # Spec 2026-10-14 §3.2: the saved conversation cannot be continued, so the job gets a
+            # fresh one under a new execution and goes back to the queue. The runner only raises
+            # this after the claim, so the attempt is known.
+            if claim.attempt is None:
+                raise
+            async with self._connection() as conn:
+                restarted = await restart_on_claim(
+                    conn, job_id=scope.job_id, attempt=claim.attempt, reason=restart.reason
+                )
+            log.warning(
+                "arv2.quality.job_restarted",
+                job_id=str(scope.job_id),
+                attempt=claim.attempt,
+                reason=restart.reason,
+                restarted=restarted,
+            )
+            return WorkResult(outcome="stopped", references=references, requeue=True)
         except Exception as error:  # noqa: BLE001 — containment: the job row is the only report
             log.exception("arv2.account_job_contained_failure", job_id=str(scope.job_id))
             if claim.attempt is None:
