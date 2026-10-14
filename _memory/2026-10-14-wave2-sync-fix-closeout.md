@@ -91,3 +91,17 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
 - Gates: frontend lint 0 errors / build / app 3425 pass 0 fail; browser 21/21; design-leg + site DB
   suites 48 pass; multi-artifact 13; targets 29. Review: 74 open (1 C parked, 25 I, 48 M).
 - Not in the group but adjacent, still open: S2b-7 (a failed editor-address read latches until reload).
+
+## S7-2 and S7-4 fixed (2026-10-14, `d1ded9254`)
+- check_prod_env: roles `frontend` and `site-editor` (own checks; the editor needs the frontend env
+  as a 3rd CLI arg: same suffix + app origin; editor env may carry no SECRET/API_KEY/TOKEN/
+  PASSWORD/DATABASE_URL/REDIS_URL/CLERK names); literal CLUE_SITE_SECTION_LINK_SECRET >= 32 chars.
+- Design API lifespan refuses to start when `site_section_links.is_production()` and the secret is
+  missing/short (`production_secret_problem`); fleet workers import main without lifespan → unaffected.
+  Lane .env is `local` with a >=32-char secret, so trenton is unaffected.
+- Frontend: canvas error `EDITOR_DID_NOT_ANSWER` when this frame (nonce) has not said ready in 30 s
+  (`useSiteFrameHost` `timedOut`, `readyTimeoutMs`); `src/instrumentation.ts` logs at start-up when
+  NODE_ENV=production and the suffix is unset (proved with `next start` on a spare port).
+- Runbook §2: secret in step 5, suffix in step 7, new step 7a (site editor service), check commands
+  for 5-frontend.env / 6-site-editor.env in step 8. Both .env.example comments updated.
+- Review: 72 open (1 C parked, 24 I, 47 M). 4.5 left: K3-6, S4-1, S4-3, S7-3, K3-8, K3-7, S2b-9.
