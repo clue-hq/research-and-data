@@ -3,10 +3,17 @@ import type { AccountArtifact, AccountWorkspace } from "./account-workspace";
 export const artifactTypeLabels: Record<AccountArtifact["type"], string> = {
   ad: "Ad",
   web: "Landing page",
+  site: "Landing page",
   document: "Document",
   presentation: "Presentation",
   email: "Email",
 };
+
+/** How an artifact type is shown and filtered. A website on Puck (`site`) is a landing page to the
+ * marketer: it takes the landing page's label, icon and filter (no separate one was designed). */
+export function artifactDisplayType(type: AccountArtifact["type"]): Exclude<AccountArtifact["type"], "site"> {
+  return type === "site" ? "web" : type;
+}
 
 export const artifactTypeOptions = [
   { value: "all", label: "All types" },
@@ -47,7 +54,7 @@ export function filterAccountArtifacts(
 ) {
   const query = search.trim().toLocaleLowerCase();
   return artifacts.filter((artifact) =>
-    (type === "all" || artifact.type === type) &&
+    (type === "all" || artifactDisplayType(artifact.type) === type) &&
     (!query || [artifact.title, artifact.projectName, artifactTypeLabels[artifact.type]]
       .some((value) => value?.toLocaleLowerCase().includes(query))),
   ).sort((a, b) => {

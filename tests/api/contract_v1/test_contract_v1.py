@@ -101,6 +101,96 @@ def test_committed_zod_fields_matches_the_live_schemas() -> None:
     )
 
 
+# --- (1b) allowed values -------------------------------------------------------------------------
+#
+# Review finding K1-1: the backend added `"site"` to an account artifact's types and the frontend's
+# Zod list did not, so a single site artifact made the whole accounts read fail. The field-name
+# parity above could not see it: it compares names, and only at the top level. This compares the
+# allowed values of every fixed-list field, at any depth: whatever the backend may send there, the
+# frontend must accept. (The frontend may accept more; a plain string is not a fixed list.)
+
+
+def _fixed_values(node: dict[str, Any], defs: dict[str, Any]) -> list[Any] | None:
+    node = _deref(node, defs)
+    if "const" in node:
+        return [node["const"]]
+    if "enum" in node:
+        return list(node["enum"])
+    options = node.get("anyOf") or node.get("oneOf")
+    if options:
+        values: list[Any] = []
+        for option in options:
+            option = _deref(option, defs)
+            if option.get("type") == "null":
+                continue
+            option_values = _fixed_values(option, defs)
+            if option_values is None:
+                return None
+            values.extend(option_values)
+        return values or None
+    return None
+
+
+def _deref(node: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    while "$ref" in node:
+        node = defs[node["$ref"].rsplit("/", 1)[-1]]
+    return node
+
+
+def _walk_enums(
+    node: dict[str, Any],
+    path: str,
+    defs: dict[str, Any],
+    out: dict[str, set[Any]],
+    seen: frozenset[str],
+) -> None:
+    ref = node.get("$ref")
+    if ref is not None:
+        if ref in seen:
+            return
+        seen = seen | {ref}
+    node = _deref(node, defs)
+    values = _fixed_values(node, defs)
+    if values is not None:
+        out[path] = set(values)
+        return
+    for key, child in (node.get("properties") or {}).items():
+        _walk_enums(child, f"{path}.{key}", defs, out, seen)
+    if isinstance(node.get("items"), dict):
+        _walk_enums(node["items"], f"{path}[]", defs, out, seen)
+    for option in node.get("anyOf") or node.get("oneOf") or []:
+        _walk_enums(option, path, defs, out, seen)
+
+
+def _backend_enums() -> dict[str, set[Any]]:
+    out: dict[str, set[Any]] = {}
+    for name, model in V1_PAYLOADS.items():
+        schema = model.model_json_schema(by_alias=True, mode="serialization")
+        _walk_enums(schema, name, schema.get("$defs", {}), out, frozenset())
+    return out
+
+
+def _frontend_enums() -> dict[str, set[Any]]:
+    root = require_node()
+    result = run_validate(root, "--enums")
+    assert result.returncode == 0, result.stderr
+    return {path: set(values) for path, values in json.loads(result.stdout).items()}
+
+
+def test_every_value_the_backend_may_send_is_one_the_frontend_accepts() -> None:
+    frontend = _frontend_enums()
+    backend = _backend_enums()
+    # A guard on the guard: both walkers must reach a nested field, or this passes vacuously.
+    nested = "AccountWorkspaceSchema.artifacts[].type"
+    assert nested in frontend and nested in backend, (sorted(frontend), sorted(backend))
+    refused = {
+        path: sorted(values - frontend[path], key=str)
+        for path, values in sorted(backend.items())
+        if path in frontend and values - frontend[path]
+    }
+    assert refused == {}, f"the backend may send values the frontend refuses: {refused}"
+
+
 # --- (2) golden payloads ----------------------------------------------------------------------
 
 
