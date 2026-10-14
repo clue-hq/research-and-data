@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -12,6 +13,7 @@ from fastapi import APIRouter, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.onboarding_store import create_run
 from clue_api.auth_wiring import authenticated_route_resolvers, install_auth_wiring
 from clue_api.frontend_read.app import (
     frontend_read_workspace_resolver,
@@ -26,7 +28,11 @@ from clue_auth import (
     PrincipalService,
 )
 from clue_auth.providers.clerk_api import ClerkApi
-from clue_auth.provisioning import hash_invitation_token, provision_self_serve_workspace
+from clue_auth.provisioning import (
+    hash_invitation_token,
+    provision_additional_workspace,
+    provision_self_serve_workspace,
+)
 from clue_auth.store import (
     create_platform_user,
     create_workspace_invitation,
@@ -460,5 +466,62 @@ def test_email_backfill_provisioning_and_primary_brand_logo() -> None:
                 assert response.status_code == 200, response.text
                 user = await get_platform_user(conn, response.json()["user_id"])
                 assert user.email == "provisioned@example.com"
+
+    run_async(scenario())
+
+
+def test_operator_workspace_reads_its_website_from_onboarding_and_its_kit_logo() -> None:
+    """A workspace an operator added has no signup record, so Settings falls back to the
+    latest full onboarding run's domain and to the workspace's approved brand kit."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            owner = await seed(conn)
+            added = await provision_additional_workspace(
+                conn, email="owner@example.com", company_website="https://acme.example"
+            )
+            ws = added.workspace.workspace_id
+            app = build_app(conn, [])
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                headers=headers(ws),
+            ) as client:
+                before = (await client.get(f"{PREFIX}/workspace")).json()
+                assert before["website"] is None
+                assert before["logo_url"] is None
+                await create_run(
+                    conn,
+                    run_id=uuid4(),
+                    workspace_id=ws,
+                    brand_id=added.brand.brand_id,
+                    company_domain="acme.example",
+                    requested_by_user_id=owner.user.user_id,
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO design_brand_kit (brand_kit_id, version, workspace_id, "
+                        "brand_id, name, approval_status, source, brand_kit_json, "
+                        "brand_summary_json, diagnostics_json) "
+                        "VALUES ('bk_operator_test', 1, :ws, :brand, 'Acme kit', 'approved', "
+                        "'uploaded', CAST(:kit AS jsonb), '{}', '[]')"
+                    ),
+                    {
+                        "ws": ws,
+                        "brand": added.brand.brand_id,
+                        "kit": json.dumps(
+                            {
+                                "assets": {
+                                    "logos": {
+                                        "primary": {"variants": [{"asset_id": "asset_acme_logo"}]}
+                                    }
+                                }
+                            }
+                        ),
+                    },
+                )
+                after = (await client.get(f"{PREFIX}/workspace")).json()
+                assert after["website"] == "https://acme.example"
+                assert after["logo_url"] == "/api/clue/design/assets/asset_acme_logo/bytes"
 
     run_async(scenario())
