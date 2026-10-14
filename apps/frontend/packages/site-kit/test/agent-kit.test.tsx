@@ -2,9 +2,12 @@
 // like the seller's, and any of the brand's surfaces.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ReactNode } from "react";
+import type { Config } from "@puckeditor/core";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { makeKit } from "../src/agent-kit";
+import { z } from "zod";
+import { makeKit, type Kit } from "../src/agent-kit";
+import { makeConfig } from "../src/config";
 import { colorOf, styleOf } from "../src/brand-values";
 import { buttonLooks, cardLooks } from "../src/looks";
 import { logoFiles } from "../src/shell";
@@ -82,4 +85,15 @@ test("a section may stand on any of the brand's surfaces by its choice name", ()
   const kit = makeKit(href, kitBrand("garner.minted"));
   assert.ok(html(kit.Shell({ surface: "band-014036", children: "x" })).includes('class="bg-surface-band-014036 text-on-surface-band-014036"'));
   assert.ok(html(kit.Shell({ surface: "brandSubtle", children: "x" })).includes('class="bg-surface-brand-subtle text-on-surface-brand-subtle"'));
+});
+
+test("a section learns from kit.editing whether the marketer is editing it", () => {
+  const seen: boolean[] = [];
+  const Probe = { schema: z.object({ id: z.string(), surface: z.string() }), render: ((_p: unknown, kit: Kit) => (seen.push(kit.editing), null)) as never };
+  const config = makeConfig(garner(), { agentSections: { Probe } }) as Config;
+  const render = (config.components.Probe as { render: (p: unknown) => ReactElement }).render;
+  renderToStaticMarkup(render({ id: "p", surface: "page", puck: { isEditing: true } }));
+  renderToStaticMarkup(render({ id: "p", surface: "page", puck: { isEditing: false } }));
+  renderToStaticMarkup(render({ id: "p", surface: "page" }));
+  assert.deepEqual(seen, [true, false, false]);
 });

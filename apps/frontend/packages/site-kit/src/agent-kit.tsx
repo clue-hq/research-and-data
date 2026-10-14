@@ -23,6 +23,9 @@ export type Kit = {
    * inside its box, never cropped or rounded (a logo). Neither: full width with the brand's corners.
    * A logo from the brand kit is always shown whole. */
   Image: (props: { src: string; alt?: string; fit?: "fill" | "contain"; className?: never }) => ReactNode;
+  /** True while the marketer edits this page in the editor's Edit mode: show the section's first
+   * state and start nothing (no timers, no autoplay), so a click selects it instead of driving it. */
+  editing: boolean;
 };
 
 export type AgentSectionModule = {
@@ -53,5 +56,6 @@ export function makeKit(href: Href, brand: BrandData): Kit {
     // eslint-disable-next-line @next/next/no-img-element
     Image: ({ src, alt, fit }) =>
       src ? <img src={src} alt={alt ?? ""} className={IMAGE_CLASS[fit ?? (logos.has(src) ? "contain" : "standard")]} /> : null,
+    editing: false,
   };
 }

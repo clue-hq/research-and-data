@@ -139,7 +139,10 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     Object.entries(options.agentSections ?? {}).map(([name, module]) => {
       // The section draws inside its own component, so its boundary catches what it throws. This is
       // the one place module.render is called. Props travel whole (not spread), so none is dropped.
-      const Drawn = ({ props }: { props: never }) => module.render(props, kit);
+      // kit.editing: true while the marketer edits the page (Puck's puck.isEditing), so the section
+      // shows its first state and starts nothing.
+      const Drawn = ({ props }: { props: never }) =>
+        module.render(props, { ...kit, editing: Boolean((props as { puck?: { isEditing?: boolean } }).puck?.isEditing) });
       return [
         name,
         {
