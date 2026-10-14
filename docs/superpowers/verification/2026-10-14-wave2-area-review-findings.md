@@ -74,6 +74,21 @@ by re-running the reviewer's probe on the merged tree or reading the code on bot
 | S8 | the merge conflicts resolved by hand | 0 | 0 | 0 |
 | **Total** | | **3** | **18** | **39** |
 
+Still open after the editor sync fix (2026-10-14):
+
+| Unit | Critical | Important | Minor | Fixed by the sync fix |
+|---|---|---|---|---|
+| S1 | 0 | 2 | 5 | S1-1, S1-2, S1-4 |
+| S2a | 0 | 2 | 6 | S2a-1, S2a-4 |
+| S2b | 0 | 1 | 6 | S2b-2, S2b-3, S2b-4 |
+| S3 | 0 | 2 | 5 | S3-3 |
+| S4 | 0 | 1 | 2 | — |
+| S5 | 0 | 2 | 1 | — |
+| S6 | 0 | 3 | 9 | — |
+| S7 | 1 | 1 | 2 | — |
+| S8 | 0 | 0 | 0 | — |
+| **Total open** | **1** | **14** | **36** | 9 fixed |
+
 **60 findings** from the area review, all open. Together with the contract review's 35 open findings, the
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
 is parked for the privacy and verification sprint.)
@@ -753,8 +768,8 @@ The six Critical findings across the whole review:
 
 ## 4. Analysis: what the findings have in common
 
-The K and S units together found **95 open findings** (35 from the contract review, 60
-from this one). Read one by one they look scattered. Grouped by cause, they come down to seven
+The K and S units together found **95 findings** (35 from the contract review, 60
+from this one); after the editor sync fix, **83 are open** (§4.1 is fixed). Read one by one they look scattered. Grouped by cause, they come down to seven
 problems. Each group below names the findings in it, the shared cause, and the one change that would
 close most of it.
 
@@ -769,8 +784,23 @@ adopted, and none while saves are on their way; saves and history steps run in o
 hotkeys, load-time refill and index-based selection are switched off; the design API answers each write
 with the version it produced. Every fix began from a failing test, including a scenario test through the
 real session and the real frame logic. An independent review of the fix found 2 Important and 6 Minor
-problems (F1–F8, in the git-ignored review folder's `reports/sync-fix-review.md`); all eight are fixed.
-Phase 2 of the plan (instant undo) is not built yet.
+problems (F1–F8; the full report with its probes is in the git-ignored review folder's
+`reports/sync-fix-review.md`). All eight are fixed, each from a test that failed on the code before:
+
+| Id | Sev | What went wrong in the fix | Fixed by |
+|---|---|---|---|
+| F1 | Important | Canvas typing that arrived while an undo, redo or restore was reloading was saved over the step, silently reverting it; a refused save's content was resent the same way | `bb6b4bb40` — after a step lands or a save is refused, the working copy refuses proposals and app edits until the reload is adopted, and the reload always re-syncs the frame |
+| F2 | Important | Canvas typing already sent to the app was lost silently when an app edit (dock, image) overtook it, while the canvas kept showing it | `89ff94296` — the frame proposes its copy again over the app's newer revision |
+| F3 | Minor | A reload deferred behind a save was lost when that save failed on the network | `bb6b4bb40` — the controller still reloads after a transport failure if a reload was waiting |
+| F4 | Minor | Coming back to a site while the last visit's save was in flight showed the pre-save copy, and the next edit was refused | `6aad60d34` — one save controller per document, kept across visits; a controller for a site you left still sends its work but no longer touches the open site's copy (found while fixing F4, own test) |
+| F5 | Minor (tests) | The "GET answers first" tests actually ran PUT-first, so the deferred-reload path was never tested | `bb6b4bb40` — the test server releases held requests by kind |
+| F6 | Minor | Puck's preview toggle matches the physical I key, so Dvorak ⌘C (copy) flipped the editor into preview; Ctrl+Alt+Z counted as undo | `161477099` — every ⌘/Ctrl chord on the physical Z, Y and I keys is stopped; ours acts only on the real character, without Alt; editable text read through the composed path (shadow roots) |
+| F7 | Minor | Clicking from one clone text slot straight into its sibling (after clearing or editing the first) lost the caret, and the typing went nowhere | `29580ee78` — the clicked slot gets the focus back after the markup rebuild; the S1-4 redraw runs after the focus has moved |
+| F8 | Minor (tests) | Several new browser assertions passed vacuously when nothing was posted | `07ac8b66c` — they assert what the canvas shows |
+
+Gates after the fixes: frontend lint (0 errors) and build pass; app tests 3,404 pass, 0 fail; site-kit 170;
+site-editor 54; browser harness 17/17. **Not yet done:** a live walk on a real site, and Phase 2 of the plan
+(instant undo).
 
 There are three copies of a site while it is being edited: the server's, the app's, and the one inside
 the editor frame, which Puck (the editing library) holds. They are kept in step only by comparing version
@@ -847,7 +877,8 @@ The result is a wrong-account page: a link with another account's name, another 
 when an async step completes.
 
 ### 4.5 Wave 2 cannot be deployed as it stands
-**Findings:** S7-1 (Critical), S4-1, S7-2, S7-4, K3-6, K3-7, K3-8, S7-3, S4-3, S2b-9, and S2b-2 (dev stacks).
+**Findings:** S7-1 (Critical), S4-1, S7-2, S7-4, K3-6, K3-7, K3-8, S7-3, S4-3, S2b-9, and S2b-2 (dev stacks;
+**fixed** 2026-10-14).
 
 - The backend release is blocked outright by the Chromium sandbox check (S7-1).
 - Several settings that the new services need are neither documented in the deploy runbook nor checked
@@ -858,8 +889,8 @@ when an async step completes.
 - On every dev stack, site edits don't save (S2b-2), so any live walk of site editing will fail until that
   is fixed.
 
-**This group gates everything else:** S7-1 must be decided before Wave 2 can reach `main`, and S2b-2 before
-any live walk.
+**This group gates everything else:** S7-1 must be decided before Wave 2 can reach `main`. (S2b-2, which
+blocked every live walk, is fixed.)
 
 ### 4.6 Brand capture misses common modern patterns
 **Findings:** S6-1, S6-2, S6-3, and S6-4 to S6-12.
@@ -889,20 +920,20 @@ reused.
 
 One pass, each fix starting from a failing test, then a review of only the fix changes. Suggested order:
 
-1. **Unblock:** S7-1 (decide the Chromium sandbox posture for containers, then make the smoke check match),
-   and S2b-2 (dev-stack saves; a small fix that unblocks every live walk).
-2. **Stop losing work (§4.1):** S1-1, S2a-1, then K1-4, K3-3, K3-5, S2b-3, S2b-4, S3-3, S2a-4. These share
-   one sync rule, so they are best done together.
+1. **Unblock:** S7-1 (decide the Chromium sandbox posture for containers, then make the smoke check match).
+   ~~S2b-2~~ fixed.
+2. ~~**Stop losing work (§4.1)**~~ — **done 2026-10-14** by the editor sync fix (S1-1, S2a-1, K1-4, K3-3, K3-5,
+   S2b-2, S2b-3, S2b-4, S3-3, S2a-4, plus S1-2 and S1-4).
 3. **K1-1** (an account with a site breaks its research pages): small and Critical.
 4. **Security (§4.2):** S5-1, S3-1, K5-5, K3-2, S3-2, S2a-3, S4-2, and K3-1 once the founder picks the fix.
 5. **Wrong-account state (§4.4):** K6-1, S2b-1, S5-2, K3-4, then the minors.
-6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-4, S1-5,
-   S2a-2, S2b-8, S6-2.
+6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-5,
+   S2a-2, S2b-8, S6-2 (S1-4 is fixed).
 7. **Deploy and configuration (§4.5):** S7-2, S7-4, and, before the pages-domain move is run, K3-6, S4-1
    and S4-3; then the configuration minors.
 8. **Brand capture (§4.6):** S6-1, S6-3, then the capture minors.
-9. **Everything else:** the remaining Important findings (K1-3, K1-5, K4-1, K4-3, K4-5, K6-2, K6-3, S1-2,
-   S1-3), the minors, and the stale-comment sweep from S8.
+9. **Everything else:** the remaining Important findings (K1-3, K1-5, K4-1, K4-3, K4-5, K6-2, K6-3, S1-3),
+   the minors, and the stale-comment sweep from S8.
 
 Founder decisions needed before or during the pass:
 - **K3-1:** which simple fix;
