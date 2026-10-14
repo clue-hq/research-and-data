@@ -363,13 +363,28 @@ export function transitionsOf(brand: BrandData, recipe: MeasuredRecipe | null | 
 
 export type DrawnIcon = { position: "start" | "end"; glyph?: string; svg?: string };
 
+/** The icon's root `<svg>` at the size it was measured at on the seller's site. The seller's CSS often
+ * sizes it (Tailwind's w-4 h-4, Font Awesome), so its captured markup has no size, or one the CSS
+ * overrode, and it drew at 0x0 on our sites while the Brand page showed it (review S6-2). The
+ * measured size replaces whatever width and height the root tag carried. */
+function sizedSvg(markup: string, width: number, height: number): string {
+  return markup.replace(/^<svg\b([^>]*)>/, (_tag, attributes: string) => {
+    const rest = attributes.replace(/\s(?:width|height)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/g, "");
+    return `<svg width="${width}" height="${height}"${rest}>`;
+  });
+}
+
 /** The icon the seller's site draws in this button style, if the kit kept one. */
 export function lookIcon(brand: BrandData, look: Look | null): DrawnIcon | null {
   const icon = look?.measured?.icon;
   if (!icon) return null;
   const value = styleOf(brand, icon.token);
   if (value?.kind === "glyph") return { position: icon.position, glyph: value.text };
-  if (value?.kind === "svg") return { position: icon.position, svg: value.markup };
+  if (value?.kind === "svg") {
+    // A kit written before icons were measured may carry no size: its markup is drawn as captured.
+    const measured = [value.width, value.height].every((n) => typeof n === "number" && Number.isFinite(n) && n > 0);
+    return { position: icon.position, svg: measured ? sizedSvg(value.markup, value.width, value.height) : value.markup };
+  }
   return null;
 }
 

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { makeKit } from "../src/agent-kit";
-import { colorOf } from "../src/brand-values";
+import { colorOf, styleOf } from "../src/brand-values";
 import { buttonLooks, cardLooks } from "../src/looks";
 import { logoFiles } from "../src/shell";
 import { garner } from "./fixtures/garner";
@@ -46,6 +46,27 @@ test("a look draws the seller's own icon where the site has one", () => {
   assert.match(markup, /<span>Go<\/span><span aria-hidden="true" class="brand-btn-icon"><svg [^>]*viewBox="0 0 12 12"/);
   const outline = buttonLooks(brand).find((look) => look.name === "outline.0d2b25")!;
   assert.ok(html(kit.Button({ label: "More", href: "/", surface: "page", look: outline.name })).includes('<span aria-hidden="true" class="brand-btn-icon">→</span>'));
+});
+
+// Review finding S6-2: the seller's CSS often sizes a button's icon (Tailwind's w-4 h-4, Font
+// Awesome); its captured markup then has no size and drew at 0x0 on our sites while the Brand page
+// showed it. The kit keeps the size the icon was measured at, and the icon is drawn at it.
+test("S6-2: a button icon is drawn at the size it was measured at, whatever its markup says", () => {
+  const brand = kitBrand("probe.minted");
+  const solid = buttonLooks(brand).find((look) => colorOf(brand, look.measured?.rest.fill) === "#047464")!;
+  const value = styleOf(brand, solid.measured!.icon!.token) as { kind: "svg"; markup: string; width: number; height: number };
+  value.markup = value.markup.replace(/\s(width|height)="[^"]*"/g, "");
+  value.width = 16;
+  value.height = 14.5;
+  const markup = html(makeKit(href, brand).Button({ label: "Go", href: "/", surface: "page", look: solid.name }));
+  assert.match(markup, /<span aria-hidden="true" class="brand-btn-icon"><svg width="16" height="14.5" [^>]*viewBox="0 0 12 12"/);
+  value.markup = value.markup.replace("<svg", '<svg width="100%" height="1em"');
+  const resized = html(makeKit(href, brand).Button({ label: "Go", href: "/", surface: "page", look: solid.name }));
+  assert.match(resized, /<svg width="16" height="14.5" /, "the measured size wins over the markup's own");
+  assert.equal((resized.match(/ width=/g) ?? []).length, 1);
+  delete (value as { width?: number }).width;
+  const unmeasured = html(makeKit(href, brand).Button({ label: "Go", href: "/", surface: "page", look: solid.name }));
+  assert.ok(unmeasured.includes('<svg width="100%" height="1em"') && !unmeasured.includes("undefined"), "an unmeasured icon is drawn as captured");
 });
 
 test("kit.Link and kit.Card are drawn like the seller's links and cards", () => {
