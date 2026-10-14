@@ -35,3 +35,18 @@ publishing (spec §12).
 - Scope of this round (founder): phase 1 live core (most important), phase 3 embeds, phase 4 snippets,
   phase 5 group 4.3 + K1-3, and the pages-domain prerequisite (group 4.5 + move). Phase 2 (forms,
   lead email, tracking) deferred to a later round — email service choice therefore not needed yet.
+
+## Later 2026-10-15 — plan, group 4.5, first group 4.3 fixes
+- Phase 1 plan written from code reads: `docs/superpowers/plans/2026-10-15-publishing-live-sites-phase-1.md`
+  (12 tasks; Task 1 is a go/no-go hydration spike; skill text and the publish refusal wording stop for
+  founder review). Execution method not chosen yet.
+- Group 4.5 fixed by an Opus implementer, verified first-hand (diffs read, tests re-run): S4-1 `35c7d041d`
+  (migration `abf95e465478`, single head; applied ONLY to the test DB `clue_trenton_wave1` — the lane DB
+  `clue_trenton` needs `alembic upgrade head` before the stack runs this code; no duplicate labels there),
+  K3-6 `c89572925` + runbook `f151c3407` + Worker comment `43c3a7c94`, S4-3 `58f9993bb`, S7-3 `c55287d17`.
+- Group 4.3, architecture-independent fixes: K5-2 `4dc4ca79c` (one themeBlock for editor and publish),
+  K1-2 `7508b3d0d`, K1-3 `935b115b8`, S2b-8 `84bea4ed4`, S6-2 size half `73e96999a` (icon drawn at stored size).
+  Deferred to the live spec: K2-1 (phase 1 Task 2), S1-5, S2a-2, S6-2 colour, parity test (phase 5).
+- Review docs: 62 open (1 Critical parked, 19 Important, 42 Minor).
+- Pre-existing, not ours: `npx tsc --noEmit -p apps/frontend` reports errors in old test files
+  (design-editor engine tests, brand-context, workspace-switcher); the gate is lint + build.

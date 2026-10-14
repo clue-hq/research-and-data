@@ -67,7 +67,7 @@ seams down as nine "contracts".
 | | Count | Ids |
 |---|---|---|
 | **Open, Critical** | 1 | K4-2 (parked, see §3) |
-| **Open, Important** | 13 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-2, K6-3 |
+| **Open, Important** | 9 | K1-5, K2-1, K3-2, K4-1, K4-3, K4-5, K5-5, K6-2, K6-3 |
 | **Open, Minor** | 13 | K1-6, K1-7, K1-8, K2-2, K3-7, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
 | **Resolved** (by A9's fix wave) | 4 | K5-1, K5-3, K5-4, K5-7 |
 | **Fixed** (by the editor sync fix, 2026-10-14) | 3 | K1-4, K3-3, K3-5 |
@@ -75,10 +75,11 @@ seams down as nine "contracts".
 | **Closed as ruled** (2026-10-14, fixes 1+2, residual accepted) | 1 | K3-1 |
 | **Fixed** (2026-10-14, root-cause group §4.4 of the area document) | 2 | K6-1, K3-4 |
 | **Fixed** (2026-10-14, config guard in §4.5) | 1 | K3-8 |
+| **Fixed** (2026-10-15, §4.5 domain move and §4.3's first fixes) | 4 | K3-6, K5-2, K1-2, K1-3 |
 | **Duplicate** | 1 | K4-4 (= K3-3) |
 
 **Update 2026-10-14:** the editor sync fix (`docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`) closed K1-4, K3-3 and K3-5, each from a failing
-test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). Then group §4.4 (wrong-account state) closed K6-1 and K3-4: **28 open** (1 Critical, 13 Important, 14 Minor); then K3-8: **27 open** (13 Minor). The rest are fixed in the fix
+test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). Then group §4.4 (wrong-account state) closed K6-1 and K3-4: **28 open** (1 Critical, 13 Important, 14 Minor); then K3-8: **27 open** (13 Minor); then, 2026-10-15, K3-6 (§4.5) and K5-2, K1-2, K1-3 (§4.3): **23 open** (1 Critical, 9 Important, 13 Minor). The rest are fixed in the fix
 pass that follows the S-unit review, each from a failing test, and only the fix changes are re-reviewed.
 The area document's §4.1 records the sync fix as a whole.
 
@@ -101,8 +102,8 @@ The area document's §4.1 records the sync fix as a whole.
 | Id | Severity | In one line | Status |
 |---|---|---|---|
 | K1-1 | Critical | An account that has a site breaks its Insights, Artifacts and Activity pages | **fixed** |
-| K1-2 | Important | The agent can save a site the editor then refuses to open | open |
-| K1-3 | Important | Restoring an older version can be refused because of the clones that version used | open |
+| K1-2 | Important | The agent can save a site the editor then refuses to open | **fixed** |
+| K1-3 | Important | Restoring an older version can be refused because of the clones that version used | **fixed** |
 | K1-4 | Important | After a refused save the canvas keeps the refused edit, and nothing typed after it saves | **fixed** (sync fix) |
 | K1-5 | Important | Renaming a site while the agent works throws away the agent's whole request | open |
 | K1-6 | Minor | Undo, redo and restore quietly undo a rename | open |
@@ -115,7 +116,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K3-3 | Important | On the standalone artifact page, the marketer's own saves wipe what they are typing | **fixed** (sync fix) |
 | K3-4 | Important | After switching workspace, sites open on the previous workspace's editor domain | **fixed** |
 | K3-5 | Important | An update arriving while the editor loads is lost, and the older site is saved over the newer | **fixed** (sync fix) |
-| K3-6 | Important | The domain-move runbook leaves published pages down mid-move | open (operational) |
+| K3-6 | Important | The domain-move runbook leaves published pages down mid-move | **fixed** |
 | K3-7 | Minor | One workspace's agent code can break every workspace's editor in that browser via cookies | open |
 | K3-8 | Minor | Nothing stops the pages domain sharing the editor's domain | **fixed** |
 | K4-1 | Important | A run taken over after a worker dies says "built" and saves nothing | open |
@@ -127,7 +128,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K4-7 | Minor | A failed research read looks like "no research yet", and nobody is told | open |
 | K4-8 | Minor | The site agent cannot ask a clarifying question properly | open |
 | K5-1 | Critical (process) | A9's fix wave was missing from the first review base | **resolved** (merged `ecdb283db`) |
-| K5-2 | Important | The editor canvas has none of the brand's spacing | open |
+| K5-2 | Important | The editor canvas has none of the brand's spacing | **fixed** |
 | K5-3 | Critical | A font name could break out of the theme stylesheet | **resolved** (A9 fix wave) |
 | K5-4 | Important | Unreadable text and invisible buttons on some surfaces | **resolved** (A9 fix wave) |
 | K5-5 | Important | Agent code can inject CSS into the published page | open |
@@ -176,7 +177,7 @@ between the apps. Lanes A, B and C, plus site-kit's shared schema.
   already does for the Head of ABM.
 
 #### K1-2 — The agent can save a site the editor then refuses to open
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-15 (`7508b3d0d`): the save check applies the editor's own id rule to every section, and adding an agent section refuses a schema whose id is not required text.
 - **What a person sees:** the site saves, renders and publishes fine. Opening it in the editor fails with
   `pages./.content.N.props.id: Invalid input: expected string`, in preview too. The document is stuck
   until another agent turn repairs it.
@@ -197,7 +198,7 @@ between the apps. Lanes A, B and C, plus site-kit's shared schema.
   pattern, whatever the section's schema says; and compile requires `id` to be a required `z.string()`.
 
 #### K1-3 — Restoring an older version can be refused because of the clones that version used
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-15 (`935b115b8`): a restore is checked against the brand of the site it brings back.
 - **What a person sees:** the person picks version 4 in the Versions menu and is refused with
   `…fragmentId: "frag_A" is not one of this brand's clones`. Undo back to the same state works, so restore
   and undo disagree, although the plan says a restore lands exactly the site that stood before.
@@ -431,7 +432,7 @@ pages domain, custom domains, and the planned move of published pages to a new d
   after; or each edit carries the version it started from, and the app refuses a stale one.
 
 #### K3-6 — The domain-move runbook leaves published pages down mid-move
-- **Severity:** Important (operational). Status: open; the move has not happened yet, so nothing is broken today.
+- **Severity:** Important (operational). Status: **fixed** 2026-10-15 (`c89572925`, `f151c3407`, `43c3a7c94`): the page origin serves a system address by its label on the system suffix and every legacy one, and runbook §8 turns the 301 on last.
 - **What a person sees (during the move):** every old published link answers with a permanent redirect
   to the new domain, and the new domain answers "not found" until the hostname rows are moved. Browsers
   cache the permanent redirect. The runbook says each step is safe to stop after.
@@ -586,7 +587,7 @@ How a brand's colours, fonts, surfaces and spacing travel from A9's brand kit in
 editor canvas and the published page.
 
 #### K5-2 — The editor canvas has none of the brand's spacing
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-15 (`4dc4ca79c`): the canvas's theme is built by the same function as the published page's (site-kit `themeBlock`), pinned by a test.
 - **What a person sees:** in the editor, sections have no section padding, no vertical rhythm, no card
   padding and no page margin, so everything looks collapsed. The published page is spaced correctly. The
   marketer edits against a layout that does not match what visitors see.

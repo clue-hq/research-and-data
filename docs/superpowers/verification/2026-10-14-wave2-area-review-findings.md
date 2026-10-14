@@ -18,6 +18,12 @@ durable record.
 > K3-1 was then closed as ruled (fixes 1 and 2), and root-cause group §4.4 (one account's state leaking into
 > another's) was fixed: K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6; then S7-2, S7-4, K3-8 and S2b-9 from §4.5.
 > **70 remain open** (1 Critical — K4-2, parked — 24 Important, 45 Minor).
+>
+> Update 2026-10-15: §4.5's domain-move findings K3-6, S4-1, S4-3 and S7-3, and §4.3's first fixes K5-2,
+> K1-2, K1-3 and S2b-8 (S6-2's size half too). **62 remain open** (1 Critical, 19 Important, 42 Minor).
+> §4.3 is now re-cut by the founder's direction that published sites run their JavaScript
+> (`docs/superpowers/specs/2026-10-15-publishing-live-sites-design.md` §13): K2-1 is in that spec's
+> phase 1 plan; S1-5, S2a-2, S6-2's colour half and the parity test are in its phase 5.
 
 ---
 
@@ -82,14 +88,14 @@ Still open after the editor sync fix (2026-10-14):
 |---|---|---|---|---|
 | S1 | 0 | 2 | 5 | S1-1, S1-2, S1-4 |
 | S2a | 0 | 2 | 6 | S2a-1, S2a-4 |
-| S2b | 0 | 0 | 3 | S2b-2, S2b-3, S2b-4; then S2b-1, S2b-5, S2b-6 (§4.4), S2b-9 |
+| S2b | 0 | 0 | 2 | S2b-2, S2b-3, S2b-4; then S2b-1, S2b-5, S2b-6 (§4.4), S2b-9, S2b-8 |
 | S3 | 0 | 2 | 5 | S3-3 |
-| S4 | 0 | 1 | 2 | — |
+| S4 | 0 | 0 | 1 | S4-1, S4-3 (§4.5) |
 | S5 | 0 | 1 | 1 | S5-2 (§4.4) |
 | S6 | 0 | 3 | 9 | — |
-| S7 | 0 | 0 | 1 | S7-1 (option A), S7-2, S7-4 |
+| S7 | 0 | 0 | 0 | S7-1 (option A), S7-2, S7-4, S7-3 |
 | S8 | 0 | 0 | 0 | — |
-| **Total open** | **0** | **11** | **32** | 17 fixed |
+| **Total open** | **0** | **10** | **29** | 21 fixed |
 
 **60 findings** from the area review, all open. Together with the contract review's 35 open findings, the
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
@@ -397,7 +403,7 @@ The six Critical findings across the whole review:
 - **Where:** `features/site-editor/hooks/use-site-editor-origin.ts:24-39`.
 
 #### S2b-8 — The brand is read once per site per tab, so a retired clone brought back by undo shows as "Choose a cloned section"
-- **Severity:** Minor. Status: open. (Fixing K1-3 alone won't make an old version display correctly.)
+- **Severity:** Minor. Status: **fixed** 2026-10-15 (`84bea4ed4`, with K1-3 `935b115b8`): a load that shows a clone the editor's brand lacks reads the brand again, and the frame is re-initialised with it.
 - **Where:** `features/site-editor/hooks/use-site-document.ts:41-43`.
 
 #### S2b-9 — Nothing stops the editor domain being set to the app's own domain
@@ -478,7 +484,7 @@ The six Critical findings across the whole review:
 
 #### S4-1 — During the move to a new pages domain, one workspace can receive another workspace's published links
 - **Severity:** Important (a cross-workspace takeover of links customers have already sent to prospects).
-  Status: open. Nothing has moved yet, so no one is affected today.
+  Status: **fixed** 2026-10-15 (`35c7d041d`): a system label is unique whatever its domain (migration `abf95e465478`; the upgrade refuses, naming them, if two workspaces already share one).
 - **What could happen:** while the operator is between steps 3 and 4 of the domain-move runbook, which says
   each step is safe to stop after:
   - **By accident:** a new customer signs up as "Acme" and is given `acme.<new domain>`, because only the new
@@ -519,7 +525,7 @@ The six Critical findings across the whole review:
   the tools themselves; never trust "who is writing" from the request.
 
 #### S4-3 — The domain-move script can report "all moved" while one row stayed behind
-- **Severity:** Minor. Status: open. If a label changes between the script's read and its update, that row
+- **Severity:** Minor. Status: **fixed** 2026-10-15 (`58f9993bb`): the move locks its rows, checks each update and re-counts; any row left behind refuses the whole move. If a label changes between the script's read and its update, that row
   isn't moved, yet the script reports the full count and "applied". Only a startup warning catches it later.
 - **Where:** `libs/clue-spine/clue_spine/hostnames.py:386-403`; `scripts/move_system_hostnames.py:58-72`.
 - **How we know:** probe re-run: "rows 2, applied" while the second workspace stayed on the old domain.
@@ -605,7 +611,7 @@ The six Critical findings across the whole review:
   only if it is readable, otherwise pick a readable colour.
 
 #### S6-2 — A button icon that the seller's CSS sizes or colours never shows on our sites
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **size half fixed** 2026-10-15 (`73e96999a`): site-kit draws the icon at the size the kit stores. Still open: the colour half (capture must write the icon's computed fill and stroke; existing kits gain it only on a founder-approved re-capture).
 - **What a person sees:** the seller's buttons carry an arrow icon sized by CSS classes (the common
   Tailwind/Heroicons and Font Awesome pattern). The Brand page shows the arrow, so the marketer believes
   the brand's buttons have it; on every site the icon is missing (drawn 0×0). An icon coloured by a CSS
@@ -724,7 +730,7 @@ The six Critical findings across the whole review:
   empty in production; give the canvas a timeout that says the editor did not answer.
 
 #### S7-3 — With a pages domain like `pages.clue.co.uk`, customers' custom domains under `.co.uk` would stop being served
-- **Severity:** Minor (depends on a domain choice not made yet). Status: open.
+- **Severity:** Minor (depends on a domain choice not made yet). Status: **fixed** 2026-10-15 (`c55287d17`): `check_prod_env.py` refuses a pages domain under a two-label public suffix, for every backend role.
 - **Why:** the edge Worker guesses "our zone" as the last two labels (`co.uk`), while the platform uses the
   Public Suffix List (`clue.co.uk`). A customer domain like `abm.acme.co.uk`, which the platform lets them
   connect, is then treated as our own record and not forwarded.
@@ -860,6 +866,13 @@ draws static HTML and compiles CSS over that page. Each difference between the t
 **The shared fix:** one test that takes a real fixture site, renders it both ways, and compares the
 results: classes resolved, styles computed, elements present. Each of these bugs would have failed it.
 
+**Status (2026-10-15):** the founder ruled that published sites run their JavaScript (live React, not static
+HTML); the group is re-cut on that design (`docs/superpowers/specs/2026-10-15-publishing-live-sites-design.md`
+§13). Fixed, each from a failing test, and independent of that decision: K5-2 (`4dc4ca79c`), K1-2
+(`7508b3d0d`), S2b-8 with its server half K1-3 (`84bea4ed4`, `935b115b8`), S6-2's size half (`73e96999a`). K2-1 is in
+the live spec's phase 1 plan (`docs/superpowers/plans/2026-10-15-publishing-live-sites-phase-1.md`, Task 2);
+S1-5, S2a-2, S6-2's colour half and the parity test are in its phase 5. S1-4 was fixed by the sync fix.
+
 ### 4.4 State that belongs to one account's site leaks into another's
 **Findings:** K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6.
 
@@ -899,7 +912,11 @@ when an async step completes.
   is fixed.
 
 **This group gated everything else.** S7-1 is fixed (option A, 2026-10-14) and S2b-2, which blocked every
-live walk, is fixed; the rest of the group remains.
+live walk, is fixed; then S7-2, S7-4, K3-8, S2b-9 (2026-10-14) and the domain-move findings K3-6, S4-1, S4-3,
+S7-3 (2026-10-15: label unique across domains, the origin serving either domain by label, the 301 last,
+the move script that refuses rather than leave a row behind, a two-label suffix refused). Only K3-7 (the
+Public Suffix List request and an editor-server fallback) remains. Before runbook §8 step 2 in production,
+these fixes must be deployed and migration `abf95e465478` run.
 
 ### 4.6 Brand capture misses common modern patterns
 **Findings:** S6-1, S6-2, S6-3, and S6-4 to S6-12.
