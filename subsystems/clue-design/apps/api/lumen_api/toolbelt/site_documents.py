@@ -118,10 +118,14 @@ def write_site_document(
         if error.code == SECTION_MODULE_MISSING:
             raise SiteDocumentInvalid([f"agent_sections: {error.message}"]) from error
         raise
+    # The brand lists the catalog's clones plus the ones the site it is built from already uses. A
+    # restore lands a site that stood before, so it is checked against the brand of THAT site: a
+    # clone the current site replaced and the catalog has since retired stays restorable, as undo
+    # to the same state always was (review finding K1-3).
     errors = check_site_document(
         prepared,
         document_id=document_id,
-        brand=brand_loader(repository, blobs, document),
+        brand=brand_loader(repository, blobs, {**document, "scene": prepared} if restoring else document),
         sections=sections,
         blobs=blobs,
         node_bin=node_bin,

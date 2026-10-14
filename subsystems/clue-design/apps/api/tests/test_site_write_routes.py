@@ -260,3 +260,48 @@ def test_every_site_write_reports_the_version_it_produced_not_a_later_one(
     restored = client.post(f"/documents/{DOC}/site/versions/{batch}/restore", json={"base_version": current})
     assert restored.status_code == 200, restored.text
     assert restored.json()["document"]["current_version"] == produced[-1]
+
+
+def test_k1_3_a_restore_may_bring_back_a_clone_the_current_site_no_longer_uses(client: TestClient) -> None:
+    """Review finding K1-3. The brand a save is checked against lists the clones the catalog offers
+    plus the ones the site's pages already use (``site_workspace_view.pinned_site_clones``). Here the
+    catalog no longer offers clone A (replaced by B): the loader below gives exactly that, a brand
+    whose clones are the ones the document it is handed uses. Restoring the version that used A
+    must be checked against the site being restored, not the current one — undo to the same state
+    already worked, and a restore lands exactly the site that stood."""
+    site, brand = hold_site_images(garner_site(DOC), garner_brand(), make_blob_store(client.app))
+    store_site(born_site(DOC))
+    install_site_inputs(client.app, brand)
+    clone_a = "frag_9fa31f37a0b94447"
+    clone_b = "frag_9fa31f37b0b94447"
+    brand["clones"][clone_b] = {**brand["clones"][clone_a], "id": clone_b}
+
+    def used_by(site: dict) -> set[str]:
+        return {
+            str(item["props"].get("fragmentId"))
+            for page in site["pages"].values()
+            for item in page["content"]
+            if item["type"] == "ClonedSection"
+        }
+
+    retired: set[str] = set()
+
+    def catalog(repo, blobs, document):
+        # The catalog's clones (minus the retired ones) plus every clone the handed site uses.
+        pinned = used_by(document["scene"]) if document.get("scene", {}).get("pages") else set()
+        clones = {cid: clone for cid, clone in brand["clones"].items() if cid not in retired or cid in pinned}
+        return {**brand, "clones": clones}
+
+    client.app.state.site_brand_loader = catalog
+    assert save(client, site, 0).status_code == 200  # v1 uses A, which the catalog still offers
+    with_b = copy.deepcopy(site)
+    for item in with_b["pages"]["/"]["content"]:
+        if item["props"].get("fragmentId") == clone_a:
+            item["props"]["fragmentId"] = clone_b
+    assert save(client, with_b, 1).status_code == 200  # v2 replaced A with B
+    retired.add(clone_a)  # and A is retired from the catalog
+    versions = client.get(f"/documents/{DOC}/site/versions").json()["versions"]
+    first = next(entry["batch_id"] for entry in versions if entry["version"] == 1)
+    restored = client.post(f"/documents/{DOC}/site/versions/{first}/restore", json={"base_version": 2})
+    assert restored.status_code == 200, restored.text
+    assert clone_a in used_by(stored_site(client))
