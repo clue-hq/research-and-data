@@ -66,16 +66,17 @@ seams down as nine "contracts".
 
 | | Count | Ids |
 |---|---|---|
-| **Open, Critical** | 2 | K3-1, K4-2 (K4-2 parked, see §3) |
+| **Open, Critical** | 1 | K4-2 (parked, see §3) |
 | **Open, Important** | 15 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-4, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-1, K6-2, K6-3 |
 | **Open, Minor** | 14 | K1-6, K1-7, K1-8, K2-2, K3-7, K3-8, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
 | **Resolved** (by A9's fix wave) | 4 | K5-1, K5-3, K5-4, K5-7 |
 | **Fixed** (by the editor sync fix, 2026-10-14) | 3 | K1-4, K3-3, K3-5 |
 | **Fixed** (2026-10-14, after the sync fix) | 1 | K1-1 |
+| **Closed as ruled** (2026-10-14, fixes 1+2, residual accepted) | 1 | K3-1 |
 | **Duplicate** | 1 | K4-4 (= K3-3) |
 
 **Update 2026-10-14:** the editor sync fix (`docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`) closed K1-4, K3-3 and K3-5, each from a failing
-test; K1-1 followed the same day. **31 K findings remain open** (2 Critical, 15 Important, 14 Minor). The rest are fixed in the fix
+test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). The rest are fixed in the fix
 pass that follows the S-unit review, each from a failing test, and only the fix changes are re-reviewed.
 The area document's §4.1 records the sync fix as a whole.
 
@@ -85,7 +86,7 @@ The area document's §4.1 records the sync fix as a whole.
 
 | Finding | Decision |
 |---|---|
-| **K3-1** (agent code in the editor frame can pose as the editor) | The isolation model was decided on 2026-10-09 (decision D2 in `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md`): agent sections run in **one** editor frame per workspace, on its own domain with no login; a sandbox per section was **rejected** ("no builder does it; the costs multiply per section"). **Founder, 2026-10-14:** that stands, no per-section isolation; take a simple fix now and harden over time. **Which simple fix is not decided yet; waiting on the founder.** |
+| **K3-1** (agent code in the editor frame can pose as the editor) | The isolation model was decided on 2026-10-09 (decision D2 in `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md`): agent sections run in **one** editor frame per workspace, on its own domain with no login; a sandbox per section was **rejected** ("no builder does it; the costs multiply per section"). **Founder, 2026-10-14:** that stands, no per-section isolation; take a simple fix now and harden over time. **Founder, 2026-10-14 (later): fixes 1 and 2** — undo/redo from the frame only while editing, and a fresh frame for each different site — built in `9db8f20dd`. Fix 3 not taken; the remaining forged-save-while-editing case is accepted. The same day, external links clicked in the preview open in a new tab (asked through the app, only after a real click). |
 | **K4-2** (sensitive research reaching the page writer) | **Founder, 2026-10-14: parked.** Privacy and verification guards get their own dedicated sprint, after the basic layer works. K4-2 is not part of this fix pass, and live site runs on trenton may go ahead meanwhile. |
 | **K1-7** (the dock shows the agent's raw error text) | Wording is a founder/design call. Owed. |
 | **K6-4** (no page navigation on phones) | Needs a design ruling. Owed. |
@@ -107,7 +108,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K1-8 | Minor | The agent's own restore brings back the pages but not that version's sections | open |
 | K2-1 | Important | A section can publish fine yet be impossible to open in the editor | open |
 | K2-2 | Minor | The section checker refuses ordinary copy that contains a class-like word | open (narrowed) |
-| K3-1 | Critical | Agent code in the editor frame can save, undo and redo as the marketer | open (founder deciding the fix) |
+| K3-1 | Critical | Agent code in the editor frame can save, undo and redo as the marketer | **closed as ruled** (fixes 1+2) |
 | K3-2 | Important | Agent code can send the editor frame to any website, inside the app | open |
 | K3-3 | Important | On the standalone artifact page, the marketer's own saves wipe what they are typing | **fixed** (sync fix) |
 | K3-4 | Important | After switching workspace, sites open on the previous workspace's editor domain | open |
@@ -324,7 +325,7 @@ The messages between the app and the editor frame, and the domains: the editor d
 pages domain, custom domains, and the planned move of published pages to a new domain.
 
 #### K3-1 — Agent code in the editor frame can save, undo and redo as the marketer
-- **Severity:** Critical. Status: open; **the founder is deciding the fix** (see §3).
+- **Severity:** Critical. Status: **closed as ruled** 2026-10-14 (`9db8f20dd`): founder chose fixes 1 and 2 — the frame may ask for undo/redo only while the marketer is editing, and a different site gets a fresh frame. **Accepted residual:** a section's code can still forge a save while the marketer is editing that same site (per-section isolation stays ruled out, D2); every save is a restorable version and publishing is always the person's own action. Fix 3 (only after a real click) was not taken.
 - **What a person sees:** nothing; that is the danger. While the marketer has a site open, a hostile or
   badly behaved agent-written section on it can:
   - in edit mode, save any content as the marketer, for example swap a button's link to a phishing page,

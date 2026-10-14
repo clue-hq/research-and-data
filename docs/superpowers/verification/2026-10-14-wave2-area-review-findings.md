@@ -15,7 +15,7 @@ durable record.
 >
 > Update 2026-10-14: the editor sync fix (§4.1) closed 12 findings across both documents: S1-1, S1-2, S1-4,
 > S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. K1-1 and S7-1 followed the same day.
-> **81 remain open** (2 Critical — K3-1, awaiting the founder's choice of fix, and K4-2, parked — 29 Important,
+> K3-1 was then closed as ruled (fixes 1 and 2). **80 remain open** (1 Critical — K4-2, parked — 29 Important,
 > 50 Minor).
 
 ---
@@ -105,7 +105,7 @@ The six Critical findings across the whole review:
 | Id | One line |
 |---|---|
 | K1-1 | An account that has a site breaks its Insights, Artifacts and Activity pages (**fixed**) |
-| K3-1 | Agent code in the editor frame can save, undo and redo as the marketer (founder choosing the fix) |
+| K3-1 | Agent code in the editor frame can save, undo and redo as the marketer (**closed as ruled**: fixes 1+2; forged save while editing the same site accepted) |
 | K4-2 | A long research section reaches the page writer past the privacy filter (parked) |
 | S1-1 | Moving between pages resets a cloned section to the seller's wording, and saves it (**fixed** by the sync fix) |
 | S2a-1 | ⌘Z in a cloned section's text rewinds the whole page and saves it (**fixed** by the sync fix) |
@@ -925,7 +925,7 @@ One pass, each fix starting from a failing test, then a review of only the fix c
 2. ~~**Stop losing work (§4.1)**~~ — **done 2026-10-14** by the editor sync fix (S1-1, S2a-1, K1-4, K3-3, K3-5,
    S2b-2, S2b-3, S2b-4, S3-3, S2a-4, plus S1-2 and S1-4).
 3. ~~**K1-1**~~ — **done 2026-10-14**.
-4. **Security (§4.2):** S5-1, S3-1, K5-5, K3-2, S3-2, S2a-3, S4-2, and K3-1 once the founder picks the fix.
+4. **Security (§4.2):** S5-1, S3-1, K5-5, K3-2, S3-2, S2a-3, S4-2. (K3-1 closed as ruled, 2026-10-14.)
 5. **Wrong-account state (§4.4):** K6-1, S2b-1, S5-2, K3-4, then the minors.
 6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-5,
    S2a-2, S2b-8, S6-2 (S1-4 is fixed).
@@ -936,7 +936,7 @@ One pass, each fix starting from a failing test, then a review of only the fix c
    the minors, and the stale-comment sweep from S8.
 
 Founder decisions needed before or during the pass:
-- **K3-1:** which simple fix;
+- ~~**K3-1:** which simple fix~~ — decided 2026-10-14: fixes 1 and 2;
 - **K1-7:** the wording of error lines (it also covers S2a-9 and S3-8);
 - **K6-4:** phone navigation for multi-page sites;
 - ~~**S7-1:** the container sandbox posture~~ — decided 2026-10-14: option A.

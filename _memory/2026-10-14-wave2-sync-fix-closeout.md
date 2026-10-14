@@ -60,3 +60,18 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
   run_python) — options in the note §6, awaiting founder.
 - Review now 81 open: 2 Critical (K3-1 awaiting the founder's fix choice; K4-2 parked), 29 I, 50 M.
 - K3-1 explained to the founder in plain terms; verdict pending (recommended fixes 1+2).
+
+## K3-1 closed as ruled + external links (2026-10-14)
+- Founder chose K3-1 fixes 1 and 2 (after a plain-language explanation: section CODE in the frame,
+  not the agent, is the risk; the agent's undo/redo/write go through its own server-side tools and
+  are untouched). `9db8f20dd`: app takes frame `shortcut` only when editing (acceptsFrameEdits);
+  `useSiteFrameHost({documentId})` mints a new nonce per different site, canvas `key={src}` → fresh
+  iframe; same site again keeps the frame. Residual accepted: forged save while editing that site.
+- External links (founder ask): preview link to another site did nothing; now frame → app
+  `open_link` (http(s) only, `ExternalHrefSchema`) → app `window.open(_blank, noopener)` only if
+  `navigator.userActivation.isActive`. Browser test tests/site_editor/test_editor_links.py
+  (red on the old frame, green on new). In preview the DOM has no data-puck-component wrappers.
+- Bridge: `mounted.frame` is now a getter; a new frame address rebinds a new FrameController;
+  `setEditing(on)` added.
+- Gates: site-kit 172, site-editor 61, app site/design-editor 2319, browser 21/21, app 3412/0/5skip,
+  lint 0 errors, build OK. Review: 80 open, 1 Critical (K4-2, parked).
