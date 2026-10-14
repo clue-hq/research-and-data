@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.display.recipes import OPTIONAL_SECTION_KEYS, read_recipes
+from clue_api.arv2.job_resume import research_execution_id
 from clue_api.arv2.person_research_brief import read_person_brief
 from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_generation import read_generation, reconcile_generation
@@ -177,7 +178,7 @@ async def persist(
 
 async def account_research_model(conn: AsyncConnection, scope: JobScope) -> str:
     """Recover the originating research model, scoped to its account job and workspace."""
-    execution_id = uuid5(NAMESPACE_URL, f"research-quality:{scope.job_id}")
+    execution_id = research_execution_id(scope.job_id, scope.restart_count)
     model = (
         await conn.execute(
             text(

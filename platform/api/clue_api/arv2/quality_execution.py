@@ -7,12 +7,14 @@ This mapping joins those existing owners without copying or estimating charges.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain.agents.middleware.types import AgentMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.research_operations import OperationScope, job_available
@@ -20,6 +22,32 @@ from clue_db import ConnFactory
 from clue_obs import get_logger
 
 log = get_logger("arv2.quality.execution")
+
+# Postgres aborts the victim of a deadlock (40P01) or a serialization failure (40001); running the
+# same transaction again is the documented remedy.
+LOCK_CONFLICT_SQLSTATES = frozenset({"40P01", "40001"})
+
+
+async def retry_lock_conflict[T](
+    connections: ConnFactory, work: Callable[[AsyncConnection], Awaitable[T]]
+) -> T:
+    """Run ``work`` in one transaction, and once more in a fresh one if Postgres aborted the first
+    as a lock-conflict victim. Any other error, or a second conflict, propagates.
+
+    Only for short dispatch-bookkeeping transactions that are idempotent on a stable key
+    (``reserve`` replays by activity id; ``operations.begin`` by operation key) and make no
+    external call. The aborted attempt rolled back, so the retry starts from the same state.
+    """
+    try:
+        async with connections() as conn:
+            return await work(conn)
+    except DBAPIError as error:
+        sqlstate = getattr(error.orig, "sqlstate", None)
+        if sqlstate not in LOCK_CONFLICT_SQLSTATES:
+            raise
+        log.warning("arv2.quality.lock_conflict_retry", sqlstate=sqlstate)
+    async with connections() as conn:
+        return await work(conn)
 
 
 class ResearchAllowanceExhausted(RuntimeError):
@@ -104,16 +132,27 @@ async def bind_execution(
             text("""
       SELECT max_model_calls,max_tool_calls,max_delegations,max_runtime_ms
       FROM arv2_quality_allowance
-      WHERE job_id=:job AND workspace_id=:ws FOR UPDATE
+      WHERE job_id=:job AND workspace_id=:ws FOR NO KEY UPDATE
     """),
             {"job": scope.job_id, "ws": scope.workspace_id},
         )
     ).one()
+    granted = (
+        await conn.execute(
+            text("""
+      SELECT COALESCE(sum(top_up_model_calls),0), COALESCE(sum(top_up_tool_calls),0),
+        COALESCE(sum(top_up_delegations),0), COALESCE(sum(top_up_runtime_ms),0)
+      FROM arv2_research_job_resume WHERE job_id=:job AND workspace_id=:ws
+    """),
+            {"job": scope.job_id, "ws": scope.workspace_id},
+        )
+    ).one()
+    # An admin's recorded top-up (spec 2026-10-14 §3.5) is the only way the limits grow.
     if tuple(saved) != (
-        limits.model_calls,
-        limits.tool_calls,
-        limits.delegations,
-        limits.runtime_ms,
+        limits.model_calls + granted[0],
+        limits.tool_calls + granted[1],
+        limits.delegations + granted[2],
+        limits.runtime_ms + granted[3],
     ):
         raise ValueError("research recovery cannot reset the shared allowance")
     await conn.execute(
@@ -157,14 +196,16 @@ async def reserve(
     await runtime_remaining(conn, scope)
     column = {"model": "model_calls", "tool": "tool_calls", "delegation": "delegations"}[kind]
     # Lock one shared job row before checking replay or consuming an allowance. Parent/child
-    # concurrency and process restart cannot overspend the logical execution bounds.
+    # concurrency and process restart cannot overspend the logical execution bounds. Every lock on
+    # this row is NO KEY UPDATE, the level its own UPDATEs take: it still serialises reservations,
+    # and a specialist's execution insert (whose FK names this row) is not blocked by it.
     row = (
         await conn.execute(
             text(f"""
       SELECT a.{column},a.max_{column} FROM arv2_quality_allowance a
       JOIN arv2_quality_execution e ON e.job_id=a.job_id AND e.workspace_id=a.workspace_id
       WHERE e.execution_id=:execution AND a.job_id=:job AND a.workspace_id=:ws
-        AND a.run_id=:run AND a.account_id=:account FOR UPDATE OF a
+        AND a.run_id=:run AND a.account_id=:account FOR NO KEY UPDATE OF a
     """),
             {
                 "execution": execution_id,
@@ -242,14 +283,17 @@ class SharedResearchAllowance(AgentMiddleware[Any, Any, Any]):
         self._domain_tools = domain_tools
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        async with self._connections() as conn:
-            await reserve(
+        activity_id = uuid4()
+        await retry_lock_conflict(
+            self._connections,
+            lambda conn: reserve(
                 conn,
                 self._scope,
                 execution_id=self._execution_id,
                 kind="model",
-                activity_id=uuid4(),
-            )
+                activity_id=activity_id,
+            ),
+        )
         return await handler(request)
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
@@ -259,16 +303,19 @@ class SharedResearchAllowance(AgentMiddleware[Any, Any, Any]):
             call_id = request.tool_call.get("id")
             if not call_id:
                 raise ValueError("research tool dispatch requires a stable call identity")
-            async with self._connections() as conn:
-                await reserve(
+            activity_id = uuid5(
+                NAMESPACE_URL, f"research-native-tool:{self._execution_id}:{call_id}"
+            )
+            await retry_lock_conflict(
+                self._connections,
+                lambda conn: reserve(
                     conn,
                     self._scope,
                     execution_id=self._execution_id,
                     kind="tool",
-                    activity_id=uuid5(
-                        NAMESPACE_URL, f"research-native-tool:{self._execution_id}:{call_id}"
-                    ),
-                )
+                    activity_id=activity_id,
+                ),
+            )
         return await handler(request)
 
 
@@ -297,7 +344,7 @@ async def begin_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: 
     await conn.execute(
         text(
             "SELECT job_id FROM arv2_quality_allowance "
-            "WHERE job_id=:job AND workspace_id=:ws FOR UPDATE"
+            "WHERE job_id=:job AND workspace_id=:ws FOR NO KEY UPDATE"
         ),
         {"job": scope.job_id, "ws": scope.workspace_id},
     )

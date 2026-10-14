@@ -212,6 +212,18 @@ async def register_child(conn: AsyncConnection, generation: Generation, *, job_i
     )
 
 
+def initial_settle_event_id(job_id: UUID, attempt: int) -> UUID:
+    """The account job's initial-settle signal for one attempt.
+
+    Attempt 1 keeps the id every job used before resume existed, so a redelivered settle of an
+    existing job is still a replay. A later attempt (a resumed or restarted job settling again,
+    spec 2026-10-14 §3.4) is a new event, so the generation moves on and its pages follow.
+    """
+    if attempt <= 1:
+        return uuid5(NAMESPACE_URL, f"quality-initial:{job_id}")
+    return uuid5(NAMESPACE_URL, f"quality-initial:{job_id}:attempt:{attempt}")
+
+
 async def signal(
     conn: AsyncConnection, *, workspace_id: str, generation_id: UUID, event_id: UUID, reason: Reason
 ) -> int:

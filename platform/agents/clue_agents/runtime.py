@@ -516,6 +516,7 @@ class DeepAgentTurnRuntime:
         continuation_config: Mapping[str, Any] | None = None,
         compaction_for: Callable[[str], CompactionSettings] | None = None,
         max_finalize_repairs: int | None = None,
+        resume_saved_turn: bool = False,
     ) -> None:
         if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
@@ -526,6 +527,9 @@ class DeepAgentTurnRuntime:
         if long_turn_alert_s is not None and long_turn_alert_s <= 0:
             raise ValueError("a long-turn alert threshold must be positive (None disables it)")
         self._continuation_config = continuation_config
+        # A caller whose turns are re-claimed after a crash (research jobs) continues the turn's
+        # own saved state instead of feeding its opening messages in a second time.
+        self._resume_saved_turn = resume_saved_turn
         # A continued research conversation gets a wider finalize-repair allowance; a caller that
         # continues an ordinary conversation (the Head of ABM) passes the ordinary one.
         self._max_finalize_repairs = (
@@ -789,6 +793,18 @@ class DeepAgentTurnRuntime:
                     state = Command(
                         update={"_summarization_event": previous.values.get("_summarization_event")}
                     )
+            elif self._resume_saved_turn:
+                destination = {
+                    "configurable": {
+                        "thread_id": str(constitution.execution_id),
+                        "checkpoint_ns": "",
+                    }
+                }
+                current = await graph.aget_state(cast(RunnableConfig, destination))
+                if current.values:
+                    # Spec 2026-10-14 §3.1: the saved state already holds this turn's opening
+                    # messages; LangGraph runs the pending step from it.
+                    state = None
             try:
                 result = await asyncio.wait_for(
                     graph.ainvoke(

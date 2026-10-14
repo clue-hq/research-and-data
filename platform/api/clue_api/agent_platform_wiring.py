@@ -20,6 +20,7 @@ from clue_agents import (
     AttachmentDescriber,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
+    ContextReceiptStore,
     DeterministicAgentContextAssembler,
     FocusLayerSource,
     HistoryLayerSource,
@@ -524,6 +525,7 @@ def build_agent_context_assembler(
     attachment_describer: AttachmentDescriber | None = None,
     history_images_max: int = 20,
     conn_factory: ConnFactory = transaction,
+    receipts: ContextReceiptStore | None = None,
 ) -> DeterministicAgentContextAssembler:
     """Compose the one exact L1-L7 production assembler for a resolved role/profile.
 
@@ -565,7 +567,8 @@ def build_agent_context_assembler(
             ),
         ),
         policy=policy,
-        receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),
+        # A resumed turn passes a store that compares and never writes (spec 2026-10-14 §3.1).
+        receipts=receipts or DbAgentContextReceiptStore(conn_factory=conn_factory),
         # The assembler reads the turn's image bytes itself, at the one moment it builds the user
         # message; the same durable store every layer source already reads through.
         artifacts=artifacts,

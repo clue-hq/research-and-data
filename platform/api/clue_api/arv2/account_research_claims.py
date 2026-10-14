@@ -180,6 +180,8 @@ class JobScope:
     employment_history: tuple[str, ...] = ()
     catalog_version: str = "v1"
     input_refs: Mapping[str, Any] | None = None
+    #: The job's restart counter; selects which conversation the job runs (spec 2026-10-14 §3.2).
+    restart_count: int = 0
 
     def __post_init__(self) -> None:
         if self.subject_kind == "person" and self.contact_id is None:
