@@ -79,6 +79,25 @@ test("the upstream immutable cache-control and content-type pass through, nothin
   assert.equal(await response.text(), "bytes");
 });
 
+test("the upstream Access-Control-Allow-Origin passes through — @font-face fetches are CORS-mode from the editor's origin-null sandboxed iframe", async () => {
+  const response = await handlePublicDesignProxyRequest(
+    new Request(`http://localhost/api/clue/design-public/asset-store/${DIGEST}`),
+    ["asset-store", DIGEST],
+    dependencies({
+      fetchImpl: async () =>
+        new Response("bytes", {
+          headers: {
+            "content-type": "font/woff2",
+            "cache-control": "public, max-age=31536000, immutable",
+            "access-control-allow-origin": "*",
+          },
+        }),
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+});
+
 test("a path outside asset-store/<64-hex> is refused with 404 and never forwarded", async () => {
   for (const path of [
     ["font-library"],
