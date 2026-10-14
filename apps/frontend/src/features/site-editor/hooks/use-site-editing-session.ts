@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
+import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
@@ -35,6 +35,7 @@ import {
   type SiteSelection,
 } from "../model/site-selection";
 import { siteStageMounted, type SiteStageBinding } from "../model/site-stage";
+import { loadDecision, SiteWorkingCopy } from "../model/site-working-copy";
 import { useSiteDocument } from "./use-site-document";
 import { useSiteEditorOrigin } from "./use-site-editor-origin";
 import { useSiteFrameHost, type SiteFrameHost } from "./use-site-frame-host";
@@ -44,13 +45,6 @@ import { useSiteVersions } from "./use-site-versions";
 import { fieldsHaveImage, type SiteImageTarget } from "./site-images.logic";
 
 const DEFAULT_REPOSITORY = httpSiteRepository();
-
-/** The app's copy of the site (ruling: the app holds the site JSON and is the only side that saves). */
-export interface AppSite {
-  documentId: string;
-  site: SiteDocument;
-  version: number;
-}
 
 export interface SiteEditingSession {
   activeDocumentId: string | null;
@@ -66,7 +60,6 @@ export interface SiteEditingSession {
   saves: SiteSaves;
   /** The active selection (null outside edit mode or for another document). */
   selection: SiteSelection | null;
-  setSite: (site: SiteDocument) => void;
   site: SiteDocument | null;
   stage: SiteStageBinding;
   version: number | null;
@@ -98,21 +91,31 @@ export function useSiteEditingSession({
   const load = useSiteDocument({ documentId: activeDocumentId, reloadNonce, repository });
   const saves = useSiteSaves({ documentId: activeDocumentId, lockNote: AGENT_RUN_LOCK_NOTE, onReload: reload, repository });
 
-  // Adopt each load as the app's copy: React's adjust-state-on-prop-change pattern, never a setState
-  // inside an effect (this repo's react-hooks rule).
-  const [appSite, setAppSite] = useState<AppSite | null>(null);
-  const [adopted, setAdopted] = useState(load.loaded);
-  if (load.loaded !== adopted) {
-    setAdopted(load.loaded);
-    if (load.loaded) {
-      setAppSite({ documentId: load.loaded.documentId, site: load.loaded.site, version: load.loaded.version });
-    }
-  }
-  const currentSite = appSite && appSite.documentId === activeDocumentId ? appSite : null;
-  const adopt = saves.adopt;
+  // The app's working copy (ruling: the app holds the site JSON and is the only side that saves).
+  // An external store, so every write path reads the CURRENT copy, never a render's closure.
+  const [copy] = useState(() => new SiteWorkingCopy());
+  const working = useSyncExternalStore(copy.subscribe, copy.get, copy.get);
+  const currentSite = working && working.documentId === activeDocumentId ? working : null;
   useEffect(() => {
-    if (load.loaded) adopt(load.loaded);
-  }, [adopt, load.loaded]);
+    // Leaving a document drops its copy; coming back waits for a fresh read (S2b-3).
+    copy.forget();
+  }, [activeDocumentId, copy]);
+  // Each load replaces the copy only when it is not older than what the save queue wrote, and never
+  // while edits are on their way (then it asks for a reload once the queue drains) — a reload read
+  // before our own save landed used to be adopted and erase that save (S2b-3, K3-3).
+  const { adopt: adoptSaves, isIdle: savesIdle, knownVersion, requestReloadWhenIdle } = saves;
+  useEffect(() => {
+    const loaded = load.loaded;
+    if (!loaded || loaded.documentId !== activeDocumentId) return;
+    const decision = loadDecision({ loadedVersion: loaded.version, knownVersion: knownVersion(), idle: savesIdle() });
+    if (decision === "stale") return;
+    if (decision === "defer") {
+      requestReloadWhenIdle();
+      return;
+    }
+    copy.adoptLoad(loaded.documentId, loaded.site);
+    adoptSaves(loaded);
+  }, [activeDocumentId, adoptSaves, copy, knownVersion, load.loaded, requestReloadWhenIdle, savesIdle]);
 
   const [routeState, setRouteState] = useState<{ documentId: string; route: string } | null>(null);
   const route = routeState && routeState.documentId === activeDocumentId ? routeState.route : "/";
@@ -127,9 +130,9 @@ export function useSiteEditingSession({
   const annotateRef = useRef<((payload: { componentId: string; geometry: PendingAnnotation["geometry"]; route: string }) => void) | null>(null);
   const stepRef = useRef<(action: "undo" | "redo") => void>(() => undefined);
 
-  const latest = useRef({ currentSite, editing, locked, save: saves.save });
+  const latest = useRef({ editing, locked, save: saves.save });
   useEffect(() => {
-    latest.current = { currentSite, editing, locked, save: saves.save };
+    latest.current = { editing, locked, save: saves.save };
   });
 
   const handleFrameMessage = useCallback((message: FrameToAppMessage) => {
@@ -151,13 +154,13 @@ export function useSiteEditingSession({
         }));
         return;
       case "changed": {
-        const current = now.currentSite;
-        if (!current || message.documentId !== current.documentId) return;
         // Review focus 5: an edit outside edit mode, or under the agent-run lock, is never saved.
         if (!acceptsFrameEdits({ editing: now.editing, locked: now.locked })) return;
-        if (canonicalJson(message.payload.site) === canonicalJson(current.site)) return;
-        setAppSite({ ...current, site: message.payload.site });
-        now.save(message.payload.site);
+        // A proposal made over an older copy than the app's is refused: the frame is about to show
+        // the newer copy and drops that unsent typing (a stale canvas never overwrites a newer copy).
+        if (copy.propose(message.documentId, message.payload.site, message.payload.baseRev) === "accepted") {
+          now.save(message.payload.site);
+        }
         return;
       }
       case "error":
@@ -187,13 +190,14 @@ export function useSiteEditingSession({
       default:
         return;
     }
-  }, []);
+  }, [copy]);
   const frame = useSiteFrameHost({ editorOrigin: origin.origin, onMessage: handleFrameMessage });
   const { boot, post } = frame;
 
   // Keep the frame in step: init for a new document, new agent sections or a rebooted frame;
-  // replace_site for a new version of the same document (an agent checkpoint, a history step).
-  const sent = useRef<{ initKey: string | null; version: number | null }>({ initKey: null, version: null });
+  // replace_site for each new revision of the working copy (an agent checkpoint, a history step, a
+  // refused save going back). The dock's own patches set `sent.rev` when they go out.
+  const sent = useRef<{ initKey: string | null; rev: number | null }>({ initKey: null, rev: null });
   useEffect(() => {
     if (!activeDocumentId || !currentSite || load.status !== "ready" || !load.brand || boot === 0) return;
     // The URL toolbar's reload bumps `initGeneration`, which forces a fresh init from a fresh read.
@@ -202,8 +206,8 @@ export function useSiteEditingSession({
       frameReady: true,
       initKey,
       sentInitKey: sent.current.initKey,
-      sentVersion: sent.current.version,
-      version: currentSite.version,
+      sentRev: sent.current.rev,
+      rev: currentSite.rev,
     });
     if (sync.kind === "init") {
       // Review focus 4: never hand the frame links that may already have expired.
@@ -219,14 +223,14 @@ export function useSiteEditingSession({
           cancelled = true;
         };
       }
-      sent.current = { initKey, version: currentSite.version };
+      sent.current = { initKey, rev: currentSite.rev };
       post(
         "init",
         {
           brand: load.brand,
           device: "Desktop",
           mode,
-          rev: 0,
+          rev: currentSite.rev,
           route: initialRoute(currentSite.site, route),
           sections: load.links,
           site: currentSite.site,
@@ -236,8 +240,8 @@ export function useSiteEditingSession({
       return;
     }
     if (sync.kind === "replace") {
-      sent.current = { ...sent.current, version: sync.version };
-      post("replace_site", { rev: 0, site: currentSite.site }, activeDocumentId);
+      sent.current = { ...sent.current, rev: sync.rev };
+      post("replace_site", { rev: sync.rev, site: currentSite.site }, activeDocumentId);
     }
   }, [activeDocumentId, boot, currentSite, initGeneration, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
 
@@ -251,13 +255,6 @@ export function useSiteEditingSession({
     post("set_mode", { mode }, activeDocumentId);
   }, [activeDocumentId, boot, mode, post, shownDocumentId]);
 
-  const setSite = useCallback(
-    (site: SiteDocument) => {
-      setAppSite((previous) => (previous && previous.documentId === activeDocumentId ? { ...previous, site } : previous));
-    },
-    [activeDocumentId],
-  );
-
   // The dock (C5): the selected section's fields over the app's own copy of the site, and Layers.
   const activeSelection = editing && selection && selection.documentId === activeDocumentId ? selection : null;
   const cloneLabels = useMemo(() => cloneLabelsOf(load.brand), [load.brand]);
@@ -267,14 +264,18 @@ export function useSiteEditingSession({
   const save = saves.save;
   const commitField = useCallback(
     (name: string, value: unknown) => {
-      if (!activeSelection || !currentSite || !activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
-      const edit = commitFieldEdit(currentSite.site, activeSelection, name, value);
+      // The CURRENT copy, never a render's closure: a canvas edit accepted a moment ago is in it.
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitFieldEdit(current.site, activeSelection, name, value);
       if (!edit) return;
-      setAppSite({ ...currentSite, site: edit.site });
-      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev: 0, route: activeSelection.target }, activeDocumentId);
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
       save(edit.site, `inspector: edit ${name}`);
     },
-    [activeDocumentId, activeSelection, currentSite, editing, locked, post, save],
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
   const selectLayer = useCallback(
     (row: SiteLayerRow) => {
@@ -298,17 +299,20 @@ export function useSiteEditingSession({
   );
   const insertAsset = useCallback(
     (target: SiteImageTarget, url: string): boolean => {
-      if (!currentSite || !activeDocumentId || !acceptsFrameEdits({ editing, locked })) return false;
-      const props = componentProps(currentSite.site, target.target, target.componentId);
+      const current = copy.get();
+      if (!current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return false;
+      const props = componentProps(current.site, target.target, target.componentId);
       if (!props) return false;
       if (getAtPath(props, target.prop) === url) return true;
-      const edited = withAssetAt(currentSite.site, target.target, target.componentId, target.prop, url);
-      setAppSite({ ...currentSite, site: edited });
-      post("insert_asset", { componentId: target.componentId, prop: target.prop, rev: 0, route: target.target, url }, activeDocumentId);
+      const edited = withAssetAt(current.site, target.target, target.componentId, target.prop, url);
+      const rev = copy.edit(current.documentId, edited);
+      if (rev === null) return false;
+      sent.current = { ...sent.current, rev };
+      post("insert_asset", { componentId: target.componentId, prop: target.prop, rev, route: target.target, url }, current.documentId);
       save(edited, `inspector: set image ${target.prop}`);
       return true;
     },
-    [activeDocumentId, currentSite, editing, locked, post, save],
+    [activeDocumentId, copy, editing, locked, post, save],
   );
   const images = useSiteImages({
     clearMessages: saves.clearMessages,
@@ -393,7 +397,7 @@ export function useSiteEditingSession({
     documentId: activeDocumentId,
     repository,
     restore: saves.restore,
-    version: saves.baseVersion ?? currentSite?.version ?? null,
+    version: saves.baseVersion,
   });
   // C10: the page panel and the URL toolbar. Navigation always goes through the frame; its
   // `navigated` answer moves the active row, the route field and the history.
@@ -470,7 +474,6 @@ export function useSiteEditingSession({
     route,
     saves,
     selection: activeSelection,
-    setSite,
     site: currentSite?.site ?? null,
     stage: {
       canvas: {
@@ -486,6 +489,6 @@ export function useSiteEditingSession({
       url,
       versions: activeDocumentId ? versions : null,
     },
-    version: currentSite?.version ?? null,
+    version: saves.baseVersion,
   };
 }

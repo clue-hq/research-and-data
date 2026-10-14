@@ -12,6 +12,8 @@ export interface SiteSaves extends SiteSaveState {
   restore: (batchId: string) => void;
   adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => void;
   isIdle: () => boolean;
+  /** The version the queue's next write will be based on, read now (React state lags a render). */
+  knownVersion: () => number | null;
   requestReloadWhenIdle: () => void;
   reportError: (message: string) => void;
   clearMessages: () => void;
@@ -78,6 +80,7 @@ export function useSiteSaves({
       adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => controller?.adopt(loaded),
       clearMessages: () => controller?.clearMessages(),
       isIdle: () => controller?.isIdle() ?? true,
+      knownVersion: () => controller?.snapshot.baseVersion ?? null,
       redo: () => controller?.redo(),
       reportError: (message: string) => controller?.reportError(message),
       requestReloadWhenIdle: () => controller?.requestReloadWhenIdle(),

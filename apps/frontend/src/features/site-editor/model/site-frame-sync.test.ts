@@ -21,15 +21,12 @@ const site = (sections: Record<string, string> = {}) =>
     agent_sections: sections,
   });
 
-test("a booted frame gets an init first, then replace_site for each new version", () => {
+test("a booted frame gets an init first, then replace_site for each new revision of the working copy", () => {
   const key = siteInitKey("doc-a", site(), 1);
-  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: null, sentVersion: null, version: 3 }), { kind: "init" });
-  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: key, sentVersion: 3, version: 3 }), { kind: "none" });
-  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: key, sentVersion: 3, version: 4 }), {
-    kind: "replace",
-    version: 4,
-  });
-  assert.deepEqual(frameSyncFor({ frameReady: false, initKey: key, sentInitKey: null, sentVersion: null, version: 3 }), { kind: "none" });
+  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: null, sentRev: null, rev: 3 }), { kind: "init" });
+  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: key, sentRev: 3, rev: 3 }), { kind: "none" });
+  assert.deepEqual(frameSyncFor({ frameReady: true, initKey: key, sentInitKey: key, sentRev: 3, rev: 4 }), { kind: "replace", rev: 4 });
+  assert.deepEqual(frameSyncFor({ frameReady: false, initKey: key, sentInitKey: null, sentRev: null, rev: 3 }), { kind: "none" });
 });
 
 test("Review focus 2: another document, new agent sections or a rebooted frame each need a fresh init", () => {

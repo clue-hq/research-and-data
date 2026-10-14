@@ -20,7 +20,11 @@ const LOADING: SiteDocumentLoad = { ...IDLE, status: "loading" };
 
 /** The open site, its brand and its agent-section links, refetched whenever `reloadNonce` moves. A
  * reload of the SAME document keeps the previous load on screen until the new one lands (the web
- * lane's quiet swap); the brand is read once per document. */
+ * lane's quiet swap); the brand is read once per document.
+ *
+ * A load belongs to one VISIT of a document: leaving it (for another site, or a web or ad tab) and
+ * coming back shows LOADING until a fresh read lands, never the copy from the earlier visit, which
+ * the working copy would otherwise adopt with an old version (review finding S2b-3). */
 export function useSiteDocument({
   documentId,
   reloadNonce,
@@ -30,7 +34,15 @@ export function useSiteDocument({
   reloadNonce: number;
   repository: SiteRepository;
 }): SiteDocumentLoad {
-  const [state, setState] = useState<SiteDocumentLoad & { forDocumentId: string | null }>({ ...IDLE, forDocumentId: null });
+  const [state, setState] = useState<SiteDocumentLoad & { forDocumentId: string | null; visit: number }>({
+    ...IDLE,
+    forDocumentId: null,
+    visit: 0,
+  });
+  // React's adjust-state-on-prop-change pattern (never a setState inside an effect).
+  const [visit, setVisit] = useState<{ documentId: string | null; id: number }>({ documentId, id: 0 });
+  if (visit.documentId !== documentId) setVisit({ documentId, id: visit.id + 1 });
+  const visitId = visit.id;
   const brandRef = useRef<{ brand: BrandData; documentId: string } | null>(null);
   useEffect(() => {
     if (!documentId) return;
@@ -45,17 +57,23 @@ export function useSiteDocument({
         ]);
         if (!live) return;
         brandRef.current = { brand, documentId };
-        setState({ brand, error: null, forDocumentId: documentId, links, loaded, loadedAt: Date.now(), status: "ready" });
+        setState({ brand, error: null, forDocumentId: documentId, links, loaded, loadedAt: Date.now(), status: "ready", visit: visitId });
       } catch (error) {
         if (!live) return;
-        setState({ ...IDLE, error: error instanceof Error ? error.message : String(error), forDocumentId: documentId, status: "error" });
+        setState({
+          ...IDLE,
+          error: error instanceof Error ? error.message : String(error),
+          forDocumentId: documentId,
+          status: "error",
+          visit: visitId,
+        });
       }
     })();
     return () => {
       live = false;
     };
-  }, [documentId, reloadNonce, repository]);
+  }, [documentId, reloadNonce, repository, visitId]);
   if (!documentId) return IDLE;
-  if (state.forDocumentId !== documentId) return LOADING;
+  if (state.forDocumentId !== documentId || state.visit !== visitId) return LOADING;
   return state;
 }

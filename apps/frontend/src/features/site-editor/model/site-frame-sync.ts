@@ -10,18 +10,22 @@ export function siteInitKey(documentId: string, site: SiteDocument, frameBoot: n
   return `${frameBoot}|${documentId}|${sectionDigests(site).join(",")}`;
 }
 
-export type FrameSync = { kind: "init" } | { kind: "replace"; version: number } | { kind: "none" };
+export type FrameSync = { kind: "init" } | { kind: "replace"; rev: number } | { kind: "none" };
 
+/** What the frame needs next. It is kept in step by the working copy's REVISION, which moves on every
+ * change the app makes (a load with new content, a refused save's revert, a dock edit), never by the
+ * server's version: a refused save leaves the version as it was, and the canvas must still go back
+ * (review finding K1-4). */
 export function frameSyncFor(input: {
   frameReady: boolean;
   initKey: string;
   sentInitKey: string | null;
-  sentVersion: number | null;
-  version: number;
+  sentRev: number | null;
+  rev: number;
 }): FrameSync {
   if (!input.frameReady) return { kind: "none" };
   if (input.initKey !== input.sentInitKey) return { kind: "init" };
-  if (input.version !== input.sentVersion) return { kind: "replace", version: input.version };
+  if (input.rev !== input.sentRev) return { kind: "replace", rev: input.rev };
   return { kind: "none" };
 }
 
