@@ -9,6 +9,7 @@ from clue_api.chat.composer_context import ContextReferenceError, validated_cont
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
     SiteTarget,
+    refs_for_document,
     resolve_scene_targets,
     resolve_site_targets,
     resolve_web_targets,
@@ -333,3 +334,39 @@ def test_validated_context_refs_accepts_targets_on_a_site_document(
             )
         )
     assert refused.value.code == "CONTEXT_REF_NOT_FOUND"
+
+
+# Review finding S5-2: a message's notes were handed to EVERY site the turn addressed. Site targets
+# are written as page + section (`site:/#hero`), and sites built from one template share those, so a
+# note drawn on Initech's hero ("shorter headline") was applied to Umbrella's hero too. A message's
+# design_node refs all belong to its one design_document ref (the composer enforces it), so each
+# addressed document gets the notes only when it is that document.
+def _ref(object_type: str, object_id: str, note: str | None = None) -> DomainObjectRef:
+    return DomainObjectRef(
+        workspace_id="ws_1", object_type=object_type, object_id=object_id, note=note
+    )
+
+
+def test_notes_go_only_to_the_document_they_were_drawn_on() -> None:
+    refs = (
+        _ref("design_document", "doc_initech"),
+        _ref("design_node", "site:/#hero", "shorter headline"),
+        _ref("design_asset", "asset_1"),
+        _ref("account", "acc_1"),
+    )
+    own = refs_for_document(refs, "doc_initech")
+    assert own == refs
+    sibling = refs_for_document(refs, "doc_umbrella")
+    assert [ref.object_type for ref in sibling] == ["design_document", "design_asset", "account"]
+
+
+def test_a_message_without_notes_is_the_same_for_every_document() -> None:
+    refs = (_ref("design_asset", "asset_1"), _ref("design_document", "doc_a"))
+    assert refs_for_document(refs, "doc_b") == refs
+    assert refs_for_document((), "doc_b") == ()
+
+
+def test_notes_with_no_document_named_reach_no_document() -> None:
+    """The composer never lets this through; if it ever did, no site gets a note it cannot place."""
+    refs = (_ref("design_node", "site:/#hero", "x"),)
+    assert refs_for_document(refs, "doc_a") == ()

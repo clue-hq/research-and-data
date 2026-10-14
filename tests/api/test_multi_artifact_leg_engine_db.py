@@ -830,3 +830,91 @@ def test_a_stopped_design_turn_hands_the_leg_back(
             assert announced == 1
 
     run_async(scenario())
+
+
+async def _seed_three_site_leg(
+    conn: AsyncConnection, *, storage_root: Path, label: str
+) -> dict[str, Any]:
+    """Three account sites built from one template: the same page and section names."""
+
+    seeds = await _seed_leg_conversation(conn, storage_root=storage_root, label=label)
+    workspace_id = seeds["workspace_id"]
+    leg_id = str(seeds["leg"]["id"])
+    document_ids: list[str] = []
+    for position, account in enumerate(("Initech", "Umbrella", "Hooli")):
+        document_id = f"doc_{label}_site_{position}_{uuid4().hex[:8]}"
+        hero = {"type": "FeatureSplit", "props": {"id": "hero", "heading": f"{account} headline"}}
+        await create_document(
+            conn,
+            workspace_id=workspace_id,
+            scene={
+                "id": document_id,
+                "title": f"{account} account page",
+                "theme": {},
+                "pages": {"/": {"root": {"props": {"title": account}}, "content": [hero]}},
+                "shell": None,
+                "agent_sections": {},
+            },
+            doc_kind="site",
+        )
+        document_ids.append(document_id)
+    await design_legs.add_leg_documents(
+        conn,
+        workspace_id=workspace_id,
+        leg_id=leg_id,
+        documents=[
+            LegDocumentSpec(document_id=document_id, position=position, note=f"note {position}")
+            for position, document_id in enumerate(document_ids)
+        ],
+    )
+    await conn.execute(
+        text("UPDATE design_leg SET document_id = :doc WHERE id = :leg AND workspace_id = :ws"),
+        {"doc": document_ids[0], "leg": leg_id, "ws": workspace_id},
+    )
+    seeds["document_ids"] = document_ids
+    return seeds
+
+
+def test_s5_2_a_note_drawn_on_one_site_reaches_only_that_sites_run(
+    tmp_path: Path,
+    registry: Any,  # noqa: F811
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Review finding S5-2: a message's notes went to every site the turn addressed; sites built
+    from one template share section names, so a note on Initech's hero was applied to Umbrella's
+    and Hooli's heroes too. The turn here addresses all three (the judge's fail-safe); only the
+    noted site's run carries the note."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_three_site_leg(conn, storage_root=tmp_path, label="s52")
+            initech, umbrella, hooli = seeds["document_ids"]
+            workspace_id = seeds["workspace_id"]
+            focus_refs = (
+                DomainObjectRef(
+                    workspace_id=workspace_id, object_type="design_document", object_id=initech
+                ),
+                DomainObjectRef(
+                    workspace_id=workspace_id,
+                    object_type="design_node",
+                    object_id="site:/#hero",
+                    note="shorter headline",
+                ),
+            )
+            lane = _FakeBatchLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="s52", message="shorter headline", focus_refs=focus_refs
+            )
+            await _run_turn(conn, seeds, registry, lane, submission, focus_refs=focus_refs)
+            envelopes = {str(e.document_id): e for batch in lane.batches for e in batch}
+            assert set(envelopes) == {initech, umbrella, hooli}, "all three were addressed"
+            assert envelopes[initech].config["request"]["targets"] == [
+                {"object_id": "site:/#hero", "note": "shorter headline"}
+            ]
+            for sibling in (umbrella, hooli):
+                assert "targets" not in envelopes[sibling].config["request"], sibling
+
+    run_async(scenario())

@@ -16,6 +16,12 @@ Site documents (Puck, Wave 2): a target is a ``design_node`` ref whose object_id
 (``site:/analysis#Hero-1a2b.title``), or ``site:shell#header`` / ``site:shell#footer``. It is
 validated against the stored site at the pinned version: the route is a page, the component's
 ``props.id`` is on it, the prop is one of its props.
+
+Which document a target belongs to: a message's ``design_node`` refs all point into its one
+``design_document`` ref (the composer refuses anything else), so a turn addressing several
+documents hands those targets ONLY to that document's run (:func:`refs_for_document`). Site and
+scene targets name a page and a section or node, which documents built from one template share —
+handing a note to every addressed document applied it to the wrong accounts (review finding S5-2).
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ __all__ = [
     "SiteTarget",
     "SiteTargetNote",
     "WebTargetNote",
+    "refs_for_document",
     "resolve_scene_targets",
     "resolve_site_targets",
     "resolve_web_targets",
@@ -81,6 +88,19 @@ class ResolvedWebTargets:
     #: One entry per submitted ref, in submission order — annotations are numbered by the
     #: human ("1.", "2.", …) and the order is part of what they said.
     target_notes: tuple[WebTargetNote, ...]
+
+
+def refs_for_document(
+    refs: Sequence[DomainObjectRef], document_id: str | None
+) -> tuple[DomainObjectRef, ...]:
+    """The message's refs as one addressed document should see them: its ``design_node`` targets
+    only when it is the document the message named, every other ref (reference images, accounts,
+    the named document itself) unchanged. Targets with no document named reach no document."""
+
+    named = next((ref.object_id for ref in refs if ref.object_type == "design_document"), None)
+    if named is not None and named == document_id:
+        return tuple(refs)
+    return tuple(ref for ref in refs if ref.object_type != "design_node")
 
 
 def split_web_target(object_id: str) -> tuple[str, str | None]:

@@ -92,6 +92,7 @@ from clue_api.design_memory import (
 )
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
+    refs_for_document,
     resolve_scene_targets,
     resolve_web_targets,
 )
@@ -2366,7 +2367,8 @@ class DesignLegTurnRunner:
                     document_id=document.get("document_id"),
                     account_card=account_cards.get(key),
                     artifact=_artifact_context(document, count=leg_document_count),
-                    focus_refs=focus_refs,
+                    # A note goes only to the document it was drawn on (review finding S5-2).
+                    focus_refs=refs_for_document(focus_refs, document.get("document_id")),
                     workspace_id=workspace_id,
                     scope_pin=scope_pin,
                     turn_request=turn_request,
