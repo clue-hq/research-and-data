@@ -68,6 +68,11 @@ def script_hash(text: str) -> str:
     return "sha256-" + base64.b64encode(digest).decode("ascii")
 
 
+def import_map_element(import_map: str) -> str:
+    """The inline import map exactly as ``live_page_html`` writes it: the last thing in the head."""
+    return f'<script type="importmap">{import_map}</script>\n'
+
+
 def _inert_json(value: object) -> str:
     # "<" escaped everywhere, so no string in the data can end or confuse the inert element.
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -85,7 +90,7 @@ def live_page_html(
     """``html`` (one whole page, exactly one ``</body>``) with the import map in its head and the
     page data and the runtime at the end of its body."""
     page_data = {**data, "sections": dict(sorted(section_urls.items()))}
-    head = f'<script type="importmap">{import_map}</script>\n'
+    head = import_map_element(import_map)
     tail = (
         f'<script type="application/json" id="clue-page-data">{_inert_json(page_data)}</script>'
         f'<script type="module" src="{runtime_url}"></script>'

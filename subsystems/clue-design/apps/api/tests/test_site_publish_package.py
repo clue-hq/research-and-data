@@ -738,3 +738,30 @@ def test_a_live_package_is_deterministic(blobs: DesignBlobStore) -> None:
 
 def test_without_live_the_package_is_byte_identical(blobs: DesignBlobStore) -> None:
     assert _build(blobs).package_digest == _build(blobs, live=False).package_digest
+
+
+def test_a_live_pages_policy_comes_before_its_import_map_and_is_its_only_policy(blobs: DesignBlobStore) -> None:
+    """A meta policy governs only what the parser meets after it: on a copy served without the page
+    origin's header, the import map must already be under it."""
+    package = _build(blobs, live=True)
+    assert [page.route for page in package.pages] == ["/", "/analysis"]
+    for page in package.pages:
+        assert page.html.count('<meta http-equiv="Content-Security-Policy"') == 1, page.route
+        policy = page.html.index('<meta http-equiv="Content-Security-Policy"')
+        assert policy < page.html.index('<script type="importmap">'), page.route
+        assert policy < page.html.lower().index("<script"), page.route
+    assert_digests_are_of_what_they_name_live(package)
+
+
+def assert_digests_are_of_what_they_name_live(package) -> None:
+    """The manifest's page digest is still the page before its back-reference went in."""
+    recorded = {entry["route"]: entry["html_digest"] for entry in package.manifest["pages"]}
+    policy = web_export._escape_attr(site_live_csp(package.manifest["live"]["script_hashes"], meta=True))
+    back_reference = (
+        f'<meta http-equiv="Content-Security-Policy" content="{policy}">\n'
+        f'<meta name="lumen-publish-manifest-digest" content="{package.manifest_digest}">\n'
+        '<link rel="lumen-publish-manifest" href="/acme-site/manifest.json">\n'
+    )
+    for page in package.pages:
+        assert page.html_digest == web_export._sha256(page.html)
+        assert recorded[page.route] == web_export._sha256(page.html.replace(back_reference, "", 1))

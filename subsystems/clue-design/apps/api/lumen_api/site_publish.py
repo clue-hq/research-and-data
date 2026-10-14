@@ -18,7 +18,13 @@ from . import web_export
 from .design_store import CustodyState
 from .public_address import PublicSiteAddress
 from .site_doc_validate import SiteDocumentInvalid, check_site_document
-from .site_live import import_map_json, live_page_html, live_runtime, script_hash
+from .site_live import (
+    import_map_element,
+    import_map_json,
+    live_page_html,
+    live_runtime,
+    script_hash,
+)
 from .site_render import (
     RenderedPage,
     SectionModule,
@@ -150,6 +156,18 @@ def _site_page_head(*, title: str, description: str, og_image: str | None, noind
     return head
 
 
+def _policy_before_import_map(html: str, import_map: str, manifest_head: str) -> str:
+    """A live page with its CSP meta (and the manifest back-reference) immediately before its
+    inline import map, so the meta policy covers every script on the page: a meta policy governs
+    only what the parser meets after it. The import map is the last thing in the head
+    (``site_live.live_page_html``), and nothing earlier can hold ``</head>`` (the site CSS has every
+    ``</`` escaped), so the first match is the page's own."""
+    tail = import_map_element(import_map) + "</head>"
+    if tail not in html:
+        raise ValueError("a live page lost its import map before the policy went in")
+    return html.replace(tail, manifest_head + tail, 1)
+
+
 def build_site_publish_package(
     repo: Any,
     document: JsonObject,
@@ -269,7 +287,10 @@ def build_site_publish_package(
     )
     pages: list[web_export.PublishedPage] = []
     for route, html in staged:
-        final = web_export._inject_before_head_close(html, manifest_head)
+        if live:
+            final = _policy_before_import_map(html, import_map, manifest_head)
+        else:
+            final = web_export._inject_before_head_close(html, manifest_head)
         pages.append(web_export.PublishedPage(page_id=route, route=route, html=final, html_digest=web_export._sha256(final)))
     served = next(page for page in pages if page.route == "/")
     package_digest = web_export._sha256(
