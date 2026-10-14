@@ -283,11 +283,11 @@ def build_frontend_read_router(
     from clue_api.frontend_read.artifacts import register_artifact_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.brand_products import register_brand_product_routes
-    from clue_api.frontend_read.product_notices import register_product_notice_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
+    from clue_api.frontend_read.product_notices import register_product_notice_routes
     from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.project_instructions import (
         register_project_instructions_routes,
