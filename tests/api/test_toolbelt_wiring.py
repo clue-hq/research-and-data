@@ -219,6 +219,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
     # turn the body names is its first fail-closed boundary.
     "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
+    # Product management (head-of-abm@v71): the matrix composes no storage, so the missing
+    # document storage is the first fail-closed boundary after the input is complete.
+    "manage_products": ("precondition", ("products_storage_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -622,6 +625,11 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "configure_project_targeting": {
             "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "manage_products": {
+            "action": "remove",
+            "product_id": "prd_matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
@@ -1469,7 +1477,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
-    assert len(registry.names()) == 144
+    assert len(registry.names()) == 145
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1513,7 +1521,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
     # `@1`, which stays for replay: one more address, no new name (166 -> 167).
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
-    assert len(registry) == 168
+    assert len(registry) == 169
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1558,7 +1566,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
-    assert len(registry.names()) == 144
+    assert len(registry.names()) == 145
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1589,7 +1597,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
     # `@1`, which stays for replay: one more address, no new name (166 -> 167).
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
-    assert len(registry) == 168
+    assert len(registry) == 169
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

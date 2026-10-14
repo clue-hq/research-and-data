@@ -45,8 +45,9 @@ def test_tools_chapter_has_one_section_per_granted_tool_in_profile_order(
     chapter = manual.build_tools_chapter(toolbelt, profile, notes)
     granted = [pin.name for pin in profile.tools]  # type: ignore[attr-defined]
     # v61 replaces the two ICP/product gate tools with one automatic targeting tool.
-    # 21 since head-of-abm@v62 granted web_search@1; 18 since v68 dropped three retired-lane tools.
-    assert len(granted) == 18
+    # 21 since head-of-abm@v62 granted web_search@1; 18 since v68 dropped three retired-lane tools;
+    # 19 since v71 granted manage_products@1.
+    assert len(granted) == 19
 
     headings = [line[3:].strip() for line in chapter.body.splitlines() if line.startswith("## ")]
     # Every granted tool, in profile order, then the two fixed sections.
