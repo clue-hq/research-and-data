@@ -44,5 +44,5 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
   slot has focus (no redraw under the caret; F7 refocus code removed as unnecessary).
 - Gates: site-kit 171, site-editor 60, app site-editor 92, browser 19/19, frontend gate green
   (app 3407 pass / 0 fail / 5 skipped).
-- Owed: founder re-check of step 5 on the live stack (reload the app page first — the editor frame
-  bundle was rebuilt). Saves take 2.2–2.7 s each (validator) — measure in Phase 2.
+- Founder re-checked step 5 on the live stack: works (2026-10-14). All 9 walk steps now pass.
+  Saves take 2.2–2.7 s each (validator) — measure in Phase 2.
