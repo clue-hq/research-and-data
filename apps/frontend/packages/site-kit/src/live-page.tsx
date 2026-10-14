@@ -26,7 +26,7 @@ export type LivePageData = {
 
 /** The brand a page needs: everything but the clones it does not use (clones carry captured HTML
  * and CSS and are the bulk of a brand). The shell draws no clone, so it adds none. */
-export function brandForPage(brand: BrandData, page: Data, _shell: ShellData | null): BrandData {
+export function brandForPage(brand: BrandData, page: Data): BrandData {
   const used = new Set(
     (page.content ?? [])
       .filter((item) => item.type === "ClonedSection")

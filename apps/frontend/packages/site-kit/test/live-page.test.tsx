@@ -26,7 +26,7 @@ const bodyOf = (html: string) => html.slice(html.indexOf('<div id="clue-site">')
 test("a page's data carries only the clones that page uses", () => {
   const page = stored.pages["/"];
   const used = new Set(page.content.filter((c: { type: string }) => c.type === "ClonedSection").map((c: { props: { fragmentId: string } }) => c.props.fragmentId));
-  const trimmed = brandForPage(brand, page, stored.shell);
+  const trimmed = brandForPage(brand, page);
   assert.deepEqual(new Set(Object.keys(trimmed.clones)), used);
   assert.deepEqual(trimmed.kit, brand.kit);
 });

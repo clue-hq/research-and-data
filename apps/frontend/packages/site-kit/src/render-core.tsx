@@ -74,7 +74,7 @@ export function renderSitePages(input: {
         title,
         page: data,
         shell: input.site.shell ?? null,
-        brand: brandForPage(input.brand, data, input.site.shell ?? null),
+        brand: brandForPage(input.brand, data),
         sections: {},
       };
       // Drawn with the very config the browser builds from this page data, so the two trees match.
