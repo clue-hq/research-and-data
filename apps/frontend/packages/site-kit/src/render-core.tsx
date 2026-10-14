@@ -2,18 +2,20 @@
 // Pure — no DOM, no file reads — so it is tested in Node; render-browser.tsx calls it inside the
 // design API's hardened Chromium page after loading the site's agent sections.
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { Render } from "@puckeditor/core/rsc";
 import type { Config, Data } from "@puckeditor/core";
 import { z } from "zod";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import { makeConfig } from "./config";
+import { SiteRoot, brandForPage, liveConfig, type LivePageData } from "./live-page";
 import type { ShellData } from "./shell";
 import { tailwindThemeCss } from "./theme";
 
 export type StoredSite = { title?: string; pages: Record<string, unknown>; shell: ShellData | null };
-export type RenderedSitePage = { route: string; html: string };
+/** `data` is the live page's data (live mode only): what the browser takes the page over with. */
+export type RenderedSitePage = { route: string; html: string; data?: LivePageData };
 
 /** A render that cannot finish, with one of the contract codes (Contract 3). */
 export class RenderRefusal extends Error {
@@ -42,6 +44,9 @@ export function renderSitePages(input: {
   agentSections: Record<string, AgentSectionModule>;
   /** Total characters of HTML allowed across the routes rendered. */
   maxOutputBytes: number;
+  /** Live mode (publishing live sites): each route is drawn into #clue-site with the tree the
+   * browser hydrates, and comes back with its page data. Without it, static HTML as before. */
+  live?: boolean;
 }): { pages: RenderedSitePage[]; tailwindTheme: string; size: number; warnings: string[] } {
   const config = makeConfig(input.brand, {
     basePath: input.basePath || undefined,
@@ -60,13 +65,30 @@ export function renderSitePages(input: {
       }
     }
     const title = String((data.root as { props?: { title?: string } } | undefined)?.props?.title || input.site.title || "");
-    const body = renderToStaticMarkup(createElement(Render as never, { config, data } as never));
+    let body: string;
+    let pageData: LivePageData | undefined;
+    if (input.live) {
+      pageData = {
+        route,
+        basePath: input.basePath,
+        title,
+        page: data,
+        shell: input.site.shell ?? null,
+        brand: brandForPage(input.brand, data, input.site.shell ?? null),
+        sections: {},
+      };
+      // Drawn with the very config the browser builds from this page data, so the two trees match.
+      const pageConfig = liveConfig(pageData, input.agentSections);
+      body = `<div id="clue-site">${renderToString(createElement(SiteRoot, { config: pageConfig, data }))}</div>`;
+    } else {
+      body = renderToStaticMarkup(createElement(Render as never, { config, data } as never));
+    }
     const html = `<!doctype html><html lang="en"><head><title>${escapeHtml(title)}</title></head><body>${body}</body></html>`;
     size += html.length;
     if (size > input.maxOutputBytes) {
       throw new RenderRefusal("render.output_too_large", `the rendered site passed ${input.maxOutputBytes} characters at ${route}`);
     }
-    pages.push({ route, html });
+    pages.push(pageData ? { route, html, data: pageData } : { route, html });
   }
   return { pages, tailwindTheme: tailwindThemeCss(input.brand), size, warnings };
 }

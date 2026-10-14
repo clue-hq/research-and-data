@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from "react";
 import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "./brand";
 import {
@@ -57,6 +58,20 @@ export type ConfigOptions = {
   /** The site's agent-written sections (E5), by section name; they join its pages. */
   agentSections?: Record<string, AgentSectionModule>;
 };
+
+/** One agent section that fails while drawing in the browser takes only itself down: the rest of
+ * the page stays alive (Review focus 1 of live publishing). `name` is the section, which the live
+ * page's error report reads from the boundary that caught the error (hydrateSite). Renders no
+ * element of its own, so the server HTML is unchanged. */
+export class SectionBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 // One config per brand and site. Fields and renders close over the brand's clone library and
 // assets; the editor (client) and the published route (server) both call this.
@@ -121,15 +136,26 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit fields.
   const kit = makeKit(href, brand);
   const agentSections = Object.fromEntries(
-    Object.entries(options.agentSections ?? {}).map(([name, module]) => [
-      name,
-      {
-        label: `${name} (agent)`,
-        fields: {},
-        // The wrapper lets compare_section find the component whatever its root element is.
-        render: (props: never) => <div data-agent-section={name}>{module.render(props, kit)}</div>,
-      },
-    ]),
+    Object.entries(options.agentSections ?? {}).map(([name, module]) => {
+      // The section draws inside its own component, so its boundary catches what it throws. This is
+      // the one place module.render is called. Props travel whole (not spread), so none is dropped.
+      const Drawn = ({ props }: { props: never }) => module.render(props, kit);
+      return [
+        name,
+        {
+          label: `${name} (agent)`,
+          fields: {},
+          // The wrapper lets compare_section find the component whatever its root element is.
+          render: (props: never) => (
+            <div data-agent-section={name}>
+              <SectionBoundary name={name}>
+                <Drawn props={props} />
+              </SectionBoundary>
+            </div>
+          ),
+        },
+      ];
+    }),
   );
 
   const config: Config<{

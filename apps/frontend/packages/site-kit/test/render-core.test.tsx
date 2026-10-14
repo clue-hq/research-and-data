@@ -41,6 +41,22 @@ test("an agent section renders inside its data-agent-section wrapper, with the k
   assert.ok(html.includes("Fewer surprises."));
 });
 
+// Live publishing, phase 1: each agent section draws inside its own error boundary, which works only
+// in the browser. On the server a section that throws still fails the whole render, as before — the
+// boundary adds no element, so the static HTML is unchanged (the wrapper test above), and it does not
+// hide a broken section from the render.
+test("a section that throws while drawing on the server still fails the render, in both modes", () => {
+  const home = structuredClone(stored.pages["/"]);
+  home.content.push({ type: "Broken", props: { id: "broken", surface: "page" } });
+  const Broken = { schema: quoteSchema, render: (() => { throw new Error("broken section"); }) as never };
+  for (const live of [false, true]) {
+    assert.throws(
+      () => renderSitePages({ site: { ...site, pages: { "/": home } }, brand, basePath: "", agentSections: { Broken }, maxOutputBytes: 10_000_000, live }),
+      /broken section/,
+    );
+  }
+});
+
 test("the output cap is a typed refusal", () => {
   assert.throws(
     () => renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 1000 }),
