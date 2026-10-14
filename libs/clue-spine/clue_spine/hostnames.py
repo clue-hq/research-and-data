@@ -160,6 +160,18 @@ def public_origin(hostname: str, *, scheme: str, port: int | None) -> str:
     return f"{scheme}://{hostname}" + (f":{port}" if port else "")
 
 
+def system_label(hostname: str, suffixes: Sequence[str]) -> str | None:
+    """The label of a system address ``<label>.<s>`` for ``s`` in ``suffixes``; ``None`` when
+    ``hostname`` is not one — another domain, a bare suffix, or more than one label before the
+    suffix (labels never contain a dot)."""
+    for suffix in suffixes:
+        tail = "." + suffix.lower().strip(".")
+        label = hostname.removesuffix(tail) if hostname.endswith(tail) else ""
+        if label and "." not in label:
+            return label
+    return None
+
+
 # --- custom hostnames: validation (spec §7.3) --------------------------------
 _EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 _LABEL_SHAPE = re.compile(rf"^[a-z0-9](?:[a-z0-9-]{{{LABEL_MIN - 2},{LABEL_MAX - 2}}}[a-z0-9])$")
@@ -317,14 +329,34 @@ async def active_custom_hostname(conn: AsyncConnection, workspace_id: str) -> st
     return str(row[0]) if row is not None else None
 
 
-async def resolve_active_hostname(conn: AsyncConnection, hostname: str) -> str | None:
-    """hostname → workspace_id, for ACTIVE rows only (a provisioning custom hostname is 404)."""
-    result = await conn.execute(
-        text(
-            "SELECT workspace_id FROM workspace_hostname WHERE hostname = :h AND status = 'active'"
-        ),
-        {"h": hostname},
-    )
+async def resolve_active_hostname(
+    conn: AsyncConnection, hostname: str, *, system_suffixes: Sequence[str] = ()
+) -> str | None:
+    """hostname → workspace_id, for ACTIVE rows only (a provisioning custom hostname is 404).
+
+    Review finding K3-6: a system address ``<label>.<s>``, for ``s`` in ``system_suffixes`` (the
+    page origin passes its system suffix and every legacy one), resolves by its LABEL to the
+    system row holding it, whatever domain that row names today. So while published pages move
+    domain, the old and the new address both serve before and after the rows move, and the edge's
+    301 can come last. A label names one workspace on every domain (S4-1's index), so this can
+    never pick between two. Every other hostname — a custom domain — is matched exactly."""
+    label = system_label(hostname, system_suffixes)
+    if label is not None:
+        result = await conn.execute(
+            text(
+                "SELECT workspace_id FROM workspace_hostname WHERE kind = 'system' "
+                "AND split_part(hostname, '.', 1) = :label AND status = 'active'"
+            ),
+            {"label": label},
+        )
+    else:
+        result = await conn.execute(
+            text(
+                "SELECT workspace_id FROM workspace_hostname "
+                "WHERE hostname = :h AND status = 'active'"
+            ),
+            {"h": hostname},
+        )
     row = result.first()
     return str(row[0]) if row is not None else None
 

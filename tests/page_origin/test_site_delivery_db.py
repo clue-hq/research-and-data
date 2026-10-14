@@ -42,7 +42,7 @@ from clue_page_origin.main import build_gate
 from clue_page_origin.reads import DbPageReads
 from clue_page_origin.routes import NOT_FOUND_HTML
 from clue_spine import create_workspace
-from clue_spine.hostnames import system_hostname
+from clue_spine.hostnames import move_system_hostnames, system_hostname
 from clue_spine.pages_settings import update_pages_settings
 from clue_storage import FsStorage
 from tests.db.conftest import run_async
@@ -79,10 +79,14 @@ def _site_html(title: str) -> str:
     )
 
 
-def _origin(conn: Any, tmp_path: Path) -> Any:
+def _origin(conn: Any, tmp_path: Path, *, system_suffixes: tuple[str, ...] = ()) -> Any:
     settings = Settings(_env_file=None, pages_trust_host_header=False)  # type: ignore[call-arg]
     secrets = Secrets(_env_file=None, pages_edge_secret=SECRET)  # type: ignore[call-arg]
-    reads = DbPageReads(FsStorage(tmp_path / "blobs"), conn_factory=conn_session_factory(conn))
+    reads = DbPageReads(
+        FsStorage(tmp_path / "blobs"),
+        conn_factory=conn_session_factory(conn),
+        system_suffixes=system_suffixes,
+    )
     return create_page_origin_app(reads=reads, gate=build_gate(settings, secrets))
 
 
@@ -360,5 +364,56 @@ def test_an_unpublished_site_and_an_unknown_route_answer_exactly_as_for_web(
                 assert _miss_shape(site_miss) == _miss_shape(web_miss), site_path
                 assert site_miss.status_code == 302
                 assert site_miss.headers["location"] == "https://www.syracuse.example"
+
+    run_async(scenario())
+
+
+# --- Review finding K3-6: both addresses serve while published pages move domain ---------------
+def test_k3_6_a_system_address_is_served_on_the_old_and_the_new_domain_before_and_after_the_move(
+    tmp_path: Path,
+) -> None:
+    """The runbook turns the edge's 301 on last, but the rows may move at any point before it: a
+    page must answer at `<label>.<old>` and `<label>.<new>` whichever domain its row names."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            tag = uuid4().hex[:6]
+            old, new = f"old{tag}.test", f"new{tag}.test"
+            workspace = await create_workspace(
+                conn, name=f"Move Origin {tag}", pages_system_suffix=old
+            )
+            ws = workspace.workspace_id
+            born = await system_hostname(conn, ws)
+            assert born is not None
+            label = born.removesuffix("." + old)
+            web = await _document(conn, ws, doc_kind="web")
+            await _publish(
+                conn,
+                ws,
+                slug="annual-report",
+                document_id=web,
+                manifest={"slug": "annual-report"},
+                pages={"/": "<html>report</html>"},
+            )
+            # The page origin as main.py composes it after step 3: new suffix + the old one.
+            app = _origin(conn, tmp_path, system_suffixes=(new, old))
+
+            async def answers() -> dict[str, int]:
+                hosts = (f"{label}.{old}", f"{label}.{new}", f"x.{label}.{new}", f"{label}.x.test")
+                return {
+                    host: (await _get(app, host, "/annual-report")).status_code for host in hosts
+                }
+
+            expected = {
+                f"{label}.{old}": 200,
+                f"{label}.{new}": 200,
+                # Not a system address: an extra label before the suffix, or a suffix not served.
+                f"x.{label}.{new}": 404,
+                f"{label}.x.test": 404,
+            }
+            assert await answers() == expected  # the row still names the old domain
+            report = await move_system_hostnames(conn, from_suffix=old, to_suffix=new, apply=True)
+            assert (report["rows"], report["applied"]) == (1, True)
+            assert await answers() == expected  # the row now names the new domain
 
     run_async(scenario())

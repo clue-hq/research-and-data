@@ -58,15 +58,28 @@ def _sha(value: str) -> str:
 
 
 class DbPageReads:
-    """The production reads over the registry, the publish DAL and the blob store."""
+    """The production reads over the registry, the publish DAL and the blob store.
 
-    def __init__(self, storage: StorageBackend, *, conn_factory: ConnFactory = transaction) -> None:
+    ``system_suffixes`` — the system suffix and every legacy one — are the domains a system
+    address ``<label>.<suffix>`` is served under, by its label, whichever of them its row names
+    (review finding K3-6: both addresses answer throughout a published-pages domain move)."""
+
+    def __init__(
+        self,
+        storage: StorageBackend,
+        *,
+        conn_factory: ConnFactory = transaction,
+        system_suffixes: tuple[str, ...] = (),
+    ) -> None:
+        self.system_suffixes = system_suffixes
         self._storage = storage
         self._conn_factory = conn_factory
 
     async def workspace_for_hostname(self, hostname: str) -> str | None:
         async with self._conn_factory() as conn:
-            return await resolve_active_hostname(conn, hostname)
+            return await resolve_active_hostname(
+                conn, hostname, system_suffixes=self.system_suffixes
+            )
 
     async def active_publish(self, workspace_id: str, slug: str) -> ServedPublish | None:
         async with self._conn_factory() as conn:

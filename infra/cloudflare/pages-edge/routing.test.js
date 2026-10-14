@@ -65,3 +65,17 @@ test("editor hosts always pass through, even with the pages on the same registra
   assert.equal(decide(req("https://acme.deeppresence.ai/report"), shared).kind, "forward", "pages still served");
   assert.equal(decide(req("https://acme.pages.cluehq.ai/"), { ...env, EDITOR_SUFFIX: "" }).kind, "forward", "unset: as before");
 });
+
+// Review finding K3-6: runbook §8 step 2 deploys the Worker with ONLY the new zone's route added,
+// SYSTEM_SUFFIX still the old one and no legacy list. A host on the new domain is outside every
+// apex the Worker knows, so it is forwarded to the page origin like a customer's domain, which
+// serves it by its label; nothing redirects yet, and cluehq.ai's other records still pass through.
+test("before the redirect is turned on, the new domain's hosts are forwarded under the old config", () => {
+  for (const url of ["https://acme.clue-pages.example/annual-report?x=1", "https://acme.pages.cluehq.ai/annual-report?x=1"]) {
+    const decision = decide(req(url), env);
+    assert.equal(decision.kind, "forward", url);
+    assert.equal(decision.headers.get("x-clue-public-host"), new URL(url).hostname);
+    assert.equal(decision.target, "https://page-origin.cluehq.ai/annual-report?x=1");
+  }
+  assert.equal(decide(req("https://app.cluehq.ai/login"), env).kind, "passthrough");
+});

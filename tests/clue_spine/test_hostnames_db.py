@@ -252,6 +252,60 @@ def test_s4_1_the_migration_refuses_duplicate_system_labels_by_name() -> None:
     run_async(scenario())
 
 
+# --- Review finding K3-6: the page origin finds a system address by its label -------------------
+# During a domain move the edge 301s every old address to the new one before (or after) the rows
+# move. The page origin therefore serves `<label>.<s>` for every suffix it is told about, from
+# the system row with that label, whatever domain the row names today.
+def test_k3_6_a_system_address_resolves_by_its_label_on_either_domain() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            old, new = _two_suffixes()
+            served = (new, old)
+            unmoved = await create_workspace(conn, name=_name(), pages_system_suffix=old)
+            moved = await create_workspace(conn, name=_name(), pages_system_suffix=new)
+            for ws, suffix in ((unmoved, old), (moved, new)):
+                label = _label_of(await system_hostname(conn, ws.workspace_id), suffix)
+                for host_suffix in (old, new):
+                    host = f"{label}.{host_suffix}"
+                    found = await resolve_active_hostname(conn, host, system_suffixes=served)
+                    assert found == ws.workspace_id, host
+                # Not a system address: an extra label before the suffix, or a suffix not served.
+                for host in (f"x.{label}.{new}", f"{label}.elsewhere-{suffix}"):
+                    assert await resolve_active_hostname(conn, host, system_suffixes=served) is None
+                # Without the suffix list the lookup is exact, as before.
+                other = new if suffix == old else old
+                assert await resolve_active_hostname(conn, f"{label}.{other}") is None
+
+    run_async(scenario())
+
+
+def test_k3_6_a_custom_hostname_still_needs_an_exact_match() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            old, new = _two_suffixes()
+            ws = await create_workspace(conn, name=_name(), pages_system_suffix=old)
+            first = "shop" + uuid4().hex[:6]
+            hostname = f"{first}.acme-{uuid4().hex[:6]}.example"
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
+                    "cname_target, ownership_txt_name, ownership_txt_value) VALUES "
+                    "(:h, :w, 'custom', 'active', 'pages.test', 'n', 'v')"
+                ),
+                {"h": hostname, "w": ws.workspace_id},
+            )
+            served = (new, old)
+            assert await resolve_active_hostname(conn, hostname, system_suffixes=served) == (
+                ws.workspace_id
+            )
+            # The custom row's first label under one of our suffixes is not that workspace.
+            for suffix in served:
+                host = f"{first}.{suffix}"
+                assert await resolve_active_hostname(conn, host, system_suffixes=served) is None
+
+    run_async(scenario())
+
+
 def test_s4_1_losing_the_one_system_row_race_still_returns_the_winner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
