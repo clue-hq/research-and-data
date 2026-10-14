@@ -386,6 +386,21 @@ Each phase gets its own implementation plan; each ships behind the flag and is t
 
 The pages-domain move and Public Suffix List listing (§12) run beside these and gate production use.
 
+**Scope of this round (founder, 2026-10-15):** phase 1 (most important), phase 3 (embeds), phase 4
+(snippets), phase 5 (group 4.3 with K1-3) and the pages-domain prerequisite (group 4.5's fixes, then
+the move). **Phase 2 — forms, the lead email and tracking — is designed here but built in a later
+round**; its decisions (§18) stand. Until phase 2 lands:
+
+- the kit has no `kit.Form` or `kit.track`, and the checker keeps refusing raw `<form>`;
+- the page origin stays GET/HEAD only and the edge Worker is unchanged;
+- hydration mismatches on published pages are not reported to us; the agent's previews (§11) and
+  the parity test (§13) are what catch them;
+- the page's policy keeps `connect-src 'self'` and `form-action 'none'`.
+
+Order: phase 1 starts with its spike; group 4.5 and the 4.3 fixes that do not need phase 1 (K5-2,
+K1-2, S2b-8 with K1-3, S6-2 size) run beside it; phases 3 and 4 follow phase 1 and can run side by
+side; the rest of phase 5 and the parity test close the round.
+
 ## 17. Testing
 
 - Phase 1 spike: identical server/client markup and zero hydration mismatches on the Garner fixture.

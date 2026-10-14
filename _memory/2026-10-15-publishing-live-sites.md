@@ -32,3 +32,6 @@ publishing (spec §12).
   YouTube, Vimeo, Loom, Wistia. Lead email: yes, to workspace admins, via an outbox + background
   sender; email service not chosen yet (founder creates the account). Spam filtering: none now,
   Cloudflare Turnstile when needed (route keeps a size cap + rate limit only). K1-3 joins group 4.3.
+- Scope of this round (founder): phase 1 live core (most important), phase 3 embeds, phase 4 snippets,
+  phase 5 group 4.3 + K1-3, and the pages-domain prerequisite (group 4.5 + move). Phase 2 (forms,
+  lead email, tracking) deferred to a later round — email service choice therefore not needed yet.
