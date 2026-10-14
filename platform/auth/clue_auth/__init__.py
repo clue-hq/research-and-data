@@ -53,11 +53,13 @@ from clue_auth.principal import (
     ServicePrincipal,
 )
 from clue_auth.provisioning import (
+    ProvisionedAdditionalWorkspace,
     ProvisionedIdentity,
     ProvisionedSelfServeWorkspace,
     ProvisionedWorkspaceOwner,
     accept_workspace_invitation,
     hash_invitation_token,
+    provision_additional_workspace,
     provision_self_serve_workspace,
     provision_workspace_owner,
 )
@@ -134,6 +136,7 @@ __all__ = [
     "PrincipalError",
     "PrincipalService",
     "ProvisionedIdentity",
+    "ProvisionedAdditionalWorkspace",
     "ProvisionedSelfServeWorkspace",
     "ProvisionedWorkspaceOwner",
     "ROLE_PERMISSIONS",
@@ -172,6 +175,7 @@ __all__ = [
     "new_user_id",
     "permissions_for_role",
     "provision_self_serve_workspace",
+    "provision_additional_workspace",
     "provision_workspace_owner",
     "reactivate_platform_user",
     "reactivate_workspace_membership",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -486,6 +487,111 @@ async def provision_self_serve_workspace(
         membership=membership,
         company_website=website,
         created=True,
+    )
+
+
+_HTTP_WEBSITE = re.compile(r"https?://[^\s/?#]+\.[^\s/?#]+(?:[/?#]\S*)?", re.IGNORECASE)
+
+
+class ProvisionedAdditionalWorkspace(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    workspace: Workspace
+    brand: Brand
+    user: PlatformUser
+    membership: WorkspaceMembership
+    company_website: str
+
+
+async def provision_additional_workspace(
+    conn: AsyncConnection,
+    *,
+    email: str,
+    company_website: str,
+    company_name: str | None = None,
+    now: datetime | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
+) -> ProvisionedAdditionalWorkspace:
+    """Give an EXISTING user one more workspace they own — an operator action, not signup.
+
+    Self-serve provisioning is first-time setup only (it refuses a user with an active
+    membership, and ``self_serve_provisioning`` is one row per user), so a second workspace for
+    someone who already has one is created here instead: the workspace, its single brand
+    (``POST /onboarding`` starts a run only for a workspace with exactly one brand), and an
+    active owner membership. No signup record is written and the user's other workspaces are
+    untouched. Onboarding then starts from the product's setting-up screen, so brand-kit
+    ingestion runs on the platform API exactly as it does for a signup.
+
+    Refuses, before any write: a website that is not an http(s) URL with a dotted host; an email
+    that matches no user or more than one; a user who is not active; and a user who already owns
+    an active workspace with the same name (a re-run of the same operator command). The user row
+    is locked first so two concurrent runs for one user cannot both pass the duplicate check.
+    """
+    at = now or datetime.now(UTC)
+    website = company_website.strip()
+    if not _HTTP_WEBSITE.fullmatch(website):
+        raise ProvisioningValidationError(
+            "COMPANY_WEBSITE_REQUIRED", "an http(s) company website with a domain is required"
+        )
+    typed = company_name.strip() if company_name and company_name.strip() else None
+    name = typed or canonical_workspace_name(website)
+    if name is None:
+        raise ProvisioningValidationError(
+            "COMPANY_NAME_REQUIRED",
+            "a company name or a website with a nameable domain is required",
+        )
+    address = email.strip().casefold()
+    user_ids = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT user_id FROM platform_user WHERE lower(email) = :email "
+                    "ORDER BY user_id FOR UPDATE"
+                ),
+                {"email": address},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not user_ids:
+        raise IdentityConflictError(f"no Clue user has the email {address}")
+    if len(user_ids) > 1:
+        raise IdentityConflictError(f"more than one Clue user has the email {address}")
+    user = await get_platform_user(conn, user_ids[0])
+    if user is None or user.status != "active":
+        raise IdentityConflictError(f"the Clue user {address} is not active")
+    duplicate = (
+        await conn.execute(
+            text(
+                "SELECT w.workspace_id FROM workspace_membership m "
+                "JOIN workspace w USING (workspace_id) "
+                "WHERE m.user_id = :user_id AND m.role_key = 'owner' AND m.status = 'active' "
+                "AND lower(w.name) = lower(:name) LIMIT 1"
+            ),
+            {"user_id": user.user_id, "name": name},
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise IdentityConflictError(
+            f"{address} already owns a workspace named {name!r} ({duplicate})"
+        )
+    workspace = await create_workspace(conn, name=name, pages_system_suffix=pages_system_suffix)
+    brand = await create_brand(conn, workspace_id=workspace.workspace_id, name=name)
+    membership = await create_workspace_membership(
+        conn,
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        role_key="owner",
+        status="active",
+        now=at,
+    )
+    return ProvisionedAdditionalWorkspace(
+        workspace=workspace,
+        brand=brand,
+        user=user,
+        membership=membership,
+        company_website=website,
     )
 
 
