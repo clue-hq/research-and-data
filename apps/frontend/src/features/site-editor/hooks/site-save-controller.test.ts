@@ -185,3 +185,76 @@ test("nothing is sent before a document version is adopted", () => {
   h.controller.undo();
   assert.deepEqual(h.calls, []);
 });
+
+// Review finding S2b-4: one queue, in the order asked. Only back-to-back saves merge.
+test("two undos asked during a save both run, after it, in order", async () => {
+  const h = harness();
+  h.controller.save(site("First"));
+  h.controller.undo();
+  h.controller.undo();
+  for (let i = 0; i < 3; i += 1) {
+    h.pending[i].resolve({ version: 6 + i });
+    await h.settle();
+  }
+  assert.deepEqual(h.calls.map((call) => [call.op, call.base]), [
+    ["save", 5],
+    ["undo", 6],
+    ["undo", 7],
+  ]);
+});
+
+test("an undo asked before a later edit runs first, and the edit built on the pre-undo copy is dropped", async () => {
+  const h = harness();
+  h.controller.save(site("Typo heading"));
+  h.controller.undo();
+  h.controller.save(site("Typo heading, more"));
+  for (let i = 0; i < 2; i += 1) {
+    h.pending[i].resolve({ version: 6 + i });
+    await h.settle();
+  }
+  assert.deepEqual(h.calls.map((call) => `${call.op}${call.heading ? ` ${call.heading}` : ""}`), ["save Typo heading", "undo"]);
+  assert.equal(h.controller.isIdle(), true);
+  assert.equal(h.reloads(), 1, "the undo's own reload pushes the stepped copy to the canvas");
+});
+
+test("saves queued behind a step never run after it; a step queued behind it still does", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  h.controller.save(site("b"));
+  h.controller.redo();
+  h.controller.save(site("c"));
+  h.controller.undo();
+  h.controller.save(site("d"));
+  for (let i = 0; i < 4; i += 1) {
+    h.pending[i]?.resolve({ version: 6 + i });
+    await h.settle();
+  }
+  assert.deepEqual(h.calls.map((call) => `${call.op}${call.heading ? ` ${call.heading}` : ""}`), ["save a", "save b", "redo", "undo"]);
+});
+
+test("a reload requested while busy fires once the queue drains; when idle it fires at once", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  h.controller.save(site("b"));
+  assert.equal(h.controller.isIdle(), false);
+  h.controller.requestReloadWhenIdle();
+  h.pending[0].resolve({ version: 6 });
+  await h.settle();
+  assert.equal(h.reloads(), 0, "still busy with the queued save");
+  h.pending[1].resolve({ version: 7 });
+  await h.settle();
+  assert.equal(h.controller.isIdle(), true);
+  assert.equal(h.reloads(), 1);
+  h.controller.requestReloadWhenIdle();
+  assert.equal(h.reloads(), 2);
+});
+
+test("a refusal reloads once and satisfies a deferred reload", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  h.controller.requestReloadWhenIdle();
+  h.pending[0].reject(new SiteRepositoryError("moved", { code: "edits.base_version_mismatch", status: 409, currentVersion: 9 }));
+  await h.settle();
+  assert.equal(h.reloads(), 1);
+  assert.equal(h.controller.isIdle(), true);
+});

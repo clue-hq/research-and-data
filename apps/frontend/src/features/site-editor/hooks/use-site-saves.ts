@@ -11,6 +11,8 @@ export interface SiteSaves extends SiteSaveState {
   redo: () => void;
   restore: (batchId: string) => void;
   adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => void;
+  isIdle: () => boolean;
+  requestReloadWhenIdle: () => void;
   reportError: (message: string) => void;
   clearMessages: () => void;
 }
@@ -75,8 +77,10 @@ export function useSiteSaves({
     () => ({
       adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => controller?.adopt(loaded),
       clearMessages: () => controller?.clearMessages(),
+      isIdle: () => controller?.isIdle() ?? true,
       redo: () => controller?.redo(),
       reportError: (message: string) => controller?.reportError(message),
+      requestReloadWhenIdle: () => controller?.requestReloadWhenIdle(),
       restore: (batchId: string) => controller?.restore(batchId),
       save: (site: SiteDocument, intent?: string) => controller?.save(site, intent),
       undo: () => controller?.undo(),

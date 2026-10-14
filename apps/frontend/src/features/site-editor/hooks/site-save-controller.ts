@@ -7,9 +7,12 @@ import { SITE_UNDO_CAP } from "../model/site-wire";
  * whole-site saves. A plain class so it is testable without a DOM; `useSiteSaves` mirrors
  * its state into React.
  *
- *  - One request in flight. Later edits coalesce: only the NEWEST site is saved next, because
- *    every save carries the whole site, so the newest one already contains the others.
- *  - Undo / redo / restore queue behind a pending save (latest step wins).
+ *  - One request in flight. Everything asked meanwhile waits in ONE queue and runs in the order
+ *    asked (review finding S2b-4: two ⌘Z are two steps, and an undo asked before a later edit runs
+ *    before it). Only back-to-back saves merge: every save carries the whole site, so the newer one
+ *    already contains the older.
+ *  - A history step that lands drops the saves queued behind it (they were built on the copy
+ *    from before the step). A refusal clears the queue (its base is gone) and reloads.
  *  - 409 `edits.base_version_mismatch` → the web lane's exact note, the edit is dropped, reload.
  *  - 409 `document.agent_run_active` → the agent-run lock's own sentence, reload.
  *  - 422 → the validator's first message, reload (the canvas goes back to what is saved).
@@ -40,6 +43,7 @@ export const IDLE_SITE_SAVE_STATE: SiteSaveState = {
 };
 
 type HistoryStep = { kind: "undo" } | { kind: "redo" } | { kind: "restore"; batchId: string };
+type QueuedOperation = { kind: "save"; site: SiteDocument; intent?: string } | { kind: "step"; step: HistoryStep };
 
 export interface SiteSaveControllerDeps {
   documentId: string;
@@ -52,8 +56,8 @@ export interface SiteSaveControllerDeps {
 export class SiteSaveController {
   private state: SiteSaveState = IDLE_SITE_SAVE_STATE;
   private inFlight = false;
-  private pendingSave: { site: SiteDocument; intent?: string } | null = null;
-  private pendingStep: HistoryStep | null = null;
+  private queue: QueuedOperation[] = [];
+  private reloadWhenIdle = false;
   private disposed = false;
 
   constructor(private readonly deps: SiteSaveControllerDeps) {}
@@ -67,10 +71,28 @@ export class SiteSaveController {
     this.update({ baseVersion: loaded.version, undoDepth: loaded.undoDepth, redoDepth: loaded.redoDepth });
   }
 
+  /** Nothing in flight and nothing queued. */
+  isIdle(): boolean {
+    return !this.inFlight && this.queue.length === 0;
+  }
+
+  /** Reload now when idle; otherwise once the queue drains (a refusal's own reload satisfies it).
+   * The working copy asks for this when a load arrives mid-save: adopting it then could put an
+   * older copy over edits still on their way to the server. */
+  requestReloadWhenIdle(): void {
+    if (this.isIdle()) {
+      this.deps.onReload();
+      return;
+    }
+    this.reloadWhenIdle = true;
+  }
+
   save(site: SiteDocument, intent?: string): void {
     if (this.disposed || this.state.baseVersion === null) return;
     if (this.inFlight) {
-      this.pendingSave = { site, intent };
+      const last = this.queue.at(-1);
+      if (last?.kind === "save") this.queue[this.queue.length - 1] = { kind: "save", site, intent };
+      else this.queue.push({ kind: "save", site, intent });
       return;
     }
     void this.runSave(site, intent);
@@ -109,8 +131,8 @@ export class SiteSaveController {
 
   private step(step: HistoryStep): void {
     if (this.disposed || this.state.baseVersion === null) return;
-    if (this.inFlight || this.pendingSave) {
-      this.pendingStep = step;
+    if (this.inFlight) {
+      this.queue.push({ kind: "step", step });
       return;
     }
     void this.runStep(step);
@@ -153,6 +175,10 @@ export class SiteSaveController {
             ? { undoDepth: Math.min(this.state.undoDepth + 1, SITE_UNDO_CAP), redoDepth: Math.max(this.state.redoDepth - 1, 0) }
             : { undoDepth: Math.min(this.state.undoDepth + 1, SITE_UNDO_CAP), redoDepth: 0 };
       this.update({ baseVersion: result.version, ...depths });
+      // Saves queued while the step ran were built on the copy from BEFORE it: running them now
+      // would put that older copy back over the step. They are dropped; the step's reload pushes
+      // the stepped copy to the canvas, which drops its unsent typing the same way.
+      this.queue = this.queue.filter((operation) => operation.kind === "step");
       this.finish();
       this.deps.onReload();
     } catch (cause) {
@@ -168,25 +194,27 @@ export class SiteSaveController {
 
   private finish(): void {
     this.inFlight = false;
-    if (this.pendingSave) {
-      const next = this.pendingSave;
-      this.pendingSave = null;
+    const next = this.queue.shift();
+    if (next?.kind === "save") {
       void this.runSave(next.site, next.intent);
       return;
     }
-    if (this.pendingStep) {
-      const next = this.pendingStep;
-      this.pendingStep = null;
-      void this.runStep(next);
+    if (next?.kind === "step") {
+      void this.runStep(next.step);
       return;
     }
     this.update({ busy: false });
+    if (this.reloadWhenIdle) {
+      this.reloadWhenIdle = false;
+      this.deps.onReload();
+    }
   }
 
   private abandon(): void {
     this.inFlight = false;
-    this.pendingSave = null;
-    this.pendingStep = null;
+    this.queue = [];
+    // Every refusal reloads on its own (refused()), which also serves a deferred reload.
+    this.reloadWhenIdle = false;
   }
 
   private refused(cause: unknown, operation: "save" | HistoryStep["kind"]): void {
