@@ -136,7 +136,11 @@ export function useBrandContextController({
   const selectedDocument =
     allDocuments.find((document) => document.path === selectedDocumentPath)
     ?? allDocuments[0];
-  const knowledgeEditor = useKnowledgeEditor(selectedDocument, { scopeKey, canWrite: canWriteKnowledge });
+  // The generated product catalog is read-only: the product actions change it (spec 2026-10-15).
+  const knowledgeEditor = useKnowledgeEditor(selectedDocument, {
+    scopeKey,
+    canWrite: canWriteKnowledge && !selectedDocument?.generated,
+  });
   const selectedAsset = selectedAssetId
     ? assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;

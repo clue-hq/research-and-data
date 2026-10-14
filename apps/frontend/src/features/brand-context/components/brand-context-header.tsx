@@ -1,9 +1,11 @@
 import { Fragment } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
 import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
+import type { ProductActionsController } from "../hooks/use-product-actions";
 import { knowledgeBreadcrumb } from "../model/knowledge-breadcrumb";
 import { BrandContextIcon } from "./brand-context-icon";
 import { BrandKitActionsRow } from "./brand-kit-actions";
+import { DocumentProductsField } from "./product-actions";
 import styles from "./brand-context.module.css";
 
 function Segment({
@@ -33,9 +35,11 @@ function Segment({
 export function BrandContextHeader({
   brandKitActions,
   controller,
+  productActions,
 }: {
   brandKitActions: BrandKitActionsController;
   controller: BrandContextController;
+  productActions?: ProductActionsController;
 }) {
   const labels = {
     assets: "Assets",
@@ -86,6 +90,13 @@ export function BrandContextHeader({
         <header className={styles.documentTitleBar}>
           <h1>{controller.selectedDocument.name}</h1>
           <div className={styles.headerActions}>
+            {productActions ? (
+              <DocumentProductsField
+                actions={productActions}
+                disabled={controller.knowledgeEditor.dirty || controller.knowledgeEditor.busy || productActions.busy}
+                document={controller.selectedDocument}
+              />
+            ) : null}
             <BrandKitActionsRow controller={brandKitActions} />
             <div aria-label="Document view" className={styles.segmentedControl} role="group">
               <Segment active={controller.knowledgeEditor.mode === "preview"} onClick={() => controller.knowledgeEditor.setMode("preview")}>

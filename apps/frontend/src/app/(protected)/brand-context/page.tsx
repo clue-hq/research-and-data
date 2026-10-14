@@ -9,6 +9,7 @@ import {
 import { BrandContextScreen } from "@/features/brand-context/components/brand-context-screen";
 import { getBrandContextWorkspace } from "@/features/brand-context/data/brand-context.repository";
 import { readOnboardingStatus } from "@/features/brand-context/data/brand-knowledge.repository";
+import { readBrandProducts } from "@/features/brand-context/data/brand-products";
 import {
   BrandAssetViewSchema,
   BrandColorModeSchema,
@@ -83,9 +84,20 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
       return null;
     }
   };
-  const [view, onboarding, query, session] = await Promise.all([
+  // The Product folder's actions read the brand's product list (spec 2026-10-15). The fixture
+  // path has no product list, so it shows no product actions.
+  const readProducts = async () => {
+    if (!platformConfigured) return null;
+    try {
+      return await readBrandProducts(await clueFetch());
+    } catch {
+      return null;
+    }
+  };
+  const [view, onboarding, products, query, session] = await Promise.all([
     getBrandContextWorkspace(designFetch, clueFetch),
     readStatus(),
+    readProducts(),
     searchParams,
     getProtectedSession(),
   ]);
@@ -108,6 +120,7 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
       }}
       kit={view.kit}
       onboarding={onboarding}
+      products={products}
       workspace={view.workspace}
     />
   );
