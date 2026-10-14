@@ -448,7 +448,14 @@ after custom-domain setup, and after removal).
 
 Every workspace's published pages move from `<label>.pages.cluehq.ai` to `<label>.<new domain>`;
 old URLs answer 301 at the edge; `cluehq.ai` stays reserved for custom domains (customers can never
-connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop after.
+connect a `*.cluehq.ai` hostname). Do the steps in order. **Every step leaves every link working,
+so each is safe to stop after:** from step 3 on, the page origin serves a system address by its
+label on both domains — `<label>.pages.cluehq.ai` and `<label>.<new domain>` answer the same page
+whichever domain the workspace's row names (review finding K3-6) — and a label belongs to one
+workspace on every domain at once, so no workspace can be given another's label on the other side
+of the move (review finding S4-1). The permanent redirect is the **last** step: browsers cache a
+301, so it is turned on only once the new addresses already serve everything. This order needs
+the services deployed with those two fixes (2026-10-15) before step 2.
 
 1. Register the domain. **It must not be the site editor's registrable domain** (`deeppresence.ai`,
    where the editor lives at `edit.deeppresence.ai`) nor the app's (`cluehq.ai`): agent-written code
@@ -458,29 +465,49 @@ connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop a
    (review findings K3-8, S2b-9). Choose a domain registered directly under a one-label public suffix (for
    example `.com` or `.page`, never `.co.uk`): the edge Worker reads the zone as the domain's last
    two labels, so under a two-label suffix every customer domain on that suffix would pass through
-   unserved. Add it to Cloudflare as its own zone; add a proxied wildcard record
+   unserved; `deploy/check_prod_env.py` refuses such a pages domain for every backend role (review
+   finding S7-3). Add it to Cloudflare as its own zone; add a proxied wildcard record
    `*` → the page-origin service (as `*.pages` is today, §5). A first-level wildcard is covered by
    Universal SSL. Apply to the Public Suffix List if the domain should be listed (§5 of the
    isolation research, `docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
-2. Deploy the Worker with the new domain (`infra/cloudflare/pages-edge/wrangler.toml`):
-   `SYSTEM_SUFFIX = "<new domain>"`, `LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai"`, and a second
-   route `{ pattern = "*/*", zone_name = "<new domain>" }`. Change SYSTEM_SUFFIX and
+   Nothing links to the new domain yet, so nothing can break.
+2. Deploy the Worker with **only** the new zone's route added (`infra/cloudflare/pages-edge/wrangler.toml`):
+   `routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }, { pattern = "*/*", zone_name = "<new domain>" }]`.
+   Leave `SYSTEM_SUFFIX = "pages.cluehq.ai"` and `LEGACY_SYSTEM_SUFFIXES = ""` exactly as they are.
+   The Worker forwards any host outside the zones it knows to the page origin, as it does a
+   customer's domain (`routing.js` `decide`; pinned by `routing.test.js`), so the new domain's hosts
+   now reach the origin and nothing redirects. Check:
+   `curl -sI https://<a label>.pages.cluehq.ai/<a slug>` → `200`, unchanged;
+   `curl -sI https://<a label>.<new domain>/<a slug>` → the page origin's `404` with a valid
+   certificate (it is answered by the origin, not by Cloudflare; it serves from step 3);
+   `curl -sI https://app.cluehq.ai/` still answers from the app.
+3. Set the env on every service (Railway shared variables and the VM's `/srv/clue/env`):
+   `CLUE_PAGES_SYSTEM_SUFFIX=<new domain>`, `CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`.
+   Leave `CLUE_PAGES_CNAME_TARGET=pages.cluehq.ai`: custom domains stay on the cluehq.ai zone.
+   `python3 deploy/check_prod_env.py <role> <env file>` must pass for each role. **Redeploy the page
+   origin first** and run the checks below before redeploying the others: from now on the platform
+   API mints new-domain URLs and creates new workspaces on the new domain, so the origin must
+   already serve it. Its startup warning `pages.system_hostnames_off_suffix` lists the rows still on
+   `pages.cluehq.ai` — expected until step 4. Check (both addresses, same page):
+   `curl -sI https://<a label>.pages.cluehq.ai/<a slug>` → `200`;
+   `curl -sI https://<a label>.<new domain>/<a slug>` → `200`.
+4. Move the rows: `uv run python scripts/move_system_hostnames.py --database-url <prod> --to-suffix <new domain>`
+   (dry run: check `rows` and `collisions: []`), then the same with `--apply`. It moves every row in
+   one transaction or none: it exits 1 with `REFUSED` and moves nothing when a new hostname is
+   taken, or when a row changed while it ran or one is still on the old suffix afterwards (review
+   finding S4-3) — run it again. Restart the page origin and the platform API; their startup
+   warning `pages.system_hostnames_off_suffix` must list nothing. Check: the same two `curl` lines
+   → `200` and `200`.
+5. Turn the redirect on — deploy the Worker with `SYSTEM_SUFFIX = "<new domain>"` and
+   `LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai"` (both routes stay). Change SYSTEM_SUFFIX and
    LEGACY_SYSTEM_SUFFIXES in the same edit and the same deploy — with the new suffix and an empty
    legacy list, the Worker would forward every cluehq.ai host, app.cluehq.ai included, to the page
    origin. Check:
    `curl -sI https://<a label>.pages.cluehq.ai/<a slug>` → `301` with
-   `location: https://<a label>.<new domain>/<a slug>` — and the new URL serves the page once step 4 ran.
+   `location: https://<a label>.<new domain>/<a slug>`, and that location → `200`;
    `curl -sI https://app.cluehq.ai/` must still answer from the app (not the page origin) right
    after the deploy.
-3. Set the env on every service (Railway shared variables and the VM's `/srv/clue/env`):
-   `CLUE_PAGES_SYSTEM_SUFFIX=<new domain>`, `CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`.
-   Leave `CLUE_PAGES_CNAME_TARGET=pages.cluehq.ai`: custom domains stay on the cluehq.ai zone.
-   `python3 deploy/check_prod_env.py <role> <env file>` must pass for each role.
-4. Move the rows: `uv run python scripts/move_system_hostnames.py --database-url <prod> --to-suffix <new domain>`
-   (dry run: check `rows` and `collisions: []`), then the same with `--apply`. Restart the page
-   origin and the platform API; their startup warning `pages.system_hostnames_off_suffix` must list
-   nothing.
-5. Republish isn't required: published HTML is root-relative. Only `og:image` and the manifest's
+6. Republish isn't required: published HTML is root-relative. Only `og:image` and the manifest's
    `canonical_url` name the old host, and the 301 covers them; a republish refreshes them.
 
 ---
