@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwind from "@tailwindcss/postcss";
 import { build } from "esbuild";
 import postcss from "postcss";
+import { editorThemeCss } from "@clue/site-kit";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const DIST = path.join(ROOT, "dist");
@@ -63,8 +64,12 @@ export function pageHtml(scriptName: string, styleName: string): string {
   ].join("\n");
 }
 
+const THEME_MARKER = "/* @clue-brand-theme */";
+
 export async function compileStyles(): Promise<string> {
-  const source = await fs.readFile(STYLES, "utf8");
+  const written = await fs.readFile(STYLES, "utf8");
+  if (!written.includes(THEME_MARKER)) throw new Error(`${STYLES} lost its ${THEME_MARKER} line`);
+  const source = written.replace(THEME_MARKER, editorThemeCss());
   const result = await postcss([tailwind({ base: ROOT })]).process(source, { from: STYLES });
   return result.css;
 }

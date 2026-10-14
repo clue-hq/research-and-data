@@ -266,13 +266,13 @@ export function themeCss(brand: BrandData): string {
   return lines.filter(Boolean).join("\n");
 }
 
-/** The Tailwind v4 mapping of the `--brand-*` variables this theme emits, as one `@theme inline`
- * block (per brand: the kit's extra surfaces and spacing add utilities). The design API's server CSS
- * compile prepends `@import "tailwindcss";` and compiles it over a site's rendered HTML (Task 17). */
-export function tailwindThemeCss(brand: BrandData): string {
+/** One `@theme inline` block mapping Tailwind's names onto the `--brand-*` variables. The published
+ * page and the editor canvas both build theirs here, so a brand setting can never be named on one and
+ * forgotten on the other (review finding K5-2: the canvas had none of the brand's spacing). */
+function themeBlock(onSurfaces: readonly string[], colorRoles: readonly string[], spacingRoles: readonly string[]): string {
   const lines: string[] = [];
-  for (const surface of surfaceRoles(brand)) lines.push(`--color-on-${colorVar(surface)}: var(--brand-on-${colorVar(surface)});`);
-  for (const role of [...COLOR_ROLES, ...extraSurfaceRoles(brand)]) lines.push(`--color-${colorVar(role)}: var(--brand-${colorVar(role)});`);
+  for (const surface of onSurfaces) lines.push(`--color-on-${colorVar(surface)}: var(--brand-on-${colorVar(surface)});`);
+  for (const role of colorRoles) lines.push(`--color-${colorVar(role)}: var(--brand-${colorVar(role)});`);
   for (const role of TYPE_ROLES) {
     const name = typeVar(role);
     lines.push(
@@ -284,8 +284,25 @@ export function tailwindThemeCss(brand: BrandData): string {
     );
   }
   for (const role of RADIUS_ROLES) lines.push(`--radius-${role}: var(--brand-radius-${role});`);
-  for (const role of SPACING_ROLES) {
-    if (numberOf(brand, `space.${role}`)) lines.push(`--spacing-${spacingVar(role)}: var(--brand-space-${spacingVar(role)});`);
-  }
+  for (const role of spacingRoles) lines.push(`--spacing-${spacingVar(role)}: var(--brand-space-${spacingVar(role)});`);
   return `@theme inline {\n${lines.map((line) => `  ${line}`).join("\n")}\n}\n`;
+}
+
+/** The Tailwind v4 mapping of the `--brand-*` variables this theme emits, as one `@theme inline`
+ * block (per brand: the kit's extra surfaces and spacing add utilities). The design API's server CSS
+ * compile prepends `@import "tailwindcss";` and compiles it over a site's rendered HTML (Task 17). */
+export function tailwindThemeCss(brand: BrandData): string {
+  return themeBlock(
+    surfaceRoles(brand),
+    [...COLOR_ROLES, ...extraSurfaceRoles(brand)],
+    SPACING_ROLES.filter((role) => numberOf(brand, `space.${role}`)),
+  );
+}
+
+/** The editor canvas's mapping: compiled once, when the editor is built, for every brand, so it
+ * declares every role (a brand without a value leaves its variable unset, which draws as the
+ * published page does without the utility). A kit's extra surfaces are painted at runtime instead
+ * (site-editor's surfaceUtilityCss). */
+export function editorThemeCss(): string {
+  return themeBlock(SURFACES, COLOR_ROLES, SPACING_ROLES);
 }

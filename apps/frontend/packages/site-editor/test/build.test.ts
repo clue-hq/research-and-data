@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { surfaceChoices, surfaceClass } from "@clue/site-kit";
+import { editorThemeCss, extraSurfaceRoles, surfaceChoices, surfaceClass, tailwindThemeCss } from "@clue/site-kit";
 import { kitBrand } from "../../site-kit/test/fixtures/kits";
 import { IMPORT_MAP, compileStyles, pageHtml, shimSource } from "../scripts/build";
 import { buildPageConfig } from "../src/client/config";
@@ -14,6 +14,29 @@ test("the stylesheet carries the brand-token utilities site-kit's sections use, 
   }
   assert.ok(css.includes("--puck-color-azure-04"), "Puck's stylesheet is bundled");
   assert.ok(css.includes("[data-site-shell-selected]"));
+});
+
+test("K5-2: the canvas has every brand utility the published page can have, the brand's spacing included", async () => {
+  const css = await compileStyles();
+  // The twelve spacing utilities site-kit's own sections use (review finding K5-2: all missing).
+  for (const utility of [
+    ".py-section", ".px-page-margin", ".p-card-padding", ".pt-stack-default", ".py-stack-loose", ".py-stack-tight",
+    ".gap-stack-tight", ".gap-stack-default", ".gap-stack-loose", ".mt-stack-tight", ".mt-stack-default", ".mt-stack-loose",
+  ]) {
+    assert.ok(css.includes(utility), utility);
+  }
+  // By construction, not by a list: every theme variable a published page can declare (for a brand
+  // that has every role) is declared in the canvas's theme too (an inline theme writes no variables
+  // into the compiled CSS, so the two theme blocks are compared). A kit's extra surfaces are painted at runtime
+  // (surfaceUtilityCss), so they are the one exception.
+  const brand = kitBrand("garner.minted");
+  const extras = extraSurfaceRoles(brand).map((role) => role.replace(/\./g, "-"));
+  assert.ok(tailwindThemeCss(brand).includes("--spacing-section:"), "the fixture brand has spacing");
+  for (const match of tailwindThemeCss(brand).matchAll(/(--[\w-]+):/g)) {
+    const name = match[1];
+    if (extras.some((extra) => name.endsWith(`-${extra}`))) continue;
+    assert.ok(editorThemeCss().includes(`${name}:`), `${name} is published but not on the canvas`);
+  }
 });
 
 test("every surface the dock offers paints on the editor canvas in the brand's colour, its own bands included", async () => {
