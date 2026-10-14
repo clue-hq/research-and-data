@@ -94,3 +94,14 @@ Owed:
 - Live walk (founder-triggered; live agent runs spend money): put one workspace on
   `LUMEN_SITE_LIVE_WORKSPACES`, restart the design API and workers, ask for an interactive section,
   publish, open the published page in the in-app browser and click it.
+
+## Phase 1 closed (2026-10-15, SDD)
+- 12 tasks done with Opus implementers, every task reviewed by the controller; final whole-branch review
+  found F1 (live screenshot had no hard deadline — fixed `ea5271a10`), F2 (unused param, `c7c096db8`),
+  F3 (readable hydration notes for the agent, `74846787f`). Late Task 3 fix `eb883bc07` (one error
+  boundary in site-kit; the editor's failed-section marker restored). Founder-approved skill
+  `f02340713` and live-only prompt lines `0de710806`. Range abf0c53c5..ea5271a10.
+- Still owed: founder OK on the publish-refusal wording (`_UNSAFE_MARKUP`, committed as drafted); the
+  in-app-browser walk (needs: `alembic upgrade head` on lane DB clue_trenton, a workspace on
+  LUMEN_SITE_LIVE_WORKSPACES, a stack restart, and — for an agent-written interactive section — one paid
+  live run). Rebuild site-kit (`npm run build -w @clue/site-kit`) wherever the stack runs.
