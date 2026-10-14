@@ -7,6 +7,7 @@ import {
   type OnboardingStep,
 } from "@/features/onboarding/model/onboarding";
 import { ONBOARDING_STEPS } from "@/features/onboarding/model/onboarding-navigation";
+import { operatorSetupTarget } from "@/features/onboarding/model/operator-setup";
 
 const screenTitles: Record<OnboardingStep, string> = {
   "sign-in": "Sign in",
@@ -37,7 +38,12 @@ export default async function OnboardingStepPage({
   searchParams,
 }: {
   params: Promise<{ step: string }>;
-  searchParams: Promise<{ hold?: string; reason?: string }>;
+  searchParams: Promise<{
+    hold?: string;
+    reason?: string;
+    workspace?: string | string[];
+    website?: string | string[];
+  }>;
 }) {
   const [{ step }, query, flow] = await Promise.all([
     params,
@@ -56,6 +62,7 @@ export default async function OnboardingStepPage({
           ? "Your session expired. Please sign in again."
           : null
       }
+      operatorTarget={step === "setting-up" ? operatorSetupTarget(query) : null}
       step={step}
     />
   );

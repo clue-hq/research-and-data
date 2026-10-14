@@ -1,6 +1,7 @@
 "use client";
 
 import type { OnboardingFlow, OnboardingStep } from "../model/onboarding";
+import type { OperatorSetupTarget } from "../model/operator-setup";
 import { useOnboardingController } from "../hooks/use-onboarding-controller";
 import { AuthScreen } from "./auth-screen";
 import {
@@ -8,6 +9,7 @@ import {
   OnboardingHeader,
 } from "./onboarding-brand";
 import { LiveSetupScreen } from "./live-setup-screen";
+import { OperatorSetupScreen } from "./operator-setup-screen";
 import { ProfileScreen } from "./profile-screen";
 import { SetupScreen } from "./setup-screen";
 import { VerifyEmailScreen } from "./verify-email-screen";
@@ -18,12 +20,15 @@ export function OnboardingScreen({
   step,
   autoAdvance,
   notice = null,
+  operatorTarget = null,
 }: {
   flow: OnboardingFlow;
   step: OnboardingStep;
   autoAdvance: boolean;
   /** One line above a sign-in card, e.g. why the user was sent back to sign in. */
   notice?: string | null;
+  /** An operator link's workspace and website (model/operator-setup.ts); setting-up only. */
+  operatorTarget?: OperatorSetupTarget | null;
 }) {
   const controller = useOnboardingController({ step, autoAdvance });
   const isAuthScreen = [
@@ -38,13 +43,23 @@ export function OnboardingScreen({
     return (
       <main className={`${styles.page} ${styles.subtlePage}`}>
         {controller.authMode === "clerk" ? (
-          // Real lane truth; the presentation timer never runs here. The website is the
-          // profile draft's — the same value provisioning posted — not the fixture account's.
-          <LiveSetupScreen
-            companyWebsite={controller.draft.companyWebsite}
-            compact={step === "finalizing"}
-            setup={flow.setup}
-          />
+          operatorTarget ? (
+            // An operator link: the workspace and website come from the link, not the profile
+            // draft (there is no signup in this flow). See model/operator-setup.ts.
+            <OperatorSetupScreen
+              compact={step === "finalizing"}
+              setup={flow.setup}
+              target={operatorTarget}
+            />
+          ) : (
+            // Real lane truth; the presentation timer never runs here. The website is the
+            // profile draft's — the same value provisioning posted — not the fixture account's.
+            <LiveSetupScreen
+              companyWebsite={controller.draft.companyWebsite}
+              compact={step === "finalizing"}
+              setup={flow.setup}
+            />
+          )
         ) : (
           <SetupScreen compact={step === "finalizing"} setup={flow.setup} />
         )}
