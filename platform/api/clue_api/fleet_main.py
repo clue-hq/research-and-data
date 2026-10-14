@@ -151,6 +151,7 @@ from clue_api.onboarding_synthesis_wiring import (
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_management import regenerate_catalog
+from clue_api.product_page_writer import build_product_page_handler
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import (
@@ -1387,6 +1388,13 @@ async def _serve() -> None:
             secrets,
             artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         )
+        # Spec 2026-10-15 §6: a person's add or merge in Brand context, written in the background.
+        product_page_handler = build_product_page_handler(
+            settings,
+            secrets,
+            storage=storage,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1401,6 +1409,7 @@ async def _serve() -> None:
             arv2_account_research_handler=arv2_account_research_handler,
             arv2_discovery_handler=arv2_discovery_handler,
             arv2_display_page_handler=arv2_display_page_handler,
+            product_page_handler=product_page_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,

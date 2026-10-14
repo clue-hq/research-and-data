@@ -688,6 +688,17 @@ class Settings(BaseSettings):
     # Env: ``CLUE_CONVERSATION_NAMING_TIMEOUT_S``.
     conversation_naming_timeout_s: float = 60.0
 
+    # --- Product page writer (spec 2026-10-15-product-management-design §6) -----------------
+    # When a person adds or merges products in Brand context, one background call writes the
+    # product's page from the pages being merged (or the description they typed). Off leaves the
+    # page "being written" until the Head of ABM or a person writes it.
+    # Env: ``CLUE_PRODUCT_PAGE_WRITER_ENABLED``.
+    product_page_writer_enabled: bool = True
+    # OpenRouter model id for that call. Env: ``CLUE_PRODUCT_PAGE_WRITER_MODEL``.
+    product_page_writer_model: str = "x-ai/grok-4.6"
+    # The call's HTTP timeout in seconds. Env: ``CLUE_PRODUCT_PAGE_WRITER_TIMEOUT_S``.
+    product_page_writer_timeout_s: float = 300.0
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is

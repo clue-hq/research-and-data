@@ -70,11 +70,14 @@ __all__ = [
     "ProductChangeResult",
     "ProjectSetOutcome",
     "add_product",
+    "change_details",
     "describe_change",
     "list_brand_products",
+    "main_page_of",
     "mark_product_page_failed",
     "merge_products_action",
     "publish_product_page",
+    "read_brand_document",
     "recent_product_changes",
     "regenerate_catalog",
     "remove_product_action",
@@ -1499,6 +1502,59 @@ async def publish_product_page(
         below=int(row["version"]),
     )
     return True
+
+
+async def read_brand_document(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    brand_id: str,
+    document_id: UUID,
+) -> tuple[dict[str, Any], str] | None:
+    """One brand-level document's front matter and body, whatever its status (a retired page is
+    still readable — that is what the page writer and an undo read)."""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT document_id, path, kind, version, status, artifact_key, "
+                    " artifact_sha256 FROM brand_knowledge_document WHERE document_id = :id "
+                    "AND workspace_id = :ws AND brand_id = :brand AND project_id IS NULL"
+                ),
+                {"id": document_id, "ws": workspace_id, "brand": brand_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None or not row["artifact_key"]:
+        return None
+    doc = await _read_doc(conn, storage, workspace_id=workspace_id, row=row)
+    return doc.front, doc.body
+
+
+async def change_details(
+    conn: AsyncConnection, *, workspace_id: str, change_id: UUID
+) -> dict[str, Any] | None:
+    details = await conn.scalar(
+        text("SELECT details FROM product_change WHERE change_id = :id AND workspace_id = :ws"),
+        {"id": change_id, "ws": workspace_id},
+    )
+    return None if details is None else dict(decode_jsonb(details) or {})
+
+
+async def main_page_of(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    brand_id: str,
+    product_id: str,
+) -> tuple[dict[str, Any], str] | None:
+    docs = await _product_folder(conn, storage, workspace_id=workspace_id, brand_id=brand_id)
+    page = _main_pages(docs).get(product_id)
+    return None if page is None else (page.front, page.body)
 
 
 async def mark_product_page_failed(conn: AsyncConnection, *, document_id: UUID) -> None:

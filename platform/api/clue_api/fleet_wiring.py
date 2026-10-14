@@ -394,6 +394,7 @@ def build_multi_work_worker(
     arv2_account_research_handler: WorkHandler | None = None,
     arv2_discovery_handler: WorkHandler | None = None,
     arv2_display_page_handler: WorkHandler | None = None,
+    product_page_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -478,6 +479,11 @@ def build_multi_work_worker(
         and arv2_display_page_handler.kind is not FleetTaskKind.ARV2_DISPLAY_PAGE
     ):
         raise ValueError("arv2_display_page_handler must own arv2_display_page tasks")
+    if (
+        product_page_handler is not None
+        and product_page_handler.kind is not FleetTaskKind.PRODUCT_PAGE_WRITE
+    ):
+        raise ValueError("product_page_handler must own product_page_write tasks")
     handlers: list[WorkHandler] = [
         # The one kind the 9d handler-safety audit found NOT safe to run concurrently on one
         # instance. Two independent reasons, both in code today:
@@ -513,6 +519,8 @@ def build_multi_work_worker(
         handlers.append(arv2_discovery_handler)
     if arv2_display_page_handler is not None:
         handlers.append(arv2_display_page_handler)
+    if product_page_handler is not None:
+        handlers.append(product_page_handler)
     selected = selected_worker_kinds(settings.fleet_worker_kinds)
     if selected is not None:
         handlers = [handler for handler in handlers if handler.kind in selected]
