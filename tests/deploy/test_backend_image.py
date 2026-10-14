@@ -39,11 +39,21 @@ def test_the_smoke_test_writes_to_the_arv2_raw_root_as_the_image_user() -> None:
     assert 'check "arv2 raw root writable"' in SMOKE
 
 
-def test_the_smoke_test_launches_chromium_with_its_own_sandbox_as_the_site_renderer_does() -> None:
-    """The site renderer asks for Chromium's sandbox (LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=1); the
-    image build is where a seccomp profile that cannot give it one must show up."""
-    assert 'check "chromium launches sandboxed"' in SMOKE
-    assert "p.chromium.launch(chromium_sandbox=True)" in SMOKE
+def test_the_image_runs_the_site_renderer_without_chromiums_own_sandbox() -> None:
+    """Review finding S7-1, option A (the decision:
+    docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md). Under Docker's default seccomp
+    profile Chromium cannot create the user namespace its sandbox needs ("No usable sandbox!"), so
+    the image sets the renderer's sandbox off; Macs keep the code default (on)."""
+    assert re.search(r"^\s*LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0\b", DOCKERFILE, re.MULTILINE)
+
+
+def test_the_smoke_test_launches_the_site_renderer_exactly_as_the_image_runs_it() -> None:
+    """The smoke check used to launch Chromium with the sandbox hard-coded on, which the image
+    cannot give and its own setting could not change, so it blocked every release (S7-1). It now
+    opens the renderer's own hardened page, which reads the image's setting."""
+    assert 'check "site renderer launches"' in SMOKE
+    assert "hardened_page" in SMOKE
+    assert "chromium_sandbox=True" not in SMOKE
 
 
 def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tags() -> None:

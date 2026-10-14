@@ -177,7 +177,27 @@ def test_the_image_sets_every_path_the_check_keeps_out_of_env_files() -> None:
     dockerfile = (_PATH.parents[1] / "docker" / "backend" / "Dockerfile").read_text("utf-8")
     for name in IMAGE_OWNED:
         assert f"{name}=/" in dockerfile, name
-    assert set(check.IMAGE_OWNED) == set(IMAGE_OWNED)
+    assert set(check.IMAGE_OWNED) == {*IMAGE_OWNED, SANDBOX}
+
+
+# Review finding S7-1, option A: the image sets the site renderer's Chromium sandbox off, because
+# the containers cannot give Chromium one. An env line would override the image, and
+# `.env.example`'s value (1, for Macs) is exactly the one that breaks every render in a container.
+SANDBOX = "LUMEN_SITE_RENDER_CHROMIUM_SANDBOX"
+
+
+@pytest.mark.parametrize("role", list(GOOD))
+@pytest.mark.parametrize("value", ["1", "0", "true", ""])
+def test_an_env_line_for_the_renderers_chromium_sandbox_is_refused(role: str, value: str) -> None:
+    env = {**GOOD[role], SANDBOX: value}
+    found = [p for p in check.problems(env, role) if p.startswith(f"{SANDBOX} must not be set")]
+    assert found, check.problems(env, role)
+    assert "2026-10-14-site-render-chromium-sandbox-decision" in found[0], "it names the decision"
+
+
+def test_the_image_sets_the_renderers_chromium_sandbox() -> None:
+    dockerfile = (_PATH.parents[1] / "docker" / "backend" / "Dockerfile").read_text("utf-8")
+    assert f"{SANDBOX}=0" in dockerfile
 
 
 def test_workers_must_not_pick_their_own_kinds_in_the_shared_env_file() -> None:

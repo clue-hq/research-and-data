@@ -146,3 +146,14 @@ checkout or a new worker host must carry all three before the flows run:
 
 Env-var trap (walk finding F-6): the design agent reads `LUMEN_AGENT_API_KEY`; a workspace
 `.env` carrying only `CLUE_OPENROUTER_API_KEY` is a guaranteed first-run stumble — set both.
+
+## 6. The hardened site renderer runs without Chromium's own sandbox in containers
+
+`apps/api/lumen_api/hardened_browser.py` renders agent-written site code. In containers it runs with
+`LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0` (set by the backend image; a production env file must leave
+the line out) because Docker's default seccomp profile cannot give Chromium its sandbox — founder
+decision 2026-10-14, option A of review finding S7-1. On a Mac the code default (on) stays. Before
+changing that setting, the image, the release smoke check, or how agent code renders on the server,
+read `docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md` (repo root): it records the
+residual risk, the hardening steps still owed, and when to move to a seccomp profile or the locked
+render container.

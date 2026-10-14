@@ -69,9 +69,14 @@ COPY --from=sitekit /src/apps/frontend/packages/site-kit/dist /app/apps/frontend
 COPY --from=sitekit /src/apps/frontend/node_modules /app/apps/frontend/node_modules
 # CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings
 # default, .artifacts/arv2, is relative and would land under the root-owned /app.
+# LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0: the site renderer's Chromium runs WITHOUT its own sandbox in
+# containers. Docker's default seccomp profile (CI, the VM; Railway is no better) refuses the user
+# namespace the sandbox needs, so with it on no site renders and the release smoke fails. Option A
+# of docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md (founder, 2026-10-14): read it before changing this, and before any upgrade.
 ENV LUMEN_CORE_HELPER=/app/subsystems/clue-design/target/release/lumen-api-helper \
     LUMEN_FONT_LIBRARY_MANIFEST_PATH=/app/subsystems/clue-design/apps/api/font-library/manifest.json \
-    CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw
+    CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw \
+    LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0
 COPY docker/backend/entrypoint.sh /usr/local/bin/clue
 # The section compiler (Lane B, Contract 4) type-checks each agent section in a throwaway folder
 # inside site-kit, where react and zod resolve; the runtime user must be able to create it.

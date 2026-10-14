@@ -31,10 +31,10 @@ check "site-kit section check folder writable" run test -w /app/apps/frontend/pa
 check "node" run node --version
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
-# The site renderer asks Chromium for its own sandbox (LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=1). If this
-# fails ("No usable sandbox" under the container's seccomp profile), every site render refuses with
-# render.failed: set the variable to 0 for that service, record why, and tell the founder.
-check "chromium launches sandboxed" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(chromium_sandbox=True); b.close(); p.stop()"
+# The site renderer's own hardened page, launched exactly as the services run it: it reads the
+# image's LUMEN_SITE_RENDER_CHROMIUM_SANDBOX (0: the container cannot give Chromium its own sandbox).
+# Review finding S7-1 and docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md.
+check "site renderer launches" run python -c "exec('from lumen_api.hardened_browser import hardened_page\\nwith hardened_page(javascript=True) as (page, _):\\n    page.set_content(\"<p>ok</p>\")\\n    assert page.inner_text(\"p\") == \"ok\"')"
 check "non-root (uid 1000)" runs_as_uid_1000
 check "alembic" quiet run alembic --help
 check "s3 storage sdk" run python -c "import aioboto3"

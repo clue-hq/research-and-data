@@ -16,8 +16,10 @@ layers, any one of which is enough on its own:
    it is: an aborted navigation makes Chromium commit its error page in place of the document
    (``abort("aborted")`` too — probe 2026-10-13). Anything else is aborted.
 
-Plus a V8 heap cap, Chromium's own sandbox (``LUMEN_SITE_RENDER_CHROMIUM_SANDBOX``, default on)
-and the process-wide capture slots shared with the web thumbnail captures. The browser is
+Plus a V8 heap cap, Chromium's own sandbox (``LUMEN_SITE_RENDER_CHROMIUM_SANDBOX``, default on — but
+OFF in containers: the backend image sets 0, because Docker's default seccomp profile cannot give
+Chromium its sandbox; founder decision 2026-10-14, ``docs/specs/2026-10-14-site-render-chromium-
+sandbox-decision.md``) and the process-wide capture slots shared with the web thumbnail captures. The browser is
 closed — which also kills a page stuck in a loop — however the caller's block ends.
 
 Sync Playwright: call from a thread with no running event loop (``asyncio.to_thread``).

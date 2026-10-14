@@ -63,6 +63,11 @@ IMAGE_OWNED = {
     "CLUE_ARV2_RAW_ROOT": "podcast downloads, writable by uid 1000",
     "LUMEN_CORE_HELPER": "the design engine helper binary",
     "LUMEN_FONT_LIBRARY_MANIFEST_PATH": "the font library manifest",
+    # Review finding S7-1: .env.example's 1 (right on a Mac) breaks every site render in a container.
+    "LUMEN_SITE_RENDER_CHROMIUM_SANDBOX": (
+        "0: the containers cannot give the site renderer's Chromium its own sandbox; see "
+        "docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md"
+    ),
 }
 #: Telemetry labels that must say production when present (the lane writes its own name there).
 PRODUCTION_LABELS = ("CLUE_SENTRY_ENVIRONMENT", "CLUE_LANGFUSE_ENVIRONMENT")
