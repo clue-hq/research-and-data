@@ -44,3 +44,33 @@ test("⌘I is swallowed (the Edit button owns preview); plain keys and other sho
   assert.deepEqual(key({ key: "c", code: "KeyC" }), { stop: false, preventDefault: false, send: null });
   assert.deepEqual(key({ target: null }), { stop: true, preventDefault: true, send: "undo" });
 });
+
+// Sync-fix review F6. Puck's preview toggle matches the PHYSICAL KeyI too, and Puck does not track
+// the left Alt key, so every ⌘/Ctrl chord on the Z, Y or I keys is stopped before Puck sees it; ours
+// acts only on the real character, without Alt.
+const STOP_ONLY = { stop: true, preventDefault: false, send: null };
+
+test("Dvorak ⌘C and Colemak ⌘U (the physical I key) still copy / underline, and Puck's preview toggle never sees them", () => {
+  assert.deepEqual(key({ key: "c", code: "KeyI" }), STOP_ONLY);
+  assert.deepEqual(key({ key: "c", code: "KeyI", metaKey: false, ctrlKey: true }), STOP_ONLY);
+  assert.deepEqual(key({ key: "u", code: "KeyI" }), STOP_ONLY);
+  assert.deepEqual(key({ key: "c", code: "KeyI", target: text }), STOP_ONLY);
+  assert.deepEqual(key({ key: "i", code: "KeyG" }), { stop: true, preventDefault: true, send: null }, "⌘I by character stays swallowed");
+});
+
+test("an Alt chord on a history key is never a history step, and Puck never sees it", () => {
+  assert.deepEqual(key({ metaKey: false, ctrlKey: true, altKey: true }), STOP_ONLY, "Ctrl+Alt+Z on Windows");
+  assert.deepEqual(key({ key: "Ω", altKey: true }), STOP_ONLY, "⌥⌘Z on a Mac");
+  assert.deepEqual(key({ key: "ż", metaKey: false, ctrlKey: true, altKey: true }), STOP_ONLY, "AltGr+Z typing ż (Polish)");
+  assert.deepEqual(key({ key: "y", code: "KeyY", altKey: true, shiftKey: true }), STOP_ONLY);
+  assert.deepEqual(key({ key: "i", code: "KeyI", altKey: true }), STOP_ONLY);
+  assert.deepEqual(key({ key: "c", code: "KeyC", altKey: true }), { stop: false, preventDefault: false, send: null });
+});
+
+test("text inside a shadow root is editable text: the event's real target is read through its composed path", () => {
+  const host = { isContentEditable: false, tagName: "AGENT-SECTION" };
+  assert.deepEqual(key({ target: host, composedPath: () => [input, host, body] }), STOP_ONLY);
+  assert.deepEqual(key({ target: host, composedPath: () => [text, host] }), STOP_ONLY);
+  assert.deepEqual(key({ target: host, composedPath: () => [host, body] }), { stop: true, preventDefault: true, send: "undo" });
+  assert.deepEqual(key({ target: host, composedPath: () => [] }), { stop: true, preventDefault: true, send: "undo" });
+});

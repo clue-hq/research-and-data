@@ -183,3 +183,28 @@ def test_cmd_z_in_a_puck_inline_field_keeps_the_dock_edit(
         proof_heading(m["payload"]["site"]) == "DOCK EDIT" for m in changed_after(page, mark)
     )
     assert frame.get_by_text("DOCK EDIT").count() > 0, "the canvas still shows the dock edit"
+
+
+DVORAK_COPY = """(code) => {
+  const fire = (type, init) => document.body.dispatchEvent(
+    new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }));
+  fire('keydown', { key: 'Meta', code: 'MetaLeft', metaKey: true });
+  fire('keydown', { key: 'c', code, metaKey: true });
+  fire('keyup', { key: 'c', code, metaKey: true });
+  fire('keyup', { key: 'Meta', code: 'MetaLeft' });
+}"""
+
+
+def test_on_a_dvorak_layout_cmd_c_never_toggles_puck_preview(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    """Sync-fix review F6: Puck's preview toggle matches the PHYSICAL KeyI, which types "c" on
+    Dvorak. Copy must not flip Puck into interactive mode, where a click selects nothing."""
+    page, frame = open_garner(app, browser_page, editor_origin)
+    frame.evaluate(DVORAK_COPY, "KeyI")
+    page.wait_for_timeout(500)
+    mark = len(received(page))
+    frame.get_by_text(PROOF).first.click(force=True)
+    page.wait_for_timeout(1000)
+    after = [m["type"] for m in received(page)[mark:]]
+    assert "selected" in after, f"a click after Dvorak Cmd+C still selects the section: {after}"
