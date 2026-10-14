@@ -109,11 +109,22 @@ async def bind_execution(
             {"job": scope.job_id, "ws": scope.workspace_id},
         )
     ).one()
+    granted = (
+        await conn.execute(
+            text("""
+      SELECT COALESCE(sum(top_up_model_calls),0), COALESCE(sum(top_up_tool_calls),0),
+        COALESCE(sum(top_up_delegations),0), COALESCE(sum(top_up_runtime_ms),0)
+      FROM arv2_research_job_resume WHERE job_id=:job AND workspace_id=:ws
+    """),
+            {"job": scope.job_id, "ws": scope.workspace_id},
+        )
+    ).one()
+    # An admin's recorded top-up (spec 2026-10-14 §3.5) is the only way the limits grow.
     if tuple(saved) != (
-        limits.model_calls,
-        limits.tool_calls,
-        limits.delegations,
-        limits.runtime_ms,
+        limits.model_calls + granted[0],
+        limits.tool_calls + granted[1],
+        limits.delegations + granted[2],
+        limits.runtime_ms + granted[3],
     ):
         raise ValueError("research recovery cannot reset the shared allowance")
     await conn.execute(

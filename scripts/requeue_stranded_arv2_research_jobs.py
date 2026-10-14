@@ -31,15 +31,9 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.fleet_task import (
-    ARV2_ACCOUNT_DEDUP_PREFIX,
-    ARV2_ACCOUNT_TASK_PRIORITY,
-    arv2_account_work_id,
-)
-from clue_core import ProjectRunId
+from clue_api.arv2.job_resume import offer_research_job
 from clue_db import db_lifespan, transaction
 from clue_fleet import FleetTaskKind
-from clue_fleet.queue import enqueue_task
 
 _STRANDED = text(
     """
@@ -88,18 +82,8 @@ async def apply_requeue(conn: AsyncConnection, plan: Sequence[StrandedJob]) -> i
     """Re-offer each planned job the way the launch offers it; returns how many were offered."""
     offered = 0
     for job in plan:
-        offered += await enqueue_task(
-            conn,
-            kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
-            project_run_id=ProjectRunId(arv2_account_work_id(job.job_id)),
-            dedup_key=f"{ARV2_ACCOUNT_DEDUP_PREFIX}{job.job_id}",
-            priority=ARV2_ACCOUNT_TASK_PRIORITY,
-            payload={
-                "job_id": str(job.job_id),
-                "run_id": str(job.run_id),
-                "workspace_id": job.workspace_id,
-            },
-            reopen_terminal=True,
+        offered += await offer_research_job(
+            conn, job_id=job.job_id, run_id=job.run_id, workspace_id=job.workspace_id
         )
     return offered
 
