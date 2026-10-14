@@ -168,3 +168,53 @@ def test_clicking_from_an_edited_clone_slot_into_its_sibling_keeps_the_caret_the
     page.keyboard.type(" CHANGED")
     active = click_into_sibling_and_type(page, frame, "ZZTYPED")
     assert_typing_reached_the_body(page, frame, active, mark)
+
+
+def stands_headline_in_changes(page: Any, mark: int) -> list[str]:
+    return [
+        str(e["props"]["slots"].get("headline", ""))
+        for m in changed_after(page, mark)
+        for e in m["payload"]["site"]["pages"]["/"]["content"]
+        if e["props"]["id"] == "stands"
+    ]
+
+
+def test_typing_in_a_clone_slot_is_sent_after_a_pause_without_leaving_it(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    """The founder's live walk (2026-10-14): typing reached the page only when the text box lost
+    focus, so a reload while still in the box lost it. A pause in typing now sends it, and the caret
+    stays where the marketer is typing while each save lands."""
+    page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
+    mark = len(received(page))
+    frame.locator(STANDS.format(key="headline")).first.click(force=True)
+    page.keyboard.press("End")
+    page.keyboard.type(" PAUSED")
+    page.wait_for_timeout(2500)
+    assert frame.evaluate(ACTIVE_SLOT) == "headline", "the caret stays in the box"
+    sent = stands_headline_in_changes(page, mark)
+    assert sent and sent[-1].endswith("PAUSED"), sent
+    page.keyboard.type(" MORE")
+    page.wait_for_timeout(2500)
+    assert frame.evaluate(ACTIVE_SLOT) == "headline", "the caret stays in the box after a save"
+    sent = stands_headline_in_changes(page, mark)
+    assert sent[-1].endswith("PAUSED MORE"), sent
+    assert frame.locator(STANDS.format(key="headline")).first.inner_text().endswith("PAUSED MORE")
+
+
+def test_the_frame_tells_the_app_while_typing_is_unsent(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    """The app asks before a reload while the frame holds unsent typing; the frame says so."""
+    page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
+    mark = len(received(page))
+    frame.locator(STANDS.format(key="headline")).first.click(force=True)
+    page.keyboard.press("End")
+    page.keyboard.type(" X")
+    page.wait_for_timeout(200)
+    pending = [m["payload"]["pending"] for m in received(page)[mark:] if m["type"] == "pending"]
+    assert pending == [True], pending
+    page.wait_for_timeout(3000)
+    pending = [m["payload"]["pending"] for m in received(page)[mark:] if m["type"] == "pending"]
+    assert pending == [True, False], pending
+    assert stands_headline_in_changes(page, mark), "and the typing was sent"
