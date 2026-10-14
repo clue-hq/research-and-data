@@ -40,7 +40,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 from pydantic import JsonValue, SecretStr
@@ -101,7 +101,7 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
-from clue_api.arv2.quality_generation import FINAL_PAGE_STEP
+from clue_api.arv2.quality_generation import FINAL_PAGE_STEP, initial_settle_event_id
 from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
 from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
@@ -2005,7 +2005,9 @@ class Arv2AccountResearchWorkHandler:
                     conn,
                     workspace_id=composition.run.workspace_id,
                     generation_id=generation.generation_id,
-                    event_id=uuid5(NAMESPACE_URL, f"quality-initial:{composition.job.job_id}"),
+                    event_id=initial_settle_event_id(
+                        composition.job.job_id, composition.job.attempt
+                    ),
                     reason="initial_settled",
                 )
                 if composition.job.subject_type == "person":

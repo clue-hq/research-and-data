@@ -291,3 +291,41 @@ def test_the_stuck_list_shows_failed_and_stranded_jobs_with_their_resumability(t
             assert stuck[op.job_id].as_json()["job_id"] == str(op.job_id)
 
     run_async(case())
+
+
+def test_a_resumed_account_job_settling_again_moves_its_generation(tmp_path):
+    """A job resumed after it settled once settles again on a later attempt; that is a new
+    event for its generation, while a redelivered settle of the same attempt is not."""
+    import inspect
+    from uuid import NAMESPACE_URL, uuid5
+
+    from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
+    from clue_api.arv2.quality_generation import initial_settle_event_id, signal
+
+    async def case():
+        async with rollback_conn() as conn:
+            op, _, cid = await setup(conn, FsStorage(tmp_path))
+            generation = await ensure_generation(conn, op, context_id=cid)
+            # Attempt 1 keeps the id every job already used, so existing jobs replay unchanged.
+            assert initial_settle_event_id(op.job_id, 1) == uuid5(
+                NAMESPACE_URL, f"quality-initial:{op.job_id}"
+            )
+
+            async def settle(attempt: int) -> int:
+                return await signal(
+                    conn,
+                    workspace_id=op.workspace_id,
+                    generation_id=generation.generation_id,
+                    event_id=initial_settle_event_id(op.job_id, attempt),
+                    reason="initial_settled",
+                )
+
+            first = await settle(1)
+            assert await settle(1) == first
+            assert await settle(2) == first + 1
+
+    run_async(case())
+    # The driver's settle uses it (not a fixed per-job id).
+    assert "initial_settle_event_id" in inspect.getsource(
+        Arv2AccountResearchWorkHandler._settle_quality
+    )
