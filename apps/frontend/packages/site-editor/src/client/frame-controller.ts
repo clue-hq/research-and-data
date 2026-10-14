@@ -37,6 +37,8 @@ export interface FrameState {
   mode: EditorMode;
   /** Bumps whenever Puck must remount: a new document, another page. */
   mountKey: number;
+  /** The app's revision of the copy shown (protocol v2): every proposal names it as its base. */
+  rev: number;
   route: string;
   sections: LoadedSection[];
   selection: FrameSelection | null;
@@ -70,6 +72,7 @@ const INITIAL: FrameState = {
   documentId: "",
   mode: "preview",
   mountKey: 0,
+  rev: 0,
   route: "/",
   sections: [],
   selection: null,
@@ -85,6 +88,9 @@ export class FrameController {
   private timer: unknown = null;
   private changePending = false;
   private initGeneration = 0;
+  /** While an init loads its agent sections, the copy it will show: every update that arrives
+   * meanwhile is applied here instead of being dropped (review finding K3-5). */
+  private loading: { site: SiteDocument; rev: number; route: string } | null = null;
 
   constructor(private readonly deps: FrameControllerDeps) {}
 
@@ -114,21 +120,37 @@ export class FrameController {
       case "init":
         return this.init(message.documentId, message.payload);
       case "replace_site":
-        return this.replaceSite(message.payload.site);
+        if (this.loading) {
+          this.loading = { ...this.loading, rev: message.payload.rev, site: message.payload.site };
+          return;
+        }
+        return this.replaceSite(message.payload.site, message.payload.rev);
       case "set_mode":
         return this.setMode(message.payload.mode);
       case "navigate":
+        if (this.loading) {
+          if (pageFor(this.loading.site, message.payload.route)) this.loading = { ...this.loading, route: message.payload.route };
+          return;
+        }
         return this.navigate(message.payload.route);
       case "select":
         return this.select(message.payload.route, message.payload.componentId);
       case "set_props": {
-        const { componentId, props, route } = message.payload;
-        if (this.state.site) this.applyOutsideEdit(withComponentProps(this.state.site, route, componentId, props), route);
+        const { componentId, props, route, rev } = message.payload;
+        if (this.loading) {
+          this.loading = { ...this.loading, rev, site: withComponentProps(this.loading.site, route, componentId, props) };
+          return;
+        }
+        if (this.state.site) this.applyOutsideEdit(withComponentProps(this.state.site, route, componentId, props), route, rev);
         return;
       }
       case "insert_asset": {
-        const { componentId, prop, route, url } = message.payload;
-        if (this.state.site) this.applyOutsideEdit(withAssetAt(this.state.site, route, componentId, prop, url), route);
+        const { componentId, prop, route, url, rev } = message.payload;
+        if (this.loading) {
+          this.loading = { ...this.loading, rev, site: withAssetAt(this.loading.site, route, componentId, prop, url) };
+          return;
+        }
+        if (this.state.site) this.applyOutsideEdit(withAssetAt(this.state.site, route, componentId, prop, url), route, rev);
         return;
       }
     }
@@ -200,40 +222,49 @@ export class FrameController {
   flushChange(): void {
     if (!this.changePending) return;
     this.cancelChange();
-    if (this.state.site) this.post("changed", { site: this.state.site });
+    if (this.state.site) this.post("changed", { site: this.state.site, baseRev: this.state.rev });
   }
 
   private async init(documentId: string, payload: AppToFramePayloads["init"]): Promise<void> {
     const generation = ++this.initGeneration;
     this.cancelChange();
+    this.loading = { route: payload.route, rev: payload.rev, site: payload.site };
     this.set({ brand: null, documentId, mode: payload.mode, sections: [], selection: null, site: null, status: "loading" });
     let sections: LoadedSection[];
     try {
       sections = await this.deps.loadSections(payload.sections);
     } catch (error) {
       if (generation !== this.initGeneration) return;
+      this.loading = null;
       this.set({ status: "failed" });
       this.post("error", { code: "section_load_failed", message: error instanceof Error ? error.message : String(error) });
       return;
     }
-    if (generation !== this.initGeneration) return;
-    const route = pageFor(payload.site, payload.route) ? payload.route : "/";
-    this.set({ brand: payload.brand, mountKey: this.state.mountKey + 1, route, sections, site: payload.site, status: "ready" });
+    if (generation !== this.initGeneration || !this.loading) return;
+    const shown = this.loading;
+    this.loading = null;
+    const route = pageFor(shown.site, shown.route) ? shown.route : "/";
+    this.set({ brand: payload.brand, mountKey: this.state.mountKey + 1, rev: shown.rev, route, sections, site: shown.site, status: "ready" });
     this.post("navigated", { route });
   }
 
-  private replaceSite(site: SiteDocument): void {
+  private replaceSite(site: SiteDocument, rev: number): void {
     if (!this.state.site) return;
-    // The server's version wins over an unsent edit, exactly as the web lane's 409 drops one.
+    // The copy already on screen (the marketer's unsent typing included): only the revision moves.
+    if (canonicalJson(site) === canonicalJson(this.state.site)) {
+      this.set({ rev });
+      return;
+    }
+    // A different copy wins over an unsent edit, exactly as the web lane's 409 drops one.
     this.cancelChange();
     const route = pageFor(site, this.state.route) ? this.state.route : "/";
     const previous = this.state.selection;
     const selection = previous && componentProps(site, previous.target, previous.componentId) ? previous : null;
     if (route !== this.state.route) {
-      this.set({ mountKey: this.state.mountKey + 1, route, selection, site });
+      this.set({ mountKey: this.state.mountKey + 1, rev, route, selection, site });
       this.post("navigated", { route });
     } else {
-      this.set({ selection, site });
+      this.set({ rev, selection, site });
       const page = pageFor(site, route);
       if (page) this.puck?.showPage(page);
     }
@@ -280,9 +311,14 @@ export class FrameController {
     if (target === this.state.route) this.puck?.select(componentId);
   }
 
-  private applyOutsideEdit(site: SiteDocument, target: SiteTarget): void {
-    if (site === this.state.site) return;
-    this.set({ site });
+  /** A dock patch: applied over the copy on screen, so the marketer's unsent typing is kept and
+   * the next proposal carries both, from the patch's revision. */
+  private applyOutsideEdit(site: SiteDocument, target: SiteTarget, rev: number): void {
+    if (site === this.state.site) {
+      this.set({ rev });
+      return;
+    }
+    this.set({ rev, site });
     if (target === this.state.route) {
       const page = pageFor(site, target);
       if (page) this.puck?.showPage(page);

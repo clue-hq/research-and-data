@@ -5,6 +5,12 @@
 //
 // Refinements recorded in the master plan (Lane C plan K6): frame → app `shortcut`; the
 // "shell" target in place of a route for the header/footer; `navigated` after an applied init.
+//
+// v2 (the sync fix, 2026-10-14): the app holds the only working copy of the site and the frame only
+// displays it. Every copy the app sends (`init`, `replace_site`, and the `set_props` / `insert_asset`
+// patches) carries the app's revision of it; every canvas edit the frame proposes (`changed`) names
+// the revision it started from, and the app refuses one made over an older copy. Revisions belong to
+// the app's working copy, not to the server's version numbers.
 import { z } from "zod";
 import {
   BrandDataSchema,
@@ -16,7 +22,7 @@ import {
 } from "./site-document";
 
 export const EDITOR_CHANNEL = "clue-site-editor";
-export const EDITOR_PROTOCOL_VERSION = 1;
+export const EDITOR_PROTOCOL_VERSION = 2;
 
 export const EditorModeSchema = z.enum(["edit", "preview"]);
 export type EditorMode = z.infer<typeof EditorModeSchema>;
@@ -73,6 +79,8 @@ const envelope = {
   nonce: z.string().min(16).max(128),
 };
 const Props = z.record(z.string(), z.unknown());
+/** The app's revision of its working copy (see the v2 note above). */
+export const RevisionSchema = z.number().int().nonnegative();
 
 export const AppToFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({
@@ -85,19 +93,20 @@ export const AppToFrameMessageSchema = z.discriminatedUnion("type", [
       mode: EditorModeSchema,
       route: SiteRouteSchema,
       device: PreviewDeviceSchema,
+      rev: RevisionSchema,
     }),
   }),
   z.object({
     ...envelope,
     type: z.literal("replace_site"),
-    payload: z.object({ site: SiteDocumentSchema, version: z.number().int().nonnegative() }),
+    payload: z.object({ site: SiteDocumentSchema, rev: RevisionSchema }),
   }),
   z.object({ ...envelope, type: z.literal("set_mode"), payload: z.object({ mode: EditorModeSchema }) }),
   z.object({ ...envelope, type: z.literal("navigate"), payload: z.object({ route: SiteRouteSchema }) }),
   z.object({
     ...envelope,
     type: z.literal("set_props"),
-    payload: z.object({ route: SiteTargetSchema, componentId: ComponentIdSchema, props: Props }),
+    payload: z.object({ route: SiteTargetSchema, componentId: ComponentIdSchema, props: Props, rev: RevisionSchema }),
   }),
   z.object({
     ...envelope,
@@ -112,13 +121,14 @@ export const AppToFrameMessageSchema = z.discriminatedUnion("type", [
       componentId: ComponentIdSchema,
       prop: PropPathSchema,
       url: AssetStoreUrlSchema,
+      rev: RevisionSchema,
     }),
   }),
 ]);
 
 export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
   z.object({ ...envelope, type: z.literal("ready"), payload: z.object({}).strict() }),
-  z.object({ ...envelope, type: z.literal("changed"), payload: z.object({ site: SiteDocumentSchema }) }),
+  z.object({ ...envelope, type: z.literal("changed"), payload: z.object({ site: SiteDocumentSchema, baseRev: RevisionSchema }) }),
   z.object({
     ...envelope,
     type: z.literal("selected"),

@@ -132,7 +132,9 @@ def test_an_edit_elsewhere_never_rebuilds_a_cloned_section(
     edited = PROOF.replace("changes.", "changes!")
     props = {**proof["props"], "heading": edited}
     page.evaluate(
-        "(props) => window.__send('set_props', { route: '/', componentId: 'proof', props })", props
+        "(props) => window.__send("
+        "'set_props', { route: '/', componentId: 'proof', props, rev: 2 })",
+        props,
     )
     frame.get_by_text(edited).first.wait_for(timeout=10000)
     page.wait_for_timeout(500)

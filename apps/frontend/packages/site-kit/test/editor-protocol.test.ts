@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BrandData } from "../src/brand";
 import {
+  EDITOR_PROTOCOL_VERSION,
   FieldDescriptionSchema,
   acceptAppMessage,
   acceptFrameMessage,
@@ -33,15 +34,15 @@ const GEOMETRY = {
 };
 
 test("every app → frame message builds and parses with its envelope", () => {
-  const init = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop" }, ctx);
+  const init = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop", rev: 1 }, ctx);
   assert.equal(parseAppToFrame(JSON.parse(JSON.stringify(init)))?.type, "init");
   const messages = [
-    appToFrame("replace_site", { site, version: 3 }, ctx),
+    appToFrame("replace_site", { site, rev: 3 }, ctx),
     appToFrame("set_mode", { mode: "preview" }, ctx),
     appToFrame("navigate", { route: "/" }, ctx),
-    appToFrame("set_props", { route: "shell", componentId: "header", props: { preparedFor: "X" } }, ctx),
+    appToFrame("set_props", { route: "shell", componentId: "header", props: { preparedFor: "X" }, rev: 4 }, ctx),
     appToFrame("select", { route: "/", componentId: null }, ctx),
-    appToFrame("insert_asset", { route: "/", componentId: "hero", prop: "image", url: `/asset-store/${"e".repeat(64)}` }, ctx),
+    appToFrame("insert_asset", { route: "/", componentId: "hero", prop: "image", url: `/asset-store/${"e".repeat(64)}`, rev: 5 }, ctx),
   ];
   for (const message of messages) assert.equal(parseAppToFrame(message)?.type, message.type);
 });
@@ -49,7 +50,7 @@ test("every app → frame message builds and parses with its envelope", () => {
 test("every frame → app message parses, including the shell target and the shortcut addition", () => {
   const messages = [
     frameToApp("ready", {}, { documentId: "", nonce: NONCE }),
-    frameToApp("changed", { site }, ctx),
+    frameToApp("changed", { site, baseRev: 2 }, ctx),
     frameToApp("selected", { route: "shell", componentId: "header", componentType: "SiteHeader", fields: [], props: {} }, ctx),
     frameToApp("deselected", {}, ctx),
     frameToApp("navigated", { route: "/" }, ctx),
@@ -64,11 +65,11 @@ test("every frame → app message parses, including the shell target and the sho
 test("a message off the channel, the version or the schema is dropped", () => {
   const good = frameToApp("deselected", {}, ctx);
   assert.equal(parseFrameToApp({ ...good, channel: "lumen-web-bridge" }), null);
-  assert.equal(parseFrameToApp({ ...good, v: 2 }), null);
+  assert.equal(parseFrameToApp({ ...good, v: 1 }), null);
   assert.equal(parseFrameToApp({ ...good, nonce: "short" }), null);
   assert.equal(parseFrameToApp({ ...good, type: "puck:publish" }), null);
   assert.equal(parseFrameToApp({ type: "puck:publish", headline: "x" }), null);
-  const insert = appToFrame("insert_asset", { route: "/", componentId: "hero", prop: "image", url: `/asset-store/${"e".repeat(64)}` }, ctx);
+  const insert = appToFrame("insert_asset", { route: "/", componentId: "hero", prop: "image", url: `/asset-store/${"e".repeat(64)}`, rev: 5 }, ctx);
   assert.equal(parseAppToFrame({ ...insert, payload: { ...insert.payload, url: "https://evil.example/pixel.gif" } }), null);
   assert.equal(parseAppToFrame({ ...insert, payload: { ...insert.payload, componentId: "hero#1" } }), null);
 });
@@ -108,14 +109,14 @@ test("ready is accepted before any document is initialised, and only with an emp
 
 test("the frame accepts an app message only from its parent and the app origin; init names the document", () => {
   const expected = { appOrigin: APP, documentId: "", nonce: NONCE, parent: parentWindow };
-  const init = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop" }, ctx);
+  const init = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop", rev: 1 }, ctx);
   assert.ok(acceptAppMessage({ data: init, origin: APP, source: parentWindow }, expected));
   assert.equal(acceptAppMessage({ data: init, origin: "http://localhost:3030", source: parentWindow }, expected), null);
   assert.equal(acceptAppMessage({ data: init, origin: APP, source: { name: "an agent section's window" } }, expected), null);
   const mode = appToFrame("set_mode", { mode: "edit" }, ctx);
   assert.equal(acceptAppMessage({ data: mode, origin: APP, source: parentWindow }, expected), null, "no document yet");
   assert.ok(acceptAppMessage({ data: mode, origin: APP, source: parentWindow }, { ...expected, documentId: "doc_1" }));
-  const unnamed = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop" }, { documentId: "", nonce: NONCE });
+  const unnamed = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop", rev: 1 }, { documentId: "", nonce: NONCE });
   assert.equal(acceptAppMessage({ data: unnamed, origin: APP, source: parentWindow }, expected), null);
 });
 
@@ -128,4 +129,23 @@ test("field descriptions nest for lists and refuse unknown kinds", () => {
   });
   assert.equal(parsed.item?.[0].kind, "text");
   assert.equal(FieldDescriptionSchema.safeParse({ kind: "html", label: "Stats", name: "stats" }).success, false);
+});
+
+// The sync fix (2026-10-14): every copy of the site the app sends carries a revision, and every
+// canvas edit the frame proposes names the revision it started from, so the app can refuse an edit
+// made over an older copy. A v1 peer (no revisions) is refused outright rather than half-understood.
+test("v2: site messages carry revisions; a message without them, or from v1, is refused", () => {
+  assert.equal(EDITOR_PROTOCOL_VERSION, 2);
+  const changed = frameToApp("changed", { site, baseRev: 3 }, ctx);
+  assert.ok(parseFrameToApp(changed));
+  assert.equal(parseFrameToApp({ ...changed, payload: { site } }), null);
+  assert.equal(parseFrameToApp({ ...changed, payload: { site, baseRev: -1 } }), null);
+  const replace = appToFrame("replace_site", { site, rev: 4 }, ctx);
+  assert.ok(parseAppToFrame(replace));
+  assert.equal(parseAppToFrame({ ...replace, payload: { site, version: 4 } }), null);
+  assert.equal(parseAppToFrame({ ...replace, v: 1 }), null);
+  const init = appToFrame("init", { site, brand, sections: [], mode: "edit", route: "/", device: "Desktop", rev: 1 }, ctx);
+  assert.equal(parseAppToFrame({ ...init, payload: { ...init.payload, rev: undefined } }), null);
+  const patch = appToFrame("set_props", { route: "/", componentId: "hero", props: {}, rev: 6 }, ctx);
+  assert.equal(parseAppToFrame({ ...patch, payload: { route: "/", componentId: "hero", props: {} } }), null);
 });

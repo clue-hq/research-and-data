@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BrandData } from "@clue/site-kit";
 import { appToFrame, type FrameToAppType } from "@clue/site-kit/editor-protocol";
-import { SiteDocumentSchema, type SitePage } from "@clue/site-kit/site-document";
+import { pageFor } from "@clue/site-kit/editor-site";
+import { SiteDocumentSchema, type SiteDocument, type SitePage } from "@clue/site-kit/site-document";
 import { FrameController, type PuckHandle } from "../src/client/frame-controller";
 import type { LoadedSection } from "../src/client/sections";
 
@@ -23,7 +24,7 @@ const site = SiteDocumentSchema.parse({
 const init = (overrides: Record<string, unknown> = {}) =>
   appToFrame(
     "init",
-    { brand, device: "Desktop", mode: "edit", route: "/", sections: [], site, ...overrides } as never,
+    { brand, device: "Desktop", mode: "edit", route: "/", rev: 1, sections: [], site, ...overrides } as never,
     { documentId: "doc_1", nonce: NONCE },
   );
 
@@ -113,7 +114,7 @@ test("the app's own edits re-render the page without echoing a change back", asy
   const h = harness();
   await h.controller.receive(init());
   await h.controller.receive(
-    appToFrame("set_props", { componentId: "cta", props: { heading: "From the dock" }, route: "/" }, { documentId: "doc_1", nonce: NONCE }),
+    appToFrame("set_props", { componentId: "cta", props: { heading: "From the dock" }, route: "/", rev: 2 }, { documentId: "doc_1", nonce: NONCE }),
   );
   assert.deepEqual(h.puckCalls.at(-1), "show:From the dock");
   h.controller.pageEdited("/", h.controller.getState().site!.pages["/"]);
@@ -125,7 +126,7 @@ test("an agent reload replaces the site, drops an unsent edit, and keeps the pag
   await h.controller.receive(init());
   h.controller.pageEdited("/", page("Unsent"));
   const agent = { ...site, pages: { ...site.pages, "/": page("Agent wrote this") } };
-  await h.controller.receive(appToFrame("replace_site", { site: agent, version: 9 }, { documentId: "doc_1", nonce: NONCE }));
+  await h.controller.receive(appToFrame("replace_site", { site: agent, rev: 9 }, { documentId: "doc_1", nonce: NONCE }));
   h.timers.forEach((run) => run());
   assert.equal(h.types().includes("changed"), false, "the server's version wins over an unsent edit");
   assert.equal(h.puckCalls.at(-1), "show:Agent wrote this");
@@ -155,4 +156,70 @@ test("a site link in preview switches page; an outside link does nothing", async
   h.controller.linkClicked("/analysis");
   assert.deepEqual(h.posts.at(-1)?.payload, { route: "/analysis" });
   assert.equal(h.controller.getState().route, "/analysis");
+});
+
+// The sync fix (2026-10-14). The frame shows the app's working copy and proposes edits stamped with
+// the revision they started from.
+const ctx = { documentId: "doc_1", nonce: NONCE };
+const headingOf = (value: SiteDocument | null) => String(pageFor(value!, "/")!.content[0].props.heading);
+const withHeading = (heading: string) => SiteDocumentSchema.parse({ ...site, pages: { ...site.pages, "/": page(heading) } });
+
+test("review K3-5: an update that arrives while sections load is applied after the load, not dropped", async () => {
+  let release!: () => void;
+  const h = harness(() => new Promise<LoadedSection[]>((resolve) => { release = () => resolve([]); }));
+  const loading = h.controller.receive(init({ rev: 4 }));
+  await h.controller.receive(appToFrame("replace_site", { site: withHeading("v5 heading"), rev: 5 }, ctx));
+  // set_props carries a section's whole props (the dock commits over the app's copy).
+  await h.controller.receive(appToFrame("set_props", { componentId: "cta", props: { eyebrow: "from the dock", heading: "v5 heading", id: "cta" }, route: "/", rev: 6 }, ctx));
+  await h.controller.receive(appToFrame("navigate", { route: "/analysis" }, ctx));
+  release();
+  await loading;
+  const state = h.controller.getState();
+  assert.equal(state.rev, 6);
+  assert.equal(headingOf(state.site), "v5 heading");
+  assert.equal(pageFor(state.site!, "/")!.content[0].props.eyebrow, "from the dock");
+  assert.equal(state.route, "/analysis");
+  assert.deepEqual(h.posts.at(-1), { documentId: "doc_1", payload: { route: "/analysis" }, type: "navigated" });
+});
+
+test("a proposal names the revision it started from; consecutive proposals share it", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 7 }));
+  h.controller.pageEdited("/", page("first"));
+  h.timers.at(-1)!();
+  h.controller.pageEdited("/", page("first and second"));
+  h.timers.at(-1)!();
+  const changed = h.posts.filter((post) => post.type === "changed").map((post) => post.payload as { site: SiteDocument; baseRev: number });
+  assert.deepEqual(changed.map((proposal) => [headingOf(proposal.site), proposal.baseRev]), [["first", 7], ["first and second", 7]]);
+});
+
+test("a dock patch to another part keeps the marketer's unsent typing, and the next proposal starts from its revision", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 7 }));
+  h.controller.pageEdited("/", page("typed"));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "From the dock" }, route: "shell", rev: 8 }, ctx));
+  h.timers.at(-1)!();
+  const proposal = h.posts.find((post) => post.type === "changed")!.payload as { site: SiteDocument; baseRev: number };
+  assert.equal(proposal.baseRev, 8);
+  assert.equal(headingOf(proposal.site), "typed");
+  assert.equal(proposal.site.shell!.header.preparedFor, "From the dock");
+});
+
+test("a different whole copy wins over unsent typing; the copy the frame already shows only moves the revision", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 1 }));
+  h.controller.pageEdited("/", page("typed"));
+  const shown = h.controller.getState().site!;
+  await h.controller.receive(appToFrame("replace_site", { site: shown, rev: 2 }, ctx));
+  assert.equal(h.controller.getState().rev, 2);
+  h.timers.at(-1)!();
+  const first = h.posts.filter((post) => post.type === "changed");
+  assert.equal(first.length, 1, "the typing is still sent");
+  assert.equal((first[0].payload as { baseRev: number }).baseRev, 2);
+  h.controller.pageEdited("/", page("typed again"));
+  await h.controller.receive(appToFrame("replace_site", { site: withHeading("from the server"), rev: 3 }, ctx));
+  h.timers.forEach((run) => run());
+  assert.equal(h.posts.filter((post) => post.type === "changed").length, 1, "the dropped typing is never sent");
+  assert.equal(headingOf(h.controller.getState().site), "from the server");
+  assert.equal(h.controller.getState().rev, 3);
 });

@@ -94,13 +94,13 @@ frame.style.width = "1280px"; frame.style.height = "2400px"; frame.style.border 
 frame.src = EDITOR + "/#n=" + NONCE;
 document.body.appendChild(frame);
 window.__send = (type, payload) => frame.contentWindow.postMessage(
-  { channel: "clue-site-editor", v: 1, documentId: "doc_probe", nonce: NONCE, type, payload },
+  { channel: "clue-site-editor", v: 2, documentId: "doc_probe", nonce: NONCE, type, payload },
   EDITOR);
 window.addEventListener("message", (event) => {
   if (event.origin !== EDITOR || event.source !== frame.contentWindow) return;
   const message = event.data;
   if (!message || message.channel !== "clue-site-editor") return;
-  if (message.v !== 1 || message.nonce !== NONCE) return;
+  if (message.v !== 2 || message.nonce !== NONCE) return;
   window.__received.push(message);
   if (message.type === "ready") window.__send("init", INIT);
 });
@@ -263,6 +263,7 @@ def garner_init(mode: str = "edit") -> dict[str, Any]:
         "brand": fixture["brand"],
         "device": "Desktop",
         "mode": mode,
+        "rev": 1,
         "route": "/",
         "sections": [],
         "site": fixture["site"],

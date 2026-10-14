@@ -226,6 +226,7 @@ export function useSiteEditingSession({
           brand: load.brand,
           device: "Desktop",
           mode,
+          rev: 0,
           route: initialRoute(currentSite.site, route),
           sections: load.links,
           site: currentSite.site,
@@ -236,7 +237,7 @@ export function useSiteEditingSession({
     }
     if (sync.kind === "replace") {
       sent.current = { ...sent.current, version: sync.version };
-      post("replace_site", { site: currentSite.site, version: sync.version }, activeDocumentId);
+      post("replace_site", { rev: 0, site: currentSite.site }, activeDocumentId);
     }
   }, [activeDocumentId, boot, currentSite, initGeneration, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
 
@@ -270,7 +271,7 @@ export function useSiteEditingSession({
       const edit = commitFieldEdit(currentSite.site, activeSelection, name, value);
       if (!edit) return;
       setAppSite({ ...currentSite, site: edit.site });
-      post("set_props", { componentId: activeSelection.componentId, props: edit.props, route: activeSelection.target }, activeDocumentId);
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev: 0, route: activeSelection.target }, activeDocumentId);
       save(edit.site, `inspector: edit ${name}`);
     },
     [activeDocumentId, activeSelection, currentSite, editing, locked, post, save],
@@ -303,7 +304,7 @@ export function useSiteEditingSession({
       if (getAtPath(props, target.prop) === url) return true;
       const edited = withAssetAt(currentSite.site, target.target, target.componentId, target.prop, url);
       setAppSite({ ...currentSite, site: edited });
-      post("insert_asset", { componentId: target.componentId, prop: target.prop, route: target.target, url }, activeDocumentId);
+      post("insert_asset", { componentId: target.componentId, prop: target.prop, rev: 0, route: target.target, url }, activeDocumentId);
       save(edited, `inspector: set image ${target.prop}`);
       return true;
     },
