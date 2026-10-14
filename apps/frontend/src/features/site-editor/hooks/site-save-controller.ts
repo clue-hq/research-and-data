@@ -97,6 +97,12 @@ export class SiteSaveController {
     this.update({ note: null, error: null });
   }
 
+  /** Mark the controller live. React's StrictMode runs an effect's cleanup and then the effect
+   * again on the same render's objects, so the lifetime is attach/dispose, not create/dispose. */
+  attach(): void {
+    this.disposed = false;
+  }
+
   dispose(): void {
     this.disposed = true;
   }

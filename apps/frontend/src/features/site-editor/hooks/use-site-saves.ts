@@ -58,7 +58,12 @@ export function useSiteSaves({
         : null,
     [documentId, lockNote, repository],
   );
-  useEffect(() => () => controller?.dispose(), [controller]);
+  // Attach in the effect, not at construction: StrictMode's simulated unmount disposes and then
+  // re-attaches the same controller, and a real unmount or document switch leaves it disposed.
+  useEffect(() => {
+    controller?.attach();
+    return () => controller?.dispose();
+  }, [controller]);
   // A new document starts from an idle state: React's adjust-state-on-prop-change pattern
   // (render-time comparison), never a setState inside an effect.
   const [owner, setOwner] = useState(controller);
