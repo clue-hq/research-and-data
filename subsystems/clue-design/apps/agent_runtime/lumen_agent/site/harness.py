@@ -331,8 +331,31 @@ CLAIMS_RULE = (
 )
 
 
-def _base_prompt(workspace: Path) -> str:
+#: A live workspace's two prompt lines (founder-approved wording, 2026-10-15): render_page's notes
+#: report hydration differences, and step 1 names the interactive-section skill.
+RENDER_PAGE_LINE = "- `render_page`: a desktop and a mobile screenshot of one page.\n"
+LIVE_RENDER_PAGE_LINE = (
+    "- `render_page`: a desktop and a mobile screenshot of one page; its notes name any place the server and the "
+    "browser drew a section differently.\n"
+)
+SKILLS_STEP = (
+    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
+    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
+    "   `rebuilding-a-section`. Follow them.\n"
+)
+LIVE_SKILLS_STEP = (
+    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
+    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
+    "   `rebuilding-a-section`, and, on this site, `making-a-section-interactive` when a section needs\n"
+    "   to respond to the visitor. Follow them.\n"
+)
+
+
+def _base_prompt(workspace: Path, *, live: bool = False) -> str:
     text = (SITE_DIR / "system_prompt.md").read_text()
+    assert RENDER_PAGE_LINE in text and SKILLS_STEP in text, "system_prompt.md drifted from harness.py"
+    if live:
+        text = text.replace(RENDER_PAGE_LINE, LIVE_RENDER_PAGE_LINE).replace(SKILLS_STEP, LIVE_SKILLS_STEP)
     if (workspace / "research" / "claims.md").exists():
         return text
     assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, "system_prompt.md drifted from harness.py"
@@ -342,7 +365,8 @@ def _base_prompt(workspace: Path) -> str:
 def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = True, live: bool = False) -> str:
     """The system prompt with the skills after it, read from the package so every call and every
     session sends the same text (the spike's, E5 on by default). ``live``: the workspace publishes
-    live sites, so the skills-live/ skills (interactive sections) follow, when new sections are allowed."""
+    live sites, so two prompt lines name render_page's hydration notes and the interactive-section
+    skill, and the skills-live/ skills follow, when new sections are allowed."""
 
     folders = [
         "skills",
@@ -354,7 +378,7 @@ def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = Tru
         for folder in folders
         for path in sorted((SITE_DIR / folder).glob("*/SKILL.md"))
     ]
-    return _base_prompt(workspace).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
+    return _base_prompt(workspace, live=live).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
 
 
 def build_site_agent(

@@ -80,3 +80,8 @@ fails without it).
   state, handlers, timers and effects; draw the same thing on the server and in the browser; stay
   still while `kit.editing`; stay on the brand; an accordion example. No failing case: live sites
   give sections a browser to run in for the first time.
+- 2026-10-15 · system prompt, live workspaces only (founder-approved wording 2026-10-15; swapped in
+  by harness.py, system_prompt.md unchanged): the render_page line adds "its notes name any place
+  the server and the browser drew a section differently", and step 1 names
+  `making-a-section-interactive` "when a section needs to respond to the visitor". No failing case:
+  the skill was in a live prompt that never named it.

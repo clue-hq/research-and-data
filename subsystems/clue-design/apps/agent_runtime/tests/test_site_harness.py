@@ -366,6 +366,38 @@ def test_live_workspaces_get_the_interactive_skill_and_others_do_not(tmp_path: P
     assert off == system_prompt_with_skills(tmp_path)  # flag off: byte-identical
 
 
+RENDER_LINE = "- `render_page`: a desktop and a mobile screenshot of one page.\n"
+LIVE_RENDER_LINE = (
+    "- `render_page`: a desktop and a mobile screenshot of one page; its notes name any place the server and the "
+    "browser drew a section differently.\n"
+)
+LIVE_STEP_1 = (
+    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
+    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
+    "   `rebuilding-a-section`, and, on this site, `making-a-section-interactive` when a section needs\n"
+    "   to respond to the visitor. Follow them.\n"
+)
+
+
+def test_a_live_prompt_names_the_interactive_skill_and_the_hydration_notes(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    materialize_workspace(workspace, inputs_for(), site=garner_site())
+    today = system_prompt_with_skills(workspace)
+    live = system_prompt_with_skills(workspace, live=True)
+    off = system_prompt_with_skills(workspace, live=False)
+    base = live.split("## Your skills")[0]
+    assert LIVE_RENDER_LINE in base and LIVE_STEP_1 in base and RENDER_LINE not in base
+    assert off == today and RENDER_LINE in off and LIVE_RENDER_LINE not in off and LIVE_STEP_1 not in off
+    assert "making-a-section-interactive" not in off and "drew a section differently" not in off
+    # The claims swap still works in both modes.
+    for prompt in (live, off):
+        assert "research/claims.md" not in prompt
+    (workspace / "research" / "claims.md").write_text("# Claims\n")
+    for prompt in (system_prompt_with_skills(workspace, live=True), system_prompt_with_skills(workspace)):
+        assert "check its claim in `research/claims.md`" in prompt
+    assert LIVE_STEP_1 in system_prompt_with_skills(workspace, live=True)
+
+
 def test_the_prompt_names_the_claims_file_only_when_the_workspace_has_one(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     materialize_workspace(workspace, inputs_for(), site=garner_site())
