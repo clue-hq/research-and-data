@@ -389,3 +389,45 @@ def test_a_site_turn_spends_inside_its_own_stamped_scope_and_drains_it(tmp_path,
     assert seen["scope"] is not None and drained == [seen["scope"]]
     assert seen["scope"].stamp.workspace_id == store.workspace_id
     assert seen["scope"].stamp.job_id == UUID(run_id)
+
+
+@pytest.mark.parametrize("listed", [True, False])
+def test_a_live_workspace_turn_is_live_through_inputs_renderer_and_section_port(
+    tmp_path, design_storage, monkeypatch, listed
+) -> None:
+    """Publishing live sites, Task 11: a workspace on LUMEN_SITE_LIVE_WORKSPACES gets live_sites on
+    its inputs, a live renderer and an interactive section port; any other workspace gets none."""
+
+    from lumen_agent.site.inputs import SiteTurnInputs
+    from lumen_api import main as api_main
+    from lumen_api.main import execute_site_turn_job
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+    if listed:
+        monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", f"ws_other, {store.workspace_id}")
+    else:
+        monkeypatch.delenv("LUMEN_SITE_LIVE_WORKSPACES", raising=False)
+    seen: dict = {}
+
+    def built_inputs(**kwargs):
+        return SiteTurnInputs(document_id=document["id"], workspace_id=store.workspace_id, brief="B",
+                              account_name="Acme", seller="Seller", brand={"assets": {}, "clones": {}}, catalog={},
+                              renderer=kwargs["renderer"])
+
+    def run_turn(doc, prompt, *, inputs, **_kwargs):
+        seen["inputs"] = inputs
+        return {"status": "applied", "summary": "No change."}
+
+    monkeypatch.setattr(api_main, "resolve_web_turn_brand_kit", lambda scene, blobs: (None, None, {}, None))
+    monkeypatch.setattr(api_main, "build_site_turn_inputs", built_inputs)
+    monkeypatch.setattr(api_main, "run_site_agent_turn", run_turn)
+    envelope = _envelope(document["id"], store.workspace_id)
+    store.create_run(envelope.run_id, document["id"], kind="site_turn", payload={})
+    outcome = execute_site_turn_job(envelope, store=store, host=_host(app, None), event_sink=lambda *_: None)
+    store.complete_run(envelope.run_id, *outcome)
+    inputs = seen["inputs"]
+    assert inputs.live_sites is listed
+    assert inputs.renderer.live is listed
+    assert inputs.sections.interactive is listed

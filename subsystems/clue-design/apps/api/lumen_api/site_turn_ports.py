@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -48,11 +50,18 @@ class PlatformSiteRenderer:
     runs with JavaScript off and the network blocked, so every ``/asset-store/<sha256>`` in the page
     and its CSS is inlined as a ``data:`` URI first (``web_pdf.inline_asset_store_refs``, the PDF
     export's own helper). A digest the workspace cannot serve is left as is and shows broken, which
-    is what the agent should see."""
+    is what the agent should see.
 
-    def __init__(self, read_blob: Any = None) -> None:
+    ``live`` (publishing live sites, phase 1: the workspace is on ``LUMEN_SITE_LIVE_WORKSPACES``):
+    each page is rendered live and remembered with its modules by the sha256 of its html, and a
+    screenshot of a remembered page is the page after it has come alive — JavaScript on, network
+    still blocked (``site_live.live_preview_document``), with the refs in its page data inlined too."""
+
+    def __init__(self, read_blob: Any = None, *, live: bool = False) -> None:
         self.read_blob = read_blob
+        self.live = live
         self._inlined: dict = {}
+        self._live_pages: dict[str, tuple[Any, list[Any]]] = {}
 
     def render(self, site: dict, brand: dict, sections: list, *, route: str) -> tuple[str, str, list[str]]:
         from . import site_render
@@ -63,25 +72,39 @@ class PlatformSiteRenderer:
         ]
         # base_path "" leaves /route links as written: the site is drawn as if served at its root
         # ("/" would turn /analysis into the protocol-relative //analysis).
-        result = site_render.render_site(site, brand, modules, base_path="", routes=[route])
+        result = site_render.render_site(site, brand, modules, base_path="", routes=[route], live=self.live)
         page = next((item for item in result.pages if item.route == route), None)
         if page is None:
             raise SiteRenderPortError("render.failed", f"the renderer returned no page {route}")
+        if self.live:
+            self._live_pages[hashlib.sha256(page.html.encode("utf-8")).hexdigest()] = (page, modules)
         return page.html, result.css, list(result.warnings)
 
     def screenshot(self, html: str, css: str, *, width: int, section_only: bool = False) -> bytes:
         from . import site_render
 
+        remembered = self._live_pages.get(hashlib.sha256(html.encode("utf-8")).hexdigest()) if self.live else None
+        data = remembered[0].data if remembered is not None else None
         if self.read_blob is not None:
             from .web_pdf import inline_asset_store_refs
 
             html, _missing = inline_asset_store_refs(html, self.read_blob, cache=self._inlined)
             css, _missing = inline_asset_store_refs(css, self.read_blob, cache=self._inlined)
+            if data is not None:
+                text, _missing = inline_asset_store_refs(json.dumps(data), self.read_blob, cache=self._inlined)
+                data = json.loads(text)
+        live_document = None
+        if remembered is not None:
+            from .site_live import live_preview_document, live_runtime
+
+            live_page = site_render.RenderedPage(route=remembered[0].route, html=html, data=data)
+            live_document = live_preview_document(live_page, css, remembered[1], live_runtime())
         return site_render.capture_site_screenshot(
             site_render.RenderedPage(route="/", html=html), css, width=width, full_page=True,
             # A shell-less scratch site's one section sits alone inside site-kit's .brand-root (the
             # theme gives it no min-height), so an element shot of it is the section, cut to size.
             clip_selector=".brand-root" if section_only else None,
+            live_document=live_document,
         )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType, SimpleNamespace
@@ -56,11 +57,13 @@ def _fake_site_render(monkeypatch: pytest.MonkeyPatch, calls: list) -> None:
     module.RenderedPage = RenderedPage
     module.SectionModule = SectionModule
 
-    def render_site(site, brand, sections, *, base_path, routes=None, timeout_s=20.0):
+    def render_site(site, brand, sections, *, base_path, routes=None, live=False, timeout_s=20.0):
+        assert live is False
         calls.append(("render_site", base_path, routes, [s.name for s in sections]))
         return SiteRender(pages=[RenderedPage(route=r, html=f"<main>{r}</main>") for r in routes or ["/"]], css="b{}", warnings=["w"])
 
-    def capture_site_screenshot(page, css, *, width, full_page=True, clip_selector=None):
+    def capture_site_screenshot(page, css, *, width, full_page=True, clip_selector=None, live_document=None):
+        assert live_document is None
         calls.append(("capture", page.html, css, width, full_page, clip_selector))
         return b"png"
 
@@ -138,6 +141,63 @@ def test_a_route_the_renderer_did_not_return_is_a_typed_refusal(monkeypatch: pyt
     with pytest.raises(SiteRenderPortError) as refused:
         PlatformSiteRenderer().render({}, {}, [], route="/")
     assert refused.value.code == "render.failed"
+
+
+def test_a_live_renderer_shows_the_page_after_its_effects_ran() -> None:
+    """Publishing live sites, Task 11: in a live workspace the agent's screenshot is the page after
+    it has come alive (JavaScript on, network still blocked), so an effect's result is in the PNG."""
+
+    from site_kit_support import chromium_available, ensure_site_kit_dist, garner_brand, site_with_agent_section
+
+    if not chromium_available():
+        pytest.skip("playwright chromium not installed")
+    ensure_site_kit_dist()
+    # A hand-written compiled module that never passes the section check, so an inline style is fine:
+    # it paints a tall black block only once its effect has run in the browser.
+    module_js = (
+        'import { jsx } from "react/jsx-runtime";\nimport { useEffect, useState } from "react";\nimport { z } from "zod";\n'
+        'export const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n'
+        'function Late() { const [on, setOn] = useState(false); useEffect(() => setOn(true), []);\n'
+        '  return jsx("div", { style: { height: 600, background: on ? "#000" : "#fff" } }); }\n'
+        'export function render() { return jsx(Late, {}); }\n'
+    )
+    site, sections = site_with_agent_section("Late", module_js)
+    live = PlatformSiteRenderer(live=True)
+    html, css, _warnings = live.render(site, garner_brand(), sections, route="/")
+    dark_live = _dark_share(live.screenshot(html, css, width=1440))
+    still = PlatformSiteRenderer(live=False)
+    html_s, css_s, _ = still.render(site, garner_brand(), sections, route="/")
+    dark_static = _dark_share(still.screenshot(html_s, css_s, width=1440))
+    assert dark_live > dark_static + 0.02, (dark_live, dark_static)
+
+
+def _dark_share(png: bytes) -> float:
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(png)).convert("L")
+    pixels = list(image.getdata())
+    return sum(1 for p in pixels if p < 20) / len(pixels)
+
+
+def test_the_live_preview_is_one_self_contained_document() -> None:
+    """The preview carries its own CSP, the CSS inline, the shims and sections as data: modules and
+    the runtime inline, with any closing script tag in the runtime's text escaped."""
+
+    from lumen_api.site_live import LiveRuntime, live_preview_document
+    from lumen_api.site_render import RenderedPage as Page, SectionModule as Module
+
+    runtime = LiveRuntime(runtime_js=b'console.log("</script>"); window.__clueHydrated = true;',
+                          shims={"react": b"export default 1;", "react/jsx-runtime": b"export {};", "zod": b"export {};"})
+    page = Page(route="/", html='<html><head><title>t</title></head><body><div id="clue-site"></div></body></html>',
+                data={"route": "/"})
+    module = Module(name="Late", digest="a" * 64, module_js="export const x = 1;", css="", props_schema={})
+    document = live_preview_document(page, "b{color:red}", [module], runtime)
+    assert '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' data:;' in document
+    assert document.index("Content-Security-Policy") < document.index('<script type="importmap">')
+    assert "b{color:red}" in document and "data:text/javascript;charset=utf-8,export%20default%201%3B" in document
+    assert '"Late":"data:text/javascript;charset=utf-8,export%20const%20x%20%3D%201%3B"' in document
+    assert '<script type="module">console.log("<\\/script>"); window.__clueHydrated = true;</script>' in document
+    assert 'src=""' not in document and document.count("</script>") == 3  # import map, page data, runtime
 
 
 class FakeCore:

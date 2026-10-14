@@ -36,8 +36,8 @@ from .workspace import SITE_DIR, materialize_workspace, read_site_files
 CLEAR_FROM_TOKENS = 60_000
 FINISH_REMINDERS = 2
 READ_ONLY = [
-    "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/catalog/**", "/brand/**",
-    "/research/**", "/seller/**", "/fetched/**", "/project-context/**", "/work/**",
+    "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/skills-live/**", "/catalog/**",
+    "/brand/**", "/research/**", "/seller/**", "/fetched/**", "/project-context/**", "/work/**",
 ]
 #: T12a–T12f (founder-approved, Task 0).
 ROUND_LIMIT_NOTE = "Stopped: this request reached its limit of {limit} model calls."
@@ -339,11 +339,16 @@ def _base_prompt(workspace: Path) -> str:
     return text.replace(CLAIMS_RESEARCH_LINE, PLAIN_RESEARCH_LINE).replace(CLAIMS_RULE, "")
 
 
-def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = True) -> str:
+def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = True, live: bool = False) -> str:
     """The system prompt with the skills after it, read from the package so every call and every
-    session sends the same text (the spike's, E5 on by default)."""
+    session sends the same text (the spike's, E5 on by default). ``live``: the workspace publishes
+    live sites, so the skills-live/ skills (interactive sections) follow, when new sections are allowed."""
 
-    folders = ["skills", *(["skills-e5"] if allow_new_sections else [])]
+    folders = [
+        "skills",
+        *(["skills-e5"] if allow_new_sections else []),
+        *(["skills-live"] if live and allow_new_sections else []),
+    ]
     skills = [
         f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
         for folder in folders
@@ -361,6 +366,7 @@ def build_site_agent(
     limits: TurnLimitsConfig = TurnLimitsConfig(),
     compaction: Any = None,
     allow_new_sections: bool = True,
+    live: bool = False,
 ):
     """Returns ``(agent, finish_guard, turn_limits)``."""
 
@@ -400,7 +406,7 @@ def build_site_agent(
     agent = create_agent(
         model,
         tools=site_tool_set(tools),
-        system_prompt=system_prompt_with_skills(tools.workspace, allow_new_sections=allow_new_sections),
+        system_prompt=system_prompt_with_skills(tools.workspace, allow_new_sections=allow_new_sections, live=live),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         name="clue-site-agent",
@@ -466,7 +472,8 @@ def run_site_turn(
             cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
             model = _instrument(config, tools, config.orchestrator_model, "site", **cancel_kwargs)
         agent, guard, turn_limits = build_site_agent(
-            tools, model=model, model_id=config.orchestrator_model, checkpointer=checkpointer, limits=limits
+            tools, model=model, model_id=config.orchestrator_model, checkpointer=checkpointer, limits=limits,
+            live=inputs.live_sites,
         )
         collector, handlers = turn_collector(callbacks)
     except Exception as error:  # noqa: BLE001 - a setup failure is the same honest crash, before any model call

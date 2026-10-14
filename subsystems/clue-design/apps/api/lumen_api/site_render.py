@@ -492,27 +492,40 @@ def capture_site_screenshot(
     scale: float = 1.0,
     timeout_s: float = 20.0,
     clip_selector: str | None = None,
+    live_document: str | None = None,
 ) -> bytes:
     """A PNG of ``page`` styled by ``css``, sanitized, in a hardened page with JavaScript OFF and
     the network blocked. Its images and fonts must already be ``data:`` URIs
     (``web_pdf.inline_asset_store_refs``): nothing else can load. With ``clip_selector``, the PNG is
-    an element shot of the first element it matches (a refusal when nothing matches)."""
+    an element shot of the first element it matches (a refusal when nothing matches).
+
+    With ``live_document`` (``site_live.live_preview_document``, publishing live sites), that
+    self-contained document is shot instead, with JavaScript ON and the network still blocked,
+    once the page has come alive (``window.__clueHydrated``) — or when the wait runs out, shot
+    anyway."""
     from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
     from .site_sanitize import sanitize_site_html
 
-    html = sanitize_site_html(site_page_html(page, css)).html
+    html = live_document if live_document is not None else sanitize_site_html(site_page_html(page, css)).html
     timeout_ms = timeout_s * 1000
     try:
         with hardened_page(
-            javascript=False,
+            javascript=live_document is not None,
             viewport={"width": width, "height": height},
             device_scale_factor=scale,
             # A scroll-driven reveal leaves below-the-fold content at its starting look in a full-page
             # capture (verified 2026-10-12); the theme's reduced-motion rule shows everything in place.
             reduced_motion="reduce",
         ) as (shot, _blocked):
+            started = time.monotonic()
             shot.set_content(html, wait_until="load", timeout=timeout_ms)
+            if live_document is not None:
+                remaining_ms = max(1.0, timeout_ms - (time.monotonic() - started) * 1000)
+                try:
+                    shot.wait_for_function("window.__clueHydrated === true", timeout=remaining_ms)
+                except PlaywrightTimeout:
+                    pass  # a page that never comes alive is still what the agent should see
             shot.wait_for_timeout(_FONT_SETTLE_MS)
             if clip_selector is not None:
                 target = shot.locator(clip_selector)

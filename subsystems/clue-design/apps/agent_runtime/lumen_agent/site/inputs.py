@@ -130,3 +130,6 @@ class SiteTurnInputs:
     renderer: SiteRenderPort | None = None
     #: Test seam for image generation; None means lumen_api.image_provider.generate.
     image_generate: Any = None
+    #: The workspace publishes live sites (LUMEN_SITE_LIVE_WORKSPACES): the agent is taught
+    #: interactive sections (skills-live/) and its previews show the page alive.
+    live_sites: bool = False

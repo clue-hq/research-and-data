@@ -14,11 +14,20 @@ import base64
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+import re
+import urllib.parse
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from . import web_export
-from .site_render import RENDER_FAILED, SiteRenderError, site_kit_dist
+from .site_render import (
+    RENDER_FAILED,
+    RenderedPage,
+    SectionModule,
+    SiteRenderError,
+    site_kit_dist,
+    site_page_html,
+)
 
 LIVE_WORKSPACES_ENV = "LUMEN_SITE_LIVE_WORKSPACES"
 SHIM_FILES = {"react": "react.js", "react/jsx-runtime": "react-jsx-runtime.js", "zod": "zod.js"}
@@ -96,3 +105,42 @@ def live_page_html(
         f'<script type="module" src="{runtime_url}"></script>'
     )
     return web_export._inject_before_head_close(html, head).replace("</body>", tail + "</body>", 1)
+
+
+_PREVIEW_CSP = (
+    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; "
+    "font-src data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
+)
+
+
+def _data_module(source: str | bytes) -> str:
+    text = source.decode("utf-8") if isinstance(source, bytes) else source
+    return "data:text/javascript;charset=utf-8," + urllib.parse.quote(text)
+
+
+def live_preview_document(
+    page: RenderedPage, css: str, modules: Sequence[SectionModule], runtime: LiveRuntime
+) -> str:
+    """The live page as one self-contained document for the agent's screenshot inside the hardened
+    page (no network): CSS inline, the shims and sections as ``data:`` modules, the runtime inline.
+    Its own CSP meta sits immediately before the import map, so it covers every script on the page
+    (as on a published live page)."""
+    import_map = import_map_json(
+        {specifier: _data_module(data) for specifier, data in runtime.shims.items()}
+    )
+    html = live_page_html(
+        site_page_html(page, css),
+        page.data or {},
+        section_urls={module.name: _data_module(module.module_js) for module in modules},
+        import_map=import_map,
+        runtime_url="",
+    )
+    # Inline, the runtime's text must not close its own element (the parser ends it at any
+    # "</script", in any case).
+    runtime_js = re.sub(r"</(script)", r"<\\/\1", runtime.runtime_js.decode("utf-8"), flags=re.IGNORECASE)
+    html = html.replace(
+        '<script type="module" src=""></script>', f'<script type="module">{runtime_js}</script>', 1
+    )
+    meta = f'<meta http-equiv="Content-Security-Policy" content="{_PREVIEW_CSP}">\n'
+    element = import_map_element(import_map)
+    return html.replace(element, meta + element, 1)

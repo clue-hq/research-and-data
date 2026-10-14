@@ -11927,6 +11927,7 @@ def _execute_site_turn_job(
     lease_generation: Optional[int] = None,
     callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
+    from .site_live import live_sites_enabled
     from .site_turn_ports import (
         DurableSiteAssetPort,
         DurableSiteSectionPort,
@@ -12007,6 +12008,9 @@ def _execute_site_turn_job(
         inputs = None
         if runner is None:
             cache_dir = _host_engine_cache_root(host, workspace_id)
+            # Publishing live sites: a live workspace's previews show the page alive, and its
+            # sections are checked (and taught) as interactive.
+            live = live_sites_enabled(workspace_id)
             brand_kit, _source, kit_assets, font_spec = resolve_web_turn_brand_kit(doc["scene"], blobs)
             inputs = build_site_turn_inputs(
                 document=doc, store=store, blobs=blobs, cache_dir=cache_dir, platform_reads=platform_reads,
@@ -12016,13 +12020,14 @@ def _execute_site_turn_job(
                 assets=DurableSiteAssetPort(blobs=blobs, cache_dir=cache_dir, core=_turn_core(host),
                                             invocations=invocations, run_id=envelope.run_id),
                 site_versions=DurableSiteVersionPort(store, document_id),
-                renderer=PlatformSiteRenderer(read_blob=blobs.read_blob),
+                renderer=PlatformSiteRenderer(read_blob=blobs.read_blob, live=live),
                 logo_cache=DurableLogoFamilyCache(blobs=blobs),
             )
             inputs = replace(
                 inputs,
+                live_sites=live,
                 sections=DurableSiteSectionPort(
-                    store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand
+                    store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand, interactive=live
                 ),
             )
         response = run_site_agent_turn(

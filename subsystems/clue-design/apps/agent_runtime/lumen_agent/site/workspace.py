@@ -6,8 +6,9 @@ functions; what changed is where the inputs come from (by value, from the design
 never reads a database) and that every image is `/asset-store/<sha256>`.
 
 Under the session folder's `workspace/`:
-- brief.md, research/, seller/, project-context/, catalog/, brand/brand.md, skills/, skills-e5/:
-  rebuilt for every request, never restored from the session snapshot;
+- brief.md, research/, seller/, project-context/, catalog/, brand/brand.md, skills/, skills-e5/,
+  skills-live/ (a live workspace only): rebuilt for every request, never restored from the session
+  snapshot;
 - page.json, pages/<name>.json, shell.json: the stored site, written at the start of a request and
   read back at its end;
 - site.md: written by code at the start of a request when the site has content;
@@ -32,7 +33,7 @@ SITE_DIR = Path(__file__).resolve().parent
 #: Rebuilt from the database at the start of every request.
 REGENERATED = (
     "brief.md", "site.md", "research", "catalog", "brand", "project-context", "skills",
-    "skills-e5", "page.json", "pages", "shell.json",
+    "skills-e5", "skills-live", "page.json", "pages", "shell.json",
 )
 #: Left out of the session snapshot: everything rebuilt per request, plus `seller/` (rewritten per
 #: pin by `write_seller_knowledge`), `work/` (one request's compaction offloads) and
@@ -629,6 +630,8 @@ def materialize_workspace(
 
     shutil.copytree(SITE_DIR / "skills", workspace / "skills")
     shutil.copytree(SITE_DIR / "skills-e5", workspace / "skills-e5")
+    if inputs.live_sites:
+        shutil.copytree(SITE_DIR / "skills-live", workspace / "skills-live")
     (workspace / "fetched").mkdir(exist_ok=True)
     write_site_files(workspace, site)
     if any(page.get("content") for page in site_pages_of(site).values()):
