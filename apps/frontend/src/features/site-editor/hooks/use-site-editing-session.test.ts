@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DOC, fakeServer, headingOf, mountSiteSession, startSite } from "./testing/site-session-bridge";
+import { DOC, fakeServer, headingOf, mountSiteSession, startSite, withHeading } from "./testing/site-session-bridge";
 
 // The sync fix (2026-10-14): the app's working copy is the only copy in the browser that decides
 // what is saved. These run the REAL session against a REAL FrameController over an in-memory bridge.
@@ -309,3 +309,90 @@ test("a frame that reboots or is given another document has nothing pending", as
   await mounted.unmount();
 });
 
+
+// Review finding K3-1 (founder, 2026-10-14: fixes 1 and 2). Agent-written section code runs in the
+// editor frame and can send the frame's messages. (1) The frame may ask for undo or redo only while
+// the marketer is editing; the app's own ⌘Z and menu, and the agent's own tools, are unaffected.
+// (2) A different site gets a fresh frame, so one site's code cannot act on the next.
+test("K3-1 fix 1: while the marketer previews, the canvas cannot undo; the app's own ⌘Z still can", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  mounted.typeOnCanvas("hero", "Edited");
+  await mounted.flushCanvas();
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Edited");
+  await mounted.setEditing(false);
+  mounted.frame.shortcut("undo");
+  mounted.frame.shortcut("redo");
+  await mounted.settle(12);
+  assert.equal(server.log.some((line) => line.startsWith("UNDO") || line.startsWith("REDO")), false, "the canvas changed nothing");
+  assert.equal(headingOf(server.site), "Edited");
+  globalThis.window.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "z", metaKey: true }));
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Old headline", "the marketer's own ⌘Z in the app still undoes");
+  await mounted.unmount();
+});
+
+test("K3-1 fix 2: a different site gets a fresh frame, and the old frame's messages are ignored", async () => {
+  const server = fakeServer();
+  const other = fakeServer(startSite({ hero: "Doc two" }), 9);
+  const mounted = await mountSiteSession(server, { otherDocument: other });
+  const firstFrame = mounted.frame;
+  const firstSrc = mounted.latest().stage.canvas.src;
+  await mounted.open("doc-2");
+  assert.notEqual(mounted.latest().stage.canvas.src, firstSrc, "a new frame address (and secret)");
+  assert.notEqual(mounted.frame, firstFrame);
+  assert.equal(headingOf(mounted.frame.getState().site), "Doc two");
+  // Code left behind in the first frame tries to act: an undo and a save.
+  firstFrame.shortcut("undo");
+  firstFrame.pageEdited("/", withHeading(firstFrame.getState().site!, "hero", "Forged").pages["/"]);
+  firstFrame.flushChange();
+  await mounted.settle(12);
+  assert.deepEqual(other.log, [], "nothing reached the open site");
+  assert.deepEqual(server.log, [], "nor the one it came from");
+  // The new frame works as usual.
+  mounted.typeOnCanvas("hero", "Typed on doc two");
+  await mounted.flushCanvas();
+  await mounted.settle(12);
+  assert.equal(headingOf(other.site), "Typed on doc two");
+  await mounted.unmount();
+});
+
+test("K3-1 fix 2: leaving a site and coming back to the same one keeps its frame", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  const frame = mounted.frame;
+  const src = mounted.latest().stage.canvas.src;
+  await mounted.open(null);
+  await mounted.open(DOC);
+  assert.equal(mounted.latest().stage.canvas.src, src);
+  assert.equal(mounted.frame, frame);
+  await mounted.unmount();
+});
+
+// External links (founder, 2026-10-14): a link to another website, clicked in the preview, opens in
+// a new browser tab. The frame cannot open tabs (its sandbox allows no popups), so it asks the app,
+// which opens only http(s) addresses, cut off from the app (noopener), and only right after a real
+// click by the person — so section code cannot open tabs on its own.
+test("an external link clicked in the preview opens in a new tab, only after a real click", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  const opened: unknown[][] = [];
+  const view = globalThis.window as unknown as { open: (...args: unknown[]) => null };
+  view.open = (...args: unknown[]) => {
+    opened.push(args);
+    return null;
+  };
+  const activation = (isActive: boolean) =>
+    Object.defineProperty(globalThis.window.navigator, "userActivation", { configurable: true, value: { isActive } });
+  await mounted.setEditing(false);
+  activation(true);
+  mounted.frame.linkClicked("https://example.com/pricing");
+  await mounted.settle();
+  assert.deepEqual(opened, [["https://example.com/pricing", "_blank", "noopener,noreferrer"]]);
+  activation(false);
+  mounted.frame.linkClicked("https://example.com/again");
+  await mounted.settle();
+  assert.equal(opened.length, 1, "no real click just now: nothing opens");
+  await mounted.unmount();
+});

@@ -59,6 +59,7 @@ test("every frame → app message parses, including the shell target and the sho
     frameToApp("error", { code: "section_load_failed", message: "AnalysisSteps did not load" }, ctx),
     frameToApp("shortcut", { action: "undo" }, ctx),
     frameToApp("pending", { pending: true }, ctx),
+    frameToApp("open_link", { href: "https://example.com/pricing" }, ctx),
   ];
   for (const message of messages) assert.equal(parseFrameToApp(message)?.type, message.type);
 });
@@ -156,4 +157,14 @@ test("v2: site messages carry revisions; a message without them, or from v1, is 
   assert.equal(parseAppToFrame({ ...init, payload: { ...init.payload, rev: undefined } }), null);
   const patch = appToFrame("set_props", { route: "/", componentId: "hero", props: {}, rev: 6 }, ctx);
   assert.equal(parseAppToFrame({ ...patch, payload: { route: "/", componentId: "hero", props: {} } }), null);
+});
+
+test("`open_link` carries only an http(s) address", () => {
+  const good = frameToApp("open_link", { href: "https://example.com/a?b=1" }, ctx);
+  assert.equal(parseFrameToApp(good)?.type, "open_link");
+  assert.equal(parseFrameToApp({ ...good, payload: { href: "http://example.com" } })?.type, "open_link");
+  for (const href of ["javascript:alert(1)", "data:text/html,x", "/pricing", "mailto:a@b.co", "HTTPS:", ""]) {
+    assert.equal(parseFrameToApp({ ...good, payload: { href } }), null, href);
+  }
+  assert.equal(parseFrameToApp({ ...good, payload: { href: `https://example.com/${"a".repeat(2100)}` } }), null);
 });

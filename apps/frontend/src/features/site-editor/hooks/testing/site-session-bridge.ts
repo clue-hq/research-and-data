@@ -183,7 +183,8 @@ export function fakeRepository(server: FakeServer): SiteRepository {
 
 export interface MountedSession {
   latest(): SiteEditingSession;
-  frame: FrameController;
+  /** The frame now on the canvas (a different site gets a fresh frame: review K3-1). */
+  readonly frame: FrameController;
   shown: SitePage[];
   settle(rounds?: number): Promise<void>;
   /** The marketer types on the canvas: the frame's Puck reports the edited page (then the frame
@@ -198,6 +199,8 @@ export interface MountedSession {
   pressUndo(): Promise<void>;
   /** Show another document, or none (a web or ad tab). */
   open(documentId: string | null): Promise<void>;
+  /** The marketer turns Edit on or off. */
+  setEditing(on: boolean): Promise<void>;
   unmount(): Promise<void>;
 }
 
@@ -251,20 +254,23 @@ export async function mountSiteSession(
   const repository = repositoryFor(otherDocument ? { [DOC]: server, "doc-2": otherDocument } : { [DOC]: server });
   const seen: SiteEditingSession[] = [];
   let artifact: string | null = "art-1";
+  let editing = true;
   const documentIds: Record<string, string> = { "art-1": DOC, "art-2": "doc-2" };
   let iframe: HTMLIFrameElement | null = null;
   function Probe() {
     const session = useSiteEditingSession({
       activeArtifactId: artifact,
       documentIds,
-      editing: true,
+      editing,
       enabled: artifact !== null,
       locked: false,
       repository,
       warm: true,
     });
     seen.push(session);
+    // Keyed on the frame's address, as the real canvas is: a new address is a new frame.
     return createElement("iframe", {
+      key: session.stage.canvas.src ?? "none",
       ref: (element: HTMLIFrameElement | null) => {
         session.stage.canvas.iframeRef.current = element;
         iframe = element;
@@ -274,23 +280,49 @@ export async function mountSiteSession(
 
   const shown: SitePage[] = [];
   const timers: (() => void)[] = [];
-  let nonce = "";
-  const frame = new FrameController({
-    cancel: () => undefined,
-    loadSections: async () => [],
-    post: (type, payload, documentId) => {
-      const data = frameToApp(type, payload, { documentId, nonce });
-      setTimeout(() => {
-        dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data, origin: EDITOR_ORIGIN, source: iframe!.contentWindow }));
-      }, 0);
-    },
-    schedule: (run) => {
-      timers.push(run);
-      return timers.length;
-    },
-  });
   const puck: PuckHandle = { select: () => undefined, setMode: () => undefined, showPage: (page) => shown.push(page) };
-  frame.attachPuck(puck);
+  let frame: FrameController | null = null;
+  let boundSrc: string | null = null;
+  /** Boot a frame in the iframe now on the canvas: its own window, its own nonce, its own logic. A
+   * frame replaced later keeps posting from its OLD window with its OLD nonce, as a stale one would. */
+  function bindFrame(): void {
+    const src = latest().stage.canvas.src;
+    if (!src || !iframe?.contentWindow) throw new Error("the session minted no editor frame");
+    boundSrc = src;
+    const nonce = new URL(src).hash.replace(/^#n=/, "");
+    const frameWindow = iframe.contentWindow;
+    const controller = new FrameController({
+      cancel: () => undefined,
+      loadSections: async () => [],
+      post: (type, payload, documentId) => {
+        const data = frameToApp(type, payload, { documentId, nonce });
+        setTimeout(() => {
+          dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data, origin: EDITOR_ORIGIN, source: frameWindow }));
+        }, 0);
+      },
+      schedule: (run) => {
+        timers.push(run);
+        return timers.length;
+      },
+    });
+    controller.attachPuck(puck);
+    // The app → frame side of the bridge: what the frame's own acceptor would let through.
+    Object.defineProperty(frameWindow, "postMessage", {
+      configurable: true,
+      value: (data: unknown, targetOrigin: string) => {
+        if (targetOrigin !== EDITOR_ORIGIN) return;
+        const message = parseAppToFrame(data);
+        if (!message || message.nonce !== nonce) return;
+        setTimeout(() => void controller.receive(message), 0);
+      },
+    });
+    frame = controller;
+    controller.announceReady();
+  }
+  const current = (): FrameController => {
+    if (!frame) throw new Error("no frame booted yet");
+    return frame;
+  };
 
   const root: Root = createRoot(dom.window.document.getElementById("root")!);
   const render = () => (strict ? createElement(StrictMode, null, createElement(Probe)) : createElement(Probe));
@@ -301,37 +333,32 @@ export async function mountSiteSession(
       });
     }
   };
+  const latest = () => seen.at(-1)!;
   await act(async () => root.render(render()));
   await settle();
-  const latest = () => seen.at(-1)!;
-  const src = latest().stage.canvas.src;
-  if (!src) throw new Error("the session minted no editor frame address");
-  nonce = new URL(src).hash.replace(/^#n=/, "");
-  // The app → frame side of the bridge: what the frame's own acceptor would let through.
-  Object.defineProperty(iframe!.contentWindow!, "postMessage", {
-    configurable: true,
-    value: (data: unknown, targetOrigin: string) => {
-      if (targetOrigin !== EDITOR_ORIGIN) return;
-      const message = parseAppToFrame(data);
-      if (!message || message.nonce !== nonce) return;
-      setTimeout(() => void frame.receive(message), 0);
-    },
-  });
-  frame.announceReady();
+  bindFrame();
   await settle();
+  /** A new frame address means the canvas mounted a new frame: boot it. */
+  const rebindIfReplaced = async () => {
+    if (latest().stage.canvas.src === boundSrc) return;
+    bindFrame();
+    await settle();
+  };
 
   return {
-    frame,
+    get frame() {
+      return current();
+    },
     latest,
     settle,
     shown,
     typeOnCanvas(id, heading) {
-      const site = frame.getState().site;
+      const site = current().getState().site;
       if (!site) throw new Error("the frame shows no site");
-      frame.pageEdited("/", withHeading(site, id, heading).pages["/"]);
+      current().pageEdited("/", withHeading(site, id, heading).pages["/"]);
     },
     async flushCanvas() {
-      frame.flushChange();
+      current().flushChange();
       await settle();
     },
     async runFrameTimers() {
@@ -344,11 +371,17 @@ export async function mountSiteSession(
       return event.defaultPrevented;
     },
     async pressUndo() {
-      frame.shortcut("undo");
+      current().shortcut("undo");
       await settle();
     },
     async open(documentId) {
       artifact = documentId === null ? null : documentId === DOC ? "art-1" : "art-2";
+      await act(async () => root.render(render()));
+      await settle();
+      await rebindIfReplaced();
+    },
+    async setEditing(on) {
+      editing = on;
       await act(async () => root.render(render()));
       await settle();
     },

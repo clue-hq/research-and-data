@@ -197,7 +197,14 @@ export function useSiteEditingSession({
         annotateRef.current?.(message.payload);
         return;
       case "shortcut":
+        // Review K3-1 (fix 1): agent-written section code runs in the frame and can send this, so
+        // the frame may ask for a history step only while the marketer is editing. The app's own
+        // ⌘Z and menu, and the agent's own tools, do not come through here and are unaffected.
+        if (!acceptsFrameEdits({ editing: now.editing, locked: now.locked })) return;
         stepRef.current(message.payload.action);
+        return;
+      case "open_link":
+        openExternalLink(message.payload.href);
         return;
       case "pending":
         framePending.current = message.payload.pending;
@@ -206,7 +213,9 @@ export function useSiteEditingSession({
         return;
     }
   }, [copy]);
-  const frame = useSiteFrameHost({ editorOrigin: origin.origin, onMessage: handleFrameMessage });
+  // Review K3-1 (fix 2): a different site gets a fresh frame, so code one site's sections loaded
+  // cannot act on the next site opened in this tab.
+  const frame = useSiteFrameHost({ documentId: activeDocumentId, editorOrigin: origin.origin, onMessage: handleFrameMessage });
   const { boot, post } = frame;
 
   // A reload or a closed tab while typing has not reached the server would lose it silently (the
@@ -521,4 +530,20 @@ export function useSiteEditingSession({
     },
     version: saves.baseVersion,
   };
+}
+
+/** A link to another website clicked in the preview (founder, 2026-10-14): opened in a new tab, cut
+ * off from this page, and only right after a real click by the person — the browser's own record,
+ * which code in the frame cannot fake — so section code cannot open tabs on its own. A browser that
+ * cannot say opens nothing (as before). */
+function openExternalLink(href: string): void {
+  if (window.navigator.userActivation?.isActive !== true) return;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return;
+  window.open(url.href === href ? href : url.href, "_blank", "noopener,noreferrer");
 }

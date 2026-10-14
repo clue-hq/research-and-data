@@ -15,6 +15,9 @@
 // `pending` (2026-10-14): the frame says whenever it starts or stops holding work it has not sent to
 // the app yet (typing not yet written into the page, an edit waiting out its pause), so the app can
 // ask before the page is reloaded or closed. An app that does not know it drops it, like any message.
+//
+// `open_link` (2026-10-14, founder): a link to another website clicked in the preview. The frame may
+// not open tabs (no popups in its sandbox) and never navigates itself; the app opens it in a new tab.
 import { z } from "zod";
 import {
   BrandDataSchema,
@@ -85,6 +88,8 @@ const envelope = {
 const Props = z.record(z.string(), z.unknown());
 /** The app's revision of its working copy (see the v2 note above). */
 export const RevisionSchema = z.number().int().nonnegative();
+/** A link to another website: an absolute http(s) address, nothing else (no javascript:, data:, …). */
+export const ExternalHrefSchema = z.string().max(2048).regex(/^https?:\/\/[^\s/?#]+/i);
 
 export const AppToFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({
@@ -165,6 +170,11 @@ export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
     ...envelope,
     type: z.literal("shortcut"),
     payload: z.object({ action: z.enum(["undo", "redo"]) }),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal("open_link"),
+    payload: z.object({ href: ExternalHrefSchema }).strict(),
   }),
   z.object({
     ...envelope,

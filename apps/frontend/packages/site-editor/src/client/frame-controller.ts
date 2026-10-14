@@ -1,4 +1,5 @@
 import type { BrandData } from "@clue/site-kit";
+import { ExternalHrefSchema } from "@clue/site-kit/editor-protocol";
 import type {
   AppToFrameMessage,
   AppToFramePayloads,
@@ -225,11 +226,18 @@ export class FrameController {
     this.post("shortcut", { action });
   }
 
+  /** A link clicked in the preview: a page of this site switches page; a link to another website
+   * is handed to the app, which opens it in a new tab (the frame may not open tabs, and never
+   * navigates itself). Anything else (javascript:, mailto:, an unknown path) does nothing. */
   linkClicked(href: string): void {
     const site = this.state.site;
     if (!site) return;
     const route = internalRoute(href, site);
-    if (route) this.navigate(route);
+    if (route) {
+      this.navigate(route);
+      return;
+    }
+    if (ExternalHrefSchema.safeParse(href).success) this.post("open_link", { href });
   }
 
   /** A keystroke in the canvas. Until it reaches the page (and the page reaches the app) the app is

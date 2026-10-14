@@ -40,6 +40,8 @@ export function SiteArtifactCanvas({
       {src ? (
         <iframe
           className={styles.frame}
+          // A new frame address is a new frame (review K3-1: a different site never reuses one).
+          key={src}
           ref={iframeRef}
           referrerPolicy="no-referrer"
           sandbox="allow-scripts allow-same-origin"

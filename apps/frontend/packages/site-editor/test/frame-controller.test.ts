@@ -147,11 +147,11 @@ test("the header is selected through the shell target with its own fields", asyn
   assert.equal(h.types().at(-1), "selected", "Puck clearing its own selection does not clear the shell's");
 });
 
-test("a site link in preview switches page; an outside link does nothing", async () => {
+test("a site link in preview switches page; an outside link never navigates the frame", async () => {
   const h = harness();
   await h.controller.receive(init({ mode: "preview" }));
   h.controller.linkClicked("https://garnerhealth.com");
-  assert.equal(h.types().at(-1), "navigated");
+  assert.equal(h.types().at(-1), "open_link", "it asks the app for a new tab (founder, 2026-10-14)");
   assert.equal(h.posts.filter((post) => post.type === "navigated").length, 1);
   h.controller.linkClicked("/analysis");
   assert.deepEqual(h.posts.at(-1)?.payload, { route: "/analysis" });
@@ -366,3 +366,18 @@ test("a new document starts with nothing pending, and its first keystroke says s
   h.controller.noteTyping();
   assert.deepEqual(pendingPosts(h), [true, true]);
 });
+
+// External links (founder, 2026-10-14): a link to another website clicked in the preview is handed
+// to the app, which opens it in a new tab; the frame never navigates itself.
+test("a link to another website asks the app to open it; a page of this site still switches page", async () => {
+  const h = harness();
+  await h.controller.receive(init({ mode: "preview" }));
+  h.controller.linkClicked("https://example.com/pricing");
+  assert.deepEqual(h.posts.at(-1), { documentId: "doc_1", payload: { href: "https://example.com/pricing" }, type: "open_link" });
+  h.controller.linkClicked("/analysis");
+  assert.deepEqual(h.posts.at(-1)?.type, "navigated");
+  const before = h.posts.length;
+  for (const href of ["javascript:alert(1)", "mailto:sales@example.com", "#top", "/not-a-page"]) h.controller.linkClicked(href);
+  assert.equal(h.posts.length, before, "nothing else is opened");
+});
+
