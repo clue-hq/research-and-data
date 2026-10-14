@@ -4588,9 +4588,11 @@ def create_app(
             "site_redo_empty": lambda message: HTTPException(status_code=409, detail={"code": "redo.empty", "message": message}),
         }
 
-    def _site_document_ref(repo: HybridRepository, document_id: str) -> JsonObject:
-        updated = repo.require_document(document_id)
-        return {"id": updated["id"], "current_version": updated["current_version"], "doc_kind": "site"}
+    def _site_document_ref(document_id: str, produced_version: int) -> JsonObject:
+        # The version THIS write produced, never a re-read: a second writer landing between the
+        # commit and the answer must not be reported as the editor's own (review finding S3-3; the
+        # agent's persist already works this way).
+        return {"id": document_id, "current_version": produced_version, "doc_kind": "site"}
 
     def _guard_site_write(repo: HybridRepository, document_id: str, base_version: int, action: str) -> JsonObject:
         document = require_document(repo, document_id)
@@ -4610,9 +4612,9 @@ def create_app(
         checkpoint_label: str,
         base_version: int,
         restore_of: str | None = None,
-    ) -> None:
+    ) -> int:
         try:
-            run_design_tool(
+            refs = run_design_tool(
                 "design_write_site",
                 {
                     "document_id": document_id,
@@ -4631,6 +4633,7 @@ def create_app(
             raise _base_version_conflict(conflict) from conflict
         except (SiteDocumentInvalid, SiteInputsUnavailable, SiteValidatorUnavailable) as error:
             raise _site_refusal(error) from error
+        return int(refs["current_version"])
 
     @app.put("/documents/{document_id}/site")
     def put_site_document(
@@ -4638,7 +4641,7 @@ def create_app(
     ) -> JsonObject:
         """One save of the whole site: one undoable step (Contract 2)."""
         _guard_site_write(repo, document_id, payload.base_version, "save the site")
-        _write_site(
+        produced = _write_site(
             repo,
             document_id,
             site=payload.site,
@@ -4646,7 +4649,7 @@ def create_app(
             checkpoint_label="Manual edit",
             base_version=payload.base_version,
         )
-        return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
+        return {"schema_version": 1, "document": _site_document_ref(document_id, produced)}
 
     def _step_site(repo: HybridRepository, document_id: str, base_version: int, direction: str) -> JsonObject:
         document = _guard_site_write(repo, document_id, base_version, direction)
@@ -4667,7 +4670,11 @@ def create_app(
         except SiteHistoryEmpty as error:
             raise HTTPException(status_code=409, detail={"code": f"{direction}.empty", "message": str(error)}) from error
         moved = "undone_batch_id" if direction == "undo" else "redone_batch_id"
-        return {"schema_version": 1, "document": _site_document_ref(repo, document_id), moved: refs["batch_id"]}
+        return {
+            "schema_version": 1,
+            "document": _site_document_ref(document_id, int(refs["current_version"])),
+            moved: refs["batch_id"],
+        }
 
     @app.post("/documents/{document_id}/site/undo")
     def undo_site_document(
@@ -4738,7 +4745,7 @@ def create_app(
                 status_code=404,
                 detail={"code": "version.not_found", "message": f"no restorable version {batch_id!r} on document {document_id}"},
             )
-        _write_site(
+        produced = _write_site(
             repo,
             document_id,
             site=site,
@@ -4747,7 +4754,7 @@ def create_app(
             base_version=payload.base_version,
             restore_of=batch_id,
         )
-        return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
+        return {"schema_version": 1, "document": _site_document_ref(document_id, produced)}
 
     @app.post("/documents/{document_id}/site/section-links")
     def mint_site_section_links(

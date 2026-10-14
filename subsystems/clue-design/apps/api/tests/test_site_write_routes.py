@@ -218,3 +218,45 @@ def test_a_restore_reinstates_the_agent_sections_its_version_held(client: TestCl
     stored = stored_site(client)
     assert stored["agent_sections"] == {"QuoteBand": module.digest}
     assert stored["pages"]["/"]["content"][-1]["type"] == "QuoteBand"
+
+
+def test_every_site_write_reports_the_version_it_produced_not_a_later_one(
+    client: TestClient, site_a: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review finding S3-3. Another writer (here a rename) lands between each write's commit and
+    the route's answer. The route must report the version ITS write produced: the editor adopts that
+    as its next base, so a re-read would make the editor's next save silently revert the rename."""
+    original = HybridRepository.update_site_document
+    produced: list[int] = []
+
+    def write_then_someone_renames(self, document_id, site, **kwargs):
+        written = original(self, document_id, site, **kwargs)
+        produced.append(int(written["current_version"]))
+        HybridRepository().rename_document(document_id, f"Renamed after v{written['current_version']}")
+        return written
+
+    monkeypatch.setattr(HybridRepository, "update_site_document", write_then_someone_renames)
+
+    saved = client.put(f"/documents/{DOC}/site", json={"site": site_a, "base_version": 0})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["document"]["current_version"] == produced[-1]
+    # The editor's next save from that base meets the rename and is refused, never a silent revert.
+    stale = client.put(f"/documents/{DOC}/site", json={"site": site_a, "base_version": produced[-1]})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"]["code"] == "edits.base_version_mismatch"
+
+    current = client.get(f"/documents/{DOC}").json()["current_version"]
+    undone = client.post(f"/documents/{DOC}/site/undo", json={"base_version": current})
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["document"]["current_version"] == produced[-1]
+
+    current = client.get(f"/documents/{DOC}").json()["current_version"]
+    redone = client.post(f"/documents/{DOC}/site/redo", json={"base_version": current})
+    assert redone.status_code == 200, redone.text
+    assert redone.json()["document"]["current_version"] == produced[-1]
+
+    batch = client.get(f"/documents/{DOC}/site/versions").json()["versions"][-1]["batch_id"]
+    current = client.get(f"/documents/{DOC}").json()["current_version"]
+    restored = client.post(f"/documents/{DOC}/site/versions/{batch}/restore", json={"base_version": current})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["document"]["current_version"] == produced[-1]
