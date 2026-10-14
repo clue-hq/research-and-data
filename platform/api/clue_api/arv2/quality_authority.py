@@ -36,6 +36,11 @@ async def resolve_authority(
     scope: JobScope,
     execution_id: UUID,
 ) -> ResearchAuthority:
+    # NO KEY UPDATE, never plain UPDATE: concurrent authority checks still queue on this row, but
+    # foreign-key checks (an activity row or a specialist's child execution naming it) take a
+    # key-share lock that plain FOR UPDATE blocks. Those writers already hold the job's allowance
+    # row, which ``reserve`` wants next, so FOR UPDATE here deadlocked them (production 40P01,
+    # 2026-10-13). No key column of this row is ever updated.
     row = (
         (
             await conn.execute(
@@ -47,7 +52,7 @@ async def resolve_authority(
       JOIN arv2_research_run r ON r.run_id=j.run_id AND r.workspace_id=j.workspace_id
       WHERE e.execution_id=:execution AND e.workspace_id=:ws AND e.job_id=:job
         AND j.run_id=:run AND j.account_entity_id=:account AND r.project_id=:project
-      FOR UPDATE OF e
+      FOR NO KEY UPDATE OF e
     """),
                 {
                     "execution": execution_id,
