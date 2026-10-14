@@ -71,6 +71,9 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (action.send) controller.shortcut(action.send);
     };
     const onFocusOut = () => controller.flushChange();
+    // Any typing on the canvas (a cloned text slot, a Puck inline field) is unsent work until it
+    // reaches the page and the app: the app asks before a reload throws it away.
+    const onInput = () => controller.noteTyping();
     const onDoubleClick = (event: MouseEvent) => {
       const state = controller.getState();
       if (state.mode !== "edit" || !state.site) return;
@@ -87,11 +90,13 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     document.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("focusout", onFocusOut, true);
+    document.addEventListener("input", onInput, true);
     document.addEventListener("dblclick", onDoubleClick, true);
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("focusout", onFocusOut, true);
+      document.removeEventListener("input", onInput, true);
       document.removeEventListener("dblclick", onDoubleClick, true);
     };
   }, [controller]);

@@ -107,7 +107,7 @@ test("leaving edit mode, switching page or a shortcut flushes a pending edit fir
   await h.controller.receive(init());
   h.controller.pageEdited("/", page("Pending"));
   h.controller.shortcut("undo");
-  assert.deepEqual(h.types().slice(-2), ["changed", "shortcut"]);
+  assert.deepEqual(h.types().filter((type) => type !== "pending").slice(-2), ["changed", "shortcut"]);
 });
 
 test("the app's own edits re-render the page without echoing a change back", async () => {
@@ -288,4 +288,81 @@ test("a patch with no proposal outstanding, or one already re-based, proposes no
   await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "Dock again" }, route: "shell", rev: 10 }, ctx));
   h.timers.forEach((run) => run());
   assert.equal(h.posts.filter((post) => post.type === "changed").length, 1, "a replaced copy ended the outstanding proposal");
+});
+
+// Unsaved work (2026-10-14, founder's live walk): a reload while the marketer was still in a text
+// box lost what they typed, with no warning. The frame tells the app whenever it holds work it has
+// not sent yet — typing not yet written, or an edit waiting out its pause — so the app can ask before
+// the page goes.
+const pendingPosts = (h: ReturnType<typeof harness>) =>
+  h.posts.filter((post) => post.type === "pending").map((post) => (post.payload as { pending: boolean }).pending);
+
+test("typing is pending at once, stays pending through the send, and clears once the typing has settled", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.noteTyping();
+  h.controller.noteTyping();
+  assert.deepEqual(pendingPosts(h), [true], "said once, on the first keystroke");
+  const settled = h.timers.length - 1;
+  h.controller.pageEdited("/", page("Hello there"));
+  h.controller.flushChange();
+  assert.equal(h.types().filter((type) => type === "changed").length, 1);
+  assert.deepEqual(pendingPosts(h), [true], "typing may still be on its way into the page");
+  h.timers[settled - 1]!();
+  assert.deepEqual(pendingPosts(h), [true], "an earlier keystroke's timer changes nothing");
+  h.timers[settled]!();
+  assert.deepEqual(pendingPosts(h), [true, false]);
+});
+
+test("a page edit without typing (a drag, a field) is pending until it is sent", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.pageEdited("/", page("Moved"));
+  assert.deepEqual(pendingPosts(h), [true]);
+  h.controller.flushChange();
+  assert.deepEqual(pendingPosts(h), [true, false]);
+});
+
+test("typing that has settled while its edit waits out the pause stays pending until the send", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.noteTyping();
+  const settled = h.timers.length - 1;
+  h.controller.pageEdited("/", page("Typed"));
+  h.timers[settled]!();
+  assert.deepEqual(pendingPosts(h), [true]);
+  h.controller.flushChange();
+  assert.deepEqual(pendingPosts(h), [true, false]);
+});
+
+test("a different copy from the app drops the unsent typing, so nothing is pending any more", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.noteTyping();
+  h.controller.pageEdited("/", page("Unsent"));
+  const other = SiteDocumentSchema.parse({ ...site, pages: { ...site.pages, "/": page("The agent wrote this") } });
+  await h.controller.receive(appToFrame("replace_site", { site: other, rev: 2 }, { documentId: "doc_1", nonce: NONCE }));
+  assert.deepEqual(pendingPosts(h), [true, false]);
+});
+
+test("in preview nothing is typed, so nothing is pending; leaving edit sends what was pending", async () => {
+  const h = harness();
+  await h.controller.receive(init({ mode: "preview" }));
+  h.controller.noteTyping();
+  assert.deepEqual(pendingPosts(h), []);
+  await h.controller.receive(appToFrame("set_mode", { mode: "edit" }, { documentId: "doc_1", nonce: NONCE }));
+  h.controller.pageEdited("/", page("Edited"));
+  await h.controller.receive(appToFrame("set_mode", { mode: "preview" }, { documentId: "doc_1", nonce: NONCE }));
+  assert.equal(h.types().includes("changed"), true);
+  assert.deepEqual(pendingPosts(h), [true, false]);
+});
+
+test("a new document starts with nothing pending, and its first keystroke says so again", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.noteTyping();
+  await h.controller.receive(init());
+  assert.deepEqual(pendingPosts(h), [true], "the app forgets the old document's state when it inits");
+  h.controller.noteTyping();
+  assert.deepEqual(pendingPosts(h), [true, true]);
 });

@@ -262,3 +262,50 @@ test("a save refused for the site you left never disturbs the site you are editi
   assert.equal(headingOf(server.site), "First");
   await mounted.unmount();
 });
+
+// Unsaved work (2026-10-14, the founder's live walk): typing, then reloading without leaving the text
+// box, lost the typing with no warning. While the frame holds work it has not sent, or a save is
+// still on its way (for any site this tab edited), leaving the page asks first.
+test("leaving the page asks first while the frame holds unsent typing, and not once it is saved", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  assert.equal(mounted.leaveAsks(), false, "nothing to lose");
+  mounted.frame.noteTyping();
+  await mounted.settle();
+  assert.equal(mounted.leaveAsks(), true, "typing not yet written into the page");
+  mounted.typeOnCanvas("hero", "Typed, not left");
+  await mounted.runFrameTimers();
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Typed, not left", "the pause sent it without leaving the box");
+  assert.equal(mounted.leaveAsks(), false);
+  await mounted.unmount();
+});
+
+test("leaving the page asks first while a save is on its way, even for a site no longer open", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  server.hold.save = true;
+  mounted.typeOnCanvas("hero", "Saving slowly");
+  await mounted.flushCanvas();
+  assert.equal(mounted.leaveAsks(), true, "the save has not landed");
+  await mounted.open(null);
+  assert.equal(mounted.leaveAsks(), true, "it is still on its way after the site is closed");
+  server.release("save");
+  await mounted.settle(12);
+  assert.equal(mounted.leaveAsks(), false);
+  assert.equal(headingOf(server.site), "Saving slowly");
+  await mounted.unmount();
+});
+
+test("a frame that reboots or is given another document has nothing pending", async () => {
+  const server = fakeServer();
+  const other = fakeServer(startSite({ hero: "Doc two" }), 9);
+  const mounted = await mountSiteSession(server, { otherDocument: other });
+  mounted.frame.noteTyping();
+  await mounted.settle();
+  assert.equal(mounted.leaveAsks(), true);
+  await mounted.open("doc-2");
+  assert.equal(mounted.leaveAsks(), false, "the new document's init dropped the old typing");
+  await mounted.unmount();
+});
+

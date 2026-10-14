@@ -58,8 +58,16 @@ test("every frame → app message parses, including the shell target and the sho
     frameToApp("annotate", { route: "/", componentId: "hero", geometry: GEOMETRY }, ctx),
     frameToApp("error", { code: "section_load_failed", message: "AnalysisSteps did not load" }, ctx),
     frameToApp("shortcut", { action: "undo" }, ctx),
+    frameToApp("pending", { pending: true }, ctx),
   ];
   for (const message of messages) assert.equal(parseFrameToApp(message)?.type, message.type);
+});
+
+test("`pending` says only whether the frame holds work it has not sent yet", () => {
+  const pending = frameToApp("pending", { pending: false }, ctx);
+  assert.deepEqual(parseFrameToApp(pending)?.payload, { pending: false });
+  assert.equal(parseFrameToApp({ ...pending, payload: { pending: "yes" } }), null);
+  assert.equal(parseFrameToApp({ ...pending, payload: { pending: true, site: {} } }), null);
 });
 
 test("a message off the channel, the version or the schema is dropped", () => {

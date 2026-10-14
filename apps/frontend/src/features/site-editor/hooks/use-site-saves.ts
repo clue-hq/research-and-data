@@ -12,6 +12,9 @@ export interface SiteSaves extends SiteSaveState {
   restore: (batchId: string) => void;
   adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => void;
   isIdle: () => boolean;
+  /** Every site this tab has edited is idle: nothing in flight or queued (a closed site's save may
+   * still be on its way). */
+  allIdle: () => boolean;
   /** The version the queue's next write will be based on, read now (React state lags a render). */
   knownVersion: () => number | null;
   requestReloadWhenIdle: () => void;
@@ -90,6 +93,7 @@ export function useSiteSaves({
   const actions = useMemo(
     () => ({
       adopt: (loaded: { version: number; undoDepth: number; redoDepth: number }) => controller?.adopt(loaded),
+      allIdle: () => controllers.allIdle(),
       clearMessages: () => controller?.clearMessages(),
       isIdle: () => controller?.isIdle() ?? true,
       knownVersion: () => controller?.snapshot.baseVersion ?? null,
@@ -100,7 +104,7 @@ export function useSiteSaves({
       save: (site: SiteDocument, intent?: string) => controller?.save(site, intent),
       undo: () => controller?.undo(),
     }),
-    [controller],
+    [controller, controllers],
   );
   return { ...state, ...actions };
 }
@@ -117,5 +121,10 @@ class ControllerRegistry {
     const created = this.create(documentId);
     this.byDocument.set(documentId, created);
     return created;
+  }
+
+  allIdle(): boolean {
+    for (const controller of this.byDocument.values()) if (!controller.isIdle()) return false;
+    return true;
   }
 }

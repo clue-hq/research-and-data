@@ -24,6 +24,10 @@ import type { LoadedSection } from "./sections";
  * and a shortcut send it at once). Each send is one save, and one save is one undo step. */
 export const CHANGE_DEBOUNCE_MS = 600;
 
+/** How long after the last keystroke typing counts as possibly not yet written into the page (a
+ * cloned text slot writes after its own short pause; see site-kit's CloneEditor). */
+export const TYPING_SETTLE_MS = 1500;
+
 export type FrameStatus = "booting" | "loading" | "ready" | "failed";
 
 export interface FrameSelection {
@@ -97,6 +101,11 @@ export class FrameController {
   /** The base revision of the last proposal sent, until a replaced copy ends it: the app may have
    * refused it because its own patch overtook it (sync-fix review F2). */
   private proposedFrom: number | null = null;
+  /** Keystrokes not yet known to be in the page (unsaved work the app must ask about on leaving). */
+  private typing = false;
+  private typingGeneration = 0;
+  /** What the app was last told about unsent work. */
+  private toldPending = false;
 
   constructor(private readonly deps: FrameControllerDeps) {}
 
@@ -223,6 +232,21 @@ export class FrameController {
     if (route) this.navigate(route);
   }
 
+  /** A keystroke in the canvas. Until it reaches the page (and the page reaches the app) the app is
+   * told there is unsent work, so a reload asks first. */
+  noteTyping(): void {
+    if (this.state.mode !== "edit" || !this.state.site) return;
+    this.typing = true;
+    const generation = ++this.typingGeneration;
+    const schedule = this.deps.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
+    schedule(() => {
+      if (generation !== this.typingGeneration) return;
+      this.typing = false;
+      this.tellPending();
+    }, TYPING_SETTLE_MS);
+    this.tellPending();
+  }
+
   /** Puck's onChange: the user edited the page shown. An echo of the page as stored is ignored. */
   pageEdited(route: string, page: SitePage): void {
     const site = this.state.site;
@@ -240,11 +264,15 @@ export class FrameController {
       this.proposedFrom = this.state.rev;
       this.post("changed", { site: this.state.site, baseRev: this.state.rev });
     }
+    this.tellPending();
   }
 
   private async init(documentId: string, payload: AppToFramePayloads["init"]): Promise<void> {
     const generation = ++this.initGeneration;
     this.cancelChange();
+    this.dropTyping();
+    // The app forgets what it was told when it sends an init, so nothing is said here.
+    this.toldPending = false;
     this.proposedFrom = null;
     this.loading = { route: payload.route, rev: payload.rev, site: payload.site };
     this.set({ brand: null, documentId, mode: payload.mode, sections: [], selection: null, site: null, status: "loading" });
@@ -275,6 +303,8 @@ export class FrameController {
     }
     // A different copy wins over an unsent edit, exactly as the web lane's 409 drops one.
     this.cancelChange();
+    this.dropTyping();
+    this.tellPending();
     this.proposedFrom = null;
     const route = pageFor(site, this.state.route) ? this.state.route : "/";
     const previous = this.state.selection;
@@ -295,6 +325,8 @@ export class FrameController {
     if (this.state.mode === "edit") this.flushChange();
     const hadSelection = this.state.selection !== null;
     this.set({ mode, selection: mode === "edit" ? this.state.selection : null });
+    if (mode !== "edit") this.dropTyping();
+    this.tellPending();
     this.puck?.setMode(mode);
     if (mode !== "edit" && hadSelection) this.post("deselected", {});
   }
@@ -365,6 +397,20 @@ export class FrameController {
     this.changePending = true;
     const schedule = this.deps.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
     this.timer = schedule(() => this.flushChange(), CHANGE_DEBOUNCE_MS);
+    this.tellPending();
+  }
+
+  private dropTyping(): void {
+    this.typing = false;
+    this.typingGeneration += 1;
+  }
+
+  /** Tell the app when unsent work starts or stops (only on a change, so not once per keystroke). */
+  private tellPending(): void {
+    const pending = this.state.mode === "edit" && (this.typing || this.changePending);
+    if (pending === this.toldPending) return;
+    this.toldPending = pending;
+    this.post("pending", { pending });
   }
 
   private cancelTimer(): void {

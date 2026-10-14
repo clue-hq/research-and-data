@@ -190,6 +190,10 @@ export interface MountedSession {
    * debounces it; `flushCanvas` sends it at once, as a blur or a pause would). */
   typeOnCanvas(id: string, heading: string): void;
   flushCanvas(): Promise<void>;
+  /** Let every timer the frame has scheduled run (pauses and the typing settle), as time passing would. */
+  runFrameTimers(): Promise<void>;
+  /** The browser is about to leave the page (a reload, a closed tab): did the app ask to stay? */
+  leaveAsks(): boolean;
   /** The frame's ⌘Z outside text. */
   pressUndo(): Promise<void>;
   /** Show another document, or none (a web or ad tab). */
@@ -329,6 +333,15 @@ export async function mountSiteSession(
     async flushCanvas() {
       frame.flushChange();
       await settle();
+    },
+    async runFrameTimers() {
+      for (const run of timers.splice(0)) run();
+      await settle();
+    },
+    leaveAsks() {
+      const event = new dom.window.Event("beforeunload", { cancelable: true });
+      dom.window.dispatchEvent(event);
+      return event.defaultPrevented;
     },
     async pressUndo() {
       frame.shortcut("undo");

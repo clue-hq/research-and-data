@@ -138,6 +138,9 @@ export function useSiteEditingSession({
   const annotateRef = useRef<((payload: { componentId: string; geometry: PendingAnnotation["geometry"]; route: string }) => void) | null>(null);
   const stepRef = useRef<(action: "undo" | "redo") => void>(() => undefined);
 
+  // Whether the frame holds work it has not sent yet (its `pending` message). Forgotten whenever the
+  // frame reboots or is given a document, which drops whatever it held.
+  const framePending = useRef(false);
   const latest = useRef({ editing, locked, save: saves.save });
   useEffect(() => {
     latest.current = { editing, locked, save: saves.save };
@@ -149,6 +152,7 @@ export function useSiteEditingSession({
       case "ready":
         // A rebooted frame shows no document until its next init lands: the canvas reads
         // "Loading preview…" until the new `navigated`.
+        framePending.current = false;
         setShownDocumentId(null);
         setSelection(null);
         return;
@@ -195,12 +199,29 @@ export function useSiteEditingSession({
       case "shortcut":
         stepRef.current(message.payload.action);
         return;
+      case "pending":
+        framePending.current = message.payload.pending;
+        return;
       default:
         return;
     }
   }, [copy]);
   const frame = useSiteFrameHost({ editorOrigin: origin.origin, onMessage: handleFrameMessage });
   const { boot, post } = frame;
+
+  // A reload or a closed tab while typing has not reached the server would lose it silently (the
+  // founder's live walk, 2026-10-14): the browser asks first, while the frame holds unsent work or
+  // any site's save is still on its way.
+  const { allIdle } = saves;
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!framePending.current && allIdle()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [allIdle]);
 
   // Keep the frame in step: init for a new document, new agent sections or a rebooted frame;
   // replace_site for each new revision of the working copy (an agent checkpoint, a history step, a
@@ -232,6 +253,7 @@ export function useSiteEditingSession({
         };
       }
       sent.current = { initKey, rev: currentSite.rev };
+      framePending.current = false;
       post(
         "init",
         {

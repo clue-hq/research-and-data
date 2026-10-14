@@ -11,6 +11,10 @@
 // patches) carries the app's revision of it; every canvas edit the frame proposes (`changed`) names
 // the revision it started from, and the app refuses one made over an older copy. Revisions belong to
 // the app's working copy, not to the server's version numbers.
+//
+// `pending` (2026-10-14): the frame says whenever it starts or stops holding work it has not sent to
+// the app yet (typing not yet written into the page, an edit waiting out its pause), so the app can
+// ask before the page is reloaded or closed. An app that does not know it drops it, like any message.
 import { z } from "zod";
 import {
   BrandDataSchema,
@@ -161,6 +165,11 @@ export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
     ...envelope,
     type: z.literal("shortcut"),
     payload: z.object({ action: z.enum(["undo", "redo"]) }),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal("pending"),
+    payload: z.object({ pending: z.boolean() }).strict(),
   }),
 ]);
 
