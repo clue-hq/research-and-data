@@ -205,6 +205,17 @@ def site_with_section(document_id: str, name: str, digest: str, props: dict[str,
     return site
 
 
+def site_with_agent_section(name: str, module_js: str) -> tuple[dict[str, Any], list[Any]]:
+    """garner-syracuse with one agent section ``name`` appended to its home page, and its module."""
+    from lumen_api.site_render import SectionModule
+
+    site = garner_site(f"doc_{name.lower()}")
+    digest = hashlib.sha256(module_js.encode("utf-8")).hexdigest()
+    site["pages"]["/"]["content"].append({"type": name, "props": {"id": name.lower(), "surface": "page"}})
+    site["agent_sections"] = {name: digest}
+    return site, [SectionModule(name=name, digest=digest, module_js=module_js, css="", props_schema={})]
+
+
 @functools.lru_cache(maxsize=1)
 def chromium_available() -> bool:
     try:

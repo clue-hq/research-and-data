@@ -36,3 +36,14 @@ test("the build writes the validator and the catalog as single files that run wi
     fs.rmSync(away, { recursive: true, force: true });
   }
 });
+
+test("the build writes the site runtime as one ES module and a shim per host library", () => {
+  execFileSync(process.execPath, ["bin/build-bundles.mjs"], { cwd: root });
+  const runtime = fs.readFileSync(path.join(root, "dist", "site-runtime.js"), "utf-8");
+  assert.ok(runtime.includes("clue-page-data") && runtime.includes("__clueHydrated") && runtime.includes("__clueSectionHost"));
+  for (const file of ["react.js", "react-jsx-runtime.js", "zod.js"]) {
+    const shim = fs.readFileSync(path.join(root, "dist", "site-runtime-shims", file), "utf-8");
+    assert.ok(shim.startsWith("const m = globalThis.__clueSectionHost"), file);
+  }
+  assert.ok(fs.readFileSync(path.join(root, "dist", "site-runtime-shims", "react.js"), "utf-8").includes(" cache"));
+});

@@ -19,6 +19,7 @@ from PIL import Image
 from lumen_api import web_export
 from lumen_api.document_thumbnails import _CAPTURE_SLOTS
 from lumen_api.hardened_browser import CHROMIUM_SANDBOX_ENV, chromium_sandbox_enabled
+from lumen_api import site_render
 from lumen_api.site_render import (
     OUTPUT_TOO_LARGE,
     RENDER_FAILED,
@@ -39,6 +40,7 @@ from site_kit_support import (
     garner_brand,
     garner_site,
     section_module,
+    site_with_agent_section,
     site_with_section,
 )
 
@@ -665,3 +667,38 @@ def test_chromium_sandbox_enabled_reads_the_switch(monkeypatch: pytest.MonkeyPat
     for value, enabled in [("1", True), ("0", False), ("false", False), ("no", False), ("off", False), (" OFF ", False)]:
         monkeypatch.setenv(CHROMIUM_SANDBOX_ENV, value)
         assert chromium_sandbox_enabled() is enabled, value
+
+
+def test_live_render_returns_page_data_and_takes_the_html_over_without_a_mismatch() -> None:
+    site = garner_site("doc_live")
+    result = site_render.render_site(site, garner_brand(), [], base_path="/acme", live=True)
+    home = result.pages[0]
+    assert '<body><div id="clue-site">' in home.html
+    assert home.data is not None and home.data["route"] == "/" and home.data["sections"] == {}
+    assert not [w for w in result.warnings if w.startswith("hydration")], result.warnings
+
+
+def test_a_section_that_draws_differently_in_the_browser_is_reported_by_route() -> None:
+    module_js = (
+        'import { jsx } from "react/jsx-runtime";\n'
+        'import { z } from "zod";\n'
+        'export const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n'
+        'export function render() { return jsx("p", { children: typeof window.__clueRender === "object" && document.getElementById("clue-site") ? "browser" : "server" }); }\n'
+    )
+    site, sections = site_with_agent_section("Drift", module_js)
+    result = site_render.render_site(site, garner_brand(), sections, base_path="", live=True)
+    assert any(w.startswith("hydration on /: mismatch") for w in result.warnings), result.warnings
+
+
+def test_review_focus_5_a_stored_module_importing_a_missing_name_fails_by_name() -> None:
+    module_js = 'import { useNotAHook } from "react";\nexport const schema = null;\nexport function render() { useNotAHook(); return null; }\n'
+    site, sections = site_with_agent_section("Broken", module_js)
+    with pytest.raises(site_render.SiteRenderError) as refused:
+        site_render.render_site(site, garner_brand(), sections, base_path="", live=True)
+    assert "useNotAHook" in refused.value.message
+
+
+def test_static_render_is_unchanged_and_carries_no_page_data() -> None:
+    result = site_render.render_site(garner_site("doc_static"), garner_brand(), [], base_path="/acme")
+    assert all(page.data is None for page in result.pages)
+    assert 'id="clue-site"' not in result.pages[0].html

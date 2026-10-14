@@ -9,8 +9,14 @@
 // imports are rewritten to data: shims over those copies (one React, one zod), renders, and answers
 // on window.__clueRender — frozen once written, and only trusted by Python when it carries the
 // render's nonce (which no section can read: the input is gone before any section loads).
+//
+// In live mode (publishing live sites) each page is drawn into #clue-site with its page data, and
+// then taken over right here the way the published page's runtime takes it over (hydrateSite): every
+// mismatch or failure becomes a warning "hydration on <route>: <message>", before the answer is
+// written, so the render page's deadline bounds it.
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
+import { hydrateSite } from "./live-page";
 import { RenderRefusal, renderSitePages, sectionPropsSchema, type StoredSite } from "./render-core";
 import { HOST_SPECIFIERS, hostExportNames, hostModules, shimSource, type HostSpecifier } from "./section-host";
 
@@ -22,6 +28,7 @@ type Input = {
   brand?: BrandData;
   basePath?: string;
   routes?: string[];
+  live?: boolean;
   sections: { name: string; moduleJs: string }[];
 };
 type Channel = { done: boolean; nonce: string; size: number; code: string | null; error: string | null; result: unknown };
@@ -32,6 +39,10 @@ const channel: Channel = Object.seal({ done: false, nonce: "", size: 0, code: nu
 Object.defineProperty(window, "__clueRender", { value: channel, writable: false, configurable: false });
 
 const dataUrl = (source: string) => "data:text/javascript;charset=utf-8," + encodeURIComponent(source);
+
+/** How long one page's take-over may take to commit before it is let go. */
+const HYDRATION_WAIT_MS = 3000;
+const OPEN_TAG = '<div id="clue-site">';
 
 const shimFor = (specifier: HostSpecifier) => shimSource(specifier, hostExportNames(HOST[specifier]));
 
@@ -81,7 +92,26 @@ async function main(): Promise<void> {
       routes: input.routes,
       agentSections,
       maxOutputBytes: input.maxOutputBytes,
+      live: input.live === true,
     });
+    if (input.live) {
+      for (const page of rendered.pages) {
+        if (!page.data) continue;
+        // The container IS #clue-site, as on the published page; it exists only during this check
+        // (every page was drawn above, before any container), so a section can tell the two apart.
+        const start = page.html.indexOf(OPEN_TAG) + OPEN_TAG.length;
+        const container = document.createElement("div");
+        container.id = "clue-site";
+        container.innerHTML = page.html.slice(start, page.html.lastIndexOf("</div></body>"));
+        document.body.appendChild(container);
+        const reports: string[] = [];
+        const run = hydrateSite({ container, data: page.data, agentSections, report: (message) => reports.push(message) });
+        await Promise.race([run.ready, new Promise((done) => setTimeout(done, HYDRATION_WAIT_MS))]);
+        run.unmount();
+        container.remove();
+        for (const message of reports) rendered.warnings.push(`hydration on ${page.route}: ${message}`);
+      }
+    }
     finish(nonce, { size: rendered.size, result: { pages: rendered.pages, tailwindTheme: rendered.tailwindTheme, warnings: rendered.warnings } });
   } catch (error) {
     finish(nonce, {

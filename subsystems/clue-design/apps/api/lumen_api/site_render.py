@@ -62,10 +62,12 @@ class SectionModule:
 
 @dataclass(frozen=True)
 class RenderedPage:
-    """One route of a rendered site: a whole HTML document, without the site's compiled CSS."""
+    """One route of a rendered site: a whole HTML document, without the site's compiled CSS. In live
+    mode ``data`` is the page's data (site-kit ``LivePageData``) the published page hydrates from."""
 
     route: str
     html: str
+    data: JsonObject | None = None
 
 
 @dataclass(frozen=True)
@@ -324,7 +326,18 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
             # then, under whatever call is waiting).
             closer = _CloseAtDeadline(page, deadline)
             try:
-                page.add_script_tag(content=bundle)
+                try:
+                    page.add_script_tag(content=bundle)
+                except PlaywrightError as error:
+                    # Playwright fails add_script_tag on ANY Content-Security-Policy console error
+                    # printed while it waits, taking it for its own script being blocked. This page
+                    # allows inline script, so the bundle is never blocked; such an error comes from
+                    # what the bundle is doing — a live render's hydration check puts the drawn HTML
+                    # into this page, and its style attributes break the page's style-src 'none'
+                    # (harmless: nothing here is looked at). The bundle runs on, and the wait below
+                    # takes its answer; were it ever truly blocked, that wait would time out.
+                    if isinstance(error, PlaywrightTimeout) or "Content Security Policy" not in str(error).replace("-", " "):
+                        raise
                 while True:
                     refuse_if_moved()
                     try:
@@ -400,6 +413,7 @@ def render_site(
     *,
     base_path: str,
     routes: Sequence[str] | None = None,
+    live: bool = False,
     timeout_s: float = 20.0,
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
     node_bin: str = "node",
@@ -409,7 +423,10 @@ def render_site(
     ``base_path`` is where the site is served ("/acme-site"); "" leaves /route links as written.
     Each page comes back as a whole document without CSS; ``css`` is the site's compiled Tailwind
     plus each agent section's own stored CSS. ``timeout_s`` bounds the page's work, not the wait for
-    a capture slot or the browser launch. Raises :class:`SiteRenderError`."""
+    a capture slot or the browser launch. With ``live``, each page is drawn into ``#clue-site`` for
+    the browser to take over, comes back with its ``data``, and is taken over once inside the render
+    page: each mismatch or failure there is a warning ``"hydration on <route>: <message>"``. Raises
+    :class:`SiteRenderError`."""
     modules = pinned_modules(dict(site), sections)
     known = site_routes(dict(site))
     wanted = list(routes) if routes is not None else known
@@ -422,10 +439,14 @@ def render_site(
         "brand": dict(brand),
         "basePath": base_path,
         "routes": wanted,
+        "live": live,
         "sections": [{"name": module.name, "moduleJs": module.module_js} for module in modules],
     }
     result, blocked, url_changes = _run_shell(payload, timeout_s=timeout_s, max_output_bytes=max_output_bytes)
-    pages = [RenderedPage(route=str(page["route"]), html=str(page["html"])) for page in result.get("pages") or []]
+    pages = [
+        RenderedPage(route=str(page["route"]), html=str(page["html"]), data=page.get("data") if live else None)
+        for page in result.get("pages") or []
+    ]
     css = _compile_css(pages, str(result.get("tailwindTheme") or ""), node_bin)
     module_css = "\n".join(module.css for module in modules if module.css)
     warnings = [str(warning) for warning in result.get("warnings") or []]
