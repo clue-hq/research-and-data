@@ -25,7 +25,7 @@ check "helper answers build_info" helper_answers
 check "font manifest" run test -f /app/subsystems/clue-design/apps/api/font-library/manifest.json
 check "tailwind toolchain" run test -d /app/subsystems/clue-design/apps/editor/node_modules/@tailwindcss/node
 check "tailwind browser runtime" run test -f /app/subsystems/clue-design/apps/editor/public/vendor/tailwind-browser.js
-check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/render-browser.js -a -f /app/apps/frontend/packages/site-kit/dist/validate-site.mjs
+check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/render-browser.js -a -f /app/apps/frontend/packages/site-kit/dist/validate-site.mjs -a -f /app/apps/frontend/packages/site-kit/dist/site-runtime.js -a -f /app/apps/frontend/packages/site-kit/dist/site-runtime-shims/react.js
 check "site-kit section toolchain" run test -d /app/apps/frontend/node_modules/typescript -a -d /app/apps/frontend/node_modules/esbuild -a -d /app/apps/frontend/node_modules/tsx
 check "site-kit section check folder writable" run test -w /app/apps/frontend/packages/site-kit/.section-check
 check "node" run node --version

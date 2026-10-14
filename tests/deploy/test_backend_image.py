@@ -152,6 +152,14 @@ def test_the_image_builds_and_ships_the_site_kit_bundles() -> None:
     assert 'check "site-kit bundles"' in SMOKE
 
 
+def test_the_smoke_check_finds_the_site_runtime_and_its_shims() -> None:
+    """A live site page imports site-kit's runtime and its shims, published from the image's
+    site-kit dist (publishing live sites, phase 1); the smoke check names both files."""
+    bundles = next(line for line in SMOKE.splitlines() if 'check "site-kit bundles"' in line)
+    assert "-a -f /app/apps/frontend/packages/site-kit/dist/site-runtime.js" in bundles
+    assert "-a -f /app/apps/frontend/packages/site-kit/dist/site-runtime-shims/react.js" in bundles
+
+
 def test_the_image_ships_the_section_compile_toolchain() -> None:
     """Agent-written sections are checked and bundled at run time (Wave 2 Lane B, Contract 4)."""
     assert (

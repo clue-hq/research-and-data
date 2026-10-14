@@ -333,6 +333,8 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
   'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src
   'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, chosen per publish at the
   page origin.
+- Live workspaces (`LUMEN_SITE_LIVE_WORKSPACES`) publish under `docs/superpowers/specs/2026-10-15-publishing-live-sites-design.md`
+  instead: checked, not stripped; `delivery: site_live`.
 
 ### Contract 4: agent sections (Lane B stores, Lane A renders, Lane C loads)
 

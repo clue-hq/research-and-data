@@ -50,3 +50,47 @@ publishing (spec §12).
 - Review docs: 62 open (1 Critical parked, 19 Important, 42 Minor).
 - Pre-existing, not ours: `npx tsc --noEmit -p apps/frontend` reports errors in old test files
   (design-editor engine tests, brand-context, workspace-switcher); the gate is lint + build.
+
+## Closing — phase 1 built (2026-10-15)
+Plan `docs/superpowers/plans/2026-10-15-publishing-live-sites-phase-1.md`, 12 tasks, executed task by
+task (Opus implementers, reviewed per task; ledger `.superpowers/sdd/2026-10-15-publishing-live-sites-phase-1/`).
+Workspaces on `LUMEN_SITE_LIVE_WORKSPACES` now publish live sites: one tree for server and browser, the
+site runtime + shims + sections as publish files under one hashed import map, checked (never stripped),
+`delivery: site_live`, served by the page origin under its own policy; interactive agent sections
+(state, effects, handlers, timers) with eval/raw HTML/cookies/foreign elements still refused; one error
+boundary per agent section; the agent previews the page alive and has the approved
+making-a-section-interactive skill. Other workspaces are unchanged (static, stripped).
+
+Commits (`git log --oneline abf0c53c5..HEAD`, oldest last), plus the Task 12 records commit on top:
+f02340713 site agent skill (making a section interactive, founder-approved) · b94431dec live preview loads
+the runtime as a data: module · 2d1edc166 live previews + interactive sections in live workspaces ·
+eb883bc07 one error boundary for agent sections · 28dbb8d58 kit.editing · 2e3858fd2 interactive sections
+lint · 938906a45 design API publishes live sites (real-browser proof) · 7d5b869ed page origin serves live
+pages under their own policy · 1f97769c9 CSP meta before the import map · fd3818bd9 live site package ·
+280560b74 live site policy · 7b586e706 site runtime + shims + live render check · fbe5501a3 the live page
+· a23b15240 one definition of section imports (K2-1) · c0c466460 hydration spike.
+Task 12: the backend image's smoke check now also requires `dist/site-runtime.js` and
+`dist/site-runtime-shims/react.js` (red→green in `tests/deploy/test_backend_image.py`).
+
+Gate (Task 12, all green): frontend design-system:build + lint (0 errors, 8 warnings — one new in this
+phase: unused `_shell` param in site-kit `live-page.tsx`) + build; `npm test` 3431 pass / 5 skip;
+site-kit tests 197 pass / 6 skip (A9_SCENARIO_KIT env-gated) + tsc; site-editor 64 pass + tsc;
+`tests/site_editor` (browser) 21, `tests/page_origin` 34, `tests/deploy` 283, `tests/design/test_publish_delivery.py` 9;
+design files one at a time all pass (site_render 41, publish_package 24, sanitize 9, live_browser 1,
+publish_routes 18, site_kit_cli 10, turn_ports 15, turn_executor 14, thumbnails 13, lane_a 9, lane_b 19);
+agent runtime site tests pass (harness 25, workspace 15, tools 12, render_tool 5, sections_tool 5, package 4).
+Ruff: root-config files changed this phase are clean; `subsystems/clue-design` is outside root ruff
+and its phase-added lines follow the files' existing long-line style.
+Pre-existing, not this phase: `test_write_path_governance.py` fails 1 on `asset_enrichment.py:51`
+(neither file changed since abf0c53c5).
+
+Owed:
+- Founder approval of the publish-refusal wording `_UNSAFE_MARKUP` in `lumen_api/site_publish.py`
+  (committed as drafted).
+- Two proposed base-prompt lines for live workspaces (name the skill in "How to work" step 1;
+  render_page's hydration notes) — proposed in chat, awaiting the founder; not part of the plan.
+- Lane DB: `alembic upgrade head` on `clue_trenton` before the stack runs this branch (S4-1 migration
+  `abf95e465478` is only on the test DB).
+- Live walk (founder-triggered; live agent runs spend money): put one workspace on
+  `LUMEN_SITE_LIVE_WORKSPACES`, restart the design API and workers, ask for an interactive section,
+  publish, open the published page in the in-app browser and click it.

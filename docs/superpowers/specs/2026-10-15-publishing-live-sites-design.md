@@ -1,6 +1,8 @@
 # Publishing live sites: JavaScript, forms, tracking, embeds and snippets on published Puck sites
 
-**Date:** 2026-10-15. **Status:** design agreed in discussion with the founder (2026-10-15); this
+**Date:** 2026-10-15. **Status:** Phase 1 built (2026-10-15, commits `c0c466460` … `f02340713`
+and the records commit that follows them; plan `docs/superpowers/plans/2026-10-15-publishing-live-sites-phase-1.md`;
+the live in-app-browser walk is owed). Earlier: design agreed in discussion with the founder (2026-10-15); this
 written spec awaits the founder's review. **Branch:** `puck/integration-wave1` (trenton).
 
 **Supersedes:** the Wave 2 integration plan's Contract 3 publishing rules
