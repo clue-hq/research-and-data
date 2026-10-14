@@ -68,6 +68,10 @@ class ProductLink:
     #: for every deterministic rung — a NULL says "no model decided this".
     reconcile_confidence: str | None = None
     reconcile_reason: str | None = None
+    #: The entry reached its product through a product a person merged away (spec 2026-10-15 §9):
+    #: the survivor already has its page, so the driver does not research it again under this
+    #: entry's name. Not stored — a replayed link reports ``False``.
+    redirected: bool = False
 
 
 #: Trademark/service-mark/copyright marks a company decorates its own product names with. They are
@@ -264,8 +268,13 @@ async def _record(
     count: int,
     confidence: str | None = None,
     reason: str | None = None,
+    redirected: bool = False,
 ) -> ProductLink:
-    """Write the lineage row for one entry and return the link that mirrors it."""
+    """Write the lineage row for one entry and return the link that mirrors it.
+
+    A ``removed_by_person`` row keeps the removed product's id (the durable record of what the
+    entry matched) while its link carries none, so nothing downstream researches it again.
+    """
     await conn.execute(
         text(
             "INSERT INTO onboarding_product_lineage (lineage_id, workspace_id, brand_id, "
@@ -290,8 +299,31 @@ async def _record(
         },
     )
     return ProductLink(
-        product_id, pending.entry.name, state, count, pending.lineage_id, confidence, reason
+        None if state == REMOVED_BY_PERSON else product_id,
+        pending.entry.name,
+        state,
+        count,
+        pending.lineage_id,
+        confidence,
+        reason,
+        redirected,
     )
+
+
+#: A person removed the product this entry names (spec 2026-10-15 §9). The row keeps the removed
+#: product's id; the link carries none.
+REMOVED_BY_PERSON = "removed_by_person"
+
+
+def _current(products: Sequence[Product], product_id: str | None) -> Product | None:
+    """What a product id stands for today: itself, or the product it was merged into."""
+    by_id = {p.product_id: p for p in products}
+    product = by_id.get(product_id) if product_id else None
+    for _ in range(8):
+        if product is None or product.merged_into is None:
+            return product
+        product = by_id.get(product.merged_into)
+    return None
 
 
 def _replace(products: list[Product], refreshed: Product) -> list[Product]:
@@ -473,8 +505,9 @@ async def synchronize_catalog(
                 raise ValueError("catalog document entry changed under its lineage")
             confidence = already["reconcile_confidence"]
             reason = already["reconcile_reason"]
+            state = str(already["resolution_state"])
             links[ordinal] = ProductLink(
-                already["product_id"],
+                None if state == REMOVED_BY_PERSON else already["product_id"],
                 entry.name,
                 str(already["resolution_state"]),
                 int(already["candidate_count"]),
@@ -482,33 +515,69 @@ async def synchronize_catalog(
                 str(confidence) if confidence is not None else None,
                 str(reason) if reason is not None else None,
             )
-            if already["product_id"] is not None:
+            if already["product_id"] is not None and state != REMOVED_BY_PERSON:
                 run_entries[str(already["product_id"])] = entry
             continue
 
         prior = await _prior_product_id(
             conn, workspace_id=workspace_id, brand_id=brand_id, fingerprint=pending.fingerprint
         )
-        if prior is not None and any(p.product_id == prior for p in existing):
+        # Every product a rung reaches is mapped to what it stands for today: a merged product to
+        # its survivor, and an archived one is a product a person removed (spec 2026-10-15 §9).
+        target = _current(existing, prior)
+        if target is not None:
+            if target.status == "archived":
+                links[ordinal] = await _record(
+                    conn,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    document_id=document_id,
+                    pending=pending,
+                    product_id=target.product_id,
+                    state=REMOVED_BY_PERSON,
+                    count=1,
+                )
+                continue
             links[ordinal] = await _record(
                 conn,
                 workspace_id=workspace_id,
                 brand_id=brand_id,
                 document_id=document_id,
                 pending=pending,
-                product_id=prior,
+                product_id=target.product_id,
                 state="lineage_reused",
                 count=1,
+                redirected=target.product_id != prior,
             )
-            run_entries[prior] = entry
+            run_entries[target.product_id] = entry
             continue
 
         hits = _candidates(entry, existing)
-        if len(hits) == 1:
+        targets = list(
+            {
+                t.product_id: t
+                for t in (_current(existing, h.product_id) for h in hits)
+                if t is not None
+            }.values()
+        )
+        if len(targets) == 1 and targets[0].status == "archived":
+            links[ordinal] = await _record(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                document_id=document_id,
+                pending=pending,
+                product_id=targets[0].product_id,
+                state=REMOVED_BY_PERSON,
+                count=1,
+            )
+            continue
+        if len(targets) == 1:
+            reached = targets[0]
             existing = _replace(
                 existing,
                 await _write_back(
-                    conn, product_id=hits[0].product_id, workspace_id=workspace_id, entry=entry
+                    conn, product_id=reached.product_id, workspace_id=workspace_id, entry=entry
                 ),
             )
             links[ordinal] = await _record(
@@ -517,13 +586,14 @@ async def synchronize_catalog(
                 brand_id=brand_id,
                 document_id=document_id,
                 pending=pending,
-                product_id=hits[0].product_id,
+                product_id=reached.product_id,
                 state="alias_reused",
                 count=1,
+                redirected=any(h.status != "active" for h in hits),
             )
-            run_entries[hits[0].product_id] = entry
+            run_entries[reached.product_id] = entry
             continue
-        if hits:
+        if targets:
             links[ordinal] = await _record(
                 conn,
                 workspace_id=workspace_id,
@@ -532,7 +602,7 @@ async def synchronize_catalog(
                 pending=pending,
                 product_id=None,
                 state="unresolved_ambiguous",
-                count=len({h.product_id for h in hits}),
+                count=len(targets),
             )
             continue
 
@@ -556,7 +626,8 @@ async def synchronize_catalog(
             brand_id=brand_id,
             document_id=document_id,
             leftovers=leftovers,
-            existing=existing,
+            # The model only ever matches against the products on the list today.
+            existing=[p for p in existing if p.status == "active"],
             run_entries=run_entries,
             reconciler=reconciler,
         )

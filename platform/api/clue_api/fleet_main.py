@@ -49,6 +49,8 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncConnection
+
 from clue_agents.ports import AgentModelProvider
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
@@ -79,6 +81,7 @@ from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
 from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
+    CatalogRegenerator,
     IcpRef,
     IcpSynthesisOutcome,
     OnboardingRunWorkHandler,
@@ -147,6 +150,7 @@ from clue_api.onboarding_synthesis_wiring import (
 )
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_management import regenerate_catalog
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import (
@@ -703,7 +707,19 @@ def _build_onboarding_handler(
         client_binder=Stage0ClientEntityBinder(),
         synthesis=synthesis,
         reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
+        catalog_regenerator=_catalog_regenerator(storage),
     )
+
+
+def _catalog_regenerator(storage: StorageBackend) -> CatalogRegenerator:
+    """Spec 2026-10-15 §9: a re-run that met merged or removed products rebuilds the catalog."""
+
+    async def regenerate(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> object:
+        return await regenerate_catalog(
+            conn, storage, workspace_id=workspace_id, brand_id=brand_id, change_id=None
+        )
+
+    return regenerate
 
 
 def _build_catalog_reconciler_factory(
