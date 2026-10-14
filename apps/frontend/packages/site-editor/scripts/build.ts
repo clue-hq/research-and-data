@@ -9,41 +9,26 @@ import tailwind from "@tailwindcss/postcss";
 import { build } from "esbuild";
 import postcss from "postcss";
 import { editorThemeCss } from "@clue/site-kit";
+import { hostExportNames, hostModules, shimSource, type HostSpecifier } from "@clue/site-kit/section-host";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const DIST = path.join(ROOT, "dist");
 const STYLES = path.join(ROOT, "src/client/styles.css");
 
-// What a compiled agent section may import from each kept dependency (the D2 spike's list,
-// trials/puck-spike/app/edit-runtime/[site]/page.tsx:20-26).
-const REACT_EXPORTS = [
-  "Children", "Component", "Fragment", "PureComponent", "StrictMode", "Suspense", "cloneElement",
-  "createContext", "createElement", "createRef", "forwardRef", "isValidElement", "lazy", "memo",
-  "startTransition", "use", "useActionState", "useCallback", "useContext", "useDebugValue",
-  "useDeferredValue", "useEffect", "useId", "useImperativeHandle", "useInsertionEffect",
-  "useLayoutEffect", "useMemo", "useOptimistic", "useReducer", "useRef", "useState",
-  "useSyncExternalStore", "useTransition", "version",
-];
-
-export const SHIMS: Record<string, { names: readonly string[]; specifier: string }> = {
-  "react-jsx-runtime.mjs": { names: ["jsx", "jsxs", "Fragment"], specifier: "react/jsx-runtime" },
-  "react.mjs": { names: REACT_EXPORTS, specifier: "react" },
-  "zod.mjs": { names: ["z"], specifier: "zod" },
+// What a compiled agent section may import: every export of the editor's own react,
+// react/jsx-runtime and zod, decided once in site-kit's section-host (review finding K2-1).
+const HOST = hostModules();
+export const SHIMS: Record<string, { names: readonly string[]; specifier: HostSpecifier }> = {
+  "react-jsx-runtime.mjs": { names: hostExportNames(HOST["react/jsx-runtime"]), specifier: "react/jsx-runtime" },
+  "react.mjs": { names: hostExportNames(HOST.react), specifier: "react" },
+  "zod.mjs": { names: hostExportNames(HOST.zod), specifier: "zod" },
 };
 
 export const IMPORT_MAP = JSON.stringify({
   imports: { react: "/shims/react.mjs", "react/jsx-runtime": "/shims/react-jsx-runtime.mjs", zod: "/shims/zod.mjs" },
 });
 
-export function shimSource(specifier: string, names: readonly string[]): string {
-  return [
-    `const m = globalThis.__clueSectionHost && globalThis.__clueSectionHost[${JSON.stringify(specifier)}];`,
-    `if (!m) throw new Error(${JSON.stringify(`The site editor has not shared ${specifier} with agent sections.`)});`,
-    "export default m.default ?? m;",
-    `export const { ${names.join(", ")} } = m;`,
-    "",
-  ].join("\n");
-}
+export { shimSource };
 
 export function pageHtml(scriptName: string, styleName: string): string {
   return [

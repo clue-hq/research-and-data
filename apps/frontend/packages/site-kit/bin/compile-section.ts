@@ -16,11 +16,12 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { BrandData } from "../src/brand";
 import { lint, lintOptionsFor, typeCheck } from "../src/check-section";
+import { foreignHostImports, HOST_SPECIFIERS } from "../src/section-host";
 import { tailwindThemeCss } from "../src/theme";
 
 const NAME = /^[A-Z][A-Za-z0-9]{2,40}$/;
-/** The only imports a compiled module may keep; each host (editor, renderer) provides them. */
-export const HOST_SPECIFIERS = ["react", "react/jsx-runtime", "zod"];
+/** The only imports a compiled module may keep; each host provides them (src/section-host.ts). */
+export { HOST_SPECIFIERS } from "../src/section-host";
 const PACKAGE = fileURLToPath(new URL("..", import.meta.url));
 
 export type Compiled =
@@ -61,10 +62,12 @@ export async function compileSection(input: { name: string; source: string; bran
     // (and so the digest) depend on the source alone.
     const moduleJs = bundled.outputFiles[0].text.replace(/^\/\/ [^\n]*\n/, "");
     const imports = [...moduleJs.matchAll(/(?:^|\n)\s*import\s[^"']*["']([^"']+)["']/g)].map((m) => m[1]);
-    const foreign = imports.filter((specifier) => !HOST_SPECIFIERS.includes(specifier));
+    const foreign = imports.filter((specifier) => !(HOST_SPECIFIERS as readonly string[]).includes(specifier));
     if (foreign.length) {
       return fail(foreign.map((s) => `the module imports "${s}"; the kit arrives as render's second argument, import only its type`));
     }
+    const missing = foreignHostImports(moduleJs);
+    if (missing.length) return fail(missing);
     return { ok: true, name, moduleJs, tailwindTheme: tailwindThemeCss(brand) };
   } finally {
     fs.rmSync(checkDir, { recursive: true, force: true });

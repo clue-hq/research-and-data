@@ -4,7 +4,7 @@ import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { editorThemeCss, extraSurfaceRoles, surfaceChoices, surfaceClass, tailwindThemeCss } from "@clue/site-kit";
 import { kitBrand } from "../../site-kit/test/fixtures/kits";
-import { IMPORT_MAP, compileStyles, pageHtml, shimSource } from "../scripts/build";
+import { IMPORT_MAP, SHIMS, compileStyles, pageHtml, shimSource } from "../scripts/build";
 import { buildPageConfig } from "../src/client/config";
 
 test("the stylesheet carries the brand-token utilities site-kit's sections use, and Puck's own styles", async () => {
@@ -63,6 +63,11 @@ test("each shim re-exports the editor's own copy and fails loudly before it is s
   assert.ok(source.includes('globalThis.__clueSectionHost["react"]'));
   assert.ok(source.includes("export const { useState, useEffect } = m;"));
   assert.ok(source.includes("throw new Error"));
+});
+
+test("K2-1: the editor's react shim hands over every react export, not a hand-written list", () => {
+  const react = SHIMS["react.mjs"];
+  assert.ok(react.names.includes("cache") && react.names.includes("use"));
 });
 
 test("the page has exactly one inline script — the nonced import map — and the bundle", () => {

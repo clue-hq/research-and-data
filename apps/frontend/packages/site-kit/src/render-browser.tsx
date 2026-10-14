@@ -9,12 +9,10 @@
 // imports are rewritten to data: shims over those copies (one React, one zod), renders, and answers
 // on window.__clueRender — frozen once written, and only trusted by Python when it carries the
 // render's nonce (which no section can read: the input is gone before any section loads).
-import * as React from "react";
-import * as jsxRuntime from "react/jsx-runtime";
-import * as zodNamespace from "zod";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import { RenderRefusal, renderSitePages, sectionPropsSchema, type StoredSite } from "./render-core";
+import { HOST_SPECIFIERS, hostExportNames, hostModules, shimSource, type HostSpecifier } from "./section-host";
 
 type Input = {
   mode: "render" | "schema";
@@ -28,30 +26,14 @@ type Input = {
 };
 type Channel = { done: boolean; nonce: string; size: number; code: string | null; error: string | null; result: unknown };
 
-const HOST: Record<string, Record<string, unknown>> = {
-  react: React as unknown as Record<string, unknown>,
-  "react/jsx-runtime": jsxRuntime as unknown as Record<string, unknown>,
-  zod: zodNamespace as unknown as Record<string, unknown>,
-};
-const RESERVED = new Set(
-  ("break case catch class const continue debugger default delete do else enum export extends false finally for " +
-    "function if import in instanceof new null return super switch this throw true try typeof var void while with " +
-    "yield let static implements interface package private protected public await").split(" "),
-);
+const HOST = hostModules();
 const freeze = Object.freeze;
 const channel: Channel = Object.seal({ done: false, nonce: "", size: 0, code: null, error: null, result: null });
 Object.defineProperty(window, "__clueRender", { value: channel, writable: false, configurable: false });
 
 const dataUrl = (source: string) => "data:text/javascript;charset=utf-8," + encodeURIComponent(source);
 
-function shimFor(specifier: string): string {
-  const names = Object.keys(HOST[specifier]).filter((name) => name !== "default" && /^[A-Za-z_$][\w$]*$/.test(name) && !RESERVED.has(name));
-  return (
-    `const M = globalThis.__clueSectionHost[${JSON.stringify(specifier)}];\n` +
-    "export default (M.default ?? M);\n" +
-    (names.length ? `export const { ${names.join(", ")} } = M;\n` : "")
-  );
-}
+const shimFor = (specifier: HostSpecifier) => shimSource(specifier, hostExportNames(HOST[specifier]));
 
 async function loadSection(moduleJs: string, shims: Record<string, string>): Promise<Record<string, unknown>> {
   const source = moduleJs.replace(
@@ -82,7 +64,7 @@ async function main(): Promise<void> {
     }
   }
   (globalThis as Record<string, unknown>).__clueSectionHost = HOST;
-  const shims = Object.fromEntries(Object.keys(HOST).map((specifier) => [specifier, dataUrl(shimFor(specifier))]));
+  const shims = Object.fromEntries(HOST_SPECIFIERS.map((specifier) => [specifier, dataUrl(shimFor(specifier))]));
   try {
     const loaded: Record<string, Record<string, unknown>> = {};
     for (const section of input.sections) loaded[section.name] = await loadSection(section.moduleJs, shims);

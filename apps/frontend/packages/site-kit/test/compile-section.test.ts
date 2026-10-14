@@ -15,7 +15,7 @@ test("a valid section compiles to a module that imports only what the host provi
   assert.equal(result.ok, true, JSON.stringify(result));
   if (!result.ok) return;
   const imports = [...result.moduleJs.matchAll(/(?:^|\n)\s*import\s[^"']*["']([^"']+)["']/g)].map((m) => m[1]);
-  assert.ok(imports.every((specifier) => HOST_SPECIFIERS.includes(specifier)), imports.join(", "));
+  assert.ok(imports.every((specifier) => (HOST_SPECIFIERS as readonly string[]).includes(specifier)), imports.join(", "));
   assert.match(result.moduleJs, /export\s*\{/);
   assert.ok(result.tailwindTheme.startsWith("@theme inline {"));
 });
@@ -47,4 +47,25 @@ test("a bad name is refused and the check folder is left empty", async () => {
   await compileSection({ name: "QuoteBand", source: EXAMPLE, brand: garner() });
   const left = fs.existsSync(CHECK_DIR) ? fs.readdirSync(CHECK_DIR).filter((entry) => entry.length === 36) : [];
   assert.deepEqual(left, []);
+});
+
+test("K2-1: a section importing a name react does not export is refused at write time", async () => {
+  const source = fs.readFileSync(new URL("./fixtures/section-example.tsx", import.meta.url), "utf-8")
+    .replace('import { z } from "zod";', 'import { z } from "zod";\nimport { useNotAHook } from "react";\nvoid useNotAHook;');
+  const result = await compileSection({ name: "QuoteBand", source, brand: garner() });
+  assert.equal(result.ok, false);
+  // The type check refuses the missing name before the bundle's named-import check gets to it;
+  // either message is the refusal that matters.
+  assert.ok(
+    !result.ok && result.errors.some((e) => e.includes('"useNotAHook" from "react"') || e.includes("no exported member 'useNotAHook'")),
+    JSON.stringify(result),
+  );
+});
+
+test("K2-1: a section importing a real react export the editor's old hand-written list lacked compiles", async () => {
+  const source = fs.readFileSync(new URL("./fixtures/section-example.tsx", import.meta.url), "utf-8")
+    .replace('import { z } from "zod";', 'import { z } from "zod";\nimport { cache } from "react";\nvoid cache;');
+  const result = await compileSection({ name: "QuoteBand", source, brand: garner() });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.ok(result.ok && /import\s*\{[^}]*\bcache\b[^}]*\}\s*from\s*"react"/.test(result.moduleJs), result.ok ? result.moduleJs : "");
 });
