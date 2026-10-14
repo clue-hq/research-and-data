@@ -159,6 +159,7 @@ def problems(env: dict[str, str], role: str) -> list[str]:
                 "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES must keep pages.cluehq.ai once published pages "
                 "move to their own domain (the custom-domain reservation depends on it)"
             )
+    found.extend(_pages_zone_problems(env))
     for name, value in env.items():
         # ${{…}} is a Railway reference and is resolved; a bare ${…} is a shell expansion that
         # neither Railway nor docker's env_file performs — the process would get the literal text.
@@ -242,6 +243,33 @@ def _registrable(host: str) -> str:
     labels = [label for label in host.strip().lower().split(":")[0].split(".") if label]
     two_level = len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _TWO_LEVEL_SECOND
     return ".".join(labels[-3:] if two_level else labels[-2:])
+
+
+def _pages_zone_problems(env: dict[str, str]) -> list[str]:
+    """Review finding S7-3: the pages edge Worker reads "our zone" as a suffix's last two labels
+    (infra/cloudflare/pages-edge/routing.js `apexOf`). Under a two-label public suffix (co.uk,
+    com.au) that is the public suffix itself, so every customer domain under it would be taken
+    for one of our own records and passed through unserved. Every pages suffix — current and
+    legacy — must sit directly under a one-label suffix."""
+    named = [("CLUE_PAGES_SYSTEM_SUFFIX", env.get("CLUE_PAGES_SYSTEM_SUFFIX", ""))]
+    named += [
+        ("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", part)
+        for part in env.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", "").split(",")
+    ]
+    found: list[str] = []
+    for name, raw in named:
+        suffix = raw.strip().lower().strip(".")
+        registrable = _registrable(suffix) if suffix else ""
+        if registrable.count(".") < 2:
+            continue
+        zone = ".".join(registrable.split(".")[-2:])
+        found.append(
+            f"{name} {suffix!r} sits under the two-label public suffix {zone!r}: the pages edge "
+            "Worker reads the zone as the domain's last two labels, so every customer domain "
+            f"under .{zone} would pass through unserved; choose a domain directly under a "
+            "one-label suffix such as .com"
+        )
+    return found
 
 
 def _app_origin_problems(env: dict[str, str]) -> list[str]:

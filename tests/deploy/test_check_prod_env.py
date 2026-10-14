@@ -645,3 +645,51 @@ def test_k3_8_the_pages_domain_is_never_the_editors(pages: str, legacy: str | No
 
 def test_k3_8_separate_domains_pass() -> None:
     assert check.editor_domain_problems(GOOD_EDITOR, GOOD_PLATFORM) == []
+
+
+# --- Review finding S7-3: a pages domain under a two-label public suffix -----------------------
+# The edge Worker reads "our zone" as a suffix's last two labels (`co.uk` for
+# `pages.clue.co.uk`), while the platform uses the Public Suffix List (`clue.co.uk`): every
+# customer domain under `.co.uk` would then be treated as one of our own records and passed
+# through unserved.
+@pytest.mark.parametrize("role", list(GOOD))
+@pytest.mark.parametrize("suffix", ["pages.clue.co.uk", "clue.co.uk", "pages.clue.com.au"])
+def test_s7_3_the_pages_domain_is_never_under_a_two_label_public_suffix(
+    role: str, suffix: str
+) -> None:
+    env = {
+        **GOOD[role],
+        "CLUE_PAGES_SYSTEM_SUFFIX": suffix,
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai",
+    }
+    zone = ".".join(suffix.split(".")[-2:])
+    assert check.problems(env, role) == [
+        f"CLUE_PAGES_SYSTEM_SUFFIX {suffix!r} sits under the two-label public suffix {zone!r}: "
+        "the pages edge Worker reads the zone as the domain's last two labels, so every customer "
+        f"domain under .{zone} would pass through unserved; choose a domain directly under a "
+        "one-label suffix such as .com"
+    ]
+
+
+@pytest.mark.parametrize("role", list(GOOD))
+def test_s7_3_a_legacy_pages_suffix_is_held_to_the_same_rule(role: str) -> None:
+    env = {
+        **GOOD[role],
+        "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example",
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai,pages.clue.co.uk",
+    }
+    found = check.problems(env, role)
+    assert len(found) == 1 and found[0].startswith(
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES 'pages.clue.co.uk' sits under the two-label public "
+        "suffix 'co.uk'"
+    ), found
+
+
+def test_s7_3_a_domain_under_a_one_label_suffix_passes() -> None:
+    for suffix in ("clue-pages.com", "pages.clue.page", "clue.uk"):
+        env = {
+            **GOOD_PLATFORM,
+            "CLUE_PAGES_SYSTEM_SUFFIX": suffix,
+            "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai",
+        }
+        assert check.problems(env, "platform-api") == [], suffix
