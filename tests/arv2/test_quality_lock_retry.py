@@ -203,3 +203,42 @@ def test_evidence_acquisition_dispatch_retries(monkeypatch):
         assert begun == ["quality_tool:search_web"]
 
     run_async(case())
+
+
+def test_specialist_delegation_reserve_retries(monkeypatch):
+    async def case():
+        from clue_api import quality_research_wiring
+
+        seen = _flaky_reserve(monkeypatch, quality_research_wiring)
+        resolved: list[object] = []
+
+        async def resolve_authority(conn, scope, execution_id):
+            resolved.append(conn)
+            return _authority()
+
+        prepared: list[object] = []
+
+        async def prepare(child, *, parent, task_ref):
+            prepared.append(child)
+
+        monkeypatch.setattr(quality_research_wiring, "resolve_authority", resolve_authority)
+        connections = _Connections()
+        runtime = SimpleNamespace(
+            scope=SimpleNamespace(project_id="prj_1"),
+            connections=connections,
+            operation_scope=SimpleNamespace(),
+            prepare=prepare,
+        )
+        request = SimpleNamespace(
+            parent_execution_id=uuid4(), delegation_id=uuid4(), task_artifact_ref=None
+        )
+        child = uuid4()
+        await quality_research_wiring._ChildExecutions(runtime).begin(
+            request=request, child_execution_id=child, project_id="prj_1"
+        )
+        assert connections.opened == 2 and len(resolved) == 2
+        assert seen == [request.delegation_id, request.delegation_id]
+        # The specialist is prepared once, after the reservation committed.
+        assert prepared == [child]
+
+    run_async(case())
