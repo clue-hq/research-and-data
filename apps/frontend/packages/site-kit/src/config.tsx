@@ -2,7 +2,6 @@ import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "./brand";
 import {
   fillClone,
-  slotDefaults,
   type LinkReplacement,
   type SlotValues,
   type TextReplacement,
@@ -36,7 +35,14 @@ const SLOT_FIELD = {
 
 /** Editor-only pieces, injected by the editor route so published pages never bundle them. */
 export type EditorParts = {
-  CloneEditor: (props: { itemId: string; clone: import("./clone").Clone; html: string }) => React.ReactNode;
+  CloneEditor: (props: {
+    itemId: string;
+    clone: import("./clone").Clone;
+    html: string;
+    /** The markup this section would have with one text slot set to `value` (CloneEditor redraws
+     * when a write leaves the markup unchanged, so the canvas shows what will publish). */
+    htmlFor: (key: string, value: string) => string;
+  }) => React.ReactNode;
   AssetPicker: (props: { assets: BrandData["assets"]; value: string; onChange: (value: string) => void }) => React.ReactNode;
 };
 
@@ -173,15 +179,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           );
           return { ...fields, slots: { type: "object", label: "Slots", objectFields } } as Fields<ClonedSectionProps>;
         },
-        // Choosing a different section pre-fills its slots with the clone's own wording. Puck also
-        // runs this when the editor loads (every prop then counts as "changed"), so the test is
-        // against the previous data, never the `changed` flag alone.
-        resolveData: (data, { lastData }) => {
-          const clone = brand.clones[data.props.fragmentId];
-          const previous = lastData?.props?.fragmentId;
-          if (!clone || !lastData || previous === data.props.fragmentId) return data;
-          return { ...data, props: { ...data.props, slots: slotDefaults(clone) } };
-        },
+        // No resolveData (review finding S1-1). Puck runs it on every page mount against the last
+        // section it saw with the same id on ANY page or site in the frame (a module-wide cache), so
+        // a rule that pre-filled the slots when the clone changed reset the agent's copy to the seller's wording on
+        // a page switch, and the frame saved it. Nothing swaps a clone through this path: the agent
+        // writes its slots itself, and the dock never changes `fragmentId`.
         render: ({ id, fragmentId, slots, replacements, links, puck }) => {
           const clone = brand.clones[fragmentId];
           if (!clone) {
@@ -200,7 +202,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
           const html = fillClone(clone, resolvedSlots, replacements, resolvedLinks);
           const Editor = options.editor?.CloneEditor;
-          if (puck?.isEditing && Editor) return <Editor itemId={id} clone={clone} html={html} />;
+          if (puck?.isEditing && Editor) {
+            const htmlFor = (key: string, value: string) =>
+              fillClone(clone, { ...resolvedSlots, [key]: value }, replacements, resolvedLinks);
+            return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
+          }
           return <CloneMarkup clone={clone} html={html} />;
         },
       },
