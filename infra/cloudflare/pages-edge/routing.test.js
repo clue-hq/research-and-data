@@ -54,3 +54,14 @@ test("after the move new system hosts and custom hostnames are forwarded; other 
 test("with no legacy suffix nothing redirects (today's configuration)", () => {
   assert.equal(decide(req("https://acme.pages.cluehq.ai/annual-report"), env).kind, "forward");
 });
+
+// Review finding K3-8: with published pages on the editor's registrable domain, the Worker forwarded
+// every workspace's editor host to the page origin. Editor hosts are never ours, whatever the pages
+// domain is.
+test("editor hosts always pass through, even with the pages on the same registrable domain", () => {
+  const shared = { ...env, SYSTEM_SUFFIX: "deeppresence.ai", EDITOR_SUFFIX: "edit.deeppresence.ai" };
+  assert.equal(decide(req("https://aac8c47153e8e006ea26797aa03615b6.edit.deeppresence.ai/"), shared).kind, "passthrough");
+  assert.equal(decide(req("https://edit.deeppresence.ai/"), shared).kind, "passthrough");
+  assert.equal(decide(req("https://acme.deeppresence.ai/report"), shared).kind, "forward", "pages still served");
+  assert.equal(decide(req("https://acme.pages.cluehq.ai/"), { ...env, EDITOR_SUFFIX: "" }).kind, "forward", "unset: as before");
+});

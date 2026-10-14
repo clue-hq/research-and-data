@@ -1,3 +1,5 @@
+import { sameRegistrableDomain } from "@clue/site-kit/editor-origin";
+
 export interface EditorServerConfig {
   port: number;
   host: string;
@@ -29,8 +31,14 @@ export function readConfig(env: Record<string, string | undefined>, distDir: str
   if (!editorSuffix) throw new Error("CLUE_SITE_EDITOR_SUFFIX is required");
   const port = Number.parseInt(env.PORT ?? "3120", 10);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error("PORT must be a TCP port");
+  const appOrigin = requireOrigin(env.CLUE_APP_ORIGIN, "CLUE_APP_ORIGIN");
+  // Review finding S2b-9: agent-written code runs here; on the app's registrable domain it could set
+  // the app's cookies, undoing the separation D2 is built on.
+  if (sameRegistrableDomain(editorSuffix, new URL(appOrigin).host)) {
+    throw new Error("CLUE_SITE_EDITOR_SUFFIX must not be on the app's own domain (CLUE_APP_ORIGIN)");
+  }
   return {
-    appOrigin: requireOrigin(env.CLUE_APP_ORIGIN, "CLUE_APP_ORIGIN"),
+    appOrigin,
     designApiBaseUrl,
     distDir,
     editorSuffix,

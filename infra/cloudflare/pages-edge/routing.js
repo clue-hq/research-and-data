@@ -12,6 +12,10 @@ export function decide(request, env) {
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter((value) => value && value !== suffix);
+  // Review finding K3-8: the site editor's hosts are never ours, whatever the pages domain is — with
+  // pages on the editor's registrable domain they would otherwise be forwarded to the page origin.
+  const editor = (env.EDITOR_SUFFIX || "").trim().toLowerCase();
+  if (editor && under(host, editor)) return { kind: "passthrough" };
   const readOnly = request.method === "GET" || request.method === "HEAD";
   // An old system hostname (<label>.pages.cluehq.ai) answers 301 with the same label, path and
   // query on the new domain. The bare old suffix is the Cloudflare for SaaS fallback origin and is

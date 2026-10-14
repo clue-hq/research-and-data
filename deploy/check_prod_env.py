@@ -2,10 +2,13 @@
 
 Usage: python3 deploy/check_prod_env.py <role> <env-file>
          role: platform-api | design-api | worker | page-origin | frontend
-       python3 deploy/check_prod_env.py site-editor <site-editor-env-file> <frontend-env-file>
+       python3 deploy/check_prod_env.py site-editor <site-editor-env> <frontend-env> \
+           <platform-api-env>
 
-The site editor is always checked against the app it serves: both must name the same editor domain
-and the same app origin, or every site loads forever (review finding S7-2).
+The site editor is always checked against the app it serves and the published pages beside it: the
+app and the editor must name the same editor domain and app origin, or every site loads forever
+(review finding S7-2); and the editor's domain must share a registrable domain with neither the app
+(S2b-9) nor the published pages (K3-8).
 
 Standard library only — the worker VM runs it with its system python3 before every deploy.
 """
@@ -230,6 +233,17 @@ def _editor_suffix_problems(env: dict[str, str]) -> list[str]:
     return []
 
 
+#: Second-level labels that, under a two-letter country code, form a public suffix (co.uk, com.au).
+#: A conservative stand-in for the Public Suffix List, mirrored in site-kit's editor-origin.ts.
+_TWO_LEVEL_SECOND = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ltd", "plc"})
+
+
+def _registrable(host: str) -> str:
+    labels = [label for label in host.strip().lower().split(":")[0].split(".") if label]
+    two_level = len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _TWO_LEVEL_SECOND
+    return ".".join(labels[-3:] if two_level else labels[-2:])
+
+
 def _app_origin_problems(env: dict[str, str]) -> list[str]:
     origin = env.get("CLUE_APP_ORIGIN", "").strip()
     if not re.match(r"^https://[a-z0-9.-]+$", origin) or _local(origin):
@@ -237,14 +251,27 @@ def _app_origin_problems(env: dict[str, str]) -> list[str]:
     return []
 
 
+def _not_the_apps_domain(env: dict[str, str]) -> list[str]:
+    """Review finding S2b-9: agent-written code runs on the editor's domain; on the app's
+    registrable domain it could set the app's cookies, undoing the separation it exists for."""
+    suffix = env.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    app_host = env.get("CLUE_APP_ORIGIN", "").strip().removeprefix("https://")
+    if suffix and app_host and _registrable(suffix) == _registrable(app_host):
+        return [
+            f"CLUE_SITE_EDITOR_SUFFIX ({suffix!r}) must not be on the app's own domain "
+            f"({app_host!r}): agent-written code runs there"
+        ]
+    return []
+
+
 def _frontend_problems(env: dict[str, str]) -> list[str]:
     """The app (review finding S7-2): without the editor's domain, every site shows 'not
     configured'."""
-    return [*_editor_suffix_problems(env), *_app_origin_problems(env)]
+    return [*_editor_suffix_problems(env), *_app_origin_problems(env), *_not_the_apps_domain(env)]
 
 
 def _site_editor_problems(env: dict[str, str]) -> list[str]:
-    found = [*_editor_suffix_problems(env), *_app_origin_problems(env)]
+    found = [*_editor_suffix_problems(env), *_app_origin_problems(env), *_not_the_apps_domain(env)]
     design_api = env.get("LUMEN_API_BASE_URL", "")
     if not design_api or _local(design_api):
         found.append(
@@ -271,6 +298,23 @@ def editor_pair_problems(frontend: dict[str, str], editor: dict[str, str]) -> li
                 f"editor ({editor.get(name)!r}); they must be the same"
             )
     return found
+
+
+def editor_domain_problems(editor: dict[str, str], platform: dict[str, str]) -> list[str]:
+    """Review finding K3-8: published pages on the editor's registrable domain — now or as an old
+    domain kept after the move — would make the edge Worker forward editor hosts to the page origin
+    (every workspace's editor down), and put published pages where agent code sets cookies."""
+    suffix = editor.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    if not suffix:
+        return []
+    pages = [platform.get("CLUE_PAGES_SYSTEM_SUFFIX", "")]
+    pages += platform.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", "").split(",")
+    return [
+        f"the published pages' domain {page.strip()!r} must not be on the site editor's domain "
+        f"({suffix!r}): pick a different registrable domain for one of them"
+        for page in pages
+        if page.strip() and _registrable(page) == _registrable(suffix)
+    ]
 
 
 def _platform_api_problems(env: dict[str, str]) -> list[str]:
@@ -326,13 +370,14 @@ def _worker_problems(env: dict[str, str]) -> list[str]:
 
 def main(argv: list[str]) -> int:
     role = argv[1] if len(argv) > 1 else ""
-    if len(argv) != (4 if role == "site-editor" else 3):
+    if len(argv) != (5 if role == "site-editor" else 3):
         sys.stderr.write(f"{__doc__}\n")
         return 2
     env = parse(Path(argv[2]).read_text(encoding="utf-8"))
     found = problems(env, role)
     if role == "site-editor":
         found += editor_pair_problems(parse(Path(argv[3]).read_text(encoding="utf-8")), env)
+        found += editor_domain_problems(env, parse(Path(argv[4]).read_text(encoding="utf-8")))
     for problem in found:
         sys.stdout.write(f"PROBLEM: {problem}\n")
     sys.stdout.write("OK\n" if not found else f"{len(found)} problem(s)\n")

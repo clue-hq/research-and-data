@@ -1,7 +1,9 @@
-import { editorLabelFor, editorOriginFor } from "@clue/site-kit/editor-origin";
+import { editorLabelFor, editorOriginFor, sameRegistrableDomain } from "@clue/site-kit/editor-origin";
 import { ClueAuthenticationError } from "@/auth/errors";
 
 export interface SiteEditorSessionDeps {
+  /** The app's own origin: the editor must never share its registrable domain (S2b-9). */
+  appOrigin?: string | null;
   authenticationEnabled: boolean;
   editorSuffix: string;
   /** The re-authorized workspace id (server-side only; it never reaches the browser). */
@@ -19,6 +21,11 @@ function refusal(status: number, code: string, message: string): Response {
 export async function handleSiteEditorSession(deps: SiteEditorSessionDeps): Promise<Response> {
   if (!deps.authenticationEnabled || !deps.editorSuffix) {
     return Response.json({ data: { editorOrigin: null } }, { headers: NO_STORE });
+  }
+  // Review finding S2b-9: an editor domain on the app's own registrable domain would let agent code
+  // set the app's cookies. Refused, never minted.
+  if (deps.appOrigin && sameRegistrableDomain(deps.editorSuffix, new URL(deps.appOrigin).host)) {
+    return refusal(500, "SITE_EDITOR_MISCONFIGURED", "CLUE_SITE_EDITOR_SUFFIX must not be on the app's own domain");
   }
   let workspaceId: string;
   try {

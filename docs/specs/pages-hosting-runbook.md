@@ -450,7 +450,12 @@ Every workspace's published pages move from `<label>.pages.cluehq.ai` to `<label
 old URLs answer 301 at the edge; `cluehq.ai` stays reserved for custom domains (customers can never
 connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop after.
 
-1. Register the domain. Choose a domain registered directly under a one-label public suffix (for
+1. Register the domain. **It must not be the site editor's registrable domain** (`deeppresence.ai`,
+   where the editor lives at `edit.deeppresence.ai`) nor the app's (`cluehq.ai`): agent-written code
+   runs on the editor's domain and could set cookies for anything under it. The Worker passes the
+   editor's hosts through either way (`EDITOR_SUFFIX` in `wrangler.toml`), and
+   `deploy/check_prod_env.py site-editor …` refuses the combination; the label `edit` is reserved
+   (review findings K3-8, S2b-9). Choose a domain registered directly under a one-label public suffix (for
    example `.com` or `.page`, never `.co.uk`): the edge Worker reads the zone as the domain's last
    two labels, so under a two-label suffix every customer domain on that suffix would pass through
    unserved. Add it to Cloudflare as its own zone; add a proxied wildcard record

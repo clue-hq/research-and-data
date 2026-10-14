@@ -117,3 +117,10 @@ def test_a_hyphen_cut_never_drops_below_the_minimum_length() -> None:
     first = next(label_candidates("a-" + "b" * 50, WS))
     assert LABEL_MIN <= len(first) <= LABEL_MAX
     assert first == ("a-" + "b" * 50)[:LABEL_MAX]
+
+
+def test_the_editor_label_is_reserved() -> None:
+    """Review finding K3-8: a workspace must never be given ``edit`` (the editor's subdomain)."""
+    for reserved in ("edit", "editor"):
+        assert reserved in RESERVED_LABELS
+        assert next(label_candidates(reserved, WS)) == f"{reserved}-2"

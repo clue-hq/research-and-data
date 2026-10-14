@@ -189,12 +189,13 @@ fetch images through the frontend's narrow public proxy
    python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
    python3 deploy/check_prod_env.py page-origin ~/clue-deploy/railway/4-page-origin.env
    python3 deploy/check_prod_env.py frontend ~/clue-deploy/railway/5-frontend.env
-   python3 deploy/check_prod_env.py site-editor ~/clue-deploy/railway/6-site-editor.env ~/clue-deploy/railway/5-frontend.env
+   python3 deploy/check_prod_env.py site-editor ~/clue-deploy/railway/6-site-editor.env ~/clue-deploy/railway/5-frontend.env ~/clue-deploy/railway/2-platform-api.env
    ```
    `5-frontend.env` and `6-site-editor.env` are the frontend's (7) and the site editor's (7a)
    variables, copied from Railway's Raw Editor. The site editor is always checked against the
-   frontend: the two must name the same editor domain and app origin, and the editor must carry no
-   secret.
+   frontend and the published pages: the two must name the same editor domain and app origin, the
+   editor must carry no secret, and the editor's registrable domain must be neither the app's
+   (`cluehq.ai`) nor the published pages' (review findings S2b-9, K3-8).
    The image sets `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT` and
    `LUMEN_SITE_RENDER_CHROMIUM_SANDBOX` (0: containers cannot give the site renderer's Chromium its
    own sandbox — `docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md`); the check refuses any line for them. Until the release PR merges `main`, every backend build

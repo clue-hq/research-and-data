@@ -1,5 +1,5 @@
 import { authenticatedBackendContext } from "@/auth/authenticated-backend";
-import { isAuthenticationEnabled, siteEditorSuffix } from "@/auth/config";
+import { clueAppOrigin, isAuthenticationEnabled, siteEditorSuffix } from "@/auth/config";
 import { handleSiteEditorSession } from "@/features/site-editor/server/site-editor-session-handler";
 
 /**
@@ -9,6 +9,7 @@ import { handleSiteEditorSession } from "@/features/site-editor/server/site-edit
  */
 export async function GET() {
   return handleSiteEditorSession({
+    appOrigin: clueAppOrigin(),
     authenticationEnabled: isAuthenticationEnabled(),
     editorSuffix: siteEditorSuffix(),
     workspaceId: async () => (await authenticatedBackendContext()).workspaceId,

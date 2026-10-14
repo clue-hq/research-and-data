@@ -17,3 +17,6 @@ ORIGIN_HOST = "page-origin.cluehq.ai"
 # route `{ pattern = "*/*", zone_name = "<new domain>" }` joins the one above, so this Worker 301s
 # every <label>.pages.cluehq.ai URL to <label>.<new domain> and serves the new hosts.
 LEGACY_SYSTEM_SUFFIXES = ""
+# Review finding K3-8: the site editor's domain. Its hosts always pass through untouched, so a pages
+# domain on the editor's registrable domain can never take every workspace's editor down.
+EDITOR_SUFFIX = "edit.deeppresence.ai"

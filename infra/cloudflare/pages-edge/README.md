@@ -9,3 +9,5 @@ Deploy with `npx wrangler deploy` from this directory (see the Task 14 runbook; 
 `npx wrangler secret put EDGE_SECRET` — its value must equal `CLUE_PAGES_EDGE_SECRET` on the Railway page-origin service, or every request is rejected.
 
 Tests: `node --test 'infra/cloudflare/pages-edge/*.test.js'` from the repo root (Node >= 18; on Node >= 22 a bare directory argument is not accepted by the test runner).
+
+`EDITOR_SUFFIX` (review finding K3-8): the site editor's domain (`edit.deeppresence.ai`). Its hosts always pass through untouched, so published pages on the editor's registrable domain can never send editor traffic to the page origin.

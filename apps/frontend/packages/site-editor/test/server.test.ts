@@ -178,3 +178,10 @@ test("an asset-store network failure answers 502 and still carries the editor's 
   assert.ok(response.headers["content-security-policy"].includes("default-src 'none'"));
   assert.equal(response.headers["x-content-type-options"], "nosniff");
 });
+
+test("S2b-9: the editor refuses to start on the app's own domain", () => {
+  const good = { CLUE_APP_ORIGIN: "https://app.cluehq.ai", CLUE_SITE_EDITOR_SUFFIX: "edit.deeppresence.ai", LUMEN_API_BASE_URL: "http://design-api.railway.internal:8010" };
+  assert.equal(readConfig(good, "/dist").editorSuffix, "edit.deeppresence.ai");
+  assert.throws(() => readConfig({ ...good, CLUE_SITE_EDITOR_SUFFIX: "edit.cluehq.ai" }, "/dist"), /app's/);
+  assert.throws(() => readConfig({ ...good, CLUE_SITE_EDITOR_SUFFIX: "cluehq.ai" }, "/dist"), /app's/);
+});

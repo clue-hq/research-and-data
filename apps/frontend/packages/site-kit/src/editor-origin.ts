@@ -31,3 +31,23 @@ export function editorLabelFromHost(host: string | undefined, suffix: string): s
   const label = value.slice(0, -tail.length);
   return EDITOR_LABEL_PATTERN.test(label) ? label : null;
 }
+
+/** Second-level labels that, under a two-letter country code, form a public suffix (`co.uk`,
+ * `com.au`): the registrable domain is then the last THREE labels. A conservative stand-in for the
+ * Public Suffix List, mirrored in deploy/check_prod_env.py. */
+const TWO_LEVEL_SECOND = new Set(["co", "com", "net", "org", "gov", "ac", "edu", "ltd", "plc"]);
+
+/** The registrable domain of a host (`app.cluehq.ai` → `cluehq.ai`; `edit.foo.co.uk` → `foo.co.uk`),
+ * port and case ignored. */
+export function registrableDomainOf(host: string): string {
+  const labels = host.trim().toLowerCase().replace(/:\d+$/, "").split(".").filter(Boolean);
+  const twoLevel = labels.length >= 3 && labels.at(-1)!.length === 2 && TWO_LEVEL_SECOND.has(labels.at(-2)!);
+  return labels.slice(twoLevel ? -3 : -2).join(".");
+}
+
+/** Review findings S2b-9 and K3-8: the editor's domain must never share a registrable domain with
+ * the app (code in the editor frame could set the app's cookies) or with the published pages. */
+export function sameRegistrableDomain(left: string, right: string): boolean {
+  return registrableDomainOf(left) === registrableDomainOf(right);
+}
+

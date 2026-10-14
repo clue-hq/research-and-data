@@ -47,3 +47,12 @@ test("a malformed suffix fails loudly instead of producing a wrong origin", asyn
   assert.equal(response.status, 500);
   assert.equal(((await response.json()) as { error: { code: string } }).error.code, "SITE_EDITOR_MISCONFIGURED");
 });
+
+test("S2b-9: an editor domain on the app's own registrable domain is refused, never minted", async () => {
+  const deps = { appOrigin: "https://app.cluehq.ai", authenticationEnabled: true, workspaceId: async () => "ws_123" };
+  const refused = await handleSiteEditorSession({ ...deps, editorSuffix: "edit.cluehq.ai" });
+  assert.equal(refused.status, 500);
+  assert.equal(((await refused.json()) as { error: { code: string } }).error.code, "SITE_EDITOR_MISCONFIGURED");
+  const served = await handleSiteEditorSession({ ...deps, editorSuffix: "edit.deeppresence.ai" });
+  assert.equal(served.status, 200);
+});

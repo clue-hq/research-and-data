@@ -583,29 +583,65 @@ def test_the_app_and_the_editor_must_agree_on_the_suffix_and_the_app_origin() ->
     )
 
 
-def test_the_cli_checks_the_editor_against_the_frontend(tmp_path: Path) -> None:
+def test_the_cli_checks_the_editor_against_the_frontend_and_the_pages(tmp_path: Path) -> None:
     def write(name: str, env: dict[str, str]) -> Path:
         path = tmp_path / name
         path.write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8")
         return path
 
+    def run(*paths: Path) -> subprocess.CompletedProcess[str]:
+        command = [sys.executable, str(_PATH), "site-editor", *map(str, paths)]
+        return subprocess.run(command, capture_output=True, text=True)
+
     editor, frontend = write("editor.env", GOOD_EDITOR), write("frontend.env", GOOD_FRONTEND)
-    ok = subprocess.run(
-        [sys.executable, str(_PATH), "site-editor", str(editor), str(frontend)],
-        capture_output=True,
-        text=True,
-    )
+    platform = write("platform.env", GOOD_PLATFORM)
+    ok = run(editor, frontend, platform)
     assert ok.returncode == 0 and ok.stdout.strip().endswith("OK"), ok.stdout
     bad = write(
         "bad-frontend.env", {**GOOD_FRONTEND, "CLUE_SITE_EDITOR_SUFFIX": "edit.example.com"}
     )
-    refused = subprocess.run(
-        [sys.executable, str(_PATH), "site-editor", str(editor), str(bad)],
-        capture_output=True,
-        text=True,
-    )
+    refused = run(editor, bad, platform)
     assert refused.returncode == 1 and "CLUE_SITE_EDITOR_SUFFIX" in refused.stdout
-    alone = subprocess.run(
-        [sys.executable, str(_PATH), "site-editor", str(editor)], capture_output=True, text=True
+    on_pages = write(
+        "pages-platform.env", {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "deeppresence.ai"}
     )
-    assert alone.returncode == 2, "the editor is always checked against the app it serves"
+    refused = run(editor, frontend, on_pages)
+    assert refused.returncode == 1 and "published pages" in refused.stdout
+    # The editor is always checked against the app it serves and the pages beside it.
+    assert run(editor).returncode == 2
+    assert run(editor, frontend).returncode == 2
+
+
+# --- Review findings S2b-9 and K3-8: keep the editor's domain apart ----------------------------
+# Agent-written code runs on the editor's domain. On the app's registrable domain it could set
+# cookies for the app (S2b-9); on the published pages' domain the edge Worker would send editor
+# traffic to the page origin, and every editor would go down (K3-8).
+@pytest.mark.parametrize("role", ["frontend", "site-editor"])
+@pytest.mark.parametrize("suffix", ["edit.cluehq.ai", "cluehq.ai"])
+def test_s2b_9_the_editor_domain_is_never_the_apps(role: str, suffix: str) -> None:
+    env = {
+        **(GOOD_FRONTEND if role == "frontend" else GOOD_EDITOR),
+        "CLUE_SITE_EDITOR_SUFFIX": suffix,
+    }
+    found = check.problems(env, role)
+    assert any("app's" in p for p in found), found
+
+
+@pytest.mark.parametrize(
+    ("pages", "legacy"),
+    [
+        ("deeppresence.ai", None),
+        ("pages.deeppresence.ai", None),
+        ("pages.cluehq.ai", "deeppresence.ai"),
+    ],
+)
+def test_k3_8_the_pages_domain_is_never_the_editors(pages: str, legacy: str | None) -> None:
+    platform = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": pages}
+    if legacy is not None:
+        platform["CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES"] = f"pages.cluehq.ai,{legacy}"
+    found = check.editor_domain_problems(GOOD_EDITOR, platform)
+    assert any("published pages" in p for p in found), found
+
+
+def test_k3_8_separate_domains_pass() -> None:
+    assert check.editor_domain_problems(GOOD_EDITOR, GOOD_PLATFORM) == []

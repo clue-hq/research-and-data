@@ -64,6 +64,9 @@ RESERVED_LABELS: frozenset[str] = frozenset(
         "login",
         "auth",
         "mcp",
+        # Review finding K3-8: the site editor's own subdomain (edit.<domain>).
+        "edit",
+        "editor",
     }
 )
 
