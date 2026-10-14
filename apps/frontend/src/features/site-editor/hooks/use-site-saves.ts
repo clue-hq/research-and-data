@@ -19,7 +19,7 @@ export interface SiteSaves extends SiteSaveState {
   clearMessages: () => void;
 }
 
-/** One controller per open site document; its state mirrored for rendering. */
+/** One controller per site document (kept across visits); the open one's state mirrored for rendering. */
 export function useSiteSaves({
   documentId,
   lockNote,
@@ -53,32 +53,39 @@ export function useSiteSaves({
     onReloadRef.current();
   }, [reloadRequests]);
   const [state, setState] = useState<SiteSaveState>(IDLE_SITE_SAVE_STATE);
-  const controller = useMemo(
+  // One controller per document for the life of this hook, kept across visits: leaving a site and
+  // coming back while its save is still in flight must find that save (and its version), or the new
+  // visit adopts the pre-save read and its next edit is refused (sync-fix review F4).
+  // (New inputs start a new registry; they are stable in practice.)
+  const controllers = useMemo(
     () =>
-      documentId
-        ? new SiteSaveController({
+      new ControllerRegistry(
+        (documentId) =>
+          new SiteSaveController({
             documentId,
             lockNote,
             onReload: () => setReloadRequests((count) => count + 1),
             onState: setState,
             onSuperseded,
             repository,
-          })
-        : null,
-    [documentId, lockNote, onSuperseded, repository],
+          }),
+      ),
+    [lockNote, onSuperseded, repository],
   );
+  const controller = useMemo(() => (documentId ? controllers.forDocument(documentId) : null), [controllers, documentId]);
   // Attach in the effect, not at construction: StrictMode's simulated unmount disposes and then
   // re-attaches the same controller, and a real unmount or document switch leaves it disposed.
   useEffect(() => {
     controller?.attach();
     return () => controller?.dispose();
   }, [controller]);
-  // A new document starts from an idle state: React's adjust-state-on-prop-change pattern
-  // (render-time comparison), never a setState inside an effect.
+  // Switching documents shows that document's controller state (idle for a new one): React's
+  // adjust-state-on-prop-change pattern (render-time comparison), never a setState in an effect.
   const [owner, setOwner] = useState(controller);
   if (owner !== controller) {
     setOwner(controller);
-    setState(IDLE_SITE_SAVE_STATE);
+    // A document seen before resumes from its controller's own state (a save may still be in flight).
+    setState(controller?.snapshot ?? IDLE_SITE_SAVE_STATE);
   }
   const actions = useMemo(
     () => ({
@@ -96,4 +103,19 @@ export function useSiteSaves({
     [controller],
   );
   return { ...state, ...actions };
+}
+
+/** The controllers this hook made, one per document. */
+class ControllerRegistry {
+  private readonly byDocument = new Map<string, SiteSaveController>();
+
+  constructor(private readonly create: (documentId: string) => SiteSaveController) {}
+
+  forDocument(documentId: string): SiteSaveController {
+    const existing = this.byDocument.get(documentId);
+    if (existing) return existing;
+    const created = this.create(documentId);
+    this.byDocument.set(documentId, created);
+    return created;
+  }
 }

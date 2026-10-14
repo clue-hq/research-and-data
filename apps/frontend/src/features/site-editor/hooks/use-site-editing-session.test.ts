@@ -216,3 +216,49 @@ test("review F2: flushed canvas typing overtaken by a dock edit is proposed agai
   assert.equal(headingOf(mounted.frame.getState().site), "Typed on canvas");
   await mounted.unmount();
 });
+
+test("review F4: coming back while the last visit's save is still in flight waits for it; the next edit is never refused", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  server.hold.save = true;
+  mounted.typeOnCanvas("hero", "Saved while leaving");
+  await mounted.flushCanvas(); // the save is with the validator…
+  await mounted.open(null); // …while the marketer looks at another tab…
+  await mounted.open(DOC); // …and comes back before it lands
+  server.release("save");
+  await mounted.settle(16);
+  assert.equal(headingOf(mounted.frame.getState().site), "Saved while leaving", "the canvas shows the saved edit");
+  assert.equal(mounted.latest().saves.baseVersion, 6);
+  mounted.typeOnCanvas("cta", "Book a call");
+  await mounted.flushCanvas();
+  assert.equal(mounted.latest().saves.note, null, "not refused as 'moved on'");
+  assert.equal(headingOf(server.site), "Saved while leaving");
+  assert.equal(headingOf(server.site, "cta"), "Book a call");
+  await mounted.unmount();
+});
+
+// Follow-up to F4: a controller kept for a document you left must not act on the working copy, which
+// by then holds the document you are looking at. Its queued save is refused while you are away; the
+// refusal used to supersede (and reload) the OTHER document, dropping what you were typing there.
+test("a save refused for the site you left never disturbs the site you are editing", async () => {
+  const server = fakeServer();
+  const other = fakeServer(startSite({ hero: "Doc two" }), 9);
+  const mounted = await mountSiteSession(server, { otherDocument: other });
+  server.refuse = (site) => (headingOf(site) === "Refused later" ? "page.content.0(hero).heading: Refused" : null);
+  server.hold.save = true;
+  mounted.typeOnCanvas("hero", "First");
+  await mounted.flushCanvas();
+  mounted.typeOnCanvas("hero", "Refused later");
+  await mounted.flushCanvas(); // queued behind the held save
+  await mounted.open("doc-2");
+  assert.equal(headingOf(mounted.frame.getState().site), "Doc two");
+  mounted.typeOnCanvas("hero", "Typing on doc two");
+  server.release("save"); // the first save lands; the queued one is refused, on the site you left
+  await mounted.settle(16);
+  await mounted.flushCanvas();
+  await mounted.settle(12);
+  assert.equal(headingOf(other.site), "Typing on doc two", "the typing on the open site was saved");
+  assert.equal(mounted.latest().saves.error, null, "the other site's refusal is not shown here");
+  assert.equal(headingOf(server.site), "First");
+  await mounted.unmount();
+});

@@ -85,7 +85,7 @@ export class SiteSaveController {
    * older copy over edits still on their way to the server. */
   requestReloadWhenIdle(): void {
     if (this.isIdle()) {
-      this.deps.onReload();
+      this.notifyReload();
       return;
     }
     this.reloadWhenIdle = true;
@@ -124,11 +124,17 @@ export class SiteSaveController {
   }
 
   /** Mark the controller live. React's StrictMode runs an effect's cleanup and then the effect
-   * again on the same render's objects, so the lifetime is attach/dispose, not create/dispose. */
+   * again on the same render's objects, so the lifetime is attach/dispose, not create/dispose.
+   * A controller is also kept for a document you left and attached again when you come back
+   * (sync-fix review F4). */
   attach(): void {
     this.disposed = false;
   }
 
+  /** Detach: no new writes are accepted, but what is already in flight or queued still goes to the
+   * server (it is the marketer's work). A detached controller tells nobody: its state, reloads and
+   * superseded notices concern the working copy of a document no longer shown, and the next visit
+   * reads the document afresh. */
   dispose(): void {
     this.disposed = true;
   }
@@ -183,9 +189,9 @@ export class SiteSaveController {
       // would put that older copy back over the step. They are dropped; the step's reload pushes
       // the stepped copy to the canvas, which drops its unsent typing the same way.
       this.queue = this.queue.filter((operation) => operation.kind === "step");
-      this.deps.onSuperseded?.(step.kind);
+      this.notifySuperseded(step.kind);
       this.finish();
-      this.deps.onReload();
+      this.notifyReload();
     } catch (cause) {
       this.abandon();
       this.refused(cause, step.kind);
@@ -211,7 +217,7 @@ export class SiteSaveController {
     this.update({ busy: false });
     if (this.reloadWhenIdle) {
       this.reloadWhenIdle = false;
-      this.deps.onReload();
+      this.notifyReload();
     }
   }
 
@@ -223,9 +229,9 @@ export class SiteSaveController {
   /** A refusal that reloads: the copy is superseded, and the reload also serves a deferred one. */
   private refusedAndReload(operation: "save" | HistoryStep["kind"], patch: Partial<SiteSaveState>): void {
     this.reloadWhenIdle = false;
-    this.deps.onSuperseded?.(operation);
+    this.notifySuperseded(operation);
     this.update(patch);
-    this.deps.onReload();
+    this.notifyReload();
   }
 
   private refused(cause: unknown, operation: "save" | HistoryStep["kind"]): void {
@@ -255,8 +261,16 @@ export class SiteSaveController {
     this.update({ busy: false, note: null, error: cause instanceof Error ? cause.message : SITE_SAVE_FAILED });
     if (this.reloadWhenIdle) {
       this.reloadWhenIdle = false;
-      this.deps.onReload();
+      this.notifyReload();
     }
+  }
+
+  private notifyReload(): void {
+    if (!this.disposed) this.deps.onReload();
+  }
+
+  private notifySuperseded(why: "save" | HistoryStep["kind"]): void {
+    if (!this.disposed) this.deps.onSuperseded?.(why);
   }
 
   private update(patch: Partial<SiteSaveState>): void {

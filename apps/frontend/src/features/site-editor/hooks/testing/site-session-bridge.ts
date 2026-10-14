@@ -197,7 +197,30 @@ export interface MountedSession {
   unmount(): Promise<void>;
 }
 
-export async function mountSiteSession(server: FakeServer, { strict = false }: { strict?: boolean } = {}): Promise<MountedSession> {
+/** One repository over several documents, each answered by its own server. */
+function repositoryFor(servers: Record<string, FakeServer>): SiteRepository {
+  const byDocument = Object.fromEntries(Object.entries(servers).map(([documentId, server]) => [documentId, fakeRepository(server)]));
+  const of = (documentId: string): SiteRepository => {
+    const repository = byDocument[documentId];
+    if (!repository) throw new Error(`no fake server for ${documentId}`);
+    return repository;
+  };
+  return {
+    get: (documentId) => of(documentId).get(documentId),
+    getBrand: (documentId) => of(documentId).getBrand(documentId),
+    sectionLinks: (documentId) => of(documentId).sectionLinks(documentId),
+    save: (documentId, request) => of(documentId).save(documentId, request),
+    undo: (documentId, baseVersion) => of(documentId).undo(documentId, baseVersion),
+    redo: (documentId, baseVersion) => of(documentId).redo(documentId, baseVersion),
+    versions: (documentId, limit) => of(documentId).versions(documentId, limit),
+    restore: (documentId, batchId, baseVersion) => of(documentId).restore(documentId, batchId, baseVersion),
+  };
+}
+
+export async function mountSiteSession(
+  server: FakeServer,
+  { strict = false, otherDocument }: { strict?: boolean; /** The server behind "doc-2", when a test opens it. */ otherDocument?: FakeServer } = {},
+): Promise<MountedSession> {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost:3029/" });
   for (const [key, value] of Object.entries({
     window: dom.window,
@@ -221,7 +244,7 @@ export async function mountSiteSession(server: FakeServer, { strict = false }: {
     },
   });
 
-  const repository = fakeRepository(server);
+  const repository = repositoryFor(otherDocument ? { [DOC]: server, "doc-2": otherDocument } : { [DOC]: server });
   const seen: SiteEditingSession[] = [];
   let artifact: string | null = "art-1";
   const documentIds: Record<string, string> = { "art-1": DOC, "art-2": "doc-2" };
