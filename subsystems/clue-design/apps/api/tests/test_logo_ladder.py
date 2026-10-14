@@ -947,3 +947,155 @@ def test_company_tokens_read_the_organisation_label():
     assert {"goodman", "campbell"} <= ladder.company_tokens(
         "goodmancampbell.com", "Goodman Campbell Brain and Spine"
     )
+
+
+# ---------------------------------------------------------------------------
+# lesson 2026-10-14 — three production misses found on one afternoon
+# (betterment.com, proxon.ai, q2.com)
+# ---------------------------------------------------------------------------
+
+
+def _letters_svg(
+    letters: int = 6, width: int = 380, height: int = 32, fill: str = "#101820"
+) -> bytes:
+    """A very wide wordmark: `letters` evenly spaced glyph blocks spanning the whole width."""
+    gap = 14
+    letter_w = (width - gap * (letters - 1)) // letters
+    blocks = "".join(
+        f'<rect x="{i * (letter_w + gap)}" y="0" width="{letter_w}" '
+        f'height="{height}" fill="{fill}"/>'
+        for i in range(letters)
+    )
+    return _svg(blocks, width, height)
+
+
+def test_a_stray_quote_in_the_site_markup_does_not_break_the_saved_svg():
+    """betterment.com's header logo carries a stray `"` in its <svg> tag. The HTML parser
+    turns it into an attribute literally named `"`, serialized as `"=""`; browsers forgive
+    it inline, but the saved file fails every strict SVG/XML parser and renders as an error."""
+    from xml.etree import ElementTree
+
+    html = (
+        '<header><a href="/"><svg width="538" height="74" xmlns="http://www.w3.org/2000/svg" '
+        'viewBox="0 0 538 74" aria-label="Betterment Logo" role="img" ">'
+        '<title>Betterment Logo</title><path d="M0 0h10"/></svg></a></header>'
+    )
+    [candidate] = [
+        c for c in ladder.harvest(html, "https://www.betterment.com/") if c.inline_svg_text
+    ]
+    ladder.attach_bytes([candidate], {})
+    markup = candidate.body.decode()
+
+    ElementTree.fromstring(markup)
+    assert '"=""' not in markup
+    assert 'role="img"' in markup and 'aria-label="Betterment Logo"' in markup
+
+
+def test_repair_drops_only_attributes_whose_names_are_not_names():
+    repaired = ladder.repair_svg_case(
+        '<svg viewBox="0 0 10 10" role="img" "="" \'="" data-x="1"><path d="M0 0h4"/></svg>'
+    )
+
+    assert '"=""' not in repaired and "'=\"\"" not in repaired
+    assert 'role="img"' in repaired and 'data-x="1"' in repaired
+    assert 'd="M0 0h4"' in repaired
+
+
+def test_a_very_wide_evenly_lettered_wordmark_is_not_junk():
+    """proxon.ai's header wordmark measures 11.66:1 (six widely tracked letters). The 8:1
+    ceiling marked it junk, disqualified it from every slot, and the ladder handed the
+    primary slot to the site's social-share card instead."""
+    html = (
+        '<header><a href="/"><img src="/assets/acme-logo.svg" alt="Acme" width="380" height="32">'
+        "</a></header>"
+    )
+    fetched = {"https://acme.com/assets/acme-logo.svg": (_letters_svg(), "image/svg+xml")}
+    candidates, resolution = _resolve(html, fetched)
+    wordmarks = [c for c in candidates if c.url.endswith("acme-logo.svg")]
+
+    assert wordmarks
+    assert not any(
+        "implausible logo aspect" in hit for c in wordmarks for hit in c.junk_hits
+    )
+    assert resolution.slots["light"] is not None
+    assert resolution.slots["light"].candidate.url.endswith("acme-logo.svg")
+
+
+def test_a_wide_single_bar_is_still_junk():
+    """The relaxed ceiling is for lettering only: a divider of the same width has one ink
+    cluster and stays an implausible logo."""
+    html = (
+        '<header><a href="/"><img src="/assets/acme-rule.svg" alt="Acme" width="380" height="32">'
+        "</a></header>"
+    )
+    divider = _svg('<rect x="0" y="0" width="380" height="32" fill="#101820"/>', 380, 32)
+    fetched = {"https://acme.com/assets/acme-rule.svg": (divider, "image/svg+xml")}
+    candidates, _ = _resolve(html, fetched)
+    rules = [c for c in candidates if c.url.endswith("acme-rule.svg")]
+
+    assert rules
+    assert all(any("implausible logo aspect" in hit for hit in c.junk_hits) for c in rules)
+
+
+def test_a_two_letter_company_name_passes_identity_as_a_whole_word():
+    """q2.com: every name token under 3 characters was ignored, so "Q2" could never match
+    the page title, and the ladder failed closed with zero winners on the company's own
+    site. Short names match as whole words only."""
+    html = (
+        '<header><a href="/"><img src="/assets/q2-logo.svg" alt="Q2" width="160" height="32">'
+        "</a></header>"
+    )
+    fetched = {"https://q2.com/assets/q2-logo.svg": (_wordmark_svg(), "image/svg+xml")}
+    _, resolution = _resolve(
+        html, fetched, domain="q2.com", title="Digital Banking Solutions | Q2", company_name="Q2"
+    )
+
+    assert resolution.identity["passed"] is True
+    assert resolution.slots["light"] is not None
+
+
+def test_a_two_letter_name_does_not_match_inside_another_word():
+    html = (
+        '<header><a href="/">'
+        '<img src="/assets/logo.svg" alt="HQ2 Partners" width="160" height="32">'
+        "</a></header>"
+    )
+    fetched = {"https://q2.com/assets/logo.svg": (_wordmark_svg(), "image/svg+xml")}
+    _, resolution = _resolve(
+        html, fetched, domain="q2.com", title="HQ2 Partners | Workplace", company_name="Q2"
+    )
+
+    assert resolution.identity["passed"] is False
+
+
+def test_a_theme_adaptive_primary_gets_no_separate_dark_counterpart():
+    """q2.com, once its identity passed: the primary is an unfilled (currentColor) SVG, which
+    the ladder itself notes serves BOTH themes — yet the dark-counterpart search still ran and
+    put a 32x32 navigation icon ("SMB"), seen on a dark panel of the brand page, in the dark
+    slot. An adaptive primary has no separate dark asset; the slot stays empty."""
+    adaptive = ladder.LadderCandidate(
+        url="https://www.q2.com/#inline-svg-148", source_domain="www.q2.com",
+        rung="INLINE_SVG", fmt="svg", width=59, height=33,
+        link_destination="/", dom_index=0, inline_svg_text="<svg/>", sha256="a" * 64,
+        body=(
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="59" height="33" viewBox="0 0 59 33">'
+            b'<title>Q2</title><path d="M4 4h20v25H4zM34 4h21v25H34z"/></svg>'
+        ),
+        content_type="image/svg+xml",
+    )
+    nav_icon = ladder.LadderCandidate(
+        url="https://www.q2.com/hubfs/Navigation%20Icons_Images/SMB.svg",
+        source_domain="www.q2.com",
+        rung="BRAND_PAGE", fmt="svg", width=32, height=32, alt_text="SMB",
+        background_context="#000005", background_source="static", sha256="b" * 64,
+        body=_svg('<rect x="4" y="4" width="24" height="24" fill="#FFFFFF"/>', 32, 32),
+        content_type="image/svg+xml",
+    )
+    meta = {"homepage_url": "https://www.q2.com/", "page_title": "Digital Banking Solutions | Q2",
+            "jsonld_org_names": []}
+    resolution = ladder.resolve([adaptive, nav_icon], meta, "q2.com", "Q2")
+
+    assert resolution.identity["passed"] is True
+    assert resolution.slots["light"] is not None
+    assert resolution.slots["light"].candidate.url.endswith("#inline-svg-148")
+    assert resolution.slots["dark"] is None
