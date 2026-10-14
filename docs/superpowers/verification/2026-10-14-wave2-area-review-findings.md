@@ -14,7 +14,8 @@ durable record.
 > Status: **complete**. All nine S units reviewed and every finding verified first-hand (2026-10-14).
 >
 > Update 2026-10-14: the editor sync fix (§4.1) closed 12 findings across both documents: S1-1, S1-2, S1-4,
-> S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. **83 remain open** (4 Critical, 29 Important,
+> S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. K1-1 and S7-1 followed the same day.
+> **81 remain open** (2 Critical — K3-1, awaiting the founder's choice of fix, and K4-2, parked — 29 Important,
 > 50 Minor).
 
 ---
@@ -85,9 +86,9 @@ Still open after the editor sync fix (2026-10-14):
 | S4 | 0 | 1 | 2 | — |
 | S5 | 0 | 2 | 1 | — |
 | S6 | 0 | 3 | 9 | — |
-| S7 | 1 | 1 | 2 | — |
+| S7 | 0 | 1 | 2 | S7-1 (option A) |
 | S8 | 0 | 0 | 0 | — |
-| **Total open** | **1** | **14** | **36** | 9 fixed |
+| **Total open** | **0** | **14** | **36** | 10 fixed |
 
 **60 findings** from the area review, all open. Together with the contract review's 35 open findings, the
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
@@ -103,12 +104,12 @@ Two severities were raised by the controller during verification, each explained
 The six Critical findings across the whole review:
 | Id | One line |
 |---|---|
-| K1-1 | An account that has a site breaks its Insights, Artifacts and Activity pages |
+| K1-1 | An account that has a site breaks its Insights, Artifacts and Activity pages (**fixed**) |
 | K3-1 | Agent code in the editor frame can save, undo and redo as the marketer (founder choosing the fix) |
 | K4-2 | A long research section reaches the page writer past the privacy filter (parked) |
 | S1-1 | Moving between pages resets a cloned section to the seller's wording, and saves it (**fixed** by the sync fix) |
 | S2a-1 | ⌘Z in a cloned section's text rewinds the whole page and saves it (**fixed** by the sync fix) |
-| S7-1 | Chromium's sandbox can't start in the backend container: every backend release is blocked |
+| S7-1 | Chromium's sandbox can't start in the backend container: every backend release is blocked (**fixed**, option A) |
 
 ---
 
@@ -682,7 +683,7 @@ The six Critical findings across the whole review:
 
 #### S7-1 — Chromium's sandbox cannot start inside the backend container: every backend release is blocked, and a release that got through would draw no site
 - **Severity:** Critical (blocks every backend release, hotfixes included; once deployed, the whole site
-  flow is broken for everyone). Status: open.
+  flow is broken for everyone). Status: **fixed** 2026-10-14 (`90f27f9d8`), founder decision **option A**: the image sets the renderer's sandbox off, `check_prod_env` refuses any env line for it, the smoke check launches the real renderer. Proven in a real backend container: `0` renders, `1` dies "No usable sandbox!". The decision, its residual risk, the hardening still owed and when to upgrade: `docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md`..
 - **What would happen:**
   - When Wave 2 reaches `main`, the image pipeline runs its smoke checks. One check launches Chromium with
     its own sandbox turned on. Under Docker's standard security profile (what CI and the VM workers use)
@@ -889,8 +890,8 @@ when an async step completes.
 - On every dev stack, site edits don't save (S2b-2), so any live walk of site editing will fail until that
   is fixed.
 
-**This group gates everything else:** S7-1 must be decided before Wave 2 can reach `main`. (S2b-2, which
-blocked every live walk, is fixed.)
+**This group gated everything else.** S7-1 is fixed (option A, 2026-10-14) and S2b-2, which blocked every
+live walk, is fixed; the rest of the group remains.
 
 ### 4.6 Brand capture misses common modern patterns
 **Findings:** S6-1, S6-2, S6-3, and S6-4 to S6-12.
@@ -920,11 +921,10 @@ reused.
 
 One pass, each fix starting from a failing test, then a review of only the fix changes. Suggested order:
 
-1. **Unblock:** S7-1 (decide the Chromium sandbox posture for containers, then make the smoke check match).
-   ~~S2b-2~~ fixed.
+1. ~~**Unblock**~~ — **done 2026-10-14**: S7-1 (option A) and S2b-2.
 2. ~~**Stop losing work (§4.1)**~~ — **done 2026-10-14** by the editor sync fix (S1-1, S2a-1, K1-4, K3-3, K3-5,
    S2b-2, S2b-3, S2b-4, S3-3, S2a-4, plus S1-2 and S1-4).
-3. **K1-1** (an account with a site breaks its research pages): small and Critical.
+3. ~~**K1-1**~~ — **done 2026-10-14**.
 4. **Security (§4.2):** S5-1, S3-1, K5-5, K3-2, S3-2, S2a-3, S4-2, and K3-1 once the founder picks the fix.
 5. **Wrong-account state (§4.4):** K6-1, S2b-1, S5-2, K3-4, then the minors.
 6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-5,
@@ -939,7 +939,7 @@ Founder decisions needed before or during the pass:
 - **K3-1:** which simple fix;
 - **K1-7:** the wording of error lines (it also covers S2a-9 and S3-8);
 - **K6-4:** phone navigation for multi-page sites;
-- **S7-1:** the container sandbox posture, if it needs a product call.
+- ~~**S7-1:** the container sandbox posture~~ — decided 2026-10-14: option A.
 
 After the pass, the **behavioural check** runs on trenton's stack:
 - the lanes' scenario tests together;

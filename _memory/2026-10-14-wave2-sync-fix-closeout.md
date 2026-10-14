@@ -46,3 +46,17 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
   (app 3407 pass / 0 fail / 5 skipped).
 - Founder re-checked step 5 on the live stack: works (2026-10-14). All 9 walk steps now pass.
   Saves take 2.2–2.7 s each (validator) — measure in Phase 2.
+
+## K1-1 and S7-1 fixed (2026-10-14, after the walk)
+- K1-1 `b31f759d9`: frontend AccountArtifact accepts `site`, shown/filtered as "Landing page"
+  (`artifactDisplayType`); contract-v1 parity now has `validate.ts --enums` + a test that every
+  fixed-list value the backend may send (any depth) is accepted by the frontend — it found only K1-1.
+- S7-1 `90f27f9d8`, founder chose option A: image ENV `LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0`,
+  `check_prod_env` IMAGE_OWNED refuses any line, smoke launches the real `hardened_page`; decision note
+  `docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md` (referenced from root CLAUDE.md,
+  AGENTS.md, subsystems/clue-design/AGENTS.md). Proven in the `clue-backend:media-check` container with
+  today's module mounted: 0 renders, 1 = "No usable sandbox!". Correction recorded: moving renders off
+  the Docker socket is NOT cheap (site turn runs in the chat pool, which needs the socket for
+  run_python) — options in the note §6, awaiting founder.
+- Review now 81 open: 2 Critical (K3-1 awaiting the founder's fix choice; K4-2 parked), 29 I, 50 M.
+- K3-1 explained to the founder in plain terms; verdict pending (recommended fixes 1+2).
