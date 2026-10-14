@@ -203,6 +203,8 @@ export interface MountedSession {
   open(documentId: string | null): Promise<void>;
   /** The marketer turns Edit on or off. */
   setEditing(on: boolean): Promise<void>;
+  /** The artifact is on screen, or hidden (another surface, the panel closed). */
+  setOnScreen(on: boolean): Promise<void>;
   unmount(): Promise<void>;
 }
 
@@ -266,6 +268,7 @@ export async function mountSiteSession(
   const seen: SiteEditingSession[] = [];
   let artifact: string | null = "art-1";
   let editing = true;
+  let onScreen = true;
   const documentIds: Record<string, string> = { "art-1": DOC, "art-2": "doc-2" };
   let iframe: HTMLIFrameElement | null = null;
   function Probe() {
@@ -275,6 +278,7 @@ export async function mountSiteSession(
       editing,
       enabled: artifact !== null,
       locked: false,
+      onScreen,
       repository,
       warm: true,
     });
@@ -398,6 +402,11 @@ export async function mountSiteSession(
     },
     async setEditing(on) {
       editing = on;
+      await act(async () => root.render(render()));
+      await settle();
+    },
+    async setOnScreen(on) {
+      onScreen = on;
       await act(async () => root.render(render()));
       await settle();
     },

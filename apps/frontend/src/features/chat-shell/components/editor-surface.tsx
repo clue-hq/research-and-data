@@ -85,10 +85,13 @@ export function EditorSurface({
   // in as `enabled` — the disabled one touches no transport at all (audit
   // finding F3: before this, every ad load ran the web theme/document fetches
   // and swallowed their 409s).
+  // S2b-6: the open artifact's undo/redo keys act only while it is actually on screen.
+  const artifactOnScreen = controller.surface === "artifact" && controller.panelOpen;
   const session = useWebEditingSession({
     activeArtifactId: controller.activeArtifactId,
     documentIds,
     enabled: controller.artifactKind === "web",
+    onScreen: artifactOnScreen,
   });
   // The recorded follow-up, now built (2026-09-03): the lock on this route comes
   // from the DOCUMENT-scoped agent-busy read (`useDocumentAgentRun` polling
@@ -127,6 +130,7 @@ export function EditorSurface({
     agentRunLocked: sceneLocked,
     documentIds,
     enabled: controller.artifactKind === "ad",
+    onScreen: artifactOnScreen,
   });
   const siteSession = useSiteEditingSession({
     activeArtifactId: controller.activeArtifactId,
@@ -134,6 +138,7 @@ export function EditorSurface({
     editing: controller.editing,
     enabled: controller.artifactKind === "site",
     locked: siteLocked,
+    onScreen: artifactOnScreen,
     warm: (artifacts ?? []).some((artifact) => artifact.documentKind === "site"),
   });
   // This route has no turn stream: an agent write to an open site is seen only by the poll above,

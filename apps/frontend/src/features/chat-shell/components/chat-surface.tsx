@@ -274,10 +274,13 @@ export function ChatSurface({
   const dispatchSendAnnotation = useCallback((note: string) => {
     sendAnnotationRef.current?.(note);
   }, []);
+  // S2b-6: the open artifact's undo/redo keys act only while it is actually on screen.
+  const artifactOnScreen = shell.surface === "artifact" && shell.panelOpen;
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
     enabled: shell.artifactKind === "web",
+    onScreen: artifactOnScreen,
     onSendAnnotation: annotationLaneOpen ? dispatchSendAnnotation : undefined,
   });
   const sceneSession = useSceneEditingSession({
@@ -285,6 +288,7 @@ export function ChatSurface({
     agentRunLocked: sceneLocked,
     documentIds,
     enabled: shell.artifactKind === "ad",
+    onScreen: artifactOnScreen,
   });
   // Lane C: the site lane's session. Warm (the editor frame mounted ahead of time) once the project
   // has a site or this thread has an open design leg that may birth one.
@@ -294,6 +298,7 @@ export function ChatSurface({
     editing: shell.editing,
     enabled: shell.artifactKind === "site",
     locked: siteLocked,
+    onScreen: artifactOnScreen,
     onSendAnnotation: siteAnnotationLaneOpen ? dispatchSendAnnotation : undefined,
     warm: feedArtifacts.some((artifact) => artifact.documentKind === "site") || chat.designLegOpen,
   });

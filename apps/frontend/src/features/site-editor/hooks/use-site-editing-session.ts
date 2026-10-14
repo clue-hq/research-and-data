@@ -71,6 +71,7 @@ export function useSiteEditingSession({
   editing,
   enabled,
   locked,
+  onScreen = true,
   onSendAnnotation,
   repository = DEFAULT_REPOSITORY,
   warm,
@@ -80,6 +81,9 @@ export function useSiteEditingSession({
   editing: boolean;
   enabled: boolean;
   locked: boolean;
+  /** The artifact is on screen (the artifact surface, panel open): undo/redo keys act only then
+   * (review finding S2b-6). Defaults to true. */
+  onScreen?: boolean;
   onSendAnnotation?: (note: string) => void;
   repository?: SiteRepository;
   warm: boolean;
@@ -413,7 +417,9 @@ export function useSiteEditingSession({
   // C8: one history path — the server's stack — from the menu, the app's keyboard and the frame's.
   const undo = saves.undo;
   const redo = saves.redo;
+  const onScreenRef = useRef(onScreen);
   useEffect(() => {
+    onScreenRef.current = onScreen;
     stepRef.current = (action) => {
       if (!activeDocumentId || locked) return;
       if (action === "undo") undo();
@@ -427,6 +433,8 @@ export function useSiteEditingSession({
       if (action) stepRef.current(action);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      // S2b-6: the keys act on the site only while it is on screen.
+      if (!onScreenRef.current) return;
       const decision = shortcutFor(event);
       if (decision !== "undo" && decision !== "redo") return;
       event.preventDefault();

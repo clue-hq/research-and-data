@@ -434,3 +434,23 @@ test("S2b-1: an upload that finishes on the same site is placed and saved", asyn
   await mounted.unmount();
 });
 
+// Review finding S2b-6: ⌘Z anywhere on the chat page undid the open site on the server, even with the
+// site hidden behind another surface or the panel closed (one step can be a whole agent turn).
+test("S2b-6: ⌘Z undoes the site only while it is on screen", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  mounted.typeOnCanvas("hero", "Edited");
+  await mounted.flushCanvas();
+  await mounted.settle(12);
+  const pressUndo = () => globalThis.window.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "z", metaKey: true }));
+  await mounted.setOnScreen(false);
+  pressUndo();
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Edited", "hidden: nothing undone");
+  await mounted.setOnScreen(true);
+  pressUndo();
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Old headline", "on screen: undone");
+  await mounted.unmount();
+});
+

@@ -1,5 +1,6 @@
 "use client";
 
+import { artifactHistoryKey } from "../adapter/history-keys";
 import { useCallback, useEffect, useRef } from "react";
 import {
   inspectorChangeToOperation,
@@ -64,11 +65,14 @@ export function useInspectorWrites({
   document,
   documentId,
   onReload,
+  onScreen = true,
   selection,
 }: {
   document: LoadedWebDocument | null;
   documentId: string | null;
   onReload: () => void;
+  /** The artifact is on screen: undo/redo keys act only then (review finding S2b-6). */
+  onScreen?: boolean;
   selection: WebArtifactSelection | null;
 }): InspectorWrites {
   const edits = useWebManualEdits({
@@ -158,9 +162,11 @@ export function useInspectorWrites({
   // general chrome undo.
   const undoRef = useRef(edits.undo);
   const redoRef = useRef(edits.redo);
+  const onScreenRef = useRef(onScreen);
   useEffect(() => {
     redoRef.current = edits.redo;
     undoRef.current = edits.undo;
+    onScreenRef.current = onScreen;
   });
 
   useEffect(() => {
@@ -175,19 +181,11 @@ export function useInspectorWrites({
       if (detail.action === "redo") redoRef.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z")
-        return;
-      // Native text-editing undo owns focused inputs/contenteditables.
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA")
-      )
-        return;
+      // S2b-6: only while the artifact is on screen; typing keeps its own undo.
+      const step = artifactHistoryKey(event, onScreenRef.current);
+      if (!step) return;
       event.preventDefault();
-      if (event.shiftKey) redoRef.current();
+      if (step === "redo") redoRef.current();
       else undoRef.current();
     };
     // window, not document: the hook's `document` prop (the loaded web
