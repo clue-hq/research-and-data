@@ -2,13 +2,14 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
 import type { BrandData } from "@clue/site-kit";
 import { acceptAppMessage, frameToApp } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, pageFor, shortcutFor } from "@clue/site-kit/editor-site";
+import { canonicalJson, pageFor } from "@clue/site-kit/editor-site";
 import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
 import type { BootContext } from "./boot";
 import { buildPageConfig, shellFieldDescriptions } from "./config";
 import { clickIntent, rectOf } from "./dom";
 import { fieldsForComponent } from "./fields";
 import { FrameController } from "./frame-controller";
+import { frameKeyAction } from "./keys";
 import { browserSectionDeps, loadSections } from "./sections";
 
 const usePuck = createUsePuck();
@@ -62,12 +63,12 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      const decision = shortcutFor(event);
-      if (!decision) return;
-      // Puck's own history and preview toggle never run: undo is the server's stack (ruling).
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (decision !== "swallow") controller.shortcut(decision);
+      // Puck's own history and preview toggle never run: undo is the server's stack (ruling). See
+      // keys.ts for why this listener, on window in the capture phase, runs before Puck's.
+      const action = frameKeyAction(event);
+      if (action.preventDefault) event.preventDefault();
+      if (action.stop) event.stopImmediatePropagation();
+      if (action.send) controller.shortcut(action.send);
     };
     const onFocusOut = () => controller.flushChange();
     const onDoubleClick = (event: MouseEvent) => {
