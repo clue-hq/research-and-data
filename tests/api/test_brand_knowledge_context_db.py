@@ -1018,3 +1018,42 @@ def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirm
             } == {seed.path.removeprefix(SEED_PREFIX) for seed in seeds}
 
     run_async(scenario())
+
+
+def test_the_index_card_names_recent_product_changes_and_is_unchanged_without_them() -> None:
+    # Spec 2026-10-15 §8: the agent hears that products changed (a merge, a rename) so an old
+    # name in its chat history maps to today's product. With no change, the card's bytes are
+    # exactly what they were before the field existed.
+    documents = (_pinned(path="company/overview.md", kind="company-overview", body="Acme.\n"),)
+    plain = compile_brand_knowledge_index_card(
+        brand_id="brn_pm", documents=documents, confirmed_icp=None, product_set=None
+    )
+    assert "recent_product_changes" not in plain.model_dump(mode="json", exclude_none=False)
+    empty = compile_brand_knowledge_index_card(
+        brand_id="brn_pm",
+        documents=documents,
+        confirmed_icp=None,
+        product_set=None,
+        recent_product_changes=(),
+    )
+    assert empty.canonical_bytes() == plain.canonical_bytes()
+    changed = compile_brand_knowledge_index_card(
+        brand_id="brn_pm",
+        documents=documents,
+        confirmed_icp=None,
+        product_set=None,
+        recent_product_changes=("15 Oct 2026: 8 products merged into Proxon",),
+    )
+    assert changed.model_dump(mode="json")["recent_product_changes"] == [
+        "15 Oct 2026: 8 products merged into Proxon"
+    ]
+    # Never dropped for budget: it is how the agent knows its old names are stale.
+    tight = compile_brand_knowledge_index_card(
+        brand_id="brn_pm",
+        documents=documents,
+        confirmed_icp=None,
+        product_set=None,
+        recent_product_changes=("15 Oct 2026: 8 products merged into Proxon",),
+        max_bytes=10,
+    )
+    assert tight.recent_product_changes == ["15 Oct 2026: 8 products merged into Proxon"]

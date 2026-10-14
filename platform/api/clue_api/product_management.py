@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -78,6 +78,7 @@ __all__ = [
     "merge_products_action",
     "publish_product_page",
     "read_brand_document",
+    "recent_change_lines",
     "recent_product_changes",
     "regenerate_catalog",
     "remove_product_action",
@@ -1434,6 +1435,17 @@ async def recent_product_changes(
         )
         for row in rows.mappings().all()
     ]
+
+
+async def recent_change_lines(
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str, days: int = 30
+) -> tuple[str, ...]:
+    """The agent's view of recent product changes: "15 Oct 2026: 8 products merged into Proxon"."""
+    since = datetime.now(UTC) - timedelta(days=days)
+    changes = await recent_product_changes(
+        conn, workspace_id=workspace_id, brand_id=brand_id, since=since
+    )
+    return tuple(f"{c.created_at:%d %b %Y}: {c.text}" for c in changes)
 
 
 async def publish_product_page(
