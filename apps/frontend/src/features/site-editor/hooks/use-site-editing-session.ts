@@ -248,7 +248,9 @@ export function useSiteEditingSession({
   useEffect(() => {
     if (!activeDocumentId || !currentSite || load.status !== "ready" || !load.brand || boot === 0) return;
     // The URL toolbar's reload bumps `initGeneration`, which forces a fresh init from a fresh read.
-    const initKey = `${siteInitKey(activeDocumentId, currentSite.site, boot)}|${initGeneration}`;
+    // A brand read again with other clones (review S2b-8) is handed to the frame with a fresh init:
+    // replace_site carries the site only.
+    const initKey = `${siteInitKey(activeDocumentId, currentSite.site, boot)}|${initGeneration}|${Object.keys(load.brand.clones).sort().join(",")}`;
     const sync = frameSyncFor({
       frameReady: true,
       initKey,

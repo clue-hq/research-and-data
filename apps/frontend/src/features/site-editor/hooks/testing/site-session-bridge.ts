@@ -68,6 +68,11 @@ export interface FakeServer {
   release(kind: "save" | "get"): void;
   /** Another writer (an agent checkpoint, another tab) changes the site on the server. */
   outsideWrite(site: SiteDocument): void;
+  /** The brand the server builds for the site it holds (as the design API's is: the catalog's clones
+   * plus every clone the site uses); null = one fixed brand. */
+  brandFor: ((site: SiteDocument) => BrandData) | null;
+  /** How many times the brand was read. */
+  brandReads: number;
 }
 
 export function fakeServer(site: SiteDocument = startSite(), version = 5): FakeServer {
@@ -82,6 +87,8 @@ export function fakeServer(site: SiteDocument = startSite(), version = 5): FakeS
     reported: version,
     hold: { save: false, get: false },
     refuse: null,
+    brandFor: null,
+    brandReads: 0,
     release(kind) {
       const next = gates[kind].shift();
       if (!next) throw new Error(`no held ${kind} to release`);
@@ -122,7 +129,8 @@ export function fakeRepository(server: FakeServer): SiteRepository {
       return { documentId, title: "Acme", site: read.site, version: read.version, undoDepth: read.undo, redoDepth: read.redo };
     },
     async getBrand() {
-      return BRAND;
+      server.brandReads += 1;
+      return server.brandFor?.(server.site) ?? BRAND;
     },
     async sectionLinks() {
       return [];

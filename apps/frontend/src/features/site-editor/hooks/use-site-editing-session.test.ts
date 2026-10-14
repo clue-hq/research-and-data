@@ -454,3 +454,39 @@ test("S2b-6: ⌘Z undoes the site only while it is on screen", async () => {
   await mounted.unmount();
 });
 
+
+// Review finding S2b-8: the brand carries the cloned sections a site can show, and the server builds
+// it from the site it holds (the catalog plus every clone the site uses). An undo that brings back a
+// clone the current site had replaced must show that clone, not "Choose a cloned section": the
+// editor reads the brand again, and the frame is given the new one.
+test("review S2b-8: undo bringing back a cloned section gives the frame a brand that has it", async () => {
+  const clone = { id: "frag_0123456789abcdef", label: "Closing band", page_url: "https://seller.example/", html: "<section></section>", css: "", slots: {}, wrapper_class: "w" };
+  const withClone = startSite();
+  withClone.pages["/"].content.push({ type: "ClonedSection", props: { id: "close", fragmentId: clone.id, slots: {}, replacements: [], links: [] } });
+  const server = fakeServer(startSite());
+  server.undo = [withClone];
+  server.brandFor = (site) => {
+    const uses = site.pages["/"].content.some((item) => item.type === "ClonedSection");
+    return { slug: "x", kit: { tokens: {} }, fonts: [], assets: {}, clones: uses ? { [clone.id]: clone } : {} } as never;
+  };
+  const mounted = await mountSiteSession(server);
+  await mounted.settle();
+  assert.equal(mounted.frame.getState().brand?.clones[clone.id], undefined, "the current site uses no clone");
+  await mounted.pressUndo();
+  await mounted.settle(12);
+  assert.ok(mounted.frame.getState().site?.pages["/"].content.some((item) => item.type === "ClonedSection"), "the undone site is shown");
+  assert.ok(mounted.frame.getState().brand?.clones[clone.id], "the frame's brand has the clone the undone site shows");
+  await mounted.unmount();
+});
+
+test("review S2b-8: a reload that brings no new clone does not read the brand again", async () => {
+  const server = fakeServer(startSite());
+  const mounted = await mountSiteSession(server);
+  await mounted.settle();
+  const reads = server.brandReads;
+  server.outsideWrite(withHeading(server.site, "hero", "An agent's heading"));
+  await mounted.pressUndo();
+  await mounted.settle(12);
+  assert.equal(server.brandReads, reads);
+  await mounted.unmount();
+});

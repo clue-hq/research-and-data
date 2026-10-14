@@ -15,12 +15,22 @@ export interface SiteDocumentLoad {
   status: "idle" | "loading" | "ready" | "error";
 }
 
+/** Whether `brand` carries every cloned section `site` shows. The brand is read once per document
+ * and kept; a load that shows a clone it lacks (an undo or a restore bringing back a clone the site
+ * had replaced) reads it again, or the clone draws as "Choose a cloned section" (review S2b-8). */
+export function brandHasClonesOf(brand: BrandData, site: LoadedSite["site"]): boolean {
+  return Object.values(site.pages).every((page) =>
+    page.content.every((item) => item.type !== "ClonedSection" || Object.hasOwn(brand.clones, String(item.props.fragmentId ?? ""))),
+  );
+}
+
 const IDLE: SiteDocumentLoad = { brand: null, error: null, links: [], loaded: null, loadedAt: 0, status: "idle" };
 const LOADING: SiteDocumentLoad = { ...IDLE, status: "loading" };
 
 /** The open site, its brand and its agent-section links, refetched whenever `reloadNonce` moves. A
  * reload of the SAME document keeps the previous load on screen until the new one lands (the web
- * lane's quiet swap); the brand is read once per document.
+ * lane's quiet swap); the brand is read once per document, and again when a load shows a cloned
+ * section it lacks (`brandHasClonesOf`).
  *
  * A load belongs to one VISIT of a document: leaving it (for another site, or a web or ad tab) and
  * coming back shows LOADING until a fresh read lands, never the copy from the earlier visit, which
@@ -50,7 +60,8 @@ export function useSiteDocument({
     void (async () => {
       try {
         const loaded = await repository.get(documentId);
-        const cachedBrand = brandRef.current?.documentId === documentId ? brandRef.current.brand : null;
+        const kept = brandRef.current?.documentId === documentId ? brandRef.current.brand : null;
+        const cachedBrand = kept && brandHasClonesOf(kept, loaded.site) ? kept : null;
         const [brand, links] = await Promise.all([
           cachedBrand ? Promise.resolve(cachedBrand) : repository.getBrand(documentId),
           Object.keys(loaded.site.agent_sections).length > 0 ? repository.sectionLinks(documentId) : Promise.resolve([]),
