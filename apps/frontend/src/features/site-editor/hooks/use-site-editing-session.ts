@@ -191,7 +191,12 @@ export function useSiteEditingSession({
         setSelection(null);
         return;
       case "request_asset":
-        openLibraryRef.current?.({ componentId: message.payload.componentId, prop: message.payload.prop, target: message.payload.route });
+        openLibraryRef.current?.({
+          componentId: message.payload.componentId,
+          documentId: message.documentId,
+          prop: message.payload.prop,
+          target: message.payload.route,
+        });
         return;
       case "annotate":
         annotateRef.current?.(message.payload);
@@ -339,7 +344,9 @@ export function useSiteEditingSession({
   const insertAsset = useCallback(
     (target: SiteImageTarget, url: string): boolean => {
       const current = copy.get();
-      if (!current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return false;
+      // An image is placed only on the site it was meant for (review finding S2b-1).
+      if (!current || current.documentId !== activeDocumentId || target.documentId !== current.documentId) return false;
+      if (!acceptsFrameEdits({ editing, locked })) return false;
       const props = componentProps(current.site, target.target, target.componentId);
       if (!props) return false;
       if (getAtPath(props, target.prop) === url) return true;
@@ -368,7 +375,12 @@ export function useSiteEditingSession({
   });
   const imageField = useCallback(
     (path: string, value: string): SiteImageFieldBinding | null =>
-      activeSelection ? images.field({ componentId: activeSelection.componentId, prop: path, target: activeSelection.target }, value) : null,
+      activeSelection
+        ? images.field(
+            { componentId: activeSelection.componentId, documentId: activeSelection.documentId, prop: path, target: activeSelection.target },
+            value,
+          )
+        : null,
     [activeSelection, images],
   );
   // C7: the web lane's annotations, one session per document, scoped by route.

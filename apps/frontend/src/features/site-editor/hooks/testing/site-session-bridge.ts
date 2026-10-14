@@ -195,6 +195,8 @@ export interface MountedSession {
   runFrameTimers(): Promise<void>;
   /** The browser is about to leave the page (a reload, a closed tab): did the app ask to stay? */
   leaveAsks(): boolean;
+  /** Hold the next image upload until the returned function lets it answer (a slow network). */
+  holdNextUpload(): () => void;
   /** The frame's ⌘Z outside text. */
   pressUndo(): Promise<void>;
   /** Show another document, or none (a web or ad tab). */
@@ -239,10 +241,19 @@ export async function mountSiteSession(
   })) {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
+  let uploadGate: Promise<void> | null = null;
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
     writable: true,
-    value: async (input: string) => {
+    value: async (input: string, init?: RequestInit) => {
+      if (String(input).endsWith("/api/clue/design/assets") && init?.method === "POST") {
+        const gate = uploadGate;
+        uploadGate = null;
+        if (gate) await gate;
+        const digest = "c".repeat(64);
+        const asset = { id: "asset_upload", label: "photo.png", kind: "raster_image", status: "ready", source: { kind: "uploaded" }, media: { digest: { algorithm: "sha256", value: digest } } };
+        return new Response(JSON.stringify({ asset }), { status: 201 });
+      }
       if (String(input).endsWith("/api/clue/site-editor/session")) {
         return new Response(JSON.stringify({ data: { editorOrigin: EDITOR_ORIGIN } }), { status: 200 });
       }
@@ -364,6 +375,11 @@ export async function mountSiteSession(
     async runFrameTimers() {
       for (const run of timers.splice(0)) run();
       await settle();
+    },
+    holdNextUpload() {
+      let release: () => void = () => undefined;
+      uploadGate = new Promise<void>((resolve) => (release = resolve));
+      return () => release();
     },
     leaveAsks() {
       const event = new dom.window.Event("beforeunload", { cancelable: true });

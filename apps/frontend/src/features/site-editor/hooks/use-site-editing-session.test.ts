@@ -396,3 +396,41 @@ test("an external link clicked in the preview opens in a new tab, only after a r
   assert.equal(opened.length, 1, "no real click just now: nothing opens");
   await mounted.unmount();
 });
+
+// Review finding S2b-1: an image upload that finished after a tab switch was placed into whichever
+// site was open by then — another account's site, saved as its next version. Every image target now
+// names its site, and the session places an image only on the site it was meant for; the picture is
+// still in the library, and the marketer is told.
+test("S2b-1: an upload that finishes after switching sites is never placed on the other site", async () => {
+  const server = fakeServer();
+  const other = fakeServer(startSite({ hero: "Doc two" }), 9);
+  const mounted = await mountSiteSession(server, { otherDocument: other });
+  mounted.frame.componentSelected("hero", "FeatureSplit", [{ kind: "image", label: "Image", name: "image" }], { image: "" });
+  await mounted.settle();
+  const field = mounted.latest().imageField("image", "");
+  assert.ok(field, "the hero's image field");
+  const release = mounted.holdNextUpload();
+  const uploading = field.onFileSelect(new File(["x"], "photo.png", { type: "image/png" })).catch(() => "refused");
+  await mounted.settle();
+  await mounted.open("doc-2");
+  release();
+  assert.equal(await uploading, "refused");
+  await mounted.settle(12);
+  assert.equal(other.log.filter((line) => line.startsWith("PUT")).length, 0, "Umbrella's site is untouched");
+  assert.equal(server.log.filter((line) => line.startsWith("PUT")).length, 0);
+  assert.match(mounted.latest().saves.error ?? "", /library/, "the marketer is told where the picture went");
+  await mounted.unmount();
+});
+
+test("S2b-1: an upload that finishes on the same site is placed and saved", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  mounted.frame.componentSelected("hero", "FeatureSplit", [{ kind: "image", label: "Image", name: "image" }], { image: "" });
+  await mounted.settle();
+  await mounted.latest().imageField("image", "")!.onFileSelect(new File(["x"], "photo.png", { type: "image/png" }));
+  await mounted.settle(12);
+  const hero = server.site.pages["/"].content.find((entry) => entry.props.id === "hero")!;
+  assert.equal(hero.props.image, `/asset-store/${"c".repeat(64)}`);
+  await mounted.unmount();
+});
+

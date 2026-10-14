@@ -15,6 +15,7 @@ import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/us
 import { editSceneAsset, generateSceneAsset } from "@/features/design-editor/hooks/use-scene-image-ai";
 import {
   EMPTY_SITE_IMAGE_AI,
+  SITE_IMAGE_NOT_PLACED_MOVED,
   SITE_IMAGE_NOT_SAVED,
   appAssetSrc,
   assetIdForUrl,
@@ -65,7 +66,7 @@ export function useSiteImages({
   place: (target: SiteImageTarget, url: string) => boolean;
   writable: () => boolean;
 }): SiteImages {
-  const [libraryTarget, setLibraryTarget] = useState<(SiteImageTarget & { documentId: string }) | null>(null);
+  const [libraryTarget, setLibraryTarget] = useState<SiteImageTarget | null>(null);
   const [registry, setRegistry] = useState<AssetRecord[]>([]);
   const [registryLoaded, setRegistryLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,11 +114,11 @@ export function useSiteImages({
   const lastTarget = useRef<SiteImageTarget | null>(null);
   const openLibraryFor = useCallback(
     (target: SiteImageTarget) => {
-      if (!documentId) return;
+      if (!documentId || target.documentId !== documentId) return;
       lastTarget.current = target;
       setQuery("");
       setCategory("all");
-      setLibraryTarget({ ...target, documentId });
+      setLibraryTarget(target);
       refresh();
     },
     [documentId, refresh],
@@ -144,7 +145,7 @@ export function useSiteImages({
 
   const placeFile = useCallback(async (target: SiteImageTarget, file: File) => {
     const now = latest.current;
-    if (!now.writable()) throw new Error("not writable");
+    if (now.documentId !== target.documentId || !now.writable()) throw new Error("not writable");
     let url: string | null;
     try {
       url = assetStoreUrlOf(await uploadWebAsset(file));
@@ -156,8 +157,17 @@ export function useSiteImages({
       now.onError(SITE_IMAGE_NOT_SAVED);
       throw new Error(SITE_IMAGE_NOT_SAVED);
     }
+    // Review finding S2b-1: the marketer may have switched sites while it uploaded. The picture is
+    // never placed on the other site (the session refuses a target for another site too); it is in
+    // the library, and they are told.
+    const after = latest.current;
+    if (after.documentId !== target.documentId) {
+      after.onError(SITE_IMAGE_NOT_PLACED_MOVED);
+      refresh();
+      throw new Error(SITE_IMAGE_NOT_PLACED_MOVED);
+    }
     if (!placeAndRefresh(target, url)) throw new Error("not placed");
-  }, [placeAndRefresh]);
+  }, [placeAndRefresh, refresh]);
 
   const pick = useCallback((assetId: string) => {
     const now = latest.current;
@@ -220,20 +230,20 @@ export function useSiteImages({
       accept: (target) => runnerOf().accept(target),
       edit: (target, instruction, transparentBackground) => runnerOf().edit(target, instruction, transparentBackground),
       generate: (target, prompt) => runnerOf().generate(target, prompt),
-      reject: () => runnerOf().reject(),
-      saveAsNew: () => runnerOf().saveAsNew(),
+      reject: (target) => runnerOf().reject(target),
+      saveAsNew: (target) => runnerOf().saveAsNew(target),
     }),
     [runnerOf],
   );
 
   const field = useCallback(
     (target: SiteImageTarget, value: string): SiteImageFieldBinding => ({
-      ai: siteImageAiBinding({ ai, canEdit: assetIdForUrl(registry, value) !== null, documentId, runner, target, url: value }),
+      ai: siteImageAiBinding({ ai, canEdit: assetIdForUrl(registry, value) !== null, runner, target, url: value }),
       onFileSelect: (file) => placeFile(target, file),
       onOpenLibrary: () => openLibraryFor(target),
       previewSrc: appAssetSrc(value),
     }),
-    [ai, documentId, openLibraryFor, placeFile, registry, runner],
+    [ai, openLibraryFor, placeFile, registry, runner],
   );
 
   const library: SceneAssetLibraryBinding | null = documentId
