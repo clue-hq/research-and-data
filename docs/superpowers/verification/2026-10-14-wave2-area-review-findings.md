@@ -16,8 +16,8 @@ durable record.
 > Update 2026-10-14: the editor sync fix (§4.1) closed 12 findings across both documents: S1-1, S1-2, S1-4,
 > S2a-1, S2a-4, S2b-2, S2b-3, S2b-4, S3-3 here, and K1-4, K3-3, K3-5. K1-1 and S7-1 followed the same day.
 > K3-1 was then closed as ruled (fixes 1 and 2), and root-cause group §4.4 (one account's state leaking into
-> another's) was fixed: K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6; then S7-2 and S7-4 from §4.5. **72 remain open**
-> (1 Critical — K4-2, parked — 24 Important, 47 Minor).
+> another's) was fixed: K6-1, S2b-1, S5-2, K3-4, S2b-5, S2b-6; then S7-2, S7-4, K3-8 and S2b-9 from §4.5.
+> **70 remain open** (1 Critical — K4-2, parked — 24 Important, 45 Minor).
 
 ---
 
@@ -82,14 +82,14 @@ Still open after the editor sync fix (2026-10-14):
 |---|---|---|---|---|
 | S1 | 0 | 2 | 5 | S1-1, S1-2, S1-4 |
 | S2a | 0 | 2 | 6 | S2a-1, S2a-4 |
-| S2b | 0 | 0 | 4 | S2b-2, S2b-3, S2b-4; then S2b-1, S2b-5, S2b-6 (§4.4) |
+| S2b | 0 | 0 | 3 | S2b-2, S2b-3, S2b-4; then S2b-1, S2b-5, S2b-6 (§4.4), S2b-9 |
 | S3 | 0 | 2 | 5 | S3-3 |
 | S4 | 0 | 1 | 2 | — |
 | S5 | 0 | 1 | 1 | S5-2 (§4.4) |
 | S6 | 0 | 3 | 9 | — |
 | S7 | 0 | 0 | 1 | S7-1 (option A), S7-2, S7-4 |
 | S8 | 0 | 0 | 0 | — |
-| **Total open** | **0** | **11** | **33** | 16 fixed |
+| **Total open** | **0** | **11** | **32** | 17 fixed |
 
 **60 findings** from the area review, all open. Together with the contract review's 35 open findings, the
 whole Wave 2 review stands at **95 open: 6 Critical, 36 Important, 53 Minor**. (K4-2, one of the Critical,
@@ -401,7 +401,7 @@ The six Critical findings across the whole review:
 - **Where:** `features/site-editor/hooks/use-site-document.ts:41-43`.
 
 #### S2b-9 — Nothing stops the editor domain being set to the app's own domain
-- **Severity:** Minor (configuration). Status: open. That setting would quietly undo the separation D2 relies on. Sibling of K3-8.
+- **Severity:** Minor (configuration). Status: **fixed** 2026-10-14 (`007697a36`). That setting would quietly undo the separation D2 relies on. Sibling of K3-8.
 - **Where:** `features/site-editor/server/site-editor-session-handler.ts:30-35`; `site-kit/src/editor-origin.ts:18-23`.
 
 #### S2b-10 — Two contract docs lag the code
@@ -937,8 +937,8 @@ One pass, each fix starting from a failing test, then a review of only the fix c
 5. ~~**Wrong-account state (§4.4)**~~ — **done 2026-10-14**.
 6. **Editor ↔ published parity (§4.3):** build the comparison test first, then K5-2, K2-1, K1-2, S1-5,
    S2a-2, S2b-8, S6-2 (S1-4 is fixed).
-7. **Deploy and configuration (§4.5):** ~~S7-2, S7-4~~ (done 2026-10-14, `d1ded9254`); before the
-   pages-domain move is run, K3-6, S4-1 and S4-3; then the configuration minors.
+7. **Deploy and configuration (§4.5):** ~~S7-2, S7-4~~ (`d1ded9254`) and ~~K3-8, S2b-9~~ (`007697a36`)
+   done 2026-10-14; before the pages-domain move is run, K3-6, S4-1, S4-3 and S7-3; then K3-7.
 8. **Brand capture (§4.6):** S6-1, S6-3, then the capture minors.
 9. **Everything else:** the remaining Important findings (K1-3, K1-5, K4-1, K4-3, K4-5, K6-2, K6-3, S1-3),
    the minors, and the stale-comment sweep from S8.

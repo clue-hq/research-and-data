@@ -68,16 +68,17 @@ seams down as nine "contracts".
 |---|---|---|
 | **Open, Critical** | 1 | K4-2 (parked, see §3) |
 | **Open, Important** | 13 | K1-2, K1-3, K1-5, K2-1, K3-2, K3-6, K4-1, K4-3, K4-5, K5-2, K5-5, K6-2, K6-3 |
-| **Open, Minor** | 14 | K1-6, K1-7, K1-8, K2-2, K3-7, K3-8, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
+| **Open, Minor** | 13 | K1-6, K1-7, K1-8, K2-2, K3-7, K4-6, K4-7, K4-8, K5-6, K6-4, K6-5, K6-6, K6-7 |
 | **Resolved** (by A9's fix wave) | 4 | K5-1, K5-3, K5-4, K5-7 |
 | **Fixed** (by the editor sync fix, 2026-10-14) | 3 | K1-4, K3-3, K3-5 |
 | **Fixed** (2026-10-14, after the sync fix) | 1 | K1-1 |
 | **Closed as ruled** (2026-10-14, fixes 1+2, residual accepted) | 1 | K3-1 |
 | **Fixed** (2026-10-14, root-cause group §4.4 of the area document) | 2 | K6-1, K3-4 |
+| **Fixed** (2026-10-14, config guard in §4.5) | 1 | K3-8 |
 | **Duplicate** | 1 | K4-4 (= K3-3) |
 
 **Update 2026-10-14:** the editor sync fix (`docs/superpowers/plans/2026-10-14-site-editor-sync-fix.md`) closed K1-4, K3-3 and K3-5, each from a failing
-test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). Then group §4.4 (wrong-account state) closed K6-1 and K3-4: **28 open** (1 Critical, 13 Important, 14 Minor). The rest are fixed in the fix
+test; K1-1 and K3-1 (as ruled) followed the same day. **30 K findings remain open** (1 Critical — K4-2, parked — 15 Important, 14 Minor). Then group §4.4 (wrong-account state) closed K6-1 and K3-4: **28 open** (1 Critical, 13 Important, 14 Minor); then K3-8: **27 open** (13 Minor). The rest are fixed in the fix
 pass that follows the S-unit review, each from a failing test, and only the fix changes are re-reviewed.
 The area document's §4.1 records the sync fix as a whole.
 
@@ -116,7 +117,7 @@ The area document's §4.1 records the sync fix as a whole.
 | K3-5 | Important | An update arriving while the editor loads is lost, and the older site is saved over the newer | **fixed** (sync fix) |
 | K3-6 | Important | The domain-move runbook leaves published pages down mid-move | open (operational) |
 | K3-7 | Minor | One workspace's agent code can break every workspace's editor in that browser via cookies | open |
-| K3-8 | Minor | Nothing stops the pages domain sharing the editor's domain | open (config-dependent) |
+| K3-8 | Minor | Nothing stops the pages domain sharing the editor's domain | **fixed** |
 | K4-1 | Important | A run taken over after a worker dies says "built" and saves nothing | open |
 | K4-2 | Critical | A long research section reaches the page writer raw, past the privacy filter | **parked** (privacy sprint) |
 | K4-3 | Important | Two notes on one site section refuse the whole chat message | open |
@@ -453,7 +454,7 @@ pages domain, custom domains, and the planned move of published pages to a new d
   or raise the editor server's header limit and ignore cookies.
 
 #### K3-8 — Nothing stops the pages domain sharing the editor's domain
-- **Severity:** Minor (depends on a domain choice not made yet). Status: open.
+- **Severity:** Minor (depends on a domain choice not made yet). Status: **fixed** 2026-10-14 (`007697a36`).
 - **What could happen:** if published pages move to `deeppresence.ai`, the edge Worker forwards editor
   hosts to the page origin and every workspace's editor goes down; a workspace could also be given the
   label `edit`.

@@ -105,3 +105,14 @@ Continues `_memory/2026-10-13-wave2-integration.md` (sync-fix entry). Branch `pu
 - Runbook §2: secret in step 5, suffix in step 7, new step 7a (site editor service), check commands
   for 5-frontend.env / 6-site-editor.env in step 8. Both .env.example comments updated.
 - Review: 72 open (1 C parked, 24 I, 47 M). 4.5 left: K3-6, S4-1, S4-3, S7-3, K3-8, K3-7, S2b-9.
+
+## K3-8 and S2b-9 fixed (2026-10-14, `007697a36`)
+- One rule `sameRegistrableDomain` (site-kit editor-origin.ts; Python twin `_registrable` in
+  check_prod_env, two-level suffixes co/com/net/org/gov/ac/edu/ltd/plc under a 2-letter TLD).
+- Guards: editor server `readConfig` refuses suffix on the app's domain; app session route refuses
+  (500 SITE_EDITOR_MISCONFIGURED, route passes clueAppOrigin()); check_prod_env frontend/site-editor
+  roles refuse it; `site-editor` CLI now takes 3 files (editor, frontend, platform-api) and refuses a
+  pages suffix (or legacy suffix) on the editor's registrable domain; Worker `EDITOR_SUFFIX` var →
+  editor hosts always pass through; reserved labels + "edit", "editor". Runbooks updated.
+- Dev stacks unaffected (editor.localhost vs localhost differ). Browser harness 21/21 booted the editor.
+- Review: 70 open (1 C parked, 24 I, 45 M). 4.5 left: K3-6, S4-1, S4-3, S7-3 (before the move), K3-7.
