@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.execution import SPILL_THRESHOLD_BYTES
 from clue_api.arv2 import research_operations as operations
@@ -24,7 +25,7 @@ from clue_api.arv2.account_research_tools import (
 )
 from clue_api.arv2.person_exa_brief import uses_person_exa_brief
 from clue_api.arv2.quality_authority import resolve_authority
-from clue_api.arv2.quality_execution import reserve
+from clue_api.arv2.quality_execution import reserve, retry_lock_conflict
 from clue_api.arv2.quality_source_navigation import operation_source_navigation
 from clue_storage import (
     artifact_key,
@@ -122,6 +123,33 @@ class AcquireResearchTool(Tool):
             for name, tool in sorted(self.operations.items())
         ]
 
+    async def begin_dispatch(
+        self, ctx: ToolContext, operation: str, arguments: dict[str, Any]
+    ) -> tuple[Any, bool]:
+        """Authorize, reserve the shared allowance and begin the ledger entry in one transaction,
+        retried once if Postgres aborts it as a lock-conflict victim (no provider call happens
+        inside it, and each step is idempotent on the tool call's operation id)."""
+        runtime = self.runtime
+        assert runtime is not None and ctx.execution_id is not None
+        execution_id = ctx.execution_id
+
+        async def begin(conn: AsyncConnection) -> tuple[Any, bool]:
+            authority = await resolve_authority(conn, runtime.scope, execution_id)
+            if authority.role != "account_research":
+                raise ValueError("specialists request acquisition through their parent")
+            await reserve(
+                conn,
+                authority.grant.scope,
+                execution_id=execution_id,
+                kind="tool",
+                activity_id=UUID(str(ctx.operation_id)),
+            )
+            return await operations.begin(
+                conn, runtime.operation_scope, "quality_tool:" + operation, arguments
+            )
+
+        return await retry_lock_conflict(ctx.conn_factory, begin)
+
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         args = AcquireResearchInput.model_validate(inputs)
         runtime = self.runtime
@@ -138,20 +166,7 @@ class AcquireResearchTool(Tool):
                 cast(type[BaseModel], tool.get_input_schema()).model_validate(args.arguments)
             except ValidationError:
                 validation_error = "invalid_acquisition_arguments"
-        async with ctx.conn_factory() as conn:
-            authority = await resolve_authority(conn, runtime.scope, ctx.execution_id)
-            if authority.role != "account_research":
-                raise ValueError("specialists request acquisition through their parent")
-            await reserve(
-                conn,
-                authority.grant.scope,
-                execution_id=ctx.execution_id,
-                kind="tool",
-                activity_id=UUID(str(ctx.operation_id)),
-            )
-            operation, won = await operations.begin(
-                conn, runtime.operation_scope, "quality_tool:" + args.operation, args.arguments
-            )
+        operation, won = await self.begin_dispatch(ctx, args.operation, args.arguments)
         if not won:
             # The provider ledger committed before indexing. Recover an interrupted index using
             # saved originals, even when the tool's own final receipt was never committed.
