@@ -1,8 +1,10 @@
 # ARV2 research: resume a stopped job
 
-Status: draft for founder review, 2026-10-14. Founder choices already made: the resume tool has a
-script and an admin endpoint; an admin may top up a job's allowance when resuming it; spec before
-code. Builds on PR #115 (the deadlock fix and the one-shot lock-conflict retry).
+Status: draft for founder review, 2026-10-14. Founder rulings so far (2026-10-14): the resume tool
+has a script and admin endpoints, including a list of stuck jobs; an admin may top up a job's
+allowance when resuming it; when the agent's instructions changed since the first attempt, the job
+restarts fresh inside the same job instead of being refused; the six frozen 2026-10-03 jobs are left
+alone; spec before code. Builds on PR #115 (the deadlock fix and the one-shot lock-conflict retry).
 
 ## 1. Why
 
@@ -57,8 +59,11 @@ path, and no test covers re-claiming an interrupted research job.
 2. One resume operation takes a stopped job back into the queue. It writes an audit record, and an
    admin may add an explicit top-up to the job's allowance.
 3. A developer script lists stuck jobs and resumes one, in any environment, dry run by default.
-4. An admin endpoint resumes one job in a workspace, for workspace owners and admins.
-5. Every outcome of a resume is either a continued job or a named refusal. Nothing fails silently.
+4. Admin endpoints list a workspace's stuck jobs and resume one, for workspace owners and admins.
+5. When the agent's instructions changed between attempts, the job restarts fresh inside the same
+   job, keeping what it already paid for.
+6. Every outcome of a resume is a continued job, a fresh restart, or a named refusal. Nothing fails
+   silently.
 
 **Non-goals**
 
@@ -82,9 +87,8 @@ chat path's rule that a turn has exactly one opening-context receipt.
      stored rows.
    - Check that the profile reference and resource-manifest digest on the turn's constitution
      still match what this deployment resolves. If a deploy changed the prompt, skills or tool
-     surface since the first attempt, refuse with `resume_profile_changed`. The saved
-     conversation has the old system prompt baked in, so silently rebuilding under a new one would
-     mix the two. The job stays where it was and the admin can relaunch.
+     surface since the first attempt, **restart fresh** (§3.2). The saved conversation has the old
+     instructions baked in, so it is never continued under new ones.
    - **A saved checkpoint exists on the execution's thread:** invoke the graph with no new input.
      LangGraph runs the pending step, the one that was interrupted, and carries on. The round
      count continues from the checkpoint.
@@ -93,10 +97,6 @@ chat path's rule that a turn has exactly one opening-context receipt.
      digest, and start the graph with them. The model sees exactly what the receipt says it saw.
 4. **Workspace:** the same execution re-acquires its own workspace lease. Its materialized
    resources are verified against the recorded seed files, not re-derived.
-
-**Specialists.** A child turn is keyed by its delegation id. A completed child is already replayed
-from its result. A child that was mid-flight resumes through the same three steps. When a resumed
-parent re-runs its pending delegation, the child's own resume or replay decides the result.
 
 **Why re-running the pending step is safe.** Every step a resumed graph can repeat is idempotent on
 a stable key:
@@ -108,23 +108,57 @@ a stable key:
 - Claim proposals and corrections replay by their proposal key.
 - Finalization refuses before it freezes outputs (fix `9f0d8b51e`).
 
-### 3.2 Job states
+### 3.2 Restart fresh inside the same job
+
+A restart gives the job a new conversation and keeps everything the job owns.
+
+- **Identity.** The job gets a restart counter, a new `restart_count` column defaulting to 0. One
+  shared function derives the execution id from the job id and that counter. At 0 it returns
+  today's id, so existing jobs and their saved state keep their ids. The three places that derive
+  the id today (the runner twice, account reconciliation once) all call it. A new execution means
+  a new turn, a new receipt and a new checkpoint thread. Nothing collides with the old attempt.
+- **What carries over.** These are owned by the job, not by the conversation:
+  - Purchases. The provider ledger keys an operation by job and exact request, so any repeated
+    call with the same arguments comes back from the ledger without buying again.
+  - Claims already written for the job.
+  - The job's acquired evidence. The new execution receives a fresh evidence grant over the
+    job's sources, the same way a first attempt does.
+  - The shared allowance and everything already counted against it. A restart may need a top-up,
+    because the fresh agent spends more of it.
+- **What does not carry over.** The old conversation and the old workspace notes. Both were
+  produced under the old instructions.
+- **When it happens:**
+  - Automatically, at claim time, when §3.1 finds the instructions changed. This is recorded with
+    the actor `system:profile_changed`.
+  - Explicitly, when an admin resumes with `restart_fresh`, for example because a conversation went
+    wrong. This is recorded with the admin as the actor.
+- Account reconciliation reads the job's current execution, so its pages build on the latest
+  attempt.
+
+### 3.3 Specialists
+
+A child turn is keyed by its delegation id. A completed child is already replayed
+from its result. A child that was mid-flight resumes through the same three steps. When a resumed
+parent re-runs its pending delegation, the child's own resume or replay decides the result.
+
+### 3.4 Job states
 
 | Job state | Interrupted (lease lost, deploy, crash) | Failed (`needs_review`) |
 |---|---|---|
 | How it re-enters | Automatic, as today. The driver requeues it. | Only through the resume operation. |
-| What the runner does | §3.1 resume | §3.1 resume |
+| What the runner does | §3.1 resume, or §3.2 restart | §3.1 resume, or §3.2 restart |
 | Attempt counter | +1 on claim, as today | +1 on claim, as today |
 
 The account generation must treat a resumed job as in flight again. Its pages wait for the job and
 are rewritten when it settles, through the same signal the Doetsch link used by hand. A resumed
 person job reports its result to its account's current generation, as a fresh launch would.
 
-### 3.3 The resume operation
+### 3.5 The resume operation
 
 One function, used by the script and the endpoint:
 
-`resume_research_job(conn, *, workspace_id, job_id, actor, reason, top_up) -> ResumeResult`
+`resume_research_job(conn, *, workspace_id, job_id, actor, reason, top_up, restart_fresh=False)
+-> ResumeResult`
 
 **Allowed from:** `needs_review`; `suspended`; or `in_progress` with no open fleet task (stranded,
 the existing requeue script's definition).
@@ -138,7 +172,6 @@ the existing requeue script's definition).
 | `run_cancelled` | The run was cancelled. |
 | `privacy_stopped` | The job or its generation was stopped for privacy. |
 | `outputs_frozen` | The workspace's outputs were frozen by the pre-fix finalize bug (the six 2026-10-03 jobs). |
-| `resume_profile_changed` | Detected at claim time (§3.1). It lands the job back in `needs_review` with this code. |
 | `reason_required` | No reason was given. |
 
 **What it writes, in one transaction:**
@@ -151,11 +184,13 @@ the existing requeue script's definition).
 - **Top-up, if given:** explicit increments to the job's allowance limits for model calls, tool
   calls, delegations and runtime minutes. Each increment is a non-negative integer added to the
   limit. Used counters are never touched.
+- **Restart, if `restart_fresh`:** the job's restart counter is incremented (§3.2).
 - **Audit row** in a new table, `arv2_research_job_resume`: id, workspace, job, attempt before the
-  resume, actor, reason, top-up, and created time. The actor is a user id from the endpoint, or
-  `operator:<name>` from the script.
+  resume, actor, reason, top-up, whether it restarted, and created time. The actor is a user id
+  from the endpoint, `operator:<name>` from the script, or `system:profile_changed` for an
+  automatic restart.
 
-### 3.4 Script
+### 3.6 Script
 
 `scripts/resume_arv2_research_job.py`, in the shape of the stranded-job requeue script.
 
@@ -163,26 +198,38 @@ the existing requeue script's definition).
   stranded. For each it shows workspace, account or person, failure code, rounds, spend, and
   whether it can be resumed, with the refusal code if not. It writes nothing.
 - **`--job <id> --reason "<text>" [--top-up-runtime-minutes N] [--top-up-model-calls N]
-  [--top-up-tool-calls N] [--top-up-delegations N]`:** prints the plan.
+  [--top-up-tool-calls N] [--top-up-delegations N] [--restart-fresh]`:** prints the plan.
 - **Add `--apply`:** performs it.
 - In production it runs from a worker container, the way the 2026-10-13 repairs ran.
 
-### 3.5 Endpoint
+### 3.7 Endpoints
 
-`POST /frontend/v1/research/jobs/{job_id}/resume`, with the workspace taken from the `X-Workspace-Id`
-header like every other `/frontend/v1` route.
+Both take the workspace from the `X-Workspace-Id` header, like every other `/frontend/v1` route, and
+both require `research.approve_spend`.
+
+**List stuck jobs:** `GET /frontend/v1/research/jobs/stuck`
+
+- Returns the workspace's `needs_review`, `suspended` and stranded jobs, newest first. Each one
+  carries: job id, run id, account (id and name), person (id and name) for a person job, state
+  (`failed` or `stalled`), failure code and message, rounds, tool calls, spend, when it stopped,
+  and `resumable` with the refusal code when it is false.
+- This is the same reading the script prints, from one shared query.
+- It is meant for a "research needing attention" screen. That screen's design is still owed.
+
+**Resume one job:** `POST /frontend/v1/research/jobs/{job_id}/resume`
 
 - **Permission:** `research.approve_spend`, which only workspace owners and admins hold. A top-up
   approves more spend, so this is the existing permission for exactly that decision.
-- **Body:** `{ "reason": string, "top_up": { "runtime_minutes"?, "model_calls"?, "tool_calls"?,
-  "delegations"? } }`
-- **200:** `{ job_id, status: "suspended", attempt, top_up_applied }`
+- **Body:** `{ "reason": string, "restart_fresh"?: boolean, "top_up": { "runtime_minutes"?,
+  "model_calls"?, "tool_calls"?, "delegations"? } }`
+- **200:** `{ job_id, status: "suspended", attempt, restarted, top_up_applied }`
 - **403:** viewer or operator.
 - **404:** the job is not in this workspace. Cross-workspace ids look the same as missing ones.
-- **409:** a refusal from §3.3, with its code.
-- The contract is recorded in `apps/frontend/docs/api-contracts/` when the button is designed.
+- **409:** a refusal from §3.5, with its code.
+- Both contracts are recorded in `apps/frontend/docs/api-contracts/` when the screens are
+  designed.
 
-### 3.6 Settings
+### 3.8 Settings
 
 None. The operation has no flag. Its permission gates it, and every action is audited.
 
@@ -202,26 +249,32 @@ database with no provider keys. A scripted model stands in for the LLM.
 4. **Failed, then resumed:** a job lands `needs_review` from an injected failure. The resume
    operation queues it, it completes, the audit row exists, counters are kept, the top-up is
    applied, and the account pages are rewritten.
-5. **Refusals:** completed, already queued, run cancelled, privacy stopped, outputs frozen, profile
-   changed between attempts, no reason.
-6. **Endpoint:** viewer and operator get 403, admin and owner get 200, another workspace's job
-   gets 404, and a second call is a no-op.
-7. **Script:** a dry run writes nothing, and `--apply` matches the endpoint's effect.
-8. **Live proof, founder-triggered, spends money:** on the lane, restart the workers in the middle
+5. **Instructions changed between attempts:** the claim restarts the job under a new execution.
+   The old receipt and checkpoint are untouched. A repeated purchase with the same arguments comes
+   back from the ledger without a second charge. Claims already written survive. The audit row
+   names `system:profile_changed`.
+6. **Explicit restart:** `restart_fresh` behaves the same way, with the admin as the actor.
+7. **Existing ids are stable:** a job with restart count 0 derives exactly today's execution id.
+8. **Refusals:** completed, already queued, run cancelled, privacy stopped, outputs frozen, no
+   reason.
+9. **Endpoints:** viewer and operator get 403, admin and owner get 200, another workspace's job
+   gets 404, a second resume is a no-op, and the list shows exactly the stuck jobs with the right
+   `resumable` flags.
+10. **Script:** a dry run writes nothing, and `--apply` matches the endpoint's effect.
+11. **Live proof, founder-triggered, spends money:** on the lane, restart the workers in the middle
    of a real person job. It continues and completes.
 
 ## 5. Risks and open questions
 
-- **Profile changed between attempts.** This spec refuses, which is the safe default. The other
-  choice is to rebuild under the new profile and lose the saved conversation. Founder ruling
-  wanted.
+- **Profile changed between attempts. Founder ruling 2026-10-14: restart fresh** (§3.2). It
+  should be rare, because each job pins its recipe version at launch. It only happens when a pinned
+  recipe's own files change in place or are retired, or a shared tool changes shape.
 - **The six 2026-10-03 jobs. Founder ruling 2026-10-14: leave them.** They are refused as
   `outputs_frozen`, and no one-off repair unfreezes them. Their research is superseded by later
   runs.
 - **A step that dies inside a provider call.** The ledger records the dispatch first, so the step
   comes back as outcome unknown and is not repurchased. The agent sees a gap, not a duplicate
   charge. This is intended.
-- **Listing in the API.** The endpoint resumes one job by id. The research progress card already
-  carries the job, and the script lists across workspaces. Add a list endpoint only if the button
-  design needs one.
-- **Retry button.** Not in this build. It needs a design ruling first.
+- **Listing in the API. Founder ruling 2026-10-14: include it** (§3.7).
+- **Screens.** The Retry button and the "research needing attention" screen are not in this build.
+  They need a design ruling first. The endpoints are their contracts.
