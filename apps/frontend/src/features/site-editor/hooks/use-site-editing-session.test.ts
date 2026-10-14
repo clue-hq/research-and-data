@@ -199,3 +199,20 @@ test("review F1: a refused edit is never sent again by typing made before its re
   assert.equal(headingOf(server.site), "Old headline");
   await mounted.unmount();
 });
+
+test("review F2: flushed canvas typing overtaken by a dock edit is proposed again and saved, never shown-but-lost", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  await selectCta(mounted);
+  mounted.typeOnCanvas("hero", "Typed on canvas");
+  mounted.frame.flushChange(); // posted, not yet handled by the app…
+  mounted.latest().inspector.onCommit("heading", "From the dock"); // …when the app's own edit moves the copy
+  await mounted.settle(12);
+  await mounted.flushCanvas(); // the frame's re-proposal (debounced) goes out
+  await mounted.settle(12);
+  assert.equal(headingOf(server.site), "Typed on canvas");
+  assert.equal(headingOf(server.site, "cta"), "From the dock");
+  assert.equal(headingOf(mounted.latest().site), "Typed on canvas");
+  assert.equal(headingOf(mounted.frame.getState().site), "Typed on canvas");
+  await mounted.unmount();
+});

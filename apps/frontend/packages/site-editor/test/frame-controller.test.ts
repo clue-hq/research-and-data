@@ -259,3 +259,33 @@ test("re-describing the selected section after an outside copy posts selected ev
   assert.equal(selected.length, before + 1);
   assert.equal((selected.at(-1)!.payload as { componentType: string }).componentType, "StatsBand");
 });
+
+// Sync-fix review F2: a proposal the app refused because its own patch (a dock edit, an image placed)
+// overtook it must not be lost while the canvas keeps showing the typing: a patch at a newer revision
+// than the last proposal's base makes the frame propose again, from the patch's revision.
+test("review F2: a patch that overtakes a sent proposal makes the frame propose again from the patch's revision", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 7 }));
+  h.controller.pageEdited("/", page("typed and flushed"));
+  h.timers.at(-1)!();
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "From the dock" }, route: "shell", rev: 8 }, ctx));
+  assert.ok(h.timers.length >= 2, "a re-proposal is scheduled");
+  h.timers.at(-1)!();
+  const proposals = h.posts.filter((post) => post.type === "changed").map((post) => post.payload as { site: SiteDocument; baseRev: number });
+  assert.deepEqual(proposals.map((proposal) => proposal.baseRev), [7, 8]);
+  assert.equal(headingOf(proposals[1].site), "typed and flushed");
+  assert.equal(proposals[1].site.shell!.header.preparedFor, "From the dock");
+});
+
+test("a patch with no proposal outstanding, or one already re-based, proposes nothing", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 7 }));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "Dock" }, route: "shell", rev: 8 }, ctx));
+  assert.equal(h.timers.length, 0);
+  h.controller.pageEdited("/", page("typed"));
+  h.timers.at(-1)!();
+  await h.controller.receive(appToFrame("replace_site", { site: withHeading("from the server"), rev: 9 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "Dock again" }, route: "shell", rev: 10 }, ctx));
+  h.timers.forEach((run) => run());
+  assert.equal(h.posts.filter((post) => post.type === "changed").length, 1, "a replaced copy ended the outstanding proposal");
+});

@@ -94,6 +94,9 @@ export class FrameController {
   /** While an init loads its agent sections, the copy it will show: every update that arrives
    * meanwhile is applied here instead of being dropped (review finding K3-5). */
   private loading: { site: SiteDocument; rev: number; route: string } | null = null;
+  /** The base revision of the last proposal sent, until a replaced copy ends it: the app may have
+   * refused it because its own patch overtook it (sync-fix review F2). */
+  private proposedFrom: number | null = null;
 
   constructor(private readonly deps: FrameControllerDeps) {}
 
@@ -233,12 +236,16 @@ export class FrameController {
   flushChange(): void {
     if (!this.changePending) return;
     this.cancelChange();
-    if (this.state.site) this.post("changed", { site: this.state.site, baseRev: this.state.rev });
+    if (this.state.site) {
+      this.proposedFrom = this.state.rev;
+      this.post("changed", { site: this.state.site, baseRev: this.state.rev });
+    }
   }
 
   private async init(documentId: string, payload: AppToFramePayloads["init"]): Promise<void> {
     const generation = ++this.initGeneration;
     this.cancelChange();
+    this.proposedFrom = null;
     this.loading = { route: payload.route, rev: payload.rev, site: payload.site };
     this.set({ brand: null, documentId, mode: payload.mode, sections: [], selection: null, site: null, status: "loading" });
     let sections: LoadedSection[];
@@ -268,6 +275,7 @@ export class FrameController {
     }
     // A different copy wins over an unsent edit, exactly as the web lane's 409 drops one.
     this.cancelChange();
+    this.proposedFrom = null;
     const route = pageFor(site, this.state.route) ? this.state.route : "/";
     const previous = this.state.selection;
     const selection = previous && componentProps(site, previous.target, previous.componentId) ? previous : null;
@@ -325,6 +333,7 @@ export class FrameController {
   /** A dock patch: applied over the copy on screen, so the marketer's unsent typing is kept and
    * the next proposal carries both, from the patch's revision. */
   private applyOutsideEdit(site: SiteDocument, target: SiteTarget, rev: number): void {
+    this.reproposeOver(rev);
     if (site === this.state.site) {
       this.set({ rev });
       return;
@@ -334,6 +343,16 @@ export class FrameController {
       const page = pageFor(site, target);
       if (page) this.puck?.showPage(page, this.selectedPageSection());
     }
+  }
+
+  /** A patch at a newer revision than the last proposal's base: the app refuses a proposal its own
+   * patch overtook, but the patch was applied over the canvas, which still shows that typing. So the
+   * frame proposes again (debounced), from the patch's revision; if the app had already taken it, the
+   * repeat is the app's own copy and changes nothing. */
+  private reproposeOver(rev: number): void {
+    if (this.proposedFrom === null || this.proposedFrom >= rev || this.state.mode !== "edit") return;
+    this.proposedFrom = null;
+    this.scheduleChange();
   }
 
   private selectedPageSection(): string | null {
