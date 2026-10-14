@@ -127,6 +127,11 @@ fetch images through the frontend's narrow public proxy
    `CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED=false` and
    `CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED=false` (each switch on without `CLUE_SUMBLE_API_KEY`
    makes the service refuse to start).
+   **The site editor's signing secret:** `CLUE_SITE_SECTION_LINK_SECRET` — a fresh random value of
+   at least 32 characters (`openssl rand -hex 32`), referenced by `design-api` only. It signs the
+   short-lived links the site editor loads agent-written sections through. Without it every such
+   section fails to load, so in production the design API **refuses to start** without it (review
+   finding S7-4), and `check_prod_env.py` refuses a literal value shorter than 32 characters.
 6. Three services; paste each one's file into Variables → Raw Editor. **`platform-api` and `design-api`
    run the image CI built and tested** — they never build it themselves (2026-10-03): Settings → Source →
    Docker image `ghcr.io/clue-hq/clue-backend:production`, and under **Registry Credentials** a GitHub
@@ -154,8 +159,25 @@ fetch images through the frontend's narrow public proxy
    `CLUE_APP_ORIGIN=https://app.cluehq.ai`, `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`,
    `CLUE_PROJECTS_API_BASE_URL=/api/clue`, and the production Clerk pair
    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…` / `CLERK_SECRET_KEY=sk_live_…` (the publishable key
-   is baked in at build, so redeploy after changing it). Domain `app.cluehq.ai`, **DNS only**. Its
-   build runs the editor wasm check in strict mode (`WASM_PREFLIGHT_STRICT=1`).
+   is baked in at build, so redeploy after changing it), and
+   **`CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai`** — the site editor's domain (7a). Without it
+   every website shows "The website editor is not configured" (the server logs this at start-up).
+   Domain `app.cluehq.ai`, **DNS only**. Its build runs the editor wasm check in strict mode
+   (`WASM_PREFLIGHT_STRICT=1`).
+7a. **Site editor** service (Wave 2; review finding S7-2) — the Puck website editor, on its own
+   domain so agent-written code never runs on the app's: `https://<label>.edit.deeppresence.ai`, one
+   subdomain per workspace. Full notes: `apps/frontend/docs/railway-deployment.md` ("Site editor
+   service"). New service from this repo, branch **`main`**, Root Directory unset, variable
+   `RAILWAY_DOCKERFILE_PATH=/apps/frontend/packages/site-editor/Dockerfile.railway`, health check
+   `/healthz`. Variables: `CLUE_APP_ORIGIN=https://app.cluehq.ai` (exactly the frontend's — the only
+   origin allowed to frame the editor), `CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai` (exactly the
+   frontend's), `LUMEN_API_BASE_URL=http://design-api.railway.internal:8010`. **Nothing else: no
+   Clerk keys, no database or Redis URL, no secret of any kind** — agent-written code runs on this
+   domain. Domain: the wildcard custom domain `*.edit.deeppresence.ai`, with the wildcard CNAME and
+   certificate records Railway shows added in `deeppresence.ai`'s DNS. Nothing with a login may ever
+   run on `deeppresence.ai` or a subdomain of it. If the app and the editor disagree on the suffix or
+   the app origin, or the DNS is missing, the canvas says "The website editor did not answer" after
+   30 seconds.
 8. Check the service files (they pass as generated; re-run after any edit), and before deploying
    boot each backend locally with its **real** Railway variables — only the database and Redis are
    swapped for throwaway ones; no value is printed — so every startup refusal shows at once instead
@@ -166,7 +188,13 @@ fetch images through the frontend's narrow public proxy
    python3 deploy/check_prod_env.py platform-api ~/clue-deploy/railway/2-platform-api.env
    python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
    python3 deploy/check_prod_env.py page-origin ~/clue-deploy/railway/4-page-origin.env
+   python3 deploy/check_prod_env.py frontend ~/clue-deploy/railway/5-frontend.env
+   python3 deploy/check_prod_env.py site-editor ~/clue-deploy/railway/6-site-editor.env ~/clue-deploy/railway/5-frontend.env
    ```
+   `5-frontend.env` and `6-site-editor.env` are the frontend's (7) and the site editor's (7a)
+   variables, copied from Railway's Raw Editor. The site editor is always checked against the
+   frontend: the two must name the same editor domain and app origin, and the editor must carry no
+   secret.
    The image sets `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT` and
    `LUMEN_SITE_RENDER_CHROMIUM_SANDBOX` (0: containers cannot give the site renderer's Chromium its
    own sandbox — `docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md`); the check refuses any line for them. Until the release PR merges `main`, every backend build

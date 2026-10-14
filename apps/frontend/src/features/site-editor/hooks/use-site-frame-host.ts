@@ -15,7 +15,13 @@ export interface SiteFrameHost {
   iframeRef: RefObject<HTMLIFrameElement | null>;
   post: <T extends AppToFrameType>(type: T, payload: AppToFramePayloads[T], documentId: string) => void;
   src: string | null;
+  /** The frame on the canvas has not said `ready` within the wait (review finding S7-2). */
+  timedOut: boolean;
 }
+
+/** How long a frame may take to say `ready` before the canvas says the editor did not answer: its
+ * bundle on a slow network, never a frame that cannot load at all. */
+export const SITE_EDITOR_READY_TIMEOUT_MS = 30_000;
 
 /** One editor frame per site document shown (and per editor origin). A fresh nonce rides in the URL
  * fragment (never sent to a server); every inbound message is checked by `acceptFrameMessage` (exact
@@ -30,11 +36,13 @@ export function useSiteFrameHost({
   documentId,
   editorOrigin,
   onMessage,
+  readyTimeoutMs = SITE_EDITOR_READY_TIMEOUT_MS,
 }: {
   /** The site the canvas shows (null: none, e.g. a web or ad tab). */
   documentId: string | null;
   editorOrigin: string | null;
   onMessage: (message: FrameToAppMessage) => void;
+  readyTimeoutMs?: number;
 }): SiteFrameHost {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   // Which document the current frame belongs to, and its generation. React's adjust-state-on-prop
@@ -52,6 +60,15 @@ export function useSiteFrameHost({
   );
   const documentIdRef = useRef<string | null>(null);
   const [boot, setBoot] = useState(0);
+  // Review finding S7-2: which frame (by its nonce) has said `ready`, and which ran out of time
+  // first. Per frame, because a different site gets a fresh frame.
+  const [answered, setAnswered] = useState<string | null>(null);
+  const [lateNonce, setLateNonce] = useState<string | null>(null);
+  useEffect(() => {
+    if (!nonce) return;
+    const timer = setTimeout(() => setLateNonce(nonce), readyTimeoutMs);
+    return () => clearTimeout(timer);
+  }, [nonce, readyTimeoutMs]);
   const onMessageRef = useRef(onMessage);
   useEffect(() => {
     onMessageRef.current = onMessage;
@@ -67,6 +84,7 @@ export function useSiteFrameHost({
       if (!message) return;
       if (message.type === "ready") {
         documentIdRef.current = null;
+        setAnswered(nonce);
         setBoot((count) => count + 1);
       }
       onMessageRef.current(message);
@@ -85,5 +103,11 @@ export function useSiteFrameHost({
     [editorOrigin, nonce],
   );
 
-  return { boot, iframeRef, post, src: editorOrigin && nonce ? `${editorOrigin}/#n=${nonce}` : null };
+  return {
+    boot,
+    iframeRef,
+    post,
+    src: editorOrigin && nonce ? `${editorOrigin}/#n=${nonce}` : null,
+    timedOut: nonce !== null && lateNonce === nonce && answered !== nonce,
+  };
 }

@@ -59,6 +59,37 @@ def link_secret() -> bytes | None:
     return value.get_secret_value().encode("utf-8") if value is not None and value.get_secret_value() else None
 
 
+#: Review finding S7-4: a shorter value is a placeholder, not a secret (deploy/check_prod_env.py's
+#: SECTION_LINK_SECRET_MIN is the same number).
+MIN_SECRET_LENGTH = 32
+
+
+def is_production() -> bool:
+    """This process is a production deployment (``CLUE_AUTH_ENVIRONMENT=production``)."""
+
+    from clue_config import load_settings
+
+    return load_settings().auth_environment == "production"
+
+
+def production_secret_problem(secret: bytes | None, *, production: bool) -> str | None:
+    """Why the design API must not start, or ``None``. Review finding S7-4: the secret is read only
+    when a section link is used, so a production deploy that forgot it (or carries a placeholder)
+    started fine and then failed every agent section in the editor, silently. Development keeps
+    working without one (the editor then shows the section as unavailable)."""
+
+    if not production:
+        return None
+    if not secret:
+        return (
+            "CLUE_SITE_SECTION_LINK_SECRET is not set: every agent-written section would fail to "
+            "load in the site editor. Set the shared variable (docs/deploy/runbook.md §2 step 5)."
+        )
+    if len(secret) < MIN_SECRET_LENGTH:
+        return f"CLUE_SITE_SECTION_LINK_SECRET must be at least {MIN_SECRET_LENGTH} characters"
+    return None
+
+
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 

@@ -100,3 +100,41 @@ def test_without_a_secret_no_link_is_minted_or_honoured(app, workspace_id: str) 
     minted = client.post(f"/documents/{document['id']}/site/section-links", json={})
     assert minted.status_code == 503 and minted.json()["detail"]["code"] == "site_section_links.unconfigured"
     assert TestClient(app).get(f"/site-sections/{digest}.mjs", params={"t": "x"}).status_code == 503
+
+
+# Review finding S7-4: the design API read the secret only when a link was used, so a deploy that
+# forgot it booted fine and then failed every agent section in the editor, silently (a Railway
+# ${{shared.…}} reference to a variable never created resolves to empty, and passes any file check).
+# In production it now refuses to start without a real secret.
+from lumen_api import site_section_links  # noqa: E402
+
+
+def test_s7_4_the_production_rule_for_the_secret() -> None:
+    rule = site_section_links.production_secret_problem
+    assert rule(None, production=False) is None, "development keeps working without one"
+    assert rule(b"x", production=False) is None
+    assert "not set" in (rule(None, production=True) or "")
+    assert "at least 32" in (rule(b"a" * 31, production=True) or "")
+    assert rule(b"a" * 32, production=True) is None
+
+
+@pytest.mark.parametrize("secret", [None, b"x", b"a" * 31])
+def test_s7_4_in_production_the_design_api_refuses_to_start_without_a_real_secret(
+    tmp_path: Path, design_storage, monkeypatch: pytest.MonkeyPatch, secret: bytes | None
+) -> None:
+    monkeypatch.setattr(site_section_links, "is_production", lambda: True)
+    application = create_app(tmp_path / "engine-cache", storage=design_storage)
+    application.state.site_section_link_secret = lambda: secret
+    refused = pytest.raises(RuntimeError, match="CLUE_SITE_SECTION_LINK_SECRET")
+    with refused, TestClient(application):
+        pass
+
+
+def test_s7_4_with_a_real_secret_production_starts(
+    tmp_path: Path, design_storage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(site_section_links, "is_production", lambda: True)
+    application = create_app(tmp_path / "engine-cache", storage=design_storage)
+    application.state.site_section_link_secret = lambda: b"a" * 32
+    with TestClient(application) as client:
+        assert client.get("/healthz").status_code == 200

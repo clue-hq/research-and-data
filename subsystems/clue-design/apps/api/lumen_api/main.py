@@ -745,6 +745,15 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Review finding S7-4: in production, refuse to start without the section-link secret
+        # (read per call elsewhere, so nothing else would notice until every agent section failed).
+        from . import site_section_links
+
+        refusal = site_section_links.production_secret_problem(
+            _app.state.site_section_link_secret(), production=site_section_links.is_production()
+        )
+        if refusal is not None:
+            raise RuntimeError(refusal)
         # uvicorn has configured its own logging by the time lifespan startup
         # runs; fold its loggers into the shared bridge so there is one stream.
         _bridge_uvicorn_loggers()

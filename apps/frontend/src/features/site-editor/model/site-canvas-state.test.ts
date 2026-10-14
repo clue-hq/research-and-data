@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SiteDocumentSchema } from "@clue/site-kit/site-document";
-import { EDITOR_NOT_CONFIGURED, siteCanvasState, type SiteCanvasInputs } from "./site-canvas-state";
+import { EDITOR_DID_NOT_ANSWER, EDITOR_NOT_CONFIGURED, siteCanvasState, type SiteCanvasInputs } from "./site-canvas-state";
 import { siteStageMounted } from "./site-stage";
 
 const filled = SiteDocumentSchema.parse({
@@ -20,6 +20,7 @@ const READY: SiteCanvasInputs = {
   editorOriginLoaded: true,
   frameError: null,
   frameReady: true,
+  frameTimedOut: false,
   loadError: null,
   loadStatus: "ready",
   shownDocumentId: "doc-a",
@@ -57,3 +58,15 @@ test("the frame is mounted for an open site, and kept warm only once an editor o
   assert.equal(siteStageMounted({ editorOrigin: "http://x.editor.localhost:3129", enabled: false, warm: true }), true);
   assert.equal(siteStageMounted({ editorOrigin: "http://x.editor.localhost:3129", enabled: false, warm: false }), false);
 });
+
+// Review finding S7-2: an editor domain the editor service does not serve, an app origin it does not
+// allow to frame it, or missing DNS left the canvas on its loading veil forever (the frame never says
+// it is ready, and nothing else reports a failure). After the frame host's timeout it says so.
+test("a frame that never answers is the error state, not an endless loading veil", () => {
+  const waiting = { ...READY, frameReady: false, shownDocumentId: null };
+  assert.equal(siteCanvasState(waiting).kind, "loading", "still within the wait");
+  assert.deepEqual(siteCanvasState({ ...waiting, frameTimedOut: true }), { kind: "error", message: EDITOR_DID_NOT_ANSWER });
+  assert.equal(siteCanvasState({ ...READY, frameTimedOut: false }).kind, "ready");
+  assert.equal(siteCanvasState({ ...READY, editorOrigin: null, frameTimedOut: true }).message, EDITOR_NOT_CONFIGURED, "not configured says so first");
+});
+

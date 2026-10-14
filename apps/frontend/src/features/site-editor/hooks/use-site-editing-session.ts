@@ -514,6 +514,7 @@ export function useSiteEditingSession({
     editorOriginLoaded: origin.loaded,
     frameError: frameError && frameError.documentId === activeDocumentId ? frameError.message : null,
     frameReady: boot > 0,
+    frameTimedOut: frame.timedOut,
     loadError: load.error,
     loadStatus: load.status,
     shownDocumentId,

@@ -1,16 +1,22 @@
 """Refuse a production env that still carries a lane default (first deployment spec §10).
 
-Usage: python3 deploy/check_prod_env.py {platform-api|design-api|worker|page-origin} <env-file>
+Usage: python3 deploy/check_prod_env.py <role> <env-file>
+         role: platform-api | design-api | worker | page-origin | frontend
+       python3 deploy/check_prod_env.py site-editor <site-editor-env-file> <frontend-env-file>
+
+The site editor is always checked against the app it serves: both must name the same editor domain
+and the same app origin, or every site loads forever (review finding S7-2).
 
 Standard library only — the worker VM runs it with its system python3 before every deploy.
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
-ROLES = ("platform-api", "design-api", "worker", "page-origin")
+ROLES = ("platform-api", "design-api", "worker", "page-origin", "frontend", "site-editor")
 #: The roles that run application code; page-origin only serves published pages.
 APP_ROLES = ("platform-api", "design-api", "worker")
 
@@ -48,6 +54,10 @@ APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY", "CLUE_METRICS_OTLP_
 #: ... and for the design API alone. Wave 2 Contract 4: without it every editor section load
 #: answers 503 site_section_links.unconfigured.
 DESIGN_API_REQUIRED = ("CLUE_SITE_SECTION_LINK_SECRET",)
+#: Review finding S7-4: a literal section-link secret shorter than this is a placeholder, not a
+#: secret. (A Railway ${{shared.…}} reference cannot be seen from a file; the design API itself
+#: refuses to start in production without a secret this long — lumen_api.site_section_links.)
+SECTION_LINK_SECRET_MIN = 32
 #: Sumble switches that make a service refuse to start without CLUE_SUMBLE_API_KEY, and whether
 #: CLUE_PRODUCT_PATH=integration_pilot turns them on when unset (clue_config.settings overlay).
 SUMBLE_SWITCHES = {
@@ -63,7 +73,8 @@ IMAGE_OWNED = {
     "CLUE_ARV2_RAW_ROOT": "podcast downloads, writable by uid 1000",
     "LUMEN_CORE_HELPER": "the design engine helper binary",
     "LUMEN_FONT_LIBRARY_MANIFEST_PATH": "the font library manifest",
-    # Review finding S7-1: .env.example's 1 (right on a Mac) breaks every site render in a container.
+    # Review finding S7-1: .env.example's 1 (right on a Mac) breaks every site render in a
+    # container.
     "LUMEN_SITE_RENDER_CHROMIUM_SANDBOX": (
         "0: the containers cannot give the site renderer's Chromium its own sandbox; see "
         "docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md"
@@ -102,6 +113,11 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     """Every way ``env`` falls short of production for ``role``; empty means it is fine."""
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}; expected one of {ROLES}")
+    # The two Node services carry none of the backend's settings: they have their own checks.
+    if role == "frontend":
+        return _frontend_problems(env)
+    if role == "site-editor":
+        return _site_editor_problems(env)
     app = role in APP_ROLES
     found: list[str] = []
     for name, wanted in {**EXACT, **(APP_EXACT if app else {})}.items():
@@ -115,6 +131,13 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     for name in required:
         if not env.get(name):
             found.append(f"{name} must be set")
+    secret = env.get("CLUE_SITE_SECTION_LINK_SECRET", "")
+    literal = secret and not secret.startswith("${{")
+    if role == "design-api" and literal and len(secret) < SECTION_LINK_SECRET_MIN:
+        found.append(
+            f"CLUE_SITE_SECTION_LINK_SECRET must be at least {SECTION_LINK_SECRET_MIN} "
+            "characters (a placeholder is not a secret; e.g. `openssl rand -hex 32`)"
+        )
     for name in NOT_LOCAL:
         if _local(env.get(name, "")):
             found.append(f"{name} points at localhost")
@@ -184,6 +207,72 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     return found
 
 
+#: What the site editor service must never carry: it serves agent-written code on its own domain
+#: and holds no login, no secret and no database access (apps/frontend/docs/railway-deployment.md).
+_EDITOR_FORBIDDEN = re.compile(
+    r"(SECRET|API_KEY|PASSWORD|TOKEN|DATABASE_URL|REDIS_URL|CLERK)", re.IGNORECASE
+)
+_DOMAIN = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def _editor_suffix_problems(env: dict[str, str]) -> list[str]:
+    suffix = env.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    if not suffix:
+        return [
+            "CLUE_SITE_EDITOR_SUFFIX must be set (the site editor's domain, e.g. "
+            "edit.deeppresence.ai)"
+        ]
+    if _local(suffix) or "localhost" in suffix or not _DOMAIN.match(suffix.lower()):
+        return [
+            "CLUE_SITE_EDITOR_SUFFIX must be a bare domain name — no scheme, port or path, never "
+            f"localhost (is {suffix!r})"
+        ]
+    return []
+
+
+def _app_origin_problems(env: dict[str, str]) -> list[str]:
+    origin = env.get("CLUE_APP_ORIGIN", "").strip()
+    if not re.match(r"^https://[a-z0-9.-]+$", origin) or _local(origin):
+        return [f"CLUE_APP_ORIGIN must be the app's https origin, with no path (is {origin!r})"]
+    return []
+
+
+def _frontend_problems(env: dict[str, str]) -> list[str]:
+    """The app (review finding S7-2): without the editor's domain, every site shows 'not
+    configured'."""
+    return [*_editor_suffix_problems(env), *_app_origin_problems(env)]
+
+
+def _site_editor_problems(env: dict[str, str]) -> list[str]:
+    found = [*_editor_suffix_problems(env), *_app_origin_problems(env)]
+    design_api = env.get("LUMEN_API_BASE_URL", "")
+    if not design_api or _local(design_api):
+        found.append(
+            "LUMEN_API_BASE_URL must be the design API's private address "
+            "(http://design-api.railway.internal:8010)"
+        )
+    for name in sorted(env):
+        if _EDITOR_FORBIDDEN.search(name):
+            found.append(
+                f"{name} must not be set: the site editor serves agent-written code and holds no "
+                "login, secret or database access"
+            )
+    return found
+
+
+def editor_pair_problems(frontend: dict[str, str], editor: dict[str, str]) -> list[str]:
+    """The app and the editor service it frames must agree, or the frame never answers: the app
+    mints addresses on its suffix, and the editor only lets its configured app origin frame it."""
+    found: list[str] = []
+    for name in ("CLUE_SITE_EDITOR_SUFFIX", "CLUE_APP_ORIGIN"):
+        if frontend.get(name, "").strip().lower() != editor.get(name, "").strip().lower():
+            found.append(
+                f"{name} differs between the frontend ({frontend.get(name)!r}) and the site "
+                f"editor ({editor.get(name)!r}); they must be the same"
+            )
+    return found
+
+
 def _platform_api_problems(env: dict[str, str]) -> list[str]:
     found: list[str] = []
     if env.get("CLUE_PROJECTIONS_AUTH_MODE") != "authenticated_principal":
@@ -236,11 +325,14 @@ def _worker_problems(env: dict[str, str]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    role = argv[1] if len(argv) > 1 else ""
+    if len(argv) != (4 if role == "site-editor" else 3):
         sys.stderr.write(f"{__doc__}\n")
         return 2
-    role, path = argv[1], Path(argv[2])
-    found = problems(parse(path.read_text(encoding="utf-8")), role)
+    env = parse(Path(argv[2]).read_text(encoding="utf-8"))
+    found = problems(env, role)
+    if role == "site-editor":
+        found += editor_pair_problems(parse(Path(argv[3]).read_text(encoding="utf-8")), env)
     for problem in found:
         sys.stdout.write(f"PROBLEM: {problem}\n")
     sys.stdout.write("OK\n" if not found else f"{len(found)} problem(s)\n")
