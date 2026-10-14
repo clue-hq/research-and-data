@@ -197,21 +197,25 @@ class DurableSiteSectionPort:
     CSS the way the renderer builds a site's (Tailwind over the text, with the brand's theme), then
     record it through the governed design_record_site_section, which reads the props schema in Lane
     A's hardened render page. Check errors come back as a list to fix; a toolchain that cannot
-    answer raises (write_section turns that into "the check crashed")."""
+    answer raises (write_section turns that into "the check crashed"). ``interactive``: the
+    workspace's sites publish live, so its sections are checked in the interactive mode."""
 
-    def __init__(self, *, store: Any, invocations: Any, run_id: str, brand: dict, node_bin: str = "node") -> None:
+    def __init__(
+        self, *, store: Any, invocations: Any, run_id: str, brand: dict, node_bin: str = "node", interactive: bool = False
+    ) -> None:
         self.store = store
         self.invocations = invocations
         self.run_id = run_id
         self.brand = brand
         self.node_bin = node_bin
+        self.interactive = interactive
 
     def compile(self, *, name: str, source: str) -> dict:
         from lumen_agent.site.inputs import SiteSection
 
         from .toolbelt.site_sections import SiteSectionRefused
 
-        answer = compile_section_source(name=name, source=source, brand=self.brand)
+        answer = compile_section_source(name=name, source=source, brand=self.brand, interactive=self.interactive)
         if not answer.get("ok"):
             return {"ok": False, "errors": [str(error) for error in answer.get("errors") or []]}
         module_js = str(answer["moduleJs"])

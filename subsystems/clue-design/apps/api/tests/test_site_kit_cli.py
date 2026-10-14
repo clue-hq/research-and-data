@@ -103,3 +103,32 @@ def test_a_section_compiles_through_the_cli() -> None:
     assert answer["ok"] is True and "export" in answer["moduleJs"]
     refused = compile_section_source(name="QuoteBand", source=EXAMPLE.replace("text-ink-secondary", "text-red-500"), brand=_brand())
     assert refused["ok"] is False and any('class "text-red-500"' in error for error in refused["errors"])
+
+
+def test_interactive_rides_the_compile_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lumen_api import site_kit_cli
+
+    payloads: list[dict] = []
+    monkeypatch.setattr(site_kit_cli, "run_site_kit_script", lambda script, payload, **kw: payloads.append(payload) or {"ok": True})
+    compile_section_source(name="FaqAccordion", source="SRC", brand={}, interactive=True)
+    compile_section_source(name="FaqAccordion", source="SRC", brand={})
+    assert [payload["interactive"] for payload in payloads] == [True, False]
+
+
+_ACCORDION = EXAMPLE.replace(
+    'import type { Kit } from "@/puck/agent-kit";',
+    'import { useState } from "react";\nimport type { Kit } from "@/puck/agent-kit";',
+).replace(
+    "export function render",
+    "function Toggle() {\n  const [open, setOpen] = useState(false);\n"
+    '  return <button className="font-body text-body" onClick={() => setOpen(!open)} aria-expanded={open}>More</button>;\n}\n\n'
+    "export function render",
+).replace("</kit.Shell>", "<Toggle /></kit.Shell>")
+
+
+@pytest.mark.skipif(section_toolchain_missing() is not None, reason=f"section toolchain: {section_toolchain_missing()}")
+def test_an_interactive_section_compiles_only_when_the_workspace_is_live() -> None:
+    live = compile_section_source(name="QuoteBand", source=_ACCORDION, brand=_brand(), interactive=True)
+    assert live["ok"] is True, live
+    fixed = compile_section_source(name="QuoteBand", source=_ACCORDION, brand=_brand())
+    assert fixed["ok"] is False and '"onClick" is an event handler; a section is static' in fixed["errors"]

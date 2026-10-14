@@ -1,7 +1,9 @@
 // Compile one agent-written section (Wave 2 Lane B, Contract 4).
 //
 // Usage: node --import tsx bin/compile-section.ts < input.json
-// Reads {"name": string, "source": string, "brand": BrandData} from stdin and prints ONE JSON line:
+// Reads {"name": string, "source": string, "brand": BrandData, "interactive"?: boolean} from stdin
+// (interactive: the workspace's sites publish live, so the check allows state, effects, handlers and
+// timers; see src/check-section.ts) and prints ONE JSON line:
 //   {"ok": true, "name", "moduleJs", "tailwindTheme"}  or  {"ok": false, "name", "errors": [string]}
 //
 // The check is site-kit's own: the lint (brand tokens, banned names, allowed imports; the brand's
@@ -28,12 +30,14 @@ export type Compiled =
   | { ok: true; name: string; moduleJs: string; tailwindTheme: string }
   | { ok: false; name: string; errors: string[] };
 
-export async function compileSection(input: { name: string; source: string; brand: BrandData }): Promise<Compiled> {
+export type CompileInput = { name: string; source: string; brand: BrandData; interactive?: boolean };
+
+export async function compileSection(input: CompileInput): Promise<Compiled> {
   const { name, source, brand } = input;
   const fail = (errors: string[]): Compiled => ({ ok: false, name, errors });
   if (!NAME.test(name)) return fail([`section name "${name}" is not PascalCase letters and digits`]);
   // The A9 rewrite (Lane A Task 6b): checked against this brand's looks, surfaces and motion classes.
-  const errors = lint(source, lintOptionsFor(brand));
+  const errors = lint(source, { ...lintOptionsFor(brand), interactive: input.interactive === true });
   if (errors.length) return fail(errors);
 
   // Type-checked in a throwaway folder inside the package (where zod and react resolve), never
@@ -77,7 +81,7 @@ export async function compileSection(input: { name: string; source: string; bran
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const input = JSON.parse(raw) as { name: string; source: string; brand: BrandData };
+  const input = JSON.parse(raw) as CompileInput;
   console.log(JSON.stringify(await compileSection(input)));
 }
 

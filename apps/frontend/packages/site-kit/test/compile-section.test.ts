@@ -69,3 +69,39 @@ test("K2-1: a section importing a real react export the editor's old hand-writte
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.ok(result.ok && /import\s*\{[^}]*\bcache\b[^}]*\}\s*from\s*"react"/.test(result.moduleJs), result.ok ? result.moduleJs : "");
 });
+
+// Publishing live sites, phase 1 (Task 9): a live workspace compiles with `interactive`, so a
+// section may keep state and handle events; without it the same source is refused, as today.
+const ACCORDION = `import { z } from "zod";
+import { useState } from "react";
+import type { Kit } from "@/puck/agent-kit";
+
+export const schema = z.object({ id: z.string(), surface: z.string(), question: z.string(), answer: z.string() }).strict();
+
+function Item(props: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-line-subtle">
+      <button className="font-body text-body text-ink-primary" onClick={() => setOpen(!open)} aria-expanded={open}>{props.question}</button>
+      {open ? <p className="mt-4 font-body text-body text-ink-secondary">{props.answer}</p> : null}
+    </div>
+  );
+}
+
+export function render(props: z.infer<typeof schema>, kit: Kit) {
+  return (
+    <kit.Shell surface={props.surface}>
+      <Item question={props.question} answer={props.answer} />
+    </kit.Shell>
+  );
+}
+`;
+
+test("interactive: an accordion with state and a click handler compiles; without interactive it is refused", async () => {
+  const live = await compileSection({ name: "FaqAccordion", source: ACCORDION, brand: garner(), interactive: true });
+  assert.equal(live.ok, true, JSON.stringify(live));
+  assert.ok(live.ok && /from\s*"react"/.test(live.moduleJs), live.ok ? live.moduleJs : "");
+  const fixed = await compileSection({ name: "FaqAccordion", source: ACCORDION, brand: garner() });
+  assert.equal(fixed.ok, false);
+  assert.ok(!fixed.ok && fixed.errors.includes('"onClick" is an event handler; a section is static'), JSON.stringify(fixed));
+});

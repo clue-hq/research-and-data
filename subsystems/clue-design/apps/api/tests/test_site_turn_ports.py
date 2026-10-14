@@ -275,12 +275,19 @@ def test_the_section_port_compiles_records_and_answers_with_the_section(monkeypa
     section = answer["section"]
     assert (section.name, section.digest, section.props_schema) == ("StepsBand", "d" * 64, SECTION_SCHEMA)
     assert section.module_js == "export {};" and section.css == '/* @import "tailwindcss"; */.px-6{}'
-    assert seen == [{"name": "StepsBand", "source": "SRC", "brand": {"assets": {}}}]
+    assert seen == [{"name": "StepsBand", "source": "SRC", "brand": {"assets": {}}, "interactive": False}]
     assert invocations.calls == [(
         "design_record_site_section",
         {"name": "StepsBand", "source": "SRC", "module_js": "export {};", "css": '/* @import "tailwindcss"; */.px-6{}'},
         "ws_sections", "agent", "run_s1",
     )]
+
+
+def test_a_live_workspace_compiles_its_sections_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _compiled(monkeypatch, {"ok": False, "name": "StepsBand", "errors": ["x"]})
+    port = DurableSiteSectionPort(store=_SectionStore(), invocations=_SectionInvocations(), run_id="r", brand={}, interactive=True)
+    port.compile(name="StepsBand", source="SRC")
+    assert seen == [{"name": "StepsBand", "source": "SRC", "brand": {}, "interactive": True}]
 
 
 def test_check_errors_pass_through_and_nothing_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:

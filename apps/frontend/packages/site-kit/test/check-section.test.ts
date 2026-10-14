@@ -225,3 +225,66 @@ test("motion classes are still refused wherever className holds them", () => {
     for (const cls of refused) assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is motion of your own`)), `${cls}: ${errors.join("; ")}`);
   }
 });
+
+// Publishing live sites, phase 1 (Task 9): in a live workspace a section runs in the visitor's
+// browser, so the check's `interactive` mode allows state, effects, handlers, timers and page reads.
+const interactive = { interactive: true } as const;
+const section = (body: string, imports = "") => `import { z } from "zod";\n${imports}import type { Kit } from "@/puck/agent-kit";\nexport const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n${body}\nexport function render(props: z.infer<typeof schema>, kit: Kit) { return <kit.Shell surface={props.surface}><Inner /></kit.Shell>; }\n`;
+
+test("interactive: state, effects, handlers, timers and page reads are allowed", () => {
+  const source = section(
+    `function Inner() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setOpen(true), 10); const w = window.innerWidth; void w; return () => clearTimeout(t); }, []);
+  return <button className="font-body text-body" onClick={() => setOpen(!open)} aria-expanded={open}>Toggle</button>;
+}`,
+    'import { useEffect, useState } from "react";\n',
+  );
+  assert.deepEqual(lint(source, interactive), []);
+  assert.ok(lint(source).some((e) => e.includes('"onClick" is an event handler')), "static mode is unchanged");
+});
+
+test("interactive: eval, Function, raw HTML, cookies, dynamic import and foreign elements are still refused", () => {
+  for (const [code, expected] of [
+    ["eval('1')", '"eval"'],
+    ["new Function('return 1')", '"Function"'],
+    ["document.cookie", '"cookie"'],
+    ["import('x')", '"import("'],
+  ] as const) {
+    const errors = lint(section(`function Inner() { ${code}; return null; }`), interactive);
+    assert.ok(errors.some((e) => e.includes(expected)), `${code}: ${JSON.stringify(errors)}`);
+  }
+  for (const tag of ["script", "iframe", "form", "object", "embed"]) {
+    const errors = lint(section(`function Inner() { return <${tag} />; }`), interactive);
+    assert.ok(errors.some((e) => e.includes(`<${tag}>`)), tag);
+  }
+  const raw = lint(section(`function Inner() { return <div dangerouslySetInnerHTML={{ __html: "x" }} />; }`), interactive);
+  assert.ok(raw.some((e) => e.includes("dangerouslySetInnerHTML")));
+});
+
+test("interactive: a raw <a> is still refused", () => {
+  const errors = lint(section(`function Inner() { return <a href="/x">x</a>; }`), interactive);
+  assert.ok(errors.includes(LINK_REFUSAL), errors.join("; "));
+});
+
+test("static mode is exactly as before: foreign elements are not refused by the check (publish strips them)", () => {
+  for (const tag of ["script", "iframe", "form", "object", "embed"]) {
+    assert.deepEqual(lint(section(`function Inner() { return <${tag} />; }`)), [], tag);
+  }
+});
+
+test("the live skill's accordion passes interactive mode with Garner's options", () => {
+  const accordion = section(
+    `function Inner() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-line-subtle">
+      <button className="font-body text-body text-ink-primary" onClick={() => setOpen(!open)} aria-expanded={open}>Question</button>
+      {open ? <p className="mt-4 font-body text-body text-ink-secondary">Answer</p> : null}
+    </div>
+  );
+}`,
+    'import { useState } from "react";\n',
+  );
+  assert.deepEqual(lint(accordion, { ...lintOptionsFor(kitBrand("garner")), interactive: true }), []);
+});

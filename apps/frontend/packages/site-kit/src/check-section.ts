@@ -11,6 +11,12 @@
 // HTML, storage, timers, event handlers). The file must export `schema` (a zod object) and
 // `render`, and must type-check.
 //
+// Interactive mode (publishing live sites, founder 2026-10-15; `LintOptions.interactive`, passed for
+// a workspace whose sites publish live): the section runs in the visitor's browser, so state,
+// effects, event handlers, timers and page reads are allowed. Still refused there: eval and
+// Function, raw HTML, cookies, dynamic import, a raw <a>, and the foreign elements <script>,
+// <iframe>, <form>, <object> and <embed>. Without the option the check is exactly the static one.
+//
 // D2 (founder, 2026-10-09 and 2026-10-11): this check NEVER imports the section. The props schema,
 // and the rules about it (an id and a surface, no className or style), are read inside the design
 // API's hardened render page (lumen_api.site_render.read_section_schema), never in a platform
@@ -47,7 +53,7 @@ export const LINK_REFUSAL =
 
 /** What the brand has, so a section is checked against it (B6 passes lintOptionsFor(brand)).
  * Without a brand only the brand-independent rules run. */
-export type LintOptions = { extraSurfaces?: string[]; buttonLooks?: string[]; cardLooks?: string[]; motions?: string[] };
+export type LintOptions = { extraSurfaces?: string[]; buttonLooks?: string[]; cardLooks?: string[]; motions?: string[]; interactive?: boolean };
 
 export function lintOptionsFor(brand: BrandData): LintOptions {
   return {
@@ -170,7 +176,28 @@ const BANNED: Record<string, string> = {
   setInterval: "is a timer; a section renders once from its props",
 };
 
-function bannedNames(source: string): string[] {
+/** In a live workspace a section runs in the visitor's browser (publishing live sites, founder
+ * 2026-10-15): it may keep state, handle events, run effects and timers and read the page. Where it
+ * can send data is the published page's policy's job, not this check's. What stays refused has its
+ * own reason, below. */
+const INTERACTIVE_BANNED: Record<string, string> = {
+  eval: "runs code the check never saw",
+  Function: "runs code the check never saw",
+  dangerouslySetInnerHTML: "writes raw HTML",
+  cookie: "reads or sets cookies; a section keeps its state in React or in localStorage",
+};
+/** Elements an interactive section may not render. Interactive mode only: in static mode the check
+ * is unchanged and publish strips them, as before. */
+const FOREIGN_ELEMENTS: Record<string, string> = {
+  script: "<script> is not allowed in a section; its code is the section itself",
+  iframe: "<iframe> is not allowed in a section",
+  form: "<form> is not allowed in a section",
+  object: "<object> is not allowed in a section",
+  embed: "<embed> is not allowed in a section",
+};
+
+function bannedNames(source: string, interactive = false): string[] {
+  const banned = interactive ? INTERACTIVE_BANNED : BANNED;
   const errors: string[] = [];
   const seen = new Set<string>();
   const add = (message: string) => {
@@ -181,14 +208,22 @@ function bannedNames(source: string): string[] {
   };
   const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node) && Object.hasOwn(BANNED, node.text)) add(`"${node.text}" ${BANNED[node.text]}; a section renders its props and nothing else`);
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) add(`"import(" loads code the check never saw; a section renders its props and nothing else`);
+    if (ts.isIdentifier(node) && Object.hasOwn(banned, node.text)) {
+      add(interactive ? `"${node.text}" ${banned[node.text]}` : `"${node.text}" ${banned[node.text]}; a section renders its props and nothing else`);
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      add(interactive ? `"import(" loads code the check never saw` : `"import(" loads code the check never saw; a section renders its props and nothing else`);
+    }
     // An event handler, as a JSX prop or as a key of an object that might be spread into one.
-    if (ts.isJsxAttribute(node) || ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node)) {
+    if (!interactive && (ts.isJsxAttribute(node) || ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node))) {
       const name = node.name.getText(file).replace(/^["'`]|["'`]$/g, "");
       if (/^on[A-Z]/.test(name)) add(`"${name}" is an event handler; a section is static`);
     }
-    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === "a") add(LINK_REFUSAL);
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(file);
+      if (tag === "a") add(LINK_REFUSAL);
+      if (interactive && Object.hasOwn(FOREIGN_ELEMENTS, tag)) add(FOREIGN_ELEMENTS[tag]);
+    }
     ts.forEachChild(node, visit);
   };
   visit(file);
@@ -231,7 +266,7 @@ export function lint(source: string, options: LintOptions = {}): string[] {
       errors.push(`class "${token}" is not one of the brand's classes; the brand's colour classes are text-ink-*, bg-surface-*, text-on-surface-* and border-line-* (see brand/brand.md)`);
     }
   }
-  errors.push(...bannedNames(source));
+  errors.push(...bannedNames(source, options.interactive === true));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
   for (const { token, base, variants } of variantTokens(classNameStrings(source))) {
