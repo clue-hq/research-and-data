@@ -215,9 +215,9 @@ database with no provider keys. A scripted model stands in for the LLM.
 - **Profile changed between attempts.** This spec refuses, which is the safe default. The other
   choice is to rebuild under the new profile and lose the saved conversation. Founder ruling
   wanted.
-- **The six 2026-10-03 jobs.** They are refused as `outputs_frozen`. Unfreezing their outputs would
-  need a one-off repair, and their research is eleven days old and superseded by later runs. This
-  spec recommends leaving them as they are.
+- **The six 2026-10-03 jobs. Founder ruling 2026-10-14: leave them.** They are refused as
+  `outputs_frozen`, and no one-off repair unfreezes them. Their research is superseded by later
+  runs.
 - **A step that dies inside a provider call.** The ledger records the dispatch first, so the step
   comes back as outcome unknown and is not repurchased. The agent sees a gap, not a duplicate
   charge. This is intended.
