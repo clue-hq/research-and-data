@@ -138,8 +138,10 @@ catalog follow it. Served under `/frontend/v1/brand-context` (browser: through t
 | `POST` | `/products/:productId/remove` | The product leaves the list and every project using it; its page is hidden, not deleted |
 | `POST` | `/product-changes/:changeId/undo` | Undo a merge or a removal |
 
-Each write returns `{changeId, kind, text, productId, productName, pageDocumentId, pagePending,
-projectsUpdated, projectsNeedingChoice}`. Refusals: `404 PRODUCT_NOT_FOUND | CHANGE_NOT_FOUND`,
+Each write returns `{changeId, kind, text, productId, productName, pageDocumentId, pagePath,
+pagePending, projectsUpdated, projectsNeedingChoice}` (`pagePath`: where the product's page lives
+now; the editor follows it after a rename). A catalog line's description is the first prose
+paragraph of that product's page, and saving a product page regenerates the catalog. Refusals: `404 PRODUCT_NOT_FOUND | CHANGE_NOT_FOUND`,
 `409 PRODUCT_NOT_ACTIVE | PRODUCT_NAME_TAKEN | CHANGE_NOT_UNDOABLE`,
 `422 NAME_INVALID | MERGE_INVALID`.
 

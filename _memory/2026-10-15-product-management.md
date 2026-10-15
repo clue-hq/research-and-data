@@ -45,3 +45,14 @@ sets. Spec `docs/superpowers/specs/2026-10-15-product-management-design.md` (fou
   they stay archived (not merged); a person can undo nothing there — re-merge is not needed.
 - Item 3 (delete a page from the tree) is not built; when it is, deleting a product's main page
   must call the Remove action.
+
+## Follow-up the same day (founder: items 1, 2, 4, 5)
+- Brand context opens on Knowledge at `company/overview.md` when the link names no section.
+- The page awaits only the documents; the brand kit is read separately (`getKitView`) and streamed
+  to the client as a promise ("Loading the brand kit…" in its sections; text styles seed once).
+- Catalog descriptions come from the first prose paragraph of each product's page; saving a
+  product page regenerates the catalog. Every change returns `pagePath`.
+- A missing document path falls back to the catalog; a rename opens the page at its new path.
+- Not done (founder declined for now): a product list with menus at the top of the catalog view,
+  so a product with no page still has no menu in the app (the Head of ABM can still change it).
+- Verified: product DB suites green; frontend npm test 3304/0; design-system:build + lint + build.
