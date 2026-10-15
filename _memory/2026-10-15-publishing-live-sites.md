@@ -105,3 +105,41 @@ Owed:
   in-app-browser walk (needs: `alembic upgrade head` on lane DB clue_trenton, a workspace on
   LUMEN_SITE_LIVE_WORKSPACES, a stack restart, and — for an agent-written interactive section — one paid
   live run). Rebuild site-kit (`npm run build -w @clue/site-kit`) wherever the stack runs.
+
+## Live walk (2026-10-15, founder approved migration + Garner on the live list + one paid run)
+- Refusal wording `_UNSAFE_MARKUP` approved as drafted (founder: "your recommendation sounds right").
+- Lane DB `clue_trenton` migrated to `abf95e465478` (no clashing labels). `.env`
+  `LUMEN_SITE_LIVE_WORKSPACES=ws_c080123a7c434454898aa5ae1a8f698b` (Garner Health). site-kit rebuilt
+  (`cd apps/frontend && npm run build -w @clue/site-kit` — the workspace lives under apps/frontend).
+  Stack restarted (down + nohup up).
+- Step 1 PASS: Garner microsite v9 republished through the Share menu → revision delivery `site_live`;
+  page origin serves the live CSP (script hash + 'self'), import map, page data, runtime module;
+  in-app browser: `__clueHydrated === true`, zero console messages, all 41 requests 200/206.
+- Defects found on the walk (not phase-1 code; owners to decide):
+  1. Share menu cannot republish changed CONTENT: "Republish" appears only after a slug or settings
+     change (`apps/frontend/src/features/chat-shell/components/artifact-share-menu.tsx`,
+     `showingPublishButton = !published || slugDirty`); a site edited after its publish shows
+     "Asset published" with no way to push v9 over v7. Walk worked around it by re-saving settings.
+  2. Share menu shows `garnerhealth.pages.cluehq.ai:8049/...` locally — stored production hostname
+     plus the local port; that link does not open on a dev stack.
+  3. The site preview's sticky header button draws over the open Share menu (z-order).
+  4. Published pages set no page background (html/body transparent); in a dark-scheme browser
+     (the in-app pane) transparent sections show near-black with dark text. The page should paint
+     the brand page colour itself. Part of the founder's "brand kit defects" item, next after the walk.
+- Step 2 (paid run, one Head-of-ABM turn + one site leg turn): agent wrote `FaqAccordion`
+  (useState, one open at a time, honours `kit.editing`, brand tokens) → site v10. Republished (same
+  settings workaround) → `site_live` revision with the module in the import map.
+- DEFECT FOUND + FIXED `76b313166`: the section's module 404'd at `/p-assets/` — the section tool
+  stores modules as `text/javascript`, the publish's re-register keeps that artifact row, and
+  `check_publish_asset` demanded the exact `text/javascript; charset=utf-8`. Module failed → React
+  #418 → the FAQ vanished after hydration. Check now compares type/subtype only (canonical type
+  still served). Red-then-green DB scenario in `tests/page_origin/test_site_delivery_db.py`; unit
+  cases in `tests/design/test_publish_delivery.py`; page_origin 35 pass. The Task 8 browser test
+  missed it because its stub server serves every asset with a hard-coded type.
+- Step 3 PASS after the fix (page origin restarted): fresh tab — hydrated, 4 FAQ buttons, zero
+  console messages, all 5 p-assets 200; click Q2 opens it and closes Q1; click Q2 again closes all.
+- More walk findings (not fixed):
+  5. A section whose module fails to load does not degrade to its server HTML: the mismatch makes
+     React redraw the root and the section disappears. Decide: skip hydration (keep static HTML)
+     when a module fails, or render the failed-section marker. Founder call.
+  6. The agent's chat summary shows the internal document id ("doc_5dc5… (now version 10)").
