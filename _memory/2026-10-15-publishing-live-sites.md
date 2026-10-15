@@ -171,3 +171,8 @@ Owed:
 - GTM's subdomains under usecluehq.com must be DNS-only and added to RESERVED_LABELS (list owed by GTM).
 - Prod state 2026-10-15: page-origin on Railway answers (403 without edge secret); no Cloudflare for
   SaaS / Worker / editor DNS yet; origin/main has none of the website work (this branch 578 ahead).
+- SUPERSEDED same day: founder bought `cluehq.page` (registered 2026-10-15, expires 2028-10-15, Cloudflare
+  NS) as the PERMANENT pages domain; usecluehq.com is not used. Runbook §9 rewritten for cluehq.page.
+  PSL: requires >2 years left at filing (extend the term), role email, public abuse page, and the
+  Guidelines decline projects "not serving more than thousands of users" — filing timing is the
+  founder's call; live pages stay flag-gated until listed (spec §12).
