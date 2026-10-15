@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { z } from "zod";
 import { makeKit, type Kit } from "../src/agent-kit";
+import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { colorOf, styleOf } from "../src/brand-values";
 import { buttonLooks, cardLooks } from "../src/looks";
@@ -90,7 +91,7 @@ test("a section may stand on any of the brand's surfaces by its choice name", ()
 test("a section learns from kit.editing whether the marketer is editing it", () => {
   const seen: boolean[] = [];
   const Probe = { schema: z.object({ id: z.string(), surface: z.string() }), render: ((_p: unknown, kit: Kit) => (seen.push(kit.editing), null)) as never };
-  const config = makeConfig(garner(), { agentSections: { Probe } }) as Config;
+  const config = makeConfig(garner(), { cloneHtml: fillClone, agentSections: { Probe } }) as Config;
   const render = (config.components.Probe as { render: (p: unknown) => ReactElement }).render;
   renderToStaticMarkup(render({ id: "p", surface: "page", puck: { isEditing: true } }));
   renderToStaticMarkup(render({ id: "p", surface: "page", puck: { isEditing: false } }));

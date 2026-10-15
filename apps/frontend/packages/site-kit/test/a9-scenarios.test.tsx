@@ -23,6 +23,7 @@ import { brandData, type BrandData } from "../src/brand";
 import { isSafeIconSvg, tokenGroups } from "../src/brand-values";
 import { buildCatalog } from "../src/catalog";
 import { lint, lintOptionsFor } from "../src/check-section";
+import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { buttonLooks, cardLooks, measuredComponents, motionClassNames } from "../src/looks";
 import { surfaceClass } from "../src/sections";
@@ -102,7 +103,7 @@ type AnyConfig = { root: Renderable; components: Record<string, Renderable> };
 /** Every page through the published config's root (the shell around it), and the shell's own two
  * components through the shell-mode config. */
 function renderSite(brand: BrandData, site: Site): string {
-  const config = makeConfig(brand, { shell: site.shell as never, basePath: "/s/a9" }) as unknown as AnyConfig;
+  const config = makeConfig(brand, { cloneHtml: fillClone, shell: site.shell as never, basePath: "/s/a9" }) as unknown as AnyConfig;
   const pages = Object.values(site.pages).map((page) => renderToStaticMarkup(
     <>{config.root.render({
       title: page.root.props.title,
@@ -111,7 +112,7 @@ function renderSite(brand: BrandData, site: Site): string {
       )),
     })}</>,
   ));
-  const shellConfig = makeConfig(brand, { mode: "shell" }) as unknown as AnyConfig;
+  const shellConfig = makeConfig(brand, { cloneHtml: fillClone, mode: "shell" }) as unknown as AnyConfig;
   const shell = renderToStaticMarkup(
     <>{shellConfig.root.render({ children: <>
       {shellConfig.components.SiteHeader.render(site.shell.header)}

@@ -1,12 +1,11 @@
 import { Component, type ReactNode } from "react";
 import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "./brand";
-import {
-  fillClone,
-  type LinkReplacement,
-  type SlotValues,
-  type TextReplacement,
-} from "./clone";
+import type { Clone, LinkReplacement, SlotValues, TextReplacement } from "./clone";
+
+/** A cloned section's markup from its clone and props. `fillClone` (./clone) is one; a live page
+ * passes its own (live-page's liveConfig). `id` is the section's component id. */
+export type CloneHtml = (clone: Clone, values: SlotValues, replacements: TextReplacement[], links: LinkReplacement[], id: string) => string;
 import { CloneMarkup } from "./clone-markup";
 import { themeCss } from "./theme";
 import { makeSections } from "./sections";
@@ -57,6 +56,13 @@ export type ConfigOptions = {
   editor?: EditorParts;
   /** The site's agent-written sections (E5), by section name; they join its pages. */
   agentSections?: Record<string, AgentSectionModule>;
+  /** How a cloned section gets its markup: `fillClone` (./clone) in the editor and the server
+   * render; on a live page in the browser, the markup the server drew (live-page's liveConfig).
+   * Passed in, never imported here, so the published page's runtime carries no HTML parser. */
+  cloneHtml: CloneHtml;
+  /** "page": the clones' CSS is drawn once outside the tree (a live page, render-core); otherwise
+   * each clone carries its own. */
+  cloneCss?: "inline" | "page";
 };
 
 /** The one error boundary around every agent section, in the editor and on the published page
@@ -226,6 +232,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
               </div>
             );
           }
+          const fill = options.cloneHtml;
           const resolvedSlots = Object.fromEntries(
             Object.entries(slots ?? {}).map(([key, value]) => [
               key,
@@ -233,14 +240,14 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             ]),
           );
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
-          const html = fillClone(clone, resolvedSlots, replacements, resolvedLinks);
+          const html = fill(clone, resolvedSlots, replacements, resolvedLinks, id);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {
             const htmlFor = (key: string, value: string) =>
-              fillClone(clone, { ...resolvedSlots, [key]: value }, replacements, resolvedLinks);
+              fill(clone, { ...resolvedSlots, [key]: value }, replacements, resolvedLinks, id);
             return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
           }
-          return <CloneMarkup clone={clone} html={html} />;
+          return <CloneMarkup clone={clone} html={html} inlineCss={options.cloneCss !== "page"} />;
         },
       },
     },

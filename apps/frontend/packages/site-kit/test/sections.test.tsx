@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { lookNamed } from "../src/looks";
+import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { makeSections } from "../src/sections";
 import { validateSite } from "../src/validate";
@@ -39,7 +40,7 @@ test("a FeatureSplit draws the look it names", () => {
 });
 
 test("the shell header's button takes a look too", () => {
-  const config = makeConfig(kitBrand("garner"), { mode: "shell" }) as unknown as { components: { SiteHeader: { fields: Record<string, Field> } } };
+  const config = makeConfig(kitBrand("garner"), { cloneHtml: fillClone, mode: "shell" }) as unknown as { components: { SiteHeader: { fields: Record<string, Field> } } };
   assert.equal(config.components.SiteHeader.fields.ctaLook.label, "Button style");
 });
 

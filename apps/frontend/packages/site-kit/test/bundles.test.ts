@@ -47,3 +47,21 @@ test("the build writes the site runtime as one ES module and a shim per host lib
   }
   assert.ok(fs.readFileSync(path.join(root, "dist", "site-runtime-shims", "react.js"), "utf-8").includes(" cache"));
 });
+
+test("the site runtime carries only what a published page runs: no editor code, no HTML parser", () => {
+  execFileSync(process.execPath, ["bin/build-bundles.mjs"], { cwd: root });
+  // The build's own report of the packages inside dist/site-runtime.js, with their bytes.
+  const report = JSON.parse(fs.readFileSync(path.join(root, "dist", "site-runtime.packages.json"), "utf-8")) as {
+    bytes: number;
+    packages: Record<string, number>;
+  };
+  // Puck's editor (rich text, drag and drop, list virtualising) and the clone filler's HTML parser:
+  // a published page draws with Puck's render-only Render, and its cloned sections keep the
+  // server's markup.
+  const editorOnly = ["@tiptap/core", "prosemirror-view", "@dnd-kit/dom", "@tanstack/virtual-core", "object-hash", "node-html-parser", "he", "css-select"];
+  assert.deepEqual(editorOnly.filter((name) => name in report.packages), []);
+  const runtime = fs.statSync(path.join(root, "dist", "site-runtime.js")).size;
+  assert.equal(report.bytes, runtime);
+  // 387 KB on 2026-10-15 (react-dom 176, zod in English 132, site-kit 47, Puck's Render 9); was 1.8 MB.
+  assert.ok(runtime < 450_000, `the site runtime is ${runtime} bytes`);
+});

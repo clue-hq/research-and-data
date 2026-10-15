@@ -8,7 +8,8 @@ import type { Config, Data } from "@puckeditor/core";
 import { z } from "zod";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
-import { makeConfig } from "./config";
+import { fillClone } from "./clone";
+import { makeConfig, type CloneHtml } from "./config";
 import { SiteRoot, brandForPage, liveConfig, type LivePageData } from "./live-page";
 import type { ShellData } from "./shell";
 import { tailwindThemeCss } from "./theme";
@@ -52,6 +53,7 @@ export function renderSitePages(input: {
     basePath: input.basePath || undefined,
     shell: input.site.shell ?? undefined,
     agentSections: input.agentSections,
+    cloneHtml: fillClone,
   }) as Config;
   const pages: RenderedSitePage[] = [];
   const warnings: string[] = [];
@@ -76,10 +78,17 @@ export function renderSitePages(input: {
         shell: input.site.shell ?? null,
         brand: brandForPage(input.brand, data),
         sections: {},
+        cloneHtml: {},
       };
       // Drawn with the very config the browser builds from this page data, so the two trees match.
-      const pageConfig = liveConfig(pageData, input.agentSections);
-      body = `<div id="clue-site">${renderToString(createElement(SiteRoot, { config: pageConfig, data }))}</div>`;
+      // Each clone is filled from the whole brand (the page data's clones carry no markup) and what
+      // was drawn is recorded for the browser to draw again.
+      const drawn = pageData.cloneHtml;
+      const fillAndRecord: CloneHtml = (clone, values, replacements, links, id) =>
+        (drawn[id] = fillClone(input.brand.clones[clone.id] ?? clone, values, replacements, links));
+      const pageConfig = liveConfig(pageData, input.agentSections, fillAndRecord);
+      const tree = renderToString(createElement(SiteRoot, { config: pageConfig, data }));
+      body = `${cloneStylesheet(input.brand, data)}<div id="clue-site">${tree}</div>`;
     } else {
       body = renderToStaticMarkup(createElement(Render as never, { config, data } as never));
     }
@@ -91,6 +100,18 @@ export function renderSitePages(input: {
     pages.push(pageData ? { route, html, data: pageData } : { route, html });
   }
   return { pages, tailwindTheme: tailwindThemeCss(input.brand), size, warnings };
+}
+
+/** A live page's clone CSS: one stylesheet in front of #clue-site, each distinct stylesheet once,
+ * outside the React tree so a redraw in the browser can never drop it. Its rules are scoped to
+ * their clones (`.lumen-frag-*`), so coming before the brand's CSS changes nothing. */
+function cloneStylesheet(brand: BrandData, page: Data): string {
+  const css = new Set<string>();
+  for (const item of (page.content ?? []) as { type: string; props: Record<string, unknown> }[]) {
+    const clone = item.type === "ClonedSection" ? brand.clones[String(item.props?.fragmentId ?? "")] : undefined;
+    if (clone?.css) css.add(clone.css);
+  }
+  return css.size ? `<style data-clue-clones="">${[...css].join("\n")}</style>` : "";
 }
 
 /** A loaded agent section's props JSON Schema, or the reasons it cannot join a site. The rules are

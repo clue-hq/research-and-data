@@ -674,8 +674,11 @@ def test_live_render_returns_page_data_and_takes_the_html_over_without_a_mismatc
     site = garner_site("doc_live")
     result = site_render.render_site(site, garner_brand(), [], base_path="/acme", live=True)
     home = result.pages[0]
-    assert '<body><div id="clue-site">' in home.html
+    # #clue-site follows the clones' one stylesheet (drawn outside the React tree).
+    assert re.search(r'<body>(<style data-clue-clones="">.*?</style>)?<div id="clue-site">', home.html, re.S)
     assert home.data is not None and home.data["route"] == "/" and home.data["sections"] == {}
+    # The browser draws each clone from what the server recorded, so the page data has every one.
+    assert home.data["cloneHtml"] and all(html in home.html for html in home.data["cloneHtml"].values())
     assert not [w for w in result.warnings if w.startswith("hydration")], result.warnings
 
 

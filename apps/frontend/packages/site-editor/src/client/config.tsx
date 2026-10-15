@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Config, Fields } from "@puckeditor/core";
-import { SURFACES, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
+import { SURFACES, fillClone, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
 import { AssetPicker, CloneEditor } from "@clue/site-kit/editor";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import type { SiteShell } from "@clue/site-kit/site-document";
@@ -38,6 +38,7 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
   const config = makeConfig(brand, {
     agentSections: Object.fromEntries(sections.map((section) => [section.name, section.module])),
     editor: { AssetPicker, CloneEditor },
+    cloneHtml: fillClone,
     mode: "page",
     shell: (shell ?? undefined) as ShellData | undefined,
   }) as MutableConfig;
@@ -63,7 +64,7 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
 
 /** The header's and footer's fields, from site-kit's shell config. */
 export function shellFieldDescriptions(brand: BrandData): { footer: FieldDescription[]; header: FieldDescription[] } {
-  const config = makeConfig(brand, { mode: "shell" }) as MutableConfig;
+  const config = makeConfig(brand, { mode: "shell", cloneHtml: fillClone }) as MutableConfig;
   return {
     footer: describeFields(config.components.SiteFooter?.fields ?? {}),
     header: describeFields(config.components.SiteHeader?.fields ?? {}),

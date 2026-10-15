@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Config } from "@puckeditor/core";
 import type { ReactElement } from "react";
+import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { garner, site } from "./fixtures/garner";
 
@@ -12,14 +13,14 @@ import { garner, site } from "./fixtures/garner";
 // pinned in the browser harness (tests/site_editor/test_editor_clone_editing.py); this pins the cause.
 test("a cloned section has no load-time refill (no resolveData)", () => {
   const stored = site("garner-syracuse");
-  const config = makeConfig(garner(), { mode: "page", shell: stored.shell }) as Config;
+  const config = makeConfig(garner(), { cloneHtml: fillClone, mode: "page", shell: stored.shell }) as Config;
   assert.equal(config.components.ClonedSection.resolveData, undefined);
 });
 
 test("the editor's clone view is handed the markup a slot write would produce", () => {
   const stored = site("garner-syracuse");
   const CloneEditor = () => null;
-  const config = makeConfig(garner(), { editor: { AssetPicker: () => null, CloneEditor }, mode: "page", shell: stored.shell }) as Config;
+  const config = makeConfig(garner(), { cloneHtml: fillClone, editor: { AssetPicker: () => null, CloneEditor }, mode: "page", shell: stored.shell }) as Config;
   const hero = stored.pages["/"].content.find((item: { props: { id: string } }) => item.props.id === "hero")!;
   const render = config.components.ClonedSection.render as (props: Record<string, unknown>) => ReactElement;
   const element = render({ ...hero.props, puck: { isEditing: true } });

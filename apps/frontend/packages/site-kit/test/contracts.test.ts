@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { COMPONENT_SCHEMAS, PageSchema, ShellSchema, formatIssues } from "../src/schemas";
+import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { validateSite } from "../src/validate";
 import { garner, site } from "./fixtures/garner";
@@ -68,7 +69,7 @@ test("a stats band needs one to four stats", () => {
 });
 
 test("every component's editor fields match its schema (no drift)", () => {
-  const config = makeConfig(garner(), { basePath: "/s/x" });
+  const config = makeConfig(garner(), { cloneHtml: fillClone, basePath: "/s/x" });
   for (const [type, schema] of Object.entries(COMPONENT_SCHEMAS)) {
     const fields = Object.keys(config.components[type]?.fields ?? {}).sort();
     const keys = Object.keys(schema.shape).filter((key) => key !== "id").sort();
