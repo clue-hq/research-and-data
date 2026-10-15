@@ -75,6 +75,9 @@ class FleetTaskKind(StrEnum):
     # ARV2 display (spec 2026-09-12): one task per (subject, page) — the fleet writes the page's
     # missing and stale sections so no HTTP request ever waits on a model. Appended, never inserted.
     ARV2_DISPLAY_PAGE = "arv2_display_page"
+    # Product management (spec 2026-10-15 §6): one task per pending product page — a person's
+    # add or merge in Brand context is written in the background. Appended, never inserted.
+    PRODUCT_PAGE_WRITE = "product_page_write"
 
 
 class FleetTaskStatus(StrEnum):

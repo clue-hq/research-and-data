@@ -9,7 +9,8 @@
  * using the authenticated sibling proxy at `../design/[...path]`, which stamps
  * the re-authorized `X-Workspace-Id` server-side. This handler widens nothing:
  * GET only, path locked to a 64-hex content address, zero request headers
- * forwarded, response headers allowlisted to content-type + cache-control.
+ * forwarded, response headers allowlisted to content-type + cache-control +
+ * the upstream's access-control-allow-origin (fonts are CORS-mode fetches).
  *
  * Same testable-handler shape as `api/clue/design/[...path]/design-proxy-handler.ts`.
  */
@@ -22,8 +23,19 @@ export type PublicDesignProxyDependencies = Readonly<{
 /** The only upstream path this passthrough may reach: a content address. */
 const PUBLIC_PATH = /^asset-store\/[0-9a-f]{64}$/;
 
-/** Response headers a public asset may carry back; everything else is dropped. */
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control"] as const;
+/**
+ * Response headers a public asset may carry back; everything else is dropped.
+ * `access-control-allow-origin` rides along because the upstream route serves
+ * content-addressed public bytes with `*`, and the web editor renders a page in
+ * an origin-"null" sandboxed srcdoc iframe: images are no-cors and load without
+ * it, but `@font-face` fetches are CORS-mode, so dropping the header made every
+ * kit font silently fall back to the system stack (production, 2026-10-14).
+ */
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "cache-control",
+  "access-control-allow-origin",
+] as const;
 
 function errorResponse(
   status: number,

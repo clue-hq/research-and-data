@@ -46,7 +46,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.ports import AgentModelProvider
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
@@ -78,6 +81,7 @@ from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
 from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
+    CatalogRegenerator,
     IcpRef,
     IcpSynthesisOutcome,
     OnboardingRunWorkHandler,
@@ -146,6 +150,8 @@ from clue_api.onboarding_synthesis_wiring import (
 )
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_management import regenerate_catalog
+from clue_api.product_page_writer import build_product_page_handler
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import (
@@ -177,7 +183,7 @@ from clue_api.run_composition import (
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
-from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
+from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep_if_due
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
@@ -236,17 +242,23 @@ async def _orphan_sweep_loop(
     conn_factory: ConnFactory = transaction,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
 ) -> None:
-    """Run :func:`~clue_api.storage_wiring.run_orphan_blob_sweep` every
-    ``storage_orphan_sweep_interval_s`` seconds until cancelled. Each pass is fully isolated: a
-    sweep fault is logged and the loop continues — the orphan sweep must never sink the worker."""
-    interval = settings.storage_orphan_sweep_interval_s
+    """Every ``storage_orphan_sweep_check_interval_s`` seconds, ask whether the FLEET is due its
+    storage sweep (purge erased artifacts, then orphan blobs) and run it if so, until cancelled.
+
+    The interval ``storage_orphan_sweep_interval_s`` belongs to the fleet, not to this process:
+    :func:`~clue_api.storage_wiring.run_orphan_blob_sweep_if_due` keeps the last run in the
+    database, so a restart never resets it and one process sweeps (2026-10-09; it used to be every
+    6 h in every process, on a timer each deploy reset). Each pass is fully isolated: a sweep fault
+    is logged and the loop continues — the sweep must never sink the worker."""
+    every = timedelta(seconds=settings.storage_orphan_sweep_interval_s)
+    check = settings.storage_orphan_sweep_check_interval_s
     while True:
-        await sleep(interval)
+        await sleep(check)
         try:
             async with conn_factory() as conn:
-                deleted = await run_orphan_blob_sweep(conn, storage=storage)
-            if deleted:
-                log.info("fleet.orphan_sweep.deleted", count=len(deleted))
+                deleted = await run_orphan_blob_sweep_if_due(conn, every=every, storage=storage)
+            if deleted is not None:
+                log.info("fleet.orphan_sweep.ran", deleted=len(deleted))
         except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.orphan_sweep.error", exc_info=True)
             capture(exc)
@@ -254,8 +266,12 @@ async def _orphan_sweep_loop(
 
 def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.Task[None] | None:
     """Start the background orphan-sweep task, or ``None`` when disabled
-    (``storage_orphan_sweep_interval_s <= 0``). Must be called with a running event loop."""
-    if settings.storage_orphan_sweep_interval_s <= 0:
+    (``storage_orphan_sweep_interval_s`` or its check interval ``<= 0``). Must be called with a
+    running event loop."""
+    if (
+        settings.storage_orphan_sweep_interval_s <= 0
+        or settings.storage_orphan_sweep_check_interval_s <= 0
+    ):
         log.info("fleet.orphan_sweep.disabled")
         return None
     return asyncio.create_task(_orphan_sweep_loop(settings, storage))
@@ -692,7 +708,19 @@ def _build_onboarding_handler(
         client_binder=Stage0ClientEntityBinder(),
         synthesis=synthesis,
         reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
+        catalog_regenerator=_catalog_regenerator(storage),
     )
+
+
+def _catalog_regenerator(storage: StorageBackend) -> CatalogRegenerator:
+    """Spec 2026-10-15 §9: a re-run that met merged or removed products rebuilds the catalog."""
+
+    async def regenerate(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> object:
+        return await regenerate_catalog(
+            conn, storage, workspace_id=workspace_id, brand_id=brand_id, change_id=None
+        )
+
+    return regenerate
 
 
 def _build_catalog_reconciler_factory(
@@ -1360,6 +1388,13 @@ async def _serve() -> None:
             secrets,
             artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         )
+        # Spec 2026-10-15 §6: a person's add or merge in Brand context, written in the background.
+        product_page_handler = build_product_page_handler(
+            settings,
+            secrets,
+            storage=storage,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1374,6 +1409,7 @@ async def _serve() -> None:
             arv2_account_research_handler=arv2_account_research_handler,
             arv2_discovery_handler=arv2_discovery_handler,
             arv2_display_page_handler=arv2_display_page_handler,
+            product_page_handler=product_page_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,

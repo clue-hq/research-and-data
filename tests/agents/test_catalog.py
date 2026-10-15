@@ -138,6 +138,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-accounts-research@v18",
         "skill:manual-accounts-research@v19",
         "skill:manual-accounts-research@v2",
+        "skill:manual-accounts-research@v20",
         "skill:manual-accounts-research@v3",
         "skill:manual-accounts-research@v4",
         "skill:manual-accounts-research@v5",
@@ -157,6 +158,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-claims@v18",
         "skill:manual-claims@v19",
         "skill:manual-claims@v2",
+        "skill:manual-claims@v20",
         "skill:manual-claims@v3",
         "skill:manual-claims@v4",
         "skill:manual-claims@v5",
@@ -176,6 +178,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-discovery@v18",
         "skill:manual-discovery@v19",
         "skill:manual-discovery@v2",
+        "skill:manual-discovery@v20",
         "skill:manual-discovery@v3",
         "skill:manual-discovery@v4",
         "skill:manual-discovery@v5",
@@ -195,6 +198,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-documents-decisions@v18",
         "skill:manual-documents-decisions@v19",
         "skill:manual-documents-decisions@v2",
+        "skill:manual-documents-decisions@v20",
         "skill:manual-documents-decisions@v3",
         "skill:manual-documents-decisions@v4",
         "skill:manual-documents-decisions@v5",
@@ -214,6 +218,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-errors@v18",
         "skill:manual-errors@v19",
         "skill:manual-errors@v2",
+        "skill:manual-errors@v20",
         "skill:manual-errors@v3",
         "skill:manual-errors@v4",
         "skill:manual-errors@v5",
@@ -233,6 +238,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-fields@v18",
         "skill:manual-fields@v19",
         "skill:manual-fields@v2",
+        "skill:manual-fields@v20",
         "skill:manual-fields@v3",
         "skill:manual-fields@v4",
         "skill:manual-fields@v5",
@@ -252,6 +258,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-gates-authority@v18",
         "skill:manual-gates-authority@v19",
         "skill:manual-gates-authority@v2",
+        "skill:manual-gates-authority@v20",
         "skill:manual-gates-authority@v3",
         "skill:manual-gates-authority@v4",
         "skill:manual-gates-authority@v5",
@@ -271,6 +278,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-glossary@v18",
         "skill:manual-glossary@v19",
         "skill:manual-glossary@v2",
+        "skill:manual-glossary@v20",
         "skill:manual-glossary@v3",
         "skill:manual-glossary@v4",
         "skill:manual-glossary@v5",
@@ -290,6 +298,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-humans-screens@v18",
         "skill:manual-humans-screens@v19",
         "skill:manual-humans-screens@v2",
+        "skill:manual-humans-screens@v20",
         "skill:manual-humans-screens@v3",
         "skill:manual-humans-screens@v4",
         "skill:manual-humans-screens@v5",
@@ -309,6 +318,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-index@v18",
         "skill:manual-index@v19",
         "skill:manual-index@v2",
+        "skill:manual-index@v20",
         "skill:manual-index@v3",
         "skill:manual-index@v4",
         "skill:manual-index@v5",
@@ -328,6 +338,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-limits@v18",
         "skill:manual-limits@v19",
         "skill:manual-limits@v2",
+        "skill:manual-limits@v20",
         "skill:manual-limits@v3",
         "skill:manual-limits@v4",
         "skill:manual-limits@v5",
@@ -347,6 +358,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-siblings@v18",
         "skill:manual-siblings@v19",
         "skill:manual-siblings@v2",
+        "skill:manual-siblings@v20",
         "skill:manual-siblings@v3",
         "skill:manual-siblings@v4",
         "skill:manual-siblings@v5",
@@ -366,6 +378,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-tools@v18",
         "skill:manual-tools@v19",
         "skill:manual-tools@v2",
+        "skill:manual-tools@v20",
         "skill:manual-tools@v3",
         "skill:manual-tools@v4",
         "skill:manual-tools@v5",
@@ -385,6 +398,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-turn@v18",
         "skill:manual-turn@v19",
         "skill:manual-turn@v2",
+        "skill:manual-turn@v20",
         "skill:manual-turn@v3",
         "skill:manual-turn@v4",
         "skill:manual-turn@v5",
@@ -404,6 +418,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-workspace@v18",
         "skill:manual-workspace@v19",
         "skill:manual-workspace@v2",
+        "skill:manual-workspace@v20",
         "skill:manual-workspace@v3",
         "skill:manual-workspace@v4",
         # The attachments mount: v4 plus the `attachments/` row, the chapter that says what is in
@@ -486,6 +501,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v44",
         "skill:stage0-interview@v45",
         "skill:stage0-interview@v46",
+        "skill:stage0-interview@v47",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
         "skill:stage0-interview@v7",
@@ -628,12 +644,17 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The agent writes the discovery brief: launch_arv2_discovery@2, read_discovery_run@3;
         # stage0 v43; manual v16; recipe 33.
         "profile:head-of-abm@v70",
-        # The design leg first-turn wording and overview paging; stage0 v44; manual v17.
+        # Product management: manage_products@1; stage0 v44; manual v17; recipe 34 (main).
         "profile:head-of-abm@v71",
-        # Page briefs give Design direction, not copy; research is offered; stage0 v45; manual v18.
+        # The website line, never in production (its own v71 was the design leg's first turn and
+        # overview paging): page briefs give Design direction, not copy; stage0 v45; manual v18.
         "profile:head-of-abm@v72",
-        # For an ad, a suggested headline is only a suggestion; stage0 v46; manual v19.
+        # The website line: for an ad, a suggested headline is only a suggestion; stage0 v46;
+        # manual v19.
         "profile:head-of-abm@v73",
+        # The website release on main's v71: v73's surface plus manage_products@1; stage0 v47;
+        # manual v20; recipe 34.
+        "profile:head-of-abm@v74",
         "profile:head-of-abm@v8",
         "profile:head-of-abm@v9",
         "profile:onboarding-synthesis@v1",

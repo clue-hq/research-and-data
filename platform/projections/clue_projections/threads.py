@@ -308,12 +308,34 @@ _PROJECT_SIDEBAR_PAGE = text(
       ON t.workspace_id = :workspace_id
      AND t.project_id = p.project_id
      AND t.created_by_user_id IS NOT NULL
+    -- A chat's place in its project is its last message (2026-10-15): the newest message row,
+    -- the person's or the agent's, or a message the person sent that no turn has answered yet.
+    -- A turn the server queued on the person's behalf (``derivation``) is not a message they
+    -- sent. Renaming, pinning or titling a chat moves ``updated_at`` and is not a message, so
+    -- ``updated_at`` no longer orders chats. Each lateral read is one index probe.
+    LEFT JOIN LATERAL (
+        SELECT m.created_at
+        FROM agent_thread_message m
+        WHERE m.workspace_id = t.workspace_id AND m.thread_id = t.id
+        ORDER BY m.sequence DESC
+        LIMIT 1
+    ) last_message ON true
+    LEFT JOIN LATERAL (
+        SELECT s.requested_at
+        FROM agent_turn_submission s
+        WHERE s.workspace_id = t.workspace_id AND s.thread_id = t.id
+          AND s.derivation IS NULL
+        ORDER BY s.requested_at DESC
+        LIMIT 1
+    ) last_sent ON true
     ORDER BY
         p.pinned DESC,
         p.updated_at DESC,
         p.project_id DESC,
         t.pinned DESC NULLS LAST,
-        t.updated_at DESC NULLS LAST,
+        COALESCE(
+            GREATEST(last_message.created_at, last_sent.requested_at), t.created_at
+        ) DESC NULLS LAST,
         t.id DESC NULLS LAST
     """
 )

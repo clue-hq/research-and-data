@@ -811,8 +811,22 @@ _SVG_CAMEL = (
 _SVG_CAMEL_MAP = {name.lower(): name for name in _SVG_CAMEL}
 
 
+_INVALID_ATTRIBUTE = re.compile(r"""\s+[^\s<>=/]*["'][^\s<>=/]*=(?:"[^"]*"|'[^']*')""")
+
+
+def _drop_invalid_attributes(markup: str) -> str:
+    """Remove attributes whose NAME contains a quote, inside tags only.
+
+    A stray quote in a site's own markup (betterment.com's header <svg>, 2026-10-14) is
+    parsed into an attribute literally named `"` and serialized back as `"=""`. Browsers
+    forgive it inline; every strict SVG/XML parser rejects the saved file.
+    """
+    return re.sub(r"<[^<>]*>", lambda tag: _INVALID_ATTRIBUTE.sub("", tag.group(0)), markup)
+
+
 def repair_svg_case(markup: str) -> str:
     """Restore camelCase SVG names and give the file usable intrinsic size."""
+    markup = _drop_invalid_attributes(markup)
 
     def fix_attr(match):
         name = match.group(1)
@@ -1225,6 +1239,14 @@ def _name_overlap(text: str | None, tokens: set[str]) -> list[str]:
         return []
     low = text.lower()
     hits = [t for t in tokens if len(t) >= 3 and t in low]
+    # A two-character name ("Q2", "HP", "3M") is a real company name, but as a substring it
+    # would match inside any word, so it counts only as a whole word (q2.com, 2026-10-14:
+    # every token under 3 characters was ignored and the company's own site failed identity).
+    hits += [
+        t
+        for t in tokens
+        if len(t) == 2 and re.search(rf"(?<![a-z0-9]){re.escape(t)}(?![a-z0-9])", low)
+    ]
     # Compound-domain check: `goodmancampbell` matched by "Goodman Campbell".
     squashed = re.sub(r"[^a-z0-9]", "", low)
     for token in tokens:
@@ -1686,6 +1708,19 @@ def analyze_lockup(candidate: LadderCandidate) -> tuple[str, dict]:
     return verdict, evidence
 
 
+WORDMARK_MAX_ASPECT = 16.0
+
+
+def _reads_as_lettering(candidate: LadderCandidate) -> bool:
+    """Measured ink with at least three glyph clusters and no gap over 3x the median."""
+    evidence = candidate.lockup_evidence or {}
+    gaps = [g for g in evidence.get("gaps") or [] if isinstance(g, (int, float))]
+    if (evidence.get("clusters") or 0) < 3 or len(gaps) < 2:
+        return False
+    median = sorted(gaps)[len(gaps) // 2]
+    return median > 0 and max(gaps) <= 3 * median
+
+
 def junk_assessment(candidate: LadderCandidate) -> tuple[float, list[str]]:
     # Match on the ASSET's own name/alt, never the DOM-role label. `_hay`
     # includes dom_role, and ARIA landmarks are labelled "div[role=banner]" —
@@ -1715,7 +1750,12 @@ def junk_assessment(candidate: LadderCandidate) -> tuple[float, list[str]]:
     # the true artwork as ~4, so a box measurement disqualified the correct logo.
     ink_aspect = candidate.lockup_evidence.get("ink_aspect")
     aspect = ink_aspect or ((width / height) if (width and height) else None)
-    if aspect is not None and (aspect < 0.35 or aspect > 8.0):
+    # Widely tracked wordmarks run past 8:1 (proxon.ai's measures 11.66 and lost every slot
+    # to its social-share card, 2026-10-14). The wider ceiling is for INK that reads as
+    # lettering only — several glyph clusters with even gaps — never a bar, rule or a strip
+    # of separate logos, which all keep the 8:1 limit.
+    ceiling = WORDMARK_MAX_ASPECT if ink_aspect and _reads_as_lettering(candidate) else 8.0
+    if aspect is not None and (aspect < 0.35 or aspect > ceiling):
         penalty += 60
         hits.append(
             f"implausible logo aspect {aspect:.2f}"
@@ -2373,10 +2413,15 @@ def resolve(
         else:
             chosen["light"] = primary
 
-        # counterpart variant among the remaining non-mark candidates
-        want = "light" if chosen["light"] is None else "dark"
+        # counterpart variant among the remaining non-mark candidates. A theme-adaptive
+        # primary IS both variants (the note above says so), so there is no counterpart to
+        # look for: searching anyway put a 32x32 navigation icon in q2.com's dark slot on
+        # placement evidence alone (2026-10-14).
+        want = None if primary.variant == "adaptive" else (
+            "light" if chosen["light"] is None else "dark"
+        )
         rejected = []
-        for candidate in non_marks:
+        for candidate in non_marks if want else ():
             if candidate is primary or candidate.variant != want:
                 continue
             if candidate.sha256 == primary.sha256:
@@ -2415,7 +2460,7 @@ def resolve(
             break
         if rejected:
             notes.append(f"rejected implausible {want} counterparts: {rejected[:3]}")
-        if chosen[want] is None:
+        if want and chosen[want] is None:
             notes.append(
                 f"no genuine {want}-mode asset found; NOT synthesized - reported as "
                 f"{'dark' if want == 'light' else 'light'}-only"

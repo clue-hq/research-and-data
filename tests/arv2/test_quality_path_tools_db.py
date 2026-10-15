@@ -140,3 +140,59 @@ def test_path_tools_preserve_canonical_evidence_and_reject_invented_names(tmp_pa
             assert stored["finding"] == "64 staff reported"
 
     run_async(case())
+
+
+@pytest.mark.parametrize("recipe", [25, 26])
+def test_a_research_view_search_is_a_refusal_not_a_failure_from_recipe_26(tmp_path, recipe):
+    """Production 2026-10-06: grep on a research view said "use search_evidence"; search_evidence
+    then failed on that path, and the failed attempt blocked finalize_turn in 7 of 12 jobs."""
+    from clue_api.arv2.quality_evidence import EvidenceUnavailable
+    from clue_toolbelt import PreconditionFailed
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, job, cid = await setup(conn, storage)
+            job = replace(job, catalog_version="v4", input_refs={"quality_recipe_version": recipe})
+            await save(conn, storage, op, "Dialpad's CMO seat has been vacant since Sept 2025.")
+            eid = await execution(conn, op, job.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=eid,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(30, 60, 20),
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=job.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                operation_id=OperationId(uuid4()),
+                execution_id=ExecutionId(eid),
+            )
+            search = SearchPathEvidenceTool(job, storage, purge_unevidenced=False)
+            view = f"/research/operations/{uuid4()}/0.json"
+            expected = PreconditionFailed if recipe >= 26 else EvidenceUnavailable
+            with pytest.raises(expected) as raised:
+                await search.invoke(SearchPathEvidenceInput(source_path=view, query="CMO"), ctx)
+            if recipe >= 26:
+                assert "grep" in raised.value.failures[0].message
+
+            backend = research_backend(BackendProtocol(), connections, storage, job, eid)
+            path = (await read(backend, "/evidence/index.json"))["sources"][0]["path"]
+            found = await backend.agrep("vacant", path=path)
+            if recipe >= 26:
+                assert found.error is None
+                assert [m["path"] for m in found.matches] == [path]
+                assert "vacant" in found.matches[0]["text"]
+                assert (await backend.agrep("vacant", path="/evidence")).error
+            else:
+                assert "search_evidence" in found.error
+
+    run_async(case())

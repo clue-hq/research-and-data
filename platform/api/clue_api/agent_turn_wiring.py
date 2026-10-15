@@ -1657,6 +1657,13 @@ class DbAgentReplayReader:
             raise AgentReplayUnavailable(receipt)
         return receipt
 
+    async def read_context_receipt(
+        self, *, workspace_id: str, turn_id: UUID
+    ) -> AgentContextReplayReceipt | None:
+        """The opening context recorded for a turn, or ``None`` before it has one."""
+        async with self._conn_factory() as conn:
+            return await self._read_context(conn, workspace_id, turn_id)
+
     async def _read_context(
         self,
         conn: object,

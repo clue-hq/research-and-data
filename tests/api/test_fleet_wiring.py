@@ -23,6 +23,7 @@ from clue_api.fleet_main import (
     NoBootHandlersRegistered,
     _build_arv2_discovery_handler,
     _build_onboarding_handler,
+    _orphan_sweep_loop,
     _require_registered,
     _start_orphan_sweep,
 )
@@ -471,6 +472,28 @@ def test_arv2_display_page_handler_is_composed_when_given_and_kind_guarded() -> 
         )
 
 
+def test_product_page_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Spec 2026-10-15 §6: the background product-page writer joins on the same terms.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.PRODUCT_PAGE_WRITE)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        product_page_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.PRODUCT_PAGE_WRITE] is handler
+
+    with pytest.raises(ValueError, match="product_page_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            product_page_handler=_CompositionHandler(FleetTaskKind.ARV2_DISPLAY_PAGE),
+        )
+
+
 def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_set(
     tmp_path: Path,
 ) -> None:
@@ -866,6 +889,41 @@ def test_orphan_sweep_task_started_when_enabled() -> None:
 def test_orphan_sweep_disabled_when_interval_zero() -> None:
     settings = _settings(storage_orphan_sweep_interval_s=0.0)
     assert _start_orphan_sweep(settings, FakeStorage()) is None
+
+
+def test_the_orphan_sweep_loop_checks_hourly_and_sweeps_only_when_the_fleet_is_due(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each process checks on the check interval; the 48 h interval is the fleet's, kept in the
+    database, so a restart never resets it and only one process sweeps (2026-10-09)."""
+    import clue_api.fleet_main as fleet_main
+
+    slept: list[float] = []
+    asked: list[timedelta] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        if len(slept) > 2:
+            raise asyncio.CancelledError
+
+    async def due(conn: object, *, every: timedelta, storage: object = None) -> None:
+        asked.append(every)
+        return None
+
+    @asynccontextmanager
+    async def connections() -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr(fleet_main, "run_orphan_blob_sweep_if_due", due)
+    settings = _settings(
+        storage_orphan_sweep_interval_s=172800.0, storage_orphan_sweep_check_interval_s=3600.0
+    )
+    with pytest.raises(asyncio.CancelledError):
+        run_async(
+            _orphan_sweep_loop(settings, FakeStorage(), conn_factory=connections, sleep=sleep)
+        )
+    assert slept == [3600.0, 3600.0, 3600.0]
+    assert asked == [timedelta(hours=48), timedelta(hours=48)]
 
 
 # --- the background design reaper (Part II D5 Round C) -------------------------------------------

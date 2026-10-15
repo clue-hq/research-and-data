@@ -16,6 +16,7 @@ from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_provider_tools import AcquireResearchInput, AcquireResearchTool
 from clue_api.arv2.quality_views import research_backend
 from clue_api.arv2.transport import ScriptedTransport
+from clue_config import Settings
 from clue_core import ExecutionId, OperationId
 from clue_storage import read_verified_artifact
 from clue_storage.fs import FsStorage
@@ -288,7 +289,10 @@ def test_invalid_transcript_reads_are_durable_refusals_without_transport(tmp_pat
     run_async(case())
 
 
-def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_path):
+@pytest.mark.parametrize("version", ["1", "2"])
+def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_path, version):
+    from clue_api.arv2.quality_provider_tools import AcquireResearchToolV2
+
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
@@ -328,7 +332,7 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
                 execution_id=ExecutionId(parent),
                 operation_id=OperationId(uuid4()),
             )
-            tool = AcquireResearchTool(rt)
+            tool = AcquireResearchTool(rt) if version == "1" else AcquireResearchToolV2(rt)
             inputs = AcquireResearchInput(
                 operation="research_deep",
                 arguments={
@@ -339,6 +343,17 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
             )
             result = await tool.invoke(inputs, ctx)
             assert result.references["status"] == "completed", result
+            if version == "2":
+                # Recipe 26 receipts preview what came back, so no round is spent opening it.
+                preview = result.references["preview"]
+                assert preview and preview[0]["title"] == "Report"
+                assert any(h["url"] == "https://example.test/bdr" for h in preview)
+                # Each source is previewed with what it says, not as a bare link (2026-10-10).
+                bdr = next(h for h in preview if h["url"] == "https://example.test/bdr")
+                assert bdr["snippet"] == "The role uses a named sales tool."
+                assert result.references["result_count"]
+            else:
+                assert "preview" not in result.references
             backend = research_backend(BackendProtocol(), connections, storage, scope, parent)
             saved = json.loads(await read_document(backend, result.references["result_path"]))
             sources = saved["source_navigation"]["sources"]
@@ -356,3 +371,281 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
             assert len(wire.requests) == 1
 
     run_async(case())
+
+
+@pytest.mark.parametrize("recover_on_success", [False, True])
+def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(
+    tmp_path, monkeypatch, recover_on_success
+):
+    """W2-20: the per-call platform steps are timed, so slow indexing is visible in the logs.
+
+    W2-17: a call that won its operation and indexed its own result runs the recovery check only
+    when ``arv2_recover_on_success`` is on; the job's settle step runs it once either way.
+    """
+    import clue_api.arv2.account_research_tools as tools_module
+
+    lines: list[tuple[str, dict]] = []
+
+    class Recording:
+        def _record(self, event, **fields):
+            lines.append((event, fields))
+
+        info = warning = error = exception = debug = _record
+
+    monkeypatch.setattr(tools_module, "log", Recording())
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR"}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_recover_on_success=recover_on_success,
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            result = await AcquireResearchTool(rt).invoke(
+                AcquireResearchInput(
+                    operation="research_deep",
+                    arguments={
+                        "charter": "Investigate the company and its operating workflows. " * 8,
+                        "additional_queries": ["company leadership"],
+                        "num_results": 40,
+                    },
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+
+    run_async(case())
+    drained = [f for e, f in lines if e == "arv2.drain_completed"]
+    assert len(drained) == 1
+    assert drained[0]["drain_ms"] >= 0 and drained[0]["index_ms"] >= 0
+    assert drained[0]["job_id"] and drained[0]["provider"]
+    recovered = [f for e, f in lines if e == "arv2.acquisition_recovered"]
+    assert len(recovered) == (1 if recover_on_success else 0)
+    assert all(r["recover_ms"] >= 0 for r in recovered)
+
+
+@pytest.mark.parametrize("outside", [False, True])
+def test_an_evidence_call_uploads_nothing_while_it_holds_the_worker_lock(tmp_path, outside):
+    """W2-15 option B: with ``arv2_upload_outside_lock`` the raw response and every source file
+    are put before the worker's database lock is taken, so the lock covers database work only.
+    Off, the files are put while the lock is held (today's order)."""
+    import asyncio as aio
+
+    lock = aio.Lock()
+    under_lock: list[str] = []
+
+    class Watching(FsStorage):
+        async def put(self, key, data, *, media_type):
+            if lock.locked():
+                under_lock.append(key)
+            await super().put(key, data, media_type=media_type)
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = Watching(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR", "text": "T."}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_upload_outside_lock=outside,
+            )
+
+            @asynccontextmanager
+            async def locked():
+                async with lock:
+                    yield conn
+
+            rt._conn_factory = rt._pacing_conn_factory = locked
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            result = await AcquireResearchTool(rt).invoke(
+                AcquireResearchInput(
+                    operation="research_deep",
+                    arguments={
+                        "charter": "Investigate the company and its operating workflows. " * 8,
+                        "additional_queries": ["company leadership"],
+                        "num_results": 40,
+                    },
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+            sources = (
+                await conn.execute(
+                    text("SELECT count(*) FROM arv2_evidence_source WHERE job_id=:j"),
+                    {"j": scope.job_id},
+                )
+            ).scalar_one()
+            assert sources > 2
+
+    run_async(case())
+    if outside:
+        assert under_lock == []
+    else:
+        assert under_lock
+
+
+@pytest.mark.parametrize("ending", ["job_withdrawn", "indexing_fails"])
+def test_files_uploaded_early_are_deleted_when_indexing_never_records_them(
+    tmp_path, monkeypatch, ending
+):
+    """Review I-1: with option B the source files are put before the lock. If the job is
+    withdrawn (a privacy stop, a suspension) before indexing, or indexing fails, nothing records
+    them — no purge or erasure could ever find them. They must be deleted, not left for the
+    orphan sweep's 24-hour grace."""
+    import contextlib
+
+    import clue_api.arv2.account_research_tools as tools_module
+    import clue_api.arv2.quality_acquisition as acquisition
+
+    real_early = acquisition.upload_sources_early
+    lines: list[tuple[str, dict]] = []
+
+    class Recording:
+        def _record(self, event, **fields):
+            lines.append((event, fields))
+
+        info = warning = error = exception = debug = _record
+
+    monkeypatch.setattr(tools_module, "log", Recording())
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+
+            async def early_then_withdraw(*args, **kwargs):
+                uploaded = await real_early(*args, **kwargs)
+                await conn.execute(
+                    text("UPDATE arv2_research_job SET status='suspended' WHERE job_id=:j"),
+                    {"j": scope.job_id},
+                )
+                return uploaded
+
+            async def failing_index(*args, **kwargs):
+                raise RuntimeError("indexing failed")
+
+            if ending == "job_withdrawn":
+                monkeypatch.setattr(acquisition, "upload_sources_early", early_then_withdraw)
+            else:
+                monkeypatch.setattr(acquisition, "index_acquisition", failing_index)
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR", "text": "T."}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_upload_outside_lock=True,
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            # The call's own outcome on a withdrawn job or a failed index is not this test's
+            # concern; what storage is left holding is.
+            with contextlib.suppress(Exception):
+                await AcquireResearchTool(rt).invoke(
+                    AcquireResearchInput(
+                        operation="research_deep",
+                        arguments={
+                            "charter": "Investigate the company and its workflows. " * 8,
+                            "additional_queries": ["company leadership"],
+                            "num_results": 40,
+                        },
+                    ),
+                    ctx,
+                )
+            stored = [key async for key, _ in storage.list_blobs()]
+            recorded = set(
+                (
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key = ANY(:k)"),
+                        {"k": stored},
+                    )
+                ).scalars()
+            )
+            return stored, recorded
+
+    stored, recorded = run_async(case())
+    assert stored, "the call stored its response"
+    assert [key for key in stored if key not in recorded] == []
+    # Review N-3: the cleanup is logged on its own, with what it deleted and how long it took.
+    (discard,) = [fields for event, fields in lines if event == "arv2.early_uploads_discarded"]
+    assert discard["discarded"] >= 1 and discard["discard_ms"] >= 0

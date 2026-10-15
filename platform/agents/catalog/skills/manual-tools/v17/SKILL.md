@@ -43,6 +43,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `run_python@1` | write | no | no | Complete a project step |
 | `submit_ingestion@1` | spend | yes | no | Complete a project step |
 | `configure_project_targeting@1` | write | no | no | Complete a project step |
+| `manage_products@1` | write | no | no | Update the product list |
 | `web_search@1` | spend | yes | no | Search the web |
 
 ## inspect_statement_history@1
@@ -330,7 +331,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `design_leg_reopen_wrong_thread` | Only a leg of this conversation can be reopened; open a fresh one here instead. |
 | `design_leg_reopen_not_closed` | Tell the human that leg is still open and they can simply keep talking to Design. |
 
-**Afterwards.** A design leg is open on this thread, and its first design turn is already queued from the human's own message, so nobody needs to say anything to start it. The design agent takes over the conversation. You do not run again while it is open and you cannot close it; the human ends it by saying so. The artifact it produces appears in the project's gallery.
+**Afterwards.** A design leg is open on this thread and the design agent takes over the conversation. You do not run again while it is open and you cannot close it; the human ends it by saying so. The artifact it produces appears in the project's gallery.
 
 **Taught by.** Not taught by the current skill.
 
@@ -428,7 +429,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_account_research@2
 
-**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids), whole sections a page at a time: follow next_offset until it is null to read all of them. When the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v17/SKILL.md#read_account_research
+**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v17/SKILL.md#read_account_research
 
 - Effect class: `read`.
 - Spends: no.
@@ -457,9 +458,9 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `section` | `str` | — |
 | `overview` | `tuple[AccountOverviewSection, ...]` | The written sections when `section='overview'`, else empty. |
 | `claims` | `tuple[AccountClaimView, ...]` | The account's servable claims when `section='claims'`, else empty. |
-| `truncated` | `bool` | More exists than this page holds: continue with `offset = next_offset`, for claims and overview sections alike. |
+| `truncated` | `bool` | More exists than this page holds: continue with `offset = next_offset` (claims), or read the claims when a long overview was cut. |
 | `excluded` | `dict[str, int]` | What the account pages' own gate held back, by reason: `sensitive`, `unverified`, `outreach_unsafe`. A non-zero count means "there is more here, and it is not servable". |
-| `offset` | `int` | Where this page started: a claim index for claims, a section index for the overview. |
+| `offset` | `int` | Where this page started in the account's servable claims. |
 | `next_offset` | `int or None` | Where the next page starts, or `None` when this page ends the list. |
 | `prefixes` | `dict[str, int]` | The account's claim families with their servable counts. |
 
@@ -468,8 +469,8 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | Field | Type | What it is |
 | --- | --- | --- |
 | `section_key` | `str` | — |
-| `body_text` | `str` | `display_block.body_json` as JSON text, whole. Text rather than a nested object because the stored body has no bound of its own; the overview pages by whole section instead, so a long overview spreads across reads rather than losing its tail. |
-| `body_truncated` | `bool` | This one section is larger than a whole page on its own, so its tail is not here. Every other section is served complete. |
+| `body_text` | `str` | `display_block.body_json` as JSON text, capped at `BODY_CHARS`. Text rather than a nested object because the stored body has no bound of its own — nothing in the display package limits how many items a section holds or how long one item is — and an unbounded blob is context the model pays for on every later turn of the thread. |
+| `body_truncated` | `bool` | The body was longer than the cap and the tail is not here. |
 | `cited_claim_ids` | `tuple[str, ...]` | — |
 | `generated_at` | `str` | — |
 
@@ -498,6 +499,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `account_not_researched` | Say plainly that nothing is known about this account yet, and offer to research it. |
 | `no_claims_under_prefix` | Pick one of the families the refusal lists and read again; never invent a prefix. |
 | `offset_past_end` | You have already read to the end. Stop paging and answer from what you have. |
+| `offset_not_paged` | Drop offset; the overview is served whole. |
 
 **Afterwards.** Nothing changes. You hold what the store actually says about one account, which is what a statement about that account must rest on. Never state a fact about an account from memory of an earlier thread.
 
@@ -988,6 +990,65 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** stage0-interview v35 section 4, "Apply the products and ICP automatically".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v17/SKILL.md`, `.deepagent/skills/manual-gates-authority/v17/SKILL.md`.
+
+## manage_products@1
+
+**What it does.** Change this brand's product list when the person asks you to: add a product, rename one, merge several into one (for example features that onboarding listed as separate products), or remove one. The change applies at once to the product list, the product pages, the catalog and every project that uses those products. For add and merge, write page_markdown: the product's page, from what you know and the pages being merged. If you only suspect the list is wrong, ask the person first instead of calling this. Manual: .deepagent/skills/manual-tools/v17/SKILL.md#manage_products
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: product_change keyed by the presenting turn and the call's inputs.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `action`, `product_id`, `product_ids`, `into_product_id`, `name`.
+- The human sees: "Update the product list".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `action` | `Literal['add', 'rename', 'merge', 'remove']` | required | none | What to do to the brand's product list. |
+| `product_id` | `str or None` | `None` | max_length=200 | rename / remove: the product to change. |
+| `product_ids` | `tuple[str, ...] or None` | `None` | min_length=1, max_length=200 | merge: the products folded in. |
+| `into_product_id` | `str or None` | `None` | max_length=200 | merge: fold into this existing product ... |
+| `name` | `str or None` | `None` | max_length=240 | ... or (merge) into a product with this name; add / rename: the product's name. |
+| `page_markdown` | `str or None` | `None` | max_length=200000 | add / merge: the product's page, written by you. |
+| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `change_id` | `str` | The change, as recorded in the brand's product change log. |
+| `action` | `str` | — |
+| `summary` | `str` | One sentence saying what changed, ready to tell the person. |
+| `product_id` | `str` | The product the change is about (for a merge, the product the others were folded into). |
+| `product_name` | `str` | — |
+| `aliases` | `tuple[str, ...]` | Its other names, including the names of products merged into it. |
+| `page_document_id` | `str or None` | The product page this call wrote, for add and merge. |
+| `catalog_document_id` | `str` | The regenerated product catalog. |
+| `projects_updated` | `int` | Projects whose product set moved to the new list. |
+| `projects_needing_choice` | `int` | Projects left with no product, which keep their old set until the person chooses. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `products_input_invalid` | Add exactly the field the message names for this action and call again. |
+| `products_page_required` | Write the product's page in page_markdown, from the pages being merged and what you know, and call again. |
+| `products_turn_unavailable` | Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved. |
+| `products_storage_unavailable` | Tell the person product changes cannot be saved on this deployment right now. |
+| `product_not_found` | Read the product catalog again and use a product id from it. |
+| `product_not_active` | Read the catalog again; that product was already merged or removed, so work from today's list. |
+| `product_name_taken` | Ask the person for a different name, or merge into the product that already has it. |
+| `name_invalid` | Use a product name between 1 and 240 characters. |
+| `merge_invalid` | Name at least one other product to merge, and either into_product_id or name but not both. |
+
+**Afterwards.** The brand's product list, its product pages and its catalog changed together, and every project that used a merged or removed product now uses the new list (each shows a notice in its chat). Old names are kept as "also called" names. Tell the person what changed in one sentence; the next turn's brand files already reflect it.
+
+**Taught by.** No skill section; the tool's own description says when to call it (spec 2026-10-15 product management).
+
+**See also.** `.deepagent/skills/manual-documents-decisions/v17/SKILL.md`.
 
 ## web_search@1
 

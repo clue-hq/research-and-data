@@ -2,13 +2,6 @@ schema_version: '1'
 kind: profile
 name: head-of-abm
 version: v71
-# v71 (2026-10-04, integration of brand-context-fixes/typography onto research-streaming): v70's
-# surface exactly - the same prompt v18, grant, workspace, caps and recipe 33. Two corrections ride
-# the re-minted manual v17: the design leg's first turn is queued from the human's own message the
-# moment the leg opens (manual-siblings, manual-gates-authority and the open_design_leg note used
-# to say opening a leg starts nothing, contradicting prompt v18), and read_account_research now
-# pages the overview by whole section (its offset_not_paged refusal is gone). stage0-interview v44
-# is v43 with its manual paths repointed to v17. No tool address moves.
 status: active
 role: head_of_abm
 prompt:
@@ -45,7 +38,7 @@ skills:
   sha256: 708c633990e0c180f0bb6cfdf675f602bb83a4ce5f15e1972b35c20617ac5a18
 - name: manual-tools
   version: v17
-  sha256: f19da9d1050a46da584b075c9b5ef90cab9c2ba7e9323305eadac5d908d9dcd4
+  sha256: 3e215d5748cdecd6fb0432cdc4a543af54b5c4fee06cf22304e0e2757fc36598
 - name: manual-fields
   version: v17
   sha256: 73dcb1089517033edca16585bd3242506728feaaff5977001cd2c4da06cbd625
@@ -63,13 +56,13 @@ skills:
   sha256: 3dbaf96baa574f1c1b2b6ccb053774f69bd63bc5824cb7b787fa737ee8bc10f6
 - name: manual-gates-authority
   version: v17
-  sha256: eddfc611be4ac1f123a60234bb5be7e1083b9a47faf3b3e78d4eab8ffdf2ecc6
+  sha256: cd25f5e835b3137ffa963d80b657aac8796504352444fc8585ecedc19b1914be
 - name: manual-humans-screens
   version: v17
   sha256: bcd1e1fbff98d5a6e47e1d063549bdc4d94dc6c628bcce9623f4fd24647471e1
 - name: manual-siblings
   version: v17
-  sha256: d24ccd9dc763e590bb39c6de81c45531c084584fc850df07d16bbe6c243ae7bc
+  sha256: 46c4a2f6bb02dc984d273ccade31306a72ef7f284a31a1cf7625b3ba3c09aa40
 - name: manual-errors
   version: v17
   sha256: 306b600b38bca9aebb4e1d2cb39d366f33de960006ace2f70678945df1530fcf
@@ -153,6 +146,14 @@ tools:
   version: '1'
   input_schema_sha256: 29e91cff09b7565ce93f9a5fd32509cc779bf93cb5b74c9d94bd755d12761012
   output_schema_sha256: 71be2f7de9d4a1f36dd29f94578d12f3f3eb213ef414f79de5d0ef8ff87094cb
+# v71 (product management, spec 2026-10-15): v70's surface with ONE address ADDED —
+# `manage_products@1`: add, rename, merge or remove the brand's products when the person asks
+# (founder ruling D3: applied directly). stage0-interview v44 only repoints its manual paths; the
+# manual re-mints at `manual-*@v17`; the conversation recipe moves 33 -> 34. Prompt v18 stays.
+- name: manage_products
+  version: '1'
+  input_schema_sha256: 14b74832991d4ccc8e082671e38b3076488e21b0a1b78b2aad26708166e93473
+  output_schema_sha256: 0971c049845cc805984415699100ab0e67480e085efc007b8b085872083c3d83
 # v62 (web search, spec 2026-09-22 — re-minted on the research-streaming merge; v61 is the
 # automatic-targeting profile): v61's surface with ONE address ADDED — `web_search@1`, one
 # deep-lite open-web search, used LAST after the claims and the seller's knowledge files,

@@ -105,8 +105,8 @@ EDITOR_PORT="${DEV_STACK_EDITOR_PORT:-3120}"
 # The page origin's port: the knob, else this checkout's own CLUE_PAGES_ORIGIN_PORT (the page
 # origin's port setting; read from .env alone, without sourcing the rest), else the runbook's 8040.
 # Lanes running side by side each name their own (charter 2026-10-12 §8), so one lane's page links
-# never reach another lane's page origin.
-PAGES_PORT="${DEV_STACK_PAGES_PORT:-$( { [ -f "$ROOT/.env" ] && sed -n 's/^CLUE_PAGES_ORIGIN_PORT=//p' "$ROOT/.env" | tail -1 | tr -d "\"' "; } || true )}"
+# never reach another lane's page origin. DEV_STACK_PAGE_ORIGIN_PORT is the same knob's older name.
+PAGES_PORT="${DEV_STACK_PAGES_PORT:-${DEV_STACK_PAGE_ORIGIN_PORT:-$( { [ -f "$ROOT/.env" ] && sed -n 's/^CLUE_PAGES_ORIGIN_PORT=//p' "$ROOT/.env" | tail -1 | tr -d "\"' "; } || true )}}"
 PAGES_PORT="${PAGES_PORT:-8040}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"

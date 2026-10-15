@@ -122,6 +122,7 @@ from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
 from clue_api.persona_request_tools import PersonaRequestService, build_persona_request_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
+from clue_api.product_management_tools import ManageProductsTool
 from clue_api.product_set_selection_gate_tools import (
     build_product_set_selection_gate_tools,
 )
@@ -3012,6 +3013,11 @@ def build_toolbelt(
         registry.register(tool, make_default=True)
     registry.register(
         ConfigureProjectTargetingTool(conn_factory=conn_factory, storage=storage), make_default=True
+    )
+    # Product management (spec 2026-10-15): the Head of ABM adds, renames, merges and removes the
+    # brand's products when the person asks, through the same service as Brand context.
+    registry.register(
+        ManageProductsTool(conn_factory=conn_factory, storage=storage), make_default=True
     )
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).

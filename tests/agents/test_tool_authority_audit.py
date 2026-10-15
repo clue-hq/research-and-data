@@ -172,7 +172,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address, ungranted
     # until the design profile bump (148 -> 149).
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address) (149 -> 150).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 150
+    # Product management (2026-10-15, main): `manage_products@1` (+1) (150 -> 151).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 151
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at

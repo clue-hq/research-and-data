@@ -254,21 +254,31 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # section 7b to teach the brief, the manual re-mints at `manual-*@v16` (a new discovery
     # chapter), and the conversation recipe moves 32 -> 33 because its slot pins exact addresses.
     # Prompt v18 stays.
-    # v71 (2026-10-04): v70's surface exactly. The manual re-mints at `manual-*@v17`: the design
-    # leg's first turn is queued from the human's own message when the leg opens (the v16 chapters
-    # and the open_design_leg note still said opening a leg starts nothing), and
-    # `read_account_research` pages the overview by whole section. `stage0-interview@v44` only
-    # repoints its manual paths. Prompt v18 and the recipe stay.
-    # v72 (2026-10-05): v71's surface exactly. The manual re-mints at `manual-*@v18`: a page brief
-    # gives Design direction (purpose, reader, angle, suggested structure, facts with sources) and
-    # keeps private notes apart, Design writes every word, and research is offered for an
-    # unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
-    # paths. Prompt v18 and the recipe stay.
-    # v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an ad,
-    # Head of ABM may suggest what its headline could say, but only as a suggestion. The manual
-    # re-mints at `manual-*@v19` (its tools chapter renders that description) and
-    # `stage0-interview@v46` only repoints its manual paths. Prompt v18 and the recipe stay.
-    AgentRole.HEAD_OF_ABM: "v73",
+    # v71 (product management, spec 2026-10-15): v70's surface with `manage_products@1` GRANTED —
+    # add, rename, merge or remove the brand's products when the person asks (founder ruling D3:
+    # applied directly; when the agent only suspects, it asks). The conversation recipe moves
+    # 33 -> 34 for the new address and the manual re-mints at `manual-*@v17`. Prompt v18 stays.
+    # v72-v73 (2026-10-05/10, the website line, never in production): v71-v73 there carried the
+    # design leg's first turn, the page brief format and the ad headline suggestion on manual
+    # v17-v19 — the same numbers main used for its own v71 and manual v17. Their notes:
+    #   v71 (2026-10-04): v70's surface exactly. The manual re-mints at `manual-*@v17`: the design
+    #   leg's first turn is queued from the human's own message when the leg opens (the v16 chapters
+    #   and the open_design_leg note still said opening a leg starts nothing), and
+    #   `read_account_research` pages the overview by whole section. `stage0-interview@v44` only
+    #   repoints its manual paths. Prompt v18 and the recipe stay.
+    #   v72 (2026-10-05): v71's surface exactly. The manual re-mints at `manual-*@v18`: a page brief
+    #   gives Design direction (purpose, reader, angle, suggested structure, facts with sources) and
+    #   keeps private notes apart, Design writes every word, and research is offered for an
+    #   unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
+    #   paths. Prompt v18 and the recipe stay.
+    #   v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an ad,
+    #   Head of ABM may suggest what its headline could say, but only as a suggestion. The manual
+    #   re-mints at `manual-*@v19` (its tools chapter renders that description) and
+    #   `stage0-interview@v46` only repoints its manual paths. Prompt v18 and the recipe stay.
+    # v74 (2026-10-16, the website release merges main): main's v71 keeps its number (production
+    # ran it); the website line re-mints on top of it — v73's surface plus `manage_products@1`,
+    # recipe 34, `manual-*@v20` and `stage0-interview@v47`. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v74",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -561,6 +571,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
     # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
     # message on the thread is what becomes the first design turn.
+    # Product management (spec 2026-10-15, founder ruling D3): granted from head-of-abm@v71. The
+    # agent changes the brand's product list when the person asks; the same service as Brand
+    # context moves the pages, the catalog and every project's product set together.
+    "manage_products": (AgentRole.HEAD_OF_ABM,),
     "open_design_leg": (AgentRole.HEAD_OF_ABM,),
     # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
@@ -714,6 +728,9 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "launch_arv2_discovery",
                 "launch_arv2_person_research",
                 "configure_project_targeting",
+                # `manage_products` (head-of-abm@v71) changes the brand's real product list,
+                # pages and every project's product set — a durable write no trial may make.
+                "manage_products",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to

@@ -5,6 +5,8 @@ or anything named "ARV2", read **`docs/specs/ARV2-AGENT-BRIEFING.md`** first, th
 charter you were given. The backlog bullets further down this file describe the codebase's history,
 not your tasks; where they disagree with the master plan, the master plan wins.
 
+**Stuck research jobs — runbook (2026-10-14).** A failed (`needs_review`) or stalled ARV2 research job is resumed, never hand-edited in the database: `uv run python scripts/resume_arv2_research_job.py` lists every stuck job and whether it can be resumed (writes nothing); `--job <id> --reason "<why>"` plans a resume, optionally with `--top-up-*` or `--restart-fresh`, and `--apply` performs it (in production, from a worker container). Workspace owners and admins have the same operation at `GET /frontend/v1/research/jobs/stuck` and `POST /frontend/v1/research/jobs/{job_id}/resume`. Every resume is audited in `arv2_research_job_resume`. Spec: `docs/superpowers/specs/2026-10-14-arv2-research-job-resume-design.md`.
+
 The overall product is an AI-powered ABM orchestration platform. In the full product, agents help discover target accounts, enrich account/contact data, perform deep research, draft personalized campaign content, generate brand-aligned campaign artifacts, scale those artifacts across contacts/accounts, and export or publish the resulting assets.
 
 This repo is the platform's **backend home** — the trustworthy data-and-context layer the rest of the platform is built on. It is organized as **subsystems behind shared substrates and seams**, and it grows by *adding* subsystems here, never by forking the pipeline: every subsystem communicates only through the shared substrates (the claim store; the scoped-memory seams) and never by importing another subsystem.

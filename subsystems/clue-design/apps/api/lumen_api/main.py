@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import re
 import shutil
 
@@ -3851,11 +3852,9 @@ def create_app(
             web_doc, blob_store(repo)
         )
         # Kit @font-face: emit rules that point the browser at the kit's stored
-        # faces (served from this request's own /asset-store origin) so the
+        # faces (served from the /asset-store origin the browser can reach) so the
         # editor preview renders in the brand's real fonts, not the fallback.
-        font_face_css = build_web_font_face_css(
-            brand_fonts, str(request.base_url).rstrip("/")
-        )
+        font_face_css = build_web_font_face_css(brand_fonts, public_api_origin(request))
         runtime_frames: Dict[str, JsonObject] = {}
         if web_doc_uses_custom_components(web_doc, page):
             try:
@@ -3915,7 +3914,7 @@ def create_app(
                     status_code=422,
                     detail={"code": "web_render.bad_nonce", "message": str(error)},
                 ) from error
-        asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
+        asset_base_url = public_api_origin(request) + "/asset-store"
         # F1.3: resolve the page's cloned-section artifacts out of durable custody and hand the
         # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
         # left OUT of the map on purpose — the engine renders its placeholder and says so
@@ -12290,6 +12289,21 @@ def _valid_font_weight(value: Any) -> bool:
 
 def _valid_font_style(value: Any) -> bool:
     return value in ("normal", "italic")
+
+
+def public_api_origin(request: Request) -> str:
+    """The origin a BROWSER can reach this API at, for URLs written into served markup.
+
+    Behind the platform's server-side proxy ``request.base_url`` is the private service host
+    (``http://design-api.railway.internal:8010/``), so every ``/asset-store/{digest}`` image and
+    kit-font URL the web render derived from it was unreachable from the browser: in production
+    (2026-10-14) seeded web pages rendered broken images and fallback fonts. ``LUMEN_API_ORIGIN``
+    names the public origin — the same setting the web turn already uses for the agent's own
+    previews — and wins when set. Unset (the dev stack, where the browser reaches the API
+    directly), the request's own base is the origin, exactly as before. No trailing slash.
+    """
+    configured = (os.environ.get("LUMEN_API_ORIGIN") or "").strip()
+    return (configured or str(request.base_url)).rstrip("/")
 
 
 def build_web_font_face_css(

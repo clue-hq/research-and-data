@@ -856,6 +856,44 @@ def read_deep_report(body: Mapping[str, Any], *, text_output: bool = False) -> s
     return None
 
 
+#: How much of a result's own words a row keeps: enough to judge whether to open the page.
+_RESULT_SNIPPET_CHARS = 300
+
+
+def exa_result_rows(body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """One short row per result, in Exa's rank order: link, title, date and a snippet.
+
+    The receipt preview shows these, so the agent sees what each result says without opening the
+    saved response (2026-10-10: run 3's preview showed four bare links of ten, and the one it hid
+    was the account's ABM case study). The snippet is Exa's highlights, else its summary, else the
+    start of the page text. A result with no link is not a result the agent can open.
+    """
+    rows: list[dict[str, Any]] = []
+    for result in body.get("results") or []:
+        if not isinstance(result, Mapping) or not result.get("url"):
+            continue
+        highlights = result.get("highlights")
+        candidates = (
+            " ".join(h for h in highlights if isinstance(h, str))
+            if isinstance(highlights, list)
+            else None,
+            result.get("summary"),
+            result.get("text"),
+        )
+        snippet = next(
+            (" ".join(c.split()) for c in candidates if isinstance(c, str) and c.strip()), ""
+        )
+        rows.append(
+            {
+                "url": result["url"],
+                "title": result.get("title"),
+                "published": result.get("publishedDate"),
+                "text_head": snippet[:_RESULT_SNIPPET_CHARS],
+            }
+        )
+    return rows
+
+
 def is_thin_deep_response(
     *, n_results: int, cost_usd: Decimal | None, report_chars: int | None
 ) -> bool:

@@ -13,16 +13,19 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import Field, model_validator
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_claims import ClaimProposal, ClaimSupport, submit_proposal
 from clue_api.arv2.quality_evidence import JsonSupport, TextSupport, validate_support
-from clue_api.arv2.quality_execution import reserve
+from clue_api.arv2.quality_execution import reserve, retry_lock_conflict
 from clue_research.claimstore.quality import assess_claim
 from clue_storage import StorageBackend, artifact_key, content_address, record_artifact
 from clue_toolbelt import (
+    PreconditionFailed,
+    PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
     Tool,
@@ -84,8 +87,10 @@ class _ResearchWriteTool(Tool):
     async def authority(self, ctx: ToolContext) -> ResearchAuthority:
         if ctx.workspace_id != self.scope.workspace_id or ctx.execution_id is None:
             raise ValueError("research tool requires its bound workspace execution")
-        async with ctx.conn_factory() as conn:
-            authority = await resolve_authority(conn, self.scope, ctx.execution_id)
+        execution_id = ctx.execution_id
+
+        async def authorize(conn: AsyncConnection) -> ResearchAuthority:
+            authority = await resolve_authority(conn, self.scope, execution_id)
             if authority.role not in ("account_research", "research_claims", "research_narrative"):
                 raise ValueError("role has no research claim authority")
             await reserve(
@@ -95,7 +100,9 @@ class _ResearchWriteTool(Tool):
                 kind="tool",
                 activity_id=UUID(str(ctx.operation_id)),
             )
-        return authority
+            return authority
+
+        return await retry_lock_conflict(ctx.conn_factory, authorize)
 
 
 class SubmitResearchClaimTool(_ResearchWriteTool):
@@ -370,12 +377,28 @@ class SearchPathEvidenceTool(SearchEvidenceTool):
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        from clue_api.arv2.quality_evidence import resolve_source
+        from clue_api.arv2.quality_evidence import EvidenceUnavailable, resolve_source
+        from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 
         args = SearchPathEvidenceInput.model_validate(inputs)
         authority = await self.authority(ctx)
         async with ctx.conn_factory() as conn:
-            source = await resolve_source(conn, authority.grant, args.source_path)
+            try:
+                source = await resolve_source(conn, authority.grant, args.source_path)
+            except EvidenceUnavailable as exc:
+                if not at_least(self.scope, RECIPE_26):
+                    raise
+                # Recipe 26+: a wrong reference is a refused read, not a failed attempt that
+                # blocks finalize_turn until repaired (7 of 12 production jobs, 2026-10-06).
+                hint = (
+                    " search_evidence searches original sources under /evidence/. To search "
+                    "a research view, use grep on that file, or read it."
+                    if args.source_path.startswith("/research/")
+                    else ""
+                )
+                raise PreconditionFailed(
+                    [PreconditionFailure("invalid_source_reference", f"{exc}{hint}")]
+                ) from exc
         return await super().invoke(
             SearchEvidenceInput(
                 **args.model_dump(exclude={"source_path"}), source_id=source.source_id

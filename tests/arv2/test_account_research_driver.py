@@ -1866,3 +1866,24 @@ def test_the_research_handler_declares_its_per_process_limit() -> None:
     )
     assert isinstance(handler, InFlightLimited)
     assert handler.max_in_flight == 3
+
+
+def test_a_wait_for_the_worker_database_lock_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """W2-20: every research job in a worker shares one database lock; a long wait says so."""
+    monkeypatch.setenv("CLUE_DB_CRITICAL_SECTION_LOG_MS", "20")
+    recorded = _RecordingLog()
+    monkeypatch.setattr(driver, "log", recorded)
+    run = _run_row()
+    handler, _conn_factory, _writer, _models = _handler(FakeStore(run, _job_row(run)))
+
+    async def hold() -> None:
+        async with handler._connection():
+            await asyncio.sleep(0.1)
+
+    async def both() -> None:
+        await asyncio.gather(hold(), hold())
+
+    asyncio.run(both())
+    waits = recorded.named("arv2.db_lock_waited")
+    assert len(waits) == 1  # the first holder did not wait; the second waited ~100 ms
+    assert waits[0]["wait_ms"] >= 80

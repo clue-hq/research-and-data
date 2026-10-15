@@ -3,9 +3,11 @@
 import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import type { ProjectEntity } from "../model/project-workspace";
+import { useProductNotices } from "../hooks/use-product-notices";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
+import { ProductNotices } from "./product-notices";
 import styles from "./project-flow.module.css";
 
 /**
@@ -34,13 +36,17 @@ export function ConversationContent({
   contextEntities,
   contextHandoffError,
   onOpenPlan,
+  projectId,
 }: {
   chat: ProjectChatController;
+  /** Shows the project's "Products changed" notices above the transcript when given. */
+  projectId?: string;
   /** The composer's whole catalog, so a chip resolves whatever was mentioned. */
   contextEntities: ProjectEntity[];
   contextHandoffError: string | null;
   onOpenPlan?: (documentId: string) => void;
 }) {
+  const productNotices = useProductNotices(projectId);
   const activeUserMessageId = chat.transcript.reduce<string | null>(
     (latest, message) => (message.role === "user" ? message.id : latest),
     null,
@@ -107,6 +113,7 @@ export function ConversationContent({
           {contextHandoffError}
         </p>
       ) : null}
+      <ProductNotices notices={productNotices.notices} onDismiss={(id) => void productNotices.dismiss(id)} />
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
           activeUserMessageId={activeUserMessageId}

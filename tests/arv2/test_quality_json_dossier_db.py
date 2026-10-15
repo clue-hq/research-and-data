@@ -879,3 +879,74 @@ def test_reciprocal_conflicts_survive_revision_reuse_and_targeted_correction(tmp
                         assert str(retired) == ids[key]
 
     run_async(case())
+
+
+def test_v2_saves_the_valid_findings_names_the_rest_and_never_drops_a_stored_one(tmp_path):
+    from clue_api.arv2.quality_json_dossier import (
+        SaveDossierSectionToolV2,
+        SaveSectionInputV2,
+        UpdateDossierFindingsToolV2,
+    )
+
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path)
+            job = replace(job, input_refs={"quality_recipe_version": 26})
+            one, three = finding(source_paths=[path]), finding("F003", source_paths=[path])
+            two = {k: v for k, v in finding("F002", source_paths=[path]).items() if k != "review"}
+            receipt = await invoke(
+                SaveDossierSectionToolV2,
+                job,
+                storage,
+                ctx,
+                SaveSectionInputV2(section="Voice", findings=[one, two, three]),
+            )
+            assert receipt["saved"] and receipt["entries"] == 2
+            assert [r["id"] for r in receipt["refused"]] == ["F002"]
+            assert "review.status" in receipt["refused"][0]["reason"]
+            saved = await read_json_dossier(conn, storage, job, cid)
+            ids = [f["id"] for f in saved["document"]["sections"][0]["findings"]]
+            assert ids == ["F001", "F003"]
+
+            # Re-sending a stored finding without review keeps the stored version.
+            bare_one = {k: v for k, v in one.items() if k != "review"}
+            again = await invoke(
+                SaveDossierSectionToolV2,
+                job,
+                storage,
+                ctx,
+                SaveSectionInputV2(section="Voice", findings=[bare_one, three]),
+            )
+            assert again["saved"] and [r["id"] for r in again["refused"]] == ["F001"]
+            saved = await read_json_dossier(conn, storage, job, cid)
+            kept = saved["document"]["sections"][0]["findings"]
+            assert [f["id"] for f in kept] == ["F001", "F003"] and kept[0]["review"]
+
+            # Nothing valid: nothing changes, and the refusal is explicit.
+            none = await invoke(
+                SaveDossierSectionToolV2,
+                job,
+                storage,
+                ctx,
+                SaveSectionInputV2(section="Voice", findings=[two]),
+            )
+            assert not none["saved"] and [r["id"] for r in none["refused"]] == ["F002"]
+
+            # The corrected finding goes in with an update.
+            fixed = {**two, "review": {"status": "supported", "reason": "Source says this"}}
+            update = await invoke(
+                UpdateDossierFindingsToolV2,
+                job,
+                storage,
+                ctx,
+                SaveSectionInputV2(section="Voice", findings=[fixed]),
+            )
+            assert update["saved"] and update["refused"] == []
+            saved = await read_json_dossier(conn, storage, job, cid)
+            assert [f["id"] for f in saved["document"]["sections"][0]["findings"]] == [
+                "F001",
+                "F003",
+                "F002",
+            ]
+
+    run_async(case())

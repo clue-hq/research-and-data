@@ -385,6 +385,41 @@ def test_an_unknown_icp_key_is_refused_rather_than_silently_unsuggested(tmp_path
     run_async(scenario())
 
 
+def test_an_archived_product_is_not_offered(tmp_path: Path) -> None:
+    """An operator can retire a product by archiving its row (2026-10-14: a client whose
+    onboarding split one platform's features into products). Archived rows stay for history and
+    lineage, but a project can no longer be pointed at them, so the gate does not offer them."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_brand_catalog(
+                conn, tmp_path, workspace_id="ws-o6-set-archived", label="set-archived"
+            )
+            archived = fixture.products[0].product_id
+            await conn.execute(
+                text("UPDATE product SET status = 'archived' WHERE product_id = :p"),
+                {"p": archived},
+            )
+            result = await _tool(fixture).invoke(
+                OpenProductSetSelectionGateInput(
+                    icp_key="clinics",
+                    source_turn_ref=derive_turn_action_ref(fixture.seeded.turn_id),
+                ),
+                _ctx(fixture),
+            )
+            assert result.references["candidate_count"] == 1
+            view = await get_gate(
+                conn,
+                workspace_id=fixture.seeded.workspace_id,
+                gate_id=UUID(str(result.references["gate_id"])),
+            )
+            assert view is not None
+            offered = [p["product_id"] for p in view.gate.subject_snapshot["products"]]
+            assert offered == [fixture.products[1].product_id]
+
+    run_async(scenario())
+
+
 def test_a_brand_with_no_products_has_nothing_to_ask_about(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:

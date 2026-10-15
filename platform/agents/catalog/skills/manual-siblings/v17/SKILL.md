@@ -89,17 +89,14 @@ and the document itself appears as a file in the audience folder.
 
 ## The design leg
 
-Opening a leg starts the design work at once. In the same step that opens the leg, the platform
-queues the leg's first design turn from the human's own message on this turn, so the human does
-not need to send anything else to begin, and you should not ask them to. The tool itself makes no
-provider call; the queued design turn is what spends. The leg row's existence **is** the routing
-rule: while the leg is open, every message the human sends on this thread goes to Design.
+Opening a leg starts nothing and spends nothing. It creates the leg row whose existence **is**
+the routing rule: while the leg is open, every message the human sends on this thread goes to
+Design.
 
 Three things follow, and all three matter:
 
 - **You do not run while a leg is open.** You cannot check in, and you will not see the thread
-  again until the leg closes. Tell the human the design session is open and what is being made,
-  and end your turn so the design can run. Queued is not finished: never say the design is done.
+  again until the leg closes. Tell the human the design session is open, and end your turn.
 - **You cannot close a leg.** Only Design can. A closing summary is what you resume with, and
   you never see the design transcript, only that summary.
 - **A leg you open may never hand the thread back.** The exit judge is built with a timeout the

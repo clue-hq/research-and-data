@@ -100,6 +100,7 @@ from clue_api.chat.inspector import (
     rounds_response,
     tools_response,
 )
+from clue_api.chat.mention_directory import build_mention_directory, search_mention_directory
 from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_GATE_RESPOND,
@@ -130,6 +131,10 @@ from clue_api.chat.schemas import (
     HomeProjectRequest,
     HomeResponse,
     HomeWire,
+    MentionDirectoryResponse,
+    MentionDirectoryWire,
+    MentionSearchResponse,
+    MentionSearchWire,
     MessageListResponse,
     PageMeta,
     PrepareComposerContextRequest,
@@ -945,6 +950,72 @@ def build_chat_router(
                 composer_capabilities=_composer_capabilities(storage_available=storage is not None),
                 suggestions=_HOME_SUGGESTIONS,
             )
+        )
+
+    # --- @-mention directory (2026-10-05) -------------------------------------------------------
+
+    @router.get("/mention-directory", response_model=None)
+    async def mention_directory_route(
+        who: PrincipalDep,
+        if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+        project_id: Annotated[str | None, Query()] = None,
+    ) -> Response | MentionDirectoryResponse:
+        """Every account and committee contact the @ tagger may offer, names and ids only.
+
+        The browser loads it once per session and re-checks it with ``If-None-Match``: a
+        matching ETag is a bodiless 304. ``project_id`` puts that project's accounts first.
+        """
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            if project_id is not None:
+                project = await get_project_for_workspace(
+                    conn, workspace_id=who.workspace_id, project_id=project_id
+                )
+                if project is None or project.kind == "system":
+                    raise _refuse(
+                        status_code=404,
+                        code="PROJECT_NOT_FOUND",
+                        message="no such project in this workspace",
+                    )
+            directory = await build_mention_directory(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+                settings=settings,
+                max_entries=settings.mention_directory_max_entries,
+            )
+        headers = {"ETag": directory.etag, "Cache-Control": "private, no-cache"}
+        if if_none_match is not None and directory.etag in {
+            tag.strip() for tag in if_none_match.split(",")
+        }:
+            return Response(status_code=304, headers=headers)
+        body = MentionDirectoryResponse(
+            data=MentionDirectoryWire(
+                entities=tuple(_context_entity_wire(entity) for entity in directory.entities),
+                complete=directory.complete,
+            )
+        )
+        return Response(
+            content=body.model_dump_json(),
+            media_type="application/json",
+            headers=headers,
+        )
+
+    @router.get("/mention-directory/search")
+    async def mention_directory_search_route(
+        who: PrincipalDep,
+        q: Annotated[str, Query(min_length=2, max_length=60)],
+    ) -> MentionSearchResponse:
+        """Server search, for workspaces whose directory is too large to load whole."""
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            found = await search_mention_directory(
+                conn, workspace_id=who.workspace_id, query=q, settings=settings
+            )
+        return MentionSearchResponse(
+            data=MentionSearchWire(entities=tuple(_context_entity_wire(entity) for entity in found))
         )
 
     if artifacts is not None:

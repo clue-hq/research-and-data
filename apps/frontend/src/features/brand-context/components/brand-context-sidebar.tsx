@@ -1,7 +1,10 @@
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
-import type { BrandContextSection, BrandContextWorkspace } from "../model/brand-context";
+import type { ProductActionsController } from "../hooks/use-product-actions";
+import type { BrandContextSection, BrandContextWorkspace, BrandKnowledgeDocument } from "../model/brand-context";
 import { measuredSections, type MeasuredBrandView, type MeasuredSection } from "../model/measured-view";
+import { productOfPage } from "../model/product-links";
 import { BrandContextIcon, type BrandContextIconName } from "./brand-context-icon";
+import { PendingProductPages, ProductFolderFooter, ProductMenu } from "./product-actions";
 import styles from "./brand-context.module.css";
 
 const brandKitItems: Array<{
@@ -22,13 +25,36 @@ const measuredItems: Record<MeasuredSection, { icon: BrandContextIconName; label
   motion: { icon: "sortActive", label: "Motion" },
 };
 
+function DocumentButton({ controller, document }: { controller: BrandContextController; document: BrandKnowledgeDocument }) {
+  return (
+    <button
+      aria-current={controller.selectedDocument?.id === document.id ? "page" : undefined}
+      className={`${styles.documentItem} ${controller.section === "knowledge" && controller.selectedDocument?.id === document.id ? styles.contextNavItemActive : ""}`}
+      onClick={() => controller.selectDocument(document.id)}
+      title={document.name}
+      type="button"
+    >
+      <span aria-hidden="true" className={styles.documentTreeRule} />
+      <span className={styles.documentItemContent}>
+        <BrandContextIcon className={styles.documentIcon} name="document" size={16} />
+        <span className={styles.documentTitle}>
+          <span className={styles.documentTitleText}>{document.name}</span>
+        </span>
+        {document.generated ? <span className={styles.generatedBadge}>Generated</span> : null}
+      </span>
+    </button>
+  );
+}
+
 export function BrandContextSidebar({
   controller,
   measured,
+  productActions,
   workspace,
 }: {
   controller: BrandContextController;
   measured: MeasuredBrandView | null;
+  productActions?: ProductActionsController;
   workspace: BrandContextWorkspace;
 }) {
   const items = [
@@ -86,24 +112,26 @@ export function BrandContextSidebar({
                   </button>
                   {open ? (
                     <div className={styles.folderChildren}>
-                      {folder.documents.map((document) => (
-                        <button
-                          aria-current={controller.selectedDocument?.id === document.id ? "page" : undefined}
-                          className={`${styles.documentItem} ${controller.section === "knowledge" && controller.selectedDocument?.id === document.id ? styles.contextNavItemActive : ""}`}
-                          key={document.id}
-                          onClick={() => controller.selectDocument(document.id)}
-                          title={document.name}
-                          type="button"
-                        >
-                          <span aria-hidden="true" className={styles.documentTreeRule} />
-                          <span className={styles.documentItemContent}>
-                            <BrandContextIcon className={styles.documentIcon} name="document" size={16} />
-                            <span className={styles.documentTitle}>
-                              <span className={styles.documentTitleText}>{document.name}</span>
-                            </span>
-                          </span>
-                        </button>
-                      ))}
+                      {folder.documents.map((document) => {
+                        // A product's page carries that product's actions (spec 2026-10-15 §10).
+                        const product = productActions
+                          ? productOfPage(document, productActions.products)
+                          : undefined;
+                        return product && productActions ? (
+                          <div className={styles.productRow} key={document.id}>
+                            <DocumentButton controller={controller} document={document} />
+                            <ProductMenu actions={productActions} product={product} />
+                          </div>
+                        ) : (
+                          <DocumentButton controller={controller} document={document} key={document.id} />
+                        );
+                      })}
+                      {folder.id === "product" && productActions ? (
+                        <>
+                          <PendingProductPages actions={productActions} />
+                          <ProductFolderFooter actions={productActions} />
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

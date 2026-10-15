@@ -30,6 +30,7 @@ from clue_agents.execution import (
     AgentTurnOutcome,
     GovernedOperationReceipt,
 )
+from clue_agents.model_session import ModelSessionAffinity
 from clue_agents.ports import (
     AgentExecutionAdapter,
     AgentModelProvider,
@@ -350,7 +351,8 @@ class TurnBudgetMiddleware(AgentMiddleware[Any, Any, Any]):
     thread's history, so a replay reads exactly what was committed.
     """
 
-    state_schema = ClueDeepAgentState
+    # No ``state_schema`` here, for the reason given on ``ToolRepairRoundsMiddleware``: its fields
+    # live in ``ClueDeepAgentState``, the graph's base state.
 
     def __init__(
         self,
@@ -514,6 +516,7 @@ class DeepAgentTurnRuntime:
         continuation_config: Mapping[str, Any] | None = None,
         compaction_for: Callable[[str], CompactionSettings] | None = None,
         max_finalize_repairs: int | None = None,
+        resume_saved_turn: bool = False,
     ) -> None:
         if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
@@ -524,6 +527,9 @@ class DeepAgentTurnRuntime:
         if long_turn_alert_s is not None and long_turn_alert_s <= 0:
             raise ValueError("a long-turn alert threshold must be positive (None disables it)")
         self._continuation_config = continuation_config
+        # A caller whose turns are re-claimed after a crash (research jobs) continues the turn's
+        # own saved state instead of feeding its opening messages in a second time.
+        self._resume_saved_turn = resume_saved_turn
         # A continued research conversation gets a wider finalize-repair allowance; a caller that
         # continues an ordinary conversation (the Head of ABM) passes the ordinary one.
         self._max_finalize_repairs = (
@@ -631,6 +637,7 @@ class DeepAgentTurnRuntime:
         governed_tools: Sequence[BaseTool],
         checkpointer: Any,
         compaction: CompactionSettings,
+        session_id: str,
     ) -> Any:
         profile = resolved_profile.profile
         summariser, compact_tool = build_compaction_middleware(model, backend, compaction)
@@ -639,6 +646,8 @@ class DeepAgentTurnRuntime:
             tools=list(governed_tools),
             system_prompt=resolved_profile.prompt_body,
             middleware=(
+                # One routing key per agent conversation, so its prompt cache stays warm.
+                ModelSessionAffinity(session_id),
                 ToolRepairRoundsMiddleware(),
                 ExactAgentToolSurfaceMiddleware(
                     profile=resolved_profile,
@@ -697,6 +706,7 @@ class DeepAgentTurnRuntime:
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
                 compaction=await self._compaction(resolved_profile.profile),
+                session_id=str(request.constitution.execution_id),
             )
             previous = await graph.aget_state(cast(RunnableConfig, dict(self._continuation_config)))
         return bool(previous.values.get("messages")) and not previous.next
@@ -729,6 +739,7 @@ class DeepAgentTurnRuntime:
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
                 compaction=await self._compaction(profile),
+                session_id=str(constitution.execution_id),
             )
             state: Any = {
                 "messages": cast(Any, list(context.messages)),
@@ -782,6 +793,18 @@ class DeepAgentTurnRuntime:
                     state = Command(
                         update={"_summarization_event": previous.values.get("_summarization_event")}
                     )
+            elif self._resume_saved_turn:
+                destination = {
+                    "configurable": {
+                        "thread_id": str(constitution.execution_id),
+                        "checkpoint_ns": "",
+                    }
+                }
+                current = await graph.aget_state(cast(RunnableConfig, destination))
+                if current.values:
+                    # Spec 2026-10-14 §3.1: the saved state already holds this turn's opening
+                    # messages; LangGraph runs the pending step from it.
+                    state = None
             try:
                 result = await asyncio.wait_for(
                     graph.ainvoke(

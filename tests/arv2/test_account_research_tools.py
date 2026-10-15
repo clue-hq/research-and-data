@@ -70,8 +70,6 @@ from clue_api.arv2.media_feeds_client import (
     Episode,
     MediaFetchError,
     Podcast,
-    YouTubeMeta,
-    YouTubeWords,
 )
 from clue_api.arv2.structuring_client import (
     FieldCatalog,
@@ -753,6 +751,7 @@ def _runtime(
     *,
     settings: Settings | None = None,
     conn_factory: Any | None = None,
+    early_gate: asyncio.Semaphore | None = None,
 ) -> tuple[ToolRuntime, FakeClients, FakeWriter, Any]:
     clients = FakeClients()
     writer = FakeWriter()
@@ -770,6 +769,7 @@ def _runtime(
         media_budget=MediaBudget(9000),
         transport_factory=lambda: ScriptedTransport([]),
         now=lambda: datetime(2026, 9, 8, tzinfo=UTC),
+        early_gate=early_gate,
     )
     return runtime, clients, writer, conn_factory
 
@@ -1784,11 +1784,7 @@ def test_read_media_feeds_prefers_the_feed_over_the_watch_page_when_both_are_giv
         calls.append(url)
         return stubbed_fetch(url, caller)
 
-    def never(url: str, caller: Any) -> Any:
-        raise AssertionError("the watch page is a fallback, not a second call")
-
     monkeypatch.setattr(tools, "fetch_feed", fetch)
-    monkeypatch.setattr(tools, "youtube_metadata", never)
     runtime, _, _, _ = _runtime()
 
     found = _call(
@@ -1865,35 +1861,21 @@ def test_read_media_feeds_needs_one_of_the_two_urls() -> None:
     assert refused["code"] == "invalid_arguments"
 
 
-def test_read_media_feeds_takes_the_youtube_words_path_without_transcribing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime, clients, writer, _ = _runtime()
-    monkeypatch.setattr(
-        tools,
-        "youtube_metadata",
-        lambda url, caller: YouTubeMeta(
-            video_id="v1", title="Nick on ABM", length_s=900, cost=_cost(provider="youtube")
-        ),
-    )
-    monkeypatch.setattr(
-        tools,
-        "youtube_words",
-        lambda url, page_text, *, title=None, cost=None: YouTubeWords(
-            url=url, title=title, text="indexed words about ABM", cost=cost
-        ),
-    )
+def test_read_media_feeds_no_longer_reads_youtube_pages() -> None:
+    """Spec 2026-10-13 §2: the legacy tool's watch-page scrape is retired; it refuses instead."""
+    runtime, clients, writer, transport = _runtime()
 
-    found = _call(
+    refused = _call(
         runtime,
         "read_media_feeds",
         person_name="Nick Fisher",
         youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
     )
 
-    assert found["words"] == "indexed words about ABM"
-    assert clients.media_client.short_calls == [], "the words path never transcribes"
-    assert [d.field_key for d in writer.drafts] == ["account.media_layer_index"]
+    assert refused["code"] == "invalid_arguments"
+    assert "read_media" in json.dumps(refused)
+    assert clients.media_client.short_calls == []
+    assert writer.drafts == []
 
 
 # -- verify_links ---------------------------------------------------------------------------------
@@ -3435,3 +3417,217 @@ def test_a_person_tool_emitting_a_code_outside_the_person_set_is_a_tool_error(
 
     assert refused["code"] == "tool_error:AssertionError"
     assert refused["recoverable"] is True
+
+
+# -- the provider slot is freed when the provider answers (W1-7) ----------------------------------
+
+
+class _Timeline:
+    """Monotonic timestamps of each hop's dispatch and drain, shared with the provider thread."""
+
+    def __init__(self) -> None:
+        import threading
+        import time
+
+        self.lock, self.clock = threading.Lock(), time.monotonic
+        self.events: list[tuple[str, int, float]] = []
+
+    def mark(self, what: str, call: int) -> None:
+        with self.lock:
+            self.events.append((what, call, self.clock()))
+
+    def at(self, what: str, call: int) -> float:
+        return next(t for w, c, t in self.events if w == what and c == call)
+
+
+def _timed_runtime(*, outside: bool, drain_s: float = 0.2, **settings: Any) -> Any:
+    runtime, _, _, _ = _runtime(
+        settings=Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            arv2_drain_outside_slot=outside,
+            **settings,
+        )
+    )
+    timeline = _Timeline()
+    drains: list[str | None] = []
+
+    async def drain(raw: Any, ledger: Any, **kwargs: Any) -> None:
+        call = len(drains)
+        drains.append(kwargs.get("error"))
+        await asyncio.sleep(drain_s)
+        timeline.mark("drain_end", call)
+
+    runtime._drain = drain
+    return runtime, timeline, drains
+
+
+def _provider_call(timeline: _Timeline, call: int, *, raise_error: bool = False) -> Any:
+    import time
+
+    def fn(caller: Any) -> str:
+        timeline.mark("dispatch_start", call)
+        time.sleep(0.01)
+        timeline.mark("dispatch_end", call)
+        if raise_error:
+            raise RuntimeError("provider exploded")
+        return f"result-{call}"
+
+    return fn
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_free_slot_is_handed_on_before_the_previous_result_is_indexed(outside: bool) -> None:
+    runtime, timeline, drains = _timed_runtime(outside=outside, arv2_account_provider_concurrency=2)
+
+    async def five() -> list[Any]:
+        return await asyncio.gather(
+            *(runtime.call_provider("exa", _provider_call(timeline, i)) for i in range(5))
+        )
+
+    assert _run(five()) == [f"result-{i}" for i in range(5)]
+    assert len(drains) == 5  # every call is indexed exactly once
+    first_indexed = min(timeline.at("drain_end", i) for i in range(5))
+    third_started = sorted(t for w, _, t in timeline.events if w == "dispatch_start")[2]
+    if outside:
+        assert third_started < first_indexed
+    else:  # the old order: both slots are held through indexing
+        assert third_started >= first_indexed
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_failed_call_is_still_indexed_and_its_error_still_raised(outside: bool) -> None:
+    runtime, timeline, drains = _timed_runtime(outside=outside, drain_s=0.01)
+
+    with pytest.raises(RuntimeError, match="provider exploded"):
+        _run(runtime.call_provider("exa", _provider_call(timeline, 0, raise_error=True)))
+    assert drains == ["RuntimeError"]
+    # The slot was given back: the next call goes through.
+    assert _run(runtime.call_provider("exa", _provider_call(timeline, 1))) == "result-1"
+
+
+class _AdvisoryConnFactory:
+    """One process-wide advisory lock, as ``pg_try_advisory_xact_lock`` behaves across jobs."""
+
+    def __init__(self) -> None:
+        self.holder: object | None = None
+
+    def __call__(self) -> Any:
+        return self._open()
+
+    @asynccontextmanager
+    async def _open(self) -> AsyncIterator[Any]:
+        factory, me = self, object()
+
+        class Conn:
+            async def execute(self, statement: Any, parameters: Any = None) -> Any:
+                won = factory.holder is None
+                if won:
+                    factory.holder = me
+
+                class Result:
+                    def scalar_one(self) -> bool:
+                        return won
+
+                return Result()
+
+        try:
+            yield Conn()
+        finally:
+            if self.holder is me:
+                self.holder = None
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside: bool) -> None:
+    # The gap outlasts the indexing, as in production (10.5 s vs ~1 s), and the two are far apart,
+    # so a loaded test machine cannot blur the two orders. While the gap runs the pacing lock is
+    # held, so the next call starts at max(gap, indexing) from the answer (review M-1).
+    gap, drain_s = 1.0, 0.5
+    runtime, timeline, drains = _timed_runtime(
+        outside=outside, drain_s=drain_s, arv2_ai_ark_min_gap_s=gap
+    )
+    runtime.clients.ai_ark_token_scope = "token-1"
+    runtime._pacing_conn_factory = _AdvisoryConnFactory()
+
+    async def two() -> list[Any]:
+        return await asyncio.gather(
+            *(runtime.call_provider("ai_ark", _provider_call(timeline, i)) for i in range(2))
+        )
+
+    assert sorted(_run(two())) == ["result-0", "result-1"]
+    assert len(drains) == 2
+    starts = sorted((t, c) for w, c, t in timeline.events if w == "dispatch_start")
+    first, second = starts[0][1], starts[1][1]
+    waited = timeline.at("dispatch_start", second) - timeline.at("dispatch_end", first)
+    if outside:  # the gap starts at the answer; the indexing runs inside it (+ 0.1 s polling)
+        assert gap <= waited < gap + drain_s - 0.1
+    else:  # the old order: indexing, then the whole gap
+        assert waited >= gap + drain_s
+
+
+def test_ai_ark_subject_registration_skips_a_held_non_ai_ark_response_without_storage() -> None:
+    """W2-16: an Exa response is not downloaded just to learn it is not AI Ark."""
+    import clue_api.arv2.committee_discovery as discovery
+
+    class NoStorage:
+        async def get(self, key: str) -> bytes:
+            raise AssertionError("storage was read")
+
+    runtime, _, _, _ = _runtime()
+    runtime.storage = NoStorage()  # type: ignore[assignment]
+    body = json.dumps({"record": {"provider": "exa", "operation": "search"}}).encode()
+    _run(
+        discovery.index_provider_artifacts(
+            runtime, MemoryConn(), ["ws-1/abc"], bodies={"ws-1/abc": body}
+        )
+    )
+
+
+def test_early_uploads_are_limited_across_every_job_of_a_worker_process(monkeypatch) -> None:
+    """W2-15 option B: the work done before the worker lock (store the response, check privacy,
+    upload the source files) is bounded per process by one shared limit, so a burst of finished
+    evidence calls cannot exhaust the process's connection pool or flood storage."""
+    import clue_api.arv2.account_research_tools as tools_module
+    from clue_api.arv2.provider_ledger import BufferedLedger, BufferedRawSink, HeldDrain
+    from clue_spend.ledger import DrainReport
+
+    running = peak = 0
+
+    async def slow_hold(**_: Any) -> HeldDrain:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return HeldDrain((), {}, {}, 0)
+
+    async def drained(conn: Any, **_: Any) -> DrainReport:
+        return DrainReport(
+            rows=0, artifacts=0, cost_usd=Decimal(0), credits=Decimal(0), media_seconds=0
+        )
+
+    monkeypatch.setattr(tools_module, "hold_drain", slow_hold)
+    monkeypatch.setattr(tools_module, "drain_provider_calls", drained)
+    monkeypatch.setattr(tools_module, "has_capability", lambda *_: False)
+    gate = asyncio.Semaphore(2)
+    settings = Settings(_env_file=None, arv2_upload_outside_lock=True)  # type: ignore[call-arg]
+    jobs = [_runtime(settings=settings, early_gate=gate)[0] for _ in range(3)]
+
+    async def burst() -> None:
+        await asyncio.gather(
+            *(job._drain(BufferedRawSink(), BufferedLedger()) for job in jobs for _ in range(2))
+        )
+
+    _run(burst())
+    assert peak == 2
+
+
+def test_the_orphan_sweep_waits_far_longer_than_an_early_upload_waits_to_be_recorded() -> None:
+    """Review M-3: with option B a source file exists without its artifact row while its call
+    waits for the worker lock (seconds to minutes). The orphan sweep deletes row-less files only
+    after its grace, so the grace must stay far longer than that wait."""
+    from datetime import timedelta
+
+    from clue_api.storage_wiring import DEFAULT_ORPHAN_SWEEP_GRACE
+
+    assert timedelta(hours=24) <= DEFAULT_ORPHAN_SWEEP_GRACE

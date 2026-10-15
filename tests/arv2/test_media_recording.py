@@ -7,7 +7,6 @@ import wave
 import pytest
 
 from clue_api.arv2 import media_recording as recording
-from clue_spend.transport import HttpRequest
 
 
 def test_lossless_wav_passes_through_without_resampling(tmp_path):
@@ -54,25 +53,21 @@ def test_video_first_audio_track_is_extracted_without_channel_or_sample_changes(
     assert "-ar" not in calls[1] and "-ac" not in calls[1]
 
 
-def test_youtube_acquisition_is_exact_public_single_recording(monkeypatch):
-    monkeypatch.setattr(recording, "find_spec", lambda _: object())
-    monkeypatch.setattr(recording.shutil, "which", lambda _: "/bin/node")
-    calls = []
+def test_youtube_is_never_downloaded():
+    """Spec 2026-10-13 §2: no yt-dlp anywhere; YouTube is read by Gemini from its public link."""
+    assert not hasattr(recording, "download_youtube")
+    assert not hasattr(recording, "YouTubeAudioTransport")
+    assert not hasattr(recording, "fetch_youtube")
 
-    def command(args):
-        calls.append(args)
-        if "--dump-single-json" in args:
-            return json.dumps({"availability": "public", "id": "abcdefghijk"})
-        from pathlib import Path
 
-        Path(args[args.index("-o") + 1].replace("%(ext)s", "webm")).write_bytes(b"audio")
-        return ""
+def test_the_deepgram_trial_script_imports_and_refuses_youtube(tmp_path):
+    import importlib.util
+    from pathlib import Path
 
-    monkeypatch.setattr(recording, "command", command)
-    response = recording.YouTubeAudioTransport().send(
-        HttpRequest("GET", "https://youtu.be/abcdefghijk")
-    )
-    assert response.body == b"audio"
-    assert all("--ignore-config" in args and "--no-playlist" in args for args in calls)
-    with pytest.raises(ValueError):
-        recording.YouTubeAudioTransport().send(HttpRequest("GET", "http://localhost/audio"))
+    path = Path(__file__).parents[2] / "scripts" / "trial_deepgram_media.py"
+    spec = importlib.util.spec_from_file_location("trial_deepgram_media", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with pytest.raises(ValueError, match="never downloaded"):
+        module.prepare("https://youtu.be/abcdefghijk", tmp_path / "out")

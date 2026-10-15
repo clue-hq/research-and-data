@@ -110,16 +110,17 @@ def test_acquisition_projects_research_evidence_only_and_preserves_audit(monkeyp
     original = {"content": [company()], "requestId": "request-1"}
     envelope = json.dumps({"body_utf8": json.dumps(original)}).encode()
     reader = AsyncMock(return_value=(None, envelope))
-    save = AsyncMock(return_value="source")
+    save = AsyncMock(return_value=["source"])
     monkeypatch.setattr(quality_acquisition, "read_verified_artifact", reader)
-    monkeypatch.setattr(quality_acquisition, "prepare_source", save)
+    monkeypatch.setattr(quality_acquisition, "prepare_sources", save)
     row = quality_acquisition.AcquisitionReceipt(
         uuid4(), provider, "lookup", datetime.now(UTC), 200, None, "audit-key", uuid4()
     )
     asyncio.run(
         quality_acquisition._index_receipts(None, None, SimpleNamespace(workspace_id="ws"), (row,))
     )
-    saved = save.call_args.kwargs
+    (saved_spec,) = save.call_args.args[3]
+    saved = vars(saved_spec)
     assert saved["body"] == (enrichment_only(original) if provider == "ai_ark" else original)
     assert saved["original_key"] == "audit-key"
     assert saved["ledger_id"] == row.ledger_id

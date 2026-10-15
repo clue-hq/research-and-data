@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.knowledge_bytes import cached_bytes, fetch_concurrently, remember_bytes
 from clue_storage import ArtifactNotFound, StorageBackend, content_address
 
 __all__ = [
@@ -105,6 +106,30 @@ async def hydrate_message_bodies(
         .all()
     )
     durable = {str(row["storage_key"]): row for row in rows}
+
+    def eligible(artifact_key: str, sha256: str) -> bool:
+        row = durable.get(artifact_key)
+        return (
+            row is not None and row["content_sha256"] == sha256 and _is_text(str(row["media_type"]))
+        )
+
+    # The downloads overlap and are served from the content cache on a reload (2026-10-15: nine
+    # bodies fetched one after another were most of a 5.3 s chat load). The budget is applied below
+    # exactly as before; the bodies it would admit if every fetch succeeds are fetched up front, and
+    # one a failure frees room for is fetched on its own in the loop.
+    planned: list[str] = []
+    optimistic = 0
+    for artifact_key, sha256 in unique.items():
+        if not eligible(artifact_key, sha256):
+            continue
+        size = int(durable[artifact_key]["size_bytes"])
+        if optimistic + size > budget_bytes:
+            continue
+        optimistic += size
+        if cached_bytes(workspace_id, (artifact_key, sha256)) is None:
+            planned.append(artifact_key)
+    fetched = await fetch_concurrently(storage, planned)
+
     hydrated: dict[str, HydratedBody] = {}
     spent = 0
     for artifact_key, sha256 in unique.items():
@@ -127,9 +152,12 @@ async def hydrate_message_bodies(
                 artifact_key=artifact_key, body=None, reason="budget"
             )
             continue
-        try:
-            data = await storage.get(artifact_key)
-        except ArtifactNotFound:
+        data: bytes | Exception | None = cached_bytes(workspace_id, (artifact_key, sha256))
+        if data is None:
+            data = fetched.get(artifact_key)
+        if data is None:
+            data = (await fetch_concurrently(storage, [artifact_key]))[artifact_key]
+        if isinstance(data, ArtifactNotFound):
             # The durable row proves that bytes once existed, while the backend no longer has
             # them. That is materially different from erased/purged metadata and must remain a
             # per-message absence: one lost historical blob cannot make the whole thread a 500.
@@ -139,11 +167,14 @@ async def hydrate_message_bodies(
                 reason="artifact_missing",
             )
             continue
+        if isinstance(data, Exception):
+            raise data
         if content_address(data) != sha256:
             hydrated[artifact_key] = HydratedBody(
                 artifact_key=artifact_key, body=None, reason="digest_mismatch"
             )
             continue
+        remember_bytes(workspace_id, (artifact_key, sha256), data)
         spent += size
         hydrated[artifact_key] = HydratedBody(
             artifact_key=artifact_key, body=data.decode("utf-8", errors="replace")

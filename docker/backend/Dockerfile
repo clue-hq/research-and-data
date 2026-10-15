@@ -51,9 +51,12 @@ COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv PATH=/app/.venv/bin:$PATH \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# ffmpeg/ffprobe: research media prepares every recording for Deepgram with them (spec
+# docs/superpowers/specs/2026-10-13-legitimate-media-sources-design.md §4); without them no
+# transcript is ever produced. YouTube is never downloaded (no yt-dlp in this image).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates fontconfig libfontconfig1 libstdc++6 \
-       libpq5 \
+       libpq5 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app

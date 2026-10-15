@@ -11,7 +11,9 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_policy import advisory_research
 
 
-async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> dict[str, object]:
+async def coverage(
+    conn: AsyncConnection, scope: JobScope, context_id: UUID, *, deferred: tuple[str, ...] = ()
+) -> dict[str, object]:
     params = {
         "ws": scope.workspace_id,
         "job": scope.job_id,
@@ -94,7 +96,7 @@ async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> 
     unprocessed = [
         str(r.source_id) for r in source_rows if r.units == 0 and r.kind != "acquisition_gap"
     ]
-    missing = sorted(required - pages)
+    missing = sorted(required - pages - set(deferred))
     claims = (
         (
             await conn.execute(
@@ -120,6 +122,7 @@ async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> 
         "claim_quality": [dict(r) for r in claims],
         "published_pages": sorted(pages),
         "missing_pages": missing,
+        **({"deferred_pages": sorted(deferred)} if deferred else {}),
         "needs_review": bool(missing or (unprocessed and not advisory_research(scope))),
         "limitations": [
             "Processed units do not prove exhaustive source coverage.",

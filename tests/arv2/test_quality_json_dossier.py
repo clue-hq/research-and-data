@@ -27,7 +27,7 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 25
+    assert CURRENT_RECIPE_VERSION == 27
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
@@ -37,11 +37,10 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
         if r.ref.endswith(f"recipe-v{CURRENT_RECIPE_VERSION}.json")
     )
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
+    assert {"save_dossier_section@2", "update_dossier_findings@2"} <= set(allowed)
     assert all(
         n + "@1" in allowed
         for n in (
-            "save_dossier_section",
-            "update_dossier_findings",
             "validate_dossier",
             "finish_dossier",
             "begin_dossier_revision",
@@ -61,12 +60,13 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
         ):
             assert set(re.findall(r"/\.deepagent/(skills/[^\s`]+?/SKILL\.md)", body)) <= mounted
     selected = {skill.resource.name: skill.resource.version for skill in profile.skills}
-    assert selected["person-dossier" if person else "account-dossier"] == ("v5" if person else "v9")
+    expected_dossier_skill = "v6" if person else "v10"
+    assert selected["person-dossier" if person else "account-dossier"] == expected_dossier_skill
     assert (
         selected["claim-ready-person-dossier" if person else "claim-ready-account-dossier"] == "v3"
     )
     if not person:
-        assert selected["person-research-briefing"] == "v4"
+        assert selected["person-research-briefing"] == "v5"
     old_parent = (
         quality_profiles(registry, version=16, person=person)
         .resolve(AgentRole.ACCOUNT_RESEARCH)
@@ -105,3 +105,39 @@ def test_current_research_roles_can_read_but_not_modify_spilled_receipts():
             assert "reads" not in workspace.writable_prefixes
     for version in range(2, 20):
         load_quality_resources("account", version=version)
+
+
+def test_v2_save_schema_shows_the_review_statuses_and_v1_is_unchanged():
+    """Production 2026-10-06: all 27 rejected saves (56 errors) were a missing `review`; the
+    v1 schema showed `review.status` as a free string, so the allowed values were invisible."""
+    from clue_api.arv2.quality_json_dossier import (
+        SaveDossierSectionTool,
+        SaveDossierSectionToolV2,
+        SaveSectionInput,
+        SaveSectionInputV2,
+        UpdateDossierFindingsToolV2,
+    )
+
+    schema = SaveSectionInputV2.model_json_schema()
+    status = schema["$defs"]["EntryReviewV2"]["properties"]["status"]
+    assert set(status["enum"]) == {
+        "supported",
+        "duplicate",
+        "wrong_entity",
+        "insufficient_context",
+        "potential_conflict",
+    }
+    # A finding without review reaches the tool (it is refused per finding, not per call).
+    SaveSectionInputV2.model_validate(
+        {
+            "section": "s",
+            "findings": [{"id": "F001", "topic": "t", "claim_type": "observation", "finding": "x"}],
+        }
+    )
+    assert (
+        SaveDossierSectionTool.version == "1"
+        and SaveDossierSectionTool.input_model is SaveSectionInput
+    )
+    assert SaveDossierSectionToolV2.version == UpdateDossierFindingsToolV2.version == "2"
+    assert SaveDossierSectionToolV2.name == "save_dossier_section"
+    assert UpdateDossierFindingsToolV2.name == "update_dossier_findings"

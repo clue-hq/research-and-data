@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Static smoke test of a built backend image: every service imports, the helper runs, the fonts
-# and Tailwind toolchain are present, Chromium launches, and the image runs as non-root.
+# and Tailwind toolchain are present, Chromium launches, ffmpeg/ffprobe run (research media), and
+# the image runs as non-root.
 # Every check runs even when an earlier one fails, so one run reports every problem; the script
 # exits non-zero if any check failed.
 # Usage: docker/backend/smoke.sh <image>
@@ -29,6 +30,8 @@ check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/r
 check "site-kit section toolchain" run test -d /app/apps/frontend/node_modules/typescript -a -d /app/apps/frontend/node_modules/esbuild -a -d /app/apps/frontend/node_modules/tsx
 check "site-kit section check folder writable" run test -w /app/apps/frontend/packages/site-kit/.section-check
 check "node" run node --version
+check "ffmpeg" quiet run ffmpeg -version
+check "ffprobe" quiet run ffprobe -version
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
 # The site renderer's own hardened page, launched exactly as the services run it: it reads the

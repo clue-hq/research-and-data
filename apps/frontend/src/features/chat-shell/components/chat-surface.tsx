@@ -10,6 +10,7 @@ import {
   type ProjectChatController,
 } from "@/features/projects/hooks/use-project-chat-controller";
 import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachments";
+import { useMentionDirectory } from "@/features/projects/hooks/use-mention-directory";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
 import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
 import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
@@ -696,14 +697,17 @@ export function ChatSurface({
     active: true,
     refreshToken: chat.planWriteRevision,
   });
+  // Accounts and contacts: the whole workspace directory, this project's accounts first
+  // (2026-10-05 — the server-rendered list held only the 50 newest accounts).
+  const mention = useMentionDirectory(projectId, workspace.entities);
   const composerCatalog = useMemo(
     () =>
       buildComposerCatalog({
         documents: composerDocuments.documents,
         artifacts: feedArtifacts,
-        entities: workspace.entities,
+        entities: mention.entities,
       }),
-    [composerDocuments.documents, feedArtifacts, workspace.entities],
+    [composerDocuments.documents, feedArtifacts, mention.entities],
   );
   const { setCatalogEntities } = controller;
   useEffect(() => {
@@ -1054,6 +1058,7 @@ export function ChatSurface({
                 contextEntities={controller.composerEntities}
                 contextHandoffError={controller.contextHandoffError}
                 onOpenPlan={(id) => void documentTabs.openById(id)}
+                projectId={workspace.id}
               />
             </div>
           ) : null}
@@ -1166,6 +1171,7 @@ export function ChatSurface({
               disabled={chat.access !== null || chat.route !== null}
               dropActive={drop.active}
               entities={controller.composerEntities}
+              onMentionQueryChange={mention.onMentionQueryChange}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
               onAttachmentFiles={

@@ -848,3 +848,196 @@ def test_a_new_turn_must_name_a_thread_that_exists_in_its_own_workspace(
                 )
 
     run_async(cross_workspace())
+
+
+# --- sidebar chat order ------------------------------------------------------------------------
+
+
+async def _message_at(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    thread_id: str,
+    at: datetime,
+    role: str,
+) -> None:
+    """One message in a thread, written at ``at`` (its own turn, the thread's next sequence)."""
+
+    turn_id = await _turn(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        thread_id=thread_id,
+        requested_at=at,
+    )
+    sha = uuid4().hex * 2
+    key = await _artifact(conn, workspace_id=workspace_id, sha=sha)
+    await conn.execute(
+        text(
+            "INSERT INTO agent_thread_message (id, workspace_id, thread_id, turn_id, sequence, "
+            " role, body_artifact_key, body_sha256, retention_class, created_at) "
+            "VALUES (:id, :workspace, :thread, :turn, (SELECT COALESCE(MAX(sequence), 0) + 1 "
+            " FROM agent_thread_message WHERE workspace_id = :workspace AND thread_id = :thread), "
+            " :role, :key, :sha, 'standard', :at)"
+        ),
+        {
+            "id": uuid4(),
+            "workspace": workspace_id,
+            "thread": thread_id,
+            "turn": turn_id,
+            "role": role,
+            "key": key,
+            "sha": sha,
+            "at": at,
+        },
+    )
+
+
+async def _submission_at(
+    conn: AsyncConnection,
+    *,
+    project,  # noqa: ANN001 -- the seeded project
+    principal,  # noqa: ANN001 -- the seeded principal
+    thread_id: str,
+    at: datetime,
+    derivation: str | None = None,
+) -> None:
+    """A message sent to a thread at ``at`` that no turn has answered yet (it is queued)."""
+
+    sha = uuid4().hex * 2
+    key = await _artifact(conn, workspace_id=project.workspace_id, sha=sha)
+    input_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO onboarding_input (id, workspace_id, brand_id, project_id, kind, "
+            " artifact_key, content_sha256, actor) "
+            "VALUES (:id, :workspace, :brand, :project, 'user_turn', :key, :sha, 'human')"
+        ),
+        {
+            "id": input_id,
+            "workspace": project.workspace_id,
+            "brand": project.brand_id,
+            "project": project.project_id,
+            "key": key,
+            "sha": sha,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO agent_turn_submission (turn_id, workspace_id, project_id, thread_id, "
+            " submitted_by_user_id, submitted_via_membership_id, onboarding_input_id, "
+            " message_artifact_key, message_sha256, agent_profile_id, requested_at, "
+            " derivation, derived_from_turn_id) "
+            "VALUES (:turn, :workspace, :project, :thread, :user, :membership, :input, :key, "
+            " :sha, 'head-of-abm@v24', :at, :derivation, :derived_from)"
+        ),
+        {
+            "turn": uuid4(),
+            "workspace": project.workspace_id,
+            "project": project.project_id,
+            "thread": thread_id,
+            "user": principal.user_id,
+            "membership": principal.membership_id,
+            "input": input_id,
+            "key": key,
+            "sha": sha,
+            "at": at,
+            "derivation": derivation,
+            "derived_from": uuid4() if derivation else None,
+        },
+    )
+
+
+def test_sidebar_orders_a_projects_chats_by_their_last_message(
+    require_thread_db: None,
+) -> None:
+    """Sidebar order (2026-10-15): pinned chats first, then the chat with the newest message.
+
+    The newest message is the person's or the agent's, and a message the person sent that is
+    still queued counts from the moment it was sent. Renaming a chat is not a message, and
+    neither is a turn the server queued on the person's behalf. A chat with no message yet
+    sorts by when it was created.
+    """
+    del require_thread_db
+    from clue_projections.threads import project_sidebar_page
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "ws-sidebar-order", name="Sidebar order")
+            await conn.execute(
+                text("UPDATE project SET status = 'active' WHERE project_id = :id"),
+                {"id": project.project_id},
+            )
+            owner = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr_sidebar_order",
+                membership_id="wsm_sidebar_order",
+            )
+            ws, pid = project.workspace_id, project.project_id
+            ids: dict[str, str] = {}
+            for name in ("pinned", "replied", "queued", "renamed", "empty"):
+                thread = await create_thread(
+                    conn,
+                    thread_id=new_thread_id(),
+                    workspace_id=ws,
+                    project_id=pid,
+                    title=name,
+                    created_by_user_id=owner.user_id,
+                    created_via_membership_id=owner.membership_id,
+                )
+                ids[name] = thread.id
+                await _stamp_created_at(conn, thread_id=thread.id, at=START)
+
+            await _message_at(
+                conn, workspace_id=ws, project_id=pid, thread_id=ids["pinned"],
+                at=START + timedelta(minutes=5), role="user",
+            )
+            await conn.execute(
+                text("UPDATE agent_thread SET pinned = true WHERE id = :id"),
+                {"id": ids["pinned"]},
+            )
+            await _message_at(
+                conn, workspace_id=ws, project_id=pid, thread_id=ids["replied"],
+                at=START + timedelta(hours=1), role="user",
+            )
+            await _message_at(
+                conn, workspace_id=ws, project_id=pid, thread_id=ids["replied"],
+                at=START + timedelta(hours=3), role="assistant",
+            )
+            await _submission_at(
+                conn, project=project, principal=owner, thread_id=ids["queued"],
+                at=START + timedelta(hours=2),
+            )
+            await _message_at(
+                conn, workspace_id=ws, project_id=pid, thread_id=ids["renamed"],
+                at=START + timedelta(minutes=30), role="assistant",
+            )
+            # A rename moves agent_thread.updated_at to now(), long after every message here.
+            await conn.execute(
+                text("UPDATE agent_thread SET title = 'renamed later', updated_at = now() "
+                     "WHERE id = :id"),
+                {"id": ids["renamed"]},
+            )
+            # A turn the server queued for the person is not a message they sent.
+            await _submission_at(
+                conn, project=project, principal=owner, thread_id=ids["empty"],
+                at=START + timedelta(hours=5), derivation="discovery_finished",
+            )
+
+            rail = await project_sidebar_page(
+                workspace_id=ws, conn_factory=conn_session_factory(conn)
+            )
+            order = [
+                thread.thread_id
+                for item in rail.items
+                if item.project_id == pid
+                for thread in item.threads
+            ]
+            names = {thread_id: name for name, thread_id in ids.items()}
+            assert [names[thread_id] for thread_id in order] == [
+                "pinned", "replied", "queued", "renamed", "empty",
+            ]
+
+    run_async(scenario())

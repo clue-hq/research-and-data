@@ -14,6 +14,10 @@ from clue_obs import get_logger
 from clue_storage import StorageBackend, read_verified_artifact, retain_artifact
 
 MIN_RECIPE = 18
+#: Recipe 26+: a nominated person starts at once, while the account is still researching; their
+#: contact page waits for the account's import (docs/superpowers/plans/2026-10-07-research-cost-
+#: phase1.md Task 10).
+RELEASE_AT_NOMINATION = 26
 READY_KIND = "research_account_import_ready"
 PARENT_DOSSIER_PATH = "/research/parent-account-dossier.json"
 log = get_logger("arv2.person_release")
@@ -23,6 +27,22 @@ def releases_after_import(scope: JobScope) -> bool:
     return (
         scope.catalog_version == "v4"
         and int((scope.input_refs or {}).get("quality_recipe_version", 0)) >= MIN_RECIPE
+    )
+
+
+async def parent_dossier_ready(conn: AsyncConnection, scope: JobScope) -> bool:
+    """Whether the person's parent account has a committed import to read now."""
+    parent = (scope.input_refs or {}).get("parent_job_id")
+    if not parent:
+        return False
+    return bool(
+        (
+            await conn.execute(
+                text("""SELECT EXISTS (SELECT 1 FROM artifact_reference
+        WHERE workspace_id=:ws AND reference_kind=:kind AND reference_id LIKE :parent||':%')"""),
+                {"ws": scope.workspace_id, "kind": READY_KIND, "parent": str(parent)},
+            )
+        ).scalar_one()
     )
 
 
@@ -86,7 +106,9 @@ async def ready_person_jobs(
           AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
           AND COALESCE(parent.input_refs->>'privacy_stopped','false')<>'true'
           AND (CAST(:generation AS uuid) IS NULL OR g.generation_id=:generation)
-          AND CASE WHEN COALESCE((j.input_refs->>'quality_recipe_version')::int,0)>=:minimum
+          AND CASE WHEN COALESCE((j.input_refs->>'quality_recipe_version')::int,0)>=:nomination
+            THEN parent.status<>'not_started'
+            WHEN COALESCE((j.input_refs->>'quality_recipe_version')::int,0)>=:minimum
             THEN EXISTS (SELECT 1 FROM artifact_reference a WHERE a.workspace_id=g.workspace_id
               AND a.reference_kind=:kind AND a.reference_id LIKE CAST(parent.job_id AS text)||':%')
             ELSE g.initial_settled_at IS NOT NULL END
@@ -94,6 +116,7 @@ async def ready_person_jobs(
                 {
                     "generation": generation_id,
                     "minimum": MIN_RECIPE,
+                    "nomination": RELEASE_AT_NOMINATION,
                     "kind": READY_KIND,
                 },
             )

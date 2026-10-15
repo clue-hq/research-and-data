@@ -190,6 +190,8 @@ class JobRow:
     profile_ref: str | None = None
     input_refs: dict[str, Any] | None = None
     selection_claim_ids: tuple[UUID, ...] | None = None
+    #: How many times the job was given a fresh conversation (spec 2026-10-14 §3.2).
+    restart_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -839,4 +841,5 @@ def _job(row: RowMapping) -> JobRow:
         selection_claim_ids=tuple(row["selection_claim_ids"])
         if row.get("selection_claim_ids") is not None
         else None,
+        restart_count=int(row.get("restart_count") or 0),
     )

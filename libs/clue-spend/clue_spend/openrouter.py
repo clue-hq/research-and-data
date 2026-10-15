@@ -14,26 +14,13 @@ caller's headers, its attribution and its model choice, and none of that is shar
 from __future__ import annotations
 
 import json
-from decimal import Decimal, InvalidOperation
+
+from clue_core.openrouter_cost import openrouter_charged_usd
 
 from .calls import CostReading
 from .transport import HttpResponse
 
 __all__ = ["openrouter_cost_reader", "openrouter_halt_rule"]
-
-
-def _decimal(value: object) -> Decimal | None:
-    """A provider-reported number as an exact Decimal, or ``None`` when it is not a number."""
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, Decimal):
-        return value
-    if isinstance(value, int | float | str):
-        try:
-            return Decimal(str(value))
-        except InvalidOperation:
-            return None
-    return None
 
 
 def openrouter_cost_reader(response: HttpResponse) -> CostReading:
@@ -63,16 +50,7 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
         return CostReading()
     usage = body.get("usage")
     usage = usage if isinstance(usage, dict) else {}
-    details = usage.get("cost_details")
-    details = details if isinstance(details, dict) else {}
-    upstream = _decimal(details.get("upstream_inference_cost"))
-    fee = _decimal(usage.get("cost"))
-    if upstream is None:
-        cost = fee
-    elif usage.get("is_byok") is True:
-        cost = upstream + (fee or Decimal(0))
-    else:
-        cost = upstream
+    cost = openrouter_charged_usd(usage)
     request_id = body.get("id") or response.headers.get("x-generation-id")
     # The model that answered and the token counts ride along as extras, under the same keys the
     # research agent writes on its ``round-*`` rows, so the per-model cost breakdown reads every

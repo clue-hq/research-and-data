@@ -9,6 +9,9 @@ Every agent built by :class:`~clue_agents.runtime.DeepAgentTurnRuntime` gets our
   public alias), so this module never does that.
 * **It is sized from the model's real context window** (:mod:`clue_gateway.model_windows`), with a
   fixed fallback when the window is unknown — never an unlimited agent.
+* **It counts real tokens** (:mod:`clue_agents.context_tokens`): every reply records our estimate
+  of the request that produced it, and the provider's own count of that request calibrates the
+  conversation's count, so the thresholds mean the model's tokens, not characters divided by four.
 
 Offloaded history and oversized tool arguments are written under ``/work/``: deepagents roots them
 at ``/`` for any backend that is not its ``CompositeBackend``, and ``/`` is not a writable prefix of
@@ -17,6 +20,7 @@ any profile, while ``work`` is for every role that can write files at all.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -25,6 +29,12 @@ from deepagents.middleware.summarization import (
     _DeepAgentsSummarizationMiddleware,
 )
 from deepagents.profiles import HarnessProfile, register_harness_profile
+
+from clue_agents.context_tokens import (
+    ContextTokenCounter,
+    estimate_tokens,
+    record_prompt_estimate,
+)
 
 __all__ = [
     "GOVERNED_PROVIDER_KEY",
@@ -57,11 +67,33 @@ class CompactionSettings:
 
 
 class ClueSummarizationMiddleware(_DeepAgentsSummarizationMiddleware):
-    """deepagents' summariser under our own class (see the module docstring)."""
+    """deepagents' summariser under our own class, counting real tokens (module docstring)."""
 
     @property
     def name(self) -> str:
         return "ClueSummarizationMiddleware"
+
+    @staticmethod
+    def _request_estimate(request: Any) -> int:
+        system = request.system_message
+        messages = [system, *request.messages] if system is not None else list(request.messages)
+        return estimate_tokens(messages, request.tools)
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        def recording(sent: Any) -> Any:
+            response = handler(sent)
+            record_prompt_estimate(response, self._request_estimate(sent))
+            return response
+
+        return super().wrap_model_call(request, recording)
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        async def recording(sent: Any) -> Any:
+            response = await handler(sent)
+            record_prompt_estimate(response, self._request_estimate(sent))
+            return response
+
+        return await super().awrap_model_call(request, recording)
 
 
 class HistoryPathBackend:
@@ -130,6 +162,7 @@ def build_compaction_middleware(
         backend=history_backend,
         trigger=trigger,
         keep=keep,
+        token_counter=ContextTokenCounter(),
         # The summary is built from the whole evicted part (founder ruling 2026-09-29), not
         # LangChain's default of only its last 4,000 tokens. The evicted part is bounded by the
         # trigger, so it always fits the same model's window.

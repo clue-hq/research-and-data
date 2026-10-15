@@ -102,6 +102,11 @@ export const BrandKnowledgeDocumentSchema = z.object({
   /** Only persisted Knowledge documents have a version; generated Design briefs do not. */
   version: z.number().int().positive().optional(),
   bodyLoaded: z.boolean().optional(),
+  /** Platform documents only: the document kind, the products it names, and whether it is the
+   * catalog generated from the product list (read-only). */
+  kind: z.string().optional(),
+  productIds: z.array(z.string()).optional(),
+  generated: z.boolean().optional(),
 });
 
 export const BrandKnowledgeFolderSchema = z.object({

@@ -56,11 +56,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
+from clue_api.knowledge_bytes import read_one_knowledge_bytes
 from clue_storage import (
     StorageBackend,
     artifact_key,
     content_address,
-    read_verified_artifact,
     record_artifact,
 )
 
@@ -930,11 +930,14 @@ async def _front_and_body(
 ) -> tuple[dict[str, Any], str]:
     """The document's front matter and its body, read from the verified artifact."""
 
-    record, raw = await read_verified_artifact(
-        conn, storage, storage_key=str(row["artifact_key"]), workspace_id=workspace_id
+    # Verified and cached by content (clue_api.knowledge_bytes); a digest that differs from the
+    # row's raises DocumentDigestMismatch, which is still the ValueError this read always raised.
+    raw = await read_one_knowledge_bytes(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        ref=(str(row["artifact_key"]), str(row["artifact_sha256"])),
     )
-    if record.content_sha256 != row["artifact_sha256"]:
-        raise ValueError("project document digest does not match its artifact")
     try:
         return parse_front_matter(raw.decode("utf-8"), preserve_body=True)
     except (UnicodeDecodeError, ValueError):

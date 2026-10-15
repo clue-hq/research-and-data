@@ -567,6 +567,12 @@ test("a measured kit brings its measured view, and its minted colours leave Sema
   const semantic = view.workspace.colorGroups.find((group) => group.id === "semantic")!;
   assert.ok(!semantic.swatches.some((swatch) => swatch.id === "surface.band.014036"));
   assert.ok(semantic.swatches.some((swatch) => swatch.id === "surface.brand"));
+  // The page streams the kit through getKitView (2026-10-15); it carries the measured view too.
+  const streamed = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getKitView();
+  assert.equal(streamed.measured?.colorGroups[0].label, "Section backgrounds");
 });
 
 test("a kit made before measurement, and a failed read, bring no measured view", async () => {
@@ -581,4 +587,28 @@ test("a kit made before measurement, and a failed read, bring no measured view",
     designFetch: async () => stubDesignApi({ "/brand-kits": { status: 500 } }).fetchImpl,
   }).getWorkspace();
   assert.equal(refused.measured, null);
+});
+
+test("the documents and the kit are read separately, and neither refusal costs the other", async () => {
+  // 2026-10-15: the page shows the documents first and streams the slower kit in after.
+  const knowledge: typeof fetch = async (input) => {
+    const path = String(input);
+    if (path.endsWith("/knowledge")) {
+      return Response.json({ brandId: "brd", folders: [{ key: "company", label: "Company", documents: [
+        { id: "doc-1", path: "company/overview.md", title: "Overview", kind: "company-overview", status: "ready", updatedAt: "2026-10-15T00:00:00Z", version: 1, productId: null, icpKey: null },
+      ] }] });
+    }
+    return Response.json({ id: "doc-1", path: "company/overview.md", title: "Overview", kind: "company-overview", status: "ready", updatedAt: "2026-10-15T00:00:00Z", version: 1, productId: null, icpKey: null, markdown: "# Overview", frontMatter: {}, sources: [] });
+  };
+  const designDown: typeof fetch = async () => new Response(null, { status: 503 });
+  const repository = httpBrandContextRepository({ clueFetch: () => knowledge, designFetch: () => designDown });
+
+  const folders = await repository.getKnowledgeFolders();
+  assert.deepEqual(folders.map((folder) => folder.documents.map((document) => document.path)), [["company/overview.md"]]);
+  const kitView = await repository.getKitView();
+  assert.equal(kitView.kit, null);
+  assert.deepEqual(kitView.workspace.knowledgeFolders, []);
+
+  const platformDown = httpBrandContextRepository({ clueFetch: () => noPlatformRead, designFetch: () => designDown });
+  assert.deepEqual(await platformDown.getKnowledgeFolders(), []);
 });

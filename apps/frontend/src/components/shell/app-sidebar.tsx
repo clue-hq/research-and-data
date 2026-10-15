@@ -20,7 +20,7 @@ function NavigationGroup({
   collapsed,
   items,
 }: {
-  activeHref: string;
+  activeHref: string | null;
   collapsed: boolean;
   items: SidebarNavigationItem[];
 }) {
@@ -59,7 +59,7 @@ export function AppSidebar({
   onToggle,
   toggleLabel,
 }: {
-  activeHref: string;
+  activeHref: string | null;
   className?: string;
   collapsed?: boolean;
   id?: string;

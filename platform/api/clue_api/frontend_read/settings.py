@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.research_fields import register_research_field_routes
+from clue_api.frontend_read.research_jobs import register_research_job_routes
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
 from clue_auth.errors import LifecycleTransitionError, MembershipPermissionError
 from clue_auth.principal import RequestPrincipal
@@ -95,10 +96,20 @@ async def read_workspace(conn: AsyncConnection, workspace_id: str) -> dict[str, 
         (
             await conn.execute(
                 text(
-                    "SELECT w.workspace_id, w.name, p.company_website, k.brand_kit_json "
+                    "SELECT w.workspace_id, w.name, "
+                    "COALESCE(p.company_website, 'https://' || r.company_domain) "
+                    "AS company_website, k.brand_kit_json "
                     "FROM workspace w LEFT JOIN self_serve_provisioning p USING (workspace_id) "
+                    # A workspace an operator added has no signup record: its website is the
+                    # domain its latest full onboarding run was started for (the switcher logo
+                    # uses the same fallback, auth_wiring.workspace_logo_urls), and its logo is
+                    # the workspace's approved kit (it has exactly one brand).
+                    "LEFT JOIN LATERAL (SELECT company_domain FROM onboarding_run "
+                    "WHERE workspace_id = w.workspace_id AND kind = 'full' "
+                    "ORDER BY requested_at DESC LIMIT 1) r ON true "
                     "LEFT JOIN LATERAL (SELECT brand_kit_json FROM design_brand_kit "
-                    "WHERE workspace_id = w.workspace_id AND brand_id = p.brand_id "
+                    "WHERE workspace_id = w.workspace_id "
+                    "AND (p.brand_id IS NULL OR brand_id = p.brand_id) "
                     "AND approval_status = 'approved' "
                     "ORDER BY updated_at DESC, version DESC, brand_kit_id "
                     "LIMIT 1) k ON true WHERE w.workspace_id = :ws"
@@ -195,6 +206,7 @@ def register_settings_routes(
     clerk = clerk_api or (ClerkApi(secret.get_secret_value()) if secret else None)
 
     register_research_field_routes(router, conn_factory=conn_factory)
+    register_research_job_routes(router, conn_factory=conn_factory)
 
     @router.get("/settings/profile")
     async def profile(request: Request, workspace_id: WorkspaceDep) -> dict[str, Any]:

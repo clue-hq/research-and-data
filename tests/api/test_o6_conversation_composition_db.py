@@ -105,6 +105,7 @@ from clue_fleet import (
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
 from clue_research.stage0 import submit_onboarding_input
+from clue_spine import create_product
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore
 from tests._identity import seed_principal
@@ -630,6 +631,25 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     body=PROJECT_ICP,
                     project_id=project.project_id,
                 )
+                # Spec 2026-10-15 §8: a product change the agent must hear about.
+                await seed_principal(conn, workspace_id=workspace_id, user_id="usr_o6_pm")
+                aura = await create_product(
+                    conn, brand_id=project.brand_id, workspace_id=workspace_id, name="Aura"
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO product_change (change_id, workspace_id, brand_id, kind, "
+                        " product_id, details, actor_user_id) VALUES (:id, :ws, :brand, "
+                        " 'rename', :product, CAST(:details AS jsonb), 'usr_o6_pm')"
+                    ),
+                    {
+                        "id": uuid4(),
+                        "ws": workspace_id,
+                        "brand": project.brand_id,
+                        "product": aura.product_id,
+                        "details": json.dumps({"before": "Aura Scribe", "after": "Aura"}),
+                    },
+                )
 
                 submission = await _capture_submission(
                     conn,
@@ -829,6 +849,10 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert card.confirmed_icp is None
                 assert card.product_set is None
                 assert card.omitted_count == 0
+                assert card.recent_product_changes is not None
+                assert [line.split(": ", 1)[1] for line in card.recent_product_changes] == [
+                    "Aura Scribe renamed to Aura"
+                ]
 
                 # 5. the surface this turn committed to, read out of the manifest artifact the
                 # turn's own row names — not from an in-memory resolve.

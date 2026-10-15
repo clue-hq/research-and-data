@@ -19,7 +19,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
-from clue_api.arv2.display.gather import SubjectRef, committee_members
+from clue_api.arv2.display.gather import (
+    SubjectRef,
+    committee_members,
+    committee_members_for_accounts,
+)
 from clue_api.arv2.project_documents import (
     document_title,
     get_project_document,
@@ -36,6 +40,7 @@ from clue_api.design_turn_targets import (
 )
 from clue_api.frontend_read.accounts_list import read_spine_page
 from clue_api.frontend_read.v1_shared import account_logo_path
+from clue_api.knowledge_bytes import read_knowledge_bytes
 from clue_config import Settings
 from clue_core import EntityId
 from clue_research.claimstore import WorkspaceScope, current_values
@@ -63,7 +68,7 @@ __all__ = [
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v73"
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v74"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
@@ -130,6 +135,40 @@ async def _account_logo_urls(
     return {entity_id: current.value_json for (entity_id, _field), current in values.items()}
 
 
+def account_context_entity(
+    account_id: Any,
+    name: str,
+    primary_domain: str | None,
+    logo: Any,
+    *,
+    settings: Settings | None,
+) -> ComposerContextEntity:
+    """One account as the picker shows it (shared by the bounded list and the directory)."""
+
+    return ComposerContextEntity(
+        object_type="account",
+        object_id=str(account_id),
+        label=name,
+        secondary_label=primary_domain or "Account",
+        image_url=account_logo_path(account_id, logo, domain=primary_domain, settings=settings),
+    )
+
+
+def contact_context_entity(
+    member: SubjectRef, *, account_id: str, account_name: str
+) -> ComposerContextEntity:
+    """One committee contact as the picker shows it, nested under its account."""
+
+    return ComposerContextEntity(
+        object_type="contact",
+        object_id=member.id,
+        label=member.name,
+        secondary_label=member.title or account_name,
+        account_id=account_id,
+        account_name=account_name,
+    )
+
+
 async def list_composer_context_entities(
     conn: AsyncConnection,
     *,
@@ -157,38 +196,28 @@ async def list_composer_context_entities(
         workspace_id=workspace_id,
         account_ids=[EntityId(UUID(str(row[0]))) for row in rows],
     )
+    # One batched committee read for the whole page (it was one query per account).
+    committees = await committee_members_for_accounts(
+        conn, workspace_id=workspace_id, account_ids=[str(row[0]) for row in rows]
+    )
     result: list[ComposerContextEntity] = []
     for account_id, canonical_name, primary_domain, _created_at, _updated_at in rows:
-        name = str(canonical_name)
         result.append(
-            ComposerContextEntity(
-                object_type="account",
-                object_id=str(account_id),
-                label=name,
-                secondary_label=primary_domain or "Account",
-                image_url=account_logo_path(
-                    account_id,
-                    logo_urls.get(EntityId(UUID(str(account_id)))),
-                    domain=primary_domain,
-                    settings=settings,
-                ),
+            account_context_entity(
+                account_id,
+                str(canonical_name),
+                primary_domain,
+                logo_urls.get(EntityId(UUID(str(account_id)))),
+                settings=settings,
             )
         )
-        for member in await committee_members(
-            conn, workspace_id=workspace_id, account_id=str(account_id)
-        ):
-            if not member.name:
-                continue
-            result.append(
-                ComposerContextEntity(
-                    object_type="contact",
-                    object_id=member.id,
-                    label=member.name,
-                    secondary_label=member.title or name,
-                    account_id=str(account_id),
-                    account_name=name,
-                )
+        result.extend(
+            contact_context_entity(
+                member, account_id=str(account_id), account_name=str(canonical_name)
             )
+            for member in committees.get(str(account_id), [])
+            if member.name
+        )
     return tuple(result)
 
 
@@ -651,7 +680,8 @@ async def _project_document_rows(
     rows = (
         await conn.execute(
             text(
-                "SELECT document_id, project_id, path, kind FROM brand_knowledge_document "
+                "SELECT document_id, project_id, path, kind, artifact_key, artifact_sha256 "
+                "FROM brand_knowledge_document "
                 "WHERE workspace_id = :workspace_id "
                 "  AND document_id = ANY(CAST(:ids AS uuid[])) AND project_id IS NOT NULL"
             ),
@@ -732,6 +762,20 @@ async def context_ref_presentations(
         rows = await _project_document_rows(
             conn, workspace_id=workspace_id, document_ids=tuple(dict.fromkeys(document_ids))
         )
+        if storage is not None:
+            # Every tagged document is opened for its title; fetch them together so the reads
+            # below are served from the content cache (2026-10-15: one after another they were
+            # 1.4 s of a chat's load). A row without a file has nothing to fetch.
+            await read_knowledge_bytes(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                refs=[
+                    (str(row.artifact_key), str(row.artifact_sha256))
+                    for row in rows.values()
+                    if getattr(row, "artifact_key", None) and getattr(row, "artifact_sha256", None)
+                ],
+            )
         for document_id, row in rows.items():
             front: Mapping[str, Any] = {}
             body = ""

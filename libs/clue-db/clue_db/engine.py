@@ -27,6 +27,7 @@ machine → Temporal) changes *where workflow state lives* without touching this
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
@@ -35,6 +36,11 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     create_async_engine,
 )
+
+from clue_obs import get_logger
+from clue_obs.critical_section import slow_threshold_ms
+
+log = get_logger("clue_db.engine")
 
 # The dependency-injection seam every persistence-touching worker/handler takes: a zero-arg factory
 # yielding a connection context manager — :func:`transaction` (commit-on-exit) or :func:`connection`
@@ -161,8 +167,27 @@ async def connection() -> AsyncIterator[AsyncConnection]:
     No surrounding transaction is begun — use :func:`transaction` when you want one. M1+ run reads
     through here. No business queries live in ``db``.
     """
+    started = time.monotonic()
     async with get_engine().connect() as conn:
+        _report_wait(started)
         yield conn
+
+
+def _report_wait(started: float) -> None:
+    """Log a connection that took long to get (W2-15 option B).
+
+    Every connection a process uses comes from one small pool, shared by its jobs, its agent
+    bookkeeping and its fleet heartbeat; a heartbeat that cannot get one in time loses its lease.
+    A wait at or above ``CLUE_DB_CRITICAL_SECTION_LOG_MS`` is logged with the pool's state. The
+    wait includes the checkout's liveness ping and, for a transaction, its ``BEGIN``.
+    """
+    waited_ms = (time.monotonic() - started) * 1000
+    if waited_ms >= slow_threshold_ms():
+        log.info(
+            "db.connection_waited",
+            wait_ms=round(waited_ms, 1),
+            pool=get_engine().pool.status(),
+        )
 
 
 @asynccontextmanager
@@ -173,7 +198,9 @@ async def transaction() -> AsyncIterator[AsyncConnection]:
     writes new claim rows (and sets ``superseded_by`` on the row being superseded) through this, so
     a supersession is one atomic unit — never an in-place UPDATE of a value column.
     """
+    started = time.monotonic()
     async with get_engine().begin() as conn:
+        _report_wait(started)
         yield conn
 
 
@@ -181,7 +208,9 @@ async def transaction() -> AsyncIterator[AsyncConnection]:
 async def repeatable_read_transaction() -> AsyncIterator[AsyncConnection]:
     """Yield one read-only, repeatable-read transaction for deterministic projections."""
 
+    started = time.monotonic()
     async with get_engine().connect() as conn:
+        _report_wait(started)
         await conn.execution_options(isolation_level="REPEATABLE READ")
         async with conn.begin():
             await conn.exec_driver_sql("SET TRANSACTION READ ONLY")

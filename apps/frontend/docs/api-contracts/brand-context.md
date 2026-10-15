@@ -123,6 +123,34 @@ Recommended document write request:
 }
 ```
 
+### Products (resolved 2026-10-15 — product management, spec `docs/superpowers/specs/2026-10-15-product-management-design.md`)
+
+The brand's product list is the platform's `product` table; the Product folder's pages and the
+catalog follow it. Served under `/frontend/v1/brand-context` (browser: through the BFF at
+`/api/clue/frontend/v1/brand-context`). Writes need `project.write`.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/products` | `{brandId, products: [{productId, name, aliases, pageDocumentId, pagePath, pagePending}], recentChanges: [{changeId, kind, text, createdAt, undoable}]}` — active products and the last 30 days of changes |
+| `POST` | `/products` | Add: `{name, description?}`; the page is written in the background (`pagePending: true`) |
+| `POST` | `/products/:productId/rename` | `{name}`; the old name stays as an alias, the page moves to the new name's path |
+| `POST` | `/products/merge` | `{productIds, intoProductId?, newName?}`; members leave the list, their pages are retired, a fresh page is written, every project using them moves to the survivor |
+| `POST` | `/products/:productId/remove` | The product leaves the list and every project using it; its page is hidden, not deleted |
+| `POST` | `/product-changes/:changeId/undo` | Undo a merge or a removal |
+
+Each write returns `{changeId, kind, text, productId, productName, pageDocumentId, pagePath,
+pagePending, projectsUpdated, projectsNeedingChoice}` (`pagePath`: where the product's page lives
+now; the editor follows it after a rename). A catalog line's description is the first prose
+paragraph of that product's page, and saving a product page regenerates the catalog. Refusals: `404 PRODUCT_NOT_FOUND | CHANGE_NOT_FOUND`,
+`409 PRODUCT_NOT_ACTIVE | PRODUCT_NAME_TAKEN | CHANGE_NOT_UNDOABLE`,
+`422 NAME_INVALID | MERGE_INVALID`.
+
+Documents name their products in front matter: the tree and document reads carry
+`productIds: string[]` and `generated: boolean` (the catalog generated from the product list).
+The document `PUT` accepts an optional `productIds` (Product-folder documents only; exactly one for
+a `product-research` page; active products of the brand only, else `422 PRODUCT_LINK_INVALID`), and refuses a hand edit of
+the generated catalog with `409 CATALOG_IS_GENERATED`.
+
 The backend should return `409 DOCUMENT_REVISION_CONFLICT` when the expected
 revision is stale. Share links require explicit scope and expiration rather
 than exposing the authenticated application URL.

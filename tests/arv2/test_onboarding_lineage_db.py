@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.onboarding_lineage import CatalogProduct, synchronize_catalog
 from clue_api.arv2.onboarding_reconcile import ExistingProduct, ReconcileDecision
 from clue_api.arv2.onboarding_store import create_run, mark_run_running, open_document, start_step
-from clue_spine import create_product, get_product, list_products
+from clue_spine import (
+    archive_product,
+    create_product,
+    get_product,
+    list_products,
+    merge_products,
+)
 from tests._identity import seed_principal
 from tests._workspace import seed_project
 from tests.db.conftest import run_async
@@ -623,5 +629,135 @@ def test_a_replay_mirrors_the_reconcile_columns_and_never_asks_the_model_again()
             )
             assert again == first
             assert replayed.calls == []
+
+    run_async(scenario())
+
+
+# --- spec 2026-10-15 §9: a re-run respects what a person decided -------------------------------
+
+
+def test_an_entry_spelled_like_a_merged_product_reuses_the_survivor() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-lineage-merged"
+            brand_id, doc_id = await _catalog_document(conn, ws)
+            feature = await create_product(
+                conn, brand_id=brand_id, workspace_id=ws, name="Proxon Observer"
+            )
+            platform = await create_product(conn, brand_id=brand_id, workspace_id=ws, name="Proxon")
+            await merge_products(
+                conn,
+                product_ids=[feature.product_id],
+                into_product_id=platform.product_id,
+                workspace_id=ws,
+            )
+            links = await synchronize_catalog(
+                conn,
+                workspace_id=ws,
+                brand_id=brand_id,
+                document_id=doc_id,
+                products=[
+                    CatalogProduct(
+                        name="Proxon Observer", short_description="A feature.", aliases=()
+                    ),
+                    CatalogProduct(name="Proxon", short_description="The platform.", aliases=()),
+                ],
+            )
+            assert [(link.product_id, link.resolution_state) for link in links] == [
+                (platform.product_id, "alias_reused"),
+                (platform.product_id, "alias_reused"),
+            ]
+            assert [link.redirected for link in links] == [True, False]
+            assert {p.name for p in await list_products(conn, brand_id)} == {
+                "Proxon Observer",
+                "Proxon",
+            }
+
+    run_async(scenario())
+
+
+def test_an_entry_spelled_like_a_removed_product_stays_removed_on_replay_too() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-lineage-removed"
+            brand_id, doc_id = await _catalog_document(conn, ws)
+            removed = await create_product(
+                conn, brand_id=brand_id, workspace_id=ws, name="Proxon Levels"
+            )
+            await archive_product(conn, product_id=removed.product_id, workspace_id=ws)
+            entries = [
+                CatalogProduct(name="Proxon Levels", short_description="Levels.", aliases=())
+            ]
+            for _ in range(2):  # the second pass is the replay of the same document
+                links = await synchronize_catalog(
+                    conn,
+                    workspace_id=ws,
+                    brand_id=brand_id,
+                    document_id=doc_id,
+                    products=entries,
+                )
+                assert [(link.product_id, link.resolution_state) for link in links] == [
+                    (None, "removed_by_person")
+                ]
+            row = (
+                await conn.execute(
+                    text("SELECT product_id FROM onboarding_product_lineage WHERE document_id=:d"),
+                    {"d": doc_id},
+                )
+            ).scalar_one()
+            assert row == removed.product_id
+            assert len(await list_products(conn, brand_id)) == 1
+
+    run_async(scenario())
+
+
+def test_a_fingerprint_bound_to_a_merged_product_replays_onto_the_survivor() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-lineage-prior-merged"
+            brand_id, first_doc = await _catalog_document(conn, ws)
+            entry = CatalogProduct(name="Proxon Spend", short_description="Spend.", aliases=())
+            (first,) = await synchronize_catalog(
+                conn, workspace_id=ws, brand_id=brand_id, document_id=first_doc, products=[entry]
+            )
+            assert first.product_id is not None
+            platform = await create_product(conn, brand_id=brand_id, workspace_id=ws, name="Proxon")
+            await merge_products(
+                conn,
+                product_ids=[first.product_id],
+                into_product_id=platform.product_id,
+                workspace_id=ws,
+            )
+            second_doc = await _second_document(conn, ws, brand_id)
+            (again,) = await synchronize_catalog(
+                conn, workspace_id=ws, brand_id=brand_id, document_id=second_doc, products=[entry]
+            )
+            assert (again.product_id, again.resolution_state, again.redirected) == (
+                platform.product_id,
+                "lineage_reused",
+                True,
+            )
+
+    run_async(scenario())
+
+
+def test_the_model_stage_is_shown_active_products_only() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-lineage-model-active"
+            brand_id, doc_id = await _catalog_document(conn, ws)
+            kept = await create_product(conn, brand_id=brand_id, workspace_id=ws, name="Kept")
+            gone = await create_product(conn, brand_id=brand_id, workspace_id=ws, name="Gone")
+            await archive_product(conn, product_id=gone.product_id, workspace_id=ws)
+            reconciler = ScriptedReconciler([])
+            await synchronize_catalog(
+                conn,
+                workspace_id=ws,
+                brand_id=brand_id,
+                document_id=doc_id,
+                products=[CatalogProduct(name="Brand new", short_description="New.", aliases=())],
+                reconciler=reconciler,
+            )
+            assert reconciler.calls and reconciler.calls[0][0] == (kept.name,)
 
     run_async(scenario())

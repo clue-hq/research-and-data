@@ -186,6 +186,10 @@ class DrainReport:
     media_seconds: int
     result_rows: tuple[LedgerRow, ...] = field(default_factory=tuple)
     raw_artifact_keys: Mapping[str, str] = field(default_factory=dict)
+    #: artifact key -> the exact bytes stored under it, for this drain only: a caller indexing the
+    #: batch right away (W2-16) uses them instead of downloading what it has just written. Freed
+    #: with the report.
+    raw_bodies: Mapping[str, bytes] = field(default_factory=dict)
 
 
 def ledger_id_for(row_id: str) -> UUID:
@@ -230,6 +234,80 @@ def _call_uuid(call_id: str) -> UUID:
         return uuid5(NAMESPACE_URL, call_id)
 
 
+@dataclass(frozen=True)
+class HeldDrain:
+    """A drain's first half: the raw bodies already stored and the ledger rows taken from the
+    buffer, before any row is written. :func:`record_drain` writes the rows."""
+
+    rows: tuple[LedgerRow, ...]
+    raw_artifact_keys: Mapping[str, str]
+    raw_bodies: Mapping[str, bytes]
+    artifacts: int
+
+    @property
+    def result_rows(self) -> tuple[LedgerRow, ...]:
+        return tuple(row for row in self.rows if row.phase == "result")
+
+
+async def hold_drain(
+    *,
+    raw: BufferedRawSink,
+    ledger: BufferedLedger,
+    artifacts: ArtifactSink | None,
+    stamp: LedgerStamp,
+) -> HeldDrain:
+    """Store every buffered raw body and take the buffered ledger rows, without a connection of
+    the caller's: the artifact sink records each body's row itself (before its upload). A caller
+    that holds a scarce connection for the rows (W2-15 option B) runs this first, outside it."""
+    keys: dict[str, str] = {}
+    bodies: dict[str, bytes] = {}
+    persisted = 0
+    for ref, record, body in raw.drain():
+        if artifacts is None:
+            continue
+        data = artifact_payload(record, body)
+        artifact = await artifacts.persist_body(
+            workspace_id=stamp.workspace_id,
+            data=data,
+            media_type="application/json",
+        )
+        keys[ref] = artifact.artifact_key
+        bodies[artifact.artifact_key] = data
+        persisted += 1
+    return HeldDrain(tuple(ledger.drain()), keys, bodies, persisted)
+
+
+async def record_drain(
+    conn: AsyncConnection,
+    held: HeldDrain,
+    *,
+    stamp: LedgerStamp,
+    on_failure: FailureHook | None = None,
+) -> DrainReport:
+    """Write a held drain's ledger rows, citing the bodies it stored, and report its spend."""
+    for row in held.rows:
+        await conn.execute(
+            _INSERT_LEDGER, _ledger_params(row, stamp=stamp, keys=held.raw_artifact_keys)
+        )
+
+    results = held.result_rows
+    if on_failure is not None:
+        for row in results:
+            if _stamped_failure(row) is not None:
+                await on_failure(conn, row, stamp, _surface_for(row, stamp))
+
+    return DrainReport(
+        rows=len(held.rows),
+        artifacts=held.artifacts,
+        cost_usd=sum((row.cost_usd or Decimal(0) for row in results), Decimal(0)),
+        credits=sum((row.credits or Decimal(0) for row in results), Decimal(0)),
+        media_seconds=sum(row.media_seconds or 0 for row in results),
+        result_rows=results,
+        raw_artifact_keys=held.raw_artifact_keys,
+        raw_bodies=held.raw_bodies,
+    )
+
+
 async def drain_provider_calls(
     conn: AsyncConnection,
     *,
@@ -238,6 +316,7 @@ async def drain_provider_calls(
     artifacts: ArtifactSink | None,
     stamp: LedgerStamp,
     on_failure: FailureHook | None = None,
+    held: HeldDrain | None = None,
 ) -> DrainReport:
     """Persist every buffered raw body and ledger row, and report what this drain cost.
 
@@ -251,39 +330,13 @@ async def drain_provider_calls(
 
     ``on_failure``, when given, is awaited once per failed result row after every row is inserted,
     with the surface :func:`_surface_for` computed for it.
+
+    ``held`` is a :func:`hold_drain` the caller already ran (bodies stored, rows taken); only its
+    rows are written here.
     """
-    keys: dict[str, str] = {}
-    persisted = 0
-    for ref, record, body in raw.drain():
-        if artifacts is None:
-            continue
-        artifact = await artifacts.persist_body(
-            workspace_id=stamp.workspace_id,
-            data=artifact_payload(record, body),
-            media_type="application/json",
-        )
-        keys[ref] = artifact.artifact_key
-        persisted += 1
-
-    rows = ledger.drain()
-    for row in rows:
-        await conn.execute(_INSERT_LEDGER, _ledger_params(row, stamp=stamp, keys=keys))
-
-    results = [row for row in rows if row.phase == "result"]
-    if on_failure is not None:
-        for row in results:
-            if _stamped_failure(row) is not None:
-                await on_failure(conn, row, stamp, _surface_for(row, stamp))
-
-    return DrainReport(
-        rows=len(rows),
-        artifacts=persisted,
-        cost_usd=sum((row.cost_usd or Decimal(0) for row in results), Decimal(0)),
-        credits=sum((row.credits or Decimal(0) for row in results), Decimal(0)),
-        media_seconds=sum(row.media_seconds or 0 for row in results),
-        result_rows=tuple(results),
-        raw_artifact_keys=keys,
-    )
+    if held is None:
+        held = await hold_drain(raw=raw, ledger=ledger, artifacts=artifacts, stamp=stamp)
+    return await record_drain(conn, held, stamp=stamp, on_failure=on_failure)
 
 
 def _surface_for(row: LedgerRow, stamp: LedgerStamp) -> str:

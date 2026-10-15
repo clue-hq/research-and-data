@@ -219,6 +219,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
     # turn the body names is its first fail-closed boundary.
     "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
+    # Product management (head-of-abm@v71): the matrix composes no storage, so the missing
+    # document storage is the first fail-closed boundary after the input is complete.
+    "manage_products": ("precondition", ("products_storage_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -628,6 +631,11 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "configure_project_targeting": {
             "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "manage_products": {
+            "action": "remove",
+            "product_id": "prd_matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
@@ -1495,7 +1503,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
-    assert len(registry.names()) == 150
+    # Product management (2026-10-15, main): manage_products (+1 name, +1 address).
+    assert len(registry.names()) == 151
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1545,7 +1554,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
-    assert len(registry) == 175
+    # Product management (2026-10-15, main): manage_products@1 (+1).
+    assert len(registry) == 176
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1594,7 +1604,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
-    assert len(registry.names()) == 150
+    # Product management (2026-10-15, main): manage_products (+1 name, +1 address).
+    assert len(registry.names()) == 151
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1631,7 +1642,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
-    assert len(registry) == 175
+    # Product management (2026-10-15, main): manage_products@1 (+1).
+    assert len(registry) == 176
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
