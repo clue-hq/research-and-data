@@ -176,3 +176,8 @@ Owed:
   PSL: requires >2 years left at filing (extend the term), role email, public abuse page, and the
   Guidelines decline projects "not serving more than thousands of users" — filing timing is the
   founder's call; live pages stay flag-gated until listed (spec §12).
+- DECIDED (founder, 2026-10-15): file the PSL only when "thousands of users" can be stated honestly;
+  until then live pages stay on internal/demo workspaces (LUMEN_SITE_LIVE_WORKSPACES). Ordinary
+  (static) published pages are for everyone. Release path: this branch is 580 ahead / 126 behind
+  origin/research-streaming (== origin/main): merge research-streaming in, PR → research-streaming,
+  then the founder's PR research-streaming → main (deploy-images must be green before merging).
