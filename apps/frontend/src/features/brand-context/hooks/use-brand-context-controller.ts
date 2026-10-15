@@ -1,7 +1,6 @@
 import { useAssetLibrary } from "./use-asset-library";
 import type { CreativeType } from "../model/asset-context";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useKnowledgeEditor } from "./use-knowledge-editor";
 import { pickSelectedDocument } from "../model/knowledge-selection";
 import type {
@@ -47,7 +46,6 @@ export function useBrandContextController({
   scopeKey: string;
   canWriteKnowledge: boolean;
 }) {
-  const router = useRouter();
   const assetLibrary = useAssetLibrary(workspace.assets, scopeKey, canWriteKnowledge);
   const assets = assetLibrary.assets;
   const [creativeTypeFilter, setCreativeTypeFilter] = useState("all");
@@ -204,7 +202,11 @@ export function useBrandContextController({
       if (path) params.set("file", path);
     }
 
-    router.replace(`/brand-context?${params.toString()}`, { scroll: false });
+    // The section, document and asset live in this client's state; the address only records
+    // them for sharing and reloads. `router.replace` re-ran the whole server page (every
+    // document and the brand kit, ~2 s) on each click — the native history call updates the
+    // address and Next's router without a server round trip (Next 16 "Native History API").
+    window.history.replaceState(null, "", `/brand-context?${params.toString()}`);
   }
 
   function selectSection(nextSection: BrandContextSection) {
