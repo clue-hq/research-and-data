@@ -227,3 +227,11 @@ Owed:
   pinned_asset_library reads store._bridge; the test passes store=None). Runner artifacts that pass
   in a clean env: two discovery-handler tests (dummy keys) and four product tests (auth on in .env).
 - Owed: founder go on push + PR base; 62 open review findings decision; release-day steps (runbook §9).
+
+## 2026-10-16 — pushed, PR #123 onto research-streaming
+- Founder go: this PR targets research-streaming. Branch pushed at `a03ed043e`; PR
+  https://github.com/clue-hq/research-and-data/pull/123 opened (no AI footer, per CLAUDE.md).
+- Open review findings at push: ~61 (K2-1 closed by phase 1 `a23b15240`). Majors: K4-2 (parked),
+  security S3-1/S3-2/S5-1/K3-2/K5-5, durability K4-1/K4-5/K1-5/K4-3, parity S1-3/S1-5/S2a-2,
+  brand S6-1/S6-2 colour/S6-3 + walk defect 4 (no page background), Share K6-2/K6-3.
+- Next agreed: brand-kit defects (S6-1, S6-3, S6-2 colour, page background, minors S6-4..S6-12).
