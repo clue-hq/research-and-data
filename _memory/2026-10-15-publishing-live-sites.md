@@ -188,3 +188,10 @@ Owed:
   LUMEN_SITE_LIVE_WORKSPACES=*. CLUE_PAGES_SYSTEM_SUFFIX left at pages.cluehq.ai: main's checker refuses
   anything else and deploy.sh runs the deployed commit's checker → flip it on release day (runbook §9
   step 5). Release checker run on the VM against the cluehq.page values: OK. No worker restarted.
+- Founder 2026-10-16: custom domains ALSO on cluehq.page — Cloudflare for SaaS on the cluehq.page zone,
+  fallback origin = apex cluehq.page, customers CNAME → cluehq.page, CLUE_PAGES_CNAME_TARGET=cluehq.page,
+  token + zone id for cluehq.page, Worker routed on cluehq.page ONLY (LEGACY_SYSTEM_SUFFIXES "" in the
+  Worker; the backends keep CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai for the reservation).
+  cluehq.ai = app only. Runbook §9 rewritten. Verified: reservation covers cluehq.page + cluehq.ai;
+  observed-CNAME check is an exact match with the row's stored target (apex target fine); main's
+  checker doesn't restrict CNAME target.
