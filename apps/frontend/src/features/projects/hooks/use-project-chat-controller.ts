@@ -16,6 +16,7 @@ import {
 } from "../data/chat-api";
 import type { ChatStreamHandle } from "../data/chat-stream.repository";
 import type { ChatGateRead } from "../data/chat-gates.repository";
+import type { ChatRepositories } from "../data/chat-repositories";
 import {
   useChatRepositories,
   useChatViewerIdentity,
@@ -58,6 +59,13 @@ import { anchorReloadDecision } from "../model/design-anchor-reload";
  * not even a type — reaches this controller. One boolean is the whole seam.
  */
 type SceneRevealHealthProbe = (documentId: string) => boolean;
+
+/** One chat's three conversation reads, started early and applied only once the chat is confirmed. */
+interface ConversationReads {
+  messages: ReturnType<ChatRepositories["messages"]["list"]>;
+  turns: ReturnType<ChatRepositories["turns"]["list"]>;
+  gates: ReturnType<ChatRepositories["gates"]["list"]>;
+}
 import {
   DESIGN_CHECKPOINT_EVENT_TYPE,
   designRefreshForEvent,
@@ -549,10 +557,10 @@ export function useProjectChatController({
   }, [activeThreadId, projectId, repositories]);
 
   const loadGates = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, early?: Promise<ChatGateRead>) => {
       if (mounted.current) setGateReadLoading(true);
       try {
-        const read = await repositories.gates.list({ projectId, threadId });
+        const read = await (early ?? repositories.gates.list({ projectId, threadId }));
         if (!mounted.current) return read;
         setGateRead(read);
         setGateFailures((current) => {
@@ -590,13 +598,32 @@ export function useProjectChatController({
     [projectId, repositories],
   );
 
+  /**
+   * Start a chat's three conversation reads without applying them (chat load speed, 2026-10-15).
+   * Each promise already carries a handler, so a read that is later discarded — the chat turned
+   * out not to be in this project — never surfaces as an unhandled rejection; a read that is used
+   * still rejects at the point it is awaited, exactly as a fresh request would.
+   */
+  const startConversationReads = useCallback(
+    (threadId: string): ConversationReads => {
+      const reads: ConversationReads = {
+        messages: repositories.messages.list({ projectId, threadId, includeBodies: true }),
+        turns: repositories.turns.list({ projectId, threadId }),
+        gates: repositories.gates.list({ projectId, threadId }),
+      };
+      for (const read of Object.values(reads)) void read.catch(() => undefined);
+      return reads;
+    },
+    [projectId, repositories],
+  );
+
   const loadConversation = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, early?: ConversationReads) => {
       const readVersion = ++conversationReadVersion.current;
       const [messagePage, turnPage] = await Promise.all([
-        repositories.messages.list({ projectId, threadId, includeBodies: true }),
-        repositories.turns.list({ projectId, threadId }),
-        loadGates(threadId),
+        early?.messages ?? repositories.messages.list({ projectId, threadId, includeBodies: true }),
+        early?.turns ?? repositories.turns.list({ projectId, threadId }),
+        loadGates(threadId, early?.gates),
       ]);
       if (!mounted.current || readVersion !== conversationReadVersion.current) return;
       planWrites.seedHistory(turnPage.turns);
@@ -660,6 +687,10 @@ export function useProjectChatController({
 
   useEffect(() => {
     let cancelled = false;
+    // The chat in the address is read alongside the project's chat list rather than after it
+    // (2026-10-15: the wait for the list was 0.5–1 s of every chat load). Its reads are applied
+    // only if the list confirms this exact chat below; otherwise they are dropped unused.
+    const early = activeThreadId ? startConversationReads(activeThreadId) : null;
     void (async () => {
       try {
         const available = await loadThreads();
@@ -688,7 +719,10 @@ export function useProjectChatController({
           replaceThreadInRoute(resolution.thread.id);
           return;
         }
-        await loadConversation(resolution.thread.id);
+        await loadConversation(
+          resolution.thread.id,
+          early && resolution.thread.id === activeThreadId ? early : undefined,
+        );
       } catch (failure) {
         if (!cancelled) report(failure);
       } finally {
@@ -706,6 +740,7 @@ export function useProjectChatController({
     loadThreads,
     replaceThreadInRoute,
     report,
+    startConversationReads,
   ]);
 
   const effectiveTurns = useMemo(
