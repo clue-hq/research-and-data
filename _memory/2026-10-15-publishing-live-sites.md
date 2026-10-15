@@ -161,3 +161,13 @@ Owed:
   turn ports 15; live walk on Garner (hydrated, 0 console, FAQ works, 106 clone elements' computed
   styles identical with the CSS in either position).
 - Next: pages-domain move + PSL listing (founder picks/registers the domain).
+
+## Pages domain ruling (founder, 2026-10-15)
+- First production launch on `usecluehq.com` (GTM's existing domain, Google Workspace mail on it) as a
+  TEMPORARY pages domain; final domain later via runbook §8. Launch straight on it (no
+  `*.pages.cluehq.ai` stage: those addresses never resolved in prod — no `*.pages` DNS,
+  `pages.cluehq.ai` answered by Railway directly). Steps: runbook §9 (`docs/specs/pages-hosting-runbook.md`).
+- Do NOT file the PSL for usecluehq.com; live pages stay internal/demo until the final domain is listed.
+- GTM's subdomains under usecluehq.com must be DNS-only and added to RESERVED_LABELS (list owed by GTM).
+- Prod state 2026-10-15: page-origin on Railway answers (403 without edge secret); no Cloudflare for
+  SaaS / Worker / editor DNS yet; origin/main has none of the website work (this branch 578 ahead).

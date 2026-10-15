@@ -510,6 +510,72 @@ the services deployed with those two fixes (2026-10-15) before step 2.
 6. Republish isn't required: published HTML is root-relative. Only `og:image` and the manifest's
    `canonical_url` name the old host, and the 301 covers them; a republish refreshes them.
 
+
+---
+
+## 9. First production launch on `usecluehq.com` (founder ruling 2026-10-15) [FOUNDER]
+
+Published pages launch straight on `usecluehq.com` (`<label>.usecluehq.com/<slug>`), the GTM team's
+existing domain, as a **temporary** pages domain; a dedicated domain replaces it later with the §8
+move. Facts behind this section (checked 2026-10-15): in production no system address has ever
+resolved (no `*.pages` record; `pages.cluehq.ai` is answered by Railway directly, not Cloudflare),
+so there are no live `*.pages.cluehq.ai` links to keep — §5's paid certificate, §8's legacy 301 and
+the staged move are skipped. `usecluehq.com`, `cluehq.ai` and `deeppresence.ai` are on the same
+Cloudflare nameservers. `usecluehq.com` carries Google Workspace mail (MX, SPF, DMARC): nothing
+below touches those records.
+
+**Because the domain is temporary:** do **not** apply to the Public Suffix List for it (a listing is
+close to permanent — apply only for the final domain), so live pages (`LUMEN_SITE_LIVE_WORKSPACES`)
+stay on internal and demo workspaces. Pages and GTM's outbound mail share this domain's
+reputation in both directions; the GTM team should know.
+
+Prerequisite: the Puck website work (Wave 2, live publishing, the group 4.5 fixes) is on `main` and
+deployed — production deploys from `main`, which had none of it on 2026-10-15.
+
+1. **GTM's subdomains stay out of the Worker's reach.** The Worker treats every *proxied* host under
+   the pages domain as a workspace address (`routing.js` `decide`), so every record GTM's tools use
+   under `usecluehq.com` (click tracking, sending, landing pages) must be **DNS only (grey cloud)**,
+   and its name must be on `RESERVED_LABELS` (`libs/clue-spine/clue_spine/hostnames.py`) so no
+   workspace is ever given it. The apex `usecluehq.com` and `www` serve no page (`www` is already
+   reserved).
+2. **`usecluehq.com` zone → DNS → Add record:** `CNAME`, name `*`, target `page-origin.cluehq.ai`,
+   **Proxied**. A first-level wildcard is covered by Universal SSL; no certificate to order. Do not
+   touch MX, SPF, DKIM or DMARC.
+3. **`cluehq.ai` zone — custom domains (§4):** `pages` CNAME → `page-origin.cluehq.ai`, **Proxied**;
+   SSL/TLS → Custom Hostnames → enable SSL for SaaS, fallback origin `pages.cluehq.ai`; record the
+   price shown. Create an API token scoped to the `cluehq.ai` zone with only **SSL and Certificates:
+   Edit**; it goes straight into Railway (step 5), never into chat or a file.
+4. **Site editor** (`docs/deploy/runbook.md` 7a): the Railway `site-editor` service from `main`,
+   wildcard custom domain `*.edit.deeppresence.ai`, the records Railway shows added in
+   `deeppresence.ai`'s DNS. Three variables only (no secrets).
+5. **Railway variables:**
+   - every backend (platform API, design API, page origin; the VM's `/srv/clue/env` for workers):
+     `CLUE_PAGES_SYSTEM_SUFFIX=usecluehq.com`, `CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`
+     (keeps every `*.cluehq.ai` name unconnectable as a custom domain), `CLUE_PAGES_CNAME_TARGET`
+     stays `pages.cluehq.ai`;
+   - platform API: `CLUE_CLOUDFLARE_API_TOKEN` (step 3) and `CLUE_CLOUDFLARE_ZONE_ID` (the
+     `cluehq.ai` zone);
+   - frontend and site editor: `CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai`;
+   - design API and workers: `LUMEN_SITE_LIVE_WORKSPACES=<internal/demo workspace ids>`.
+   `python3 deploy/check_prod_env.py <role> <env file>` must pass for every role.
+6. **Deploy `main`** (migrations run on the way), page origin first. Then move the workspace rows:
+   `uv run python scripts/move_system_hostnames.py --database-url <prod> --to-suffix usecluehq.com`
+   (dry run: `rows`, `collisions: []`), then with `--apply`. Restart the page origin and the
+   platform API; their startup warning `pages.system_hostnames_off_suffix` must list nothing.
+7. **Deploy the Worker** (`infra/cloudflare/pages-edge/wrangler.toml`), both zones, the new suffix
+   and the old one as legacy in the same edit:
+   `routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }, { pattern = "*/*", zone_name = "usecluehq.com" }]`,
+   `SYSTEM_SUFFIX = "usecluehq.com"`, `LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai"`; the secret with
+   `wrangler secret put EDGE_SECRET` (the same value as Railway's `CLUE_PAGES_EDGE_SECRET`).
+   Check: `curl -sI https://<a label>.usecluehq.com/<a slug>` → `200`;
+   `curl -sI https://app.cluehq.ai/` answers from the app; `dig MX usecluehq.com` unchanged.
+8. **Acceptance in the browser:** publish a site → it opens at `<label>.usecluehq.com`; edit it →
+   the editor loads from `<token>.edit.deeppresence.ai`; connect one real custom domain in Settings
+   → Pages → it verifies and serves the same page (also the S2 walk owed since 2026-09-18); a live
+   workspace's page comes alive.
+9. **Later — the final domain:** register it, run §8 from `usecluehq.com` to it (that move keeps
+   every link working with a 301), and apply to the Public Suffix List for the final domain.
+
 ---
 
 ## Not done yet
