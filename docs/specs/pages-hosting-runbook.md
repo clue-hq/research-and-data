@@ -550,6 +550,13 @@ deployed — production deploys from `main`, which had none of it on 2026-10-15.
    - design API and workers: `LUMEN_SITE_LIVE_WORKSPACES=<internal/demo workspace ids>` until step 9
      is settled.
    `python3 deploy/check_prod_env.py <role> <env file>` must pass for every role.
+   **`CLUE_PAGES_SYSTEM_SUFFIX` changes on release day only**, with the release: the checker of the
+   code deployed before it refuses any suffix but `pages.cluehq.ai`, and the VM's `deploy.sh` runs
+   the checker of the commit it deploys, so an earlier release would stop at the VM. Everything else
+   above may be set ahead. Worker VM, 2026-10-15: `CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`
+   and `LUMEN_SITE_LIVE_WORKSPACES=*` are already in `/srv/clue/env` (backup
+   `/srv/clue/env.bak-20261015-pages`); on release day, as `clue`, right before `deploy.sh`:
+   `sed -i "s|^CLUE_PAGES_SYSTEM_SUFFIX=.*|CLUE_PAGES_SYSTEM_SUFFIX=cluehq.page|" /srv/clue/env`.
 6. **Deploy `main`** (migrations run on the way), page origin first. Then move the workspace rows:
    `uv run python scripts/move_system_hostnames.py --database-url <prod> --to-suffix cluehq.page`
    (dry run: `rows`, `collisions: []`), then with `--apply`. Restart the page origin and the

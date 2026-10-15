@@ -181,3 +181,10 @@ Owed:
   (static) published pages are for everyone. Release path: this branch is 580 ahead / 126 behind
   origin/research-streaming (== origin/main): merge research-streaming in, PR → research-streaming,
   then the founder's PR research-streaming → main (deploy-images must be green before merging).
+- Founder 2026-10-15: live pages for EVERY workspace by default (overrides "internal until PSL"); the
+  flag needs `*` support (code change owed in release prep; until then `*` matches no workspace).
+- Worker VM /srv/clue/env (2026-10-15, via ssh ubuntu@40.160.37.148, as clue, backup
+  /srv/clue/env.bak-20261015-pages): added CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai and
+  LUMEN_SITE_LIVE_WORKSPACES=*. CLUE_PAGES_SYSTEM_SUFFIX left at pages.cluehq.ai: main's checker refuses
+  anything else and deploy.sh runs the deployed commit's checker → flip it on release day (runbook §9
+  step 5). Release checker run on the VM against the cluehq.page values: OK. No worker restarted.
