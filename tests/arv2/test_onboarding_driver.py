@@ -372,6 +372,7 @@ def _handler(
     reconciler_factory: Any = None,
     settings_overrides: dict[str, Any] | None = None,
     drain: Any = None,
+    catalog_regenerator: Any = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
     return OnboardingRunWorkHandler(
@@ -387,6 +388,7 @@ def _handler(
         known_products=known_products or _no_known_products,
         reconciler_factory=reconciler_factory,
         drain=drain or FakeDrain(),
+        catalog_regenerator=catalog_regenerator,
     )
 
 
@@ -594,6 +596,61 @@ def test_two_lineup_entries_resolving_to_one_product_open_one_product_research_s
     assert len([call for call in exa.calls if call.startswith("product_research")]) == 3
     assert any(event[0] == "finish_run" for event in store.events)
     assert not any(event[0] == "fail_run" for event in store.events)
+
+
+def test_a_rerun_researches_nothing_a_person_merged_or_removed_and_rebuilds_the_catalog() -> None:
+    """Spec 2026-10-15 §9: an entry that reached its product through a merge already has the
+    survivor's page; an entry a person removed has no product. Neither is researched again, and
+    the catalog the run published is regenerated from the product list."""
+    products = [
+        {"name": name, "short_description": "d", "offering_kind": "feature"}
+        for name in ("Proxon Observer", "Proxon Levels", "Proxon")
+    ]
+    exa = FakeExa(
+        {
+            "overview": _agent(OVERVIEW),
+            "reviews": _agent(REVIEWS),
+            "product_research": _agent(PRODUCT),
+        },
+        _deep(products),
+    )
+    store = FakeStore()
+    regenerated: list[tuple[str, str]] = []
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn, kw
+        return (
+            ProductLink(
+                "prd_proxon", "Proxon Observer", "alias_reused", 1, uuid4(), redirected=True
+            ),
+            ProductLink(None, "Proxon Levels", "removed_by_person", 1, uuid4()),
+            ProductLink("prd_proxon", "Proxon", "alias_reused", 1, uuid4()),
+        )
+
+    async def regenerate(conn: Any, *, workspace_id: str, brand_id: str) -> None:
+        del conn
+        regenerated.append((workspace_id, brand_id))
+
+    handler = _handler(exa, store, links=fake_sync, catalog_regenerator=regenerate)
+
+    result = asyncio.run(handler.handle(_context(uuid4())))
+
+    assert result.outcome == "completed"
+    opened = [subject for kind, subject in store.opened.values() if kind == "product_research"]
+    assert opened == ["prd_proxon"]
+    assert len(regenerated) == 1
+
+
+def test_a_first_run_does_not_rebuild_the_catalog() -> None:
+    regenerated: list[str] = []
+
+    async def regenerate(conn: Any, *, workspace_id: str, brand_id: str) -> None:
+        del conn, brand_id
+        regenerated.append(workspace_id)
+
+    handler = _handler(_all_answers(), FakeStore(), links=_one_link, catalog_regenerator=regenerate)
+    assert asyncio.run(handler.handle(_context(uuid4()))).outcome == "completed"
+    assert regenerated == []
 
 
 def test_a_step_the_store_refuses_to_open_costs_that_step_and_never_the_run() -> None:

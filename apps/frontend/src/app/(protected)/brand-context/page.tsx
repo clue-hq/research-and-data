@@ -7,13 +7,14 @@ import {
   fetchAuthenticatedDesignBackend,
 } from "@/auth/authenticated-backend";
 import { BrandContextScreen } from "@/features/brand-context/components/brand-context-screen";
-import { getBrandContextWorkspace } from "@/features/brand-context/data/brand-context.repository";
+import { getBrandContextRepository } from "@/features/brand-context/data/brand-context.repository";
 import { readOnboardingStatus } from "@/features/brand-context/data/brand-knowledge.repository";
+import { readBrandProducts } from "@/features/brand-context/data/brand-products";
 import {
   BrandAssetViewSchema,
   BrandColorModeSchema,
-  BrandContextSectionSchema,
 } from "@/features/brand-context/model/brand-context";
+import { brandContextLanding } from "@/features/brand-context/model/knowledge-selection";
 
 export const metadata: Metadata = {
   title: "Brand context",
@@ -83,14 +84,30 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
       return null;
     }
   };
-  const [view, onboarding, query, session] = await Promise.all([
-    getBrandContextWorkspace(designFetch, clueFetch),
+  // The Product folder's actions read the brand's product list (spec 2026-10-15). The fixture
+  // path has no product list, so it shows no product actions.
+  const readProducts = async () => {
+    if (!platformConfigured) return null;
+    try {
+      return await readBrandProducts(await clueFetch());
+    } catch {
+      return null;
+    }
+  };
+  // The documents render first; the brand kit (colors, type, assets, its Design brief) is the
+  // slow read, so it is started here and streamed to the page rather than awaited (2026-10-15).
+  const repository = getBrandContextRepository(designFetch, clueFetch);
+  const kitView = repository.getKitView();
+  const [knowledgeFolders, onboarding, products, query, session] = await Promise.all([
+    repository.getKnowledgeFolders(),
     readStatus(),
+    readProducts(),
     searchParams,
     getProtectedSession(),
   ]);
 
-  const section = BrandContextSectionSchema.safeParse(query.section);
+  // No section in the link: open on the company overview (founder request 2026-10-15).
+  const landing = brandContextLanding(query);
   const assetView = BrandAssetViewSchema.safeParse(query.view);
   const colorMode = BrandColorModeSchema.safeParse(query.theme);
 
@@ -103,12 +120,13 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
         assetId: query.asset,
         assetView: assetView.success ? assetView.data : "grid",
         colorMode: colorMode.success ? colorMode.data : "light",
-        filePath: query.file,
-        section: section.success ? section.data : "colors",
+        filePath: landing.filePath,
+        section: landing.section,
       }}
-      kit={view.kit}
+      kitView={kitView}
+      knowledgeFolders={knowledgeFolders}
       onboarding={onboarding}
-      workspace={view.workspace}
+      products={products}
     />
   );
 }

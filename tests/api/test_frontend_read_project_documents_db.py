@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.project_documents import PLAN_PATH, ProjectPlanWrite, write_project_plan
 from clue_api.frontend_read.app import FRONTEND_READ_PREFIX
+from clue_api.knowledge_bytes import clear_knowledge_byte_cache
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_storage.fs import FsStorage
@@ -447,6 +448,7 @@ def test_the_list_titles_every_document_from_its_own_bytes(tmp_path: Any) -> Non
             storage = _CountingStorage(tmp_path)
             _, project_id, _ids = await _seed(conn, storage)
             storage.reads.clear()
+            clear_knowledge_byte_cache()
 
             listed = await _get(conn, storage, f"/projects/{project_id}/documents")
 
@@ -460,7 +462,11 @@ def test_the_list_titles_every_document_from_its_own_bytes(tmp_path: Any) -> Non
             assert len(storage.reads) == 3, storage.reads
 
             # The ICP's bytes vanish: the tab still lists every document, by path-derived name.
+            # (A process that already holds the verified bytes keeps serving them — erasure and
+            # purge are refused by the database check every read runs — so the cache is cleared
+            # to exercise the vanished-blob path.)
             await storage.delete(storage.reads[0])
+            clear_knowledge_byte_cache()
             degraded = await _get(conn, storage, f"/projects/{project_id}/documents")
             assert degraded.status_code == 200, degraded.text
             assert [row["title"] for row in degraded.json()["data"]["documents"]] == [

@@ -6,22 +6,43 @@ import { useChatRepositories } from "../data/projects-transport";
 import type { SidebarProject } from "../model/sidebar-project";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 
+/** The project whose chat is open, read from a chat route; `null` anywhere else. */
+export function activeChatProjectId(pathname: string): string | null {
+  return /^\/projects\/([^/]+)\/chats\/[^/]+\/?$/.exec(pathname)?.[1] ?? null;
+}
+
 /**
  * Folds a reload's server truth over the tree's local view state.
  *
  * Expansion is a purely local affordance — nothing durable records which
  * folders a reader opened — so a reload keeps it; every other field, `pinned`
- * included, is the server's answer and replaces what the browser held.
+ * included, is the server's answer and replaces what the browser held. A
+ * project the tree has not shown yet starts open when its chat is the one on
+ * screen (2026-10-15), so the open chat's row is visible from the first paint.
  */
 export function mergeExpandedState(
   current: SidebarProject[],
   data: SidebarProject[],
+  activeProjectId: string | null = null,
 ): SidebarProject[] {
   const expanded = new Map(current.map((project) => [project.id, project.expanded]));
   return data.map((project) => ({
     ...project,
-    expanded: expanded.get(project.id) ?? project.expanded,
+    expanded:
+      expanded.get(project.id) ?? (project.expanded || project.id === activeProjectId),
   }));
+}
+
+/** Opens one project's chat list; the same array when there is nothing to open. */
+export function openProject(
+  projects: SidebarProject[],
+  projectId: string | null,
+): SidebarProject[] {
+  const target = projects.find((project) => project.id === projectId);
+  if (!target || target.expanded) return projects;
+  return projects.map((project) =>
+    project.id === projectId ? { ...project, expanded: true } : project,
+  );
 }
 
 /**
@@ -52,8 +73,23 @@ export function useSidebarProjectsController() {
   const [savingProject, setSavingProject] = useState(false);
   const saveInFlight = useRef(false);
 
+  const activeProjectId = activeChatProjectId(pathname);
+  // Going to a chat opens its project's chat list (2026-10-15). Adjusted while
+  // rendering rather than in an effect: the route changed, so the tree it
+  // shows changes with it. The person may close the project again; it opens
+  // the next time they go to one of its chats.
+  const [openedForPathname, setOpenedForPathname] = useState(pathname);
+  if (openedForPathname !== pathname) {
+    setOpenedForPathname(pathname);
+    setProjects((current) => openProject(current, activeProjectId));
+  }
+  const activeProjectRef = useRef(activeProjectId);
+  useEffect(() => {
+    activeProjectRef.current = activeProjectId;
+  }, [activeProjectId]);
+
   const receiveProjects = useCallback((data: SidebarProject[]) => {
-    setProjects((current) => mergeExpandedState(current, data));
+    setProjects((current) => mergeExpandedState(current, data, activeProjectRef.current));
   }, []);
 
   const reload = useCallback(async () => {

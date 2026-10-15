@@ -13,6 +13,10 @@ export const KnowledgeDocumentSchema = z
     kind: z.string(),
     path: z.string(),
     productId: z.string().nullable(),
+    /** Every product the document names (spec 2026-10-15 §4.1). */
+    productIds: z.array(z.string()).default([]),
+    /** The catalog generated from the product list: read-only here. */
+    generated: z.boolean().default(false),
     status: z.string(),
     title: z.string(),
     updatedAt: z.string(),
@@ -25,6 +29,18 @@ export const KnowledgeTreeSchema = z.object({
   folders: z.array(
     z.object({
       documents: z.array(KnowledgeDocumentSchema),
+      key: KnowledgeFolderKeySchema,
+      label: z.string(),
+    }),
+  ),
+});
+
+/** The tree with every document's markdown (`null` when its bytes could not be read). */
+export const KnowledgeTreeWithBodiesSchema = z.object({
+  brandId: z.string().nullable(),
+  folders: z.array(
+    z.object({
+      documents: z.array(KnowledgeDocumentSchema.extend({ markdown: z.string().nullable() })),
       key: KnowledgeFolderKeySchema,
       label: z.string(),
     }),
@@ -62,6 +78,50 @@ export const OnboardingStatusSchema = z.object({
   steps: z.array(OnboardingStepSchema),
 });
 
+/** One product on the brand's list, with its page (spec 2026-10-15 §10). */
+export const BrandProductSchema = z.object({
+  aliases: z.array(z.string()),
+  name: z.string(),
+  pageDocumentId: z.string().nullable(),
+  pagePath: z.string().nullable(),
+  pagePending: z.boolean(),
+  productId: z.string(),
+});
+
+export const ProductChangeLineSchema = z.object({
+  changeId: z.string(),
+  createdAt: z.string(),
+  kind: z.string(),
+  text: z.string(),
+  undoable: z.boolean(),
+});
+
+export const BrandProductsSchema = z.object({
+  brandId: z.string().nullable(),
+  products: z.array(BrandProductSchema),
+  recentChanges: z.array(ProductChangeLineSchema),
+});
+
+/** What one add / rename / merge / remove / undo did. */
+export const ProductChangeSchema = z.object({
+  changeId: z.string(),
+  kind: z.string(),
+  pageDocumentId: z.string().nullable(),
+  /** Where the product's page lives now; the editor follows it after a rename. */
+  pagePath: z.string().nullable().default(null),
+  pagePending: z.boolean(),
+  productId: z.string(),
+  productName: z.string(),
+  projectsNeedingChoice: z.number().int(),
+  projectsUpdated: z.number().int(),
+  text: z.string(),
+});
+
+export type BrandProduct = z.infer<typeof BrandProductSchema>;
+export type BrandProducts = z.infer<typeof BrandProductsSchema>;
+export type ProductChange = z.infer<typeof ProductChangeSchema>;
+export type ProductChangeLine = z.infer<typeof ProductChangeLineSchema>;
+
 export type KnowledgeTree = z.infer<typeof KnowledgeTreeSchema>;
 export type KnowledgeDocumentDetail = z.infer<typeof KnowledgeDocumentDetailSchema>;
 export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
@@ -91,5 +151,6 @@ export function toKnowledgeDocument(
     body: body ?? "", bodyLoaded: body !== undefined, folderId, id: document.id,
     name: document.title, path: document.path, version: document.version,
     updatedLabel: `Updated ${dateLabel(document.updatedAt)}`,
+    kind: document.kind, productIds: document.productIds, generated: document.generated,
   };
 }

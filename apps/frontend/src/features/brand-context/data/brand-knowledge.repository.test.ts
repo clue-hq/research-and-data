@@ -45,3 +45,30 @@ test("the onboarding status parses and a refusal is null", async () => {
   assert.equal(status?.status, "running");
   assert.equal(await readOnboardingStatus(fetchOf({})), null);
 });
+
+test("one full-tree read carries every body; an unreadable body lists the document empty", async () => {
+  // 2026-10-15: 37 separate body reads took 1.45 s; the full tree is one read.
+  const requested: string[] = [];
+  const full = {
+    ...TREE,
+    folders: TREE.folders.map((folder) => ({
+      ...folder,
+      documents: folder.documents.map((document) => ({
+        ...document,
+        markdown: document.id === "doc-1" ? "# Overview\n" : null,
+      })),
+    })),
+  };
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    requested.push(path);
+    if (path.endsWith("/knowledge/full")) return Response.json(full);
+    return new Response("unexpected", { status: 500 });
+  }) as typeof fetch;
+  const folders = await readBrandKnowledgeFolders(fetcher);
+  assert.deepEqual(requested, ["/frontend/v1/brand-context/knowledge/full"]);
+  assert.equal(folders[0].documents[0].body, "# Overview\n");
+  assert.equal(folders[0].documents[0].bodyLoaded, true);
+  assert.equal(folders[1].documents[0].body, "");
+  assert.equal(folders[1].documents[0].bodyLoaded, false);
+});

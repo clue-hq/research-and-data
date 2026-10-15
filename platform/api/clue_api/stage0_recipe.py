@@ -440,6 +440,7 @@ class Stage0StepPinProvider:
         if step.tool_name in {
             "author_icp_document",
             "configure_project_targeting",
+            "manage_products",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",

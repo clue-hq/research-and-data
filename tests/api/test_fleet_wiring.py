@@ -472,6 +472,28 @@ def test_arv2_display_page_handler_is_composed_when_given_and_kind_guarded() -> 
         )
 
 
+def test_product_page_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Spec 2026-10-15 §6: the background product-page writer joins on the same terms.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.PRODUCT_PAGE_WRITE)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        product_page_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.PRODUCT_PAGE_WRITE] is handler
+
+    with pytest.raises(ValueError, match="product_page_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            product_page_handler=_CompositionHandler(FleetTaskKind.ARV2_DISPLAY_PAGE),
+        )
+
+
 def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_set(
     tmp_path: Path,
 ) -> None:

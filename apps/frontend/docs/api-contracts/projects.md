@@ -1219,6 +1219,22 @@ Both queued and executing turns derive `running`; `approval` and `needs-input`
 derive from unanswered durable gates. This sidebar status is informative and
 does not decide whether Stop is available.
 
+**Chat order within a project (2026-10-15).** Pinned chats first, then each
+chat by its last message: the newest message row, the person's or the agent's,
+or a message the person sent that no turn has answered yet. A turn the server
+queued on the person's behalf (a submission with a `derivation`) is not a
+message they sent. Renaming, pinning or titling a chat is not a message, so a
+chat's `updated_at` no longer decides its place. A chat with no message yet
+sorts by when it was created. The frontend keeps the server's order and
+re-reads the sidebar when the person sends a message or answers a gate, as well
+as when a turn ends. Project order is unchanged.
+
+**Highlight and expansion (2026-10-15).** "Projects" is the highlighted top-level
+item only on the projects list. Inside a project no top-level item is
+highlighted; on a chat page the chat's own row is the highlight, and its
+project's chat list is open: on first load, and again whenever the person goes
+to one of its chats, even after closing it.
+
 ### 6. Turn submission, queueing, and controls
 
 The as-built ordinary endpoint remains:
@@ -2913,3 +2929,16 @@ All account, person and narrative work in a run consumes this immutable context.
 refreshes carry project/context/generation identity as described in the accounts contract's
 “Research quality generations” amendment. Changing project targeting creates a new context; it
 cannot silently rewrite the meaning of an old run or replace another project's narrative.
+
+## Product change notices (2026-10-15)
+
+Spec `docs/superpowers/specs/2026-10-15-product-management-design.md` §7. A merge or removal of
+products in Brand context moves every project whose current product set used them (a new
+product-set version tagged with the change), and the project's chat shows one line per change.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/frontend/v1/projects/:projectId/product-notices` | `{notices: [{changeId, text, outcome, createdAt}]}` — the last 30 days, minus those this person dismissed. `outcome` is `updated`, `needs_choice` (the project had no other product and keeps its old set), `restored` or `left_as_is` (an undo). |
+| `POST` | `/frontend/v1/projects/:projectId/product-notices/:changeId/dismiss` | `204`; per person. |
+
+Shown only in the project's chat, above the transcript (founder answer 2026-10-15).

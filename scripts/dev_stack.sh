@@ -92,6 +92,9 @@ FRONTEND_PORT="${DEV_STACK_FRONTEND_PORT:-3020}"
 DESIGN_PORT="${DEV_STACK_DESIGN_PORT:-8010}"
 PLATFORM_PORT="${DEV_STACK_PLATFORM_PORT:-8020}"
 PLATFORM2_PORT="${DEV_STACK_PLATFORM2_PORT:-8030}"
+# The public page origin. Another worktree's stack may already hold 8040, so a lane wrapper can
+# move it (it would otherwise fail to bind while `status` reported the other lane's process).
+PAGE_ORIGIN_PORT="${DEV_STACK_PAGE_ORIGIN_PORT:-8040}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"
   CLUE_DESIGN_RUNTIME_ENABLED=1
@@ -103,7 +106,7 @@ PLATFORM_ENV=(
   # front of it locally. The repo `.env` keeps the PRODUCTION defaults; these override per process.
   CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost
   CLUE_PAGES_PUBLIC_SCHEME=http
-  CLUE_PAGES_PUBLIC_PORT=8040
+  CLUE_PAGES_PUBLIC_PORT="$PAGE_ORIGIN_PORT"
   CLUE_PAGES_TRUST_HOST_HEADER=true
   CLUE_PAGES_EDGE_SECRET=
 )
@@ -155,7 +158,7 @@ start_platform_api() {  # both twins; a settings change (.env) needs both restar
 
 start_page_origin() {  # public page origin — serves http://<label>.pages.localhost:8040/<slug>
   ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port 8040 \
+      "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port "$PAGE_ORIGIN_PORT" \
       > "${LOG}_page_origin.log" 2>&1 & )
 }
 
@@ -168,7 +171,7 @@ restart_api() {
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m uvicorn --factory clue_page_origin.main:build_application" 2>/dev/null || true
   for _ in $(seq 1 20); do
-    lsof -iTCP:"$PLATFORM_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PLATFORM2_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8040 -sTCP:LISTEN >/dev/null 2>&1 || break
+    lsof -iTCP:"$PLATFORM_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PLATFORM2_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PAGE_ORIGIN_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
   done
   start_platform_api
@@ -281,7 +284,7 @@ down() {
 }
 
 status() {
-  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "8040 page-origin"; do
+  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "$PAGE_ORIGIN_PORT page-origin"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"

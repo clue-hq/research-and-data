@@ -467,6 +467,25 @@ errors:
     "is structurally unavailable to this exact agent profile": Call only tools your capability map lists; that name is not one of them.
     "Your previous response is not committed because it did not call finalize_turn": Call finalize_turn now and nothing else, preserving your previous answer word for word as user_message.
 
+manage_products:
+  afterwards: >-
+    The brand's product list, its product pages and its catalog changed together, and every
+    project that used a merged or removed product now uses the new list (each shows a notice in its
+    chat). Old names are kept as "also called" names. Tell the person what changed in one
+    sentence; the next turn's brand files already reflect it.
+  skill_section: No skill section; the tool's own description says when to call it (spec 2026-10-15 product management).
+  see_also: [documents-decisions]
+  refusals:
+    products_input_invalid: Add exactly the field the message names for this action and call again.
+    products_page_required: Write the product's page in page_markdown, from the pages being merged and what you know, and call again.
+    products_turn_unavailable: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
+    products_storage_unavailable: Tell the person product changes cannot be saved on this deployment right now.
+    product_not_found: Read the product catalog again and use a product id from it.
+    product_not_active: Read the catalog again; that product was already merged or removed, so work from today's list.
+    product_name_taken: Ask the person for a different name, or merge into the product that already has it.
+    name_invalid: Use a product name between 1 and 240 characters.
+    merge_invalid: Name at least one other product to merge, and either into_product_id or name but not both.
+
 configure_project_targeting:
   afterwards: >-
     The product set and exact ICP artifact are confirmed and pinned automatically. Continue the

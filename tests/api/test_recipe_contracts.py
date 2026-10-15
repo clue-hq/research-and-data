@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 33
+    assert CONVERSATION_RECIPE_VERSION == 34
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -889,6 +889,38 @@ def test_agent_authored_discovery_mints_recipe_v33_without_rewriting_v32() -> No
     assert v32["version"] == 32
     assert v33["version"] == 33
     assert slot["dynamic_pin_kinds"] == v32_slot["dynamic_pin_kinds"]
+
+
+def test_product_management_mints_recipe_v34_without_rewriting_v33() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v33 = json.loads((root / "recipe0-stage0-v33.json").read_text())
+    v34 = json.loads((root / "recipe0-stage0-v34.json").read_text())
+    # One address JOINS and none leaves: `manage_products@1`, which `head-of-abm@v71` grants.
+    added = "manage_products@1"
+    v33_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v33.json")
+    assert SYSTEM_RECIPE_FILENAMES[v33_index : v33_index + 2] == (
+        "recipe0-stage0-v33.json",
+        "recipe0-stage0-v34.json",
+    )
+    assert set(v33["graph"]["tool_allowlist"]) | {added} == set(v34["graph"]["tool_allowlist"])
+    slot = next(node for node in v34["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v33_slot = next(
+        node for node in v33["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v33_slot["dynamic_tool_allowlist"]) | {added} == set(slot["dynamic_tool_allowlist"])
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v33_slot["requirements"]) | {("manage_products", "1")} == tools(
+        slot["requirements"]
+    )
+    assert tools(v33["compatibility"]["nodes"]["stage0_interactions"]) | {
+        ("manage_products", "1")
+    } == tools(v34["compatibility"]["nodes"]["stage0_interactions"])
+    assert added in RECIPE_0_TOOL_ADDRESSES
+    assert (v33["version"], v34["version"]) == (33, 34)
+    assert slot["dynamic_pin_kinds"] == v33_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:
