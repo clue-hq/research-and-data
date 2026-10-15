@@ -1,6 +1,6 @@
 # Product management in Brand context — design
 
-Date: 2026-10-15. Status: **draft for founder review**. No code yet.
+Date: 2026-10-15. Status: **implemented** on `feat/brand-context-product-management` (plan `docs/superpowers/plans/2026-10-15-product-management.md`); live proof owed.
 
 ## 1. The problem
 
