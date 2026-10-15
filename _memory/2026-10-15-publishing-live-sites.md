@@ -143,3 +143,21 @@ Owed:
      React redraw the root and the section disappears. Decide: skip hydration (keep static HTML)
      when a module fails, or render the failed-section marker. Founder call.
   6. The agent's chat summary shows the internal document id ("doc_5dc5… (now version 10)").
+
+## Page weight (2026-10-15, founder: "lets work on this optimisation")
+- `91fbce7e1` site runtime 1,826 KB → 387 KB (gzip 528 → 116 KB): Puck render-only `Render`
+  (`@puckeditor/core/rsc`) on both sides; Puck's lazy richtext renderer stubbed in the runtime build
+  (no richtext fields exist); clones drawn from page-data `cloneHtml` (server records what it drew,
+  by component id) so no HTML parser in the browser; clone CSS one de-duplicated `<style
+  data-clue-clones>` before `#clue-site`; page-data clones carry no html/css (Garner page 863 → 564 KB);
+  zod English-only in the runtime. `makeConfig` now REQUIRES `cloneHtml` (fillClone in editor/server).
+  Guard: build writes `dist/site-runtime.packages.json`; bundles.test.ts forbids editor/parser
+  packages and caps the runtime at 450 KB.
+- Rejected on the way (test caught it): keeping the server's clone DOM via empty
+  dangerouslySetInnerHTML — one section failing in the browser redraws the root and blanked every clone.
+- `9fcef50b8` page origin gzips (≥1 KB) with weak ETags; page 88 KB gzipped.
+- Verified: site-kit 203, site-editor 64, editor browser 21 (needs CLUE_SITE_EDITOR_BROWSER=1),
+  page_origin 36, live browser 1, site_render live 3 (+42), publish package 24, thumbnails 13,
+  turn ports 15; live walk on Garner (hydrated, 0 console, FAQ works, 106 clone elements' computed
+  styles identical with the CSS in either position).
+- Next: pages-domain move + PSL listing (founder picks/registers the domain).
