@@ -195,3 +195,11 @@ Owed:
   cluehq.ai = app only. Runbook §9 rewritten. Verified: reservation covers cluehq.page + cluehq.ai;
   observed-CNAME check is an exact match with the row's stored target (apex target fine); main's
   checker doesn't restrict CNAME target.
+- Prod settings 2026-10-16 (founder-approved, via Railway CLI on project `remarkable-vibrancy` + ssh):
+  platform-api/design-api/page-origin: CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai (founder had set
+  cluehq.page; reverted until release day), CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai,
+  CLUE_PAGES_CNAME_TARGET=cluehq.page; design-api LUMEN_SITE_LIVE_WORKSPACES=*; frontend
+  CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai; platform-api has a Cloudflare token + zone id
+  bcf228d1… (founder to confirm both are cluehq.page's). Redeployed the three backends (SUCCESS) and
+  the VM (deploy.sh 6c891a01, all six workers up; VM env backup /srv/clue/env.bak-20261016-cname).
+  Cloudflare: cluehq.page `*` and apex records proxied; SaaS enabled, fallback origin being set.
