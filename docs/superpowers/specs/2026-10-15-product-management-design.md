@@ -71,8 +71,9 @@ product's name and aliases to the surviving product's `aliases`.
 
 ### 4.1 The link lives in front matter
 
-- A product page carries `product_id` (as today). Any other Brand-context document — proof,
-  audience, a file a person wrote — may carry `product_ids: [...]`.
+- A product page carries `product_id` (as today). Only documents in the **Product folder** name
+  products — a person's own Product-folder file may carry `product_ids: [...]`; the company
+  overview, audience, proof and the generated catalog never do (founder ruling 2026-10-15).
 - The editor shows this as a **Products** field with a picker of the brand's active products. The
   person never edits YAML. The save route (`PUT` in `frontend_read/brand_knowledge.py`) takes an
   optional `product_ids` and writes it into the new version's front matter; ids must be active

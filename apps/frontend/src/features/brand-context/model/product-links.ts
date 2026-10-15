@@ -19,3 +19,11 @@ export function linkedProductNames(
   const ids = document.productIds ?? [];
   return products.filter((product) => ids.includes(product.productId)).map((product) => product.name);
 }
+
+/** Only documents in the Product folder name products — never the company overview, an
+ * audience file or the generated catalog (founder ruling 2026-10-15). */
+export const PRODUCT_FOLDER = "product";
+
+export function canLinkProducts(document: BrandKnowledgeDocument): boolean {
+  return document.folderId === PRODUCT_FOLDER && !document.generated && Boolean(document.version);
+}

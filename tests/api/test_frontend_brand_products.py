@@ -166,20 +166,48 @@ def test_a_document_names_its_products_through_the_picker_and_the_catalog_is_rea
             )
             assert busy.status_code == 409
 
+            # Only Product-folder documents name products (founder ruling 2026-10-15).
             await _document(
                 conn,
                 brand.artifacts,
                 ws=brand.ws,
                 brand_id=brand.brand,
                 folder="audience",
-                path="audience/notes.md",
+                path="audience/buyers.md",
+                kind="note",
+                version=1,
+                status="ready",
+                body="---\nkind: note\n---\n\n# Buyers\n\nWho buys.\n",
+            )
+            await _document(
+                conn,
+                brand.artifacts,
+                ws=brand.ws,
+                brand_id=brand.brand,
+                folder="product",
+                path="product/notes.md",
                 kind="note",
                 version=1,
                 status="ready",
                 body="---\nkind: note\n---\n\n# Notes\n\nWho buys.\n",
             )
             tree = (await _call(brand, "GET", "/knowledge")).json()
-            note = tree["folders"][2]["documents"][0]
+            audience = tree["folders"][2]["documents"][0]
+            refused = await _call(
+                brand,
+                "PUT",
+                f"/knowledge/documents/{audience['id']}",
+                {
+                    "body": "# Buyers\n\nWho buys.\n",
+                    "expectedRevision": 1,
+                    "productIds": [brand.products["Proxon"]],
+                },
+            )
+            assert refused.status_code == 422
+            assert refused.json()["error"]["code"] == "PRODUCT_LINK_INVALID"
+            note = next(
+                d for d in tree["folders"][1]["documents"] if d["path"] == "product/notes.md"
+            )
             assert note["productIds"] == []
             body = "# Notes\n\nWho buys.\n"
             foreign = await _call(

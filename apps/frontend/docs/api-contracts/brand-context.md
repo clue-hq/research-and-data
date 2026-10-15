@@ -147,8 +147,8 @@ paragraph of that product's page, and saving a product page regenerates the cata
 
 Documents name their products in front matter: the tree and document reads carry
 `productIds: string[]` and `generated: boolean` (the catalog generated from the product list).
-The document `PUT` accepts an optional `productIds` (exactly one for a `product-research` page;
-active products of the brand only, else `422 PRODUCT_LINK_INVALID`), and refuses a hand edit of
+The document `PUT` accepts an optional `productIds` (Product-folder documents only; exactly one for
+a `product-research` page; active products of the brand only, else `422 PRODUCT_LINK_INVALID`), and refuses a hand edit of
 the generated catalog with `409 CATALOG_IS_GENERATED`.
 
 The backend should return `409 DOCUMENT_REVISION_CONFLICT` when the expected

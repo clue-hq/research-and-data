@@ -150,18 +150,24 @@ _PRODUCT_PAGE_KIND = "product-research"
 
 
 async def _validated_product_link(
-    conn: AsyncConnection, *, brand_id: str, kind: str, ids: list[str]
+    conn: AsyncConnection, *, brand_id: str, folder: str, kind: str, ids: list[str]
 ) -> list[str]:
-    """The picker's choice, checked: every id an active product of this brand, and exactly one
-    for a product page (a page is about one product)."""
+    """The picker's choice, checked: only a Product-folder document names products (founder
+    ruling 2026-10-15 — never the company overview or an audience file), every id is an active
+    product of this brand, and a product page names exactly one."""
     chosen = list(dict.fromkeys(ids))
     active = {p.product_id for p in await list_products(conn, brand_id) if p.status == "active"}
-    if not set(chosen) <= active or (kind == _PRODUCT_PAGE_KIND and len(chosen) != 1):
+    if (
+        folder != "product"
+        or not set(chosen) <= active
+        or (kind == _PRODUCT_PAGE_KIND and len(chosen) != 1)
+    ):
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "PRODUCT_LINK_INVALID",
-                "message": "Choose products from this brand's list (one for a product page).",
+                "message": "Only a Product-folder document names products; choose from this "
+                "brand's list (one for a product page).",
             },
         )
     return chosen
@@ -245,7 +251,11 @@ async def save_knowledge_document(
     link_changed = False
     if update.product_ids is not None:
         linked = await _validated_product_link(
-            conn, brand_id=str(row["brand_id"]), kind=str(row["kind"]), ids=update.product_ids
+            conn,
+            brand_id=str(row["brand_id"]),
+            folder=str(row["folder"]),
+            kind=str(row["kind"]),
+            ids=update.product_ids,
         )
         before = (front.get("product_id"), front.get("product_ids"))
         if row["kind"] == _PRODUCT_PAGE_KIND:

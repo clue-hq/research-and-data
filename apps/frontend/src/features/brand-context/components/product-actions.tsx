@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { ProductActionsController } from "../hooks/use-product-actions";
 import type { BrandKnowledgeDocument } from "../model/brand-context";
 import type { BrandProduct } from "../model/brand-knowledge";
-import { PRODUCT_PAGE_KIND, linkedProductNames } from "../model/product-links";
+import { PRODUCT_PAGE_KIND, canLinkProducts, linkedProductNames } from "../model/product-links";
 import { BrandContextIcon } from "./brand-context-icon";
 import styles from "./brand-context.module.css";
 
@@ -112,7 +112,7 @@ export function DocumentProductsField({
   document: BrandKnowledgeDocument;
   disabled: boolean;
 }) {
-  if (!actions.available || document.generated || !document.version) return null;
+  if (!actions.available || !canLinkProducts(document)) return null;
   const names = linkedProductNames(document, actions.products);
   const label = names.length ? `Products: ${names.join(", ")}` : "No product linked";
   if (!actions.canWrite) return <span className={styles.documentProducts}>{label}</span>;
