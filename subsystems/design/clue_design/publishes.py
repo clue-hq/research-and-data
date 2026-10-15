@@ -624,12 +624,21 @@ def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension:
     the bytes must hash to the digest in the URL — so ``/{digest}.css`` can never serve JavaScript.
     Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
     import ``lumen_api``) and the design API share one rule.
+
+    Only the type itself is compared, not its parameters: an agent section's module is first stored
+    by the section tool as ``text/javascript``, and its artifact row keeps that type when the publish
+    registers the same bytes as a page asset. The canonical type is what is served either way.
     """
     expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
     if expected is None:
         raise PublishAssetMismatch("publish asset media type does not match its URL")
     if hashlib.sha256(data).hexdigest() != digest:
         raise PublishAssetMismatch("publish asset failed its integrity check")
-    if media_type != expected:
+    if _essence(media_type) != _essence(expected):
         raise PublishAssetMismatch("publish asset media type does not match its URL")
     return expected
+
+
+def _essence(media_type: str) -> str:
+    """``type/subtype`` alone, lower-cased: ``text/javascript; charset=utf-8`` → ``text/javascript``."""
+    return media_type.split(";", 1)[0].strip().lower()

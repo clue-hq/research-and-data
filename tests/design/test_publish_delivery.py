@@ -47,12 +47,24 @@ def test_check_publish_asset_accepts_matching_bytes() -> None:
     )
 
 
+@pytest.mark.parametrize("stored", ["text/javascript", "TEXT/JavaScript; charset=UTF-8"])
+def test_check_publish_asset_compares_the_type_not_its_parameters(stored: str) -> None:
+    """An agent section's module keeps the section tool's ``text/javascript`` row (live walk
+    2026-10-15); it is served, and always under the canonical type."""
+    data = b"export const x = 1;"
+    digest = hashlib.sha256(data).hexdigest()
+    served = check_publish_asset(data=data, media_type=stored, digest=digest, extension="js")
+    assert served == "text/javascript; charset=utf-8"
+
+
 @pytest.mark.parametrize(
     ("media_type", "digest_ok", "extension"),
     [
         ("text/css; charset=utf-8", True, "js"),  # media type vs URL
         ("text/javascript; charset=utf-8", False, "js"),  # bytes vs digest
         ("text/javascript; charset=utf-8", True, "png"),  # unknown extension
+        ("text/css", True, "js"),  # a bare type is still checked against the URL
+        ("text/javascript", True, "css"),
     ],
 )
 def test_check_publish_asset_refuses(media_type: str, digest_ok: bool, extension: str) -> None:

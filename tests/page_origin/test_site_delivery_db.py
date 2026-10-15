@@ -32,8 +32,14 @@ from httpx import ASGITransport
 from clue_config import Secrets, Settings
 from clue_design import publishes
 from clue_design.documents import create_document
+from clue_design.storage import (
+    SOURCE_KEY_PUBLISH_ASSET,
+    SOURCE_KEY_SITE_SECTION,
+    register_design_bytes,
+)
 from clue_design.publishes import (
     DELIVERY_CSP_HEADER,
+    PUBLISH_ASSET_MEDIA_TYPES,
     SITE_DELIVERY_CSP_HEADER,
     SITE_DELIVERY_CSP_META,
     site_live_csp,
@@ -475,5 +481,40 @@ def test_k3_6_a_system_address_is_served_on_the_old_and_the_new_domain_before_an
             report = await move_system_hostnames(conn, from_suffix=old, to_suffix=new, apply=True)
             assert (report["rows"], report["applied"]) == (1, True)
             assert await answers() == expected  # the row now names the new domain
+
+    run_async(scenario())
+
+
+def test_an_agent_sections_module_saved_by_the_section_tool_is_served_after_a_live_publish(
+    tmp_path: Path,
+) -> None:
+    """Found on the live walk (2026-10-15): the section tool stores a compiled module as
+    ``text/javascript``; the publish then registers the same bytes as a page asset, but the digest
+    already has its artifact row, so the row keeps the section tool's type. The page origin must
+    still serve that module, or the published page loses the section after hydration."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws, host = await _workspace(conn)
+            storage = FsStorage(tmp_path / "blobs")
+            module = b'export function render() { return null; }\n'
+            digest = hashlib.sha256(module).hexdigest()
+            # The order a real turn and publish use: the section tool, then the publish.
+            await register_design_bytes(
+                conn, storage, workspace_id=ws, data=module,
+                media_type="text/javascript", source_key=SOURCE_KEY_SITE_SECTION,
+            )
+            await register_design_bytes(
+                conn, storage, workspace_id=ws, data=module,
+                media_type=PUBLISH_ASSET_MEDIA_TYPES["js"], source_key=SOURCE_KEY_PUBLISH_ASSET,
+            )
+            app = _origin(conn, tmp_path)
+
+            served = await _get(app, host, f"/p-assets/{digest}.js")
+            assert served.status_code == 200, served.text
+            assert served.content == module
+            assert served.headers["content-type"] == PUBLISH_ASSET_MEDIA_TYPES["js"]
+            # The type still has to agree with the address: never served as a stylesheet.
+            assert (await _get(app, host, f"/p-assets/{digest}.css")).status_code == 404
 
     run_async(scenario())
