@@ -235,3 +235,13 @@ Owed:
   security S3-1/S3-2/S5-1/K3-2/K5-5, durability K4-1/K4-5/K1-5/K4-3, parity S1-3/S1-5/S2a-2,
   brand S6-1/S6-2 colour/S6-3 + walk defect 4 (no page background), Share K6-2/K6-3.
 - Next agreed: brand-kit defects (S6-1, S6-3, S6-2 colour, page background, minors S6-4..S6-12).
+
+## 2026-10-16 — brand capture fidelity: spec + plan written (not started)
+- Founder asked to "completely solve" the brand-kit defects. Spec `docs/superpowers/specs/2026-10-16-brand-capture-fidelity-design.md`
+  (D1–D13), plan `docs/superpowers/plans/2026-10-16-brand-capture-fidelity.md` (Tasks 0–12, branch `brand/capture-fidelity`).
+- Grounding checked live: Chromium 149 canvas paints oklch/lab/lch/hwb/color() exactly as the plan's Python conversions
+  (0 channel diff); out-of-gamut is clipped; same-origin iframe elements readable via main getComputedStyle; CDP
+  DOM.requestNode + forcePseudoState works on iframe nodes; page globals persist across evaluate in playwright AND patchright.
+- Chromium serialises `animation: "glow pulse"` as `glow\ pulse` (escaped ident) — plan's css_name handles it.
+- Origin: S6 bugs are Wave 2 A9 code (12–13 Oct), except S6-3's parser root (predates).
+- Awaiting founder review of the plan + execution method. Re-capture of real brands stays founder-gated (Task 12).
