@@ -46,7 +46,7 @@ x-batch: &batch
   <<: *worker
   environment:
     <<: *worker-env
-    CLUE_FLEET_WORKER_KINDS: drive_run,account_job,execute_graph,entity_research_job,stage0_recon,official_site_crawl,onboarding_run,arv2_account_research,arv2_discovery,arv2_display_page
+    CLUE_FLEET_WORKER_KINDS: drive_run,account_job,execute_graph,entity_research_job,stage0_recon,official_site_crawl,onboarding_run,arv2_account_research,arv2_discovery,arv2_display_page,product_page_write
     CLUE_FLEET_WORKER_CONCURRENCY: "10"
 
 services:
