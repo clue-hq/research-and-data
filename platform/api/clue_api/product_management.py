@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown, slugify
 from clue_api.arv2.onboarding_lineage import normalize_identity
+from clue_api.knowledge_bytes import read_knowledge_bytes, read_one_knowledge_bytes
 from clue_core import decode_jsonb, serialize_value_json
 from clue_spine import (
     Product,
@@ -57,7 +58,6 @@ from clue_storage import (
     StorageBackend,
     artifact_key,
     content_address,
-    read_verified_artifact,
     record_artifact,
 )
 
@@ -198,12 +198,23 @@ _CURRENT_SERVABLE = text(
 async def _read_doc(
     conn: AsyncConnection, storage: StorageBackend, *, workspace_id: str, row: RowMapping
 ) -> _Doc:
+    raw = (
+        await read_one_knowledge_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            ref=(str(row["artifact_key"]), str(row["artifact_sha256"])),
+        )
+        if row["artifact_key"]
+        else None
+    )
+    return _doc_of(row, raw)
+
+
+def _doc_of(row: RowMapping, raw: bytes | None) -> _Doc:
     front: dict[str, Any] = {}
     body = ""
-    if row["artifact_key"]:
-        _, raw = await read_verified_artifact(
-            conn, storage, storage_key=str(row["artifact_key"]), workspace_id=workspace_id
-        )
+    if raw is not None:
         try:
             front, body = parse_front_matter(raw.decode("utf-8"), preserve_body=True)
         except (UnicodeDecodeError, ValueError):
@@ -231,10 +242,21 @@ async def _product_folder(
             "servable": list(_SERVABLE),
         },
     )
-    return [
-        await _read_doc(conn, storage, workspace_id=workspace_id, row=row)
-        for row in rows.mappings().all()
-    ]
+    found = list(rows.mappings().all())
+    # Fetched together and cached by content, like the Brand-context tree (2026-10-15).
+    contents = await read_knowledge_bytes(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        refs=[(str(r["artifact_key"]), str(r["artifact_sha256"])) for r in found],
+    )
+    docs: list[_Doc] = []
+    for row in found:
+        raw = contents[(str(row["artifact_key"]), str(row["artifact_sha256"]))]
+        if isinstance(raw, Exception):
+            raise raw
+        docs.append(_doc_of(row, raw))
+    return docs
 
 
 def _main_pages(docs: Sequence[_Doc]) -> dict[str, _Doc]:

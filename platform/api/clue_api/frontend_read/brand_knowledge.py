@@ -29,6 +29,7 @@ from clue_api.arv2.onboarding_store import read_current_run
 from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.knowledge_bytes import read_knowledge_bytes, read_one_knowledge_bytes
 from clue_api.product_management import regenerate_catalog
 from clue_db import ConnFactory
 from clue_obs import get_logger
@@ -37,7 +38,6 @@ from clue_storage import (
     StorageBackend,
     artifact_key,
     content_address,
-    read_verified_artifact,
     record_artifact,
 )
 
@@ -474,11 +474,16 @@ async def _front_and_body(
     workspace_id: str,
     row: RowMapping,
 ) -> tuple[dict[str, Any], str]:
-    record, raw = await read_verified_artifact(
-        conn, storage, storage_key=str(row["artifact_key"]), workspace_id=workspace_id
+    raw = await read_one_knowledge_bytes(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        ref=(str(row["artifact_key"]), str(row["artifact_sha256"])),
     )
-    if record.content_sha256 != row["artifact_sha256"]:
-        raise ValueError("Knowledge document digest does not match its artifact")
+    return _parse_document(raw)
+
+
+def _parse_document(raw: bytes) -> tuple[dict[str, Any], str]:
     try:
         return parse_front_matter(raw.decode("utf-8"), preserve_body=True)
     except (UnicodeDecodeError, ValueError):
@@ -525,22 +530,34 @@ async def read_knowledge_tree(
     """
     documents: dict[str, list[KnowledgeDocumentWire]] = {key: [] for key, _ in FOLDERS}
     if brand_id is not None:
-        for row in await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id):
+        rows = await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id)
+        # Every document is opened for its title and links, so they are fetched together and
+        # served from the content cache on a reload (2026-10-15: 37 in turn took 8.7 s).
+        contents = (
+            await read_knowledge_bytes(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                refs=[(str(r["artifact_key"]), str(r["artifact_sha256"])) for r in rows],
+            )
+            if storage is not None
+            else {}
+        )
+        for row in rows:
             front: dict[str, Any] = {}
             body = ""
             if storage is not None:
-                try:
-                    front, body = await _front_and_body(
-                        conn, storage, workspace_id=workspace_id, row=row
-                    )
-                except Exception:  # noqa: BLE001 — a missing blob lists the document by name, never 500s the tree
+                raw = contents.get((str(row["artifact_key"]), str(row["artifact_sha256"])))
+                if isinstance(raw, bytes):
+                    front, body = _parse_document(raw)
+                else:
+                    # A missing blob lists the document by name, never 500s the tree.
                     log.warning(
                         "brand_knowledge.document_unreadable",
                         workspace_id=workspace_id,
                         document_id=str(row["document_id"]),
                         path=str(row["path"]),
                     )
-                    front, body = {}, ""
             documents[str(row["folder"])].append(_document_wire(row, front=front, body=body))
     return KnowledgeTreeWire(
         brand_id=brand_id,
