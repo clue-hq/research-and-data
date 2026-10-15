@@ -1051,6 +1051,9 @@ export function useProjectChatController({
       } finally {
         messageSubmissions.current.finish(attempt);
       }
+      // The sidebar orders a project's chats by their last message, and this
+      // one just changed: re-read it now rather than when the reply finishes.
+      invalidateProjectCatalog();
       if (mounted.current) {
         setOptimistic((current) => [
           ...current.filter((item) => item.turnId !== accepted.turnId),
@@ -1071,7 +1074,10 @@ export function useProjectChatController({
       }
       return { status: "accepted", turnId: accepted.turnId } as const;
     },
-    [activeThreadId, attach, loadConversation, projectId, repositories, report],
+    [
+      activeThreadId, attach, invalidateProjectCatalog, loadConversation, projectId,
+      repositories, report,
+    ],
   );
 
   const answerGate = useCallback(
@@ -1098,6 +1104,8 @@ export function useProjectChatController({
             `gate:${card.gateId}:${input.decision}`,
           ),
         });
+        // An answer is a message too: it moves this chat up the sidebar.
+        invalidateProjectCatalog();
         if (!mounted.current) return;
         setGateFailures((current) => {
           const next = new Map(current);
@@ -1128,7 +1136,10 @@ export function useProjectChatController({
         if (mounted.current) setSubmitting(false);
       }
     },
-    [activeThreadId, attach, loadConversation, projectId, repositories, report],
+    [
+      activeThreadId, attach, invalidateProjectCatalog, loadConversation, projectId,
+      repositories, report,
+    ],
   );
 
   const recoverGate = useCallback(

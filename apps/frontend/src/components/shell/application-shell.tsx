@@ -8,6 +8,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { DesignIcon } from "@/components/ui/design-icon";
+import { projectRouteActiveHref } from "./active-navigation";
 import { AppSidebar } from "./app-sidebar";
 import {
   useDesktopSidebar,
@@ -48,7 +49,7 @@ export function ProjectApplicationShell({
   // carve-out for the artifact route; the dated founder ruling wins here.)
   return (
     <ApplicationShell
-      activeHref={pathname === "/" ? "/" : "/projects"}
+      activeHref={projectRouteActiveHref(pathname)}
       desktopMode="rail"
       initialDesktopState="pinned-expanded"
     >
@@ -63,7 +64,7 @@ export function ApplicationShell({
   desktopMode = "rail",
   initialDesktopState = "pinned-expanded",
 }: {
-  activeHref: string;
+  activeHref: string | null;
   children: React.ReactNode;
   desktopMode?: "overlay" | "rail";
   initialDesktopState?: SidebarState;
