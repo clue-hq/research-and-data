@@ -203,3 +203,27 @@ Owed:
   bcf228d1… (founder to confirm both are cluehq.page's). Redeployed the three backends (SUCCESS) and
   the VM (deploy.sh 6c891a01, all six workers up; VM env backup /srv/clue/env.bak-20261016-cname).
   Cloudflare: cluehq.page `*` and apex records proxied; SaaS enabled, fallback origin being set.
+
+## Release prep (2026-10-16): main merged into puck/integration-wave1 (local, NOT pushed)
+- Merge `226d942b8` (163 main commits; 23 conflicts). Agent catalog collision resolved by keeping
+  main's live head-of-abm v71 / manual v17 / stage0 v44 and re-minting this line on top:
+  head-of-abm **v74**, manual **v20** (generated chapters rebuilt; `manual_build --check` clean),
+  stage0-interview **v47**; tool totals 151 names / 176 addresses. OpenRouter cost: one rule in
+  clue_core.openrouter_cost incl. the BYOK fee. Brand context: main's streamed kit view + this
+  line's measured panels. Alembic join `c8c3d99be272` (one head; db-smoke up/down/up OK on a throwaway).
+- Follow-ups: `d6a9592c8` `*` on LUMEN_SITE_LIVE_WORKSPACES; `88a30de4c` VM batch pool claims
+  product_page_write (main bug: product page tasks never ran in prod); `93a4f8634` pages-edge
+  routed on cluehq.page alone (+release.test.js); `5bf5cb14e` import guard allowlist + migration
+  round-trip test runs its own step.
+- Commit messages: four commits briefly carried a Claude trailer (CLAUDE.md forbids); rewritten
+  locally with identical trees before anything was pushed.
+- Gates: frontend lint 0 errors, app tests 3,477 pass, site-kit 203, production build OK (built
+  from an in-repo clone `apps/.frontend-build-check`, since `.next` belongs to the running dev
+  server); tests/agents all pass; tests/deploy pass; page_origin 36; Worker 21; design publish 25,
+  turn ports 15, logo ladder, web render public origin pass; 162 changed root test files run.
+- Remaining failures, NOT merge-caused: test_docker_runner (no bare `python` on macOS);
+  test_project_context_files_db status-facts test (inserts a cross-workspace job the base FK
+  arv2_job_run_scope forbids — fails on both sides); test_p37 pinned-turn test (this line's
+  pinned_asset_library reads store._bridge; the test passes store=None). Runner artifacts that pass
+  in a clean env: two discovery-handler tests (dummy keys) and four product tests (auth on in .env).
+- Owed: founder go on push + PR base; 62 open review findings decision; release-day steps (runbook §9).
