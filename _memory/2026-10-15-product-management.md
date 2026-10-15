@@ -76,3 +76,9 @@ sets. Spec `docs/superpowers/specs/2026-10-15-product-management-design.md` (fou
   has no _conn_factory).
 - Lane stack: DB copy `clue_nashville_pm` (original `clue_nashville` untouched; .env backup
   `.env.bak-2026-10-15-before-pm-db`); page origin on 8064 because addis-ababa holds 8040.
+- Follow-up (same day): project reuse across chat switches (`data/project-workspace-cache.ts`,
+  stale-while-revalidate) and the chat prefetch store (`data/chat-prefetch.ts`, started by the
+  project loader on a first visit). Measured: switching to another chat of the same project 0.19 s;
+  first visit 2.2 s and switching back to the 9-message chat 1.8 s — the reads now all start at
+  once, and what remains is ~10 concurrent requests (doubled by dev Strict Mode) contending in one
+  API process.
