@@ -32,17 +32,17 @@ from httpx import ASGITransport
 from clue_config import Secrets, Settings
 from clue_design import publishes
 from clue_design.documents import create_document
-from clue_design.storage import (
-    SOURCE_KEY_PUBLISH_ASSET,
-    SOURCE_KEY_SITE_SECTION,
-    register_design_bytes,
-)
 from clue_design.publishes import (
     DELIVERY_CSP_HEADER,
     PUBLISH_ASSET_MEDIA_TYPES,
     SITE_DELIVERY_CSP_HEADER,
     SITE_DELIVERY_CSP_META,
     site_live_csp,
+)
+from clue_design.storage import (
+    SOURCE_KEY_PUBLISH_ASSET,
+    SOURCE_KEY_SITE_SECTION,
+    register_design_bytes,
 )
 from clue_page_origin import create_page_origin_app
 from clue_page_origin.main import build_gate

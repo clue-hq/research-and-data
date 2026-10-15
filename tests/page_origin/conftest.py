@@ -127,7 +127,9 @@ def dev_client(reads: FakePageReads) -> TestClient:
 
 
 def edge(host: str = HOST, *, secret: str | None = SECRET) -> dict[str, str]:
-    headers = {"X-Clue-Public-Host": host}
+    # The plain representation: these tests read each route's own headers and bytes; the gzipped
+    # one has its own test (test_routes.py).
+    headers = {"X-Clue-Public-Host": host, "Accept-Encoding": "identity"}
     if secret is not None:
         headers["X-Clue-Edge-Auth"] = secret
     return headers
