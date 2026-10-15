@@ -86,6 +86,8 @@ class ProductChangeWire(WireModel):
     product_name: str
     page_document_id: str | None
     page_pending: bool
+    #: Where the product's page lives now — the editor opens it there after a rename.
+    page_path: str | None
     projects_updated: int
     projects_needing_choice: int
 
@@ -124,6 +126,7 @@ def _change_wire(result: ProductChangeResult) -> ProductChangeWire:
         product_name=result.product.name,
         page_document_id=str(result.page_document_id) if result.page_document_id else None,
         page_pending=result.page_pending,
+        page_path=result.page_path,
         projects_updated=sum(p.outcome in ("updated", "restored") for p in result.projects),
         projects_needing_choice=sum(p.outcome == "needs_choice" for p in result.projects),
     )

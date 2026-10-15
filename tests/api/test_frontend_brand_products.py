@@ -217,3 +217,37 @@ def test_a_document_names_its_products_through_the_picker_and_the_catalog_is_rea
             assert again.status_code == 200 and again.json()["version"] == 2  # nothing changed
 
     run_async(scenario())
+
+
+def test_saving_a_product_page_rewrites_its_catalog_line(offers: _Offers) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            brand = await _Brand(conn, "ws-bp-page-edit").seed(["Proxon"])
+            tree = (await _call(brand, "GET", "/knowledge")).json()
+            page = next(
+                d for d in tree["folders"][1]["documents"] if d["path"] == "product/proxon.md"
+            )
+            saved = await _call(
+                brand,
+                "PUT",
+                f"/knowledge/documents/{page['id']}",
+                {
+                    "body": "# Proxon\n\nThe management layer for an AI workforce.\n",
+                    "expectedRevision": 1,
+                },
+            )
+            assert saved.status_code == 200, saved.text
+            tree = (await _call(brand, "GET", "/knowledge")).json()
+            catalog = next(
+                d for d in tree["folders"][1]["documents"] if d["path"] == "product/catalog.md"
+            )
+            assert catalog["generated"] is True
+            detail = (await _call(brand, "GET", f"/knowledge/documents/{catalog['id']}")).json()
+            (line,) = detail["frontMatter"]["products"]
+            assert line["short_description"] == "The management layer for an AI workforce."
+            renamed = await _call(
+                brand, "POST", f"/products/{brand.products['Proxon']}/rename", {"name": "Proxon AI"}
+            )
+            assert renamed.json()["pagePath"] == "product/proxon-ai.md"
+
+    run_async(scenario())

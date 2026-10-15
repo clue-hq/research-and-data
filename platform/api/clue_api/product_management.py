@@ -75,6 +75,7 @@ __all__ = [
     "list_brand_products",
     "main_page_of",
     "mark_product_page_failed",
+    "page_summary",
     "merge_products_action",
     "publish_product_page",
     "read_brand_document",
@@ -145,6 +146,8 @@ class ProductChangeResult:
     catalog_document_id: UUID
     projects: tuple[ProjectSetOutcome, ...]
     replayed: bool = False
+    #: Where the product's page lives now (add, rename, merge); ``None`` when it has none.
+    page_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -422,6 +425,28 @@ def _page_body(name: str, markdown: str) -> str:
     return body + "\n" if _HEADING.match(body) else f"# {name}\n\n{body}\n"
 
 
+#: The longest catalog description taken from a page, in characters.
+_SUMMARY_MAX = 300
+_PLACEHOLDER = re.compile(r"^_[^_].*_$")
+
+
+def page_summary(body: str) -> str | None:
+    """The first real paragraph of a page: headings, placeholders ("_Not established._") and
+    tables skipped, whitespace folded, cut at a word near 300 characters. ``None`` when the page
+    has no prose yet."""
+    for block in body.split("\n\n"):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines or all(line.startswith(("#", "|", "---")) for line in lines):
+            continue
+        text = " ".join(" ".join(line for line in lines if not line.startswith("#")).split())
+        if not text or _PLACEHOLDER.match(text):
+            continue
+        if len(text) <= _SUMMARY_MAX:
+            return text
+        return text[:_SUMMARY_MAX].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return None
+
+
 def _page_path(product: Product, docs: Sequence[_Doc], *, current: _Doc | None) -> str:
     """Where a product's page lives: its current page's path, else its name's slug — never a
     path another product's page holds."""
@@ -489,6 +514,7 @@ async def regenerate_catalog(
             if isinstance(spelling, str) and normalize_identity(spelling):
                 by_spelling.setdefault(normalize_identity(spelling), entry)
 
+    pages = _main_pages(docs)
     rows: list[dict[str, Any]] = []
     for product in await list_products(conn, brand_id):
         if product.status != "active" or product.workspace_id != workspace_id:
@@ -507,6 +533,12 @@ async def regenerate_catalog(
             "aliases": list(product.aliases),
         }
         row.update({key: found.get(key) for key in _CATALOG_CARRIED})
+        # The product's own page is how a person corrects its line, so its first paragraph
+        # wins over what onboarding research wrote.
+        page = pages.get(product.product_id)
+        summary = page_summary(page.body) if page is not None else None
+        if summary:
+            row["short_description"] = summary
         rows.append(row)
 
     front: dict[str, Any] = {
@@ -630,6 +662,7 @@ async def _result_of(
         page_document_id=UUID(page) if page else None,
         page_pending=bool(result.get("page_pending")),
         catalog_document_id=UUID(result["catalog_document_id"]),
+        page_path=result.get("page_path"),
         projects=tuple(
             ProjectSetOutcome(str(p["project_id"]), p["outcome"], p["selection_version"])
             for p in projects.mappings().all()
@@ -872,6 +905,7 @@ async def add_product(
             "page_document_id": str(page_id),
             "page_pending": pending,
             "catalog_document_id": str(catalog_id),
+            "page_path": path,
         },
     }
     await _record_change(
@@ -887,7 +921,15 @@ async def add_product(
         idempotency_key=idempotency_key,
     )
     return ProductChangeResult(
-        change_id, "add", describe_change("add", details), product, page_id, pending, catalog_id, ()
+        change_id,
+        "add",
+        describe_change("add", details),
+        product,
+        page_id,
+        pending,
+        catalog_id,
+        (),
+        page_path=path,
     )
 
 
@@ -921,6 +963,7 @@ async def rename_product_action(
     docs = await _product_folder(conn, storage, workspace_id=workspace_id, brand_id=brand_id)
     page = _main_pages(docs).get(product_id)
     page_id: UUID | None = None
+    page_path: str | None = None
     if page is not None:
         new_path = f"product/{slugify(product.name)}.md"
         others = {d.path for d in docs if d.document_id != page.document_id}
@@ -942,6 +985,7 @@ async def rename_product_action(
         )
         if path != page.path:
             await _retire_path(conn, workspace_id=workspace_id, brand_id=brand_id, path=page.path)
+        page_path = path
     catalog_id = await regenerate_catalog(
         conn, storage, workspace_id=workspace_id, brand_id=brand_id, change_id=change_id
     )
@@ -952,6 +996,7 @@ async def rename_product_action(
             "page_document_id": str(page_id) if page_id else None,
             "page_pending": False,
             "catalog_document_id": str(catalog_id),
+            "page_path": page_path,
         },
     }
     await _record_change(
@@ -975,6 +1020,7 @@ async def rename_product_action(
         False,
         catalog_id,
         (),
+        page_path=page_path,
     )
 
 
@@ -1078,6 +1124,7 @@ async def merge_products_action(
             "page_document_id": str(page_id),
             "page_pending": pending,
             "catalog_document_id": str(catalog_id),
+            "page_path": path,
         },
     }
     await _record_change(
@@ -1109,6 +1156,7 @@ async def merge_products_action(
         pending,
         catalog_id,
         projects,
+        page_path=path,
     )
 
 

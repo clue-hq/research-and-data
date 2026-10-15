@@ -246,11 +246,11 @@ def test_rename_moves_the_page_and_keeps_the_old_name_findable() -> None:
             front, body = pages["product/proxon.md"]
             assert front["product_name"] == "Proxon" and body.startswith("# Proxon\n")
             assert pages[CATALOG_PATH][0]["products"][0]["name"] == "Proxon"
-            # The catalog row kept what research found about the product.
-            assert (
-                pages[CATALOG_PATH][0]["products"][0]["short_description"]
-                == "About Proxon Platform."
-            )
+            # The catalog row keeps what research found about the product (its kind), and its
+            # description is the page's first paragraph.
+            line = pages[CATALOG_PATH][0]["products"][0]
+            assert line["offering_kind"] == "feature"
+            assert line["short_description"] == "Research about Proxon Platform."
             assert result.product.aliases == ("Proxon Platform",)
             with pytest.raises(ProductChangeRefused) as refused:
                 await rename_product_action(
@@ -513,5 +513,60 @@ def test_a_change_names_the_person_and_the_turn() -> None:
                 .one()
             )
             assert (row["actor_user_id"], UUID(str(row["actor_turn_id"]))) == (USER, turn)
+
+    run_async(scenario())
+
+
+def test_a_catalog_line_reads_the_first_paragraph_of_the_products_page() -> None:
+    # Spec follow-up 2026-10-15: editing a product's page is how a person corrects its catalog
+    # line, so the description comes from the page, not from the onboarding research.
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            brand = await _Brand(conn, "ws-pm-catalog-line").seed(["Proxon"])
+            await add_product(
+                conn,
+                brand.storage,
+                workspace_id=brand.ws,
+                brand_id=brand.brand,
+                actor=ACTOR,
+                name="Proxon Agents",
+                page_markdown=(
+                    "## Overview\n\n_Not established._\n\n"
+                    "Agents that run   work for\nthe whole company.\n\nMore detail."
+                ),
+            )
+            pages = await brand.servable()
+            lines = {e["name"]: e["short_description"] for e in pages[CATALOG_PATH][0]["products"]}
+            # The page's first real paragraph, whitespace folded; placeholders and headings skipped.
+            assert lines["Proxon Agents"] == "Agents that run work for the whole company."
+            # The seeded Proxon page's first paragraph wins over the research description too.
+            assert lines["Proxon"] == "Research about Proxon."
+
+    run_async(scenario())
+
+
+def test_every_change_says_where_the_products_page_now_lives() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            brand = await _Brand(conn, "ws-pm-page-path").seed(["Proxon Platform", "B"])
+            renamed = await rename_product_action(
+                conn,
+                brand.storage,
+                workspace_id=brand.ws,
+                brand_id=brand.brand,
+                actor=ACTOR,
+                product_id=brand.products["Proxon Platform"],
+                name="Proxon",
+            )
+            assert renamed.page_path == "product/proxon.md"
+            removed = await remove_product_action(
+                conn,
+                brand.storage,
+                workspace_id=brand.ws,
+                brand_id=brand.brand,
+                actor=ACTOR,
+                product_id=brand.products["B"],
+            )
+            assert removed.page_path is None
 
     run_async(scenario())

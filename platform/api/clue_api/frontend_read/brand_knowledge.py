@@ -29,6 +29,7 @@ from clue_api.arv2.onboarding_store import read_current_run
 from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.product_management import regenerate_catalog
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_spine import list_products
@@ -312,6 +313,15 @@ async def save_knowledge_document(
                 "WHERE document_id = :id"
             ),
             {"id": document_id},
+        )
+    if row["kind"] == _PRODUCT_PAGE_KIND:
+        # A product's page is how a person corrects its catalog line (spec 2026-10-15).
+        await regenerate_catalog(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            brand_id=str(row["brand_id"]),
+            change_id=None,
         )
     saved = await read_knowledge_document(
         conn, storage, workspace_id=workspace_id, document_id=new_id
