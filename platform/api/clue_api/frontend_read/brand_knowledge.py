@@ -29,13 +29,15 @@ from clue_api.arv2.onboarding_store import read_current_run
 from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.knowledge_bytes import read_knowledge_bytes, read_one_knowledge_bytes
+from clue_api.product_management import regenerate_catalog
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_spine import list_products
 from clue_storage import (
     StorageBackend,
     artifact_key,
     content_address,
-    read_verified_artifact,
     record_artifact,
 )
 
@@ -52,6 +54,7 @@ __all__ = [
     "OnboardingStepWire",
     "read_knowledge_document",
     "read_knowledge_tree",
+    "read_knowledge_tree_full",
     "read_onboarding_status",
     "register_brand_knowledge_routes",
     "resolve_knowledge_brand",
@@ -77,6 +80,27 @@ class KnowledgeDocumentWire(WireModel):
     updated_at: str
     product_id: str | None
     icp_key: str | None
+    #: Every product the document names (``product_id`` for a page, ``product_ids`` otherwise).
+    product_ids: list[str] = Field(default_factory=list)
+    #: The catalog generated from the product list — read-only in the editor.
+    generated: bool = False
+
+
+class KnowledgeDocumentWithBodyWire(KnowledgeDocumentWire):
+    """A tree entry with its markdown — ``None`` when the document's bytes could not be read."""
+
+    markdown: str | None
+
+
+class KnowledgeFolderWithBodiesWire(WireModel):
+    key: str
+    label: str
+    documents: list[KnowledgeDocumentWithBodyWire]
+
+
+class KnowledgeTreeWithBodiesWire(WireModel):
+    brand_id: str | None
+    folders: list[KnowledgeFolderWithBodiesWire]
 
 
 class KnowledgeFolderWire(WireModel):
@@ -107,6 +131,8 @@ class KnowledgeDocumentDetailWire(WireModel):
     updated_at: str
     product_id: str | None
     icp_key: str | None
+    product_ids: list[str] = Field(default_factory=list)
+    generated: bool = False
     markdown: str
     front_matter: dict[str, Any]
     sources: list[KnowledgeSourceWire]
@@ -115,6 +141,36 @@ class KnowledgeDocumentDetailWire(WireModel):
 class KnowledgeDocumentUpdate(WireModel):
     body: str = Field(max_length=1_000_000)
     expected_revision: int = Field(ge=1, strict=True)
+    #: The products this document is about (spec 2026-10-15 §4.1), set through the editor's
+    #: picker. ``None`` leaves the document's link as it is; a product page takes exactly one.
+    product_ids: list[str] | None = Field(default=None, max_length=50)
+
+
+_PRODUCT_PAGE_KIND = "product-research"
+
+
+async def _validated_product_link(
+    conn: AsyncConnection, *, brand_id: str, folder: str, kind: str, ids: list[str]
+) -> list[str]:
+    """The picker's choice, checked: only a Product-folder document names products (founder
+    ruling 2026-10-15 — never the company overview or an audience file), every id is an active
+    product of this brand, and a product page names exactly one."""
+    chosen = list(dict.fromkeys(ids))
+    active = {p.product_id for p in await list_products(conn, brand_id) if p.status == "active"}
+    if (
+        folder != "product"
+        or not set(chosen) <= active
+        or (kind == _PRODUCT_PAGE_KIND and len(chosen) != 1)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PRODUCT_LINK_INVALID",
+                "message": "Only a Product-folder document names products; choose from this "
+                "brand's list (one for a product page).",
+            },
+        )
+    return chosen
 
 
 def _revision_conflict() -> HTTPException:
@@ -183,7 +239,33 @@ async def save_knowledge_document(
     ):
         raise _revision_conflict()
     front, original = await _front_and_body(conn, storage, workspace_id=workspace_id, row=row)
-    if original == update.body:
+    if front.get("generated") is True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CATALOG_IS_GENERATED",
+                "message": "The catalog is generated from your products. Rename, merge or "
+                "remove a product to change it.",
+            },
+        )
+    link_changed = False
+    if update.product_ids is not None:
+        linked = await _validated_product_link(
+            conn,
+            brand_id=str(row["brand_id"]),
+            folder=str(row["folder"]),
+            kind=str(row["kind"]),
+            ids=update.product_ids,
+        )
+        before = (front.get("product_id"), front.get("product_ids"))
+        if row["kind"] == _PRODUCT_PAGE_KIND:
+            front["product_id"] = linked[0]
+        elif linked:
+            front["product_ids"] = linked
+        else:
+            front.pop("product_ids", None)
+        link_changed = before != (front.get("product_id"), front.get("product_ids"))
+    if original == update.body and not link_changed:
         existing = await read_knowledge_document(
             conn, storage, workspace_id=workspace_id, document_id=document_id
         )
@@ -259,6 +341,15 @@ async def save_knowledge_document(
                 "WHERE document_id = :id"
             ),
             {"id": document_id},
+        )
+    if row["kind"] == _PRODUCT_PAGE_KIND:
+        # A product's page is how a person corrects its catalog line (spec 2026-10-15).
+        await regenerate_catalog(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            brand_id=str(row["brand_id"]),
+            change_id=None,
         )
     saved = await read_knowledge_document(
         conn, storage, workspace_id=workspace_id, document_id=new_id
@@ -411,11 +502,16 @@ async def _front_and_body(
     workspace_id: str,
     row: RowMapping,
 ) -> tuple[dict[str, Any], str]:
-    record, raw = await read_verified_artifact(
-        conn, storage, storage_key=str(row["artifact_key"]), workspace_id=workspace_id
+    raw = await read_one_knowledge_bytes(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        ref=(str(row["artifact_key"]), str(row["artifact_sha256"])),
     )
-    if record.content_sha256 != row["artifact_sha256"]:
-        raise ValueError("Knowledge document digest does not match its artifact")
+    return _parse_document(raw)
+
+
+def _parse_document(raw: bytes) -> tuple[dict[str, Any], str]:
     try:
         return parse_front_matter(raw.decode("utf-8"), preserve_body=True)
     except (UnicodeDecodeError, ValueError):
@@ -435,7 +531,64 @@ def _document_wire(
         updated_at=_iso(row["updated_at"]) or "",
         product_id=_optional_str(front, "product_id"),
         icp_key=_optional_str(front, "icp_key"),
+        product_ids=_linked_products(front),
+        generated=front.get("generated") is True,
     )
+
+
+def _linked_products(front: Mapping[str, Any]) -> list[str]:
+    single = _optional_str(front, "product_id")
+    many = front.get("product_ids")
+    listed = [p for p in many if isinstance(p, str) and p] if isinstance(many, list) else []
+    return list(dict.fromkeys([single, *listed] if single else listed))
+
+
+async def _tree_entries(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_id: str | None,
+    storage: StorageBackend | None,
+) -> dict[str, list[tuple[KnowledgeDocumentWire, str | None]]]:
+    """Each folder's current servable documents, as wires with their markdown (``None`` when the
+    bytes could not be read). Every document is opened for its title and links, so they are
+    fetched together and served from the content cache on a reload (2026-10-15: 37 in turn took
+    8.7 s)."""
+    entries: dict[str, list[tuple[KnowledgeDocumentWire, str | None]]] = {
+        key: [] for key, _ in FOLDERS
+    }
+    if brand_id is None:
+        return entries
+    rows = await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id)
+    contents = (
+        await read_knowledge_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            refs=[(str(r["artifact_key"]), str(r["artifact_sha256"])) for r in rows],
+        )
+        if storage is not None
+        else {}
+    )
+    for row in rows:
+        front: dict[str, Any] = {}
+        body = ""
+        markdown: str | None = None
+        if storage is not None:
+            raw = contents.get((str(row["artifact_key"]), str(row["artifact_sha256"])))
+            if isinstance(raw, bytes):
+                front, body = _parse_document(raw)
+                markdown = body
+            else:
+                # A missing blob lists the document by name, never 500s the tree.
+                log.warning(
+                    "brand_knowledge.document_unreadable",
+                    workspace_id=workspace_id,
+                    document_id=str(row["document_id"]),
+                    path=str(row["path"]),
+                )
+        entries[str(row["folder"])].append((_document_wire(row, front=front, body=body), markdown))
+    return entries
 
 
 async def read_knowledge_tree(
@@ -447,33 +600,44 @@ async def read_knowledge_tree(
 ) -> KnowledgeTreeWire:
     """The four folders, always all four, each carrying its brand's current servable documents.
 
-    Every document's artifact is read for its title, product id and ICP key (sequentially; a tree
-    is at most a few dozen documents). A process with no storage still serves the tree, with
-    file-name titles and no ids — the shape the page needs, honestly degraded.
+    A process with no storage still serves the tree, with file-name titles and no ids — the shape
+    the page needs, honestly degraded.
     """
-    documents: dict[str, list[KnowledgeDocumentWire]] = {key: [] for key, _ in FOLDERS}
-    if brand_id is not None:
-        for row in await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id):
-            front: dict[str, Any] = {}
-            body = ""
-            if storage is not None:
-                try:
-                    front, body = await _front_and_body(
-                        conn, storage, workspace_id=workspace_id, row=row
-                    )
-                except Exception:  # noqa: BLE001 — a missing blob lists the document by name, never 500s the tree
-                    log.warning(
-                        "brand_knowledge.document_unreadable",
-                        workspace_id=workspace_id,
-                        document_id=str(row["document_id"]),
-                        path=str(row["path"]),
-                    )
-                    front, body = {}, ""
-            documents[str(row["folder"])].append(_document_wire(row, front=front, body=body))
+    entries = await _tree_entries(
+        conn, workspace_id=workspace_id, brand_id=brand_id, storage=storage
+    )
     return KnowledgeTreeWire(
         brand_id=brand_id,
         folders=[
-            KnowledgeFolderWire(key=key, label=label, documents=documents[key])
+            KnowledgeFolderWire(key=key, label=label, documents=[wire for wire, _ in entries[key]])
+            for key, label in FOLDERS
+        ],
+    )
+
+
+async def read_knowledge_tree_full(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_id: str | None,
+    storage: StorageBackend | None,
+) -> KnowledgeTreeWithBodiesWire:
+    """The same tree with every document's markdown, so the page makes one read instead of one
+    per document (2026-10-15: 37 body requests took 1.45 s through one API process)."""
+    entries = await _tree_entries(
+        conn, workspace_id=workspace_id, brand_id=brand_id, storage=storage
+    )
+    return KnowledgeTreeWithBodiesWire(
+        brand_id=brand_id,
+        folders=[
+            KnowledgeFolderWithBodiesWire(
+                key=key,
+                label=label,
+                documents=[
+                    KnowledgeDocumentWithBodyWire(**wire.model_dump(), markdown=markdown)
+                    for wire, markdown in entries[key]
+                ],
+            )
             for key, label in FOLDERS
         ],
     )
@@ -611,6 +775,19 @@ def register_brand_knowledge_routes(
                 conn, workspace_id=workspace_id, brand_id=brand_id
             )
             return await read_knowledge_tree(
+                conn, workspace_id=workspace_id, brand_id=resolved, storage=storage
+            )
+
+    @router.get("/brand-context/knowledge/full", response_model=KnowledgeTreeWithBodiesWire)
+    async def get_knowledge_tree_full(
+        workspace_id: WorkspaceDep,
+        brand_id: str | None = Query(default=None, alias="brandId"),
+    ) -> KnowledgeTreeWithBodiesWire:
+        async with conn_factory() as conn:
+            resolved = await resolve_knowledge_brand(
+                conn, workspace_id=workspace_id, brand_id=brand_id
+            )
+            return await read_knowledge_tree_full(
                 conn, workspace_id=workspace_id, brand_id=resolved, storage=storage
             )
 

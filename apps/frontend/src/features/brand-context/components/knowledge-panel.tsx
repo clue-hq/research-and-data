@@ -1,15 +1,25 @@
 import { MarkdownArticle } from "@/components/markdown/markdown-article";
 import { MarkdownEditor } from "@/components/markdown/markdown-editor";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
+import type { ProductActionsController } from "../hooks/use-product-actions";
+import { ProductCatalogNotes } from "./product-actions";
 import styles from "./brand-context.module.css";
 
-export function KnowledgePanel({ controller }: { controller: BrandContextController }) {
+export function KnowledgePanel({
+  controller, productActions,
+}: {
+  controller: BrandContextController;
+  productActions?: ProductActionsController;
+}) {
   if (!controller.selectedDocument) {
     return <div className={styles.emptyState}>Select a knowledge document.</div>;
   }
 
   return (
     <>
+      {controller.selectedDocument.generated && productActions ? (
+        <ProductCatalogNotes actions={productActions} />
+      ) : null}
       {controller.knowledgeEditor.error ? (
         <p className={styles.documentSaveError} role="alert">{controller.knowledgeEditor.error}</p>
       ) : null}

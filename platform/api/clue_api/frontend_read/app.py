@@ -260,8 +260,10 @@ def build_frontend_read_router(
     generation switched off) the seam is a pure projection, so a router built without ``secrets``
     behaves exactly as it did before this argument existed.
 
-    ``work_queue`` reaches exactly one place, the display seam: with it a read schedules page
-    writes on the fleet; without it the seam writes inline (tests, a queue-less deployment).
+    ``work_queue`` reaches two places: the display seam (with it a read schedules page writes on
+    the fleet; without it the seam writes inline) and the Brand-context product routes (an add or
+    merge made in the app offers the background product-page writer; without a queue the page
+    stays "being written").
     """
 
     router = APIRouter(
@@ -280,10 +282,12 @@ def build_frontend_read_router(
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
     from clue_api.frontend_read.artifacts import register_artifact_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
+    from clue_api.frontend_read.brand_products import register_brand_product_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
+    from clue_api.frontend_read.product_notices import register_product_notice_routes
     from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.project_instructions import (
         register_project_instructions_routes,
@@ -397,6 +401,19 @@ def build_frontend_read_router(
         conn_factory=conn_factory,
         storage=evidence_storage,
         allow_local_mutations=allow_local_mutations,
+    )
+    # Product management (spec 2026-10-15): the Product folder's actions. The queue offers the
+    # background product-page writer after an add or merge made in the app.
+    register_brand_product_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        work_queue=work_queue,
+        allow_local_mutations=allow_local_mutations,
+    )
+    # The project chat's "Products changed" notices (spec 2026-10-15 §7).
+    register_product_notice_routes(
+        router, conn_factory=conn_factory, allow_local_mutations=allow_local_mutations
     )
     return router
 

@@ -3724,3 +3724,55 @@
 }
 .planDocumentLink:hover { text-decoration: underline; }
 .planDocumentLink:focus-visible { outline: 2px solid var(--clue-ds-color-border-brand-default); outline-offset: 4px; }
+
+/* Product change notices above the chat (spec 2026-10-15 product management §7). */
+.productNotices {
+  display: grid;
+  gap: 8px;
+  padding: 12px 24px 0;
+}
+
+.productNotice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--clue-ds-color-bg-subtle);
+  color: var(--clue-ds-color-content-neutral);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+
+.productNotice p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.productNoticeLink {
+  flex: none;
+  color: var(--clue-ds-color-content-neutral);
+  text-decoration: underline;
+}
+
+.productNoticeDismiss {
+  flex: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  font: inherit;
+  cursor: pointer;
+}
+
+.productNoticeDismiss:hover {
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.productNoticeLink:focus-visible,
+.productNoticeDismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--clue-ds-color-primitives-brand-alpha-300);
+}

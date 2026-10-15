@@ -29,7 +29,7 @@ from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
 from clue_spine.hostnames import DEFAULT_PAGES_SYSTEM_SUFFIX, ensure_system_hostname
 
 WorkspaceStatus = Literal["active", "archived"]
-ProductStatus = Literal["active", "archived"]
+ProductStatus = Literal["active", "archived", "merged"]
 ProjectStatus = Literal["draft", "active", "archived"]
 ProjectKind = Literal["marketing", "system"]
 
@@ -85,6 +85,8 @@ class Product(BaseModel):
     name: str
     aliases: tuple[str, ...] = ()
     status: ProductStatus = "active"
+    #: The product this one was merged into; set exactly when ``status`` is ``merged``.
+    merged_into: str | None = None
     created_at: UtcDatetime
 
 
@@ -207,7 +209,9 @@ async def list_brands_for_workspace(conn: AsyncConnection, workspace_id: str) ->
 
 
 # --- product ----------------------------------------------------------------
-_PRODUCT_COLUMNS = "product_id, brand_id, workspace_id, name, aliases, status, created_at"
+_PRODUCT_COLUMNS = (
+    "product_id, brand_id, workspace_id, name, aliases, status, merged_into, created_at"
+)
 
 
 def _row_to_product(row: dict[str, Any]) -> Product:
@@ -218,6 +222,7 @@ def _row_to_product(row: dict[str, Any]) -> Product:
         name=row["name"],
         aliases=tuple(decode_jsonb(row["aliases"]) or ()),
         status=row["status"],
+        merged_into=row.get("merged_into"),
         created_at=row["created_at"],
     )
 
@@ -319,6 +324,180 @@ async def list_products(conn: AsyncConnection, brand_id: str) -> list[Product]:
         {"brand_id": brand_id},
     )
     return [_row_to_product(dict(row)) for row in result.mappings().all()]
+
+
+# --- product lifecycle (spec 2026-10-15 §3) ----------------------------------
+# A person or the Head of ABM renames, merges, archives and restores products. Each function locks
+# the rows it changes and refuses (ValueError) a product outside the workspace or in the wrong
+# state; a name clash among active products stays a raw IntegrityError (``product_name_per_brand``).
+
+
+async def _lock_product(conn: AsyncConnection, *, product_id: str, workspace_id: str) -> Product:
+    result = await conn.execute(
+        text(
+            f"SELECT {_PRODUCT_COLUMNS} FROM product "
+            "WHERE product_id = :id AND workspace_id = :ws FOR UPDATE"
+        ),
+        {"id": product_id, "ws": workspace_id},
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise ValueError("product is not in this workspace")
+    return _row_to_product(dict(row))
+
+
+def _require_active(product: Product) -> None:
+    if product.status != "active":
+        raise ValueError(f"product {product.product_id} is not active")
+
+
+async def _set_aliases(
+    conn: AsyncConnection, *, product_id: str, workspace_id: str, aliases: Sequence[str]
+) -> None:
+    await conn.execute(
+        text(
+            "UPDATE product SET aliases = CAST(:aliases AS jsonb) "
+            "WHERE product_id = :id AND workspace_id = :ws"
+        ),
+        {"aliases": serialize_value_json(list(aliases)), "id": product_id, "ws": workspace_id},
+    )
+
+
+async def _refreshed(conn: AsyncConnection, product_id: str) -> Product:
+    product = await get_product(conn, product_id)
+    assert product is not None  # written a moment ago in this same transaction
+    return product
+
+
+async def rename_product(
+    conn: AsyncConnection, *, product_id: str, workspace_id: str, name: str
+) -> Product:
+    """Give an active product a new name. The old name becomes an alias, so an old spelling in a
+    document or a chat still finds the product; an alias that now *is* the name is dropped."""
+    product = await _lock_product(conn, product_id=product_id, workspace_id=workspace_id)
+    _require_active(product)
+    new_name = name.strip()
+    if not new_name:
+        raise ValueError("a product name cannot be empty")
+    if new_name == product.name:
+        return product
+    folded = _alias_fold(new_name)
+    aliases = [a for a in product.aliases if _alias_fold(a) != folded]
+    if _alias_fold(product.name) not in {_alias_fold(a) for a in aliases} | {folded}:
+        aliases.append(product.name)
+    await conn.execute(
+        text("UPDATE product SET name = :name WHERE product_id = :id AND workspace_id = :ws"),
+        {"name": new_name, "id": product_id, "ws": workspace_id},
+    )
+    await _set_aliases(conn, product_id=product_id, workspace_id=workspace_id, aliases=aliases)
+    return await _refreshed(conn, product_id)
+
+
+async def archive_product(conn: AsyncConnection, *, product_id: str, workspace_id: str) -> Product:
+    """Remove an active product from the brand's list. The row stays (history and references)."""
+    product = await _lock_product(conn, product_id=product_id, workspace_id=workspace_id)
+    _require_active(product)
+    await conn.execute(
+        text(
+            "UPDATE product SET status = 'archived' WHERE product_id = :id AND workspace_id = :ws"
+        ),
+        {"id": product_id, "ws": workspace_id},
+    )
+    return await _refreshed(conn, product_id)
+
+
+async def merge_products(
+    conn: AsyncConnection,
+    *,
+    product_ids: Sequence[str],
+    into_product_id: str,
+    workspace_id: str,
+) -> tuple[Product, tuple[str, ...]]:
+    """Fold active products into one active survivor of the same brand.
+
+    Members become ``merged`` with ``merged_into`` = the survivor; any product merged *into* a
+    member earlier is re-pointed at the survivor, so a lookup is never more than one hop. The
+    members' names and aliases join the survivor's aliases. Returns the refreshed survivor and the
+    aliases actually added (what an undo removes again). Rows are locked in id order.
+    """
+    members = list(dict.fromkeys(product_ids))
+    if not members:
+        raise ValueError("a merge needs at least one product to fold in")
+    if into_product_id in members:
+        raise ValueError("a product cannot be merged into itself")
+    locked = {
+        pid: await _lock_product(conn, product_id=pid, workspace_id=workspace_id)
+        for pid in sorted([*members, into_product_id])
+    }
+    survivor = locked[into_product_id]
+    _require_active(survivor)
+    for pid in members:
+        _require_active(locked[pid])
+        if locked[pid].brand_id != survivor.brand_id:
+            raise ValueError("every merged product must belong to the same brand")
+    aliases = list(survivor.aliases)
+    seen = {_alias_fold(survivor.name)} | {_alias_fold(a) for a in aliases}
+    added: list[str] = []
+    for pid in members:
+        for spelling in (locked[pid].name, *locked[pid].aliases):
+            folded = _alias_fold(spelling)
+            if spelling.strip() and folded and folded not in seen:
+                seen.add(folded)
+                aliases.append(spelling.strip())
+                added.append(spelling.strip())
+    await conn.execute(
+        text(
+            "UPDATE product SET merged_into = :survivor "
+            "WHERE workspace_id = :ws AND merged_into = ANY(:members)"
+        ),
+        {"survivor": into_product_id, "ws": workspace_id, "members": members},
+    )
+    await conn.execute(
+        text(
+            "UPDATE product SET status = 'merged', merged_into = :survivor "
+            "WHERE workspace_id = :ws AND product_id = ANY(:members)"
+        ),
+        {"survivor": into_product_id, "ws": workspace_id, "members": members},
+    )
+    await _set_aliases(conn, product_id=into_product_id, workspace_id=workspace_id, aliases=aliases)
+    return await _refreshed(conn, into_product_id), tuple(added)
+
+
+async def restore_product(conn: AsyncConnection, *, product_id: str, workspace_id: str) -> Product:
+    """Bring an archived or merged product back onto the brand's list."""
+    product = await _lock_product(conn, product_id=product_id, workspace_id=workspace_id)
+    if product.status == "active":
+        raise ValueError(f"product {product_id} is already active")
+    await conn.execute(
+        text(
+            "UPDATE product SET status = 'active', merged_into = NULL "
+            "WHERE product_id = :id AND workspace_id = :ws"
+        ),
+        {"id": product_id, "ws": workspace_id},
+    )
+    return await _refreshed(conn, product_id)
+
+
+async def remove_product_aliases(
+    conn: AsyncConnection, *, product_id: str, workspace_id: str, aliases: Sequence[str]
+) -> Product:
+    """Drop spellings from a product's aliases (folded comparison) — what undoing a merge needs."""
+    product = await _lock_product(conn, product_id=product_id, workspace_id=workspace_id)
+    drop = {_alias_fold(a) for a in aliases}
+    kept = [a for a in product.aliases if _alias_fold(a) not in drop]
+    if kept != list(product.aliases):
+        await _set_aliases(conn, product_id=product_id, workspace_id=workspace_id, aliases=kept)
+    return await _refreshed(conn, product_id)
+
+
+async def resolve_current_product(conn: AsyncConnection, product_id: str) -> Product | None:
+    """The product an id stands for today: itself, or the product it was merged into."""
+    product = await get_product(conn, product_id)
+    for _ in range(8):
+        if product is None or product.merged_into is None:
+            return product
+        product = await get_product(conn, product.merged_into)
+    raise ValueError(f"product {product_id} has a merge chain longer than 8")
 
 
 # --- project ----------------------------------------------------------------
@@ -559,7 +738,7 @@ async def confirm_project_product(
 # --- project product set (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.2) -----------
 _PROJECT_PRODUCT_COLUMNS = (
     "workspace_id, project_id, brand_id, product_id, selection_version, gate_id, "
-    "confirmed_by_user_id, confirmed_at, confirmation_turn_id"
+    "confirmed_by_user_id, confirmed_at, confirmation_turn_id, product_change_id"
 )
 
 
@@ -576,6 +755,8 @@ class ProjectProductSet(BaseModel):
     product_ids: tuple[str, ...]
     gate_id: UUID | None
     confirmation_turn_id: UUID | None = None
+    #: Set when a product change (merge / remove / undo) moved this project's set automatically.
+    product_change_id: UUID | None = None
     confirmed_by_user_id: str
     confirmed_at: UtcDatetime
 
@@ -597,6 +778,7 @@ def _rows_to_sets(rows: list[dict[str, Any]]) -> list[ProjectProductSet]:
                 product_ids=tuple(m["product_id"] for m in members),
                 gate_id=head["gate_id"],
                 confirmation_turn_id=head["confirmation_turn_id"],
+                product_change_id=head["product_change_id"],
                 confirmed_by_user_id=head["confirmed_by_user_id"],
                 confirmed_at=head["confirmed_at"],
             )
@@ -636,16 +818,20 @@ async def confirm_project_product_set(
     gate_id: UUID | None,
     confirmed_by_user_id: str,
     confirmation_turn_id: UUID | None = None,
+    product_change_id: UUID | None = None,
 ) -> ProjectProductSet | None:
-    """Confirm the whole set, recording either a human gate or an automatic turn.
+    """Confirm the whole set, recording a human gate, an automatic turn or a product change.
 
     Returns ``None`` — without revealing which coordinate was foreign — when the project is absent
     from the workspace or any product is not a product of the project's own brand and workspace.
     Repeats in ``product_ids`` collapse, first occurrence wins. Raises ``ValueError`` on an empty
     list: an empty set is not a selection.
     """
-    if (gate_id is None) == (confirmation_turn_id is None):
-        raise ValueError("confirmation requires exactly one gate or automatic turn")
+    if (
+        sum(source is not None for source in (gate_id, confirmation_turn_id, product_change_id))
+        != 1
+    ):
+        raise ValueError("confirmation requires exactly one gate, automatic turn or product change")
     ordered = list(dict.fromkeys(product_ids))
     if not ordered:
         raise ValueError("a project product set needs at least one product")
@@ -693,9 +879,10 @@ async def confirm_project_product_set(
         await conn.execute(
             text(
                 "INSERT INTO project_product (workspace_id, project_id, brand_id, product_id, "
-                " selection_version, gate_id, confirmed_by_user_id, confirmation_turn_id) "
+                " selection_version, gate_id, confirmed_by_user_id, confirmation_turn_id, "
+                " product_change_id) "
                 "VALUES (:workspace_id, :project_id, :brand_id, :product_id, :version, :gate_id, "
-                " :user_id, :confirmation_turn_id)"
+                " :user_id, :confirmation_turn_id, :product_change_id)"
             ),
             {
                 "workspace_id": workspace_id,
@@ -705,6 +892,7 @@ async def confirm_project_product_set(
                 "version": int(next_version),
                 "gate_id": gate_id,
                 "confirmation_turn_id": confirmation_turn_id,
+                "product_change_id": product_change_id,
                 "user_id": confirmed_by_user_id,
             },
         )

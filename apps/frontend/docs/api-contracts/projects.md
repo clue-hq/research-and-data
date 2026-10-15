@@ -2913,3 +2913,16 @@ All account, person and narrative work in a run consumes this immutable context.
 refreshes carry project/context/generation identity as described in the accounts contract's
 “Research quality generations” amendment. Changing project targeting creates a new context; it
 cannot silently rewrite the meaning of an old run or replace another project's narrative.
+
+## Product change notices (2026-10-15)
+
+Spec `docs/superpowers/specs/2026-10-15-product-management-design.md` §7. A merge or removal of
+products in Brand context moves every project whose current product set used them (a new
+product-set version tagged with the change), and the project's chat shows one line per change.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/frontend/v1/projects/:projectId/product-notices` | `{notices: [{changeId, text, outcome, createdAt}]}` — the last 30 days, minus those this person dismissed. `outcome` is `updated`, `needs_choice` (the project had no other product and keeps its old set), `restored` or `left_as_is` (an undo). |
+| `POST` | `/frontend/v1/projects/:projectId/product-notices/:changeId/dismiss` | `204`; per person. |
+
+Shown only in the project's chat, above the transcript (founder answer 2026-10-15).

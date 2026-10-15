@@ -119,6 +119,7 @@ from clue_api.design_leg_wiring import (
 )
 from clue_api.frontend_read import latest_project_run_context
 from clue_api.langfuse_callbacks import build_langfuse_callbacks
+from clue_api.product_management import recent_change_lines
 from clue_api.project_attachments import sync_project_attachments
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
@@ -606,6 +607,7 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = ()
         confirmed_icp: ConfirmedIcpRef | None = None
         product_set: ProjectProductSet | None = None
+        product_changes: tuple[str, ...] = ()
         icp_pin: ProjectIcpPin | None = None
         knowledge_pin_created = False
         # What this turn's workspace mounts beside its thread root. A turn that composes no
@@ -633,6 +635,10 @@ class ProjectConversationTurnRunner:
                     conn,
                     workspace_id=workspace_id,
                     project_id=scope.project_id,
+                )
+                # Spec 2026-10-15 §8: the agent hears about merged, renamed and removed products.
+                product_changes = await recent_change_lines(
+                    conn, workspace_id=workspace_id, brand_id=scope.brand_id
                 )
                 # Founder rulings 2026-09-10: what this project's ICP *is* comes from its durable
                 # pin, not from whatever the brand's documents currently claim.
@@ -854,6 +860,7 @@ class ProjectConversationTurnRunner:
                 documents=documents,
                 confirmed_icp=confirmed_icp,
                 product_set=product_set,
+                product_changes=product_changes,
                 project_library_index=project_library_index,
                 focus_refs=submission_focus_refs,
             )
@@ -1012,6 +1019,7 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = (),
         confirmed_icp: ConfirmedIcpRef | None = None,
         product_set: ProjectProductSet | None = None,
+        product_changes: tuple[str, ...] = (),
         project_library_index: bytes | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
@@ -1038,6 +1046,7 @@ class ProjectConversationTurnRunner:
                 documents=documents,
                 confirmed_icp=confirmed_icp,
                 product_set=product_set,
+                recent_product_changes=product_changes,
             )
             index_ref = await self._artifact(
                 submission,

@@ -205,7 +205,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # `head-of-abm@v70` grants. The old versions leave rather than stand beside them (one version
 # per ``(kind, key)``); they stay registered, so v32 stays the exact replay input for turns
 # pinned to it.
-CONVERSATION_RECIPE_VERSION = 33
+# Revision 34 (product management, 2026-10-15) admits one address and removes none:
+# ``manage_products@1``, granted by `head-of-abm@v71`.
+CONVERSATION_RECIPE_VERSION = 34
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

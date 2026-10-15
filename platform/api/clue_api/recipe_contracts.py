@@ -125,6 +125,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # that is never a claim. Granted at `head-of-abm@v62`; a SPEND, AT_LEAST_ONCE on replay, with
     # the same ``project`` pin as its siblings.
     "web_search@1",
+    # manage_products@1 (recipe0-stage0@34): the Head of ABM adds, renames, merges or removes the
+    # brand's products when the person asks. Granted at `head-of-abm@v71`; a WRITE with the same
+    # ``project`` pin as its siblings, resolved from the presenting turn.
+    "manage_products@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

@@ -37,6 +37,7 @@ export function ProjectWorkspaceShell({
   const loaded = useProjectWorkspaceLoader({
     initialWorkspace: workspace,
     projectId,
+    threadId: initial.threadId,
   });
   if (loaded.loading) {
     return (

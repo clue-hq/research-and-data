@@ -167,7 +167,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` and
     # `read_discovery_run@3`: new ADDRESSES of names this map already carries, so the count is
     # unmoved. Authority is decided by address for both names below.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 144
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 145
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at

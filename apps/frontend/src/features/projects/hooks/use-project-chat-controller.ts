@@ -17,6 +17,12 @@ import {
 import type { ChatStreamHandle } from "../data/chat-stream.repository";
 import type { ChatGateRead } from "../data/chat-gates.repository";
 import {
+  startConversationReads,
+  takeChatPrefetch,
+  type ChatPrefetch,
+  type ConversationReads,
+} from "../data/chat-prefetch";
+import {
   useChatRepositories,
   useChatViewerIdentity,
 } from "../data/projects-transport";
@@ -521,8 +527,8 @@ export function useProjectChatController({
 
   // --- reads ------------------------------------------------------------
 
-  const loadThreads = useCallback(async () => {
-    const page = await repositories.threads.list({ projectId });
+  const loadThreads = useCallback(async (early?: ChatPrefetch["threads"]) => {
+    const page = await (early ?? repositories.threads.list({ projectId }));
     if (!mounted.current) return page.threads;
     setThreads(page.threads);
     // Task 4 fix round 1 (I1): seed the transcript's leg from the DURABLE read.
@@ -549,10 +555,10 @@ export function useProjectChatController({
   }, [activeThreadId, projectId, repositories]);
 
   const loadGates = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, early?: Promise<ChatGateRead>) => {
       if (mounted.current) setGateReadLoading(true);
       try {
-        const read = await repositories.gates.list({ projectId, threadId });
+        const read = await (early ?? repositories.gates.list({ projectId, threadId }));
         if (!mounted.current) return read;
         setGateRead(read);
         setGateFailures((current) => {
@@ -591,12 +597,12 @@ export function useProjectChatController({
   );
 
   const loadConversation = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, early?: ConversationReads) => {
       const readVersion = ++conversationReadVersion.current;
       const [messagePage, turnPage] = await Promise.all([
-        repositories.messages.list({ projectId, threadId, includeBodies: true }),
-        repositories.turns.list({ projectId, threadId }),
-        loadGates(threadId),
+        early?.messages ?? repositories.messages.list({ projectId, threadId, includeBodies: true }),
+        early?.turns ?? repositories.turns.list({ projectId, threadId }),
+        loadGates(threadId, early?.gates),
       ]);
       if (!mounted.current || readVersion !== conversationReadVersion.current) return;
       planWrites.seedHistory(turnPage.turns);
@@ -660,9 +666,18 @@ export function useProjectChatController({
 
   useEffect(() => {
     let cancelled = false;
+    // The chat in the address is read alongside the project's chat list rather than after it
+    // (2026-10-15: the wait for the list was 0.5–1 s of every chat load). Its reads are applied
+    // only if the list confirms this exact chat below; otherwise they are dropped unused.
+    // When the project loader already started them (before this view existed), they are taken
+    // from the shared prefetch store instead of being asked for again.
+    const prefetched = activeThreadId ? takeChatPrefetch(projectId, activeThreadId) : null;
+    const early: ConversationReads | null = activeThreadId
+      ? (prefetched?.conversation ?? startConversationReads(repositories, projectId, activeThreadId))
+      : null;
     void (async () => {
       try {
-        const available = await loadThreads();
+        const available = await loadThreads(prefetched?.threads);
         if (cancelled || !mounted.current) return;
         const resolution = resolveProjectThreadRoute(available, activeThreadId);
         if (resolution.kind === "not-found") {
@@ -688,7 +703,10 @@ export function useProjectChatController({
           replaceThreadInRoute(resolution.thread.id);
           return;
         }
-        await loadConversation(resolution.thread.id);
+        await loadConversation(
+          resolution.thread.id,
+          early && resolution.thread.id === activeThreadId ? early : undefined,
+        );
       } catch (failure) {
         if (!cancelled) report(failure);
       } finally {
@@ -705,7 +723,9 @@ export function useProjectChatController({
     loadConversation,
     loadThreads,
     replaceThreadInRoute,
+    projectId,
     report,
+    repositories,
   ]);
 
   const effectiveTurns = useMemo(

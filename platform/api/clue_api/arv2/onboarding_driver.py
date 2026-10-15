@@ -52,7 +52,7 @@ from clue_api.arv2.onboarding_documents import (
     render_markdown,
     slugify,
 )
-from clue_api.arv2.onboarding_lineage import CatalogProduct, ProductLink
+from clue_api.arv2.onboarding_lineage import REMOVED_BY_PERSON, CatalogProduct, ProductLink
 from clue_api.arv2.onboarding_lineage import synchronize_catalog as default_synchronize
 from clue_api.arv2.onboarding_reconcile import CatalogReconciler
 from clue_api.arv2.onboarding_requests import (
@@ -220,6 +220,14 @@ class ExaClientFactory(Protocol):
 DrainProviderCalls = Callable[..., Awaitable[DrainReport]]
 
 
+class CatalogRegenerator(Protocol):
+    """Rebuilds ``product/catalog.md`` from the brand's product list (``product_management``)."""
+
+    async def __call__(
+        self, conn: AsyncConnection, *, workspace_id: str, brand_id: str
+    ) -> object: ...
+
+
 class ArtifactSink(Protocol):
     async def persist_body(
         self, *, workspace_id: str, data: bytes, media_type: str
@@ -375,6 +383,7 @@ class OnboardingRunWorkHandler:
         known_products: Callable[[AsyncConnection, str], Awaitable[Sequence[str]]] | None = None,
         reconciler_factory: Callable[[RawSink, LedgerSink], CatalogReconciler] | None = None,
         drain: DrainProviderCalls = drain_provider_calls,
+        catalog_regenerator: CatalogRegenerator | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -399,6 +408,10 @@ class OnboardingRunWorkHandler:
         # Injected like the store and the synchronizer, so the offline tests record every drain
         # without a database.
         self._drain_calls = drain
+        # Spec 2026-10-15 §9: when a re-run's lineup meets products a person merged or removed,
+        # the catalog it just published lists them again; this rebuilds it from the product list.
+        # ``None`` (the offline tests, a lane without storage) leaves the published catalog as is.
+        self._regenerate_catalog = catalog_regenerator
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -531,7 +544,12 @@ class OnboardingRunWorkHandler:
         # The ICP turn reads what the fast lane published and does not wait for the per-product
         # reports, so it starts alongside the fan-out rather than after it.
         synthesis_task = asyncio.create_task(self._synthesis_step(scope))
-        background = [self._product_research(scope, link) for link in _one_link_per_product(links)]
+        # An entry that reached its product through a merge already has the survivor's page, so
+        # it is not researched again under its old name (spec 2026-10-15 §9).
+        background = [
+            self._product_research(scope, link)
+            for link in _one_link_per_product([link for link in links if not link.redirected])
+        ]
         if not reviews_fast:
             background.append(self._reviews(scope, phase="background"))
         semaphore = asyncio.Semaphore(self._settings.onboarding_max_parallel_runs)
@@ -930,6 +948,12 @@ class OnboardingRunWorkHandler:
                     failure_message=str(error)[:500],
                 )
                 return ()
+            if self._regenerate_catalog is not None and any(
+                link.redirected or link.resolution_state == REMOVED_BY_PERSON for link in links
+            ):
+                await self._regenerate_catalog(
+                    conn, workspace_id=scope.workspace_id, brand_id=scope.brand_id
+                )
             await self._store.finish_step(conn, step_id=step_id, status="completed")
         return tuple(links)
 

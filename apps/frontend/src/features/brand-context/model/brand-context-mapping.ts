@@ -15,6 +15,7 @@ import type {
   BrandTextStyle,
   BrandTypeface,
 } from "./brand-context";
+import { BrandContextWorkspaceSchema } from "./brand-context";
 import { approvalChip, toBrandKitMeta } from "./brand-kit-actions";
 import {
   DesignAssetRecordSchema,
@@ -95,6 +96,17 @@ export function emptyBrandContextWorkspace(): BrandContextWorkspace {
     textStyles: [],
     typefaces: [],
   };
+}
+
+/** Platform folders first (Company, Product, Audience, Proof), then the kit's Design. */
+export function withPlatformFolders(
+  workspace: BrandContextWorkspace,
+  platformFolders: readonly BrandKnowledgeFolder[],
+): BrandContextWorkspace {
+  return BrandContextWorkspaceSchema.parse({
+    ...workspace,
+    knowledgeFolders: [...platformFolders, ...workspace.knowledgeFolders],
+  });
 }
 
 export function toBrandContextWorkspace(

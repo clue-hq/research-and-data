@@ -663,6 +663,11 @@ class BrandKnowledgeIndexCard(BaseModel):
     #: unset field is serialized away entirely, below, so that card's bytes and content hash are
     #: exactly what they were before this field existed.
     library_sha256: str | None = None
+    #: Product changes of the last 30 days, one plain line each ("15 Oct 2026: 8 products merged
+    #: into Proxon"; spec 2026-10-15 §8), so a product name in the chat history that no longer
+    #: exists is recognised as stale. Omitted from every dump when unset, like ``library_sha256``,
+    #: so a card with no change keeps the bytes it had before this field existed.
+    recent_product_changes: list[str] | None = None
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -677,6 +682,8 @@ class BrandKnowledgeIndexCard(BaseModel):
         payload = dict(handler(self))
         if self.library_sha256 is None:
             payload.pop("library_sha256", None)
+        if self.recent_product_changes is None:
+            payload.pop("recent_product_changes", None)
         return payload
 
     def canonical_bytes(self) -> bytes:
@@ -752,6 +759,7 @@ def compile_brand_knowledge_index_card(
     max_bytes: int | None = 8192,
     prefix: str = INPUT_PREFIX,
     library_sha256: str | None = None,
+    recent_product_changes: Sequence[str] = (),
 ) -> BrandKnowledgeIndexCard:
     """Compile the opening index over one turn's pinned documents, bounded by ``max_bytes``.
 
@@ -811,6 +819,7 @@ def compile_brand_knowledge_index_card(
             ),
             omitted_count=omitted,
             library_sha256=library_sha256,
+            recent_product_changes=list(recent_product_changes) or None,
         )
 
     omitted_count = 0
