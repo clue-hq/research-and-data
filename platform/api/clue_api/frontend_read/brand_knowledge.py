@@ -54,6 +54,7 @@ __all__ = [
     "OnboardingStepWire",
     "read_knowledge_document",
     "read_knowledge_tree",
+    "read_knowledge_tree_full",
     "read_onboarding_status",
     "register_brand_knowledge_routes",
     "resolve_knowledge_brand",
@@ -83,6 +84,23 @@ class KnowledgeDocumentWire(WireModel):
     product_ids: list[str] = Field(default_factory=list)
     #: The catalog generated from the product list — read-only in the editor.
     generated: bool = False
+
+
+class KnowledgeDocumentWithBodyWire(KnowledgeDocumentWire):
+    """A tree entry with its markdown — ``None`` when the document's bytes could not be read."""
+
+    markdown: str | None
+
+
+class KnowledgeFolderWithBodiesWire(WireModel):
+    key: str
+    label: str
+    documents: list[KnowledgeDocumentWithBodyWire]
+
+
+class KnowledgeTreeWithBodiesWire(WireModel):
+    brand_id: str | None
+    folders: list[KnowledgeFolderWithBodiesWire]
 
 
 class KnowledgeFolderWire(WireModel):
@@ -515,6 +533,54 @@ def _linked_products(front: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys([single, *listed] if single else listed))
 
 
+async def _tree_entries(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_id: str | None,
+    storage: StorageBackend | None,
+) -> dict[str, list[tuple[KnowledgeDocumentWire, str | None]]]:
+    """Each folder's current servable documents, as wires with their markdown (``None`` when the
+    bytes could not be read). Every document is opened for its title and links, so they are
+    fetched together and served from the content cache on a reload (2026-10-15: 37 in turn took
+    8.7 s)."""
+    entries: dict[str, list[tuple[KnowledgeDocumentWire, str | None]]] = {
+        key: [] for key, _ in FOLDERS
+    }
+    if brand_id is None:
+        return entries
+    rows = await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id)
+    contents = (
+        await read_knowledge_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            refs=[(str(r["artifact_key"]), str(r["artifact_sha256"])) for r in rows],
+        )
+        if storage is not None
+        else {}
+    )
+    for row in rows:
+        front: dict[str, Any] = {}
+        body = ""
+        markdown: str | None = None
+        if storage is not None:
+            raw = contents.get((str(row["artifact_key"]), str(row["artifact_sha256"])))
+            if isinstance(raw, bytes):
+                front, body = _parse_document(raw)
+                markdown = body
+            else:
+                # A missing blob lists the document by name, never 500s the tree.
+                log.warning(
+                    "brand_knowledge.document_unreadable",
+                    workspace_id=workspace_id,
+                    document_id=str(row["document_id"]),
+                    path=str(row["path"]),
+                )
+        entries[str(row["folder"])].append((_document_wire(row, front=front, body=body), markdown))
+    return entries
+
+
 async def read_knowledge_tree(
     conn: AsyncConnection,
     *,
@@ -524,45 +590,44 @@ async def read_knowledge_tree(
 ) -> KnowledgeTreeWire:
     """The four folders, always all four, each carrying its brand's current servable documents.
 
-    Every document's artifact is read for its title, product id and ICP key (sequentially; a tree
-    is at most a few dozen documents). A process with no storage still serves the tree, with
-    file-name titles and no ids — the shape the page needs, honestly degraded.
+    A process with no storage still serves the tree, with file-name titles and no ids — the shape
+    the page needs, honestly degraded.
     """
-    documents: dict[str, list[KnowledgeDocumentWire]] = {key: [] for key, _ in FOLDERS}
-    if brand_id is not None:
-        rows = await _current_servable(conn, workspace_id=workspace_id, brand_id=brand_id)
-        # Every document is opened for its title and links, so they are fetched together and
-        # served from the content cache on a reload (2026-10-15: 37 in turn took 8.7 s).
-        contents = (
-            await read_knowledge_bytes(
-                conn,
-                storage,
-                workspace_id=workspace_id,
-                refs=[(str(r["artifact_key"]), str(r["artifact_sha256"])) for r in rows],
-            )
-            if storage is not None
-            else {}
-        )
-        for row in rows:
-            front: dict[str, Any] = {}
-            body = ""
-            if storage is not None:
-                raw = contents.get((str(row["artifact_key"]), str(row["artifact_sha256"])))
-                if isinstance(raw, bytes):
-                    front, body = _parse_document(raw)
-                else:
-                    # A missing blob lists the document by name, never 500s the tree.
-                    log.warning(
-                        "brand_knowledge.document_unreadable",
-                        workspace_id=workspace_id,
-                        document_id=str(row["document_id"]),
-                        path=str(row["path"]),
-                    )
-            documents[str(row["folder"])].append(_document_wire(row, front=front, body=body))
+    entries = await _tree_entries(
+        conn, workspace_id=workspace_id, brand_id=brand_id, storage=storage
+    )
     return KnowledgeTreeWire(
         brand_id=brand_id,
         folders=[
-            KnowledgeFolderWire(key=key, label=label, documents=documents[key])
+            KnowledgeFolderWire(key=key, label=label, documents=[wire for wire, _ in entries[key]])
+            for key, label in FOLDERS
+        ],
+    )
+
+
+async def read_knowledge_tree_full(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_id: str | None,
+    storage: StorageBackend | None,
+) -> KnowledgeTreeWithBodiesWire:
+    """The same tree with every document's markdown, so the page makes one read instead of one
+    per document (2026-10-15: 37 body requests took 1.45 s through one API process)."""
+    entries = await _tree_entries(
+        conn, workspace_id=workspace_id, brand_id=brand_id, storage=storage
+    )
+    return KnowledgeTreeWithBodiesWire(
+        brand_id=brand_id,
+        folders=[
+            KnowledgeFolderWithBodiesWire(
+                key=key,
+                label=label,
+                documents=[
+                    KnowledgeDocumentWithBodyWire(**wire.model_dump(), markdown=markdown)
+                    for wire, markdown in entries[key]
+                ],
+            )
             for key, label in FOLDERS
         ],
     )
@@ -700,6 +765,19 @@ def register_brand_knowledge_routes(
                 conn, workspace_id=workspace_id, brand_id=brand_id
             )
             return await read_knowledge_tree(
+                conn, workspace_id=workspace_id, brand_id=resolved, storage=storage
+            )
+
+    @router.get("/brand-context/knowledge/full", response_model=KnowledgeTreeWithBodiesWire)
+    async def get_knowledge_tree_full(
+        workspace_id: WorkspaceDep,
+        brand_id: str | None = Query(default=None, alias="brandId"),
+    ) -> KnowledgeTreeWithBodiesWire:
+        async with conn_factory() as conn:
+            resolved = await resolve_knowledge_brand(
+                conn, workspace_id=workspace_id, brand_id=brand_id
+            )
+            return await read_knowledge_tree_full(
                 conn, workspace_id=workspace_id, brand_id=resolved, storage=storage
             )
 

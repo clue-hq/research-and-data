@@ -387,3 +387,29 @@ def test_onboarding_current_mirrors_the_run_and_its_steps() -> None:
             assert only["startedAt"].endswith("Z") and only["finishedAt"].endswith("Z")
 
     run_async(scenario())
+
+
+def test_the_full_tree_carries_every_documents_markdown_in_one_read() -> None:
+    # 2026-10-15: the page asked for each document's text separately — 37 requests that the API
+    # worked through one at a time (1.45 s). One read now carries the tree and every body.
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = _MemoryStorage()
+            _, ids = await _seed(conn, storage)
+            full = await _get(conn, storage, "/knowledge/full")
+            assert full.status_code == 200, full.text
+            plain = (await _get(conn, storage, "/knowledge")).json()
+            body = full.json()
+            # Same tree, same order, same metadata — plus each document's markdown.
+            assert [[d["id"] for d in f["documents"]] for f in body["folders"]] == [
+                [d["id"] for d in f["documents"]] for f in plain["folders"]
+            ]
+            overview = body["folders"][0]["documents"][0]
+            assert overview["id"] == str(ids["overview_v2"])
+            single = (
+                await _get(conn, storage, f"/knowledge/documents/{ids['overview_v2']}")
+            ).json()
+            assert overview["markdown"] == single["markdown"]
+            assert "markdown" not in plain["folders"][0]["documents"][0]
+
+    run_async(scenario())

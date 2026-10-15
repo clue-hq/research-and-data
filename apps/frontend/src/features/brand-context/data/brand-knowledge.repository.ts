@@ -2,6 +2,7 @@ import type { BrandKnowledgeFolder } from "../model/brand-context";
 import {
   KnowledgeDocumentDetailSchema,
   KnowledgeTreeSchema,
+  KnowledgeTreeWithBodiesSchema,
   OnboardingStatusSchema,
   toKnowledgeFolders,
   type OnboardingStatus,
@@ -22,6 +23,18 @@ async function readJson(clueFetch: typeof fetch, path: string): Promise<unknown>
  * Never rejects — the page is a review surface, and a 500 would be a lie about the brand.
  */
 export async function readBrandKnowledgeFolders(clueFetch: typeof fetch): Promise<BrandKnowledgeFolder[]> {
+  // One read carries the tree and every body (2026-10-15: 37 separate body reads took 1.45 s
+  // through one API process). An API without that route gets the per-document reads below.
+  try {
+    const full = KnowledgeTreeWithBodiesSchema.parse(await readJson(clueFetch, `${READ_PREFIX}/knowledge/full`));
+    const bodies = new Map<string, string>();
+    for (const document of full.folders.flatMap((folder) => folder.documents)) {
+      if (document.markdown !== null) bodies.set(document.id, document.markdown);
+    }
+    return toKnowledgeFolders(full, bodies);
+  } catch {
+    // Older API, or the read failed: fall through to the tree plus one read per document.
+  }
   let tree;
   try {
     tree = KnowledgeTreeSchema.parse(await readJson(clueFetch, `${READ_PREFIX}/knowledge`));

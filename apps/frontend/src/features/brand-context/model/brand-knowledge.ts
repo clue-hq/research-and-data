@@ -35,6 +35,18 @@ export const KnowledgeTreeSchema = z.object({
   ),
 });
 
+/** The tree with every document's markdown (`null` when its bytes could not be read). */
+export const KnowledgeTreeWithBodiesSchema = z.object({
+  brandId: z.string().nullable(),
+  folders: z.array(
+    z.object({
+      documents: z.array(KnowledgeDocumentSchema.extend({ markdown: z.string().nullable() })),
+      key: KnowledgeFolderKeySchema,
+      label: z.string(),
+    }),
+  ),
+});
+
 export const KnowledgeSourceSchema = z.object({
   confidence: z.string().nullable(),
   section: z.string(),
