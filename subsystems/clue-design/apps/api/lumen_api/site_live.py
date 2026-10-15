@@ -33,10 +33,12 @@ SHIM_FILES = {"react": "react.js", "react/jsx-runtime": "react-jsx-runtime.js", 
 
 
 def live_sites_enabled(workspace_id: str) -> bool:
+    """Whether this workspace publishes live sites: it is listed, or the list holds `*` (every
+    workspace; founder 2026-10-15, what production sets)."""
     listed = {
         part.strip() for part in os.environ.get(LIVE_WORKSPACES_ENV, "").split(",") if part.strip()
     }
-    return workspace_id in listed
+    return "*" in listed or workspace_id in listed
 
 
 @dataclass(frozen=True)

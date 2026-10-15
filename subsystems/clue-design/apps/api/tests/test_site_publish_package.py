@@ -715,6 +715,18 @@ def test_a_workspace_off_the_list_publishes_the_static_page_exactly_as_before(bl
     assert manifest["delivery"] == "site" and "live" not in manifest
 
 
+def test_a_star_puts_every_workspace_on_the_live_list(blobs: DesignBlobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Founder 2026-10-15: every workspace publishes live by default; production sets `*`."""
+    from lumen_api.site_live import live_sites_enabled
+
+    for listed, expected in (("*", True), ("ws_other, *", True), (" * ", True), ("ws_other", False), ("", False)):
+        monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", listed)
+        assert live_sites_enabled(blobs.workspace_id) is expected, listed
+    monkeypatch.setenv("LUMEN_SITE_LIVE_WORKSPACES", "*")
+    _publish_through_the_core(blobs, "pub_core_star")
+    assert _stored_manifest(blobs)["delivery"] == "site_live"
+
+
 # --- Live sites (publishing live sites, phase 1) ---------------------------------------------------
 
 
