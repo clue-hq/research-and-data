@@ -39,6 +39,7 @@ from clue_api.design_turn_targets import (
 )
 from clue_api.frontend_read.accounts_list import read_spine_page
 from clue_api.frontend_read.v1_shared import account_logo_path
+from clue_api.knowledge_bytes import read_knowledge_bytes
 from clue_config import Settings
 from clue_core import EntityId
 from clue_research.claimstore import WorkspaceScope, current_values
@@ -673,7 +674,8 @@ async def _project_document_rows(
     rows = (
         await conn.execute(
             text(
-                "SELECT document_id, project_id, path, kind FROM brand_knowledge_document "
+                "SELECT document_id, project_id, path, kind, artifact_key, artifact_sha256 "
+                "FROM brand_knowledge_document "
                 "WHERE workspace_id = :workspace_id "
                 "  AND document_id = ANY(CAST(:ids AS uuid[])) AND project_id IS NOT NULL"
             ),
@@ -754,6 +756,20 @@ async def context_ref_presentations(
         rows = await _project_document_rows(
             conn, workspace_id=workspace_id, document_ids=tuple(dict.fromkeys(document_ids))
         )
+        if storage is not None:
+            # Every tagged document is opened for its title; fetch them together so the reads
+            # below are served from the content cache (2026-10-15: one after another they were
+            # 1.4 s of a chat's load). A row without a file has nothing to fetch.
+            await read_knowledge_bytes(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                refs=[
+                    (str(row.artifact_key), str(row.artifact_sha256))
+                    for row in rows.values()
+                    if getattr(row, "artifact_key", None) and getattr(row, "artifact_sha256", None)
+                ],
+            )
         for document_id, row in rows.items():
             front: Mapping[str, Any] = {}
             body = ""
