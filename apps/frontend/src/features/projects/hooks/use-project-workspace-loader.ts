@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { startChatPrefetch } from "../data/chat-prefetch";
 import {
   cachedProjectWorkspace,
   forgetProjectWorkspace,
@@ -18,9 +19,12 @@ interface ProjectWorkspaceLoadState {
 export function useProjectWorkspaceLoader({
   initialWorkspace,
   projectId,
+  threadId,
 }: {
   initialWorkspace: ProjectWorkspace | null;
   projectId: string;
+  /** The chat in the address, whose reads start alongside the project read. */
+  threadId?: string;
 }) {
   const repositories = useChatRepositories();
   const { revision } = useProjectCatalogInvalidation();
@@ -39,6 +43,15 @@ export function useProjectWorkspaceLoader({
   const [loaded, setLoaded] = useState<ProjectWorkspaceLoadState>(fresh);
 
   const current = loaded.projectId === projectId ? loaded : fresh();
+
+  // The chat view only exists once the project has arrived, so on a first visit its reads would
+  // wait for the project read (~0.8 s). They start here instead, alongside it, and the chat
+  // controller takes them from the prefetch store when it mounts. With the project cached the
+  // chat view mounts at once and reads for itself, so nothing is started that would duplicate it.
+  useEffect(() => {
+    if (!httpMode || !threadId || cachedProjectWorkspace(projectId) !== null) return;
+    startChatPrefetch(repositories, projectId, threadId);
+  }, [httpMode, projectId, repositories, threadId]);
 
   useEffect(() => {
     if (!httpMode) return;

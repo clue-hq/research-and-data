@@ -5,6 +5,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { SearchParamsContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
+import { clearChatPrefetch, startChatPrefetch } from "@/features/projects/data/chat-prefetch";
+import { createChatRepositories } from "@/features/projects/data/chat-repositories";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
 import {
   useProjectChatController,
@@ -187,6 +189,34 @@ test("a chat in a project with no chats reports the route, not the refused early
     await h.flush();
     assert.equal(h.controller().route?.code, "THREAD_NOT_FOUND");
     assert.equal(h.controller().transcript.length, 0);
+    assert.equal(h.controller().error, null);
+  } finally {
+    await h.teardown();
+  }
+});
+
+
+test("reads the project loader already started are used, not asked for again", async () => {
+  // Chat load speed: the loader starts the chat's reads alongside the project read, before the
+  // chat view exists; the controller takes them when it mounts.
+  clearChatPrefetch();
+  const h = harness({ listed: [THREAD] });
+  try {
+    startChatPrefetch(createChatRepositories(TRANSPORT), PROJECT, THREAD);
+    await h.flush();
+    assert.equal(count(h.requested, PREFIX), 1);
+    assert.equal(count(h.requested, `${PREFIX}/${THREAD}/messages`), 1);
+    await h.mount();
+    await h.flush();
+    h.releaseList();
+    await h.flush();
+    assert.equal(count(h.requested, PREFIX), 1, "the chat list is not read twice");
+    assert.equal(count(h.requested, `${PREFIX}/${THREAD}/messages`), 1, "nor the messages");
+    assert.equal(count(h.requested, `${PREFIX}/${THREAD}/turns`), 1);
+    assert.equal(count(h.requested, `${PREFIX}/${THREAD}/gates`), 1);
+    assert.ok(
+      h.controller().transcript.some((message) => JSON.stringify(message).includes("Hello from the chat")),
+    );
     assert.equal(h.controller().error, null);
   } finally {
     await h.teardown();

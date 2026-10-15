@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
+import { clearChatPrefetch, takeChatPrefetch } from "@/features/projects/data/chat-prefetch";
 import { clearProjectWorkspaceCache } from "@/features/projects/data/project-workspace-cache";
 import { useProjectWorkspaceLoader } from "@/features/projects/hooks/use-project-workspace-loader";
 
@@ -38,9 +39,16 @@ function environment() {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   const oldFetch = globalThis.fetch;
-  const server = { titles: new Map<string, string>(), reads: [] as string[], failing: new Set<string>() };
+  const server = {
+    titles: new Map<string, string>(), reads: [] as string[], failing: new Set<string>(),
+    chatReads: [] as string[],
+  };
   globalThis.fetch = async (input) => {
     const path = new URL(String(input), "https://clue.invalid").pathname;
+    if (path.includes("/threads")) {
+      server.chatReads.push(path);
+      return Response.json({ data: [], meta: { next_cursor: null } });
+    }
     const id = path.split("/").at(-1)!;
     server.reads.push(id);
     if (server.failing.has(id)) {
@@ -50,17 +58,17 @@ function environment() {
   };
   const seen: Array<{ loading: boolean; title: string | null; error: string | null }> = [];
   let root: Root | null = null;
-  function Probe({ projectId }: { projectId: string }) {
-    const state = useProjectWorkspaceLoader({ initialWorkspace: null, projectId });
+  function Probe({ projectId, threadId }: { projectId: string; threadId?: string }) {
+    const state = useProjectWorkspaceLoader({ initialWorkspace: null, projectId, threadId });
     seen.push({ loading: state.loading, title: state.workspace?.title ?? null, error: state.error });
     return null;
   }
-  async function mount(projectId: string) {
+  async function mount(projectId: string, threadId?: string) {
     seen.length = 0;
     root = createRoot(dom.window.document.getElementById("root")!);
     await act(async () => {
       // eslint-disable-next-line react/no-children-prop
-      root!.render(createElement(ProjectsTransportProvider, { transport: TRANSPORT, children: createElement(Probe, { projectId }) }));
+      root!.render(createElement(ProjectsTransportProvider, { transport: TRANSPORT, children: createElement(Probe, { projectId, threadId }) }));
     });
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await act(async () => { await new Promise<void>((resolve) => setImmediate(resolve)); });
@@ -125,6 +133,35 @@ test("a refresh that fails reports the failure and forgets the cached project", 
     env.server.failing.delete("prj_a");
     await env.mount("prj_a");
     assert.equal(env.seen[0].loading, true, "nothing cached after the failure");
+    await env.unmount();
+  } finally {
+    env.teardown();
+  }
+});
+
+
+test("the first visit starts the chat's reads alongside the project read", async () => {
+  // Chat load speed: before the project arrives the chat view does not exist, so the loader
+  // starts the chat's reads and leaves them for the chat controller to take.
+  clearProjectWorkspaceCache();
+  clearChatPrefetch();
+  const env = environment();
+  try {
+    env.server.titles.set("prj_c", "Chat project");
+    await env.mount("prj_c", "thr_c");
+    const base = "/api/clue/api/v1/projects/prj_c/threads";
+    assert.deepEqual([...env.server.chatReads].sort(), [
+      base, `${base}/thr_c/gates`, `${base}/thr_c/messages`, `${base}/thr_c/turns`,
+    ]);
+    assert.ok(takeChatPrefetch("prj_c", "thr_c"), "left for the chat controller");
+    await env.unmount();
+
+    // With the project already cached the chat view mounts at once and reads for itself, so the
+    // loader starts nothing that would only duplicate those reads.
+    env.server.chatReads.length = 0;
+    await env.mount("prj_c", "thr_c");
+    assert.deepEqual(env.server.chatReads, []);
+    assert.equal(takeChatPrefetch("prj_c", "thr_c"), null);
     await env.unmount();
   } finally {
     env.teardown();
