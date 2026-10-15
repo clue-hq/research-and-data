@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import {
+  cachedProjectWorkspace,
+  forgetProjectWorkspace,
+  rememberProjectWorkspace,
+} from "../data/project-workspace-cache";
 import { useChatRepositories } from "../data/projects-transport";
 import type { ProjectWorkspace } from "../model/project-workspace";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
@@ -20,21 +25,20 @@ export function useProjectWorkspaceLoader({
   const repositories = useChatRepositories();
   const { revision } = useProjectCatalogInvalidation();
   const httpMode = repositories.transport.mode === "http";
-  const [loaded, setLoaded] = useState<ProjectWorkspaceLoadState>({
-    error: null,
-    loading: httpMode,
-    projectId,
-    workspace: initialWorkspace,
-  });
+  // A project a previous mount read is shown at once; the effect below still reads it again and
+  // the newest read wins (switching chats within a project, 2026-10-15).
+  const fresh = (): ProjectWorkspaceLoadState => {
+    const cached = httpMode ? cachedProjectWorkspace(projectId) : null;
+    return {
+      error: null,
+      loading: httpMode && cached === null,
+      projectId,
+      workspace: cached ?? initialWorkspace,
+    };
+  };
+  const [loaded, setLoaded] = useState<ProjectWorkspaceLoadState>(fresh);
 
-  const current = loaded.projectId === projectId
-    ? loaded
-    : {
-        error: null,
-        loading: httpMode,
-        projectId,
-        workspace: initialWorkspace,
-      };
+  const current = loaded.projectId === projectId ? loaded : fresh();
 
   useEffect(() => {
     if (!httpMode) return;
@@ -42,6 +46,7 @@ export function useProjectWorkspaceLoader({
     void repositories.projects
       .get(projectId)
       .then((next) => {
+        rememberProjectWorkspace(next);
         if (!cancelled) {
           setLoaded({
             error: null,
@@ -52,6 +57,7 @@ export function useProjectWorkspaceLoader({
         }
       })
       .catch((failure: unknown) => {
+        forgetProjectWorkspace(projectId);
         if (cancelled) return;
         setLoaded({
           error: failure instanceof Error
