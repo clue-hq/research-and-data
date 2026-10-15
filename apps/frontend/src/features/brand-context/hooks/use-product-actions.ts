@@ -22,7 +22,12 @@ export type ProductDialog =
   | { kind: "remove"; product: BrandProduct }
   | { kind: "link"; document: BrandKnowledgeDocument };
 
-export function useProductActions(products: BrandProducts | null, canWrite: boolean) {
+export function useProductActions(
+  products: BrandProducts | null,
+  canWrite: boolean,
+  /** Called with the page's new path after a rename, so the editor follows the page. */
+  onPageMoved?: (path: string) => void,
+) {
   const router = useRouter();
   const [dialog, setDialog] = useState<ProductDialog | null>(null);
   const [name, setName] = useState("");
@@ -87,7 +92,11 @@ export function useProductActions(products: BrandProducts | null, canWrite: bool
     if (current.kind === "add") {
       await run(async () => (await addProduct({ name: name.trim(), description: description.trim() || undefined })).text);
     } else if (current.kind === "rename") {
-      await run(async () => (await renameProduct(current.product.productId, name.trim())).text);
+      await run(async () => {
+        const renamed = await renameProduct(current.product.productId, name.trim());
+        if (renamed.pagePath && current.product.pageDocumentId) onPageMoved?.(renamed.pagePath);
+        return renamed.text;
+      });
     } else if (current.kind === "merge") {
       await run(async () => (await mergeProducts({ productIds: selected, intoProductId: current.product.productId })).text);
     } else if (current.kind === "remove") {

@@ -9,6 +9,7 @@ import {
   emptyBrandContextWorkspace,
   toBrandContextWorkspace,
   toRegistryAssets,
+  withPlatformFolders,
 } from "../model/brand-context-mapping";
 import {
   BrandKitDetailSchema,
@@ -42,6 +43,13 @@ export interface BrandContextView {
 
 export interface BrandContextRepository extends AssetRepository {
   getWorkspace(): Promise<BrandContextView>;
+  /**
+   * The two halves of `getWorkspace`, read separately so the page can show the documents as
+   * soon as they arrive and stream the slower brand kit in after (2026-10-15). `getKitView`'s
+   * workspace carries only the kit's own folders (its Design brief); neither ever rejects.
+   */
+  getKitView(): Promise<BrandContextView>;
+  getKnowledgeFolders(): Promise<BrandKnowledgeFolder[]>;
 }
 
 /**
@@ -75,6 +83,17 @@ export function httpBrandContextRepository({
 }): BrandContextRepository {
   return {
     ...httpAssetRepository(designFetch),
+    async getKitView() {
+      try {
+        return await readWorkspace(await designFetch(), Promise.resolve([]));
+      } catch (error) {
+        console.warn("[brand-context] serving no brand kit; the brand-kit read failed:", error);
+        return { kit: null, workspace: emptyBrandContextWorkspace() };
+      }
+    },
+    getKnowledgeFolders() {
+      return readPlatformKnowledgeFolders(clueFetch);
+    },
     async getWorkspace() {
       // Started first and awaited last, so the two backends are read concurrently.
       // It never rejects, which is what lets the catch below still serve the
@@ -223,17 +242,6 @@ async function readPlatformKnowledgeFolders(
   }
 }
 
-/** Platform folders first (Company, Product, Audience, Proof), then the kit's Design. */
-function withPlatformFolders(
-  workspace: BrandContextWorkspace,
-  platformFolders: readonly BrandKnowledgeFolder[],
-): BrandContextWorkspace {
-  return BrandContextWorkspaceSchema.parse({
-    ...workspace,
-    knowledgeFolders: [...platformFolders, ...workspace.knowledgeFolders],
-  });
-}
-
 /**
  * The workspace's current kit: its LATEST version, whatever its approval
  * status — this screen is precisely the review surface for a draft. A
@@ -258,6 +266,12 @@ function selectBrandKit(
 
 const fixtureBrandContextRepository: BrandContextRepository = {
   ...fixtureAssetRepository(),
+  async getKitView() {
+    return { kit: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
+  },
+  async getKnowledgeFolders() {
+    return [];
+  },
   async getWorkspace() {
     // No kit meta: the dummy is a DESIGN, not a stored kit — there is nothing to approve or
     // re-extract, and inventing a status chip for it would be the first lie on this page.

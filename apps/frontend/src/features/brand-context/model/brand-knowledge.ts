@@ -95,6 +95,8 @@ export const ProductChangeSchema = z.object({
   changeId: z.string(),
   kind: z.string(),
   pageDocumentId: z.string().nullable(),
+  /** Where the product's page lives now; the editor follows it after a rename. */
+  pagePath: z.string().nullable().default(null),
   pagePending: z.boolean(),
   productId: z.string(),
   productName: z.string(),

@@ -3,6 +3,7 @@ import type { CreativeType } from "../model/asset-context";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useKnowledgeEditor } from "./use-knowledge-editor";
+import { pickSelectedDocument } from "../model/knowledge-selection";
 import type {
   BrandAssetCategory,
   BrandAssetSortDirection,
@@ -61,7 +62,11 @@ export function useBrandContextController({
   const [section, setSection] = useState(initial.section);
   const [colorMode, setColorModeState] = useState(initial.colorMode);
   const [assetView, setAssetViewState] = useState(initial.assetView);
-  const [selectedDocumentPath, setSelectedDocumentPath] = useState(defaultDocument?.path ?? "");
+  // The requested path wins even before it has loaded: the kit's Design brief streams in after
+  // the documents, and a link to it should land on it once it arrives.
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState(
+    initial.filePath ?? defaultDocument?.path ?? "",
+  );
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(
     () => new Set(defaultDocument ? [defaultDocument.folderId] : []),
   );
@@ -93,6 +98,13 @@ export function useBrandContextController({
   const [fontSearch, setFontSearch] = useState("");
   const [customFontName, setCustomFontName] = useState("");
   const [textStyles, setTextStyles] = useState(workspace.textStyles);
+  // The brand kit streams in after the documents (2026-10-15), so the first render may have no
+  // styles yet. Seed them once when the kit lands; later refreshes keep local additions.
+  const [stylesSeeded, setStylesSeeded] = useState(workspace.textStyles.length > 0);
+  if (!stylesSeeded && workspace.textStyles.length > 0) {
+    setStylesSeeded(true);
+    setTextStyles(workspace.textStyles);
+  }
   const [newStyle, setNewStyle] = useState<BrandTextStyle>({
     fontFamily: workspace.typefaces[0]?.family ?? "Satoshi Variable",
     fontSize: 18,
@@ -133,9 +145,7 @@ export function useBrandContextController({
     () => workspace.knowledgeFolders.flatMap((folder) => folder.documents),
     [workspace.knowledgeFolders],
   );
-  const selectedDocument =
-    allDocuments.find((document) => document.path === selectedDocumentPath)
-    ?? allDocuments[0];
+  const selectedDocument = pickSelectedDocument(allDocuments, selectedDocumentPath);
   // The generated product catalog is read-only: the product actions change it (spec 2026-10-15).
   const knowledgeEditor = useKnowledgeEditor(selectedDocument, {
     scopeKey,
@@ -190,10 +200,8 @@ export function useBrandContextController({
       if (assetId) params.set("asset", assetId);
     }
     if (nextSection === "knowledge") {
-      const document = next.filePath
-        ? allDocuments.find((item) => item.path === next.filePath)
-        : selectedDocument;
-      if (document) params.set("file", document.path);
+      const path = next.filePath ?? selectedDocument?.path;
+      if (path) params.set("file", path);
     }
 
     router.replace(`/brand-context?${params.toString()}`, { scroll: false });
@@ -211,6 +219,15 @@ export function useBrandContextController({
     setSection("knowledge");
     setOpenFolderIds((current) => new Set(current).add(document.folderId));
     syncRoute({ filePath: document.path, section: "knowledge" });
+  }
+
+  /** Open a document by path, even one that has not loaded yet — a renamed product's page
+   * appears at its new path after the refresh that follows the rename. */
+  function openDocumentPath(path: string) {
+    setSelectedDocumentPath(path);
+    setSection("knowledge");
+    setOpenFolderIds((current) => new Set(current).add(path.split("/")[0]));
+    syncRoute({ filePath: path, section: "knowledge" });
   }
 
   function openAsset(assetId: string) {
@@ -368,6 +385,7 @@ export function useBrandContextController({
     removeTypeface,
     section,
     selectDocument,
+    openDocumentPath,
     selectedAsset,
     selectedDocument,
     selectSection,
