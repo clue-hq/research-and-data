@@ -56,3 +56,23 @@ sets. Spec `docs/superpowers/specs/2026-10-15-product-management-design.md` (fou
 - Not done (founder declined for now): a product list with menus at the top of the catalog view,
   so a product with no page still has no menu in the app (the Head of ABM can still change it).
 - Verified: product DB suites green; frontend npm test 3304/0; design-system:build + lint + build.
+
+## Load-speed work the same day (founder-approved, same branch)
+- Root cause everywhere: stored files read from R2 one after another. `clue_api/knowledge_bytes.py`
+  fetches concurrently (16) and caches by (workspace, storage key, digest); the DB liveness/digest
+  check still runs on every read. Used by the Brand-context tree/product list/documents, project
+  documents, chat message bodies and tagged-document labels.
+- Brand context: `GET /brand-context/knowledge/full` (tree + every body, one read); section and
+  document switches use `window.history.replaceState` (no server re-render). Stripe warm load:
+  first byte 9.6–13 s -> 0.88 s.
+- Chat: the conversation's messages/turns/gates start alongside the chat list and apply only when
+  the list confirms the chat. Left-nav click on a 9-message chat: 7.7 s -> 3.1 s (first after
+  restart) / 2.1 s (warm). Remaining: the project read gates the chat (~0.8 s) and ~11 concurrent
+  requests (doubled by dev Strict Mode) contend in one API process.
+- Not done (founder: only if still slow): start chat reads before the project read (needs a shared
+  prefetch store because the chat view remounts per chat by design); reuse the project across chat
+  switches; batch the per-document DB checks into one query.
+- Pre-existing failure seen, not ours: tests/api/test_reference_images_contract.py (DesignLegTurnRunner
+  has no _conn_factory).
+- Lane stack: DB copy `clue_nashville_pm` (original `clue_nashville` untouched; .env backup
+  `.env.bak-2026-10-15-before-pm-db`); page origin on 8064 because addis-ababa holds 8040.
