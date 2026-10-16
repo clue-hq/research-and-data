@@ -274,7 +274,6 @@ async def acquire(
     audio = None
     prepared = None
     expected_hash = None
-    remote_url = None
     # Founder ruling 2026-10-16: an audio file is transcribed from its own link and never
     # downloaded, when its length is known (the feed's, or estimated from its size) so the
     # allowance is checked before paying. Deepgram's checksum, request id and measured duration
@@ -299,7 +298,10 @@ async def acquire(
             request.update(delivery="url", source_url=link)
     with tempfile.TemporaryDirectory(prefix="arv2-media-") as directory:
         if not resolution.transcript and candidate.media_url and link is None:
-            # Download is independently journalled and retained as an artifact for repairs.
+            # Founder ruling 2026-10-16: a download is transcription input only. It lives in this
+            # temporary folder, which is deleted when this block ends, whatever happens; its raw
+            # record keeps a hash and size, never the bytes; nothing of it reaches storage. A
+            # retry after a failure therefore downloads it again.
             async with runtime._conn_factory() as conn:
                 download, won = await ops.begin(
                     runtime,
@@ -308,17 +310,26 @@ async def acquire(
                     stage="download",
                     request={"url": candidate.media_url or candidate.url},
                 )
-            if won:
-                media_url = candidate.media_url
-                response = await ops.call(
-                    runtime,
-                    download,
-                    "media_public",
-                    lambda caller: fetch(caller, media_url, binary=True),
-                )
-                mime = response.headers.get("content-type", "").split(";")[0].lower()
-                if not mime.startswith(("audio/", "video/")):
-                    async with runtime._conn_factory() as conn:
+            if not won and download["state"] != "succeeded":
+                return {
+                    "state": download["state"],
+                    "operation_ref": str(download["operation_id"]),
+                    "gap": "download_not_ready",
+                }
+            media_url = candidate.media_url
+
+            def get(caller: Any) -> Any:
+                return fetch(caller, media_url, binary=True, keep_body=False)
+
+            response = await (
+                ops.call(runtime, download, "media_public", get)
+                if won
+                else runtime.call_provider("media_public", get)
+            )
+            mime = response.headers.get("content-type", "").split(";")[0].lower()
+            if not mime.startswith(("audio/", "video/")):
+                async with runtime._conn_factory() as conn:
+                    if won:
                         await ops.finish(
                             runtime,
                             conn,
@@ -326,65 +337,28 @@ async def acquire(
                             error="unsupported_media_mime",
                             known_failure=True,
                         )
-                        await store.release_item(runtime, conn, item["item_id"])
-                    return {"state": "unavailable", "gap": "unsupported_media_mime"}
-                blob = await runtime._artifacts.persist_body(
-                    workspace_id=runtime.scope.workspace_id, data=response.body, media_type=mime
-                )
-                async with runtime._conn_factory() as conn:
-                    await store.subjects(runtime, conn, blob.artifact_key, [])
-                    await conn.execute(
-                        text(
-                            "UPDATE arv2_media_operation SET "
-                            "artifact_keys=array_append(artifact_keys,:key) WHERE workspace_id=:ws "
-                            "AND operation_id=:id"
-                        ),
-                        {
-                            "ws": runtime.scope.workspace_id,
-                            "id": download["operation_id"],
-                            "key": blob.artifact_key,
-                        },
-                    )
-                    await ops.finish(
-                        runtime, conn, download, result={"blob": blob.artifact_key, "mime": mime}
-                    )
-                download["result"] = {"blob": blob.artifact_key, "mime": mime}
-                download["state"] = "succeeded"
-            if download["state"] != "succeeded":
-                return {
-                    "state": download["state"],
-                    "operation_ref": str(download["operation_id"]),
-                    "gap": "download_not_ready",
-                }
-            async with runtime._conn_factory() as conn:
-                _, data = await read_verified_artifact(
-                    conn,
-                    runtime.storage,
-                    workspace_id=runtime.scope.workspace_id,
-                    storage_key=download["result"]["blob"],
-                )
+                    await store.release_item(runtime, conn, item["item_id"])
+                return {"state": "unavailable", "gap": "unsupported_media_mime"}
             path = Path(directory) / "recording"
-            path.write_bytes(data)
+            path.write_bytes(response.body)
+            if won:
+                async with runtime._conn_factory() as conn:
+                    await ops.finish(
+                        runtime,
+                        conn,
+                        download,
+                        result={"mime": mime, "bytes": len(response.body)},
+                    )
             audio, prepared = await asyncio.to_thread(prepare_audio, path)
             duration = prepared["duration_s"]
-            # URL delivery avoids the slow-upload failure seen in the trial, but only when
-            # it sends precisely the retained audio bytes. Extracted tracks use upload.
-            remote_url = (
-                candidate.media_url
-                if prepared["preparation"] == "original_audio_bytes" and not upload
-                else None
-            )
             expected_hash = prepared["audio_sha256"]
-            request.update(input_sha256=expected_hash, delivery="url" if remote_url else "upload")
-            blob = await runtime._artifacts.persist_body(
-                workspace_id=runtime.scope.workspace_id,
-                data=audio.read_bytes(),
-                media_type=prepared["mime"],
+            # The step is known by the downloaded file's hash: a retry re-downloads the same
+            # bytes, while the speech audio cut from them need not come out byte-identical.
+            request.update(
+                input_sha256=prepared["original_sha256"],
+                delivery="upload",
+                preparation=prepared["preparation"],
             )
-            async with runtime._conn_factory() as conn:
-                await store.subjects(runtime, conn, blob.artifact_key, [])
-            request["prepared_blob"] = blob.artifact_key
-            request["preparation"] = prepared
         if not resolution.transcript and link is None and (audio is None or not duration):
             async with runtime._conn_factory() as conn:
                 await store.release_item(runtime, conn, item["item_id"])
@@ -398,20 +372,12 @@ async def acquire(
                 request=request,
                 seconds=0 if resolution.transcript else duration or 0,
             )
-        if won and request.get("prepared_blob"):
-            async with runtime._conn_factory() as conn:
-                await conn.execute(
-                    text(
-                        "UPDATE arv2_media_operation SET "
-                        "artifact_keys=array_append(artifact_keys,:key) "
-                        "WHERE workspace_id=:ws AND operation_id=:id"
-                    ),
-                    {
-                        "ws": runtime.scope.workspace_id,
-                        "id": op["operation_id"],
-                        "key": request["prepared_blob"],
-                    },
-                )
+        if not won and link is not None and op["state"] == "failed":
+            # An earlier read sent this link and Deepgram refused it outright (heard nothing,
+            # billed nothing): fetch the recording ourselves rather than send the link again.
+            return await acquire(
+                runtime, resolution, purpose=purpose, repair_version=repair_version, upload=True
+            )
         transcript: Transcript | DeepgramTranscript | None = None
         if not won:
             if op["result"].get("empty_transcript"):
@@ -447,7 +413,7 @@ async def acquire(
         elif link is not None or (audio is not None and prepared is not None):
             names = (runtime.scope.account_name, runtime.scope.person_name)
             keyterms = tuple(dict.fromkeys(n.strip() for n in names if n and n.strip()))
-            sent = link or remote_url
+            sent = link
             try:
                 transcript = await ops.call(
                     runtime,

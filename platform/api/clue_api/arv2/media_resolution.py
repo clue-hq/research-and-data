@@ -35,7 +35,9 @@ from clue_research.official_site.url_policy import ConservativeUrlPolicy, UrlPol
 if TYPE_CHECKING:
     from clue_api.arv2.media_sources import MediaSourceKeys
 
-MAX_MEDIA_BYTES = 200 * 1024 * 1024
+#: The largest recording downloaded (founder ruling 2026-10-16). Most are never downloaded at all:
+#: Deepgram and Gemini are given their links.
+MAX_MEDIA_BYTES = 500 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5_000_000
 YT_HOSTS = {
     "youtube.com",
@@ -196,9 +198,15 @@ class PublicMediaTransport:
 
 
 def fetch(
-    caller: ProviderCaller, url: str, *, binary: bool = False, probe: bool = False
+    caller: ProviderCaller,
+    url: str,
+    *,
+    binary: bool = False,
+    probe: bool = False,
+    keep_body: bool = True,
 ) -> HttpResponse:
-    """One public GET. ``probe`` asks for the headers only when the answer is a recording."""
+    """One public GET. ``probe`` asks for the headers only when the answer is a recording.
+    ``keep_body=False`` records the answer by hash and size only (a downloaded recording)."""
     url = public_url(url)
     headers = {**PUBLIC_HEADERS, **({PROBE_HEADER: "1"} if probe else {})}
     result = caller.call(
@@ -208,6 +216,7 @@ def fetch(
             label="media.resolve",
             request=HttpRequest(method="GET", url=url, headers=headers, timeout_s=60),
             binary=binary,
+            keep_body=keep_body,
             max_attempts=1,
         )
     )

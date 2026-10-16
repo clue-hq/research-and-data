@@ -709,20 +709,33 @@ def prepared_offline_recording(monkeypatch):
 
     def prepare(path):
         data = path.read_bytes()
+        # The real preparation's shape (media_recording.prepare_audio), without running ffmpeg.
         return path, {
             "mime": "audio/mpeg",
             "duration_s": json.loads(data)["duration"],
-            "preparation": "original_audio_bytes",
+            "preparation": "mono_speech_mp3",
+            "original_sha256": hashlib.sha256(data).hexdigest(),
             "audio_sha256": hashlib.sha256(data).hexdigest(),
         }
 
     monkeypatch.setattr(media_acquisition, "prepare_audio", prepare)
 
 
+#: Marks a downloaded recording's bytes, so a test can prove they are stored nowhere.
+DOWNLOADED = "DOWNLOADED-RECORDING-BYTES"
+
+
+def stores_downloaded_bytes(rt) -> bool:
+    import base64
+
+    needles = (DOWNLOADED.encode(), base64.b64encode(DOWNLOADED.encode())[:20])
+    return any(n in blob for blob in rt.storage.blobs.values() for n in needles)
+
+
 def offline_audio(duration=60):
     import json
 
-    body = json.dumps({"duration": duration}).encode()
+    body = json.dumps({"duration": duration, "marker": DOWNLOADED}).encode()
     # A real file server states the size, which link-first reads as an estimated length.
     return HttpResponse(200, {"content-type": "audio/mpeg", "content-length": str(len(body))}, body)
 
@@ -920,11 +933,12 @@ def test_a_size_estimate_over_the_allowance_is_measured_by_downloading_not_refus
             )
             result = await link_first_read(rt, wire)
             assert result["state"] == "available"
-            # Measured exactly from the download, then sent by link as before link-first.
+            # Measured exactly from the download; what was downloaded is what is sent (as small
+            # speech audio, never the link again), and nothing of it is kept.
             listen = [r for r in wire.requests if "/v1/listen?" in r.url]
-            assert [json.loads(r.body) for r in listen] == [
-                {"url": "https://example.com/source.mp3"}
-            ]
+            assert len(listen) == 1 and listen[0].headers["Content-Type"] == "audio/mpeg"
+            assert json.loads(listen[0].body)["marker"] == DOWNLOADED
+            assert not stores_downloaded_bytes(rt)
             assert [tuple(r) for r in await transcribe_seconds(conn, rt)] == [("succeeded", 3040)]
 
     run_async(scenario())
@@ -949,13 +963,60 @@ def test_when_deepgram_cannot_fetch_the_link_the_recording_is_downloaded_and_upl
             assert result["state"] == "available"
             first, second = [r for r in wire.requests if "/v1/listen?" in r.url]
             assert json.loads(first.body) == {"url": "https://example.com/source.mp3"}
-            # The retry sends the bytes we fetched, never the same link again.
+            # The retry sends the audio we fetched, never the same link again.
             assert second.headers["Content-Type"] == "audio/mpeg"
-            assert json.loads(second.body) == {"duration": 1800}
+            assert json.loads(second.body)["duration"] == 1800
+            # Founder ruling 2026-10-16: the download is deleted with its temporary folder;
+            # neither the file, nor its raw record's body, nor the sent audio is stored.
+            assert not stores_downloaded_bytes(rt)
             states = [tuple(r) for r in await transcribe_seconds(conn, rt)]
             assert states == [("failed", 1800), ("succeeded", 1800)]
 
     run_async(scenario())
+
+
+def test_a_retry_after_a_failure_downloads_again_because_nothing_was_kept(monkeypatch):
+    from clue_api.arv2 import media_acquisition
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            real = media_acquisition.prepare_audio
+
+            def fail_once(path):
+                monkeypatch.setattr(media_acquisition, "prepare_audio", real)
+                raise ValueError("recording preparation failed: ffmpeg exit 1")
+
+            monkeypatch.setattr(media_acquisition, "prepare_audio", fail_once)
+            wire = ScriptedTransport(
+                [
+                    podcast_feed(),
+                    deepgram_cannot_fetch(),
+                    offline_audio(1800),
+                    # The retry reads the feed again; the link already failed, so it downloads.
+                    podcast_feed(),
+                    offline_audio(1800),
+                    deepgram_speech("We need evidence.", 1800),
+                    embeddings(),
+                ]
+            )
+            failed = await link_first_read(rt, wire)
+            assert failed["state"] == "unavailable"
+            assert failed["gaps"] == ["recording preparation failed: ffmpeg exit 1"]
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            downloads = [r for r in wire.requests if r.url == "https://example.com/source.mp3"]
+            assert len(downloads) == 2
+            assert len([r for r in wire.requests if "/v1/listen?" in r.url]) == 2
+            assert not stores_downloaded_bytes(rt)
+
+    run_async(scenario())
+
+
+def test_a_recording_may_be_up_to_500_mb():
+    from clue_api.arv2.media_resolution import MAX_MEDIA_BYTES
+
+    assert MAX_MEDIA_BYTES == 500 * 1024 * 1024
 
 
 def test_a_deepgram_server_error_on_a_link_is_never_retried_or_downloaded():

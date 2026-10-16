@@ -54,7 +54,15 @@ For any link, in this order:
    Deepgram answers it cannot fetch (its `400 REMOTE_CONTENT_ERROR`, which hears nothing): then
    the bytes we fetched are uploaded. A Deepgram server error or timeout is never retried. A
    repair re-reads the link; if the publisher has removed the recording, the repair reports it
-   unavailable and the existing transcript stands.
+   unavailable and the existing transcript stands. Size estimates only skip a download: one that
+   does not clearly fit the allowance is downloaded and measured.
+   **Downloads (same ruling):** at most 500 MB. A download is transcription input only: it lives
+   in a temporary folder deleted as soon as the step ends (transcript saved, or anything failed);
+   its raw record keeps a hash and size, never the bytes; nothing of it is stored. Whatever was
+   downloaded (stereo, studio quality, a video, an MP3 with cover art), only small mono speech audio
+   is sent: the first audio track, one channel, 16 kHz, 64 kbit/s MP3 (about 0.5 MB a minute). A
+   retry after a failure downloads again; the step is known by the downloaded file's hash, so it
+   is never bought twice. What is kept: the transcript, Deepgram's response and the link.
 4. **A YouTube embed on the page** goes to the YouTube path (step 2 onwards for that video).
 
 New: when the plain fetch is refused (403) or finds no recording, the page is fetched again with
