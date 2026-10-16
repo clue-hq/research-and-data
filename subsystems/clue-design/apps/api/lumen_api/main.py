@@ -12022,9 +12022,16 @@ def run_site_agent_turn(
     # What history compares: this request's start and end, or — when the run saved earlier — the
     # site that save replaced and the one it saved.
     history_before, history_after = document["scene"], result.site
+    reply = result.summary
+    earlier = None
     if result.status == "applied" and (outcome is None or outcome.status == "already_saved") and run_saved_site:
         earlier = run_saved_site()
         if earlier is not None:
+            if outcome is not None:
+                # This attempt arrived at a different site, which was refused as the run's second
+                # save: its own words describe an edit that was never saved, so say what was.
+                reply = f"Saved this request as version {earlier.version}."
+                result = replace(result, summary=reply)
             outcome = SitePersistOutcome("saved", earlier.version, None)
             history_before, history_after = earlier.before, earlier.after
     response = _site_turn_response(result, outcome, base_version=base_version)
@@ -12042,17 +12049,21 @@ def run_site_agent_turn(
         return _site_turn_fenced_response(result, base_version=base_version)
     saved = outcome is not None and outcome.status == "saved"
     workspace.mkdir(parents=True, exist_ok=True)
-    append_history(
-        workspace,
-        number=history_count(workspace) + 1,
-        request=user_message,
-        changes=site_changes(site_pages_of(history_before), site_pages_of(history_after)) if saved else [],
-        shell_changed=saved and history_before.get("shell") != history_after.get("shell"),
-        reply=result.summary,
-        saved=saved_line(status=result.status, stop_reason=result.stop_reason,
-                         outcome_status=outcome.status if outcome else None,
-                         version=outcome.version if outcome else None),
-    )
+    saved_as = saved_line(status=result.status, stop_reason=result.stop_reason,
+                          outcome_status=outcome.status if outcome else None,
+                          version=outcome.version if outcome else None)
+    # A version is saved once, so an entry already saying "as version N" is this request's: an
+    # earlier attempt wrote it before dying, and finishing the request again must not repeat it.
+    if not (earlier is not None and _history_has_saved_line(workspace, saved_as)):
+        append_history(
+            workspace,
+            number=history_count(workspace) + 1,
+            request=user_message,
+            changes=site_changes(site_pages_of(history_before), site_pages_of(history_after)) if saved else [],
+            shell_changed=saved and history_before.get("shell") != history_after.get("shell"),
+            reply=reply,
+            saved=saved_as,
+        )
     shutil.rmtree(workspace / "work", ignore_errors=True)
     try:
         # Snapshot the ATTEMPT's folder (its keys are the session's own, ``workspace/…``) and move
@@ -12077,6 +12088,15 @@ def run_site_agent_turn(
         return response
     finally:
         shutil.rmtree(attempt_dir, ignore_errors=True)
+
+
+def _history_has_saved_line(workspace: Path, saved_as: str) -> bool:
+    """Whether the attempt's history.md already has an entry whose "Saved:" line is ``saved_as``."""
+    try:
+        text = (workspace / "history.md").read_text()
+    except OSError:
+        return False
+    return f"- Saved: {saved_as}" in text.splitlines()
 
 
 def _site_turn_fenced_response(result: Any, *, base_version: int) -> JsonObject:

@@ -1722,15 +1722,17 @@ def test_i_e_a_takeover_after_the_save_landed_never_makes_a_second_version(
     assert different.status == "succeeded" and different.response["outcome"] == "saved", different.response
     assert different.response["saved_version"] == different.response["current_version"] == 1
     assert saves(different) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+    # C's own words describe an edit that was never saved; it says what was saved instead.
+    assert different.response["summary"] == "Saved this request as version 1."
     stored = store.require_document(document_id)
     assert stored["current_version"] == 1 and stored["scene"] == saved_by_a
     assert len(store.list_envelopes(document_id)) == 1
     history = (session_folder(_agent_root, store.workspace_id, document_id) / "workspace" / "history.md").read_text()
     assert "already saved" not in history
-    # Every entry for the request (one per attempt that finished it) says it was saved as version 1.
+    # The request has ONE entry, written by A; the attempts that finished it again did not repeat it.
     lines = history.splitlines()
-    assert {line for line in lines if line.startswith("- Saved:")} == {"- Saved: as version 1"}
-    assert {line for line in lines if line.startswith("- What changed:")} == {"- What changed: /: changed proof (heading)"}
+    assert [line for line in lines if line.startswith("- Saved:")] == ["- Saved: as version 1"]
+    assert [line for line in lines if line.startswith("- What changed:")] == ["- What changed: /: changed proof (heading)"]
     finish(store, different, generation_c)
 
 
