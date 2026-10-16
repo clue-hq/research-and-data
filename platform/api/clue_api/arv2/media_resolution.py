@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 from clue_api.arv2.calls import CallSpec, ProviderCaller
 from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.media_feeds_client import (
+    MAX_FEED_BYTES,
     parse_feed,
     reject_native_video,
 )
@@ -38,7 +39,8 @@ if TYPE_CHECKING:
 #: The largest recording downloaded (founder ruling 2026-10-16). Most are never downloaded at all:
 #: Deepgram and Gemini are given their links.
 MAX_MEDIA_BYTES = 500 * 1024 * 1024
-MAX_DOCUMENT_BYTES = 5_000_000
+#: The largest page, feed or transcript read: a feed is the biggest document, so its cap.
+MAX_DOCUMENT_BYTES = MAX_FEED_BYTES
 YT_HOSTS = {
     "youtube.com",
     "www.youtube.com",

@@ -250,3 +250,34 @@ def test_a_transistor_player_whose_feed_lacks_the_episode_uses_the_players_own_r
     assert result.state == "resolved"
     assert result.candidates[0].media_url == PLAYER_MP3
     assert "html:transistor-player" in result.candidates[0].identity_evidence
+
+
+def big_daily_feed(megabytes: int):
+    """A long-running daily show's feed: thousands of episodes with full show notes. The Daily's
+    real feed is 20.4 MB and Hospitality Daily's is 8.6 MB (measured 2026-10-16)."""
+    notes = "Show notes. " * 4000
+    old = "".join(
+        f"<item><guid>old-{n}</guid><title>Episode {n}</title><description>{notes}</description>"
+        f'<enclosure url="https://cdn.example.com/{n}.mp3" type="audio/mpeg"/></item>'
+        for n in range(megabytes * 1024 * 1024 // len(notes))
+    )
+    return (
+        '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
+        "<title>Hospitality Daily</title><item><guid>today</guid><title>Roman Pedan of Kasa</title>"
+        "<itunes:duration>458</itunes:duration>"
+        '<enclosure url="https://cdn.example.com/today.mp3" type="audio/mpeg"/></item>'
+        f"{old}</channel></rss>"
+    ).encode()
+
+
+def test_a_big_daily_show_feed_is_read_not_refused():
+    feed = big_daily_feed(21)
+    assert len(feed) > 20 * 1024 * 1024
+    stream = httpx.Response(
+        200, headers={"content-type": "application/xml"}, stream=_Stream([feed])
+    )
+    assert read_body(stream, probe=True) == feed
+    wire = ScriptedTransport([HttpResponse(200, {"content-type": "application/rss+xml"}, feed)])
+    result = resolve(caller(wire), "https://feeds.example.com/hospitality-daily.rss", hint="Kasa")
+    assert result.state == "resolved"
+    assert result.candidates[0].media_url == "https://cdn.example.com/today.mp3"
