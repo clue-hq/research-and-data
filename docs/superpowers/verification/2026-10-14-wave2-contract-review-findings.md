@@ -234,7 +234,7 @@ between the apps. Lanes A, B and C, plus site-kit's shared schema.
   unchanged (for example a sync counter that the canvas sync also compares).
 
 #### K1-5 — Renaming a site while the agent works throws away the agent's whole request
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-16 (`e777a70f6`, `9b9866f72`): renaming is refused (409 `document.agent_run_active`) while a design run drives the document, and the header rename is disabled under the run lock (founder ruling 2026-10-16).
 - **What a person sees:** the marketer renames the site's tab while a site request runs. The request ends
   "the site changed while this request ran", and minutes of agent work are thrown away.
 - **Why it happens:** rename has no agent-run lock and moves the version number. The site turn saves once,
@@ -662,7 +662,7 @@ agent's publish tools, the locks and batch publishing.
   and drop a publish result for a document that is no longer shown.
 
 #### K6-2 — After the first publish, Share never offers Republish when the site changes
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-16 (`be6e928b3`, `24cd45774`, `58034b515`): Share compares the published version with the current one and offers Republish; publishing waits for site saves still on their way.
 - **What a person sees:** the marketer publishes version 3. The agent (or they) take the site to version 4.
   Share still says "Asset published" and offers only Preview and Copy link, and the link still serves
   version 3. The only way to push version 4 is hidden: re-save the same address, which brings back
@@ -679,7 +679,7 @@ agent's publish tools, the locks and batch publishing.
   with Republish; wait for pending saves before publishing.
 
 #### K6-3 — Account sites publish indexable, and a noindex choice is lost
-- **Severity:** Important. Status: open; founder ruling R25-4 makes it a bug, not a new decision.
+- **Severity:** Important. Status: **fixed** 2026-10-16 (`42f0208ee`, `be6e928b3`, `58034b515`, `b67329f14`): every new web or site document is born noindex (founder ruling 2026-10-16, one birth rule in the DAL); the noindex route takes sites; the publish state reports indexing and the checkbox starts from it; existing documents keep what they were born with.
 - **What a person sees:** every account site ("Prepared for <account>", with claims about named contacts)
   can be indexed by search engines from its first publish. If the marketer unticks "Allow indexing" and
   publishes, the page is protected, but after a reload the next republish quietly sends "indexable" again.
