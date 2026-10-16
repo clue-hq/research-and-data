@@ -18,6 +18,7 @@ from clue_api.design_leg_wiring import _exit_judge_artifact_lines, design_leg_ru
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
 from clue_design.documents import create_document, get_document
+from clue_research.membership import ensure_project_account
 from clue_toolbelt import ToolRegistry
 from tests.api.conftest import hermetic_flag_env
 from tests.api.test_genad_leg_document_birth_db import (
@@ -26,6 +27,7 @@ from tests.api.test_genad_leg_document_birth_db import (
     _seed_conversation,
 )
 from tests.api.test_genweb_leg_document_birth_db import engine_web_doc
+from tests.api.test_multi_artifact_leg_birth_db import _seed_account_entity
 from tests.api.test_genweb_web_turn_dispatch_db import (
     _FakeLane,
     _run_turn,
@@ -90,6 +92,62 @@ def test_an_unlisted_workspace_births_a_webdoc_unchanged(tmp_path: Path, migrate
             )
             assert document["doc_kind"] == "web"
             assert document["scene"]["pages"][0]["id"] == "home"
+
+    run_async(scenario())
+
+
+# --- K6-3 (ruling R25-4): a website born for a tagged account is noindex at birth -----------------
+
+
+async def _tagged_account(conn: AsyncConnection, seeds: dict[str, Any]) -> str:
+    """A live research account of this workspace, on this project: what the composer's tag names."""
+
+    entity_id = await _seed_account_entity(
+        conn, workspace_id=seeds["workspace_id"], name="Apollo Clinics", domain="apollo.example"
+    )
+    await ensure_project_account(
+        conn,
+        workspace_id=seeds["workspace_id"],
+        project_id=seeds["project_id"],
+        account_entity_id=entity_id,
+        added_via="manual",
+    )
+    return str(entity_id)
+
+
+@pytest.mark.parametrize("listed", [True, False], ids=["site", "web"])
+def test_a_website_born_for_a_tagged_account_is_noindex_and_a_generic_one_is_not(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+    listed: bool,
+) -> None:
+    """The ABM batch's rule (an account page is born stamped noindex, publish or not) applies to a
+    chat-born account website too, site or web; a generic page in the same delegation keeps the
+    ordinary default (indexable)."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_conversation(conn, storage_root=tmp_path, label=f"noindex-{listed}")
+            account = await _tagged_account(conn, seeds)
+            result = await _open(
+                seeds,
+                _registry(seeds, listed=listed),
+                doc_kind="web",
+                artifacts=[
+                    {"title": "Apollo page", "note": "for Apollo", "account_id": account},
+                    {"title": "Generic page", "note": "no account"},
+                ],
+            )
+            tagged, generic = [
+                await get_document(conn, workspace_id=seeds["workspace_id"], document_id=str(document_id))
+                for document_id in result.references["document_ids"]
+            ]
+            assert tagged["doc_kind"] == generic["doc_kind"] == ("site" if listed else "web")
+            assert tagged["account_id"] is not None and tagged["web_noindex"] is True
+            assert generic["account_id"] is None and generic["web_noindex"] is False
 
     run_async(scenario())
 
