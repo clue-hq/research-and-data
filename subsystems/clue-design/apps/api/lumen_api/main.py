@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -11844,12 +11844,27 @@ def site_turn_save_key(run_id: str, lease_generation: int) -> str:
     return f"site-turn-save:{run_id}:g{lease_generation}"
 
 
-def _run_saved_version(store: HybridRepository, document_id: str, run_id: str) -> Optional[int]:
-    """The version an earlier attempt of ``run_id`` saved, from its history envelope."""
+class _RunSave(NamedTuple):
+    """The one version a site run saved: its number, the site it replaced and the site it saved."""
+
+    version: int
+    before: JsonObject
+    after: JsonObject
+
+
+def _run_saved_site(store: HybridRepository, document_id: str, run_id: str) -> Optional[_RunSave]:
+    """The version an attempt of ``run_id`` saved, from its history envelope (an agent-run save
+    stamps the run id as ``actor_id``; one run saves at most once — ``hold_run_for_save``)."""
+    from .toolbelt.site_documents import replace_site_payload
+
     for row in store.list_envelopes(document_id, newest_first=False):
         actor = row.get("actor") or {}
         if actor.get("kind") == "agent" and actor.get("id") == run_id:
-            return int(row["base_revision"]) + 1
+            before = replace_site_payload(row.get("inverse_operations"))
+            after = replace_site_payload(row.get("operations"))
+            if before is None or after is None:
+                return None
+            return _RunSave(int(row["base_revision"]) + 1, before, after)
     return None
 
 
@@ -11878,12 +11893,6 @@ def _site_turn_response(result: Any, outcome: Any, *, base_version: int) -> Json
         failed = failed_agent_turn_response(SITE_TURN_FENCED, message, outcome.detail or "")
         return {**failed, **common, "current_version": base_version, "saved_version": None,
                 "error": {"code": SITE_TURN_FENCED, "message": message}}
-    if outcome.status == "already_saved":
-        saved_as = f"version {outcome.version}" if outcome.version is not None else "a version"
-        summary = (f"This request was already saved as {saved_as} by an earlier attempt, "
-                   "so this attempt's changes were not saved.")
-        return {**common, "status": "applied", "outcome": "already_saved", "summary": summary,
-                "current_version": base_version, "saved_version": None}
     message = f"The website could not be saved: {outcome.detail or 'the write was refused'}"
     failed = failed_agent_turn_response("site_turn.write_refused", message, outcome.detail or "")
     return {**failed, **common, "current_version": base_version, "saved_version": None,
@@ -11910,9 +11919,18 @@ def run_site_agent_turn(
     lease_generation: Optional[int] = None,
     resume: Any = None,
     working_copy_sink: Any = None,
+    run_saved_site: Any = None,
 ) -> JsonObject:
     """One Puck site request: restore the session folder, run, persist under CAS, write history,
     snapshot memory. Never raises — every failure folds into a failed response.
+
+    ``run_saved_site()`` returns the version this run already saved (a :class:`_RunSave`), or
+    ``None``. A takeover whose earlier attempt saved and then died before its terminal write
+    (site-turn durability, 2026-10-16) finds the request already saved: its own result then has
+    nothing to save (it continued to the same site) or is refused as a second save by the run.
+    Either way the request IS saved, so it is reported exactly as if this attempt had saved it —
+    applied, that version, the saved event, and history computed between the site that save
+    replaced and the one it saved.
 
     Fresh session per request (founder ruling 2026-10-11): the LangGraph thread is ``run_id``; the
     agent's memory across requests is the session folder's plan.md, history.md and fetched/, which
@@ -11997,8 +12015,18 @@ def run_site_agent_turn(
         shutil.rmtree(attempt_dir, ignore_errors=True)
         return failed_agent_turn_response("agent_runtime.failed", "Site agent failed before returning a result.", str(error))
 
+    from .site_turn_ports import SitePersistOutcome
+
     base_version = int(document["current_version"])
     outcome = persist(result.site) if result.status == "applied" and result.site != document["scene"] else None
+    # What history compares: this request's start and end, or — when the run saved earlier — the
+    # site that save replaced and the one it saved.
+    history_before, history_after = document["scene"], result.site
+    if result.status == "applied" and (outcome is None or outcome.status == "already_saved") and run_saved_site:
+        earlier = run_saved_site()
+        if earlier is not None:
+            outcome = SitePersistOutcome("saved", earlier.version, None)
+            history_before, history_after = earlier.before, earlier.after
     response = _site_turn_response(result, outcome, base_version=base_version)
     if outcome is not None and outcome.status == "fenced":
         # Another attempt holds the run now and owns this request's history and memory: a fenced
@@ -12018,8 +12046,8 @@ def run_site_agent_turn(
         workspace,
         number=history_count(workspace) + 1,
         request=user_message,
-        changes=site_changes(site_pages_of(document["scene"]), site_pages_of(result.site)) if saved else [],
-        shell_changed=saved and document["scene"].get("shell") != result.site.get("shell"),
+        changes=site_changes(site_pages_of(history_before), site_pages_of(history_after)) if saved else [],
+        shell_changed=saved and history_before.get("shell") != history_after.get("shell"),
         reply=result.summary,
         saved=saved_line(status=result.status, stop_reason=result.stop_reason,
                          outcome_status=outcome.status if outcome else None,
@@ -12342,8 +12370,8 @@ def _execute_site_turn_job(
                 if SITE_SAVE_FENCED in refused.reason_codes:
                     return SitePersistOutcome("fenced", None, detail)
                 if SITE_ALREADY_SAVED_BY_RUN in refused.reason_codes:
-                    return SitePersistOutcome("already_saved", _run_saved_version(store, document_id, envelope.run_id),
-                                              detail)
+                    # Reported as the run's own save by run_site_agent_turn (``run_saved_site``).
+                    return SitePersistOutcome("already_saved", None, detail)
                 return SitePersistOutcome("refused", None, detail)
             except TurnCancelled:
                 # Stop pressed between the agent's last step and the save: nothing is written.
@@ -12395,6 +12423,7 @@ def _execute_site_turn_job(
             checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
             callbacks=callbacks, event_sink=event_sink, runner=runner, lease_generation=lease_generation,
             resume=resume, working_copy_sink=working_copy_sink,
+            run_saved_site=lambda: _run_saved_site(store, document_id, envelope.run_id),
         )
         if (response.get("error") or {}).get("code") == SITE_TURN_FENCED:
             # No event and no terminal result: the attempt holding the run now owns both.

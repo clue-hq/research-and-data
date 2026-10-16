@@ -177,10 +177,10 @@ class SitePersistOutcome:
     """What the governed site write did with one request's site."""
 
     #: ``fenced``: the attempt no longer holds its run, so nothing was saved (and it must not
-    #: report as the run). ``already_saved``: an earlier attempt of this run saved the site.
+    #: report as the run). ``already_saved``: an earlier attempt of this run saved the site, so
+    #: this one wrote nothing; the turn reports that earlier save as its own (``run_site_agent_turn``).
     status: Literal["saved", "conflicted", "refused", "fenced", "already_saved"]
-    #: The new version when saved; the stored version when conflicted; the version the run saved
-    #: when already_saved (None if it could not be read); None when refused or fenced.
+    #: The new version when saved; the stored version when conflicted; None otherwise.
     version: int | None
     detail: str | None = None
 

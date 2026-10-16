@@ -1659,9 +1659,10 @@ def test_i_d_a_retried_save_of_the_same_site_is_one_version(
 def test_i_e_a_takeover_after_the_save_landed_never_makes_a_second_version(
         client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
     """A saves (version 1) and dies before its terminal write. B takes the run over and redoes the
-    request. If B ends with the site A saved, there is nothing to save. If B ends with a DIFFERENT
-    site, it is refused as already saved by this run: still one version, and B's result says so
-    instead of claiming a save."""
+    request. If B ends with the site A saved, there is nothing to save; if B ends with a DIFFERENT
+    site, its save is refused as a second save by this run. Either way there is still one version,
+    and the request IS saved as it: B reports version 1 as saved (the request's result), not a
+    turn that saved nothing."""
     store, document_id, born, envelope = fresh_site_run(garner)
     generation_a = hold_run(store, envelope, "worker-a")
     model.next(*proof_edit(born, PROOF_A, 1))
@@ -1669,28 +1670,34 @@ def test_i_e_a_takeover_after_the_save_landed_never_makes_a_second_version(
     assert a.response["saved_version"] == 1  # ...and A dies here, before complete_run.
     saved_by_a = with_heading(born, "/", "proof", PROOF_A)
 
-    # B redoes the request and ends where A did: nothing to save.
+    # B redoes the request and ends where A did: nothing new to save, the request saved as version 1.
     generation_b = take_over(store, envelope, "worker-b")
     model.next(AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 1)]),
                AIMessage(content="The proof heading already reads as asked."))
     same = attempt_turn(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
-    assert same.status == "succeeded" and same.response["outcome"] == "unchanged"
+    assert same.status == "succeeded" and same.response["outcome"] == "saved", same.response
+    assert same.response["saved_version"] == same.response["current_version"] == 1
+    assert saves(same) == [("site_document_saved", {"document_id": document_id, "version": 1})]
     assert store.require_document(document_id)["current_version"] == 1
 
-    # A third attempt redoes it differently: refused, still one version, said plainly.
+    # A third attempt redoes it differently: its save is refused, still one version, and the
+    # request is reported saved as that version.
     generation_c = take_over(store, envelope, "worker-c")
     model.next(*proof_edit(saved_by_a, PROOF_B, 1))
     different = attempt_turn(client.app, store, envelope, worker_id="worker-c", generation=generation_c)
-    assert different.response["saved_version"] is None, different.response
-    assert different.status == "succeeded" and different.response["outcome"] == "already_saved"
-    assert different.response["current_version"] == 1
-    assert "already saved" in different.response["summary"] and "version 1" in different.response["summary"]
-    assert saves(different) == []
+    assert different.status == "succeeded" and different.response["outcome"] == "saved", different.response
+    assert different.response["saved_version"] == different.response["current_version"] == 1
+    assert saves(different) == [("site_document_saved", {"document_id": document_id, "version": 1})]
     stored = store.require_document(document_id)
     assert stored["current_version"] == 1 and stored["scene"] == saved_by_a
     assert len(store.list_envelopes(document_id)) == 1
     history = (session_folder(_agent_root, store.workspace_id, document_id) / "workspace" / "history.md").read_text()
-    assert "- Saved: no, an earlier attempt of this request already saved version 1\n" in history
+    assert "already saved" not in history
+    # Every entry for the request (one per attempt that finished it) says it was saved as version 1.
+    lines = history.splitlines()
+    assert {line for line in lines if line.startswith("- Saved:")} == {"- Saved: as version 1"}
+    assert {line for line in lines if line.startswith("- What changed:")} == {"- What changed: /: changed proof (heading)"}
+    finish(store, different, generation_c)
 
 
 # =================================================================================================
@@ -2034,6 +2041,100 @@ def test_j_g_a_zombie_and_its_takeover_never_share_a_folder(
     assert PROOF_A not in (folder / "workspace" / "page.json").read_text()
     assert "## 1. " in (folder / "workspace" / "history.md").read_text()
     assert list((folder / "attempts").iterdir()) == []
+
+
+def die_right_after_the_save(monkeypatch: pytest.MonkeyPatch) -> Callable[[], None]:
+    """The next attempt's save lands, then its worker dies (before history, the session copy and
+    the terminal write). Returns the call that puts the real save back."""
+    from lumen_api.toolbelt.wiring import DesignToolInvocations
+
+    real_invoke = DesignToolInvocations.invoke
+
+    def save_then_die(self, name, body, **kwargs):
+        written = real_invoke(self, name, body, **kwargs)
+        if name == "design_write_site":
+            die()
+        return written
+
+    monkeypatch.setattr(DesignToolInvocations, "invoke", save_then_die)
+    return lambda: monkeypatch.setattr(DesignToolInvocations, "invoke", real_invoke)
+
+
+def history_entry(history: str, number: int) -> str:
+    """One request's entry in history.md, from its heading to the next one."""
+    start = history.index(f"\n## {number}. ")
+    end = history.find("\n## ", start + 1)
+    return history[start:] if end == -1 else history[start:end]
+
+
+def test_j_h_saves_then_dies_and_the_takeover_reports_the_request_saved(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A's save lands as version 1, then A's worker dies before its terminal write. B, on another
+    disk, resumes at A's final step (no model call) with exactly the site A saved. The request IS
+    saved, as version 1, so B reports it that way: applied, saved_version 1, the saved event the
+    chat turns into its checkpoint frame, and a history entry saying "as version 1" with the pages
+    A changed (between the version before A's save and A's version). Still one version."""
+    put_back = die_right_after_the_save(monkeypatch)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    model.next(*proof_edit(born, PROOF_A, 1))
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert store.require_document(document_id)["current_version"] == 1
+    put_back()
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next()
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert b.seen == [], "the takeover asked the model again for finished work"
+    assert turn.status == "succeeded", turn.response
+    assert turn.response["status"] == "applied" and turn.response["outcome"] == "saved", turn.response
+    assert turn.response["saved_version"] == 1 and turn.response["current_version"] == 1
+    assert turn.response["summary"] == f"The proof heading now reads {PROOF_A!r}."
+    assert saves(turn) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+    stored = store.require_document(document_id)
+    assert stored["current_version"] == 1 and stored["scene"] == with_heading(born, "/", "proof", PROOF_A)
+    assert len(store.list_envelopes(document_id)) == 1
+    entry = history_entry(history_of(_agent_root, store, document_id), 1)
+    assert "- What changed: /: changed proof (heading)\n" in entry, entry
+    assert "- Saved: as version 1\n" in entry, entry
+    assert turn.response.get("session_manifest_sha256")
+
+    finish(store, turn, generation_b)
+    assert store.require_run(envelope.run_id)["status"] == "succeeded"
+
+
+def test_j_i_saves_then_dies_and_a_takeover_that_ends_differently_still_reports_the_save(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A saves version 1 and dies. B has no conversation to continue (no checkpointer), redoes the
+    request and ends with a DIFFERENT site; its save is refused because the run already saved.
+    The request is still saved as version 1, and B reports exactly that, as in J h."""
+    put_back = die_right_after_the_save(monkeypatch)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    model.next(*proof_edit(born, PROOF_A, 1))
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    put_back()
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    model.next(*proof_edit(with_heading(born, "/", "proof", PROOF_A), PROOF_B, 11))
+    turn = attempt_turn(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert turn.status == "succeeded", turn.response
+    assert turn.response["outcome"] == "saved" and turn.response["saved_version"] == 1, turn.response
+    assert turn.response["current_version"] == 1
+    assert saves(turn) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+    stored = store.require_document(document_id)
+    assert stored["current_version"] == 1 and stored["scene"] == with_heading(born, "/", "proof", PROOF_A)
+    assert len(store.list_envelopes(document_id)) == 1
+    entry = history_entry(history_of(_agent_root, store, document_id), 1)
+    assert "- What changed: /: changed proof (heading)\n" in entry, entry
+    assert "- Saved: as version 1\n" in entry, entry
+
+    finish(store, turn, generation_b)
+    assert store.require_run(envelope.run_id)["status"] == "succeeded"
 
 
 # =================================================================================================

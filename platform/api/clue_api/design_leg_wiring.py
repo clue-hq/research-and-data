@@ -985,7 +985,8 @@ def _web_turn_summary(run: dict[str, Any], result: dict[str, Any]) -> str:
 
     A site turn whose save changed nothing (outcome ``unchanged``) says exactly that, never
     the agent's last words: its "Built the page" described work that was not saved (K4-1).
-    An ``already_saved`` turn's summary is the executor's own notice, so it is echoed as is.
+    A takeover whose earlier attempt already saved the request reports that save as its own
+    (outcome ``saved``, its version), so it reads like any saved turn.
     """
 
     status = str(result.get("status") or run.get("status") or "unknown")

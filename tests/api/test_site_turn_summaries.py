@@ -70,17 +70,6 @@ def test_a_saved_site_turn_with_an_explicit_outcome_still_echoes_the_agent() -> 
     )
 
 
-def test_a_site_turn_already_saved_by_an_earlier_attempt_reads_the_results_own_message() -> None:
-    message = (
-        "This request was already saved as version 3 by an earlier attempt, "
-        "so this attempt's changes were not saved."
-    )
-    run = _site_run("already_saved", message)
-    sentence = _assistant_summary(run)
-    assert sentence == f"Design turn applied on website document doc_1 (now version 3): {message}"
-    assert "Built" not in sentence
-
-
 def test_a_batch_line_for_an_unchanged_site_says_nothing_was_saved() -> None:
     saved = _site_run("saved", "Built the page.", version=4)
     unchanged = _site_run("unchanged", "Built the page.")
