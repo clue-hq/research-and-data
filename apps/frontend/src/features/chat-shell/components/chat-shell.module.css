@@ -1567,6 +1567,28 @@
   line-height: 18px;
 }
 
+/* K1-5: the agent-run lock's sentence under the inert Rename item — the share menu's
+ * publish-note type (`.sharePublishNote`), inset to the menu items' text. */
+.artifactMenuNote {
+  margin: 0;
+  padding: 0 8px 6px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* K1-5: the same sentence beside the title when a rename lost the race to a run. */
+.artifactHeadingNote {
+  margin: 0;
+  overflow: hidden;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .artifactMenuIcon {
   display: block;
   flex: 0 0 16px;
@@ -1685,6 +1707,13 @@
 .artifactHeaderCenter > *,
 .artifactHeaderActions > * {
   flex: 0 0 auto;
+}
+
+/* K1-5: the refused-rename note shrinks to an ellipsis rather than pushing the controls. */
+.artifactHeaderStart > .artifactHeadingNote {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: center;
 }
 
 /* A wide header (the header is its own container) with a site's URL bar: three columns — title

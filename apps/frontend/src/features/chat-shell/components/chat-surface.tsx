@@ -244,6 +244,12 @@ export function ChatSurface({
   // publish routes); this is the honest UX in front of it.
   const publishLocked =
     agentRunLock.locked && isWebsiteKind(shell.artifactKind);
+  // K1-5 (founder ruling 2026-10-16): no rename while a design run drives the
+  // document — every kind, so the lock is not filtered by lane. A rename moves
+  // the document version, and a run that saves against the version it started
+  // from would lose its whole request to it. The server refuses mid-run either
+  // way (409 `document.agent_run_active` on `PUT /documents/{id}/title`).
+  const renameLocked = agentRunLock.locked;
 
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
@@ -644,6 +650,7 @@ export function ChatSurface({
   );
   const renameArtifact = useArtifactRename({
     documentIds,
+    locked: renameLocked,
     onRenamed: onArtifactRenamed,
   });
 
@@ -1326,9 +1333,15 @@ export function ChatSurface({
         }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
-            renameArtifact(shell.activeArtifactId, title);
+            renameArtifact.rename(shell.activeArtifactId, title);
           }
         }}
+        renameLockNote={agentRunLock.note}
+        renameNote={
+          renameArtifact.refusal?.artifactId === shell.activeArtifactId
+            ? renameArtifact.refusal.note
+            : null
+        }
         // The tab strip's rename of a NON-active tab is unchanged local state
         // (it carries no document handle of its own here).
         onRenameArtifactFor={shell.setArtifactTitleFor}

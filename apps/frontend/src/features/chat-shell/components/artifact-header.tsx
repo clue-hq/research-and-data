@@ -72,6 +72,8 @@ export function ArtifactHeader({
   pages,
   publishLocked = false,
   redoDisabled,
+  renameLockNote = null,
+  renameNote = null,
   site = null,
   title,
   undoDisabled,
@@ -142,6 +144,13 @@ export function ArtifactHeader({
   publishLocked?: boolean;
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
+  /** K1-5 (founder ruling 2026-10-16): a design run drives the document, so the
+   * action menu's Rename is inert and says this sentence. Absent leaves Rename
+   * live (the server still refuses mid-run). */
+  renameLockNote?: string | null;
+  /** K1-5: a rename the server refused anyway (a run that started before the
+   * lock knew) — the sentence to show beside the unchanged title. */
+  renameNote?: string | null;
   /** C10 (sites): the Pages toggle's state and the URL toolbar. Absent on every other kind.
    * K6-2: `publish` is the site editor's side of Share — its wait for edits on their way and its
    * saved version. */
@@ -333,6 +342,7 @@ export function ArtifactHeader({
                   onSelectVersion={selectVersion}
                   onVersionsOpenChange={setVersionsOpen}
                   redoDisabled={redoDisabled}
+                  renameLockNote={renameLockNote}
                   selectedVersionId={selectedVersionId}
                   undoDisabled={undoDisabled}
                   versions={versions}
@@ -341,6 +351,11 @@ export function ArtifactHeader({
               ) : null}
             </div>
           </div>
+          {renameNote ? (
+            <p className={styles.artifactHeadingNote} role="status">
+              {renameNote}
+            </p>
+          ) : null}
           {/* DESIGN REVIEW (DR1): the Pages toggle (founder ruling 2026-10-11, the Ploy reference) —
               the Edit pill's own button style and pressed state. */}
           {site ? (

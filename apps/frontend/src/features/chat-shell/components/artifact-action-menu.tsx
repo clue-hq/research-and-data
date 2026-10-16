@@ -75,6 +75,7 @@ export function ArtifactActionMenu({
   onSelectVersion,
   onVersionsOpenChange,
   redoDisabled = false,
+  renameLockNote = null,
   selectedVersionId,
   undoDisabled = false,
   versions = null,
@@ -86,6 +87,9 @@ export function ArtifactActionMenu({
   onVersionsOpenChange: (open: boolean) => void;
   /** W3.4: driven by the loaded document's redoDepth (empty stack → true). */
   redoDisabled?: boolean;
+  /** K1-5 (founder ruling 2026-10-16): a design run drives the document, so
+   * Rename is inert and this sentence sits under it. Absent leaves Rename live. */
+  renameLockNote?: string | null;
   selectedVersionId: string;
   /** W3.4: driven by the loaded document's undoDepth (empty stack → true). */
   undoDisabled?: boolean;
@@ -110,10 +114,19 @@ export function ArtifactActionMenu({
 
   return (
     <div aria-label="Artifact actions" className={styles.artifactActionMenu} role="menu">
-      <button className={styles.artifactMenuItem} onClick={onRename} role="menuitem" type="button">
+      <button
+        className={styles.artifactMenuItem}
+        disabled={renameLockNote !== null}
+        onClick={onRename}
+        role="menuitem"
+        type="button"
+      >
         <ArtifactActionIcon name="rename" />
         <span>Rename</span>
       </button>
+      {renameLockNote !== null ? (
+        <p className={styles.artifactMenuNote}>{renameLockNote}</p>
+      ) : null}
       <MenuAction action="duplicate" label="Duplicate" onSelect={onRequestAction} />
 
       <div aria-hidden="true" className={styles.artifactMenuSeparator} />

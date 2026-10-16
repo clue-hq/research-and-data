@@ -123,6 +123,10 @@ export function EditorSurface({
     enabled: controller.artifactKind === "web",
   });
   const publishLocked = isWebsiteKind(controller.artifactKind) && (siteLocked || webAgentRun.active);
+  // K1-5 (founder ruling 2026-10-16): no rename while a design run drives the
+  // document, any kind — the same document-scoped poll; exactly one of the two
+  // reads is enabled for the open kind (ad/site, or web).
+  const renameLocked = agentRun.active || webAgentRun.active;
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
     // Task 4 (scene live-streaming rung A), closed here: the lock is the
@@ -190,6 +194,7 @@ export function EditorSurface({
   );
   const renameArtifact = useArtifactRename({
     documentIds,
+    locked: renameLocked,
     onRenamed: onArtifactRenamed,
   });
 
@@ -423,9 +428,15 @@ export function EditorSurface({
         }
         onRenameArtifact={(title) => {
           if (controller.activeArtifactId) {
-            renameArtifact(controller.activeArtifactId, title);
+            renameArtifact.rename(controller.activeArtifactId, title);
           }
         }}
+        renameLockNote={renameLocked ? AGENT_RUN_LOCK_NOTE : null}
+        renameNote={
+          renameArtifact.refusal?.artifactId === controller.activeArtifactId
+            ? renameArtifact.refusal.note
+            : null
+        }
         // The tab strip's rename of a NON-active tab is unchanged local state
         // (it carries no document handle of its own here).
         onRenameArtifactFor={controller.setArtifactTitleFor}

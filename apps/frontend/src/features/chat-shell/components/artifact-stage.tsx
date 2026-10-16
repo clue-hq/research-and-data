@@ -118,6 +118,8 @@ export function ArtifactStage({
   onPageChange,
   pages,
   publishLocked = false,
+  renameLockNote = null,
+  renameNote = null,
   onRenameArtifact,
   onRenameArtifactFor,
   onSceneChange,
@@ -255,6 +257,12 @@ export function ArtifactStage({
    * the turn stream), or the standalone artifact route's document-scoped
    * agent-busy poll (`editor-surface.tsx`). Absent leaves publishing as it is. */
   publishLocked?: boolean;
+  /** K1-5 (founder ruling 2026-10-16): a design run drives the open document,
+   * so the header's Rename is inert and says this sentence — the mount's own
+   * agent-run lock (all document kinds). Absent leaves Rename live. */
+  renameLockNote?: string | null;
+  /** K1-5: a rename the server refused anyway, for the header to show. */
+  renameNote?: string | null;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
   /** AD2.7: the rendered ad scene, mirrored up for the shared editing
@@ -479,6 +487,8 @@ export function ArtifactStage({
             onRename={onRenameArtifact}
             pages={pages}
             publishLocked={publishLocked}
+            renameLockNote={renameLockNote}
+            renameNote={renameNote}
             onRequestExportPreview={onRequestExportPreview}
             onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}

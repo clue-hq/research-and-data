@@ -355,7 +355,24 @@ export async function saveLayoutManagedEditing(
   return payload.layout_managed_editing === true;
 }
 
-/** Artifacts page (2026-09-15): persist a new title (row + document JSON; the version advances). */
+/** A refused rename: the HTTP status and the design API's refusal code
+ * (`detail.code`, null when it sent none), so a caller can tell refusals apart
+ * without parsing prose — e.g. 409 `document.agent_run_active` while a design
+ * run drives the document (K1-5, founder ruling 2026-10-16). */
+export class DocumentRenameError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, options: { status: number; code: string | null }) {
+    super(message);
+    this.name = "DocumentRenameError";
+    this.status = options.status;
+    this.code = options.code;
+  }
+}
+
+/** Artifacts page (2026-09-15): persist a new title (row + document JSON; the version advances).
+ * A refusal throws a {@link DocumentRenameError}. */
 export async function renameDocument(
   // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
@@ -371,7 +388,17 @@ export async function renameDocument(
     }
   );
   if (!response.ok) {
-    throw new Error(`renaming the document failed (HTTP ${response.status})`);
+    let code: string | null = null;
+    try {
+      const detail = ((await response.json()) as { detail?: { code?: unknown } } | null)?.detail;
+      code = typeof detail?.code === "string" ? detail.code : null;
+    } catch {
+      /* not JSON — no refusal code */
+    }
+    throw new DocumentRenameError(`renaming the document failed (HTTP ${response.status})`, {
+      status: response.status,
+      code,
+    });
   }
   const payload = (await response.json()) as { title?: unknown };
   if (typeof payload.title !== "string") {
