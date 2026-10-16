@@ -980,14 +980,22 @@ def _assistant_summary(run: dict[str, Any]) -> str:
 
 
 def _web_turn_summary(run: dict[str, Any], result: dict[str, Any]) -> str:
-    """The web half of :func:`_assistant_summary` — names the artifact, invents nothing."""
+    """The web half of :func:`_assistant_summary` — names the artifact, invents nothing.
+
+    A site turn whose save changed nothing (outcome ``unchanged``) says exactly that, never
+    the agent's last words: its "Built the page" described work that was not saved (K4-1).
+    An ``already_saved`` turn's summary is the executor's own notice, so it is echoed as is.
+    """
 
     status = str(result.get("status") or run.get("status") or "unknown")
+    unchanged = result.get("outcome") == "unchanged"
     document_id = run.get("document_id")
     subject = f"website document {document_id}" if document_id else "the website document"
     version = result.get("current_version")
     if isinstance(version, int):
-        subject = f"{subject} (now version {version})"
+        subject = f"{subject} ({'still' if unchanged else 'now'} version {version})"
+    if unchanged:
+        return f"Design turn {status} on {subject}: no changes were saved."
     note = result.get("summary")
     if isinstance(note, str) and note.strip():
         return f"Design turn {status} on {subject}: {note.strip()}"
