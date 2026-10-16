@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import socket
 from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
@@ -41,13 +43,25 @@ from clue_fleet import (
 )
 from clue_fleet.enums import FleetTaskKind
 from clue_fleet.lease import DEFAULT_LEASE_TTL
-from clue_fleet.work_worker import WorkContext, WorkHandler
+from clue_fleet.work_worker import WorkContext, WorkHandler, renew_retry_after
 from clue_obs import get_logger
 
 log = get_logger("clue_api.design_fleet")
 
-#: The worker identity the inline design-leg lane holds its work lease under.
+#: The prefix of the worker identity the inline design-leg lane holds its work lease under.
 _DESIGN_LEG_LANE_WORKER_ID = "design-leg-inline-lane"
+
+
+def design_leg_lane_worker_id(*, host: str | None = None, pid: int | None = None) -> str:
+    """The inline lane's worker id in THIS process: ``design-leg-inline-lane:<host>:<pid>``.
+
+    Per process (site-turn durability, 2026-10-16). It used to be the bare prefix in every
+    process, and a lease lets its holder re-acquire it while live — so two processes could both
+    hold one design run's lease and drive it at once. ``host``/``pid`` exist for tests."""
+    return (
+        f"{_DESIGN_LEG_LANE_WORKER_ID}:{host if host is not None else socket.gethostname()}"
+        f":{pid if pid is not None else os.getpid()}"
+    )
 
 
 class DesignRuntimeUnavailable(RuntimeError):
@@ -162,7 +176,8 @@ class InlineDesignLaneDriver:
     design reaper — enabled by the same switch as this lane — treats a dead lease with no fleet
     task as a strand. So :meth:`drive` races the handler against a renewal loop that beats at
     TTL/3, retries transient renew errors without killing the beat, and declares loss only when
-    fenced (a higher generation took over) or when no beat can land before true expiry — at
+    fenced — a renew reaches the database and fails because a higher generation took over (since
+    2026-10-16 a beat that lands after expiry still keeps a lease nobody else claimed) — at
     which point ``context.lease_lost`` flips and the handler abandons cooperatively, exactly as
     it does under the fleet worker.
 
@@ -187,8 +202,12 @@ class InlineDesignLaneDriver:
         join_poll_interval_s: float = 5.0,
         join_timeout_s: float = 1800.0,
         checkpoint_poll_interval_s: float = 1.0,
+        worker_id: str | None = None,
     ) -> None:
         self._handler = handler
+        #: Who this lane holds design-run leases as — this process (see
+        #: :func:`design_leg_lane_worker_id`), unless a test names two "processes" in one.
+        self._worker_id = worker_id if worker_id is not None else design_leg_lane_worker_id()
         self._conn_factory = conn_factory
         self._lease_ttl = lease_ttl
         self._heartbeat_interval_s = (
@@ -331,7 +350,7 @@ class InlineDesignLaneDriver:
                     lease = await acquire_work_lease(
                         conn,
                         work_id=work_id,
-                        worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                        worker_id=self._worker_id,
                         ttl=self._lease_ttl,
                     )
                 if lease is not None:
@@ -389,7 +408,7 @@ class InlineDesignLaneDriver:
                 lease = await acquire_work_lease(
                     conn,
                     work_id=work_id,
-                    worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                    worker_id=self._worker_id,
                     ttl=self._lease_ttl,
                 )
             if lease is not None:
@@ -420,7 +439,7 @@ class InlineDesignLaneDriver:
         context = WorkContext(
             task_id=uuid4(),
             work_id=work_id,
-            worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+            worker_id=self._worker_id,
             lease_generation=generation,
             payload=envelope.model_dump(mode="json"),
             stop_requested=asyncio.Event(),
@@ -479,7 +498,7 @@ class InlineDesignLaneDriver:
                 await release_work_lease(
                     conn,
                     work_id=work_id,
-                    worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                    worker_id=self._worker_id,
                     generation=generation,
                 )
 
@@ -491,9 +510,11 @@ class InlineDesignLaneDriver:
         lease_lost: asyncio.Event,
         acquired_at: float,
     ) -> None:
-        """Mirror of ``LeasedWorkWorker._heartbeat`` (and the B1 supervised-beat ruling):
-        transient renew errors are retried with a shrinking sleep and never silently kill the
-        beat; loss is declared only when fenced or when no beat can land before true expiry."""
+        """Mirror of ``LeasedWorkWorker._heartbeat``: renew errors are retried and never kill
+        the beat, and loss is declared ONLY when a renew reaches the database and fails — a
+        higher generation took the lease. A beat that lands after expiry still keeps the lease
+        when nobody else claimed it (founder decision 2026-10-16), so an unreachable database
+        no longer abandons the turn at expiry; the generation fences any write made meanwhile."""
 
         loop = asyncio.get_running_loop()
         ttl_s = self._lease_ttl.total_seconds()
@@ -507,7 +528,7 @@ class InlineDesignLaneDriver:
                     renewed = await renew_work_lease(
                         conn,
                         work_id=work_id,
-                        worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                        worker_id=self._worker_id,
                         generation=generation,
                         ttl=self._lease_ttl,
                     )
@@ -515,15 +536,10 @@ class InlineDesignLaneDriver:
                 log.warning(
                     "design_leg.lane_renew_error",
                     work_id=str(work_id),
+                    lease_lapsed=loop.time() >= deadline,
                     exc_info=True,
                 )
-                if loop.time() >= deadline - self._heartbeat_interval_s:
-                    lease_lost.set()
-                    return
-                sleep_for = min(
-                    self._heartbeat_interval_s,
-                    max(0.05, (deadline - loop.time()) / 4),
-                )
+                sleep_for = renew_retry_after(deadline - loop.time(), self._heartbeat_interval_s)
                 continue
             if not renewed:
                 lease_lost.set()

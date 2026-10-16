@@ -85,7 +85,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.read_tools import DbArv2ReadService, claim_gate_reason
 from clue_api.chat.schemas import DesignArtifactListResponse
 from clue_api.chat.turn_events import TurnEventType, list_turn_events
-from clue_api.design_fleet import build_design_leg_lane_driver
+from clue_api.design_fleet import build_design_leg_lane_driver, design_leg_lane_worker_id
 from clue_api.design_leg_wiring import (
     _assistant_summary,
     design_leg_run_id,
@@ -812,7 +812,8 @@ def test_p1_a_chat_message_becomes_a_saved_website_version_across_the_boundary(
             assert await _run_columns(leg, run_id) == {
                 "kind": "site_turn",
                 "status": "succeeded",
-                "leased_by": "design-leg-inline-lane",
+                # The lane's per-process worker id (2026-10-16; it was one id for every process).
+                "leased_by": design_leg_lane_worker_id(),
                 "lease_generation": 1,
                 "leg_id": str(leg.seeds["leg"]["id"]),
                 "checkpoint_thread_id": run_id,
