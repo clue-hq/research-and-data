@@ -106,13 +106,16 @@ READABLE_RATIO = 4.5
 
 
 def readable_ink(band: BandSurface, candidates: list[str]) -> tuple[str, bool]:
-    """The text colour to store for a band, and whether it is the one measured there (S6-1). The
-    measured colour when it reads on the band; else the best-reading of `candidates` (the kit's
-    text.primary and text.inverse); else black or white, whichever reads better. `band.ink_hex` must
-    be set."""
+    """The text colour to store for a band, and whether it is the one measured there (S6-1, D4).
+
+    The measured colour when it reads on the band (4.5:1). Otherwise the brand's own text colour
+    wins whenever it reads: the best-reading of `candidates` (the kit's text.primary and
+    text.inverse) that reaches 4.5:1. Only when none does, black (#0B0F14) or white, whichever reads
+    better. `band.ink_hex` must be set."""
     measured = str(band.ink_hex)
     if contrast_ratio(measured, band.hex) >= READABLE_RATIO:
         return measured, True
-    options = [c[:7].upper() for c in candidates if c] + ["#FFFFFF", "#0B0F14"]
+    readable = [c[:7].upper() for c in candidates if c and contrast_ratio(c[:7], band.hex) >= READABLE_RATIO]
+    options = readable or ["#FFFFFF", "#0B0F14"]
     best = max(options, key=lambda option: contrast_ratio(option, band.hex))
     return best, False

@@ -596,6 +596,11 @@ def test_s6_1_a_band_text_colour_that_does_not_read_is_replaced_by_one_that_does
         assert ratio >= 4.5, (band, ink, ratio)
     assert [d["code"] for d in diagnostics if d["code"] == "LUMI0609"] == ["LUMI0609", "LUMI0609"]
     assert "#F5A623" in next(d["message"] for d in diagnostics if d["code"] == "LUMI0609")
+    # The brand's own text colour beats a generic one whenever it reads (D4): the kit's text.primary
+    # reads on cream, so the cream band's pair names it and no text.band.f3f0e8 is minted.
+    assert contrast_ratio(colors["text.primary"]["value"]["default"]["value"], "#F3F0E8") >= 4.5
+    assert by_band["surface.band.f3f0e8"] == "text.primary"
+    assert "text.band.f3f0e8" not in colors
 
 
 def test_s6_1_a_band_text_colour_that_reads_is_kept_as_measured() -> None:
@@ -605,3 +610,25 @@ def test_s6_1_a_band_text_colour_that_reads_is_kept_as_measured() -> None:
     ]))
     assert result.brand_kit["tokens"]["colors"]["text.band.28241e"]["value"]["default"]["value"] == "#FAF5E6"
     assert not [d for d in result.diagnostics if d["code"] == "LUMI0609"]
+
+
+def test_s6_1_readable_ink_prefers_the_measured_ink_then_the_kits_own_then_black_or_white() -> None:
+    from lumen_ingestion.colorspace import contrast_ratio
+    from lumen_ingestion.normalizer.bands import readable_ink
+
+    def band(hex_value: str, ink: str) -> BandSurface:
+        return BandSurface(path=f"surface.band.{hex_value[1:].lower()}", hex=hex_value,
+                           provenance="website:https://x.example/ :: section background (sections 1)",
+                           description="section background (1 band, 600px)", ink_hex=ink)
+
+    # (a) the measured ink reads: it is kept.
+    assert readable_ink(band("#28241E", "#FAF5E6"), ["#111111", "#FFFFFF"]) == ("#FAF5E6", True)
+    # (b) the measured ink fails; the kit's text.primary reads: it wins over black and white.
+    assert readable_ink(band("#F3F0E8", "#F5A623"), ["#1F2937", "#FFFFFF"]) == ("#1F2937", False)
+    # (c) the measured ink and both kit candidates fail: the better of black and white.
+    grey = band("#777777", "#7A7A7A")
+    ink, measured = readable_ink(grey, ["#6A6A6A", "#8A8A8A"])
+    best = max(("#0B0F14", "#FFFFFF"), key=lambda option: contrast_ratio(option, "#777777"))
+    assert (ink, measured) == (best, False)
+    if max(contrast_ratio("#0B0F14", "#777777"), contrast_ratio("#FFFFFF", "#777777")) >= 4.5:
+        assert contrast_ratio(ink, "#777777") >= 4.5
