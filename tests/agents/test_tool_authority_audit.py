@@ -223,7 +223,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `@1` stays registered only so its journaled calls replay, refuses every new call with
     # `discovery_tool_retired`, and is held by nobody.
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("launch_arv2_discovery@2") == (AgentRole.HEAD_OF_ABM,)
+    # `head-of-abm@v72` re-pins it at `@3` (the brief's exclude list, spec 2026-10-16), so the
+    # grant moves with it and `@2` is held by nobody either.
+    assert c6_roles_for_tool("launch_arv2_discovery@3") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("launch_arv2_discovery@2") == ()
     assert c6_roles_for_tool("launch_arv2_discovery@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_person_research@1") == (AgentRole.HEAD_OF_ABM,)

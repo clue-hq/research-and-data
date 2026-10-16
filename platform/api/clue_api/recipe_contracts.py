@@ -81,8 +81,9 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # the spine row the execution is bound to — which is what this audit requires of every
     # standing address. Agent-authored discovery (recipe0-stage0@33) RE-PINS it at ``@2``, whose
     # input is the brief the Head of ABM writes; ``@1`` leaves (one version per ``(kind, key)``)
-    # and stays registered only to refuse ``discovery_tool_retired`` on replay.
-    "launch_arv2_discovery@2",
+    # and stays registered only to refuse ``discovery_tool_retired`` on replay. recipe0-stage0@35
+    # RE-PINS it at ``@3``, whose brief adds ``exclude`` (spec 2026-10-16).
+    "launch_arv2_discovery@3",
     "read_arv2_account_research_run@1",
     # ``author_icp_document@1`` (added in @24), ``request_persona_synthesis@1`` (@24) and
     # ``write_project_document@1`` (@25) were retired at recipe0-stage0@27: the documents they

@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.onboarding_store import (
+    create_customers_run,
     create_run,
     fail_document,
     fail_run,
@@ -338,5 +339,35 @@ def test_a_step_identity_cannot_repeat_within_a_run() -> None:
                         kind="overview",
                         phase="fast",
                     )
+
+    run_async(scenario())
+
+
+def test_a_customers_run_is_created_with_its_kind() -> None:
+    """Spec 2026-10-16 §4.4: a brand onboarded earlier gets a customers-only run."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-customers-run"
+            brand_id, _full = await _seed(conn, ws)
+            run_id = uuid4()
+            await create_customers_run(
+                conn,
+                run_id=run_id,
+                workspace_id=ws,
+                brand_id=brand_id,
+                company_domain="conduit.ai",
+                requested_by_user_id=USER,
+            )
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT kind, status, persona_icp_document_id, company_domain "
+                        "FROM onboarding_run WHERE run_id = :run_id"
+                    ),
+                    {"run_id": run_id},
+                )
+            ).one()
+            assert tuple(row) == ("customers", "queued", None, "conduit.ai")
 
     run_async(scenario())

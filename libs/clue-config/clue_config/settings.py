@@ -579,6 +579,11 @@ class Settings(BaseSettings):
     #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
     #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
     arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
+    #: How long a discovery run waits for its Exa Import of excluded companies (the brief's
+    #: ``exclude`` list and the seller's own domain) to finish before its first webset goes ahead
+    #: without it; the domain skip still applies (spec 2026-10-16, §4.6).
+    #: Env: ``CLUE_ARV2_DISCOVERY_IMPORT_WAIT_S``.
+    arv2_discovery_import_wait_s: float = Field(default=120.0, ge=0)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
@@ -600,6 +605,10 @@ class Settings(BaseSettings):
     # ``high`` per deployment if the product files read thin).
     # Env: ``CLUE_ONBOARDING_PRODUCT_EFFORT``.
     onboarding_product_effort: str = "medium"
+    # Exa Agent effort for the existing-customers run (spec 2026-10-16-discovery-excludes-seller-
+    # customers §4.1: ``xhigh`` found 28 of 29 and 13 of 15 known customers in the live tests,
+    # where a one-shot search found 17 of 29). Env: ``CLUE_ONBOARDING_CUSTOMERS_EFFORT``.
+    onboarding_customers_effort: str = "xhigh"
     # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
     onboarding_reviews_phase: Literal["fast", "background"] = "fast"
     # Cap on concurrent background per-product Exa Agent runs.

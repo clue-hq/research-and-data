@@ -24,6 +24,7 @@ ONBOARDING_SETTING_DEFAULTS: dict[str, object] = {
     "onboarding_overview_effort": "high",
     "onboarding_reviews_effort": "medium",
     "onboarding_product_effort": "medium",
+    "onboarding_customers_effort": "xhigh",
     "onboarding_reviews_phase": "fast",
     "onboarding_max_parallel_runs": 6,
     "onboarding_persona_evidence_enabled": True,

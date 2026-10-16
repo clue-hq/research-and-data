@@ -118,6 +118,33 @@ class DbOnboardingEnqueuer:
             reopen_terminal=False,
         )
 
+    async def enqueue_customers(
+        self,
+        *,
+        run_id: UUID,
+        workspace_id: str,
+        brand_id: str,
+        company_domain: str,
+        company_name: str,
+    ) -> bool:
+        """Offer the narrow customers run (spec 2026-10-16 §4.4): the same task kind, priority and
+        dedup shape as :meth:`enqueue`; the payload's ``kind`` tells the handler which run."""
+        return await self._queue.enqueue(
+            kind=FleetTaskKind.ONBOARDING_RUN,
+            work_id=onboarding_work_id(run_id),
+            dedup_key=f"{ONBOARDING_DEDUP_PREFIX}{run_id}",
+            priority=ONBOARDING_TASK_PRIORITY,
+            payload={
+                "run_id": str(run_id),
+                "workspace_id": workspace_id,
+                "brand_id": brand_id,
+                "company_domain": company_domain,
+                "company_name": company_name,
+                "kind": "customers",
+            },
+            reopen_terminal=False,
+        )
+
     async def enqueue_personas(
         self,
         *,

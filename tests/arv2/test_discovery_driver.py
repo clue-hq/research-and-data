@@ -48,6 +48,8 @@ from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow, SearchR
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import ExaAnswerResult, ExaCitation
 from clue_api.arv2.exa_websets_client import (
+    ImportHandle,
+    ImportStatus,
     WebsetItem,
     WebsetItemsResult,
     WebsetSearchView,
@@ -150,8 +152,10 @@ class _Store:
         prior_websets: Sequence[str] = (),
         candidates: Sequence[CandidateRow] = (),
         searches: Sequence[SearchRow] = (),
+        seller_domain: str | None = None,
     ) -> None:
         self.run = run
+        self.seller = seller_domain
         self.found_before = found_before
         self.prior_websets = tuple(prior_websets)
         self.candidates = list(candidates)
@@ -227,6 +231,11 @@ class _Store:
     async def record_verdicts(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("record_verdicts", kwargs))
+
+    async def seller_domain(self, conn: Any, *, workspace_id: str, brand_id: str) -> str | None:
+        del conn
+        self.events.append(("seller_domain", {"workspace_id": workspace_id, "brand_id": brand_id}))
+        return self.seller
 
     async def list_candidates(self, conn: Any, *, run_id: UUID) -> tuple[CandidateRow, ...]:
         del conn
@@ -453,7 +462,9 @@ class _FakeWebsets:
         items_after_cancel: WebsetItemsResult | None = None,
         websets: Mapping[str, tuple[Sequence[WebsetView], Sequence[WebsetItemsResult]]] = {},
         found: Mapping[str, WebsetView] = {},
+        import_statuses: Sequence[str | ImportStatus] = ("completed",),
     ) -> None:
+        self._import_statuses = list(import_statuses)
         self._create_views = (
             [_view(webset_id=webset_id, status="running") for webset_id in websets]
             if websets
@@ -516,6 +527,24 @@ class _FakeWebsets:
         self.calls.append(("cancel", {"webset_id": webset_id}))
         return _view(webset_id=webset_id, status="idle")
 
+    def create_import(self, *, csv_bytes: bytes, count: int, title: str) -> ImportHandle:
+        self.calls.append(("create_import", {"csv_bytes": csv_bytes, "count": count}))
+        return ImportHandle(import_id="i1", upload_url="https://up.example/i1")
+
+    def upload_import(self, *, upload_url: str, csv_bytes: bytes) -> None:
+        self.calls.append(("upload_import", {"upload_url": upload_url, "csv_bytes": csv_bytes}))
+
+    def get_import(self, import_id: str) -> ImportStatus:
+        self.calls.append(("get_import", {"import_id": import_id}))
+        status = self._import_statuses[0]
+        if len(self._import_statuses) > 1:
+            self._import_statuses.pop(0)
+        if isinstance(status, ImportStatus):
+            return status
+        # A completed Import read every row it was sent unless a test says otherwise.
+        sent = self.named("create_import")[-1]["count"] if self.named("create_import") else 0
+        return ImportStatus(status=status, count=sent if status == "completed" else None)
+
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for call, payload in self.calls if call == name]
 
@@ -545,8 +574,12 @@ def _answer(payload: object, *, citations: Sequence[ExaCitation] = ()) -> ExaAns
 class _FakeExa:
     """``answer`` scripted by the *question*: the website ask, or the gate whose rule it quotes."""
 
-    def __init__(self, respond: Callable[[str], ExaAnswerResult]) -> None:
+    def __init__(
+        self, respond: Callable[[str], ExaAnswerResult], *, search_hits: Sequence[Any] = ()
+    ) -> None:
         self._respond = respond
+        self.search_hits = list(search_hits)
+        self.searches: list[dict[str, Any]] = []
         self.queries: list[str] = []
         self.labels: list[str] = []
         self.models: list[str] = []
@@ -556,6 +589,11 @@ class _FakeExa:
         self.labels.append(str(kwargs.get("label", "")))
         self.models.append(str(kwargs.get("model", "")))
         return self._respond(query)
+
+    def search(self, query: str, **kwargs: Any) -> Any:
+        del query
+        self.searches.append(kwargs)
+        return SimpleNamespace(status=200, results=self.search_hits)
 
     def gate_queries(self) -> list[str]:
         return [query for query in self.queries if "Test to verify:" in query]
@@ -2740,3 +2778,350 @@ def test_stop_mid_webset_cancels_it_reads_it_once_more_and_keeps_what_was_verifi
     (ended,) = store.named("end_discovery_run")
     assert (ended["status"], ended["end_reason"]) == ("stopped", "stopped")
     assert ended["summary"]["added"] == 1
+
+
+# -- the brief's exclude list (spec 2026-10-16-discovery-excludes-seller-customers §4.6) ---------
+
+
+def _excluding(*entries: tuple[str, str], **roles: str) -> dict[str, Any]:
+    return {
+        **_brief_json(**roles),
+        "exclude": [{"name": name, "domains": [domain]} for name, domain in entries],
+    }
+
+
+def _brief_excluded(store: _Store) -> list[CandidateRow]:
+    return [
+        event["row"]
+        for event in store.named("upsert_candidate")
+        if event["row"].disposition == "excluded_by_brief"
+    ]
+
+
+_PASSES = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+
+
+def test_a_webset_item_on_the_exclude_list_is_recorded_and_never_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Marriott", "https://www.marriott.com"),
+                _item("Probook", "https://probook.ai"),
+            )
+        ]
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert (excluded.domain, excluded.excluded_by_entry, excluded.name) == (
+        "marriott.com",
+        "Marriott",
+        "Marriott",
+    )
+    # Not one paid question about Marriott: no website answer and no gate.
+    assert not any("Marriott" in query for query in exa.queries)
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 1
+
+
+def test_a_search_hit_on_the_exclude_list_is_recorded_before_any_spend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    brief = {**_excluding(("Marriott", "marriott.com")), "source": "search"}
+    run = _run_row(brief=brief, source="search", target_count=1)
+    store = _Store(run)
+    hits = [SimpleNamespace(url="https://www.marriott.com/", title="Marriott", text="")]
+    exa = _FakeExa(_responder({}), search_hits=hits)
+    handler, *_ = _handler(store, exa=exa, websets=_FakeWebsets(), monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert excluded.domain == "marriott.com"
+    assert exa.queries == []
+
+
+def test_a_verified_domain_on_the_list_is_caught_after_a_redirecting_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Probook", "probook.ai")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert excluded.domain == "probook.ai"
+    # The one website answer that found the real domain; no gate.
+    assert len(exa.queries) == 1
+    assert exa.gate_queries() == []
+
+
+def test_the_sellers_onboarding_domain_is_skipped_without_any_exclude(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run, seller_domain="conduit.ai")
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(items_results=[_items(_item("Conduit", "https://conduit.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert (excluded.domain, excluded.excluded_by_entry) == ("conduit.ai", "seller")
+    assert store.named("seller_domain")[0] == {"workspace_id": WORKSPACE, "brand_id": "brd-1"}
+
+
+def test_no_onboarding_run_means_only_the_brief_excludes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run, seller_domain=None)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert _brief_excluded(store) == []
+
+
+def test_a_resumed_run_recounts_its_brief_exclusions_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    earlier = CandidateRow(
+        candidate_id=uuid4(),
+        run_id=run.run_id,
+        workspace_id=WORKSPACE,
+        project_id=PROJECT,
+        pass_="strict",
+        domain="marriott.com",
+        websets_url="https://www.marriott.com",
+        name="Marriott",
+        provider_snapshot={"websets_domain": "marriott.com"},
+        disposition="excluded_by_brief",
+        excluded_by_entry="Marriott",
+    )
+    store = _Store(run, candidates=[earlier])
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(items_results=[_items(_item("Marriott", "https://www.marriott.com"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert _brief_excluded(store) == []
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 1
+
+
+def test_an_old_run_without_exclude_resumes_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    brief = _brief_json()
+    assert "exclude" not in brief
+    run = _run_row(brief=brief)
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 0
+
+
+def test_the_summary_counts_brief_exclusions(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com"), ("Hilton", "hilton.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Marriott", "https://www.marriott.com"),
+                _item("Hilton", "https://hilton.com"),
+            )
+        ]
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (ended,) = store.named("end_discovery_run")
+    summary = ended["summary"]
+    assert summary["excluded_by_brief"] == 2
+    assert summary["excluded_by_brief_example"] == "Marriott"
+    assert (
+        "Excluded by the brief (existing customers or the seller): 2 — e.g. Marriott."
+        in driver.summary_message(run.run_id, summary)
+    )
+
+
+def test_websets_rounds_exclude_the_brief_through_one_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(target_count=2, brief=_excluding(("Marriott", "marriott.com"), geography="must"))
+    store = _Store(run)
+    fails = {"geography": "fail", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers("Acme", "acme.com", fails),
+                "Bolt": _company_answers("Bolt", "bolt.com", fails),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        websets={
+            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Acme", "https://acme.com"))]),
+            "ws-2": ([_view(webset_id="ws-2")], [_items(_item("Bolt", "https://bolt.com"))]),
+        },
+        import_statuses=("processing", "completed"),
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=1),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (made,) = websets.named("create_import")
+    assert made["csv_bytes"] == b"url\nhttps://marriott.com\n"
+    assert websets.named("upload_import")[0]["csv_bytes"] == made["csv_bytes"]
+    creates = websets.named("create")
+    assert len(creates) == 2
+    assert all(call["exclude_import_ids"] == ("i1",) for call in creates)
+    # The person sees the exclusion working even when the Import kept everyone out upfront.
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 1
+    assert (
+        "The Exa import kept 1 excluded domain out of every search upfront."
+        in driver.summary_message(run.run_id, ended["summary"])
+    )
+
+
+def test_an_import_still_processing_at_the_deadline_is_skipped_and_the_domain_skip_still_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items(_item("Marriott", "https://www.marriott.com"))],
+        import_statuses=("processing",),
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_import_wait_s=0),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create")[0]["exclude_import_ids"] == ()
+    assert [row.domain for row in _brief_excluded(store)] == ["marriott.com"]
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    assert receipt["guards"].get("brief_import_unavailable") == 1
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 0
+    assert ended["summary"]["import_unavailable"] is True
+    assert (
+        "The Exa import of the excluded domains could not be used; they were skipped as they came."
+        in driver.summary_message(run.run_id, ended["summary"])
+    )
+
+
+def test_a_completed_import_exa_read_no_rows_from_is_not_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live 2026-10-16: Exa marked the Import ``completed`` having read 0 of its 24 rows, the
+    search excluded nothing through it, and the summary still said it kept 24 domains out. An
+    empty Import is no exclusion: it is never attached, and the summary says so."""
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items(_item("Marriott", "https://www.marriott.com"))],
+        import_statuses=(ImportStatus(status="completed", count=0),),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create")[0]["exclude_import_ids"] == ()
+    assert [row.domain for row in _brief_excluded(store)] == ["marriott.com"]
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    assert receipt["guards"].get("brief_import_unavailable") == 1
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 0
+    assert ended["summary"]["import_unavailable"] is True
+    message = driver.summary_message(run.run_id, ended["summary"])
+    assert "kept" not in message
+    assert (
+        "The Exa import of the excluded domains could not be used; they were skipped as they came."
+        in message
+    )
+
+
+def test_the_summary_counts_the_rows_exa_read_not_the_rows_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com"), ("Nobu Hotel", "nobuhotels.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items()],
+        import_statuses=(ImportStatus(status="completed", count=1),),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create_import")[0]["count"] == 2
+    assert websets.named("create")[0]["exclude_import_ids"] == ("i1",)
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 1
+
+
+def test_no_exclusions_means_no_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _run_row()
+    store = _Store(run)
+    websets = _FakeWebsets()
+    handler, *_ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create_import") == []
+    assert websets.named("create")[0]["exclude_import_ids"] == ()
+
+
+def test_a_search_round_makes_room_for_the_excluded_domains_exa_still_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A seller with many customers matching the ICP: the search asks for one more result per
+    excluded domain, as it does per known one, so the customers do not crowd out new companies."""
+    entries = [(f"Customer {n}", f"customer{n}.com") for n in range(3)]
+    brief = {**_excluding(*entries), "source": "search"}
+    run = _run_row(brief=brief, source="search", target_count=1)
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    handler, *_ = _handler(store, exa=exa, websets=_FakeWebsets(), monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert exa.searches[0]["num_results"] == 2 * 1 + 3

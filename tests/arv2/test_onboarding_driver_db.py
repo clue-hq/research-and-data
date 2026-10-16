@@ -26,7 +26,16 @@ from clue_storage import read_verified_artifact
 from tests._identity import seed_principal
 from tests._workspace import seed_project
 from tests.api.test_stage0_setup_db import _MemoryStorage
-from tests.arv2.test_onboarding_driver import OVERVIEW, PRODUCT, REVIEWS, FakeExa, _agent, _deep
+from tests.arv2.test_onboarding_driver import (
+    CUSTOMERS,
+    OVERVIEW,
+    PRODUCT,
+    REVIEWS,
+    FakeExa,
+    _agent,
+    _deep,
+    _no_domain_checks,
+)
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
     conn_session_factory,
@@ -65,6 +74,7 @@ def test_a_run_publishes_readable_documents_and_products_and_status() -> None:
                     "overview": _agent(OVERVIEW, usd="0.5"),
                     "reviews": _agent(REVIEWS),
                     "product_research": _agent(PRODUCT),
+                    "customers": _agent(CUSTOMERS),
                 },
                 _deep(
                     [
@@ -81,6 +91,7 @@ def test_a_run_publishes_readable_documents_and_products_and_status() -> None:
                 conn_factory=conn_session_factory(conn),
                 artifacts=artifacts,
                 exa=lambda *, run_id, step_label, raw, ledger: exa,
+                domain_checker=_no_domain_checks,
             )
             context = WorkContext(
                 task_id=uuid4(),
@@ -159,6 +170,7 @@ def test_every_provider_step_lands_its_rows_on_the_ledger_with_the_run_as_the_jo
                     "overview": _agent(OVERVIEW),
                     "reviews": _agent(REVIEWS),
                     "product_research": _agent(PRODUCT),
+                    "customers": _agent(CUSTOMERS),
                 },
                 _deep(
                     [
@@ -196,6 +208,7 @@ def test_every_provider_step_lands_its_rows_on_the_ledger_with_the_run_as_the_jo
                 conn_factory=conn_session_factory(conn),
                 artifacts=artifacts,
                 exa=factory,
+                domain_checker=_no_domain_checks,
             )
             context = WorkContext(
                 task_id=uuid4(),
@@ -232,12 +245,13 @@ def test_every_provider_step_lands_its_rows_on_the_ledger_with_the_run_as_the_jo
             )
             labels = sorted(row["label"] for row in rows)
             # The catalog step drains too, with no row: no reconciler is composed here, so it
-            # spent nothing — the three recon/lineup steps and the one product report did.
-            assert labels[:2] == ["lineup", "overview"]
-            assert labels[2].startswith("product_research:")
-            assert labels[3:] == ["reviews"]
+            # spent nothing — the three recon/lineup steps, the one product report and the
+            # customers step (spec 2026-10-16 §4.1) did.
+            assert labels[:3] == ["customers", "lineup", "overview"]
+            assert labels[3].startswith("product_research:")
+            assert labels[4:] == ["reviews"]
             assert {row["entity_research_job_id"] for row in rows} == {run_id}
             assert all(row["project_id"] is None and row["project_run_id"] is None for row in rows)
-            assert sum(row["cost_usd"] for row in rows) == Decimal("0.08")
+            assert sum(row["cost_usd"] for row in rows) == Decimal("0.10")
 
     run_async(scenario())

@@ -272,6 +272,7 @@ Every step the run can open:
 | `synthesis` | `fast` | — | one — the ICP turn |
 | `persona` | `background` | the ICP key | one per registered ICP |
 | `product_research` | `background` | the product id | one per synchronized product |
+| `customers` | `background` | — | one — the seller's existing customers into `proof/customers.md` (spec 2026-10-16); a `customers` run kind takes only this step |
 
 The fast lane runs its steps concurrently; the lineup's two passes are merged and handed straight
 to `catalog_sync` inside the same step branch, which mints or reuses the product rows over the
