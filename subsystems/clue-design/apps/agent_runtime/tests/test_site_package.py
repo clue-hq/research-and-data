@@ -11,7 +11,8 @@ SITE = Path(inputs.__file__).resolve().parent
 SPIKE = Path(__file__).resolve().parents[5] / "trials" / "puck-spike" / "agent"
 UNCHANGED = [
     "skills/account-page-copy/SKILL.md",
-    "skills-e5/rebuilding-a-section/SKILL.md",
+    # skills-e5/rebuilding-a-section left the spike's text on 2026-10-16 (S2a-2, founder-approved
+    # wording: mark the words a marketer edits on the page; SKILLS-CHANGELOG.md).
 ]
 
 
