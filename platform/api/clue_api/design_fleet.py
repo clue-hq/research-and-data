@@ -43,7 +43,13 @@ from clue_fleet import (
 )
 from clue_fleet.enums import FleetTaskKind
 from clue_fleet.lease import DEFAULT_LEASE_TTL
-from clue_fleet.work_worker import WorkContext, WorkHandler, renew_retry_after
+from clue_fleet.work_worker import (
+    DrainAware,
+    WorkContext,
+    WorkDrained,
+    WorkHandler,
+    renew_retry_after,
+)
 from clue_obs import get_logger
 
 log = get_logger("clue_api.design_fleet")
@@ -190,6 +196,14 @@ class InlineDesignLaneDriver:
     Stop semantics are unchanged and doctrine-consistent: a user-stopped platform turn abandons
     the drive (asyncio cancellation), the lease is released, and already-launched design work
     may complete detached — the same stance every launched-work surface takes.
+
+    **Drain on deploy** (site-turn durability, 2026-10-16). A worker being shut down never stops
+    this lane: the handler is handed a stop event nobody sets, so the turn keeps running. At the
+    worker's drain bound the agent-turn handler calls :meth:`request_drain`; the design handler
+    drains its site turn at the next step boundary (or abandons a scene/web turn) and reports
+    ``drained``. The lane then releases the lease and raises :class:`~clue_fleet.WorkDrained`
+    instead of driving the run again in a process that is going away: the agent turn is requeued,
+    and its next attempt, on another worker, continues the run from its working copy.
     """
 
     def __init__(
@@ -231,6 +245,11 @@ class InlineDesignLaneDriver:
         #: Successful renewals across this driver's lifetime — observable, so a test (or an
         #: operator counter) can prove the beat is real rather than infer it from silence.
         self.renewals = 0
+
+    def request_drain(self, reason: str) -> None:
+        """The worker's drain bound passed: drain the turns this lane's handler is running."""
+        if isinstance(self._handler, DrainAware):
+            self._handler.request_drain(reason)
 
     @property
     def frames_forwarded(self) -> int:
@@ -501,6 +520,12 @@ class InlineDesignLaneDriver:
                     worker_id=self._worker_id,
                     generation=generation,
                 )
+        if result.outcome == "drained":
+            # The worker is shutting down: the lease is released (its generation kept, so a
+            # takeover is a newer attempt), and this process must not drive the run again.
+            raise WorkDrained(
+                f"design run {envelope.run_id} was drained; another worker continues it"
+            )
 
     async def _keep_lease(
         self,

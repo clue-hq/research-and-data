@@ -11940,6 +11940,7 @@ def run_site_agent_turn(
         import functools
 
         from lumen_agent.config import AgentRuntimeConfig
+        from lumen_agent.drain import TurnDrained
         from lumen_agent.session_sync import restore_session, snapshot_session
         from lumen_agent.site.harness import run_site_turn
         from lumen_agent.site.workspace import (
@@ -11985,6 +11986,13 @@ def run_site_agent_turn(
                 checkpointer=checkpointer, thread_id=run_id, cancel_requested=cancel_requested,
                 callbacks=callbacks, event_sink=event_sink, resume=resume, working_copy_sink=working_copy_sink,
             )
+    except TurnDrained:
+        # The worker is shutting down and the turn stopped at a step boundary, its working copy and
+        # checkpoint saved (drain on deploy, 2026-10-16). It still holds its run, so nothing below
+        # would refuse it: it must not save, write history or move the session copy. The attempt
+        # that finishes the request writes them; the handler hands the run back to the queue.
+        shutil.rmtree(attempt_dir, ignore_errors=True)
+        raise
     except Exception as error:
         shutil.rmtree(attempt_dir, ignore_errors=True)
         return failed_agent_turn_response("agent_runtime.failed", "Site agent failed before returning a result.", str(error))

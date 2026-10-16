@@ -115,6 +115,7 @@ from clue_design.exit_judgment import (
 from clue_design.sessions import design_session_id
 from clue_fleet.enums import FleetTaskKind
 from clue_fleet.queue import enqueue_task
+from clue_fleet.work_worker import WorkDrained
 from clue_obs import get_logger
 from clue_obs.langfuse import observation, propagate_trace, tag_entities
 from clue_spine import get_project
@@ -1773,6 +1774,11 @@ class DesignLegTurnRunner:
             # The watched-turn owner distinguishes user Stop from process/lease
             # cancellation. Emitting a crash terminal here would close SSE before
             # that owner can publish the actual cancellation.
+            raise
+        except WorkDrained:
+            # The worker is shutting down and the design lane handed its run back (drain on
+            # deploy, 2026-10-16). Not a crash: the leg stays running and the turn gets no
+            # terminal frame, because the agent turn is requeued and its next attempt finishes it.
             raise
         except BaseException:
             await self._contain_crash(

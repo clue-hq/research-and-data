@@ -40,13 +40,23 @@ Rust engine and to node. It therefore runs under ``asyncio.to_thread`` so the wo
 coroutine keeps beating; a blocked event loop would be a self-inflicted lease loss
 (``clue_fleet.work_worker`` renews on the loop).
 
-Cancellation is COOPERATIVE ONLY. Python cannot interrupt a thread, so on ``lease_lost`` /
-``stop_requested`` the handler stops waiting and returns — it does not, and cannot, stop the
-thread. The abandoned thread may finish minutes later and try to write a terminal result. That is
-why every durable write this handler makes carries ``expected_generation``: the design row's
-generation fence (``clue_design.runs``) refuses a stale writer's terminal write and raises
+Cancellation is COOPERATIVE ONLY. Python cannot interrupt a thread, so on ``lease_lost`` the
+handler stops waiting and returns — it does not, and cannot, stop the thread. The abandoned thread
+may finish minutes later and try to write a terminal result. That is why every durable write this
+handler makes carries ``expected_generation``: the design row's generation fence
+(``clue_design.runs``) refuses a stale writer's terminal write and raises
 ``DesignRunFencedError``, which is logged loudly and dropped. The zombie burns CPU until it
 finishes; it cannot corrupt the run.
+
+DRAIN ON DEPLOY (site-turn durability, 2026-10-16)
+--------------------------------------------------
+A worker being shut down no longer abandons a running TURN: ``stop_requested`` is not raced for
+turns, so the turn finishes and saves. Once the worker's drain bound passes it calls
+:meth:`DesignJobWorkHandler.request_drain`. A site turn then stops at its next step boundary
+(:mod:`lumen_agent.drain`; its working copy and checkpoint are saved) and is handed back to the
+queue as ``drained``: the run is not failed, and the next worker continues it. A scene or web turn
+cannot stop at a step, so at the bound it is abandoned exactly as on a lost lease. An ingestion
+job keeps today's behaviour: it is abandoned and handed back as soon as the worker stops.
 """
 
 from __future__ import annotations
@@ -195,6 +205,13 @@ class DesignJobWorkHandler:
         # takes none (it is a pipeline, not a graph).
         self._turn_callbacks_factory = turn_callbacks_factory
         self._ingestion_only = ingestion_only
+        # Drain on deploy. ``request_drain`` sets the reason and the event; the site turns this
+        # handler runs register in the scope (built with the first turn: the agent runtime is an
+        # optional, heavy import in this process), and the event lets the turns that cannot stop
+        # at a step be abandoned instead.
+        self._drain_reason: Optional[str] = None
+        self._drain_requested = asyncio.Event()
+        self._drain_scope: Any = None
         # Every drained job is one named Langfuse trace (2026-10-03 agent-scoped tracing spec,
         # R7). The platform's inline leg lane turns this off: its turns already run inside
         # ``design-leg.turn``, and a second trace name would rename the leg's trace.
@@ -217,6 +234,29 @@ class DesignJobWorkHandler:
             ),
             TaskCapability(field=_INGESTION_KIND_FIELD, supported=runnable_ingestion_kinds()),
         )
+
+    def request_drain(self, reason: str) -> None:
+        """The worker's drain bound passed (``clue_fleet.DrainAware``): every site turn this
+        handler runs stops at its next step boundary and is handed back; every other turn is
+        abandoned and handed back. Called on the worker's event loop."""
+        logger.warning("design_job.drain_requested", reason=reason)
+        self._drain_reason = reason
+        self._drain_requested.set()
+        if self._drain_scope is not None:
+            self._drain_scope.request_drain(reason)
+
+    def _turn_drain(self) -> tuple[Any, Any]:
+        """``(the scope a turn runs in, TurnDrained)``; ``(None, None)`` without the agent
+        runtime, whose absence the executor reports as an honest failed turn."""
+        try:
+            from lumen_agent.drain import DrainScope, TurnDrained
+        except ImportError:
+            return None, None
+        if self._drain_scope is None:
+            self._drain_scope = DrainScope()
+            if self._drain_reason is not None:
+                self._drain_scope.request_drain(self._drain_reason)
+        return self._drain_scope, TurnDrained
 
     async def handle(self, context: WorkContext) -> WorkResult:
         """Execute one design job, and NEVER raise past this point (R3-B).
@@ -347,10 +387,28 @@ class DesignJobWorkHandler:
             **subject,
         )
 
-        body = asyncio.create_task(
-            asyncio.to_thread(self._execute, envelope, generation, host, context.worker_id)
-        )
-        fence = asyncio.create_task(_first_of(context.lease_lost, context.stop_requested))
+        # What ends the wait before the body does. A lost lease always. A stopping worker only for
+        # an ingestion job: a turn keeps running (drain on deploy). At the drain bound, a turn that
+        # cannot stop at a step boundary (scene, web) is abandoned; a site turn drains itself.
+        scope, turn_drained = (None, None)
+        if isinstance(envelope, DesignIngestionEnvelope):
+            reasons = {"lease_lost": context.lease_lost, "stop_requested": context.stop_requested}
+        elif envelope.kind == DesignRunKind.SITE_TURN.value:
+            reasons = {"lease_lost": context.lease_lost}
+            scope, turn_drained = self._turn_drain()
+        else:
+            reasons = {"lease_lost": context.lease_lost, "drain_requested": self._drain_requested}
+        selected: Any = contextlib.nullcontext()
+        if scope is not None:
+            from lumen_agent.drain import drain_scope
+
+            selected = drain_scope(scope)
+        # The selected scope rides into the turn's thread (``to_thread`` copies the context).
+        with selected:
+            body = asyncio.create_task(
+                asyncio.to_thread(self._execute, envelope, generation, host, context.worker_id)
+            )
+        fence = asyncio.create_task(_first_of(*reasons.values()))
         try:
             done, _ = await asyncio.wait({body, fence}, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -361,23 +419,33 @@ class DesignJobWorkHandler:
         if body not in done:
             # Cooperative stop. The thread is NOT cancelled (Python cannot); it is abandoned, and
             # the generation fence on its durable writes is what protects the takeover's work.
-            lost = context.lease_lost.is_set()
+            reason = next(name for name, event in reasons.items() if event.is_set())
             logger.warning(
                 "design_job.abandoned",
                 work_id=str(context.work_id),
                 worker_id=context.worker_id,
                 lease_generation=generation,
-                reason="lease_lost" if lost else "stop_requested",
+                reason=reason,
                 residual="the synchronous job thread keeps running until it finishes",
                 **subject,
             )
-            return WorkResult(
-                outcome="lease_lost" if lost else "stopped",
-                references=_refs(context, subject),
-                requeue=True,
-            )
+            outcome = {"lease_lost": "lease_lost", "stop_requested": "stopped"}.get(reason, "drained")
+            return WorkResult(outcome=outcome, references=_refs(context, subject), requeue=True)
 
         error = body.exception()
+        if turn_drained is not None and isinstance(error, turn_drained):
+            # The worker is shutting down and the site turn stopped at a step boundary: its working
+            # copy and checkpoint are saved. Not a failure: nothing is terminalized, and the task
+            # goes back to the queue for the worker that continues it.
+            logger.info(
+                "design_job.drained",
+                work_id=str(context.work_id),
+                worker_id=context.worker_id,
+                lease_generation=generation,
+                reason=error.reason,
+                **subject,
+            )
+            return WorkResult(outcome="drained", references=_refs(context, subject), requeue=True)
         if error is not None:
             # IN-HANDLER CONTAINMENT (D5 Round C). A raise from here — a store fault, not a
             # failed turn — used to mark only the FLEET task failed and leave the design row
