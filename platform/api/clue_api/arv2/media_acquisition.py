@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import shutil
 import tempfile
 from dataclasses import asdict, replace
@@ -16,7 +17,13 @@ from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
-from clue_api.arv2.deepgram_media_client import DeepgramTranscript, parameters, parse_response
+from clue_api.arv2.deepgram_media_client import (
+    REMOTE_CONTENT_ERROR,
+    DeepgramMediaError,
+    DeepgramTranscript,
+    parameters,
+    parse_response,
+)
 from clue_api.arv2.gemini_media_client import (
     GeminiMediaClient,
     SpeakerContext,
@@ -146,9 +153,33 @@ async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
         ops.active_resolution.reset(token)
 
 
+#: The cautious bitrate a recording's size is read at when no feed states its length: few podcasts
+#: are encoded below it, so the estimate errs long and the allowance is checked before paying.
+ESTIMATE_BITS_PER_SECOND = 64_000
+
+
+async def estimated_seconds(runtime: Any, url: str) -> int | None:
+    """A recording's length from its size alone (one header-only request), or ``None``."""
+    try:
+        response = await runtime.call_provider(
+            "media_public", lambda caller: fetch(caller, url, binary=True, probe=True)
+        )
+    except ValueError:
+        return None
+    size = response.headers.get("content-length", "")
+    return -(-int(size) * 8 // ESTIMATE_BITS_PER_SECOND) if size.isdigit() and int(size) else None
+
+
 async def acquire(
-    runtime: Any, resolution: Resolution, *, purpose: str, repair_version: UUID | None = None
+    runtime: Any,
+    resolution: Resolution,
+    *,
+    purpose: str,
+    repair_version: UUID | None = None,
+    upload: bool = False,
 ) -> dict[str, Any]:
+    """``upload`` is the fallback after Deepgram could not fetch the recording's link: fetch it
+    ourselves and send the bytes."""
     candidate = resolution.candidates[0]
     async with runtime._conn_factory() as conn:
         item = await store.item_for(runtime, conn, candidate)
@@ -243,10 +274,34 @@ async def acquire(
     audio = None
     prepared = None
     expected_hash = None
-    remote_url = None
+    # Founder ruling 2026-10-16: an audio file is transcribed from its own link and never
+    # downloaded, when its length is known (the feed's, or estimated from its size) so the
+    # allowance is checked before paying. Deepgram's checksum, request id and measured duration
+    # are the proof. Video, an unknown length, or a link Deepgram cannot fetch is downloaded.
+    link = None
+    if (
+        not (resolution.transcript or upload)
+        and candidate.media_url
+        and candidate.family == "audio"
+    ):
+        if not duration:
+            # A size says little about a length (podcasts run 32 to 320 kbit/s): the cautious
+            # estimate may only skip a download, never refuse a recording. One it does not
+            # clearly fit is downloaded and measured exactly, as before link-first.
+            estimate = await estimated_seconds(runtime, candidate.media_url)
+            async with runtime._conn_factory() as conn:
+                used = await ops.used_seconds(runtime, conn)
+            ceiling = runtime.settings.arv2_media_seconds_ceiling
+            duration = estimate if estimate and used + estimate <= ceiling else None
+        if duration:
+            link = candidate.media_url
+            request.update(delivery="url", source_url=link)
     with tempfile.TemporaryDirectory(prefix="arv2-media-") as directory:
-        if not resolution.transcript and candidate.media_url:
-            # Download is independently journalled and retained as an artifact for repairs.
+        if not resolution.transcript and candidate.media_url and link is None:
+            # Founder ruling 2026-10-16: a download is transcription input only. It lives in this
+            # temporary folder, which is deleted when this block ends, whatever happens; its raw
+            # record keeps a hash and size, never the bytes; nothing of it reaches storage. A
+            # retry after a failure therefore downloads it again.
             async with runtime._conn_factory() as conn:
                 download, won = await ops.begin(
                     runtime,
@@ -255,17 +310,26 @@ async def acquire(
                     stage="download",
                     request={"url": candidate.media_url or candidate.url},
                 )
-            if won:
-                media_url = candidate.media_url
-                response = await ops.call(
-                    runtime,
-                    download,
-                    "media_public",
-                    lambda caller: fetch(caller, media_url, binary=True),
-                )
-                mime = response.headers.get("content-type", "").split(";")[0].lower()
-                if not mime.startswith(("audio/", "video/")):
-                    async with runtime._conn_factory() as conn:
+            if not won and download["state"] != "succeeded":
+                return {
+                    "state": download["state"],
+                    "operation_ref": str(download["operation_id"]),
+                    "gap": "download_not_ready",
+                }
+            media_url = candidate.media_url
+
+            def get(caller: Any) -> Any:
+                return fetch(caller, media_url, binary=True, keep_body=False)
+
+            response = await (
+                ops.call(runtime, download, "media_public", get)
+                if won
+                else runtime.call_provider("media_public", get)
+            )
+            mime = response.headers.get("content-type", "").split(";")[0].lower()
+            if not mime.startswith(("audio/", "video/")):
+                async with runtime._conn_factory() as conn:
+                    if won:
                         await ops.finish(
                             runtime,
                             conn,
@@ -273,64 +337,29 @@ async def acquire(
                             error="unsupported_media_mime",
                             known_failure=True,
                         )
-                        await store.release_item(runtime, conn, item["item_id"])
-                    return {"state": "unavailable", "gap": "unsupported_media_mime"}
-                blob = await runtime._artifacts.persist_body(
-                    workspace_id=runtime.scope.workspace_id, data=response.body, media_type=mime
-                )
-                async with runtime._conn_factory() as conn:
-                    await store.subjects(runtime, conn, blob.artifact_key, [])
-                    await conn.execute(
-                        text(
-                            "UPDATE arv2_media_operation SET "
-                            "artifact_keys=array_append(artifact_keys,:key) WHERE workspace_id=:ws "
-                            "AND operation_id=:id"
-                        ),
-                        {
-                            "ws": runtime.scope.workspace_id,
-                            "id": download["operation_id"],
-                            "key": blob.artifact_key,
-                        },
-                    )
-                    await ops.finish(
-                        runtime, conn, download, result={"blob": blob.artifact_key, "mime": mime}
-                    )
-                download["result"] = {"blob": blob.artifact_key, "mime": mime}
-                download["state"] = "succeeded"
-            if download["state"] != "succeeded":
-                return {
-                    "state": download["state"],
-                    "operation_ref": str(download["operation_id"]),
-                    "gap": "download_not_ready",
-                }
-            async with runtime._conn_factory() as conn:
-                _, data = await read_verified_artifact(
-                    conn,
-                    runtime.storage,
-                    workspace_id=runtime.scope.workspace_id,
-                    storage_key=download["result"]["blob"],
-                )
+                    await store.release_item(runtime, conn, item["item_id"])
+                return {"state": "unavailable", "gap": "unsupported_media_mime"}
             path = Path(directory) / "recording"
-            path.write_bytes(data)
+            path.write_bytes(response.body)
+            if won:
+                async with runtime._conn_factory() as conn:
+                    await ops.finish(
+                        runtime,
+                        conn,
+                        download,
+                        result={"mime": mime, "bytes": len(response.body)},
+                    )
             audio, prepared = await asyncio.to_thread(prepare_audio, path)
             duration = prepared["duration_s"]
-            # URL delivery avoids the slow-upload failure seen in the trial, but only when
-            # it sends precisely the retained audio bytes. Extracted tracks use upload.
-            remote_url = (
-                candidate.media_url if prepared["preparation"] == "original_audio_bytes" else None
-            )
             expected_hash = prepared["audio_sha256"]
-            request.update(input_sha256=expected_hash, delivery="url" if remote_url else "upload")
-            blob = await runtime._artifacts.persist_body(
-                workspace_id=runtime.scope.workspace_id,
-                data=audio.read_bytes(),
-                media_type=prepared["mime"],
+            # The step is known by the downloaded file's hash: a retry re-downloads the same
+            # bytes, while the speech audio cut from them need not come out byte-identical.
+            request.update(
+                input_sha256=prepared["original_sha256"],
+                delivery="upload",
+                preparation=prepared["preparation"],
             )
-            async with runtime._conn_factory() as conn:
-                await store.subjects(runtime, conn, blob.artifact_key, [])
-            request["prepared_blob"] = blob.artifact_key
-            request["preparation"] = prepared
-        if not resolution.transcript and (audio is None or not duration):
+        if not resolution.transcript and link is None and (audio is None or not duration):
             async with runtime._conn_factory() as conn:
                 await store.release_item(runtime, conn, item["item_id"])
             return {"state": "unavailable", "gap": "recording_audio_unavailable"}
@@ -343,20 +372,12 @@ async def acquire(
                 request=request,
                 seconds=0 if resolution.transcript else duration or 0,
             )
-        if won and request.get("prepared_blob"):
-            async with runtime._conn_factory() as conn:
-                await conn.execute(
-                    text(
-                        "UPDATE arv2_media_operation SET "
-                        "artifact_keys=array_append(artifact_keys,:key) "
-                        "WHERE workspace_id=:ws AND operation_id=:id"
-                    ),
-                    {
-                        "ws": runtime.scope.workspace_id,
-                        "id": op["operation_id"],
-                        "key": request["prepared_blob"],
-                    },
-                )
+        if not won and link is not None and op["state"] == "failed":
+            # An earlier read sent this link and Deepgram refused it outright (heard nothing,
+            # billed nothing): fetch the recording ourselves rather than send the link again.
+            return await acquire(
+                runtime, resolution, purpose=purpose, repair_version=repair_version, upload=True
+            )
         transcript: Transcript | DeepgramTranscript | None = None
         if not won:
             if op["result"].get("empty_transcript"):
@@ -389,19 +410,37 @@ async def acquire(
                 text=resolution.transcript,
                 lines=sentence_lines(resolution.transcript),
             )
-        elif audio is not None and prepared is not None:
-            transcript = await ops.call(
-                runtime,
-                op,
-                "deepgram",
-                lambda caller: runtime.clients.transcription(caller).transcribe(
-                    audio=b"" if remote_url else audio.read_bytes(),
-                    mime=prepared["mime"],
-                    duration_s=duration,
-                    expected_hash=expected_hash,
-                    media_url=remote_url,
-                ),
-            )
+        elif link is not None or (audio is not None and prepared is not None):
+            names = (runtime.scope.account_name, runtime.scope.person_name)
+            keyterms = tuple(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+            sent = link
+            try:
+                transcript = await ops.call(
+                    runtime,
+                    op,
+                    "deepgram",
+                    lambda caller: runtime.clients.transcription(caller).transcribe(
+                        audio=b"" if sent else audio.read_bytes(),
+                        mime=prepared["mime"] if prepared else "audio/mpeg",
+                        duration_s=duration,
+                        expected_hash=expected_hash,
+                        media_url=sent,
+                        keyterms=keyterms,
+                    ),
+                )
+            except DeepgramMediaError as exc:
+                # Deepgram heard nothing (its 400, already recorded as a failed, released step);
+                # fetch the recording ourselves. A server error or timeout is never retried.
+                if link is None or exc.err_code != REMOTE_CONTENT_ERROR:
+                    raise
+                return await acquire(
+                    runtime, resolution, purpose=purpose, repair_version=repair_version, upload=True
+                )
+            if link is not None and isinstance(transcript, DeepgramTranscript):
+                measured = transcript.quality.diagnostics.get("metadata", {}).get("duration")
+                if isinstance(measured, int | float) and measured > 0:
+                    async with runtime._conn_factory() as conn:
+                        await ops.settle_seconds(runtime, conn, op, math.ceil(measured))
         if transcript is None:
             raise store.unavailable("unsupported acquisition route")
         return await _save_transcript(

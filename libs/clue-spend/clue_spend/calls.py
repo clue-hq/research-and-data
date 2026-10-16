@@ -208,6 +208,11 @@ class CallSpec:
     #: this governs the request, and the record then carries its sha256 and byte count instead.
     #: A body over :data:`MAX_INLINE_REQUEST_CHARS` is treated the same way without the flag.
     binary_request: bool = False
+    #: Whether the response body is stored with the attempt. ``False`` keeps the attempt in the
+    #: trail as status, redacted headers, sha256 and byte count only: for bytes that are input to
+    #: one step and must not be kept, such as a downloaded recording (founder ruling 2026-10-16:
+    #: no downloaded media is stored). The caller still receives the whole body.
+    keep_body: bool = True
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -740,7 +745,7 @@ class ProviderCaller:
         """
         body = response.body
         body_text: str | None = None
-        if persist_body and not spec.binary:
+        if persist_body and spec.keep_body and not spec.binary:
             try:
                 body_text = body.decode("utf-8")
             except UnicodeDecodeError:
@@ -773,7 +778,7 @@ class ProviderCaller:
                 body_bytes=len(body),
             ),
         )
-        return self._raw_sink.save(record, body if persist_body else b"")
+        return self._raw_sink.save(record, body if persist_body and spec.keep_body else b"")
 
     @staticmethod
     def _inline_request_text(spec: CallSpec, request_body: bytes | None) -> str | None:

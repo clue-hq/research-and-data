@@ -179,3 +179,74 @@ def test_a_probed_recording_is_not_downloaded_but_a_probed_page_is_read_whole():
 def test_a_feedback_page_is_not_a_feed():
     text = "Send us https://example.com/feedback or subscribe https://example.com/feed"
     assert podcast_links(text) == ["https://example.com/feed"]
+
+
+TRANSISTOR_PAGE = "https://share.transistor.fm/e/4f7793d7"
+TRANSISTOR_FEED = "https://feeds.transistor.fm/the-modern-hotelier"
+EPISODE_TITLE = "#276: Building a Tech-Forward Hotel Brand | with Roman Pedan of Kasa"
+PLAYER_MP3 = "https://pdst.fm/e/media.transistor.fm/4f7793d7/46ec5b96.mp3"
+
+
+def transistor_player(*episodes):
+    """A Transistor embed: the player's data is JSON in an HTML-escaped Alpine ``x-data``."""
+    import html
+
+    data = {"id": 29433, "title": "The Modern Hotelier", "feed_url": TRANSISTOR_FEED}
+    data["episodes"] = [
+        {
+            "id": 3250707 + n,
+            "title": title,
+            "duration": 3040,
+            "trackable_media_url": PLAYER_MP3,
+            "share_url": "https://themodernhotelier.com/episode/276",
+            "transcript_url": "https://share.transistor.fm/s/4f7793d7/transcript",
+        }
+        for n, title in enumerate(episodes)
+    ]
+    attribute = html.escape(f"transistor.audioEmbedPlayer({json.dumps(data)})")
+    return response(f'<html><body><div id="embed-player" x-data="{attribute}"></div></body></html>')
+
+
+def transistor_feed(title):
+    return response(
+        '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" '
+        'xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel>'
+        f"<title>The Modern Hotelier</title><item><guid>ep-276</guid><title>{title}</title>"
+        "<link>https://themodernhotelier.com/episode/276</link>"
+        "<itunes:duration>3040</itunes:duration>"
+        '<enclosure url="https://media.transistor.fm/4f7793d7/46ec5b96.mp3" type="audio/mpeg"/>'
+        '<podcast:transcript url="https://share.transistor.fm/s/4f7793d7/transcript.txt" '
+        'type="text/plain"/></item></channel></rss>',
+        "application/rss+xml",
+    )
+
+
+def test_a_transistor_player_leads_to_its_episode_in_the_shows_feed_and_its_transcript():
+    wire = ScriptedTransport(
+        [
+            transistor_player(EPISODE_TITLE),
+            transistor_feed(EPISODE_TITLE.replace("&", "&amp;")),
+            response("David Millili: Welcome.\nRoman Pedan: Thanks.", "text/plain"),
+        ]
+    )
+    result = resolve(caller(wire), TRANSISTOR_PAGE)
+    assert result.state == "resolved"
+    assert result.candidates[0].title == EPISODE_TITLE
+    assert result.candidates[0].feed_url == TRANSISTOR_FEED
+    assert result.transcript and "Roman Pedan: Thanks." in result.transcript
+    assert TRANSISTOR_PAGE in result.aliases
+    assert [r.url for r in wire.requests][1] == TRANSISTOR_FEED
+
+
+def test_a_transistor_player_whose_feed_lacks_the_episode_uses_the_players_own_recording():
+    wire = ScriptedTransport(
+        [
+            transistor_player(EPISODE_TITLE),
+            transistor_feed("#275: Another guest"),
+            HttpResponse(200, {"content-type": "audio/mpeg"}, b""),
+        ]
+    )
+    result = resolve(caller(wire), TRANSISTOR_PAGE)
+    assert result.state == "resolved"
+    assert result.candidates[0].media_url == PLAYER_MP3
+    assert "html:transistor-player" in result.candidates[0].identity_evidence

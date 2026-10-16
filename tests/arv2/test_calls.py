@@ -598,6 +598,26 @@ def test_a_binary_body_is_stored_by_hash_and_size_not_as_text() -> None:
     assert stored == audio
 
 
+def test_a_body_marked_not_to_keep_is_recorded_by_hash_and_size_and_never_stored() -> None:
+    """A downloaded recording is transcription input only (founder ruling 2026-10-16): the
+    attempt is still in the trail, as its address and length, but its bytes are never stored."""
+    audio = b"\x00\x01\x02\xff"
+    caller, _transport, raw, _ledger, _clock = _caller([HttpResponse(200, {}, audio)])
+    result = caller.call(_spec(binary=True, keep_body=False))
+
+    record, stored = raw.records[0]
+    assert record.response.body_sha256 == sha256_hex(audio)
+    assert record.response.body_bytes == 4
+    assert stored == b""
+    # The caller still gets the bytes it asked for; only the stored copy is withheld.
+    assert result.response.body == audio
+
+    caller, _transport, raw, _ledger, _clock = _caller([HttpResponse(200, {}, b"spoken words")])
+    caller.call(_spec(keep_body=False))
+    record, stored = raw.records[0]
+    assert record.response.body_text is None and stored == b""
+
+
 def test_an_unreadable_cost_falls_back_to_the_estimate_and_says_so() -> None:
     """A cost reader that raises never fails the call; the row records the substitution."""
 

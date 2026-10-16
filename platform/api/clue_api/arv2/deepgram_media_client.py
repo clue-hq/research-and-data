@@ -206,10 +206,26 @@ def parse_response(body: dict[str, Any], *, expected_hash: str | None = None) ->
     )
 
 
+#: Deepgram could not fetch the recording from the link it was given (a 400: nothing was heard,
+#: nothing billed). The audio can still be fetched by us and uploaded.
+REMOTE_CONTENT_ERROR = "REMOTE_CONTENT_ERROR"
+
+
 class DeepgramMediaError(ValueError):
-    def __init__(self, message: str, http_status: int | None = None):
+    def __init__(self, message: str, http_status: int | None = None, err_code: str | None = None):
         super().__init__(message)
         self.http_status = http_status
+        self.err_code = err_code
+
+
+def error_code(body: bytes) -> str | None:
+    """Deepgram's ``err_code`` from an error answer, when it gave one."""
+    try:
+        value = json.loads(body)
+    except ValueError:
+        return None
+    code = value.get("err_code") if isinstance(value, dict) else None
+    return code if isinstance(code, str) else None
 
 
 class DeepgramMediaClient:
@@ -232,9 +248,12 @@ class DeepgramMediaClient:
         audio: bytes,
         mime: str,
         duration_s: int,
-        expected_hash: str,
+        expected_hash: str | None,
         media_url: str | None = None,
+        keyterms: tuple[str, ...] = (),
     ) -> DeepgramTranscript:
+        """``keyterms`` are names Deepgram should expect (the account, the person): nova-3 spells
+        them as given instead of as the nearest common word ("Casa" for "Kasa")."""
         if self.api_key is None or not self.api_key.get_secret_value():
             raise ValueError("CLUE_DEEPGRAM_API_KEY is required for recording transcription")
         body = json.dumps({"url": public_url(media_url)}).encode() if media_url else audio
@@ -245,7 +264,8 @@ class DeepgramMediaClient:
                 label="media.transcribe",
                 request=HttpRequest(
                     "POST",
-                    "https://api.deepgram.com/v1/listen?" + urlencode(parameters(self.language)),
+                    "https://api.deepgram.com/v1/listen?"
+                    + urlencode(parameters(self.language, keyterms), doseq=True),
                     headers={
                         "Authorization": f"Token {self.api_key.get_secret_value()}",
                         "Content-Type": "application/json" if media_url else mime,
@@ -273,6 +293,7 @@ class DeepgramMediaClient:
             raise DeepgramMediaError(
                 f"Deepgram transcription failed with HTTP {result.response.status}",
                 result.response.status,
+                error_code(result.response.body),
             )
         try:
             return parse_response(json.loads(result.response.body), expected_hash=expected_hash)

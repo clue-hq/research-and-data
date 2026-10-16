@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
+from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.media_feeds_client import (
     parse_feed,
     reject_native_video,
@@ -34,7 +35,9 @@ from clue_research.official_site.url_policy import ConservativeUrlPolicy, UrlPol
 if TYPE_CHECKING:
     from clue_api.arv2.media_sources import MediaSourceKeys
 
-MAX_MEDIA_BYTES = 200 * 1024 * 1024
+#: The largest recording downloaded (founder ruling 2026-10-16). Most are never downloaded at all:
+#: Deepgram and Gemini are given their links.
+MAX_MEDIA_BYTES = 500 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5_000_000
 YT_HOSTS = {
     "youtube.com",
@@ -195,9 +198,15 @@ class PublicMediaTransport:
 
 
 def fetch(
-    caller: ProviderCaller, url: str, *, binary: bool = False, probe: bool = False
+    caller: ProviderCaller,
+    url: str,
+    *,
+    binary: bool = False,
+    probe: bool = False,
+    keep_body: bool = True,
 ) -> HttpResponse:
-    """One public GET. ``probe`` asks for the headers only when the answer is a recording."""
+    """One public GET. ``probe`` asks for the headers only when the answer is a recording.
+    ``keep_body=False`` records the answer by hash and size only (a downloaded recording)."""
     url = public_url(url)
     headers = {**PUBLIC_HEADERS, **({PROBE_HEADER: "1"} if probe else {})}
     result = caller.call(
@@ -207,6 +216,7 @@ def fetch(
             label="media.resolve",
             request=HttpRequest(method="GET", url=url, headers=headers, timeout_s=60),
             binary=binary,
+            keep_body=keep_body,
             max_attempts=1,
         )
     )
@@ -228,12 +238,29 @@ class PageLinks(HTMLParser):
         self.player_metadata: dict[str, str] = {}
         self.transcripts: list[str] = []
         self.documents: list[object] = []
+        #: (feed URL, exact episode title, recording URL) a player names for its one episode.
+        self.player_episodes: list[tuple[str, str, str]] = []
         self._script: list[str] | None = None
         self._anchor: tuple[str, list[str]] | None = None
 
     def add_media(self, url: str, origin: str) -> None:
         self.media.append(url)
         self.media_origins.setdefault(url, []).append(origin)
+
+    def add_transistor_player(self, data: str) -> None:
+        """A Transistor embed keeps its show and episode as JSON in the player's ``x-data``: the
+        show's feed and, per episode, its exact title and recording. Only a one-episode player
+        names a recording; a playlist player names none."""
+        with suppress(ValueError, TypeError, AttributeError):
+            show, _ = json.JSONDecoder().raw_decode(data, data.index("(") + 1)
+            (episode,) = show["episodes"]
+            self.player_episodes.append(
+                (
+                    str(show.get("feed_url") or ""),
+                    str(episode.get("title") or ""),
+                    str(episode.get("trackable_media_url") or ""),
+                )
+            )
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = dict(attrs)
@@ -247,6 +274,8 @@ class PageLinks(HTMLParser):
             self.feeds.append(href)
         if tag in {"iframe", "audio", "video", "source"} and src:
             self.add_media(src, f"html:{tag}:src")
+        if (data := a.get("x-data")) and data.startswith("transistor.audioEmbedPlayer("):
+            self.add_transistor_player(data)
         if tag == "meta" and a.get("content"):
             key = (a.get("property") or a.get("name") or "").lower()
             if key in {"twitter:player", "twitter:player:stream"}:
@@ -817,6 +846,16 @@ def resolve(
                 media,
                 "html:json-ld:contentUrl" if obj.get("contentUrl") else "html:json-ld:embedUrl",
             )
+    for feed, title, recording in parser.player_episodes:
+        # The player names its episode's exact title in its own show feed: read the episode
+        # there (its transcript, date and length); else fall back to the player's recording.
+        if feed and title:
+            with suppress(ValueError, ET.ParseError, RawParseError):
+                found = resolve(caller, urljoin(url, feed), hint=title, visited=visited, keys=keys)
+                if found.state == "resolved":
+                    return replace(found, aliases=tuple(dict.fromkeys((url, *found.aliases))))
+        if recording:
+            parser.add_media(recording, "html:transistor-player")
     media_links = recording_links(parser, url)
     if len(media_links) > 1:
         return Resolution(
