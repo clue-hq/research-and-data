@@ -2743,8 +2743,12 @@ def create_app(
         take it off again — and the field is required, so a caller who names no value gets a 422
         rather than a silent clear. (The ABM batch is the stamp's first writer; a human turning
         an account page back into an indexable one is what this route serves.)
+
+        K6-3: a Puck site carries the same flag and its publish honours it the same way, so the
+        route takes a site as well as a web page (the share menu stores the marketer's indexing
+        choice here for both). A scene has no publish surface and is still refused.
         """
-        require_web_document(require_document(repo, document_id))
+        require_website_document(require_document(repo, document_id))
         written = run_design_tool(
             "design_set_web_noindex",
             {"document_id": document_id, "enabled": payload.noindex},
@@ -5027,8 +5031,20 @@ def create_app(
         )
         return _publish_response(repo, slug, publish)
 
-    def _publish_state(repo: HybridRepository, document_id: str) -> JsonObject:
-        """The publish-state body — one builder for the web and site routes."""
+    def _publish_state(repo: HybridRepository, document: JsonObject) -> JsonObject:
+        """The publish-state body — one builder for the web and site routes.
+
+        Both states carry two facts about the DOCUMENT, not the publish (K6-2, K6-3):
+        ``current_version`` — the share menu compares it with the published ``doc_version`` to
+        offer Republish when the site changed since publishing — and ``noindex``, the document's
+        durable flag, which every publish ORs into its pages, so the menu's "Allow indexing"
+        shows what the next publish will really do.
+        """
+        document_id = str(document["id"])
+        document_facts = {
+            "current_version": document["current_version"],
+            "noindex": bool(document.get("web_noindex")),
+        }
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
             # Even unpublished, the state names WHERE this document would publish — the
@@ -5038,6 +5054,7 @@ def create_app(
                 "published": False,
                 "public_origin": system_public_origin(repo),
                 "custom_origin": custom_public_origin(repo),
+                **document_facts,
             }
         # F5/R-F5-1: the site's public address, from the hostname registry — never the request.
         address = site_address(repo, publish["slug"])
@@ -5071,6 +5088,7 @@ def create_app(
             "custom_page_urls": (
                 {} if custom is None else {route: custom.page_url(route) for route in routes}
             ),
+            **document_facts,
         }
 
     @app.get("/documents/{document_id}/web/publish")
@@ -5080,7 +5098,7 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
-        return _publish_state(repo, document_id)
+        return _publish_state(repo, document)
 
     @app.post("/documents/{document_id}/site/publish")
     def publish_site_document_route(
@@ -5101,7 +5119,7 @@ def create_app(
     def get_site_publish_state(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
         document = require_document(repo, document_id)
         require_site_document(document)
-        return _publish_state(repo, document_id)
+        return _publish_state(repo, document)
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
@@ -8204,6 +8222,23 @@ def require_site_document(document: JsonObject) -> None:
                 "message": (
                     f"document {document['id']} is a {kind!r} document; this "
                     "endpoint operates only on site documents"
+                ),
+            },
+        )
+
+
+def require_website_document(document: JsonObject) -> None:
+    """Gate the endpoints both website kinds share (web pages and Puck sites) — today the durable
+    ``noindex`` route (K6-3). A scene has no publish surface, so it is a 409."""
+    kind = document.get("doc_kind", "scene")
+    if kind not in ("web", "site"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "document.kind_unsupported",
+                "message": (
+                    f"document {document['id']} is a {kind!r} document; this "
+                    "endpoint operates only on web and site documents"
                 ),
             },
         )

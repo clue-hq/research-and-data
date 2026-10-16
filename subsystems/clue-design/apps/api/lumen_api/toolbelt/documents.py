@@ -531,14 +531,16 @@ class SetWebNoindexInput(ToolInput):
 
 
 class SetWebNoindexTool(DesignTool):
-    """Stamp or explicitly clear one web document's durable ``noindex`` (ruling R-F1)."""
+    """Stamp or explicitly clear one website document's durable ``noindex`` (ruling R-F1).
+
+    A website is a web page or (K6-3) a Puck site: both publish, and both publishes OR the flag."""
 
     name = "design_set_web_noindex"
     version = "1"
     model_description = (
-        "Stamp or clear the durable noindex flag on a website-mode design document. A stamped "
-        "page emits <meta name=\"robots\" content=\"noindex\"> on EVERY publish, whichever route "
-        "publishes it; clearing it is this call and nothing else."
+        "Stamp or clear the durable noindex flag on a website (web or site) design document. A "
+        "stamped page emits <meta name=\"robots\" content=\"noindex\"> on EVERY publish, "
+        "whichever route publishes it; clearing it is this call and nothing else."
     )
     input_model: ClassVar[type[ToolInput]] = SetWebNoindexInput
     output_model: ClassVar[type[ToolOutput]] = ToggleRef
@@ -555,11 +557,16 @@ class SetWebNoindexTool(DesignTool):
 
     def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
         assert isinstance(inputs, SetWebNoindexInput)
-        # `kind="web"`, unlike its two scene-side neighbours: a scene document has no publish
-        # surface, so the flag stored on one would be a fact about nothing.
-        return document_failures(
-            self.host.repository(ctx.workspace_id), inputs.document_id, kind="web"
-        )
+        # Websites only, unlike its two scene-side neighbours: a scene document has no publish
+        # surface, so the flag stored on one would be a fact about nothing. A web page and a Puck
+        # site both publish and both honour the flag (K6-3); a scene keeps the web refusal.
+        repository = self.host.repository(ctx.workspace_id)
+        failures = document_failures(repository, inputs.document_id)
+        if failures:
+            return failures
+        if repository.require_document(inputs.document_id).get("doc_kind", "scene") == "site":
+            return ()
+        return document_failures(repository, inputs.document_id, kind="web")
 
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, SetWebNoindexInput)

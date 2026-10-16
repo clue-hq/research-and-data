@@ -361,12 +361,10 @@ def test_e_noindex_marks_every_page_and_the_documents_stored_flag_forces_it(clie
     assert published_manifest(workspace_id, "hidden-site")["robots"] == "noindex"
     assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "hidden-site").values())
 
-    # A site document cannot be stamped through the product: the route and its tool are web-only.
-    refused(client.put("/documents/site_index/web-noindex", json={"noindex": True}), 409, "document.kind_unsupported")
-    assert HybridRepository().require_document("site_index")["web_noindex"] is False
-    # But the publish honours the stored column whenever it is set (here straight through the DAL):
-    # a plain republish of the same document is now de-indexed on every page.
-    HybridRepository().set_web_noindex("site_index", True)
+    # K6-3: a site is stamped through the same route as a web page, and a plain republish of the
+    # same document is then de-indexed on every page.
+    assert ok(client.put("/documents/site_index/web-noindex", json={"noindex": True}))["web_noindex"] is True
+    assert HybridRepository().require_document("site_index")["web_noindex"] is True
     stamped = ok(publish(client, "site_index", slug="indexed-site"))
     assert published_manifest(workspace_id, "indexed-site")["robots"] == "noindex"
     assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "indexed-site").values())
@@ -376,6 +374,60 @@ def test_e_noindex_marks_every_page_and_the_documents_stored_flag_forces_it(clie
     assert rollback.status_code == 422, rollback.text
     assert rollback.json()["detail"]["reason_codes"] == ["design_publish_rollback_would_unindex"]
     assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "indexed-site").values())
+
+
+# k. K6-2/K6-3: the publish state says what changed since publishing and how the site is indexed --
+
+
+def test_k_the_state_reports_changes_since_publishing_and_a_noindex_choice_survives_republishing(
+    client: TestClient, workspace_id: str
+) -> None:
+    site = stored(client, garner_site_without_clones("site_k"))
+    state = client.get("/documents/site_k/site/publish").json()
+    assert (state["published"], state["noindex"], state["current_version"]) == (False, False, 0)
+
+    # The marketer unticks "Allow indexing": the share menu stores that on the document.
+    assert ok(client.put("/documents/site_k/web-noindex", json={"noindex": True}))["web_noindex"] is True
+    assert client.get("/documents/site_k/site/publish").json()["noindex"] is True
+
+    # A publish that asks for nothing (as a reloaded menu used to send) cannot make the page indexable.
+    first = ok(publish(client, "site_k", slug="k-site", noindex=False))
+    assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "k-site").values())
+    state = client.get("/documents/site_k/site/publish").json()
+    assert state["noindex"] is True
+    assert state["doc_version"] == state["current_version"] == first["doc_version"]
+
+    # The site changes after publishing: the state shows the live version is behind.
+    version = save_site(client, "site_k", with_home_heading(site, "Changes since you published"))
+    state = client.get("/documents/site_k/site/publish").json()
+    assert state["current_version"] == version and state["doc_version"] == first["doc_version"] < version
+
+    # Republishing catches up, still noindex on every page.
+    second = ok(publish(client, "site_k", slug="k-site", noindex=False))
+    state = client.get("/documents/site_k/site/publish").json()
+    assert state["doc_version"] == state["current_version"] == second["doc_version"] == version
+    pages = assert_served_site(workspace_id, "k-site")
+    assert all(ROBOTS_NOINDEX_META in html for html in pages.values())
+    assert "Changes since you published" in pages["/"]
+
+    # Ticking "Allow indexing" again is an explicit act on the same route, and the next publish obeys it.
+    assert ok(client.put("/documents/site_k/web-noindex", json={"noindex": False}))["web_noindex"] is False
+    assert client.get("/documents/site_k/site/publish").json()["noindex"] is False
+    ok(publish(client, "site_k", slug="k-site", noindex=False))
+    assert all(ROBOTS_NOINDEX_META not in html for html in assert_served_site(workspace_id, "k-site").values())
+
+
+def test_k_the_noindex_tool_takes_a_site_and_still_refuses_a_scene(client: TestClient, workspace_id: str) -> None:
+    stored(client, garner_site_without_clones("site_k_tool"))
+    tools = client.app.state.design_tools
+    result = tools.invoke("design_set_web_noindex", {"document_id": "site_k_tool", "enabled": True}, workspace_id=workspace_id)
+    assert result.references["value"] is True
+    assert HybridRepository().require_document("site_k_tool")["web_noindex"] is True
+    scene = client.post("/documents", json={}).json()["document"]["id"]
+    with pytest.raises(PreconditionFailed) as not_website:
+        tools.invoke("design_set_web_noindex", {"document_id": scene, "enabled": True}, workspace_id=workspace_id)
+    assert not_website.value.reason_codes == ("design_document_not_web",)
+    refused(client.put(f"/documents/{scene}/web-noindex", json={"noindex": True}), 409, "document.kind_unsupported")
 
 
 # f. Refusals over HTTP; nothing is published for any of them ------------------------------------
@@ -489,8 +541,9 @@ def test_i_the_publish_state_matches_the_web_route_before_and_after_an_unpublish
     web = seed_document(client)
     site_state = client.get("/documents/site_state/site/publish").json()
     web_state = client.get(f"/documents/{web['id']}/web/publish").json()
-    assert set(site_state) == {"schema_version", "published", "public_origin", "custom_origin"}
-    assert site_state == web_state
+    assert set(site_state) == {"schema_version", "published", "public_origin", "custom_origin", "current_version", "noindex"}
+    # The two documents differ in their own version; everything else about the state is the same.
+    assert {**site_state, "current_version": None} == {**web_state, "current_version": None}
     assert site_state["published"] is False and site_state["custom_origin"] is None
     assert site_state["public_origin"].startswith("https://")
 

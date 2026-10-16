@@ -599,9 +599,20 @@ def test_get_publish_state_unpublished(client: TestClient) -> None:
     state = client.get(f"/documents/{document['id']}/web/publish").json()
     # Custom-domain publishing S1: even unpublished, the state names WHERE this document would
     # publish — the workspace's always-live system origin, and its custom origin when it has one.
-    assert set(state) == {"schema_version", "published", "public_origin", "custom_origin"}
+    # K6-2/K6-3: and two facts about the document itself — its current version (so the share
+    # menu can tell when the site changed since publishing) and its durable noindex.
+    assert set(state) == {
+        "schema_version",
+        "published",
+        "public_origin",
+        "custom_origin",
+        "current_version",
+        "noindex",
+    }
     assert state["schema_version"] == 1
     assert state["published"] is False
+    assert state["current_version"] == client.get(f"/documents/{document['id']}").json()["current_version"]
+    assert state["noindex"] is False
     assert state["custom_origin"] is None
     assert state["public_origin"].startswith("https://")
 
