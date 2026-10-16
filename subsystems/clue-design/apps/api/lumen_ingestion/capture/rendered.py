@@ -212,7 +212,7 @@ _PROBE_JS = r"""
     const r = el.getBoundingClientRect();
     if (cs.backgroundImage.includes('url(') && r.width > 40 && r.height > 40) media.push(abs(r));
     if (cs.backgroundImage.includes('gradient(') && r.width * r.height > 20000 && visible(el)) {
-      const stops = cs.backgroundImage.match(/rgba?\([^)]+\)/g) || [];
+      const stops = cs.backgroundImage.match(/(?:rgba?|hsla?|hwb|oklab|oklch|lab|lch|color)\([^)]+\)/g) || [];
       if (stops.length) gradients.push({box: abs(r), stops: stops.slice(0, 12)});
     }
   }

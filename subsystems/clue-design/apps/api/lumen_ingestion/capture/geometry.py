@@ -1238,16 +1238,17 @@ def _split_layers(raw: str) -> list[str]:
     return layers
 
 
+_COLOR_CALL = re.compile(
+    r"(?<![a-z-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", re.IGNORECASE
+)
+
+
 def _take_color(text: str) -> tuple[str | None, str]:
-    lowered = text.lower()
-    for prefix in ("rgba(", "rgb(", "hsla(", "hsl("):
-        start = lowered.find(prefix)
-        if start < 0:
-            continue
-        end = text.find(")", start)
-        if end < 0:
-            continue
-        return text[start : end + 1], text[:start] + text[end + 1 :]
+    match = _COLOR_CALL.search(text)
+    if match:
+        end = text.find(")", match.start())
+        if end >= 0:
+            return text[match.start() : end + 1], text[: match.start()] + text[end + 1 :]
     for token in text.split():
         if token.startswith("#"):
             return token, text.replace(token, " ", 1)
