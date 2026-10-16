@@ -285,7 +285,15 @@ async def acquire(
         and candidate.media_url
         and candidate.family == "audio"
     ):
-        duration = duration or await estimated_seconds(runtime, candidate.media_url)
+        if not duration:
+            # A size says little about a length (podcasts run 32 to 320 kbit/s): the cautious
+            # estimate may only skip a download, never refuse a recording. One it does not
+            # clearly fit is downloaded and measured exactly, as before link-first.
+            estimate = await estimated_seconds(runtime, candidate.media_url)
+            async with runtime._conn_factory() as conn:
+                used = await ops.used_seconds(runtime, conn)
+            ceiling = runtime.settings.arv2_media_seconds_ceiling
+            duration = estimate if estimate and used + estimate <= ceiling else None
         if duration:
             link = candidate.media_url
             request.update(delivery="url", source_url=link)

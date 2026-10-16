@@ -897,18 +897,35 @@ def test_without_a_stated_length_the_file_size_sets_the_budget_before_paying():
     run_async(scenario())
 
 
-def test_a_file_too_large_for_the_remaining_allowance_is_refused_before_deepgram():
+def test_a_size_estimate_over_the_allowance_is_measured_by_downloading_not_refused():
+    import json
+
     async def scenario():
         async with rollback_conn() as conn:
             rt = await seeded(conn)
-            # 80 MB at 64 kbit/s is 10,000 s: over the 9,000 s allowance, so nothing is bought.
+            # A 50-minute episode at 256 kbit/s (The Modern Hotelier #276, 2026-10-16 trial): 97 MB,
+            # which the cautious 64 kbit/s reading takes for 12,161 s, over the 9,000 s allowance.
+            # The estimate may only skip a download; it never refuses a recording on its own.
             probe = HttpResponse(
-                200, {"content-type": "audio/mpeg", "content-length": "80000000"}, b""
+                200, {"content-type": "audio/mpeg", "content-length": "97288880"}, b""
             )
-            wire = ScriptedTransport([podcast_feed(length=""), probe])
-            with pytest.raises(Exception, match="allowance exceeded"):
-                await link_first_read(rt, wire)
-            assert not [r for r in wire.requests if "/v1/listen?" in r.url]
+            wire = ScriptedTransport(
+                [
+                    podcast_feed(length=""),
+                    probe,
+                    offline_audio(3040),
+                    deepgram_speech("We need evidence.", 3040),
+                    embeddings(),
+                ]
+            )
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            # Measured exactly from the download, then sent by link as before link-first.
+            listen = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert [json.loads(r.body) for r in listen] == [
+                {"url": "https://example.com/source.mp3"}
+            ]
+            assert [tuple(r) for r in await transcribe_seconds(conn, rt)] == [("succeeded", 3040)]
 
     run_async(scenario())
 
