@@ -143,7 +143,7 @@ LOOK_JS = r"""
 #: The element's transitions (its own, its words' and its icon's) and its icon.
 MOTION_JS = r"""
 (el) => {
-""" + _TRANSITIONS_FN + r"""
+""" + _TRANSITIONS_FN + COLOR_FN + r"""
   const host = (() => {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     let node;
@@ -151,24 +151,104 @@ MOTION_JS = r"""
     return el;
   })();
   const icon = el.querySelector('svg, img');
-  // A sprite icon (<use href="#id">) is read from a CLONE with each in-page reference replaced
-  // by what it points at; an external sprite file (/sprite.svg#id) is left for the cleaner to drop.
+  // The icon as the page drew it (S6-2, S6-10). The cleaner keeps drawing attributes only — never
+  // `class` or `style` — so the paint CSS gave the icon is written onto a copy as attributes: on each
+  // element where it differs from its parent's, on the root where it differs from the initial value.
+  // A fill or stroke equal to the icon's text colour is written `currentColor`, so the icon keeps
+  // following the label's colour in every state and on every surface. A paint through `url(…)` is
+  // left out (the cleaner refuses it). A sprite `<use>` becomes a group carrying the use's own paint,
+  // scaled from the symbol's viewBox into the box the use drew (preserveAspectRatio honoured), so the
+  // drawing keeps its size and place; the symbol's children keep their own attributes.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const PAINT = ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+    'fill-rule', 'clip-rule', 'opacity', 'fill-opacity', 'stroke-opacity'];
+  const INITIAL = { stroke: 'none', 'stroke-width': '1', 'stroke-linecap': 'butt', 'stroke-linejoin': 'miter',
+    'stroke-miterlimit': '4', 'fill-rule': 'nonzero', 'clip-rule': 'nonzero', opacity: '1', 'fill-opacity': '1',
+    'stroke-opacity': '1' };
+  const r3 = (n) => Math.round(n * 1000) / 1000;
+  const paintValue = (prop, raw, textColor) => {
+    const v = String(raw || '').trim();
+    if (!v) return null;
+    if (prop === 'fill' || prop === 'stroke') {
+      if (v === 'none') return 'none';
+      if (v.indexOf('url(') >= 0) return null;
+      const hex = hexOf(v);
+      if (!hex) return null;
+      return hex === textColor ? 'currentColor' : hex;
+    }
+    if (prop === 'stroke-width' || prop === 'stroke-miterlimit' || prop.endsWith('opacity')) {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? String(r3(n)) : null;
+    }
+    return v;
+  };
+  const writePaint = (src, dst, parentSrc, textColor) => {
+    const cs = getComputedStyle(src);
+    const ps = parentSrc ? getComputedStyle(parentSrc) : null;
+    for (const prop of PAINT) {
+      const value = paintValue(prop, cs.getPropertyValue(prop), textColor);
+      if (value === null) continue;
+      if (ps ? paintValue(prop, ps.getPropertyValue(prop), textColor) === value : INITIAL[prop] === value) continue;
+      dst.setAttribute(prop, value);
+    }
+  };
+  const lengthOf = (el, name, ref) => {
+    const raw = el.getAttribute(name);
+    if (raw === null || String(raw).trim() === '') return null;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return null;
+    return String(raw).trim().endsWith('%') ? (n / 100) * ref : n;
+  };
+  const viewBoxOf = (el) => {
+    const vb = String(el.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    return vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0 ? vb : null;
+  };
+  const useTransform = (use, target, symbol, outer) => {
+    const x = lengthOf(use, 'x', outer.w) || 0, y = lengthOf(use, 'y', outer.h) || 0;
+    const vb = symbol ? viewBoxOf(target) : null;
+    if (!vb) return (x || y) ? `translate(${r3(x)} ${r3(y)})` : null;
+    const w = lengthOf(use, 'width', outer.w), h = lengthOf(use, 'height', outer.h);
+    const W = w === null ? outer.w : w, H = h === null ? outer.h : h;
+    const par = String(target.getAttribute('preserveAspectRatio') || 'xMidYMid meet').trim().split(/\s+/);
+    let sx = W / vb[2], sy = H / vb[3], tx = x - vb[0] * sx, ty = y - vb[1] * sy;
+    if (par[0] !== 'none') {
+      const s = par[1] === 'slice' ? Math.max(sx, sy) : Math.min(sx, sy);
+      const fx = par[0].indexOf('xMid') >= 0 ? 0.5 : par[0].indexOf('xMax') >= 0 ? 1 : 0;
+      const fy = par[0].indexOf('YMid') >= 0 ? 0.5 : par[0].indexOf('YMax') >= 0 ? 1 : 0;
+      sx = sy = s;
+      tx = x + (W - vb[2] * s) * fx - vb[0] * s;
+      ty = y + (H - vb[3] * s) * fy - vb[1] * s;
+    }
+    if (r3(sx) === 1 && r3(sy) === 1 && r3(tx) === 0 && r3(ty) === 0) return null;
+    return `translate(${r3(tx)} ${r3(ty)}) scale(${r3(sx)} ${r3(sy)})`;
+  };
   const iconMarkup = (svg) => {
     const copy = svg.cloneNode(true);
+    const textColor = hexOf(getComputedStyle(svg).color);
+    const sources = [svg, ...Array.from(svg.querySelectorAll('*'))];
+    const copies = [copy, ...Array.from(copy.querySelectorAll('*'))];
+    sources.forEach((src, i) => { if (copies[i]) writePaint(src, copies[i], i === 0 ? null : src.parentElement, textColor); });
+    const root = svg.getRootNode();
+    const byId = (id) => (root && root.getElementById ? root.getElementById(id) : null) || svg.ownerDocument.getElementById(id);
     for (const use of Array.from(copy.querySelectorAll('use'))) {
       const ref = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
-      const target = ref.startsWith('#') ? document.getElementById(ref.slice(1)) : null;
+      const target = ref.startsWith('#') ? byId(ref.slice(1)) : null;
       if (!target) continue;
       const symbol = target.tagName.toLowerCase() === 'symbol';
-      const drawn = symbol
-        ? document.createElementNS('http://www.w3.org/2000/svg', 'g') : target.cloneNode(true);
-      if (symbol) {
-        for (const child of Array.from(target.childNodes)) drawn.appendChild(child.cloneNode(true));
-        if (!copy.hasAttribute('viewBox') && target.hasAttribute('viewBox')) {
-          copy.setAttribute('viewBox', target.getAttribute('viewBox'));
-        }
+      if (symbol && !copy.hasAttribute('viewBox') && target.hasAttribute('viewBox')) {
+        copy.setAttribute('viewBox', target.getAttribute('viewBox'));
       }
-      use.replaceWith(drawn);
+      const box = svg.getBoundingClientRect();
+      const vb = viewBoxOf(copy);
+      const outer = vb ? { w: vb[2], h: vb[3] }
+        : { w: lengthOf(svg, 'width', box.width) || box.width, h: lengthOf(svg, 'height', box.height) || box.height };
+      const group = document.createElementNS(SVG_NS, 'g');
+      for (const prop of PAINT) if (use.hasAttribute(prop)) group.setAttribute(prop, use.getAttribute(prop));
+      const transform = useTransform(use, target, symbol, outer);
+      if (transform) group.setAttribute('transform', transform);
+      const drawn = symbol ? Array.from(target.childNodes).map((child) => child.cloneNode(true)) : [target.cloneNode(true)];
+      for (const child of drawn) group.appendChild(child);
+      use.replaceWith(group);
     }
     return copy.outerHTML.slice(0, 8192);
   };

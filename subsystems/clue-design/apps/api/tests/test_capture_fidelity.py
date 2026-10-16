@@ -190,3 +190,70 @@ def test_s6_1_screen_reader_only_text_does_not_set_a_bands_ink() -> None:
             browser.close()
     band = parse_geometry(geometry, page_url="https://sr-only.test/").background_sequence[0]
     assert (band.background, band.ink) == ("#F3F0E8", "#333333")
+
+
+def _icons(run: dict) -> dict[str, str]:
+    return {s.variant: s.icon.svg for s in run["parsed"].styles if s.surface == "button" and s.icon and s.icon.svg}
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_2_a_css_stroked_icon_keeps_its_stroke_and_follows_the_label(engine: str) -> None:
+    icons = _icons(_run(engine, "icons.html"))
+    stroke = icons["solid.ad1457"]
+    root = stroke.split(">", 1)[0]
+    assert 'fill="none"' in root and 'stroke="currentColor"' in root and 'stroke-width="2"' in root, stroke
+    assert 'stroke-linecap="round"' in root and 'stroke-linejoin="round"' in root, stroke
+    hero = icons["solid.00695c"]
+    assert 'fill="currentColor"' in hero.split(">", 1)[0], hero
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_10_a_sprite_icon_is_drawn_at_the_size_the_page_drew_it(engine: str) -> None:
+    sprite = _icons(_run(engine, "icons.html"))["solid.283593"]
+    assert 'viewBox="0 0 24 24"' in sprite and 'transform="translate(0 0) scale(2 2)"' in sprite, sprite
+
+
+def test_the_captured_icons_draw_like_the_page() -> None:
+    """Rendered on a dark button with white text, the captured markup paints white, at full size."""
+    from playwright.sync_api import sync_playwright
+
+    icons = _icons(_run("playwright", "icons.html"))
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            out = {}
+            for variant, markup in icons.items():
+                sized = markup.replace("<svg", '<svg width="16" height="16"', 1)
+                page.set_content(f'<div style="color:#fff;background:#222">{sized}</div>')
+                out[variant] = page.evaluate("""() => { const p = document.querySelector('path');
+                  const cs = getComputedStyle(p); const r = p.getBoundingClientRect();
+                  return { fill: cs.fill, stroke: cs.stroke, w: Math.round(r.width) }; }""")
+        finally:
+            browser.close()
+    assert out["solid.ad1457"]["stroke"] == "rgb(255, 255, 255)" and out["solid.ad1457"]["fill"] == "none", out
+    assert out["solid.00695c"]["fill"] == "rgb(255, 255, 255)", out
+    assert out["solid.283593"]["w"] >= 11, out   # the 12-unit arrow scaled into the 24-unit box: ~12px of 16
+
+
+def test_an_icon_painted_through_a_gradient_or_in_a_translucent_colour_is_still_kept() -> None:
+    from playwright.sync_api import sync_playwright
+
+    from lumen_ingestion.capture.motion import clean_icon_svg
+    from lumen_ingestion.capture.states import MOTION_JS
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(
+                '<a id="b" href="#" style="color:#fff;background:#222;padding:12px 24px">Go '
+                '<svg viewBox="0 0 24 24" style="width:16px;height:16px"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient></defs>'
+                '<path d="M5 12h14" style="fill:url(#g);stroke:rgba(255,255,255,0.5);stroke-width:2"/></svg></a>'
+            )
+            info = page.locator("#b").evaluate(MOTION_JS)["icon"]
+        finally:
+            browser.close()
+    cleaned = clean_icon_svg(info["svg"])
+    assert cleaned is not None and "url(" not in cleaned, info["svg"]
+    assert 'stroke="#FFFFFF80"' in cleaned, cleaned
