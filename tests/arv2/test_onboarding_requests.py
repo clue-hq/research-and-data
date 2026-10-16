@@ -8,12 +8,15 @@ from typing import Any
 from clue_api.arv2.onboarding_requests import (
     COMPANY_OVERVIEW_SYSTEM_PROMPT,
     CUSTOMER_REVIEWS_SYSTEM_PROMPT,
+    EXISTING_CUSTOMERS_SYSTEM_PROMPT,
     PERSONA_EVIDENCE_SYSTEM_PROMPT,
     PRODUCT_RESEARCH_SYSTEM_PROMPT,
     company_overview_output_schema,
     company_overview_query,
     customer_reviews_output_schema,
     customer_reviews_query,
+    existing_customers_output_schema,
+    existing_customers_query,
     persona_evidence_output_schema,
     product_research_output_schema,
     product_research_query,
@@ -164,3 +167,59 @@ def test_the_persona_evidence_schema_fits_the_search_limits() -> None:
     passage = schema["properties"]["passages"]["items"]
     assert passage["required"] == ["quote", "speaker_role"]
     assert not {"url", "citations", "source_url"} & set(passage["properties"])
+
+
+def test_the_customers_query_names_the_seller_and_where_to_look() -> None:
+    query = existing_customers_query("Alt Carbon", "altcarbon.com")
+    for part in (
+        "Alt Carbon",
+        "altcarbon.com",
+        "what buying from",
+        "sitemap",
+        "logo walls",
+        "press releases",
+        "purchase trackers or registries",
+    ):
+        assert part in query
+
+
+def test_the_customers_prompt_states_the_non_negotiables() -> None:
+    for part in (
+        "investors",
+        "integration partners",
+        "competitors",
+        "same logo wall",
+        "named on a page",
+        "brand domains",
+        "otherwise leave it out",
+    ):
+        assert part in EXISTING_CUSTOMERS_SYSTEM_PROMPT
+
+
+def test_the_customers_schema_bounds_lists_and_forbids_extras() -> None:
+    schema = existing_customers_output_schema()
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["customers", "seller_domains"]
+    customers = schema["properties"]["customers"]
+    assert customers["maxItems"] == 300
+    item = customers["items"]
+    assert item["additionalProperties"] is False
+    assert item["required"] == ["name", "domains", "relationship", "evidence_kind", "quote"]
+    assert item["properties"]["relationship"]["enum"] == [
+        "direct",
+        "through_coalition",
+        "through_marketplace",
+        "weak_mention",
+    ]
+    assert item["properties"]["evidence_kind"]["enum"] == [
+        "logo_wall",
+        "case_study",
+        "testimonial",
+        "press",
+        "review",
+        "tracker",
+        "other",
+    ]
+    assert item["properties"]["domains"]["maxItems"] == 10
+    assert item["properties"]["via"]["type"] == ["string", "null"]
+    assert schema["properties"]["seller_domains"]["maxItems"] == 10

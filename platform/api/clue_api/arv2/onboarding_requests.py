@@ -17,12 +17,15 @@ from typing import Any
 __all__ = [
     "COMPANY_OVERVIEW_SYSTEM_PROMPT",
     "CUSTOMER_REVIEWS_SYSTEM_PROMPT",
+    "EXISTING_CUSTOMERS_SYSTEM_PROMPT",
     "PERSONA_EVIDENCE_SYSTEM_PROMPT",
     "PRODUCT_RESEARCH_SYSTEM_PROMPT",
     "company_overview_output_schema",
     "company_overview_query",
     "customer_reviews_output_schema",
     "customer_reviews_query",
+    "existing_customers_output_schema",
+    "existing_customers_query",
     "persona_evidence_output_schema",
     "product_research_output_schema",
     "product_research_query",
@@ -374,6 +377,89 @@ def customer_reviews_output_schema() -> dict[str, Any]:
                 },
             },
             "not_found": _string_list(10),
+        },
+    }
+
+
+# -- existing customers (spec 2026-10-16-discovery-excludes-seller-customers §4.1) ----------------
+
+
+def existing_customers_query(company_name: str, domain: str) -> str:
+    return (
+        f"Find every company that is an existing customer of {company_name} ({domain}). First work "
+        f"out what buying from {company_name} means. Then read {company_name}'s own site: its "
+        "sitemap, customers and case-study pages, press releases, news and logo walls. Then search "
+        "announcements by buyers themselves, news coverage, reviews, and the industry's own "
+        "purchase trackers or registries. List every customer found, with every website domain it "
+        "uses."
+    )
+
+
+EXISTING_CUSTOMERS_SYSTEM_PROMPT = (
+    "List only companies that buy or use the product, directly or through a buying coalition or "
+    "marketplace; name the coalition or marketplace in via. Leave out investors, grant-givers, "
+    "registries, technology and integration partners, suppliers and competitors, even when they "
+    "appear on the same logo wall. Every customer must be named on a page you found; never infer a "
+    "customer from its industry. Give every website domain the customer uses, a group's brand "
+    "domains as well as its corporate one. Check that each domain's website is really that "
+    'company; otherwise leave it out. Mark a sweeping claim such as "300+ brands including X" as '
+    "weak_mention. Quote verbatim, at most 40 words. Also list every domain the seller itself uses "
+    "in seller_domains."
+)
+
+
+def existing_customers_output_schema() -> dict[str, Any]:
+    """Spec §4.1. An Agent request, so the full JSON Schema is allowed; page citations come back in
+    the run's ``grounding``, never as fields here."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["customers", "seller_domains"],
+        "properties": {
+            "customers": {
+                "type": "array",
+                "maxItems": 300,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["name", "domains", "relationship", "evidence_kind", "quote"],
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "the customer company's name as written on the page",
+                        },
+                        "domains": _string_list(
+                            10, "a website domain the customer uses, e.g. marriott.com"
+                        ),
+                        "relationship": {
+                            "type": "string",
+                            "enum": [
+                                "direct",
+                                "through_coalition",
+                                "through_marketplace",
+                                "weak_mention",
+                            ],
+                        },
+                        "via": _nullable(
+                            "string", description="the coalition or marketplace, when there is one"
+                        ),
+                        "evidence_kind": {
+                            "type": "string",
+                            "enum": [
+                                "logo_wall",
+                                "case_study",
+                                "testimonial",
+                                "press",
+                                "review",
+                                "tracker",
+                                "other",
+                            ],
+                        },
+                        "quote": {"type": "string", "description": "verbatim, 40 words max"},
+                    },
+                },
+            },
+            "seller_domains": _string_list(10, "a website domain the seller itself uses"),
         },
     }
 
