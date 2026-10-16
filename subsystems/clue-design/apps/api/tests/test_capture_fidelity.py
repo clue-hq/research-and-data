@@ -257,3 +257,11 @@ def test_an_icon_painted_through_a_gradient_or_in_a_translucent_colour_is_still_
     cleaned = clean_icon_svg(info["svg"])
     assert cleaned is not None and "url(" not in cleaned, info["svg"]
     assert 'stroke="#FFFFFF80"' in cleaned, cleaned
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_8_web_component_and_iframe_ctas_are_measured_with_their_hover(engine: str) -> None:
+    buttons = _buttons(_run(engine, "shadow_iframe_anim.html"))
+    assert "solid.047464" in buttons and "solid.1565c0" in buttons, sorted(buttons)
+    assert buttons["solid.047464"].hover is not None and buttons["solid.047464"].hover.background == "#035A4E"
+    assert buttons["solid.1565c0"].hover is not None and buttons["solid.1565c0"].hover.background == "#0D47A1"

@@ -329,12 +329,34 @@ GEOMETRY_JS = r"""
     link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer') && !blockAnchor(el),
   };
 
+  // Where the page's elements live (S6-8): the document, every open shadow root, and every
+  // same-origin iframe's document (a cross-origin one cannot be read, by design). Bounded.
+  const ROOTS = (() => {
+    const roots = [document];
+    for (let i = 0; i < roots.length && roots.length < 64; i++) {
+      let all = [];
+      try { all = roots[i].querySelectorAll('*'); } catch (e) { continue; }
+      for (const el of all) {
+        if (roots.length >= 64) break;
+        if (el.shadowRoot) roots.push(el.shadowRoot);
+        if (el.tagName === 'IFRAME') {
+          try { const doc = el.contentDocument; if (doc && doc.documentElement) roots.push(doc); } catch (e) { /* cross-origin */ }
+        }
+      }
+    }
+    return roots;
+  })();
+  const deepAll = (selector) => {
+    const out = [];
+    for (const root of ROOTS) { try { out.push(...root.querySelectorAll(selector)); } catch (e) { /* bad selector */ } }
+    return out;
+  };
+
   const seen = new Set();
   const surfaces = [];
   for (const [cls, selector] of CLASSES) {
     let taken = 0;
-    let nodes = [];
-    try { nodes = Array.from(document.querySelectorAll(selector)); } catch (e) { nodes = []; }
+    const nodes = deepAll(selector);
     for (const el of nodes) {
       if (taken >= MAX_PER_CLASS || surfaces.length >= MAX_SURFACES) break;
       if (seen.has(el)) continue;

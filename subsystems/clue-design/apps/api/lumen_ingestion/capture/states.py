@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 from typing import Any
 
@@ -439,9 +440,46 @@ async def _settled(handle: Any) -> dict:
     return previous
 
 
-async def _force(cdp: Any, root: int, idx: int, classes: list[str]) -> None:
-    node = await cdp.send("DOM.querySelector", {"nodeId": root, "selector": f'[data-lumen-probe="{idx}"]'})
-    await cdp.send("CSS.forcePseudoState", {"nodeId": node["nodeId"], "forcedPseudoClasses": classes})
+#: Finds a probed element wherever GEOMETRY_JS found it — the document, an open shadow root, a
+#: same-origin iframe — for CDP, whose DOM.querySelector stops at shadow and frame boundaries.
+_DEEP_FIND_JS = r"""
+(() => {
+  const selector = %s;
+  const roots = [document];
+  for (let i = 0; i < roots.length && roots.length < 64; i++) {
+    const hit = roots[i].querySelector(selector);
+    if (hit) return hit;
+    for (const el of roots[i].querySelectorAll('*')) {
+      if (el.shadowRoot) roots.push(el.shadowRoot);
+      if (el.tagName === 'IFRAME') { try { const d = el.contentDocument; if (d) roots.push(d); } catch (e) {} }
+    }
+  }
+  return null;
+})()
+"""
+
+
+async def _probe_handle(page: Any, idx: int) -> Any:
+    """The probed element's handle, in whichever frame holds it (Playwright's CSS engine pierces open
+    shadow roots within a frame)."""
+    selector = f'[data-lumen-probe="{idx}"]'
+    for frame in page.frames:
+        handle = await frame.query_selector(selector)
+        if handle is not None:
+            return handle
+    return await page.locator(selector).element_handle(timeout=HOVER_TIMEOUT_MS)
+
+
+async def _node_id(cdp: Any, idx: int) -> int:
+    found = await cdp.send("Runtime.evaluate", {"expression": _DEEP_FIND_JS % json.dumps(f'[data-lumen-probe="{idx}"]')})
+    object_id = (found.get("result") or {}).get("objectId")
+    if not object_id:
+        raise LookupError(f"probe {idx} not found for a forced state")
+    return (await cdp.send("DOM.requestNode", {"objectId": object_id}))["nodeId"]
+
+
+async def _force(cdp: Any, idx: int, classes: list[str]) -> None:
+    await cdp.send("CSS.forcePseudoState", {"nodeId": await _node_id(cdp, idx), "forcedPseudoClasses": classes})
 
 
 async def _pointer_away(page: Any, handle: Any) -> None:
@@ -471,9 +509,9 @@ async def _restore(handle: Any, script: str, prior: Any) -> None:
         pass
 
 
-async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: float) -> dict:
+async def _probe_one(page: Any, cdp: Any, idx: int, deadline: float) -> dict:
     _in_time(deadline)
-    handle = await page.locator(f'[data-lumen-probe="{idx}"]').element_handle(timeout=HOVER_TIMEOUT_MS)
+    handle = await _probe_handle(page, idx)
     motion = await handle.evaluate(MOTION_JS)  # reads the transitions, so before they are frozen
     priors = await handle.evaluate_handle(FREEZE_JS)  # the animations themselves, so the thaw finds them
     try:
@@ -487,21 +525,24 @@ async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int, deadline: 
         except Exception:  # noqa: BLE001 — covered or pointer-proof: read the CSS hover
             if cdp is None:
                 raise
-            await _force(cdp, root, idx, ["hover"])
+            await _force(cdp, idx, ["hover"])
             hover = await _look(handle)
-            await _force(cdp, root, idx, [])
+            await _force(cdp, idx, [])
             record["how"] = "forced"
         record["hover"] = look_delta(rest, hover)
         if cdp is not None:
-            _in_time(deadline)
-            await _force(cdp, root, idx, ["hover", "active"])
-            record["pressed"] = look_delta(rest, await _look(handle))
-            await _force(cdp, root, idx, [])
-            await _pointer_away(page, handle)
-            _in_time(deadline)
-            await _force(cdp, root, idx, ["focus", "focus-visible"])
-            record["focus"] = look_delta(rest, await _look(handle))
-            await _force(cdp, root, idx, [])
+            try:
+                _in_time(deadline)
+                await _force(cdp, idx, ["hover", "active"])
+                record["pressed"] = look_delta(rest, await _look(handle))
+                await _force(cdp, idx, [])
+                await _pointer_away(page, handle)
+                _in_time(deadline)
+                await _force(cdp, idx, ["focus", "focus-visible"])
+                record["focus"] = look_delta(rest, await _look(handle))
+                await _force(cdp, idx, [])
+            except LookupError:
+                pass  # a probe CDP cannot reach keeps its rest and hover reads
         await _pointer_away(page, handle)
         _in_time(deadline)
         prior = await handle.evaluate(DISABLE_JS)
@@ -551,12 +592,11 @@ async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None,
     surfaces = geometry.get("surfaces") if isinstance(geometry, dict) else None
     targets = state_targets(surfaces if isinstance(surfaces, list) else [])
     cdp = None
-    root: int | None = None
     try:
         cdp = await page.context.new_cdp_session(page)
         await cdp.send("DOM.enable")
         await cdp.send("CSS.enable")
-        root = (await cdp.send("DOM.getDocument", {"depth": 0}))["root"]["nodeId"]
+        await cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})  # DOM.requestNode needs it
     except Exception as error:  # noqa: BLE001
         cdp = None
         diagnostics.append(_diag("LUMI0543", "warning", f"pressed and focus states not measured (no CDP session): {error}"))
@@ -568,7 +608,7 @@ async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None,
                 break
             for idx in candidates:
                 try:
-                    result["styles"].append(await _probe_one(page, cdp, root, idx, deadline))
+                    result["styles"].append(await _probe_one(page, cdp, idx, deadline))
                     break
                 except _PastDeadline:  # the style is dropped whole; the check above ends the pass
                     result["truncated"] = True
