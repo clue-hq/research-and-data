@@ -50,6 +50,7 @@ from . import (
     document_thumbnails,
     image_cache,
     image_provider,
+    logo_search,
     web_export,
     web_pdf,
 )
@@ -203,6 +204,8 @@ from .models import (
     GenerateAssetRequest,
     GenerateQrRequest,
     GenerateBrandKitRequest,
+    LogoSaveRequest,
+    LogoSearchRequest,
     IngestWebsiteRequest,
     OnboardAdAssetsRequest,
     PreflightRequest,
@@ -7032,6 +7035,81 @@ def create_app(
             "enrichment": DescriptionStore(workspace_id=repo.workspace_id).get_many(
                 [stored["asset"]["id"]]).get(stored["asset"]["id"]),
         }
+
+    def _logo_search_outcome(repo: HybridRepository, url: str):
+        """The shared logo lookup for one request: cache, Brandfetch, the official-site ladder,
+        the arbiter. None when no source could be reached or attributed to the company."""
+        try:
+            from lumen_agent.tools import logo_fetch
+        except ImportError as error:  # the API can be deployed without the agent runtime
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "logo_search.unavailable", "message": "Logo search is not available here."},
+            ) from error
+        from lumen_ingestion.capture.net import CaptureError
+
+        try:
+            return logo_fetch.fetch_logo_family(
+                url, cache=DurableLogoFamilyCache(blobs=blob_store(repo))
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "logo_search.bad_url", "message": "Enter a website, like stripe.com."},
+            ) from error
+        except CaptureError as error:
+            log_event(api_logger, logging.INFO, "logo_search_unreachable", code=error.code)
+            return None
+
+    @app.post("/assets/logo-search")
+    def search_logos(
+        payload: LogoSearchRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """The asset library's Logo search: every version the lookup found, as inline previews.
+        Saves nothing (`logo_search.py`). A sync def, so the slow lookup runs in the threadpool;
+        the Brandfetch call it may make lands on this request's spend scope."""
+        with _request_spend_scope(store_workspace_id(repo)):
+            outcome = _logo_search_outcome(repo, payload.url)
+        return {"schema_version": 1, **logo_search.search_payload(outcome, query=payload.url)}
+
+    @app.post("/assets/logo-search/save")
+    def save_searched_logo(
+        payload: LogoSaveRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Register the ONE version the person clicked as a workspace asset; the caller places it.
+        The lookup re-runs and the family cache answers it, so the id the search showed resolves
+        to the same bytes."""
+        with _request_spend_scope(store_workspace_id(repo)):
+            outcome = _logo_search_outcome(repo, payload.url)
+        prepared = logo_search.find_logo(outcome, payload.asset_id)
+        if prepared is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "logo_search.stale",
+                    "message": "That logo is no longer in the search results. Search again.",
+                },
+            )
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        try:
+            result = app.state.core.ingest_asset(**prepared.ingest_kwargs(cache_dir))
+        except CoreError as error:
+            raise core_http_error(error) from error
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            raise HTTPException(
+                status_code=400,
+                detail={"code": error.get("code"), "message": error.get("message")},
+            )
+        record = (result.get("asset") or {}).get("record") or {}
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
+        stored = _register_asset_record(repo, record)
+        return {"schema_version": 1, "asset": public_asset_record(stored["asset"])}
 
     @app.post("/assets/generate/qr")
     def generate_qr_asset(

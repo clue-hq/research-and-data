@@ -348,6 +348,19 @@ class GenerateQrRequest(BaseModel):
     target_width_mm: Optional[float] = None
 
 
+class LogoSearchRequest(BaseModel):
+    """The asset library's logo search: any company's website or domain."""
+
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class LogoSaveRequest(BaseModel):
+    """Save one version a logo search returned, by its content-addressed id."""
+
+    url: str = Field(min_length=1, max_length=2048)
+    asset_id: str = Field(min_length=1, max_length=200)
+
+
 class GenerateAssetRequest(BaseModel):
     provider: str
     prompt: str = ""
