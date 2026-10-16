@@ -3,17 +3,22 @@
 // buttons, links, cards and motion exactly as the seller's site draws them. Image takes only files
 // from the brand's assets (the validator checks the path); Link, Button and Card point a /route at
 // wherever the site is served.
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { BrandData } from "./brand";
 import { lookNamed } from "./looks";
 import { Button as BrandButton, Eyebrow, Shell, type AnySurface, type Href } from "./sections";
 import { logoFiles } from "./shell";
 
+/** A prop the section marks `.meta({ edit: "inline" })` (S2a-2): text on the published page and in
+ * Preview, but while the marketer edits the page an editable piece of it. Put it into the page as it
+ * is (`{props.headline}`), never handle it as text. The section check types marked props as this. */
+export type EditableText = string | ReactElement;
+
 export type Kit = {
   /** surface: any surface brand.md lists (page, canvas, band-014036). */
   Shell: (props: { surface: AnySurface; children: ReactNode }) => ReactNode;
   /** look: a button style brand.md lists (Buttons); none is the kit's standard button. */
-  Button: (props: { label: string; href: string; surface: AnySurface; look?: string; disabled?: boolean }) => ReactNode;
+  Button: (props: { label: ReactNode; href: string; surface: AnySurface; look?: string; disabled?: boolean }) => ReactNode;
   /** look: a card style brand.md lists (Cards); href makes the whole card a link. */
   Card: (props: { look?: string; href?: string; children: ReactNode }) => ReactNode;
   Eyebrow: (props: { children: ReactNode }) => ReactNode;

@@ -17,6 +17,11 @@
 // Function, raw HTML, cookies, dynamic import, a raw <a>, and the foreign elements <script>,
 // <iframe>, <form>, <object> and <embed>. Without the option the check is exactly the static one.
 //
+// Edit in place (S2a-2, founder 2026-10-16): a prop marked `.meta({ edit: "inline" })` is, while the
+// marketer edits the page, an editable piece of the page and not text. The type check runs over a
+// shadow copy in which every marked prop is typed `EditableText` (string | ReactElement), so a string
+// operation on one is refused; the lint refuses one in a template literal or String(...).
+//
 // D2 (founder, 2026-10-09 and 2026-10-11): this check NEVER imports the section. The props schema,
 // and the rules about it (an id and a surface, no className or style), are read inside the design
 // API's hardened render page (lumen_api.site_render.read_section_schema), never in a platform
@@ -235,6 +240,167 @@ function classTokens(source: string): string[] {
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((t) => t.split(":").pop() ?? t);
 }
 
+// --- Edit in place (S2a-2) -------------------------------------------------------------------------
+
+/** A prop marked `.meta({ edit: "inline" })`: its name, where its schema entry sits in the source and
+ * the zod name it was built with (`z`). */
+type MarkedProp = { name: string; start: number; end: number; zod: string | null };
+
+export const editInPlaceRefusal = (prop: string) =>
+  `"${prop}" is edited in place on the canvas, so while the page is being edited it is not text: put it in the page as it is ({props.${prop}}); for capitals use the uppercase class; for lines, use a list of items`;
+
+const parse = (source: string) => ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+function isEditInlineMeta(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== "meta") return false;
+  const argument = node.arguments[0];
+  return (
+    !!argument &&
+    ts.isObjectLiteralExpression(argument) &&
+    argument.properties.some(
+      (property) =>
+        ts.isPropertyAssignment(property) &&
+        (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) &&
+        property.name.text === "edit" &&
+        (ts.isStringLiteral(property.initializer) || ts.isNoSubstitutionTemplateLiteral(property.initializer)) &&
+        property.initializer.text === "inline",
+    )
+  );
+}
+
+/** Every schema entry whose zod chain carries the marker, anywhere in the file (a list's item
+ * object included). */
+function markedProps(file: ts.SourceFile): MarkedProp[] {
+  const marked: MarkedProp[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))) {
+      let link: ts.Expression = node.initializer;
+      let isMarked = false;
+      while (ts.isCallExpression(link) || ts.isPropertyAccessExpression(link)) {
+        if (isEditInlineMeta(link)) isMarked = true;
+        link = link.expression;
+      }
+      if (isMarked) {
+        marked.push({ name: node.name.text, start: node.initializer.getStart(file), end: node.initializer.getEnd(), zod: ts.isIdentifier(link) ? link.text : null });
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return marked;
+}
+
+/** Every name that holds a marked prop, to the prop it holds: the props themselves, what they are
+ * destructured into (`const { headline: h } = props`) and plain copies (`const h = props.headline`). */
+function markedNames(file: ts.SourceFile, marked: MarkedProp[]): Map<string, string> {
+  const names = new Map(marked.map((prop) => [prop.name, prop.name]));
+  const props = new Set(names.keys());
+  for (let changed = true; changed; ) {
+    changed = false;
+    const visit = (node: ts.Node) => {
+      let alias: string | undefined;
+      let held: string | null = null;
+      if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
+        const property = node.propertyName && (ts.isIdentifier(node.propertyName) || ts.isStringLiteral(node.propertyName)) ? node.propertyName.text : node.name.text;
+        alias = node.name.text;
+        held = props.has(property) ? property : null;
+      } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        // Only a plain copy (`const h = props.headline`); `const n = props.headline ? 1 : 0` is not one.
+        let value: ts.Expression = node.initializer;
+        while (ts.isParenthesizedExpression(value) || ts.isAsExpression(value) || ts.isNonNullExpression(value)) value = value.expression;
+        alias = node.name.text;
+        held = ts.isPropertyAccessExpression(value) && props.has(value.name.text) ? value.name.text : ts.isIdentifier(value) ? (names.get(value.text) ?? null) : null;
+      }
+      if (alias && held && !names.has(alias)) {
+        names.set(alias, held);
+        changed = true;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+  }
+  return names;
+}
+
+/** The marked prop an expression reads, if any: `props.headline`, `item.title`, or a name holding one. */
+function markedReference(node: ts.Node, props: ReadonlySet<string>, names: ReadonlyMap<string, string>): string | null {
+  if (ts.isPropertyAccessExpression(node) && props.has(node.name.text)) return node.name.text;
+  if (ts.isIdentifier(node) && names.has(node.text)) {
+    const parent = node.parent;
+    const isPropertyName =
+      (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+      (ts.isBindingElement(parent) && parent.propertyName === node) ||
+      (ts.isPropertyAssignment(parent) && parent.name === node);
+    if (!isPropertyName) return names.get(node.text) ?? null;
+  }
+  return ts.forEachChild(node, (child) => markedReference(child, props, names) ?? undefined) ?? null;
+}
+
+/** A marked prop inside a template literal or String(...): text the types cannot see is made. */
+function markedPropsMadeText(source: string): string[] {
+  const file = parse(source);
+  const marked = markedProps(file);
+  if (!marked.length) return [];
+  const props = new Set(marked.map((prop) => prop.name));
+  const names = markedNames(file, marked);
+  const found = new Set<string>();
+  const visit = (node: ts.Node) => {
+    const parts = ts.isTemplateExpression(node)
+      ? node.templateSpans.map((span) => span.expression)
+      : ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "String"
+        ? [...node.arguments]
+        : [];
+    for (const part of parts) {
+      const prop = markedReference(part, props, names);
+      if (prop) found.add(prop);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return [...found].map(editInPlaceRefusal);
+}
+
+/** The shadow copy the type check reads: every marked prop's schema entry becomes
+ * `z.custom<EditableText>()`, on the same lines, so line numbers survive. Null when nothing is marked. */
+function editInPlaceShadow(source: string): string | null {
+  const file = parse(source);
+  const marked = markedProps(file).filter((prop) => prop.zod);
+  if (!marked.length) return null;
+  let shadow = source;
+  for (const prop of [...marked].sort((a, b) => b.start - a.start)) {
+    const lines = source.slice(prop.start, prop.end).split("\n").length - 1;
+    shadow = `${shadow.slice(0, prop.start)}${prop.zod}.custom<__ClueEditableText>()${"\n".repeat(lines)}${shadow.slice(prop.end)}`;
+  }
+  // On line 1, so no line moves.
+  return `import type { EditableText as __ClueEditableText } from "@/puck/agent-kit"; ${shadow}`;
+}
+
+/** Reads a type error the shadow raised on a marked prop as the refusal that names it; null for any
+ * other error. Errors sit on the lines of the file as written (the shadow keeps them). */
+function editInPlaceErrors(source: string): (line: number, column: number, message: string) => string | null {
+  const file = parse(source);
+  const marked = markedProps(file);
+  const props = new Set(marked.map((prop) => prop.name));
+  const names = markedNames(file, marked);
+  return (line, column, message) => {
+    if (!marked.length || !/EditableText|ReactElement/.test(message) || line - 1 >= file.getLineStarts().length) return null;
+    const position = file.getPositionOfLineAndCharacter(line - 1, column - 1);
+    let node: ts.Node = file;
+    for (let inner: ts.Node | undefined = file; inner; ) {
+      node = inner;
+      inner = node.getChildren(file).find((child) => child.getStart(file) <= position && position < child.getEnd());
+    }
+    // From the token the error points at, out to its statement or element: the first marked prop read.
+    for (let at: ts.Node | undefined = node; at && !ts.isSourceFile(at) && !ts.isBlock(at); at = at.parent) {
+      const prop = markedReference(at, props, names);
+      if (prop) return editInPlaceRefusal(prop);
+      if (ts.isStatement(at) || ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)) break;
+    }
+    return null;
+  };
+}
+
 export function lint(source: string, options: LintOptions = {}): string[] {
   const errors: string[] = [];
   for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
@@ -288,6 +454,7 @@ export function lint(source: string, options: LintOptions = {}): string[] {
         : `look "${look}" on kit.Card is not one of this brand's card styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Cards)`);
     }
   }
+  errors.push(...markedPropsMadeText(source));
   return errors;
 }
 
@@ -297,12 +464,18 @@ export function typeCheck(file: string): string[] {
   // must sit where zod and react resolve (inside apps/frontend), as in the spike.
   const root = fileURLToPath(new URL("..", import.meta.url));
   const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc");
+  const source = fs.readFileSync(file, "utf-8");
+  // S2a-2: marked props are checked as EditableText in a shadow copy beside the file; the file itself
+  // is left as written (it is what gets bundled).
+  const shadow = editInPlaceShadow(source);
+  const checked = shadow === null ? file : path.join(dir, `${path.basename(file, ".tsx")}.edit-in-place.tsx`);
+  if (shadow !== null) fs.writeFileSync(checked, shadow);
   fs.writeFileSync(
     path.join(dir, "tsconfig.json"),
     JSON.stringify({
       extends: path.relative(dir, path.join(root, "tsconfig.json")),
       compilerOptions: { incremental: false, noEmit: true },
-      include: [path.basename(file)],
+      include: [path.basename(checked)],
       // Inheriting an exclude that covers the file's directory would silently type-check nothing.
       exclude: [],
     }),
@@ -312,7 +485,16 @@ export function typeCheck(file: string): string[] {
     return [];
   } catch (error) {
     const out = String((error as { stdout?: Buffer }).stdout ?? error);
-    return out.split("\n").filter((l) => l.includes("error TS")).slice(0, 8).map((l) => `type error: ${l.replace(/^.*?\(/, "(")}`);
+    const named = editInPlaceErrors(source);
+    const errors: string[] = [];
+    for (const line of out.split("\n").filter((l) => l.includes("error TS"))) {
+      const at = /\((\d+),(\d+)\): error TS\d+: (.*)$/.exec(line);
+      const error = (at && named(Number(at[1]), Number(at[2]), at[3])) || `type error: ${line.replace(/^.*?\(/, "(")}`;
+      if (!errors.includes(error)) errors.push(error);
+    }
+    return errors.slice(0, 8);
+  } finally {
+    if (shadow !== null) fs.rmSync(checked, { force: true });
   }
 }
 

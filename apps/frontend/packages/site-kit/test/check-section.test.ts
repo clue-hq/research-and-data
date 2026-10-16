@@ -299,3 +299,84 @@ test("the making-a-section-interactive skill's example lints clean in interactiv
   assert.ok(example, "the skill has a tsx example");
   assert.deepEqual(lint(example, { ...lintOptionsFor(kitBrand("garner")), interactive: true }), []);
 });
+
+// S2a-2 (option B): a prop marked .meta({ edit: "inline" }) edits in place on the canvas, so while the
+// page is edited the section receives an editable piece of the page, not text. The check refuses a
+// section that handles such a prop as text (it would crash in Edit mode only) and says what to write.
+const MARKED = (pre: string, body: string) => `import { z } from "zod";
+import type { Kit } from "@/puck/agent-kit";
+
+export const schema = z.object({
+  id: z.string(),
+  surface: z.string(),
+  headline: z.string().min(1).meta({ edit: "inline" }),
+  caption: z
+    .string()
+    .meta({ edit: "inline" }),
+  cta: z.string().meta({ edit: "inline" }),
+  ctaHref: z.string(),
+  photo: z.string(),
+  label: z.string(),
+  items: z.array(z.object({ title: z.string().meta({ edit: "inline" }) })),
+}).strict();
+
+export function render(props: z.infer<typeof schema>, kit: Kit) {
+  ${pre}
+  return (
+    <kit.Shell surface={props.surface}>
+      ${body}
+    </kit.Shell>
+  );
+}
+`;
+const inPlace = (prop: string) =>
+  `"${prop}" is edited in place on the canvas, so while the page is being edited it is not text: put it in the page as it is ({props.${prop}}); for capitals use the uppercase class; for lines, use a list of items`;
+
+function typeCheckSource(name: string, source: string): string[] {
+  const dir = fileURLToPath(new URL(`../.section-check/edit-in-place-${name}`, import.meta.url));
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    const file = path.join(dir, `${name}.tsx`);
+    fs.writeFileSync(file, source);
+    const errors = typeCheck(file);
+    assert.equal(fs.readFileSync(file, "utf-8"), source, "the checked file is left exactly as written");
+    return errors;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("S2a-2: string operations on a marked prop are refused by the type check, naming the prop", () => {
+  const cases: [string, string, string, string][] = [
+    ["Upper", "", '<h2 className="font-title text-title">{props.headline.toUpperCase()}</h2>', "headline"],
+    ["Split", "", '{props.items.map((item, n) => <p key={n} className="font-body text-body">{item.title.split(" ")}</p>)}', "title"],
+    ["Destructured", "const { headline } = props;\n  const trimmed = headline.trim();", '<h2 className="font-title text-title">{trimmed}</h2>', "headline"],
+    ["Alias", "const h = props.headline;\n  const size = h.length;", '<h2 className="font-title text-title">{size}</h2>', "headline"],
+    ["ImageAlt", "", "<kit.Image src={props.photo} alt={props.caption} />", "caption"],
+  ];
+  for (const [name, pre, body, prop] of cases) {
+    const source = MARKED(pre, body);
+    assert.deepEqual(lint(source), [], `${name}: the lint passes; the type check refuses`);
+    assert.deepEqual(typeCheckSource(name, source), [inPlace(prop)], name);
+  }
+});
+
+test("S2a-2: a marked prop in a template literal or String(...) is refused by the lint", () => {
+  assert.deepEqual(lint(MARKED("", '<h2 className="font-title text-title">{`${props.headline}!`}</h2>')), [inPlace("headline")]);
+  assert.deepEqual(lint(MARKED("", '<h2 className="font-title text-title">{String(props.headline)}</h2>')), [inPlace("headline")]);
+  assert.deepEqual(lint(MARKED("const { cta } = props;", '<h2 className="font-title text-title">{`Go: ${cta}`}</h2>')), [inPlace("cta")]);
+  assert.deepEqual(lint(MARKED("", '<h2 className="font-title text-title">{`${props.label}!`}</h2>')), [], "an unmarked prop is text");
+  assert.deepEqual(lint(MARKED("const count = props.headline ? 1 : 0;", '<h2 className="font-title text-title">{`${count}!`}</h2>')), [], "a value made from a marked prop is not the prop");
+});
+
+test("S2a-2: a marked prop put in the page as it is, or as a button's words, passes; unmarked props are text", () => {
+  const source = MARKED(
+    "",
+    `<h2 className="font-title text-title uppercase">{props.headline}</h2>
+      <p className="font-body text-body">{props.label.toUpperCase()}</p>
+      {props.items.map((item, n) => <p key={n} className="font-body text-body">{item.title}</p>)}
+      <kit.Button label={props.cta} href={props.ctaHref} surface={props.surface} />`,
+  );
+  assert.deepEqual(lint(source), []);
+  assert.deepEqual(typeCheckSource("Good", source), []);
+});

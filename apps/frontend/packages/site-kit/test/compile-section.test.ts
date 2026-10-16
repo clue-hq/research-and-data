@@ -105,3 +105,14 @@ test("interactive: an accordion with state and a click handler compiles; without
   assert.equal(fixed.ok, false);
   assert.ok(!fixed.ok && fixed.errors.includes('"onClick" is an event handler; a section is static'), JSON.stringify(fixed));
 });
+
+test("S2a-2: a section with props marked to edit in place compiles from its own schema, markers kept", async () => {
+  const source = EXAMPLE.replace("quote: z.string().min(1),", 'quote: z.string().min(1).meta({ edit: "inline" }),');
+  assert.notEqual(source, EXAMPLE);
+  const result = await compileSection({ name: "QuoteBand", source, brand: garner() });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  if (result.ok) {
+    assert.match(result.moduleJs, /\.meta\(\{\s*edit:\s*"inline"\s*\}\)/);
+    assert.doesNotMatch(result.moduleJs, /custom/);
+  }
+});
