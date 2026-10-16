@@ -150,8 +150,10 @@ class _Store:
         prior_websets: Sequence[str] = (),
         candidates: Sequence[CandidateRow] = (),
         searches: Sequence[SearchRow] = (),
+        seller_domain: str | None = None,
     ) -> None:
         self.run = run
+        self.seller = seller_domain
         self.found_before = found_before
         self.prior_websets = tuple(prior_websets)
         self.candidates = list(candidates)
@@ -227,6 +229,11 @@ class _Store:
     async def record_verdicts(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("record_verdicts", kwargs))
+
+    async def seller_domain(self, conn: Any, *, workspace_id: str, brand_id: str) -> str | None:
+        del conn
+        self.events.append(("seller_domain", {"workspace_id": workspace_id, "brand_id": brand_id}))
+        return self.seller
 
     async def list_candidates(self, conn: Any, *, run_id: UUID) -> tuple[CandidateRow, ...]:
         del conn
@@ -545,8 +552,11 @@ def _answer(payload: object, *, citations: Sequence[ExaCitation] = ()) -> ExaAns
 class _FakeExa:
     """``answer`` scripted by the *question*: the website ask, or the gate whose rule it quotes."""
 
-    def __init__(self, respond: Callable[[str], ExaAnswerResult]) -> None:
+    def __init__(
+        self, respond: Callable[[str], ExaAnswerResult], *, search_hits: Sequence[Any] = ()
+    ) -> None:
         self._respond = respond
+        self.search_hits = list(search_hits)
         self.queries: list[str] = []
         self.labels: list[str] = []
         self.models: list[str] = []
@@ -556,6 +566,10 @@ class _FakeExa:
         self.labels.append(str(kwargs.get("label", "")))
         self.models.append(str(kwargs.get("model", "")))
         return self._respond(query)
+
+    def search(self, query: str, **kwargs: Any) -> Any:
+        del query, kwargs
+        return SimpleNamespace(status=200, results=self.search_hits)
 
     def gate_queries(self) -> list[str]:
         return [query for query in self.queries if "Test to verify:" in query]
@@ -2740,3 +2754,188 @@ def test_stop_mid_webset_cancels_it_reads_it_once_more_and_keeps_what_was_verifi
     (ended,) = store.named("end_discovery_run")
     assert (ended["status"], ended["end_reason"]) == ("stopped", "stopped")
     assert ended["summary"]["added"] == 1
+
+
+# -- the brief's exclude list (spec 2026-10-16-discovery-excludes-seller-customers §4.6) ---------
+
+
+def _excluding(*entries: tuple[str, str], **roles: str) -> dict[str, Any]:
+    return {
+        **_brief_json(**roles),
+        "exclude": [{"name": name, "domains": [domain]} for name, domain in entries],
+    }
+
+
+def _brief_excluded(store: _Store) -> list[CandidateRow]:
+    return [
+        event["row"]
+        for event in store.named("upsert_candidate")
+        if event["row"].disposition == "excluded_by_brief"
+    ]
+
+
+_PASSES = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+
+
+def test_a_webset_item_on_the_exclude_list_is_recorded_and_never_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Marriott", "https://www.marriott.com"),
+                _item("Probook", "https://probook.ai"),
+            )
+        ]
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert (excluded.domain, excluded.excluded_by_entry, excluded.name) == (
+        "marriott.com",
+        "Marriott",
+        "Marriott",
+    )
+    # Not one paid question about Marriott: no website answer and no gate.
+    assert not any("Marriott" in query for query in exa.queries)
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 1
+
+
+def test_a_search_hit_on_the_exclude_list_is_recorded_before_any_spend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    brief = {**_excluding(("Marriott", "marriott.com")), "source": "search"}
+    run = _run_row(brief=brief, source="search", target_count=1)
+    store = _Store(run)
+    hits = [SimpleNamespace(url="https://www.marriott.com/", title="Marriott", text="")]
+    exa = _FakeExa(_responder({}), search_hits=hits)
+    handler, *_ = _handler(store, exa=exa, websets=_FakeWebsets(), monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert excluded.domain == "marriott.com"
+    assert exa.queries == []
+
+
+def test_a_verified_domain_on_the_list_is_caught_after_a_redirecting_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Probook", "probook.ai")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert excluded.domain == "probook.ai"
+    # The one website answer that found the real domain; no gate.
+    assert len(exa.queries) == 1
+    assert exa.gate_queries() == []
+
+
+def test_the_sellers_onboarding_domain_is_skipped_without_any_exclude(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run, seller_domain="conduit.ai")
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(items_results=[_items(_item("Conduit", "https://conduit.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (excluded,) = _brief_excluded(store)
+    assert (excluded.domain, excluded.excluded_by_entry) == ("conduit.ai", "seller")
+    assert store.named("seller_domain")[0] == {"workspace_id": WORKSPACE, "brand_id": "brd-1"}
+
+
+def test_no_onboarding_run_means_only_the_brief_excludes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run, seller_domain=None)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert _brief_excluded(store) == []
+
+
+def test_a_resumed_run_recounts_its_brief_exclusions_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    earlier = CandidateRow(
+        candidate_id=uuid4(),
+        run_id=run.run_id,
+        workspace_id=WORKSPACE,
+        project_id=PROJECT,
+        pass_="strict",
+        domain="marriott.com",
+        websets_url="https://www.marriott.com",
+        name="Marriott",
+        provider_snapshot={"websets_domain": "marriott.com"},
+        disposition="excluded_by_brief",
+        excluded_by_entry="Marriott",
+    )
+    store = _Store(run, candidates=[earlier])
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(items_results=[_items(_item("Marriott", "https://www.marriott.com"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert _brief_excluded(store) == []
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 1
+
+
+def test_an_old_run_without_exclude_resumes_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    brief = _brief_json()
+    assert "exclude" not in brief
+    run = _run_row(brief=brief)
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _PASSES)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.ai"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert store.named("finish_discovery_run")[0]["receipt"]["excluded_by_brief"] == 0
+
+
+def test_the_summary_counts_brief_exclusions(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com"), ("Hilton", "hilton.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Marriott", "https://www.marriott.com"),
+                _item("Hilton", "https://hilton.com"),
+            )
+        ]
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (ended,) = store.named("end_discovery_run")
+    summary = ended["summary"]
+    assert summary["excluded_by_brief"] == 2
+    assert summary["excluded_by_brief_example"] == "Marriott"
+    assert (
+        "Excluded by the brief (existing customers or the seller): 2 — e.g. Marriott."
+        in driver.summary_message(run.run_id, summary)
+    )

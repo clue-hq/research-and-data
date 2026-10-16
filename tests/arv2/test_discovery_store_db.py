@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import date
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -34,6 +36,7 @@ from clue_api.arv2.discovery_store import (
     record_wake_turn,
     release_discovery_for_turn,
     request_discovery_stop,
+    seller_domain,
     stop_requested,
     suspend_discovery_run,
     upsert_candidate,
@@ -42,6 +45,7 @@ from clue_core import ProjectPhase, ProjectRunId
 from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_spine import Project
+from tests._identity import seed_principal
 from tests._workspace import seed_project
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -657,5 +661,86 @@ def test_a_stopped_run_is_never_walked_back_into_the_queue() -> None:
             held = await read_discovery_run(conn, run_id=row.run_id)
             assert held is not None and held.status == "stopped"
             assert await begin_discovery_run(conn, run_id=row.run_id) is None
+
+    run_async(scenario())
+
+
+def test_brief_exclusions_are_not_found_before_for_later_runs() -> None:
+    """Spec 2026-10-16 §4.6: a brief-excluded company was never judged, so the next run decides it
+    from its own brief — a person's correction to the customer page takes effect there."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            first = _run(project, request_sha256="5" * 64)
+            await create_discovery_run(conn, first)
+            await upsert_candidate(
+                conn,
+                CandidateRow(
+                    candidate_id=uuid4(),
+                    run_id=first.run_id,
+                    workspace_id=first.workspace_id,
+                    project_id=first.project_id,
+                    pass_="strict",
+                    domain="marriott.com",
+                    websets_url="https://www.marriott.com",
+                    name="Marriott",
+                    provider_snapshot={},
+                    disposition="excluded_by_brief",
+                    excluded_by_entry="Marriott",
+                ),
+            )
+            (row,) = await list_candidates(conn, run_id=first.run_id)
+            assert (row.disposition, row.excluded_by_entry) == ("excluded_by_brief", "Marriott")
+            await _release(conn, first)
+            second = _run(project, request_sha256="6" * 64)
+            await create_discovery_run(conn, second)
+            assert (
+                await project_found_domains(
+                    conn,
+                    workspace_id=first.workspace_id,
+                    project_id=first.project_id,
+                    before_run_id=second.run_id,
+                )
+                == frozenset()
+            )
+
+    run_async(scenario())
+
+
+def test_seller_domain_reads_the_latest_completed_full_run() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            assert (
+                await seller_domain(conn, workspace_id=WORKSPACE, brand_id=project.brand_id) is None
+            )
+            user = "usr_seller_domain"
+            await seed_principal(conn, workspace_id=WORKSPACE, user_id=user)
+            for domain, status, at in (
+                ("old.example", "completed", date(2026, 1, 1)),
+                ("https://www.Conduit.ai/", "completed_with_gaps", date(2026, 2, 1)),
+                ("newer-but-failed.example", "failed", date(2026, 3, 1)),
+            ):
+                await conn.execute(
+                    text(
+                        "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, "
+                        " company_domain, requested_by_user_id, status, requested_at, finished_at) "
+                        "VALUES (:run, :ws, :brand, :domain, :user, :status, :at, :at)"
+                    ),
+                    {
+                        "run": uuid4(),
+                        "ws": WORKSPACE,
+                        "brand": project.brand_id,
+                        "domain": domain,
+                        "user": user,
+                        "status": status,
+                        "at": at,
+                    },
+                )
+            assert (
+                await seller_domain(conn, workspace_id=WORKSPACE, brand_id=project.brand_id)
+                == "conduit.ai"
+            )
 
     run_async(scenario())
