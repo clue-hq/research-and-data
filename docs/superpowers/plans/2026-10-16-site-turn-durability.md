@@ -1,6 +1,6 @@
 # Site-turn durability (K4-1, K4-5) — plan for founder review
 
-**Status:** draft for review. **Nothing is built until the founder approves this plan.**
+**Status:** APPROVED by the founder 2026-10-16 (option A for point a, and points b–e as recommended): "yes. you can plan and go ahead with their implementation."
 **Findings:** K4-1 and K4-5 in `docs/superpowers/verification/2026-10-14-wave2-contract-review-findings.md`.
 **Founder decisions (2026-10-16):**
 1. A turn taken over after a worker dies **continues** from where it was; nothing finished is redone.
@@ -162,7 +162,7 @@ Out of scope: the old web-document turn path (web documents are being removed), 
 
 | # | Point | Recommendation |
 |---|---|---|
-| a | Lease generations stop repeating. This changes shared fleet code used by every kind of background task, not only site turns. | Yes; the fence is meaningless without it. Covered by tests across task kinds. |
+| a | Lease generations stop repeating. This changes shared fleet code used by every kind of background task, not only site turns. History: the same reset broke research resumes on 2026-08-19 (`_memory/2026-08-19-resume-after-crash-journal-conflict.md`); research worked around it with the task attempt count in its own turn ids and named a monotone per-work generation as "the honest root fix", deferred because it touches every fleet lane. The inline design lane never claims a task, so the attempt count cannot fence it. | **Approved (A):** fix the lease itself; research's workaround keeps working alongside. |
 | b | Deploys can take up to about 11 minutes to roll the `chat` and `design` workers while turns are running. | Accept. With nothing running, deploys are as fast as today. |
 | c | A turn still running at the 10-minute bound is stopped at a step boundary and continued by the next worker. | Yes; this follows from decisions 1 and 3. |
 | d | On a resumed turn, the agent's round and time limits **carry over** rather than restart. | Carry over, so a turn cannot run forever through repeated takeovers. |
