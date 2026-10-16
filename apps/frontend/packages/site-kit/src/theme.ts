@@ -203,11 +203,16 @@ export function themeCss(brand: BrandData): string {
 
   // The root paints the page itself (walk defect 4): a gap between sections, or a section that sets no
   // surface, shows the brand's page colour and text, never the browser's default canvas.
+  // Painting a background made the root cover a clone's background layers drawn at a negative
+  // z-index (Garner's hero video sits at z-index:-4; the hero showed as a grey box, 2026-10-16):
+  // isolation makes the root their stacking context, so they paint above its background and
+  // below the section's content, as they do on the seller's own page.
   const paintsPage = colorOf(brand, "surface.page") !== undefined;
   lines.push(rule(".brand-root", {
     ...root, ...(local.get("surface.page") ?? {}),
     "background-color": paintsPage ? `var(--brand-${colorVar("surface.page")})` : undefined,
     color: paintsPage ? inkOn("surface.page") : undefined,
+    isolation: "isolate",
   }));
   for (const surface of surfaces) lines.push(rule(`.bg-${colorVar(surface)}`, local.get(surface)!));
   for (const role of TYPE_ROLES) lines.push(`.brand-ink-${typeVar(role)}{color:var(--brand-ink-role-${typeVar(role)},currentColor)}`);

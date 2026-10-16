@@ -243,6 +243,34 @@ def test_a_live_screenshot_of_a_page_with_two_different_agent_sections_is_drawn(
         assert png[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_a_clones_background_video_layer_is_painted_above_the_page_colour() -> None:
+    """Garner's captured hero puts its video behind everything (position:absolute; z-index:-4) with
+    a 50% black overlay on top. The page root paints the brand's page colour; it must be the
+    video's stacking context, or that colour is painted OVER the video and the hero is a flat grey
+    box (what the editor and the published page showed, 2026-10-16). A black layer stands in for
+    the video here: under the overlay it stays black, over the page colour it would be grey."""
+
+    from site_kit_support import chromium_available, ensure_site_kit_dist, garner_brand, garner_site
+
+    if not chromium_available():
+        pytest.skip("playwright chromium not installed")
+    ensure_site_kit_dist()
+    brand = garner_brand()
+    brand["clones"]["frag_videohero"] = {
+        "id": "frag_videohero", "role": "hero", "label": "Video hero", "page_url": "https://garnerhealth.com/",
+        "section_index": 0, "wrapper_class": "", "slots": {}, "native_dependencies": [], "viewport_width": 1440,
+        "html": '<section class="vh"><div class="vh-video"></div><div class="vh-overlay"></div><h1 class="vh-h">Keep the plan</h1></section>',
+        "css": ".vh{position:relative;height:600px}.vh-video{position:absolute;inset:0;background:#000;z-index:-4}"
+               ".vh-overlay{position:absolute;inset:0;background:#00000080}.vh-h{position:relative;color:#fff}",
+    }
+    site = garner_site("doc_video_hero")
+    site["pages"]["/"]["content"] = [{"type": "ClonedSection", "props": {"id": "hero", "fragmentId": "frag_videohero", "slots": {}, "replacements": [], "links": []}}]
+    renderer = PlatformSiteRenderer(live=False)
+    html, css, _warnings = renderer.render(site, brand, [], route="/")
+    dark = _dark_share(renderer.screenshot(html, css, width=1440))
+    assert dark > 0.15, f"the video layer is painted under the page colour (dark share {dark:.3f})"
+
+
 def _dark_share(png: bytes) -> float:
     from PIL import Image
 

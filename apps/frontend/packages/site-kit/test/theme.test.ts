@@ -225,6 +225,15 @@ test("walk defect 4: the brand root paints the page colour and its text, so gaps
   assert.match(root, /(?:^|[;{])color:var\(--brand-on-surface-page\)/);
 });
 
+test("the brand root is its own stacking context, so a clone's background video is not painted under the page colour", () => {
+  // Garner's captured hero puts its video at position:absolute; z-index:-4. Since the root paints the
+  // page colour (walk defect 4), a root that is not a stacking context paints that colour OVER the
+  // video: the hero showed as a grey box (2026-10-16). isolation:isolate makes the root the video's
+  // stacking context, so the video paints above the root's background and below the section's content.
+  const root = ruleOf(themeCss(kitBrand("probe.minted")), ".brand-root");
+  assert.match(root, /isolation:isolate/);
+});
+
 test("walk defect 4: the document canvas is the page colour with a matching colour scheme", () => {
   const light = pageCanvasCss(kitBrand("probe.minted"));
   assert.match(light, /^html\{background-color:#[0-9A-F]{6};color:#[0-9A-F]{6,8};color-scheme:light\}$/);
