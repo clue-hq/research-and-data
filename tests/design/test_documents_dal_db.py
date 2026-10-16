@@ -14,6 +14,7 @@ All writes run in rolled-back transactions against the session-migrated DB.
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -284,6 +285,72 @@ def test_scene_birth_without_an_approved_kit_stays_unbranded(require_design_db: 
             )
             assert doc["scene"]["meta"].get("brand_kit") is None
             assert doc["effective_brand_kit_id"] is None
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_every_new_website_document_is_born_noindex_and_a_scene_is_not(
+    require_design_db: None,
+) -> None:
+    """Founder ruling 2026-10-16: every NEW web or site document is born with the durable
+    ``web_noindex``, whichever insert births it (a plain document, a derivation, a template); a
+    scene has no publish surface and stays false. A document that already exists keeps what it
+    holds — nothing here rewrites a row — and only an explicit clear makes a page indexable."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+
+            # A document from before the ruling: an indexable web row, as every old one was born.
+            existing_id = f"web_existing_{uuid4().hex}"
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document (id, workspace_id, title, status, doc_kind,"
+                    " current_scene_json, current_version, web_noindex)"
+                    " VALUES (:d, :w, 'Old', 'draft', 'web', CAST(:s AS jsonb), 0, false)"
+                ),
+                {"d": existing_id, "w": ws, "s": json.dumps(_web_doc(existing_id))},
+            )
+
+            web = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_web_doc(f"web_{uuid4().hex}"), doc_kind="web"
+            )
+            site = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_site_doc(f"site_{uuid4().hex}"), doc_kind="site"
+            )
+            derived = await design_documents.create_document(
+                conn,
+                workspace_id=ws,
+                scene=_web_doc(f"web_derived_{uuid4().hex}"),
+                doc_kind="web",
+                template_document_id=str(web["id"]),
+                template_doc_version=0,
+            )
+            template = await design_documents.create_web_template(
+                conn, workspace_id=ws, web_doc=_web_doc(f"web_template_{uuid4().hex}")
+            )
+            scene = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_scene(f"doc_{uuid4().hex}")
+            )
+            assert [d["web_noindex"] for d in (web, site, derived, template)] == [True] * 4
+            assert scene["web_noindex"] is False
+
+            # The births touched no other row.
+            old = await design_documents.get_document(
+                conn, workspace_id=ws, document_id=existing_id
+            )
+            assert old["web_noindex"] is False
+
+            # "Allow indexing" is the explicit clear, and it holds.
+            cleared = await design_documents.set_web_noindex(
+                conn, workspace_id=ws, document_id=str(web["id"]), enabled=False
+            )
+            assert cleared["web_noindex"] is False
+            again = await design_documents.get_document(
+                conn, workspace_id=ws, document_id=str(web["id"])
+            )
+            assert again["web_noindex"] is False
             await txn.rollback()
 
     run_async(_check())

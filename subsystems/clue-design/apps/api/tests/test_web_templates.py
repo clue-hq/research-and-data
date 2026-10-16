@@ -121,6 +121,31 @@ def test_save_as_template_custom_title(client: TestClient) -> None:
     assert response.json()["title"] == "ABM base"
 
 
+def test_a_template_is_born_noindex_and_its_publish_serves_the_robots_meta(
+    client: TestClient, workspace_id: str
+) -> None:
+    """Founder ruling 2026-10-16: saving as a template births a NEW web document, so it is born
+    with the durable noindex — even when the page it was cloned from was made indexable — and
+    a publish that asks for nothing serves the robots meta."""
+    from conftest import published_html
+
+    document = create_web_document(client)
+    seed_content(client, document["id"])
+    allowed = client.put(f"/documents/{document['id']}/web-noindex", json={"noindex": False})
+    assert allowed.status_code == 200, allowed.text
+
+    template_id = client.post(
+        f"/documents/{document['id']}/web/template", json={}
+    ).json()["document_id"]
+    store = HybridRepository()
+    assert store.require_document(template_id)["web_noindex"] is True
+    assert store.require_document(document["id"])["web_noindex"] is False
+
+    published = client.post(f"/documents/{template_id}/web/publish", json={"slug": "tpl-page"})
+    assert published.status_code == 200, published.text
+    assert '<meta name="robots" content="noindex">' in published_html(workspace_id, "tpl-page")
+
+
 def test_save_as_template_rejects_scene_document(client: TestClient) -> None:
     scene = create_scene_document(client)
     response = client.post(f"/documents/{scene['id']}/web/template", json={})

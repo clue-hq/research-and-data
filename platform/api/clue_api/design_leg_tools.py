@@ -152,7 +152,7 @@ from clue_core import ContactHandoffClaimRef, EntityId
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
-from clue_design.documents import create_document, get_document, set_web_noindex
+from clue_design.documents import create_document, get_document
 from clue_design.errors import DesignNotFoundError
 from clue_obs import get_logger
 from clue_research.identity import get_account
@@ -997,8 +997,8 @@ class OpenDesignLegTool(Tool):
 
         ``account_id`` (@5, spec §3.6) is the design-plane account this page was born for, or
         ``None`` for a generic one. It makes the existing G2 account-card resolution work for
-        chat-born 1:1 pages; nothing in the design runtime reads it. A page born for an account is
-        also born noindex (K6-3, ruling R25-4) — the ABM batch's rule for account pages.
+        chat-born 1:1 pages; nothing in the design runtime reads it. Like every new website
+        document, the page is born noindex — the DAL's one birth rule (founder ruling 2026-10-16).
 
         A workspace listed in ``CLUE_DESIGN_SITE_ENGINE_WORKSPACES`` (website agent on Puck,
         2026-10-09 plan) is born a Puck ``site`` document instead, through the same DAL call
@@ -1038,15 +1038,6 @@ class OpenDesignLegTool(Tool):
                 scene=web_doc,
                 doc_kind="web",
                 account_id=account_id,
-            )
-        if account_id is not None:
-            # K6-3, ruling R25-4: a page made for one account is reachable by its explicit URL and
-            # kept out of search indexes. It is born with the durable noindex the ABM batch stamps
-            # on its account pages (the same column, the same write, the same moment: at birth,
-            # publish or not), so every later publish carries the robots meta until a person
-            # clears it on purpose. A generic page keeps the ordinary default (indexable).
-            document = await set_web_noindex(
-                conn, workspace_id=workspace_id, document_id=str(document["id"]), enabled=True
             )
         stamped_id = document.get("effective_brand_kit_id")
         stamped_version = document.get("effective_brand_kit_version")

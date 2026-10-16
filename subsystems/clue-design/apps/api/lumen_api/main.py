@@ -5993,7 +5993,13 @@ def create_app(
                 _publish_web(repo, derived, slug=slug, noindex=abm)
                 row["slug"] = slug
                 row["url"] = site_address(repo, slug).page_url("/")
-                row["noindex"] = abm
+                # What the page actually serves: the request's ask OR the document's durable
+                # flag, which every new website document is born with (founder ruling
+                # 2026-10-16) — so a generic run's pages report noindex too, until a person
+                # ticks "Allow indexing".
+                row["noindex"] = bool(
+                    abm or repo.require_document(derived["id"]).get("web_noindex")
+                )
                 row["status"] = "published"
             return row
         except Exception as error:  # noqa: BLE001 — one account never kills a batch

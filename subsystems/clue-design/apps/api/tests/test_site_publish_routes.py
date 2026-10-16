@@ -322,6 +322,9 @@ def test_c_after_a_move_the_state_names_the_address_the_document_now_lives_at(cl
 
 def test_d_a_keyed_retry_replays_the_first_publish(client: TestClient, workspace_id: str) -> None:
     stored(client, garner_site_without_clones("site_keyed"))
+    # Indexable, so the conflicting `noindex=True` body below would visibly change the page if it
+    # ran (a new site is born noindex since the founder ruling of 2026-10-16).
+    ok(client.put("/documents/site_keyed/web-noindex", json={"noindex": False}))
     headers = {"Idempotency-Key": "site-publish-once"}
     first = ok(publish(client, "site_keyed", slug="keyed-site", headers=headers))
     again = ok(publish(client, "site_keyed", slug="keyed-site", headers=headers))
@@ -352,11 +355,14 @@ def test_d_a_keyed_retry_replays_the_first_publish(client: TestClient, workspace
 
 def test_e_noindex_marks_every_page_and_the_documents_stored_flag_forces_it(client: TestClient, workspace_id: str) -> None:
     stored(client, garner_site_without_clones("site_index"))
+    # Founder ruling 2026-10-16: a new site is born noindex; "Allow indexing" makes it indexable.
+    ok(client.put("/documents/site_index/web-noindex", json={"noindex": False}))
     ok(publish(client, "site_index", slug="indexed-site"))
     assert "robots" not in published_manifest(workspace_id, "indexed-site")
     assert all(ROBOTS_NOINDEX_META not in html for html in assert_served_site(workspace_id, "indexed-site").values())
 
     stored(client, garner_site_without_clones("site_hidden"))
+    ok(client.put("/documents/site_hidden/web-noindex", json={"noindex": False}))
     ok(publish(client, "site_hidden", slug="hidden-site", noindex=True))
     assert published_manifest(workspace_id, "hidden-site")["robots"] == "noindex"
     assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "hidden-site").values())
@@ -384,11 +390,8 @@ def test_k_the_state_reports_changes_since_publishing_and_a_noindex_choice_survi
 ) -> None:
     site = stored(client, garner_site_without_clones("site_k"))
     state = client.get("/documents/site_k/site/publish").json()
-    assert (state["published"], state["noindex"], state["current_version"]) == (False, False, 0)
-
-    # The marketer unticks "Allow indexing": the share menu stores that on the document.
-    assert ok(client.put("/documents/site_k/web-noindex", json={"noindex": True}))["web_noindex"] is True
-    assert client.get("/documents/site_k/site/publish").json()["noindex"] is True
+    # Founder ruling 2026-10-16: a new site is born noindex ("Allow indexing" starts unticked).
+    assert (state["published"], state["noindex"], state["current_version"]) == (False, True, 0)
 
     # A publish that asks for nothing (as a reloaded menu used to send) cannot make the page indexable.
     first = ok(publish(client, "site_k", slug="k-site", noindex=False))
@@ -415,6 +418,19 @@ def test_k_the_state_reports_changes_since_publishing_and_a_noindex_choice_survi
     assert client.get("/documents/site_k/site/publish").json()["noindex"] is False
     ok(publish(client, "site_k", slug="k-site", noindex=False))
     assert all(ROBOTS_NOINDEX_META not in html for html in assert_served_site(workspace_id, "k-site").values())
+
+
+def test_k_a_new_site_is_born_noindex_and_its_plain_publish_says_so_on_every_page(
+    client: TestClient, workspace_id: str
+) -> None:
+    """Founder ruling 2026-10-16: every new site document is born with the durable noindex, so
+    its first publish — a body that names no noindex at all — serves the robots meta on every
+    page and in the manifest."""
+    stored(client, garner_site_without_clones("site_born"))
+    assert HybridRepository().require_document("site_born")["web_noindex"] is True
+    ok(publish(client, "site_born", slug="born-site"))
+    assert published_manifest(workspace_id, "born-site")["robots"] == "noindex"
+    assert all(ROBOTS_NOINDEX_META in html for html in assert_served_site(workspace_id, "born-site").values())
 
 
 def test_k_the_noindex_tool_takes_a_site_and_still_refuses_a_scene(client: TestClient, workspace_id: str) -> None:

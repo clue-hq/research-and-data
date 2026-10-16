@@ -200,6 +200,36 @@ def test_derive_without_account_is_identity_copy(client: TestClient) -> None:
     )
 
 
+def test_a_derived_page_is_born_noindex_and_its_publish_serves_the_robots_meta(
+    client: TestClient, workspace_id: str
+) -> None:
+    """Founder ruling 2026-10-16: the derive route births a NEW web document, so it is born with
+    the durable noindex (with or without an account) and a publish that asks for nothing serves
+    the robots meta. The template it came from keeps whatever it holds."""
+    from conftest import published_html
+
+    document = create_web_document(client)
+    seed_template(client, document["id"])
+    repo = HybridRepository()
+    allowed = client.put(f"/documents/{document['id']}/web-noindex", json={"noindex": False})
+    assert allowed.status_code == 200, allowed.text
+
+    account = client.post(
+        "/web/accounts", json={"name": "Privia Health", "data": {"tagline": "Better care"}}
+    ).json()["account_id"]
+    for body in ({"account_id": account}, {}):
+        derived = client.post(f"/documents/{document['id']}/web/derive", json=body)
+        assert derived.status_code == 200, derived.text
+        assert repo.require_document(derived.json()["document_id"])["web_noindex"] is True
+    assert repo.require_document(document["id"])["web_noindex"] is False
+
+    published = client.post(
+        f"/documents/{derived.json()['document_id']}/web/publish", json={"slug": "derived-page"}
+    )
+    assert published.status_code == 200, published.text
+    assert '<meta name="robots" content="noindex">' in published_html(workspace_id, "derived-page")
+
+
 # --- 404s + 422 rejection ----------------------------------------------------
 
 

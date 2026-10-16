@@ -14,3 +14,13 @@ Full report: `.superpowers/sdd/2026-10-16-site-publish-durability/lane-publish-r
 - Owed: live UI check after a design-API restart (the running :8019 serves the old state body).
 - Pre-existing failure seen: `test_write_path_governance::test_converted_domain_mutations_are_only_called_from_the_toolbelt`
   (asset_enrichment.py create_asset_record) — not this lane's.
+
+## Follow-up (same day): every NEW website document is born noindex (founder ruling 2026-10-16)
+- One birth rule in `clue_design.documents` (`_born_noindex`): both `INSERT INTO design_document`
+  (`create_document`, `create_web_template`) write `web_noindex = true` for web/site, false for scene.
+  Covers plain create, derive, batch derive, template, chat leg birth. 42f0208ee's per-account stamp in
+  `design_leg_tools.py` removed (now redundant). No migration, no backfill: existing rows keep their value.
+- "Allow indexing" in Share (PUT web-noindex false) is the only way to make a new page indexable.
+- Batch manifest row `noindex` now reports the effective value (request OR durable flag).
+- Frontend fixture adapter (`web-publish.repository.ts`) still defaults `noindex: false` — fixtures only.
+- Report: `.superpowers/sdd/2026-10-16-site-publish-durability/noindex-default-report.md`.

@@ -96,7 +96,7 @@ def test_an_unlisted_workspace_births_a_webdoc_unchanged(tmp_path: Path, migrate
     run_async(scenario())
 
 
-# --- K6-3 (ruling R25-4): a website born for a tagged account is noindex at birth -----------------
+# --- K6-3 / founder ruling 2026-10-16: every website the leg births is noindex at birth ----------
 
 
 async def _tagged_account(conn: AsyncConnection, seeds: dict[str, Any]) -> str:
@@ -116,14 +116,15 @@ async def _tagged_account(conn: AsyncConnection, seeds: dict[str, Any]) -> str:
 
 
 @pytest.mark.parametrize("listed", [True, False], ids=["site", "web"])
-def test_a_website_born_for_a_tagged_account_is_noindex_and_a_generic_one_is_not(
+def test_every_website_a_leg_births_is_noindex_tagged_account_or_not(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
     listed: bool,
 ) -> None:
-    """The ABM batch's rule (an account page is born stamped noindex, publish or not) applies to a
-    chat-born account website too, site or web; a generic page in the same delegation keeps the
-    ordinary default (indexable)."""
+    """Founder ruling 2026-10-16 (widening K6-3 / R25-4): every NEW web or site document is born
+    with the durable noindex, through the one birth rule in the design DAL's insert. A chat-born
+    page for a tagged account is noindex (the case K6-3 fixed), and so is a generic page in the
+    same delegation; a person makes one indexable by ticking "Allow indexing" in Share."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -147,7 +148,7 @@ def test_a_website_born_for_a_tagged_account_is_noindex_and_a_generic_one_is_not
             ]
             assert tagged["doc_kind"] == generic["doc_kind"] == ("site" if listed else "web")
             assert tagged["account_id"] is not None and tagged["web_noindex"] is True
-            assert generic["account_id"] is None and generic["web_noindex"] is False
+            assert generic["account_id"] is None and generic["web_noindex"] is True
 
     run_async(scenario())
 

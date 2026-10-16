@@ -544,17 +544,75 @@ def test_publish_noindex_option_reaches_the_served_page(
 ) -> None:
     """F5 task 13: the share menu's indexing toggle is a real publish option.
 
-    `noindex` defaults off (the neighbouring publish tests pin that an ordinary publish carries
-    no robots meta), and asking for it puts the meta on the page the visitor is served.
+    Asking for it puts the meta on the page the visitor is served. (Since the founder ruling of
+    2026-10-16 a NEW page is born with the durable flag anyway, so the page starts out
+    "Allow indexing" cleared here; the option still adds the meta on its own.)
     """
 
     document = seed_document(client)
+    cleared = client.put(f"/documents/{document['id']}/web-noindex", json={"noindex": False})
+    assert cleared.status_code == 200, cleared.text
     published = client.post(
         f"/documents/{document['id']}/web/publish",
         json={"slug": "hidden-page", "noindex": True},
     )
     assert published.status_code == 200, published.text
     assert '<meta name="robots" content="noindex">' in published_html(workspace_id, "hidden-page")
+
+
+ROBOTS_META = '<meta name="robots" content="noindex">'
+
+
+def test_a_new_web_document_is_born_noindex_and_allow_indexing_makes_it_indexable(
+    client: TestClient, workspace_id: str
+) -> None:
+    """Founder ruling 2026-10-16: every NEW web document is born noindex, whichever route makes
+    it. A publish that asks for nothing serves the robots meta; ticking "Allow indexing" in
+    Share (the explicit clear on the noindex route) is enough to make the next publish
+    indexable. A scene is not a website and is born without the flag, and a document that
+    already exists keeps what it holds."""
+
+    repo = HybridRepository()
+    # A document from before the ruling: indexable, as every old web page was born. (Its flag
+    # is cleared directly in the row — what an old row holds — not through any route here.)
+    old = seed_document(client)
+
+    async def make_old(conn):
+        from sqlalchemy import text
+
+        await conn.execute(
+            text("UPDATE design_document SET web_noindex = false WHERE id = :d AND workspace_id = :w"),
+            {"d": old["id"], "w": repo.workspace_id},
+        )
+
+    repo._bridge._run(make_old)
+
+    document = seed_document(client)
+    assert repo.require_document(document["id"])["web_noindex"] is True
+    assert client.get(f"/documents/{document['id']}/web/publish").json()["noindex"] is True
+
+    published = client.post(f"/documents/{document['id']}/web/publish", json={"slug": "born-hidden"})
+    assert published.status_code == 200, published.text
+    assert ROBOTS_META in published_html(workspace_id, "born-hidden")
+    assert published_manifest(workspace_id, "born-hidden")["robots"] == "noindex"
+
+    # "Allow indexing": the explicit clear, then the next publish is indexable.
+    cleared = client.put(f"/documents/{document['id']}/web-noindex", json={"noindex": False})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["web_noindex"] is False
+    republished = client.post(f"/documents/{document['id']}/web/publish", json={"slug": "born-hidden"})
+    assert republished.status_code == 200, republished.text
+    assert ROBOTS_META not in published_html(workspace_id, "born-hidden")
+    assert "robots" not in published_manifest(workspace_id, "born-hidden")
+
+    # A scene has no publish surface: no flag.
+    scene = create_scene_document(client)
+    assert repo.require_document(scene["id"])["web_noindex"] is False
+
+    # The old document is untouched by all of the above and still publishes indexable.
+    assert repo.require_document(old["id"])["web_noindex"] is False
+    assert client.post(f"/documents/{old['id']}/web/publish", json={"slug": "old-page"}).status_code == 200
+    assert ROBOTS_META not in published_html(workspace_id, "old-page")
 
 
 def test_publish_slug_validation(client: TestClient) -> None:
@@ -612,7 +670,8 @@ def test_get_publish_state_unpublished(client: TestClient) -> None:
     assert state["schema_version"] == 1
     assert state["published"] is False
     assert state["current_version"] == client.get(f"/documents/{document['id']}").json()["current_version"]
-    assert state["noindex"] is False
+    # Founder ruling 2026-10-16: a new web document is born noindex.
+    assert state["noindex"] is True
     assert state["custom_origin"] is None
     assert state["public_origin"].startswith("https://")
 

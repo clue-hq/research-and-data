@@ -284,9 +284,10 @@ def test_the_account_page_carries_the_robots_meta(
 def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
 ) -> None:
-    """The other direction, and the one that matters more: a homepage publish must not have
-    quietly become noindex. The default is off, and the ONLY difference the option makes is the
-    one meta line."""
+    """The other direction: an INDEXABLE page's publish must not quietly become noindex, and the
+    ONLY difference the option makes is the one meta line. (Founder ruling 2026-10-16: a new
+    page is born noindex, so the page here is made indexable by the explicit "Allow indexing"
+    clear first — what a person does in Share.)"""
     from lumen_api import web_export
 
     template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
@@ -300,6 +301,8 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     derived = client.post(
         f"/documents/{template}/web/derive", json={"account_id": account}
     ).json()["document_id"]
+    allowed = client.put(f"/documents/{derived}/web-noindex", json={"noindex": False})
+    assert allowed.status_code == 200, allowed.text
     ordinary = client.post(f"/documents/{derived}/web/publish", json={"slug": "acme-home"})
     assert ordinary.status_code == 200, ordinary.text
 
@@ -366,9 +369,9 @@ def test_the_batch_stamps_the_durable_flag_on_every_abm_page_it_publishes(
     repo = HybridRepository(workspace_id=workspace_id)
     document = repo.require_document(body["manifest"][0]["document_id"])
     assert document["web_noindex"] is True
-    # The template it was derived from is NOT stamped — the stamp is about a published account
-    # page, and the template never publishes at all (R25-7).
-    assert repo.require_document(template)["web_noindex"] is False
+    # The template it was derived from carries the flag only because every new web document is
+    # born with it (founder ruling 2026-10-16); the batch writes nothing onto the template.
+    assert repo.require_document(template)["web_noindex"] is True
 
 
 def test_a_plain_republish_of_an_abm_page_keeps_the_robots_meta(
@@ -453,25 +456,38 @@ def test_clearing_the_durable_flag_is_an_explicit_named_call_and_a_publish_canno
     assert ROBOTS_META not in published_html(workspace_id, row["slug"])
 
 
-def test_an_ordinary_document_is_born_un_stamped_and_publishes_exactly_as_before(
+def test_a_derived_document_is_born_stamped_and_only_allow_indexing_unstamps_it(
     client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
 ) -> None:
-    """The direction that matters more, at the DURABLE layer: a never-stamped document's publish
-    is byte-identical to what it produced before this ruling (the option test above pins the
-    package itself; this pins that nothing stamps a document behind anybody's back)."""
+    """Founder ruling 2026-10-16 (it replaced "an ordinary document is born un-stamped"): every
+    new website document is born with the durable flag, a derived page from the single-account
+    derive route included, so its plain publish serves the robots meta. Ticking "Allow
+    indexing" (the explicit clear) is enough to make the next publish indexable."""
     template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
     account = _account(client, "Acme Health")
     derived = client.post(
         f"/documents/{template}/web/derive", json={"account_id": account}
     ).json()["document_id"]
+    generic = client.post(f"/documents/{template}/web/derive", json={}).json()["document_id"]
     repo = HybridRepository(workspace_id=workspace_id)
-    assert repo.require_document(derived)["web_noindex"] is False
+    assert repo.require_document(derived)["web_noindex"] is True
+    assert repo.require_document(generic)["web_noindex"] is True
 
     assert (
         client.post(f"/documents/{derived}/web/publish", json={"slug": "plain-home"}).status_code
         == 200
     )
+    assert ROBOTS_META in published_html(workspace_id, "plain-home")
+    assert repo.get_web_publish("plain-home")["manifest"]["robots"] == "noindex"
 
+    assert (
+        client.put(f"/documents/{derived}/web-noindex", json={"noindex": False}).status_code
+        == 200
+    )
+    assert (
+        client.post(f"/documents/{derived}/web/publish", json={"slug": "plain-home"}).status_code
+        == 200
+    )
     page = published_html(workspace_id, "plain-home")
     assert "robots" not in page
     assert "robots" not in (repo.get_web_publish("plain-home").get("manifest") or {})
@@ -850,6 +866,12 @@ def test_rollback_refuses_to_serve_a_stamped_page_unindexed(
         f"/documents/{template}/web/derive", json={"account_id": account}
     ).json()
     doc_id = derived["document_id"]
+    # A page from before the stamp: born noindex since the founder ruling of 2026-10-16, so it
+    # is made indexable explicitly to stand for one.
+    assert (
+        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": False}).status_code
+        == 200
+    )
     # First publish BEFORE any stamp (the pre-wave revision shape).
     first = client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-rollbk"})
     assert first.status_code == 200, first.text
@@ -881,6 +903,12 @@ def test_rollback_of_two_unstamped_revisions_stays_available(
         f"/documents/{template}/web/derive", json={"account_id": account}
     ).json()
     doc_id = derived["document_id"]
+    # Two unstamped revisions: the page is born noindex since the founder ruling of 2026-10-16,
+    # so it is made indexable explicitly first.
+    assert (
+        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": False}).status_code
+        == 200
+    )
     assert client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-2rev"}).status_code == 200
     assert client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-2rev"}).status_code == 200
     assert (
