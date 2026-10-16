@@ -381,14 +381,21 @@ def existing_customers_document(
         return ", ".join(str(domain) for domain in customer.get("domains") or [])
 
     def check(customer: Mapping[str, Any]) -> str:
-        """``confirmed`` when every domain's homepage named the company; otherwise each domain
-        that did not, with the page title that explains why."""
-        doubts = []
-        for domain in customer.get("domains") or []:
+        """Each domain's check with the homepage title it saw, so a reader can tell a confirmed
+        page that belongs to another company with the same name; ``no domain given`` when Exa
+        gave none."""
+        found_domains = [str(domain) for domain in customer.get("domains") or []]
+        if not found_domains:
+            return "no domain given"
+        parts = []
+        for domain in found_domains:
             found = checks.get(domain)
-            if found is not None and found.status == "unconfirmed":
-                doubts.append(f"{domain}: unconfirmed ({found.title or 'no answer'})")
-        return "; ".join(doubts) or "confirmed"
+            if found is None or found.status == "unchecked":
+                parts.append(f"{domain}: not checked (the site did not answer)")
+            else:
+                title = f" ({found.title})" if found.title else ""
+                parts.append(f"{domain}: {found.status}{title}")
+        return "; ".join(parts)
 
     def how(customer: Mapping[str, Any]) -> str:
         via = customer.get("via")

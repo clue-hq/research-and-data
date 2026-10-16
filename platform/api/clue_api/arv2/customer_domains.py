@@ -1,11 +1,13 @@
 """Does each customer domain Exa gave really belong to that customer? (spec 2026-10-16-discovery-
 excludes-seller-customers §4.2.)
 
-One GET of each distinct domain's homepage. A page that names the company is ``confirmed``;
-anything else — another business, no answer, a refusal — is ``unconfirmed``, with the page title
-kept so a reader sees why. Nothing is ever dropped: the label only informs the Head of ABM, who
-decides what to exclude. The live run that set this up: Exa gave Wynwood House (a Latin American
-hospitality group) the domain ``wynwoodhouse.us``, a personal-care home in Pennsylvania.
+One GET of each distinct domain's homepage. A page that names the company is ``confirmed``; a page
+about something else is ``unconfirmed``; a homepage that did not answer (blocked, refused, down) is
+``unchecked``, because silence says nothing about the domain. Nothing is ever dropped: the label
+only informs the Head of ABM, who decides what to exclude. The page title is kept for every answered
+page, confirmed ones too, because a name check cannot tell two companies with one name apart: the
+2026-10-16 live run confirmed ``wynwoodhouse.us``, a Pennsylvania care home also called Wynwood
+House, for the Latin American hospitality group of that name.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ _TEXT_WINDOW = 5000
 
 @dataclass(frozen=True)
 class DomainCheck:
-    status: Literal["confirmed", "unconfirmed"]
+    status: Literal["confirmed", "unconfirmed", "unchecked"]
     title: str | None
 
 
@@ -65,7 +67,12 @@ class _Page(HTMLParser):
 
 
 def _words(value: str) -> list[str]:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).split()
+    return [_singular(word) for word in re.sub(r"[^a-z0-9]+", " ", value.lower()).split()]
+
+
+def _singular(word: str) -> str:
+    """ "rentals" and "rental" are one word to a name check."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
 def names_company(name: str, page: str) -> bool:
@@ -76,10 +83,23 @@ def names_company(name: str, page: str) -> bool:
     wanted = [word for word in _words(name) if word not in _NAME_NOISE]
     if not wanted:
         return False
-    on_page = set(_words(page))
+    words = _words(page)
+    on_page = set(words)
     if set(wanted) <= on_page:
         return True
-    return len(wanted) > 1 and "".join(wanted) in on_page
+    joined = "".join(wanted)
+    if len(wanted) > 1 and joined in on_page:
+        return True
+    # "BlueGems" on a "Blue Gems" page: the name run together is two page words run together.
+    return joined in {first + second for first, second in zip(words, words[1:], strict=False)}
+
+
+def _named_domain(domain: str, name: str, page: str) -> bool:
+    """A domain spelled as the company's name ("cur8.earth" for "Cur8 Earth Limited") whose page
+    shows that name as a whole word."""
+    label = _words(domain.split(".")[0])
+    wanted = [word for word in _words(name) if word not in _NAME_NOISE]
+    return len(label) == 1 and label[0] in wanted and label[0] in set(_words(page))
 
 
 def _homepage(caller: ProviderCaller, domain: str) -> tuple[bool, str | None, str]:
@@ -120,6 +140,11 @@ def check_domains(
     checks: dict[str, DomainCheck] = {}
     for domain, owners in names.items():
         answered, title, text = _homepage(caller, domain)
-        confirmed = answered and any(names_company(owner, text) for owner in owners)
+        if not answered:
+            checks[domain] = DomainCheck("unchecked", None)
+            continue
+        confirmed = any(
+            names_company(owner, text) or _named_domain(domain, owner, text) for owner in owners
+        )
         checks[domain] = DomainCheck("confirmed" if confirmed else "unconfirmed", title)
     return checks

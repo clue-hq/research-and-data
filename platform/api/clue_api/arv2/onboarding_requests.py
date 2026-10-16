@@ -400,11 +400,19 @@ EXISTING_CUSTOMERS_SYSTEM_PROMPT = (
     "marketplace; name the coalition or marketplace in via. Leave out investors, grant-givers, "
     "registries, technology and integration partners, suppliers and competitors, even when they "
     "appear on the same logo wall. Every customer must be named on a page you found; never infer a "
-    "customer from its industry. Give every website domain the customer uses, a group's brand "
-    "domains as well as its corporate one. Check that each domain's website is really that "
-    'company; otherwise leave it out. Mark a sweeping claim such as "300+ brands including X" as '
-    "weak_mention. Quote verbatim, at most 40 words. Also list every domain the seller itself uses "
-    "in seller_domains."
+    "customer from its industry. "
+    "For relationship: direct means the seller names the company as a customer (a logo wall, a "
+    "customers page, a case study, a testimonial, a press release) or the company says it buys; "
+    "through_coalition and through_marketplace mean it buys through a group the page names; "
+    "weak_mention is only for a sweeping claim that lists brands without saying they buy, such as "
+    '"300+ brands including X". '
+    "For domains: give the website domains of the business that buys - its own site, and a "
+    "brand's site only when that brand is the buyer. Never a parent group's other brands or "
+    "products, a social network, an app store, or a shared platform where many companies have "
+    "pages (linkedin.com, myshopify.com, wixsite.com). Give only domains you saw the company "
+    "itself use, and check that each domain's website is really that company; otherwise leave it "
+    "out. Quote verbatim, at most 40 words. Also list every domain the seller itself uses in "
+    "seller_domains."
 )
 
 

@@ -38,7 +38,7 @@ def test_a_page_about_another_business_is_unconfirmed_and_kept() -> None:
     }
 
 
-def test_a_domain_that_does_not_answer_is_unconfirmed() -> None:
+def test_a_domain_that_does_not_answer_is_not_checked() -> None:
     wire = ScriptedTransport(
         [
             TransportFailure("connection refused"),
@@ -52,8 +52,8 @@ def test_a_domain_that_does_not_answer_is_unconfirmed() -> None:
             {"name": "Marriott", "domains": ["marriott.com"]},
         ],
     )
-    assert checks["moxxiproperty.com.au"] == DomainCheck("unconfirmed", None)
-    assert checks["marriott.com"] == DomainCheck("unconfirmed", None)
+    assert checks["moxxiproperty.com.au"] == DomainCheck("unchecked", None)
+    assert checks["marriott.com"] == DomainCheck("unchecked", None)
 
 
 def test_names_company_tolerates_case_spacing_and_suffixes() -> None:
@@ -83,3 +83,35 @@ def test_a_short_name_inside_another_word_is_not_a_match() -> None:
     assert not names_company("Sage", "Our message is clear")
     assert not names_company("Olala", "Holalandia resorts")
     assert names_company("Sage", "Sage | Accounting software")
+
+
+def test_a_site_that_does_not_answer_is_not_checked_rather_than_unconfirmed() -> None:
+    """A blocked or silent homepage says nothing about the domain; the live run (2026-10-16) had
+    marriott.com, meta.com and mol.co.jp all refuse the check."""
+    wire = ScriptedTransport([TransportFailure("blocked")])
+    checks = check_domains(caller(wire), [{"name": "Marriott", "domains": ["marriott.com"]}])
+    assert checks["marriott.com"] == DomainCheck("unchecked", None)
+
+
+def test_near_identical_names_are_confirmed() -> None:
+    assert names_company("BlueGems", "Blue Gems Vacation Homes | Near Disney")
+    assert names_company(
+        "Haven Vacation Rentals", "Smoky Mountain Vacation Rental Management | Haven"
+    )
+
+
+def test_a_domain_named_after_the_company_confirms_when_the_page_shows_that_name() -> None:
+    wire = ScriptedTransport([_page("CUR8 | Carbon Removal Intelligence Platform")])
+    checks = check_domains(
+        caller(wire), [{"name": "Cur8 Earth Limited", "domains": ["cur8.earth"]}]
+    )
+    assert checks["cur8.earth"].status == "confirmed"
+
+
+def test_a_same_name_page_is_confirmed_but_keeps_its_title_for_the_reader() -> None:
+    """A name check cannot tell two companies with one name apart; the title lets the reader."""
+    wire = ScriptedTransport([_page("Personal Care Communities", "Welcome to Wynwood House")])
+    checks = check_domains(
+        caller(wire), [{"name": "Wynwood House", "domains": ["wynwoodhouse.us"]}]
+    )
+    assert checks["wynwoodhouse.us"] == DomainCheck("confirmed", "Personal Care Communities")

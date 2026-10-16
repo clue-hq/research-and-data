@@ -433,7 +433,11 @@ def test_the_table_shows_domains_with_their_check_how_they_buy_and_the_quote() -
     # the check's result has its own column (review finding, 2026-10-16).
     assert "| Wynwood House | wynwoodhouse.us | wynwoodhouse.us: unconfirmed" in body
     assert "Personal Care Communities \\| State College" in body
-    assert "| Stripe | stripe.com | confirmed |" in body
+    # Every answered page keeps its title, confirmed ones too (a same-name company shows there).
+    assert (
+        "| Stripe | stripe.com | stripe.com: confirmed (Stripe \\| Financial Infrastructure) |"
+        in body
+    )
     assert "through_coalition via Frontier" in body
     assert "move its guest communication to Conduit." in body
     assert "https://www.conduit.ai/customers/wynwood-house" in body
@@ -454,3 +458,24 @@ def test_a_failed_customers_run_still_renders_with_its_failure_note() -> None:
     ).body
     assert "_Not established._" in body
     assert "Research run did not complete: `timeout`" in body
+
+
+def test_the_check_column_says_when_a_domain_was_not_checked_or_none_was_given() -> None:
+    run = _customers_run()
+    customers = run.structured["customers"]  # type: ignore[index]
+    customers.append(
+        {
+            "name": "Beachside",
+            "domains": [],
+            "relationship": "direct",
+            "via": None,
+            "evidence_kind": "logo_wall",
+            "quote": "Operators who run on Conduit",
+        }
+    )
+    checks = {**_CHECKS, "stripe.com": DomainCheck("unchecked", None)}
+    body = existing_customers_document(
+        run, company_domain="conduit.ai", as_of=AS_OF, checks=checks
+    ).body
+    assert "| Beachside |  | no domain given |" in body
+    assert "| Stripe | stripe.com | stripe.com: not checked (the site did not answer) |" in body

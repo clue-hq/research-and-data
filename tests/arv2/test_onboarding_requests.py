@@ -190,8 +190,14 @@ def test_the_customers_prompt_states_the_non_negotiables() -> None:
         "competitors",
         "same logo wall",
         "named on a page",
-        "brand domains",
         "otherwise leave it out",
+        # The 2026-10-16 live run: a whole logo wall was labelled weak_mention, and big groups got
+        # their subsidiaries' and social networks' domains (linkedin.com for Microsoft).
+        "direct means the seller names the company as a customer (a logo wall",
+        "weak_mention is only for a sweeping claim",
+        "the business that buys",
+        "Never a parent group's other brands or products",
+        "shared platform",
     ):
         assert part in EXISTING_CUSTOMERS_SYSTEM_PROMPT
 
