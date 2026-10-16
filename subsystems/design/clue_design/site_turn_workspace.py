@@ -10,6 +10,8 @@ site and resumes the conversation from that checkpoint
 * :func:`put_site_turn_workspace` — the attempt's write, fenced: it lands only while the run is
   ``running`` under the writer's lease generation (when the writer names one), so a fenced-out
   attempt can never overwrite its takeover's copy.
+* :func:`restamp_site_turn_workspace` — after a round that changed no file: the same fence, an
+  ``UPDATE`` of the existing row only, moving its checkpoint and turn state on without the files.
 * :func:`prune_site_turn_state` — deletes the copy and the run's conversation checkpoints once the
   run is terminal. Called from every terminal write in :mod:`clue_design.runs`, in the same
   transaction, and idempotent. Checkpoints are touched only for a ``site_turn`` run whose thread is
@@ -107,6 +109,43 @@ async def put_site_turn_workspace(
     return row is not None
 
 
+async def restamp_site_turn_workspace(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    run_id: str,
+    checkpoint_id: str,
+    turn_state: JsonObject,
+    attempt_generation: int | None,
+) -> bool:
+    """Move the run's existing working copy on to ``checkpoint_id`` and ``turn_state``, keeping its
+    files (a round that only read). Never inserts. ``False`` = refused: there is no copy, the run
+    is not ``running``, or (with ``attempt_generation``) it is held under another generation."""
+    fence = "" if attempt_generation is None else " AND run.lease_generation = :gen"
+    row = (
+        await conn.execute(
+            text(
+                "UPDATE design_site_turn_workspace AS copy SET"
+                "   checkpoint_id = :c, turn_state = CAST(:state AS jsonb),"
+                "   attempt_generation = CAST(:gen AS bigint), updated_at = now()"
+                " WHERE copy.run_id = :r AND copy.workspace_id = :w"
+                "   AND EXISTS (SELECT 1 FROM design_agent_run AS run"
+                "               WHERE run.run_id = :r AND run.workspace_id = :w"
+                "                 AND run.status = 'running'" + fence + " FOR SHARE)"
+                " RETURNING copy.run_id"
+            ),
+            {
+                "r": run_id,
+                "w": workspace_id,
+                "c": checkpoint_id,
+                "state": dump_json(turn_state),
+                "gen": attempt_generation,
+            },
+        )
+    ).first()
+    return row is not None
+
+
 async def prune_site_turn_state(conn: AsyncConnection, *, run_id: str) -> bool:
     """Delete a terminal site turn's working copy and conversation checkpoints. Idempotent.
 
@@ -131,4 +170,9 @@ async def prune_site_turn_state(conn: AsyncConnection, *, run_id: str) -> bool:
     return True
 
 
-__all__ = ["get_site_turn_workspace", "prune_site_turn_state", "put_site_turn_workspace"]
+__all__ = [
+    "get_site_turn_workspace",
+    "prune_site_turn_state",
+    "put_site_turn_workspace",
+    "restamp_site_turn_workspace",
+]

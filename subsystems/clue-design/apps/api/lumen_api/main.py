@@ -12466,11 +12466,18 @@ def _site_turn_takeover(
         checkpointer.delete_thread(run_id)
         api_logger.warning("site_turn.restarted_without_working_copy", run_id=run_id, lease_generation=lease_generation)
 
-    def working_copy_sink(checkpoint_id: str, files: JsonObject, turn_state: JsonObject, files_sha256: str) -> None:
-        written = store.put_site_turn_workspace(
-            run_id, checkpoint_id=checkpoint_id, files=files, turn_state=turn_state, files_sha256=files_sha256,
-            attempt_generation=lease_generation,
-        )
+    def working_copy_sink(checkpoint_id: str, files: Optional[JsonObject], turn_state: JsonObject,
+                          files_sha256: Optional[str]) -> None:
+        if files is None:
+            # A round that changed no file: move the copy's checkpoint and turn state on, keep its files.
+            written = store.restamp_site_turn_workspace(
+                run_id, checkpoint_id=checkpoint_id, turn_state=turn_state, attempt_generation=lease_generation,
+            )
+        else:
+            written = store.put_site_turn_workspace(
+                run_id, checkpoint_id=checkpoint_id, files=files, turn_state=turn_state, files_sha256=files_sha256,
+                attempt_generation=lease_generation,
+            )
         if not written:
             # This attempt no longer holds the run; its save will be refused too.
             api_logger.warning("site_turn.working_copy_fenced", run_id=run_id, lease_generation=lease_generation)

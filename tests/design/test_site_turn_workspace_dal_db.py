@@ -170,6 +170,57 @@ def test_one_copy_per_run_overwritten_in_place_and_only_by_the_holder() -> None:
 
 
 @pytest.mark.usefixtures("require_design_db")
+def test_a_restamp_moves_the_checkpoint_and_turn_state_on_and_keeps_the_files() -> None:
+    """A round that changed no file re-stamps the copy: checkpoint, turn state and writer move on,
+    the files and their digest stay. Same fence as the full write, and never an insert."""
+
+    async def restamp(conn, ws, run_id, *, checkpoint: str, gen: int | None, rounds: int) -> bool:
+        return await copies.restamp_site_turn_workspace(
+            conn,
+            workspace_id=ws,
+            run_id=run_id,
+            checkpoint_id=checkpoint,
+            turn_state={"rounds": rounds},
+            attempt_generation=gen,
+        )
+
+    async def body(conn: AsyncConnection) -> None:
+        ws = await _seed_ws(conn)
+        run_id = await _site_run(conn, ws, generation=2)
+        # Nothing to re-stamp before the first copy: no row is created.
+        assert not await restamp(conn, ws, run_id, checkpoint="cp-0", gen=2, rounds=0)
+        assert await copies.get_site_turn_workspace(conn, workspace_id=ws, run_id=run_id) is None
+
+        assert await _put(conn, ws, run_id, checkpoint="cp-1", gen=2)
+        assert await restamp(conn, ws, run_id, checkpoint="cp-2", gen=2, rounds=5)
+        row = await copies.get_site_turn_workspace(conn, workspace_id=ws, run_id=run_id)
+        assert row is not None
+        assert (row["checkpoint_id"], row["turn_state"], row["files"], row["files_sha256"]) == (
+            "cp-2",
+            {"rounds": 5},
+            {"page.json": "{}"},
+            SHA,
+        )
+
+        # A fenced-out attempt, a stranger, and another workspace re-stamp nothing.
+        assert not await restamp(conn, ws, run_id, checkpoint="zombie", gen=1, rounds=9)
+        assert not await restamp(conn, ws, run_id, checkpoint="stranger", gen=3, rounds=9)
+        other = await _seed_ws(conn)
+        assert not await restamp(conn, other, run_id, checkpoint="other", gen=2, rounds=9)
+        row = await copies.get_site_turn_workspace(conn, workspace_id=ws, run_id=run_id)
+        assert row is not None and row["checkpoint_id"] == "cp-2"
+
+        # A terminal run is not re-stamped.
+        await conn.execute(
+            text("UPDATE design_agent_run SET status = 'succeeded' WHERE run_id = :r"),
+            {"r": run_id},
+        )
+        assert not await restamp(conn, ws, run_id, checkpoint="late", gen=2, rounds=9)
+
+    _in_rolled_back_txn(body)
+
+
+@pytest.mark.usefixtures("require_design_db")
 def test_every_terminal_write_prunes_the_copy_and_the_runs_checkpoints() -> None:
     async def body(conn: AsyncConnection) -> None:
         ws = await _seed_ws(conn)

@@ -1839,6 +1839,44 @@ def test_j_b_dies_mid_turn_and_the_takeover_does_not_rebuild_its_pages(
     assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
 
 
+def test_j_b2_read_only_rounds_are_not_redone_after_a_takeover(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """A edits two pages (rounds 1 and 2), then only reads for three rounds, and dies at its sixth
+    model call. Each read-only round re-stamped the copy, so B resumes at round 5's checkpoint: it
+    makes exactly one model call for the step that was in flight (already holding all five rounds)
+    before answering, and its restored round counter is 5."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    a = model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/", "proof", PROOF_A, 1)]),
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/analysis", "cta", CTA_A, 2)]),
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 3)]),
+        AIMessage(content="", tool_calls=[call("ls", {"path": "/"}, 4)]),
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/pages/analysis.json"}, 5)]),
+        AIMessage(content="never reached"),
+        hooks={5: die},
+    )
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert len(a.seen) == 6
+    copy_a = store.get_site_turn_workspace(envelope.run_id)
+    assert copy_a["turn_state"]["rounds"] == 5
+    assert PROOF_A in copy_a["files"]["page.json"] and CTA_A in copy_a["files"]["pages/analysis.json"]
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next(AIMessage(content="Both headings are updated."))
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert len(b.seen) == 1, "the takeover redid read-only rounds"
+    assert {f"call_{n}" for n in range(1, 6)} <= tool_results_in(b.seen[0])
+    assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response
+    both = with_heading(with_heading(born, "/", "proof", PROOF_A), "/analysis", "cta", CTA_A)
+    assert store.require_document(document_id)["scene"] == both
+    assert store.get_site_turn_workspace(envelope.run_id)["turn_state"]["rounds"] == 6
+
+    finish(store, turn, generation_b)
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+
+
 def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
         client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
         monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2202,6 +2202,30 @@ class HybridRepository:
             )
         )
 
+    def restamp_site_turn_workspace(
+        self,
+        run_id: str,
+        *,
+        checkpoint_id: str,
+        turn_state: JsonObject,
+        attempt_generation: Optional[int],
+    ) -> bool:
+        """Move the run's working copy on to a later checkpoint and turn state, keeping its files (a
+        round that changed no file); ``False`` when there is no copy or the attempt no longer holds
+        the run."""
+        return bool(
+            self._bridge._run(
+                lambda conn: design_site_turn_workspace.restamp_site_turn_workspace(
+                    conn,
+                    workspace_id=self.workspace_id,
+                    run_id=run_id,
+                    checkpoint_id=checkpoint_id,
+                    turn_state=turn_state,
+                    attempt_generation=attempt_generation,
+                )
+            )
+        )
+
     def request_run_cancellation(self, run_id: str) -> JsonObject:
         """Ask this run to stop (A3, defect R3-D). Idempotent; raises on an unknown/foreign run.
 

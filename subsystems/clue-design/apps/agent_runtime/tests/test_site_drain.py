@@ -47,7 +47,10 @@ class Copies:
     def __init__(self) -> None:
         self.rows: list[dict] = []
 
-    def __call__(self, checkpoint_id: str, files: dict, turn_state: dict, files_sha256: str) -> None:
+    def __call__(self, checkpoint_id: str, files: dict | None, turn_state: dict, files_sha256: str | None) -> None:
+        if files is None:  # a re-stamp: the copy's files stay, its checkpoint and state move on
+            self.rows[-1] = {**self.rows[-1], "checkpoint_id": checkpoint_id, "turn_state": turn_state}
+            return
         self.rows.append({"checkpoint_id": checkpoint_id, "files": files, "turn_state": turn_state})
 
     def resume(self) -> SiteTurnResume:

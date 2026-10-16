@@ -414,7 +414,9 @@ def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = Tru
 # redone (docs/superpowers/plans/2026-10-16-site-turn-durability.md §2.1).
 
 #: ``sink(checkpoint_id, files, turn_state, files_sha256)``: the executor's port to the copy's row.
-WorkingCopySink = Callable[[str, dict, dict, str], Any]
+#: ``files`` and ``files_sha256`` are ``None`` for a RE-STAMP: the files are those of the copy
+#: already written, only its checkpoint and turn state move on (an update of the existing row).
+WorkingCopySink = Callable[[str, "dict | None", dict, "str | None"], Any]
 
 
 @dataclass(frozen=True)
@@ -471,8 +473,12 @@ def restore_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuar
 class WorkingCopy(AgentMiddleware):
     """First in the middleware list. Before each model call (the previous round's tools are done
     and its checkpoint, under ``durability="sync"``, committed) it writes the working copy when
-    the files or the turn's sections and images changed; after the agent's answer it stamps the
-    final copy, so a takeover after the last step makes no model call at all.
+    the files or the turn's sections and images changed. When they did not but the checkpoint moved
+    on (a round that only read), it RE-STAMPS the copy already written with the new checkpoint and
+    the current turn state, without sending the files again, so a takeover redoes at most the step
+    in flight and its round and time counters are current. After the agent's answer it stamps the
+    final copy, so a takeover after the last step makes no model call at all. Before the first copy
+    is written there is nothing to re-stamp.
 
     A sink that fails is logged and retried at the next round: the turn goes on, its copy one round
     older. Anything that is not an ``Exception`` (a dying worker) is never caught here."""
@@ -484,6 +490,8 @@ class WorkingCopy(AgentMiddleware):
         self.turn_limits: TurnLimits | None = None
         self.guard: FinishGuard | None = None
         self._written: tuple[str, str] | None = None
+        #: The checkpoint the copy row is stamped with now (``None``: no copy written yet).
+        self._stamped_at: str | None = None
 
     def bind(self, *, turn_limits: "TurnLimits", guard: FinishGuard) -> None:
         self.turn_limits, self.guard = turn_limits, guard
@@ -495,11 +503,13 @@ class WorkingCopy(AgentMiddleware):
         turn = json.dumps({"sections": state["sections"], "assets": state["assets"]}, sort_keys=True)
         return files, state, files_sha, (files_sha, turn)
 
-    def prime(self) -> None:
+    def prime(self, checkpoint_id: str | None = None) -> None:
         """Take the workspace as it stands (the start of the turn, or the restored copy) as the
-        last copy written, so the first round writes nothing unless something changed."""
+        last copy written, so the first round writes nothing unless something changed.
+        ``checkpoint_id``: the restored copy's checkpoint (its row exists, so it can be re-stamped)."""
 
         self._written = self._capture()[3]
+        self._stamped_at = checkpoint_id
 
     def _write(self, runtime: Any, *, always: bool) -> None:
         info = getattr(runtime, "execution_info", None)
@@ -510,9 +520,17 @@ class WorkingCopy(AgentMiddleware):
         from; for a drained turn, the last step its graph committed."""
 
         files, state, files_sha, key = self._capture()
-        if key == self._written and not always:
-            return
         if not checkpoint_id:
+            return
+        if key == self._written and not always:
+            if self._stamped_at is None or checkpoint_id == self._stamped_at:
+                return
+            try:
+                self.sink(checkpoint_id, None, state, None)
+            except Exception:  # noqa: BLE001 - a lost re-stamp costs a redone round, never the turn
+                logger.warning("site_turn.working_copy_restamp_failed", checkpoint_id=checkpoint_id, exc_info=True)
+                return
+            self._stamped_at = checkpoint_id
             return
         try:
             self.sink(checkpoint_id, files, state, files_sha)
@@ -522,6 +540,7 @@ class WorkingCopy(AgentMiddleware):
         if state["dropped_files"]:
             logger.warning("site_turn.working_copy_dropped_offloads", dropped=len(state["dropped_files"]))
         self._written = key
+        self._stamped_at = checkpoint_id
 
     def before_model(self, state, runtime):
         self._write(runtime, always=False)
@@ -693,7 +712,7 @@ def run_site_turn(
         if resume is not None:
             restore_turn_state(tools, turn_limits, guard, resume.turn_state)
         if working_copy is not None:
-            working_copy.prime()
+            working_copy.prime(resume.checkpoint_id if resume is not None else None)
         collector, handlers = turn_collector(callbacks)
     except Exception as error:  # noqa: BLE001 - a setup failure is the same honest crash, before any model call
         detail = f"{type(error).__name__}: {error}"[:500]

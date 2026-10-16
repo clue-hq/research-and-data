@@ -44,12 +44,21 @@ class Script(ScriptedModel):
 
 
 class Copies:
-    """The executor's sink, in memory: the last copy written, and how many were written."""
+    """The executor's sink, in memory: every full copy written (``rows``) and every re-stamp of the
+    last one (``restamps``: a round that changed no file moves the copy's checkpoint and turn state
+    on, keeping its files — the row's UPDATE)."""
 
     def __init__(self) -> None:
         self.rows: list[dict] = []
+        self.restamps: list[dict] = []
 
-    def __call__(self, checkpoint_id: str, files: dict, turn_state: dict, files_sha256: str) -> None:
+    def __call__(self, checkpoint_id: str, files: dict | None, turn_state: dict, files_sha256: str | None) -> None:
+        if files is None:
+            assert self.rows, "a re-stamp with no copy written"
+            assert files_sha256 is None
+            self.rows[-1] = {**self.rows[-1], "checkpoint_id": checkpoint_id, "turn_state": turn_state}
+            self.restamps.append({"checkpoint_id": checkpoint_id, "turn_state": turn_state})
+            return
         self.rows.append({"checkpoint_id": checkpoint_id, "files": files, "turn_state": turn_state,
                           "files_sha256": files_sha256})
 
@@ -120,6 +129,39 @@ def test_a_takeover_after_the_last_step_makes_no_model_call(tmp_path: Path) -> N
     assert b.seen == []
     assert result.status == "applied" and result.site == first.site and result.site != garner_site()
     assert result.summary == "Done."
+
+
+@needs_node
+def test_read_only_rounds_move_the_copy_on_so_a_takeover_redoes_only_the_step_in_flight(tmp_path: Path) -> None:
+    """Two rounds change files, three only read. A dies at its sixth model call. Each read-only
+    round re-stamps the copy (its checkpoint and turn state; the files are not sent again), so B
+    resumes at round 5's checkpoint: its first model call already holds all five rounds, and the
+    round counter it restores is 5."""
+    saver, copies = InMemorySaver(), Copies()
+    a = Script(messages=iter([
+        AIMessage(content="", tool_calls=[_edit(OLD_PROOF, "Lower spend for Syracuse", 1)]),
+        AIMessage(content="", tool_calls=[call("write_file", {"file_path": "/plan.md", "content": "# Plan\n"}, 2)]),
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 3)]),
+        AIMessage(content="", tool_calls=[call("ls", {"path": "/"}, 4)]),
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/plan.md"}, 5)]),
+        AIMessage(content="never answered"),
+    ]), die_at=5)
+    with pytest.raises(WorkerDied):
+        _attempt(tmp_path / "disk-a" / "workspace", a, saver, copies)
+    assert len(a.seen) == 5
+    # Two full copies (the two file-changing rounds), then one re-stamp per read-only round.
+    assert len(copies.rows) == 2 and len(copies.restamps) == 3
+    assert copies.rows[-1]["turn_state"]["rounds"] == 5
+    assert copies.rows[-1]["files"]["plan.md"] == "# Plan\n"
+
+    b = Script(messages=iter([AIMessage(content="Done: the proof heading names Syracuse.")]))
+    result = _attempt(tmp_path / "disk-b" / "workspace", b, saver, copies, resume=copies.resume())
+    # Exactly one model call (the step that was in flight), already holding all five rounds.
+    assert len(b.seen) == 1
+    assert {f"call_{n}" for n in range(1, 6)} <= _tool_results(b.seen[0])
+    assert result.status == "applied", result
+    assert "Lower spend for Syracuse" in json.dumps(result.site["pages"]["/"])
+    assert copies.rows[-1]["turn_state"]["rounds"] == 6
 
 
 def test_rounds_carry_over_so_a_takeover_cannot_buy_fresh_ones(tmp_path: Path) -> None:
