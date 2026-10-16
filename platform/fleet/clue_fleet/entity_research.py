@@ -44,7 +44,7 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
-from clue_fleet.lease import WorkId
+from clue_fleet.lease import WorkId, revoke_work_lease
 from clue_fleet.queue import cancel_work_tasks, enqueue_task, finish_task
 from clue_fleet.work_worker import WorkContext, WorkResult
 
@@ -241,9 +241,11 @@ class EntityResearchExecutionFence(BaseModel):
 
     ``task_attempt`` is the durable per-task claim counter (``fleet_task.attempts``, incremented
     by every claim and never reset — a re-offered task keeps its row). It is part of the fence
-    because ``lease_generation`` alone does **not** identify a drive: ``release_work_lease``
-    deletes the ``work_lease`` row, so the next acquisition starts again at generation 1. Two
-    drives of the same job at the same durable state therefore share
+    because ``lease_generation`` alone did **not** identify a drive: ``release_work_lease`` used
+    to delete the ``work_lease`` row, so the next acquisition started again at generation 1.
+    (Since 2026-10-16 release keeps the row and generations never repeat — except after a
+    month-idle row is pruned — and the attempt stays in the key regardless.) Two drives of the
+    same job at the same durable state could therefore share
     ``(job, lease_generation, current_state_sha256)``, and the R3 journal's immutable
     exact-construction row would be replayed under a *different* construction whenever anything
     that constructs the agent moved between them (code, deployment config, run budget, committee
@@ -1251,10 +1253,9 @@ async def _record_finalization(
         # Revoke the lease before locking the task.  Heartbeats renew lease then touch task, so
         # using the same lock order prevents a cancellation/heartbeat deadlock.  The next renew
         # fences and cancels the resident driver; domain writes also re-check this live lease.
-        await conn.execute(
-            text("DELETE FROM work_lease WHERE work_id = :job_id"),
-            {"job_id": job.job_id},
-        )
+        # Revocation moves the generation on rather than deleting the row, so no later acquire
+        # can repeat the resident driver's number (site-turn durability, 2026-10-16).
+        await revoke_work_lease(conn, work_id=WorkId(job.job_id))
         await cancel_work_tasks(
             conn,
             kind=FleetTaskKind.ENTITY_RESEARCH_JOB,

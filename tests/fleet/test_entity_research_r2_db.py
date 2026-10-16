@@ -46,6 +46,7 @@ from clue_fleet import (
     launch_entity_research_run,
     list_tasks,
     release_work_lease,
+    renew_work_lease,
     requeue_task,
     wait_entity_research_job,
     wake_entity_research_job,
@@ -364,7 +365,19 @@ def test_contact_run_cancellation_is_all_or_none_and_cannot_resurrect_waits() ->
                 actor="user:owner",
             )
             assert cancelled_run.state is EntityResearchRunState.TERMINAL
-            assert await get_work_lease(conn, WorkId(queued_id)) is None
+            # Cancellation revokes the running job's lease: the row stays, ended, at a higher
+            # generation (it was deleted until 2026-10-16, which let the next holder repeat the
+            # resident driver's number), so the resident driver's next renew fails.
+            revoked = await get_work_lease(conn, WorkId(queued_id))
+            assert revoked is not None and not revoked.live
+            assert revoked.generation > running_fence.lease_generation
+            assert not await renew_work_lease(
+                conn,
+                work_id=WorkId(queued_id),
+                worker_id=running_fence.worker_id,
+                generation=LeaseGeneration(running_fence.lease_generation),
+                ttl=_TTL,
+            )
             for job_id in (queued_id, waiting_id):
                 job = await store.get_job(job_id)
                 assert job is not None

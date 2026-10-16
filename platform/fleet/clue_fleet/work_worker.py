@@ -129,6 +129,18 @@ class InFlightLimited(Protocol):
     def max_in_flight(self) -> int | None: ...
 
 
+def renew_retry_after(remaining_s: float, heartbeat_interval: float) -> float:
+    """How long a heartbeat waits before retrying a renew that raised.
+
+    Densely (a quarter of what is left, at least 50 ms) while the lease is still live, so a beat
+    lands before expiry if the fault clears; at the normal cadence once it has lapsed, when the
+    renew still lands if nobody took the work and a tight loop would only hammer a sick database.
+    """
+    if remaining_s <= 0:
+        return heartbeat_interval
+    return min(heartbeat_interval, max(0.05, remaining_s / 4))
+
+
 class LeasedWorkWorker:
     """Claim any registered work kind and supervise it under a generated lease fence.
 
@@ -559,6 +571,16 @@ class LeasedWorkWorker:
         acquired_at: float,
         slot: int | None = None,
     ) -> None:
+        """Keep the lease. Loss is declared ONLY when a renew reaches the database and fails.
+
+        A renew that raises (the database is unreachable) is retried — densely while the lease is
+        still live, at the normal cadence once it has lapsed — and never ends the turn by itself:
+        a renew lands even after expiry as long as nobody else has claimed the work (founder
+        decision 2026-10-16: a live worker that missed its renewal takes the lease back if nobody
+        else has claimed the run). If someone has — a stale task re-claimed by another worker,
+        which then acquired the lapsed lease at a higher generation — the next renew that reaches
+        the database fails, and that is when ``lease_lost`` is set. Writes made meanwhile are
+        fenced by the generation, never by this loop's clock."""
         loop = asyncio.get_running_loop()
         deadline = acquired_at + self._lease_ttl.total_seconds()
         sleep_for = self._heartbeat_interval
@@ -578,16 +600,11 @@ class LeasedWorkWorker:
                     worker_id=self.worker_id,
                     slot=slot,
                     work_id=str(work_id),
+                    lease_lapsed=loop.time() >= deadline,
                     exc_info=True,
                 )
-                if loop.time() >= deadline - self._heartbeat_interval:
-                    lease_lost.set()
-                    return
                 await self._touch(task_id, work_id, slot=slot)
-                sleep_for = min(
-                    self._heartbeat_interval,
-                    max(0.05, (deadline - loop.time()) / 4),
-                )
+                sleep_for = renew_retry_after(deadline - loop.time(), self._heartbeat_interval)
                 continue
             if not renewed:
                 lease_lost.set()
@@ -641,4 +658,5 @@ __all__ = [
     "WorkHandler",
     "WorkResult",
     "enqueue_work",
+    "renew_retry_after",
 ]
