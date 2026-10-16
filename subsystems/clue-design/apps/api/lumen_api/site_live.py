@@ -109,8 +109,8 @@ def live_page_html(
 
 
 _PREVIEW_CSP = (
-    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data:; "
-    "font-src data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
+    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self' data:; media-src 'self'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
 )
 
 

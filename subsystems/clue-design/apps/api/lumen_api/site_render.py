@@ -12,9 +12,10 @@ import functools
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -484,6 +485,39 @@ def site_page_html(page: RenderedPage, css: str) -> str:
     return web_export._inject_before_head_close(page.html, style)
 
 
+#: Where a preview document is served to the hardened browser when its assets are answered on
+#: request (``capture_site_screenshot(read_blob=...)``). Only this origin is ever answered.
+PREVIEW_ORIGIN = "http://site.preview.local"
+_ASSET_PATH = re.compile(r"^/asset-store/([0-9a-f]{64})$")
+
+
+def _load_document(page: Any, document: str, read_blob: Callable[[str], tuple[str, bytes]] | None, *, timeout_ms: float) -> None:
+    """Put ``document`` in the hardened page: served at :data:`PREVIEW_ORIGIN` with its
+    ``/asset-store/<sha256>`` files answered from ``read_blob`` on request, or set as is."""
+    if read_blob is None:
+        page.set_content(document, wait_until="load", timeout=timeout_ms)
+        return
+
+    def answer(route: Any) -> None:
+        path = route.request.url[len(PREVIEW_ORIGIN):]
+        if path in ("", "/"):
+            route.fulfill(status=200, content_type="text/html; charset=utf-8", body=document)
+            return
+        match = _ASSET_PATH.match(path)
+        if match is None:
+            route.abort("blockedbyclient")
+            return
+        try:
+            media_type, data = read_blob(match.group(1))
+        except Exception:  # noqa: BLE001 - a missing file is a missing picture, never a failed shot
+            route.fulfill(status=404)
+            return
+        route.fulfill(status=200, content_type=media_type, body=data)
+
+    page.route(PREVIEW_ORIGIN + "/**", answer)
+    page.goto(PREVIEW_ORIGIN + "/", wait_until="load", timeout=timeout_ms)
+
+
 def capture_site_screenshot(
     page: RenderedPage,
     css: str,
@@ -495,9 +529,18 @@ def capture_site_screenshot(
     timeout_s: float = 20.0,
     clip_selector: str | None = None,
     live_document: str | None = None,
+    read_blob: Callable[[str], tuple[str, bytes]] | None = None,
 ) -> bytes:
     """A PNG of ``page`` styled by ``css``, sanitized, in a hardened page with JavaScript OFF and
-    the network blocked. Its images and fonts must already be ``data:`` URIs
+    the network blocked.
+
+    With ``read_blob`` (``digest -> (media type, bytes)``) the document is served to the browser at
+    :data:`PREVIEW_ORIGIN`, and every ``/asset-store/<sha256>`` it asks for is answered from
+    ``read_blob`` on request; nothing else is ever answered. The browser then fetches only the
+    files the page uses. Inlining every image, font and video as ``data:`` text instead made the
+    Garner Syracuse page a 44 MB document (643 inlined files, 501 of them fonts) that took 4 s to
+    load, three times per preview (2026-10-17); served on request it is 1 MB and loads in 0.3 s.
+    Without ``read_blob`` the document is set as is, and its images and fonts must already be ``data:`` URIs
     (``web_pdf.inline_asset_store_refs``): nothing else can load. With ``clip_selector``, the PNG is
     an element shot of the first element it matches (a refusal when nothing matches).
 
@@ -534,7 +577,7 @@ def capture_site_screenshot(
 
                 closer = _CloseAtDeadline(shot, deadline)
                 try:
-                    shot.set_content(html, wait_until="load", timeout=remaining_ms())
+                    _load_document(shot, html, read_blob, timeout_ms=remaining_ms())
                     try:
                         # At most half the time limit, so a page that never comes alive still has
                         # the other half to be shot in. A FUNCTION, like ``_DONE``: Playwright polls a
@@ -553,7 +596,7 @@ def capture_site_screenshot(
                     return shot.screenshot(type="png", full_page=full_page, timeout=remaining_ms())
                 finally:
                     closer.disarm()
-            shot.set_content(html, wait_until="load", timeout=timeout_ms)
+            _load_document(shot, html, read_blob, timeout_ms=timeout_ms)
             shot.wait_for_timeout(_FONT_SETTLE_MS)
             if clip_selector is not None:
                 target = shot.locator(clip_selector)

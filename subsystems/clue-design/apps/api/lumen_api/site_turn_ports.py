@@ -13,7 +13,6 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -60,7 +59,6 @@ class PlatformSiteRenderer:
     def __init__(self, read_blob: Any = None, *, live: bool = False) -> None:
         self.read_blob = read_blob
         self.live = live
-        self._inlined: dict = {}
         self._live_pages: dict[str, tuple[Any, list[Any]]] = {}
 
     def render(self, site: dict, brand: dict, sections: list, *, route: str) -> tuple[str, str, list[str]]:
@@ -84,27 +82,21 @@ class PlatformSiteRenderer:
         from . import site_render
 
         remembered = self._live_pages.get(hashlib.sha256(html.encode("utf-8")).hexdigest()) if self.live else None
-        data = remembered[0].data if remembered is not None else None
-        if self.read_blob is not None:
-            from .web_pdf import inline_asset_store_refs
-
-            html, _missing = inline_asset_store_refs(html, self.read_blob, cache=self._inlined)
-            css, _missing = inline_asset_store_refs(css, self.read_blob, cache=self._inlined)
-            if data is not None:
-                text, _missing = inline_asset_store_refs(json.dumps(data), self.read_blob, cache=self._inlined)
-                data = json.loads(text)
         live_document = None
         if remembered is not None:
             from .site_live import live_preview_document, live_runtime
 
-            live_page = site_render.RenderedPage(route=remembered[0].route, html=html, data=data)
+            live_page = site_render.RenderedPage(route=remembered[0].route, html=html, data=remembered[0].data)
             live_document = live_preview_document(live_page, css, remembered[1], live_runtime())
+        # The page's /asset-store files are answered from this workspace's blobs as the browser asks
+        # for them (only the ones the page uses), never inlined into the document.
         return site_render.capture_site_screenshot(
             site_render.RenderedPage(route="/", html=html), css, width=width, full_page=True,
             # A shell-less scratch site's one section sits alone inside site-kit's .brand-root (the
             # theme gives it no min-height), so an element shot of it is the section, cut to size.
             clip_selector=".brand-root" if section_only else None,
             live_document=live_document,
+            read_blob=self.read_blob,
         )
 
 

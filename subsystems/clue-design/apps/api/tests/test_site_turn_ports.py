@@ -62,9 +62,9 @@ def _fake_site_render(monkeypatch: pytest.MonkeyPatch, calls: list) -> None:
         calls.append(("render_site", base_path, routes, [s.name for s in sections]))
         return SiteRender(pages=[RenderedPage(route=r, html=f"<main>{r}</main>") for r in routes or ["/"]], css="b{}", warnings=["w"])
 
-    def capture_site_screenshot(page, css, *, width, full_page=True, clip_selector=None, live_document=None):
+    def capture_site_screenshot(page, css, *, width, full_page=True, clip_selector=None, live_document=None, read_blob=None):
         assert live_document is None
-        calls.append(("capture", page.html, css, width, full_page, clip_selector))
+        calls.append(("capture", page.html, css, width, full_page, clip_selector, read_blob))
         return b"png"
 
     module.render_site = render_site
@@ -80,7 +80,7 @@ def test_the_renderer_port_drives_lane_as_render_and_screenshot(monkeypatch: pyt
     renderer = PlatformSiteRenderer()
     assert renderer.render({"pages": {}}, {"assets": {}}, [section], route="/analysis") == ("<main>/analysis</main>", "b{}", ["w"])
     assert renderer.screenshot("<main/>", "b{}", width=375) == b"png"
-    assert calls == [("render_site", "", ["/analysis"], ["StepsBand"]), ("capture", "<main/>", "b{}", 375, True, None)]
+    assert calls == [("render_site", "", ["/analysis"], ["StepsBand"]), ("capture", "<main/>", "b{}", 375, True, None, None)]
 
 
 def test_a_section_only_screenshot_is_cut_to_the_brand_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,18 +119,52 @@ def test_a_real_section_only_shot_is_the_section_and_a_full_page_shot_fills_the_
     assert page.height >= 900
 
 
-def test_the_screenshot_gets_images_and_fonts_inlined_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Lane A's screenshot runs with the network blocked, so /asset-store/ references become data:
-    URIs before it (contract conflict 7)."""
+def test_the_screenshot_hands_the_pages_files_to_the_capture_instead_of_inlining_them(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The page's /asset-store references stay as written and the blob reader goes to the capture,
+    which answers them on request (2026-10-17). They used to be inlined as data: URIs first, which
+    made the Garner Syracuse preview a 44 MB document (every font of every clone, the hero video)
+    that took 4 s to load, three times per preview."""
 
     calls: list = []
     _fake_site_render(monkeypatch, calls)
     digest = "a" * 64
-    renderer = PlatformSiteRenderer(read_blob=lambda d: ("image/png", b"\x89PNG"))
+    read_blob = lambda d: ("image/png", b"\x89PNG")  # noqa: E731
+    renderer = PlatformSiteRenderer(read_blob=read_blob)
     renderer.screenshot(f'<img src="/asset-store/{digest}">', f"@font-face{{src:url(/asset-store/{digest})}}", width=1440)
-    (_, html, css, width, _, _) = calls[-1]
-    assert "/asset-store/" not in html and "data:image/png;base64," in html
-    assert "/asset-store/" not in css and width == 1440
+    (_, html, css, width, _, _, handed) = calls[-1]
+    assert f"/asset-store/{digest}" in html and f"/asset-store/{digest}" in css and "data:" not in html
+    assert handed is read_blob and width == 1440
+
+
+def test_a_screenshot_fetches_only_the_files_the_page_uses() -> None:
+    """In the real hardened browser: the page's image is served from the blob reader on request,
+    a blob the page never names is never read, nothing is inlined, and the shot is a real PNG."""
+
+    from site_kit_support import chromium_available, ensure_site_kit_dist, garner_brand, garner_site
+
+    if not chromium_available():
+        pytest.skip("playwright chromium not installed")
+    ensure_site_kit_dist()
+    used, unused = "c" * 64, "d" * 64
+    reads: list[str] = []
+
+    def read_blob(digest: str) -> tuple[str, bytes]:
+        reads.append(digest)
+        return "image/png", base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        )
+
+    site = garner_site("doc_served_on_request")
+    site["pages"]["/"]["content"].append(
+        {"type": "FeatureSplit", "props": {"id": "split", "surface": "page", "heading": "t", "body": "b",
+                                           "image": f"/asset-store/{used}", "imageSide": "left", "buttonLabel": "", "buttonHref": ""}}
+    )
+    renderer = PlatformSiteRenderer(read_blob=read_blob)
+    html, css, _warnings = renderer.render(site, garner_brand(), [], route="/")
+    assert f"/asset-store/{used}" in html
+    png = renderer.screenshot(html, css, width=1440)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert used in reads and unused not in reads
 
 
 def test_a_route_the_renderer_did_not_return_is_a_typed_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,7 +264,8 @@ def test_the_live_preview_is_one_self_contained_document() -> None:
                 data={"route": "/"})
     module = Module(name="Late", digest="a" * 64, module_js="export const x = 1;", css="", props_schema={})
     document = live_preview_document(page, "b{color:red}", [module], runtime)
-    assert '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' data:;' in document
+    assert ('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' data:; '
+            'style-src \'unsafe-inline\'; img-src \'self\' data:; font-src \'self\' data:; media-src \'self\';') in document
     assert document.index("Content-Security-Policy") < document.index('<script type="importmap">')
     assert "b{color:red}" in document and "data:text/javascript;charset=utf-8,export%20default%201%3B" in document
     assert '"Late":"data:text/javascript;charset=utf-8,export%20const%20x%20%3D%201%3B"' in document
