@@ -141,13 +141,77 @@ FREEZE_MOTION_FN = r"""
 """
 
 
+#: The in-page colour reader every probe shares (review finding S6-3): each colour is drawn on a 1×1
+#: canvas and read back, so oklch(), lab(), color(display-p3 …) and any later CSS colour syntax arrive
+#: as the sRGB hex the page actually paints (Chromium clips out-of-gamut channels; so does this).
+#: `behindOf` composites every background from an element up to the first opaque one — through slots,
+#: shadow roots and same-origin iframes — onto the canvas default (white), and is null when a
+#: background image sits in between: text on a photo or a gradient has no one colour behind it.
+#: A hostile page can redefine canvas methods; it can only mislead its own capture.
+COLOR_FN = r"""
+  const __colorCanvas = document.createElement('canvas');
+  __colorCanvas.width = 1; __colorCanvas.height = 1;
+  const __colorCtx = __colorCanvas.getContext('2d', { willReadFrequently: true });
+  const __colorCache = new Map();
+  const __hex2 = (n) => n.toString(16).padStart(2, '0').toUpperCase();
+  const hexOf = (value) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    if (!text || text === 'none' || /^currentcolor$/i.test(text)) return null;
+    if (__colorCache.has(text)) return __colorCache.get(text);
+    let out = null;
+    if (CSS.supports('color', text)) {
+      __colorCtx.clearRect(0, 0, 1, 1);
+      __colorCtx.fillStyle = '#000';
+      __colorCtx.fillStyle = text;
+      __colorCtx.fillRect(0, 0, 1, 1);
+      const d = __colorCtx.getImageData(0, 0, 1, 1).data;
+      out = d[3] === 0 ? '#00000000' : '#' + __hex2(d[0]) + __hex2(d[1]) + __hex2(d[2]) + (d[3] === 255 ? '' : __hex2(d[3]));
+    }
+    __colorCache.set(text, out);
+    return out;
+  };
+  const alphaOf = (hex) => (!hex ? 0 : hex.length === 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1);
+  const paints = (hex) => alphaOf(hex) > 0;
+  const over = (top, bottom) => {
+    const a = alphaOf(top);
+    const ch = (i) => Math.round(parseInt(top.slice(i, i + 2), 16) * a + parseInt(bottom.slice(i, i + 2), 16) * (1 - a));
+    return '#' + __hex2(ch(1)) + __hex2(ch(3)) + __hex2(ch(5));
+  };
+  const composedParent = (node) => {
+    if (node.assignedSlot) return node.assignedSlot;
+    if (node.parentElement) return node.parentElement;
+    const root = node.getRootNode ? node.getRootNode() : null;
+    if (root && root.host) return root.host;
+    try {
+      const view = node.ownerDocument && node.ownerDocument.defaultView;
+      return view && view.frameElement ? view.frameElement : null;
+    } catch (e) { return null; }
+  };
+  const behindOf = (el) => {
+    const layers = [];
+    for (let node = el; node; node = composedParent(node)) {
+      if (node.nodeType !== 1) continue;
+      const ncs = getComputedStyle(node);
+      if (ncs.backgroundImage && ncs.backgroundImage !== 'none') return null;
+      const fill = hexOf(ncs.backgroundColor);
+      if (paints(fill)) { layers.push(fill); if (alphaOf(fill) >= 1) break; }
+    }
+    let base = '#FFFFFF';
+    if (layers.length && alphaOf(layers[layers.length - 1]) >= 1) base = layers.pop();
+    for (let i = layers.length - 1; i >= 0; i--) base = over(layers[i], base);
+    return base;
+  };
+"""
+
+
 # The browser-side probe. One expression, evaluated in the page; every number it
 # returns is a *used* value read from getComputedStyle, so nothing here needs a
 # CSS parser. Bounded on purpose (a 10k-node marketing page must not ship a
 # multi-megabyte harvest through the job row).
 GEOMETRY_JS = r"""
 () => {
-""" + FREEZE_MOTION_FN + r"""
+""" + FREEZE_MOTION_FN + COLOR_FN + r"""
   const MAX_PER_CLASS = 60;
   const MAX_SURFACES = 320;
   const MAX_SECTIONS = 40;
@@ -155,7 +219,9 @@ GEOMETRY_JS = r"""
 
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
   const r2 = (n) => Math.round(n * 100) / 100;
-  const opaque = (v) => (!v || v === 'transparent' || v === 'rgba(0, 0, 0, 0)') ? null : v;
+  // A colour that paints, as hex; null for none or fully transparent (S6-7: `rgba(255, 255, 255, 0)`
+  // is no fill, whatever its channels say).
+  const opaque = (v) => { const h = hexOf(v); return paints(h) ? h : null; };
   const notNone = (v) => (!v || v === 'none') ? null : v;
 
   const CORNERS = [
@@ -175,16 +241,6 @@ GEOMETRY_JS = r"""
       radius.push(r2(value));
     }
     return { radius, pill };
-  };
-
-  const effectiveBg = (el) => {
-    let node = el;
-    while (node) {
-      const bg = opaque(getComputedStyle(node).backgroundColor);
-      if (bg) return bg;
-      node = node.parentElement;
-    }
-    return null;
   };
 
   // A candidate's look is read with its motion held still (FREEZE_MOTION_FN), and its inline styles
@@ -218,7 +274,7 @@ GEOMETRY_JS = r"""
       gap: (rowGap === null && colGap === null) ? null : [rowGap, colGap],
       bg: opaque(cs.backgroundColor),
       bgImage: notNone(cs.backgroundImage),
-      color: cs.color || null,
+      color: hexOf(cs.color),
       font: cs.fontWeight + ' ' + cs.fontSize + '/' + cs.lineHeight + ' ' + cs.fontFamily,
       disabled: el.matches(':disabled, [aria-disabled="true"]'),
     };
@@ -241,8 +297,8 @@ GEOMETRY_JS = r"""
     if (text.length < 1 || text.length > 40 || h < 20) return false;
     if (blockAnchor(el)) return false;
     const fill = opaque(cs.backgroundColor);
-    const behind = effectiveBg(el.parentElement) || 'rgb(255, 255, 255)';  // the canvas default
-    if (fill && fill !== behind) return true;
+    const behind = behindOf(el.parentElement) || '#FFFFFF';  // the canvas default
+    if (fill && over(fill, behind) !== behind) return true;
     if ((cs.backgroundImage || '').indexOf('gradient(') >= 0) return true;
     return ['Top', 'Right', 'Bottom', 'Left'].every((side) => (
       num(cs['border' + side + 'Width']) >= 1 && !!opaque(cs['border' + side + 'Color'])
@@ -372,7 +428,7 @@ GEOMETRY_JS = r"""
       id: el.getAttribute('id'),
       classes: el.getAttribute('class'),
       top: r2(top),
-      bg: effectiveBg(el),
+      bg: behindOf(el),
       bgImage: bgImage,
       ink: inkOf(el),
       gradient: bgImage ? /gradient\(/i.test(bgImage) : false,
@@ -798,7 +854,7 @@ def shape_key(entry: dict) -> tuple:
     border, as in `_rest_look` and the minting."""
     radius = _numbers(entry.get("radius"))
     border = _numbers(entry.get("border"))
-    bg = _hex(entry.get("bg"))
+    bg = _opaque_hex(entry.get("bg"))
     style = str(entry.get("borderStyle") or "none").lower()
     has_border = (
         style not in ("none", "hidden") and any(v > 0 for v in border) and bool(_opaque_hex(entry.get("borderColor")))

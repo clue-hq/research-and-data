@@ -92,13 +92,13 @@ def test_each_style_is_measured_in_every_state(engine: str) -> None:
     run = asyncio.run(_capture(engine))
     solid = run["by_id"]["b-solid"]
     assert solid["how"] == "pointer"
-    assert solid["hover"]["background"] == "rgb(3, 90, 78)"
+    assert solid["hover"]["background"] == "#035A4E"
     assert "0px 4px 12px" in solid["hover"]["box_shadow"]
     assert solid["hover"]["icon_transform"] == "matrix(1, 0, 0, 1, 4, 0)"
-    assert solid["pressed"]["background"] == "rgb(2, 63, 55)"
+    assert solid["pressed"]["background"] == "#023F37"
     assert solid["pressed"]["transform"] == "matrix(0.98, 0, 0, 0.98, 0, 0)"
     assert solid["focus"]["outline_style"] == "solid"
-    assert solid["focus"]["outline_color"] == "rgb(245, 166, 35)"
+    assert solid["focus"]["outline_color"] == "#F5A623"
     assert solid["focus"]["outline_width"] == 3 and solid["focus"]["outline_offset"] == 2
     assert solid["disabled"] == {"opacity": 0.45, "cursor": "not-allowed"}
     assert [(t["property"], t["duration_ms"], t["easing"], t["delay_ms"]) for t in solid["motion"]["transitions"]] == [
@@ -110,19 +110,19 @@ def test_each_style_is_measured_in_every_state(engine: str) -> None:
 
     outline = run["by_id"]["b-outline"]
     assert outline["motion"]["icon"] == {"kind": "glyph", "position": "end", "glyph": "→"}
-    assert outline["hover"]["label_color"] == "rgb(255, 255, 255)"
+    assert outline["hover"]["label_color"] == "#FFFFFF"
 
-    assert run["by_id"]["b-js"]["hover"]["background"] == "rgb(90, 47, 214)", "the mouseenter hover"
+    assert run["by_id"]["b-js"]["hover"]["background"] == "#5A2FD6", "the mouseenter hover"
     assert run["by_id"]["b-js"]["focus"] == {"browser_focus_ring": True}, "the browser's ring is not a brand value"
     assert run["by_id"]["b-lift"]["hover"]["transform"] == "matrix(1, 0, 0, 1, 0, -2)"
     covered = run["by_id"]["b-covered"]
-    assert covered["how"] == "forced" and covered["hover"]["background"] == "rgb(8, 58, 108)"
+    assert covered["how"] == "forced" and covered["hover"]["background"] == "#083A6C"
 
     link = run["by_id"]["l-text"]
     assert link["hover"]["decoration_line"] == "underline"
     assert link["hover"]["decoration_thickness"] == "2px"
-    assert link["hover"]["color"] == "rgb(4, 116, 100)"
-    assert run["by_id"]["n-home"]["hover"]["color"] == "rgb(4, 116, 100)"
+    assert link["hover"]["color"] == "#047464"
+    assert run["by_id"]["n-home"]["hover"]["color"] == "#047464"
     assert "0px 8px 24px" in run["by_id"]["c-card"]["hover"]["box_shadow"]
 
     assert run["clicked"] == 0, "pressing never clicks"
@@ -139,7 +139,7 @@ def test_animations_reveals_and_scripted_motion_are_found(engine: str) -> None:
     assert reveal["from_transform"] == "matrix(1, 0, 0, 1, 0, 24)" and reveal["trigger"] == ["is-in"]
     assert {"kind": "scripted", "where": "div#spin.spin"} in run["result"]["scripted"]
     band = next(s for s in run["geometry"]["sections"] if s.get("id") == "band")
-    assert band["ink"] == "rgb(255, 255, 255)"
+    assert band["ink"] == "#FFFFFF"
 
 
 def test_the_pass_leaves_the_pixels_as_it_found_them() -> None:
@@ -155,7 +155,7 @@ def test_without_a_cdp_session_pointer_hovers_are_still_measured(monkeypatch) ->
 
     run = asyncio.run(_capture("playwright", before_probe=no_cdp))
     solid = run["by_id"]["b-solid"]
-    assert solid["hover"]["background"] == "rgb(3, 90, 78)"
+    assert solid["hover"]["background"] == "#035A4E"
     assert "pressed" not in solid and "focus" not in solid
     assert any(d["code"] == "LUMI0543" for d in run["diagnostics"])
 
@@ -179,7 +179,7 @@ def test_a_target_that_leaves_the_page_costs_no_more_than_the_deadline() -> None
     assert run["elapsed"] < STATE_PASS_DEADLINE_S + 3, f"state pass took {run['elapsed']:.1f}s"
     assert run["result"]["truncated"] is False
     stay = run["by_id"]["b-stay"]
-    assert stay["how"] == "pointer" and stay["hover"]["background"] == "rgb(3, 90, 78)"
+    assert stay["how"] == "pointer" and stay["hover"]["background"] == "#035A4E"
     assert run["by_id"]["n-home"]["how"] == "pointer", "the styles after the vanished ones are measured too"
     # The element re-rendered under the pointer is not measured by half: no record rather than the
     # empty reads of a detached element.
@@ -204,7 +204,7 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     pulse = run["by_id"]["b-pulse"]
     assert pulse["rest"]["box_shadow"] is None and pulse["rest"]["transform"] is None, pulse["rest"]
     assert pulse["how"] == "pointer", "a still element takes the real pointer"
-    assert pulse["hover"] == {"background": "rgb(3, 90, 78)"}
+    assert pulse["hover"] == {"background": "#035A4E"}
     assert not {"box_shadow", "transform"} & set(pulse["pressed"]), pulse["pressed"]
     assert not {"box_shadow", "transform"} & set(pulse["disabled"]), pulse["disabled"]
     assert run["after"] == ["", "pulse"], "the animation is given back"
@@ -218,7 +218,7 @@ def test_a_running_animation_is_not_read_as_a_state() -> None:
     # none is minted for it.
     fade = run["by_id"]["b-fade"]
     assert fade["rest"]["opacity"] == 1 and fade["rest"]["transform"] is None, fade["rest"]
-    assert fade["hover"] == {"background": "rgb(0, 0, 0)"}
+    assert fade["hover"] == {"background": "#000000"}
     minted = mint_component_tokens(json.loads(GARNER_KIT.read_text()), parsed.styles, MotionEvidence())
     (fade_recipe,) = [r for r in minted.section["styles"] if r["variant"] == "solid.28241e"]
     assert "transform" not in fade_recipe["rest"], fade_recipe["rest"]
@@ -238,7 +238,7 @@ def test_an_entrance_still_running_is_read_where_it_ends() -> None:
         for key in ("b-slow", "b-late"):
             rest = run["by_id"][key]["rest"]
             assert rest["opacity"] == 1 and rest["transform"] is None, (before_probe, key, rest)
-        assert run["by_id"]["b-slow"]["hover"] == {"background": "rgb(3, 90, 78)"}
+        assert run["by_id"]["b-slow"]["hover"] == {"background": "#035A4E"}
 
 
 def test_a_reversed_entrance_is_read_where_it_ends() -> None:
@@ -254,7 +254,7 @@ def test_a_reversed_entrance_is_read_where_it_ends() -> None:
         )
 
     run = asyncio.run(_capture("playwright", fixture="reversed_entrance.html", after_probe=rates_after))
-    for key, hover in (("b-script-rev", "rgb(3, 90, 78)"), ("b-css-rev", "rgb(0, 0, 0)")):
+    for key, hover in (("b-script-rev", "#035A4E"), ("b-css-rev", "#000000")):
         rest = run["by_id"][key]["rest"]
         assert rest["opacity"] == 1 and rest["transform"] is None, (key, rest)
         assert run["by_id"][key]["hover"] == {"background": hover}, (key, run["by_id"][key]["hover"])
@@ -298,7 +298,7 @@ def test_a_script_driven_pulse_is_not_read_as_a_state() -> None:
         first = run["by_id"]["b-first"]
         assert first["rest"]["box_shadow"] is None and first["rest"]["transform"] is None, first["rest"]
         assert first["how"] == "pointer", "a still element takes the real pointer"
-        assert first["hover"] == {"background": "rgb(3, 90, 78)"}
+        assert first["hover"] == {"background": "#035A4E"}
         assert not {"box_shadow", "transform"} & set(first["pressed"]), first["pressed"]
         assert not {"box_shadow", "transform"} & set(first["disabled"]), first["disabled"]
         assert run["after"] == [["running"], ["running"]], "the pulses are given back"
@@ -319,14 +319,14 @@ def test_an_entrance_ending_is_not_caused_by_the_capture() -> None:
 
     run = asyncio.run(_capture("playwright", fixture="animationend_side_effect.html", after_probe=ended_after))
     assert run["after"] == [0, "cta css", "cta script"], "no end handler ran during the capture"
-    fills = {"b-css": "rgb(4, 116, 100)", "b-script": "rgb(40, 36, 30)"}
+    fills = {"b-css": "#047464", "b-script": "#28241E"}
     measured = {surface["idx"]: surface for surface in run["geometry"]["surfaces"]}
     for key, fill in fills.items():
         record = run["by_id"][key]
         assert measured[record["idx"]]["bg"] == fill, (key, measured[record["idx"]]["bg"])
         assert record["rest"]["background"] == fill and record["rest"]["opacity"] == 1, (key, record["rest"])
-    assert run["by_id"]["b-css"]["hover"] == {"background": "rgb(3, 90, 78)"}
-    assert run["by_id"]["b-script"]["hover"] == {"background": "rgb(0, 0, 0)"}
+    assert run["by_id"]["b-css"]["hover"] == {"background": "#035A4E"}
+    assert run["by_id"]["b-script"]["hover"] == {"background": "#000000"}
     styles = {s.variant for s in parse_geometry({**run["geometry"], "states": run["result"]},
                                                 page_url="https://fixture.test/").styles if s.surface == "button"}
     assert styles == {"solid.047464", "solid.28241e"}, styles
@@ -361,5 +361,5 @@ def test_cards_wrapped_in_anchors_are_not_the_text_link_style() -> None:
     parsed = parse_geometry({**run["geometry"], "states": run["result"]}, page_url="https://fixture.test/")
     links = [(s.variant, s.count, s.probed) for s in parsed.styles if s.surface == "link"]
     assert links == [("ghost.0b5cad", 2, "pointer")], links
-    assert run["by_id"]["l-docs"]["hover"]["color"] == "rgb(8, 66, 124)"
+    assert run["by_id"]["l-docs"]["hover"]["color"] == "#08427C"
     assert {s.variant for s in parsed.styles if s.surface == "nav_link"} == {"ghost.0d2b25"}

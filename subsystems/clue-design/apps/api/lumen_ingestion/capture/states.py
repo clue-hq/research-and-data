@@ -47,7 +47,7 @@ import contextlib
 import time
 from typing import Any
 
-from .geometry import FREEZE_MOTION_FN, normalize_transform, state_targets
+from .geometry import COLOR_FN, FREEZE_MOTION_FN, normalize_transform, state_targets
 
 #: The whole pass's wall clock. Ten buttons and a dozen other styles take about 2.5 s at the
 #: measured 100-140 ms each; the rest is headroom for covered elements (1.2 s each).
@@ -90,6 +90,7 @@ _TRANSITIONS_FN = r"""
 LOOK_JS = r"""
 (el) => {
   if (!el.isConnected) throw new Error('the element has left the page');
+""" + COLOR_FN + r"""
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; };
   const cut = (v) => (v === undefined || v === null || v === '') ? null : String(v).slice(0, 240);
   const host = (() => {
@@ -102,10 +103,10 @@ LOOK_JS = r"""
   const cs = getComputedStyle(el);
   const hs = getComputedStyle(host);
   const look = {
-    background: cut(cs.backgroundColor),
-    color: cut(cs.color),
-    label_color: host === el ? null : cut(hs.color),
-    border_color: cut(cs.borderTopColor),
+    background: hexOf(cs.backgroundColor),
+    color: hexOf(cs.color),
+    label_color: host === el ? null : hexOf(hs.color),
+    border_color: hexOf(cs.borderTopColor),
     border_width: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].map(num),
     border_style: cut(cs.borderTopStyle),
     radius: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map(num),
@@ -125,14 +126,14 @@ LOOK_JS = r"""
     filter: cs.filter === 'none' ? null : cut(cs.filter),
     cursor: cut(cs.cursor),
     outline_style: cut(cs.outlineStyle),
-    outline_color: cut(cs.outlineColor),
+    outline_color: hexOf(cs.outlineColor),
     outline_width: num(cs.outlineWidth),
     outline_offset: num(cs.outlineOffset),
   };
   if (icon) {
     const is = getComputedStyle(icon);
     look.icon_transform = is.transform === 'none' ? null : cut(is.transform);
-    look.icon_color = cut(is.color);
+    look.icon_color = hexOf(is.color);
     look.icon_opacity = num(is.opacity);
   }
   return look;
