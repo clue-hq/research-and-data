@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Config, Fields } from "@puckeditor/core";
+import { useGetPuck, type Config, type Fields } from "@puckeditor/core";
 import { SURFACES, fillClone, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
 import { AssetPicker, CloneEditor } from "@clue/site-kit/editor";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
@@ -28,6 +28,14 @@ export function surfaceUtilityCss(brand: BrandData): string {
   return rules.length ? `@layer utilities{${rules.join("")}}` : "";
 }
 
+/** S2a-2 §2.5: an agent section's props as Puck stores them (plain strings, before its in-place
+ * widgets go in), for site-kit's one second try at drawing a section that failed in Edit mode.
+ * Called while the section draws in Puck's preview, which shares Puck's React tree. */
+function useRawProps(): (id: string) => Record<string, unknown> | undefined {
+  const getPuck = useGetPuck();
+  return (id) => getPuck().getItemById(id)?.props as Record<string, unknown> | undefined;
+}
+
 /** The page config: site-kit's sections, the seller's clones, the shell drawn around every page,
  * and this site's agent sections with fields from their own props schema. Each agent section sits
  * behind site-kit's own error boundary (its `SectionBoundary`): one that throws is left out on its
@@ -37,7 +45,7 @@ export function surfaceUtilityCss(brand: BrandData): string {
 export function buildPageConfig(brand: BrandData, shell: SiteShell | null, sections: readonly LoadedSection[]): Config {
   const config = makeConfig(brand, {
     agentSections: Object.fromEntries(sections.map((section) => [section.name, section.module])),
-    editor: { AssetPicker, CloneEditor },
+    editor: { AssetPicker, CloneEditor, useRawProps },
     cloneHtml: fillClone,
     mode: "page",
     shell: (shell ?? undefined) as ShellData | undefined,

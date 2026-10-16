@@ -44,6 +44,9 @@ export type EditorParts = {
     htmlFor: (key: string, value: string) => string;
   }) => React.ReactNode;
   AssetPicker: (props: { assets: BrandData["assets"]; value: string; onChange: (value: string) => void }) => React.ReactNode;
+  /** A hook, called while an agent section draws in the editor: reads a section's props as stored
+   * (plain strings, before Puck puts its in-place widgets in), by its id (S2a-2 §2.5). */
+  useRawProps?: () => (id: string) => Record<string, unknown> | undefined;
 };
 
 export type ConfigOptions = {
@@ -73,15 +76,28 @@ export type ConfigOptions = {
  * is the section, which the live page's error report reads from the boundary that caught the error
  * (hydrateSite). While nothing fails it renders no element of its own, so the server HTML is
  * unchanged (boundaries do nothing on the server: a section that throws there fails the render). */
-export class SectionBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
+export class SectionBoundary extends Component<
+  { name: string; children: ReactNode; retry?: () => ReactNode | null },
+  { failed: boolean }
+> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
+  componentDidCatch() {
+    if (this.props.retry) {
+      console.warn(`The agent section ${this.props.name} failed with its text editable on the canvas; it is drawn with its stored props and edited in the side panel.`);
+    }
+  }
   render() {
-    return this.state.failed ? <div data-agent-section-failed={this.props.name} /> : this.props.children;
+    if (!this.state.failed) return this.props.children;
+    // The editor's one second try (S2a-2 §2.5); a failure there is the marker.
+    const retry = this.props.retry?.();
+    return retry ? <SectionBoundary name={this.props.name}>{retry}</SectionBoundary> : <div data-agent-section-failed={this.props.name} />;
   }
 }
+
+const noRawProps = () => () => undefined;
 
 // One config per brand and site. Fields and renders close over the brand's clone library and
 // assets; the editor (client) and the published route (server) both call this.
@@ -143,27 +159,44 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     })),
   ];
   const sections = makeSections(brand, href, options.editor?.AssetPicker);
-  // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit fields.
+  // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit
+  // fields (the editor gives them fields from their props schema).
   const kit = makeKit(href, brand);
+  const useRawProps = options.editor?.useRawProps ?? noRawProps;
   const agentSections = Object.fromEntries(
     Object.entries(options.agentSections ?? {}).map(([name, module]) => {
+      type SectionProps = Record<string, unknown> & { id?: string; puck?: { isEditing?: boolean } };
       // The section draws inside its own component, so its boundary catches what it throws. This is
       // the one place module.render is called. Props travel whole (not spread), so none is dropped.
       // kit.editing: true while the marketer edits the page (Puck's puck.isEditing), so the section
       // shows its first state and starts nothing.
-      const Drawn = ({ props }: { props: never }) =>
-        module.render(props, { ...kit, editing: Boolean((props as { puck?: { isEditing?: boolean } }).puck?.isEditing) });
+      const Drawn = ({ props }: { props: SectionProps }) =>
+        module.render(props as never, { ...kit, editing: Boolean(props.puck?.isEditing) });
+      // In Edit mode, a section that throws with Puck's in-place widgets in its props is drawn once
+      // more with its stored props (S2a-2 §2.5): edited in the side panel, never an empty box. The
+      // boundary is keyed by the mode, so leaving Edit mode draws the section afresh.
+      const Mounted = ({ props }: { props: SectionProps }) => {
+        const rawProps = useRawProps();
+        const editing = Boolean(props.puck?.isEditing);
+        const retry = () => {
+          const raw = rawProps(String(props.id ?? ""));
+          return raw ? <Drawn props={{ ...raw, puck: props.puck }} /> : null;
+        };
+        return (
+          <SectionBoundary key={editing ? "edit" : "view"} name={name} retry={editing && options.editor?.useRawProps ? retry : undefined}>
+            <Drawn props={props} />
+          </SectionBoundary>
+        );
+      };
       return [
         name,
         {
           label: `${name} (agent)`,
           fields: {},
           // The wrapper lets compare_section find the component whatever its root element is.
-          render: (props: never) => (
+          render: (props: SectionProps) => (
             <div data-agent-section={name}>
-              <SectionBoundary name={name}>
-                <Drawn props={props} />
-              </SectionBoundary>
+              <Mounted props={props} />
             </div>
           ),
         },
