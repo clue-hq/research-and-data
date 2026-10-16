@@ -1921,13 +1921,14 @@ def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
     real_put = HybridRepository.put_site_turn_workspace
     writes: list = []
 
-    def die_on_the_second_copy(self, run_id, **kwargs):
+    # Copies: the starting one (before call 1), round 1's (before call 2), round 2's (before call 3).
+    def die_on_round_twos_copy(self, run_id, **kwargs):
         writes.append(kwargs["checkpoint_id"])
-        if len(writes) == 2:
+        if len(writes) == 3:
             die()
         return real_put(self, run_id, **kwargs)
 
-    monkeypatch.setattr(HybridRepository, "put_site_turn_workspace", die_on_the_second_copy)
+    monkeypatch.setattr(HybridRepository, "put_site_turn_workspace", die_on_round_twos_copy)
     store, document_id, born, envelope = fresh_site_run(garner)
     generation_a = hold_run(store, envelope, "worker-a")
     a = model.next(
@@ -1936,9 +1937,9 @@ def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
         AIMessage(content="never reached"),
     )
     dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
-    assert len(a.seen) == 2 and len(writes) == 2
+    assert len(a.seen) == 2 and len(writes) == 3
     copy = store.get_site_turn_workspace(envelope.run_id)
-    assert copy["checkpoint_id"] == writes[0] and CTA_A not in copy["files"]["pages/analysis.json"]
+    assert copy["checkpoint_id"] == writes[1] and CTA_A not in copy["files"]["pages/analysis.json"]
     monkeypatch.setattr(HybridRepository, "put_site_turn_workspace", real_put)
 
     another_disk(_agent_root, store, document_id)
@@ -1957,13 +1958,13 @@ def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
         with_heading(born, "/", "proof", PROOF_A), "/analysis", "cta", CTA_A)
 
 
-def test_j_d_no_copy_yet_restarts_from_the_top_and_the_site_is_saved(
+def test_j_d_a_death_in_the_first_round_redoes_only_that_round_and_the_site_is_saved(
         client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
         monkeypatch: pytest.MonkeyPatch) -> None:
-    """A dies in its first round, after its edit landed in its folder: no copy was written yet, but
-    its conversation has checkpoints. Resuming them over a folder rebuilt from the stored site would
-    lose the edit (the turn would end "unchanged"). B instead drops them and starts the turn from
-    the top, so the request's edit is made again and saved."""
+    """A dies in its first round, after its edit landed in its folder. The copy written before its
+    first model call (the files as the turn started) is stamped with that call's checkpoint, so B
+    resumes there: it redoes only the round in flight, never resuming the later checkpoints over
+    a folder that lacks their edit (which would end the turn "unchanged"), and the edit is saved."""
     from lumen_agent.site.tools import SiteTools
 
     real_validate = SiteTools.validate_page
@@ -1980,7 +1981,9 @@ def test_j_d_no_copy_yet_restarts_from_the_top_and_the_site_is_saved(
     generation_a = hold_run(store, envelope, "worker-a")
     model.next(*proof_edit(born, PROOF_A, 1))
     dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
-    assert store.get_site_turn_workspace(envelope.run_id) is None
+    start = store.get_site_turn_workspace(envelope.run_id)
+    assert start is not None and start["turn_state"]["rounds"] == 0
+    assert PROOF_A not in json.dumps(start["files"])
     assert checkpoint_rows(envelope.run_id) > 0
 
     another_disk(_agent_root, store, document_id)

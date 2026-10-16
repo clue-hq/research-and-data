@@ -477,8 +477,8 @@ class WorkingCopy(AgentMiddleware):
     on (a round that only read), it RE-STAMPS the copy already written with the new checkpoint and
     the current turn state, without sending the files again, so a takeover redoes at most the step
     in flight and its round and time counters are current. After the agent's answer it stamps the
-    final copy, so a takeover after the last step makes no model call at all. Before the first copy
-    is written there is nothing to re-stamp.
+    final copy, so a takeover after the last step makes no model call at all. The first round always
+    writes a copy (the files as the turn starts), so there is a row to re-stamp from the start.
 
     A sink that fails is logged and retried at the next round: the turn goes on, its copy one round
     older. Anything that is not an ``Exception`` (a dying worker) is never caught here."""
@@ -505,7 +505,7 @@ class WorkingCopy(AgentMiddleware):
 
     def prime(self, checkpoint_id: str | None = None) -> None:
         """Take the workspace as it stands (the start of the turn, or the restored copy) as the
-        last copy written, so the first round writes nothing unless something changed.
+        last copy written, so the first round writes only the starting copy (when none exists yet) unless something changed.
         ``checkpoint_id``: the restored copy's checkpoint (its row exists, so it can be re-stamped)."""
 
         self._written = self._capture()[3]
@@ -522,8 +522,10 @@ class WorkingCopy(AgentMiddleware):
         files, state, files_sha, key = self._capture()
         if not checkpoint_id:
             return
-        if key == self._written and not always:
-            if self._stamped_at is None or checkpoint_id == self._stamped_at:
+        # Before any copy exists the first round writes one, changed or not, so even the rounds
+        # before the first file change are never redone; after that an unchanged round re-stamps.
+        if key == self._written and not always and self._stamped_at is not None:
+            if checkpoint_id == self._stamped_at:
                 return
             try:
                 self.sink(checkpoint_id, None, state, None)

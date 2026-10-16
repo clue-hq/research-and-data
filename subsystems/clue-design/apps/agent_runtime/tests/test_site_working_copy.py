@@ -96,7 +96,8 @@ def test_a_takeover_continues_from_the_copy_and_redoes_nothing_finished(tmp_path
         _attempt(tmp_path / "disk-a" / "workspace", a, saver, copies)
     assert len(a.seen) == 2
     # One copy per round that changed files: after round 1 (the page) and after round 2 (plan.md).
-    assert len(copies.rows) == 2
+    # The starting copy (round 0, before the first model call), then the round that edited.
+    assert len(copies.rows) == 3 and copies.rows[0]["turn_state"]["rounds"] == 0
     assert copies.rows[-1]["files"]["plan.md"] == "# Plan\n"
     assert "Lower spend for Syracuse" in copies.rows[-1]["files"]["page.json"]
     assert copies.rows[-1]["turn_state"]["rounds"] == 2
@@ -150,7 +151,8 @@ def test_read_only_rounds_move_the_copy_on_so_a_takeover_redoes_only_the_step_in
         _attempt(tmp_path / "disk-a" / "workspace", a, saver, copies)
     assert len(a.seen) == 5
     # Two full copies (the two file-changing rounds), then one re-stamp per read-only round.
-    assert len(copies.rows) == 2 and len(copies.restamps) == 3
+    # The starting copy, the two file-changing rounds, then three re-stamps.
+    assert len(copies.rows) == 3 and len(copies.restamps) == 3
     assert copies.rows[-1]["turn_state"]["rounds"] == 5
     assert copies.rows[-1]["files"]["plan.md"] == "# Plan\n"
 
