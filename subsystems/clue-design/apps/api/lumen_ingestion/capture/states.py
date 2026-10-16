@@ -596,7 +596,8 @@ async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None,
         cdp = await page.context.new_cdp_session(page)
         await cdp.send("DOM.enable")
         await cdp.send("CSS.enable")
-        await cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})  # DOM.requestNode needs it
+        # DOM.requestNode needs the document requested; depth 0 is enough (it pushes the path to the node itself).
+        await cdp.send("DOM.getDocument", {"depth": 0})
     except Exception as error:  # noqa: BLE001
         cdp = None
         diagnostics.append(_diag("LUMI0543", "warning", f"pressed and focus states not measured (no CDP session): {error}"))
