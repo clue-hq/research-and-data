@@ -9228,9 +9228,10 @@ def run_agent_turn_preview(
         # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
         # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
         # is left exactly as the human composed it — no top-up to the cap, no reordering.
-        reference_assets = resolve_auto_ad_references(
-            payload, turn_blobs, turn_cache_root, ad_lane
-        )
+        with _setup_step(run_id or "preview", "auto_ad_references"):
+            reference_assets = resolve_auto_ad_references(
+                payload, turn_blobs, turn_cache_root, ad_lane
+            )
 
     try:
         config = AgentRuntimeConfig.from_env(root)
@@ -9391,12 +9392,13 @@ def run_agent_turn_preview(
             # A DIFFERENT worker ran this session's last turn (or this one's disk was reclaimed).
             # Rebuild the folder before anything reads it, or the agent would continue a
             # conversation about files it cannot open.
-            restored = restore_session(
-                session_dir,
-                session_manifest,
-                read_blob=turn_blobs.read_blob,
-                history_file=history_file,
-            )
+            with _setup_step(run_id or "preview", "session_restore"):
+                restored = restore_session(
+                    session_dir,
+                    session_manifest,
+                    read_blob=turn_blobs.read_blob,
+                    history_file=history_file,
+                )
             api_logger.info(
                 "design_session.restored", session_id=session_id, files=restored
             )
@@ -10327,6 +10329,25 @@ def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
 
 
 @contextmanager
+def _setup_step(run_id: str, step: str):
+    """Log how long one step of a design turn's setup took, before the agent starts.
+
+    A follow-up edit spent ~100 s here with one silent minute (2026-10-16); these lines make
+    each step's share visible in the worker log as ``design_turn.setup_step``.
+    """
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        api_logger.info(
+            "design_turn.setup_step",
+            run_id=run_id,
+            step=step,
+            duration_ms=round((time.perf_counter() - started) * 1000, 1),
+        )
+
+
+@contextmanager
 def _request_spend_scope(workspace_id: str):
     """One request's spend scope, drained on the way out. For a route that spends.
 
@@ -10579,7 +10600,8 @@ def _execute_agent_turn_job(
         reads_factory = getattr(host, "platform_reads_factory", None)
         if callable(reads_factory):
             try:
-                platform_reads = reads_factory(envelope)
+                with _setup_step(envelope.run_id, "platform_reads"):
+                    platform_reads = reads_factory(envelope)
             except Exception:
                 api_logger.warning(
                     "design_turn.platform_reads_unavailable",
@@ -10610,7 +10632,8 @@ def _execute_agent_turn_job(
     drift_note: str | None = None
     if leg_persist:
         try:
-            doc = store.require_document(document_id)
+            with _setup_step(envelope.run_id, "document_read"):
+                doc = store.require_document(document_id)
         except Exception as error:  # noqa: BLE001 - mirrors the executor's own outer handler
             # Same shape the outer handler below mints, minted here because this read happens
             # before it opens: a turn that cannot read its own document has not begun.
@@ -10621,9 +10644,10 @@ def _execute_agent_turn_job(
             )
             return "failed", failed, "error", {"message": str(error)}
         base_version = int(doc["current_version"])
-        drift_note = _document_drift_note(
-            store, document_id=str(document_id), current_version=base_version
-        )
+        with _setup_step(envelope.run_id, "drift_note"):
+            drift_note = _document_drift_note(
+                store, document_id=str(document_id), current_version=base_version
+            )
         payload = payload.model_copy(update={"scene": doc["scene"]})
 
     pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
@@ -10642,14 +10666,15 @@ def _execute_agent_turn_job(
                     "the leg's brand pin carries no version; a pin is (id, version)"
                 )
             pinned_version = int(pinned_version)
-            resolved_brand_kit = load_brand_kit_by_value(
-                workspace_id=envelope.workspace_id,
-                brand_kit_id=str(pinned_kit_id),
-                version=pinned_version,
-                blobs=_turn_blob_store(host, envelope.workspace_id),
-                source="leg_pin",
-                ensure_workspace=False,
-            )
+            with _setup_step(envelope.run_id, "brand_kit"):
+                resolved_brand_kit = load_brand_kit_by_value(
+                    workspace_id=envelope.workspace_id,
+                    brand_kit_id=str(pinned_kit_id),
+                    version=pinned_version,
+                    blobs=_turn_blob_store(host, envelope.workspace_id),
+                    source="leg_pin",
+                    ensure_workspace=False,
+                )
         except Exception as error:
             failed = failed_agent_turn_response(
                 "design_leg.brand_pin_unresolvable",
@@ -10722,6 +10747,18 @@ def _execute_agent_turn_job(
                 run_id=envelope.run_id,
                 intent=user_message,
             )
+        turn_asset_library = None
+        turn_session_manifest = None
+        if override is None:
+            with _setup_step(envelope.run_id, "asset_library"):
+                turn_asset_library = pinned_asset_library(store, envelope.run_id)
+            if session_id:
+                with _setup_step(envelope.run_id, "session_manifest"):
+                    turn_session_manifest = _session_manifest(
+                        store,
+                        _turn_blob_store(host, envelope.workspace_id),
+                        document_id=str(document_id),
+                    )
         if override is not None:
             response = _call_turn_override(
                 override, payload, root, scene_checkpoint=_checkpoint_sink(committer),
@@ -10733,7 +10770,7 @@ def _execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
-                resolved_asset_library=pinned_asset_library(store, envelope.run_id),
+                resolved_asset_library=turn_asset_library,
                 frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
@@ -10751,15 +10788,7 @@ def _execute_agent_turn_job(
                 # ...and the memory that session left behind, so a turn on a worker that has
                 # never run it rebuilds the folder instead of opening a continued thread over
                 # an empty workspace.
-                session_manifest=(
-                    _session_manifest(
-                        store,
-                        _turn_blob_store(host, envelope.workspace_id),
-                        document_id=str(document_id),
-                    )
-                    if session_id
-                    else None
-                ),
+                session_manifest=turn_session_manifest,
                 resolved_brand_kit=resolved_brand_kit,
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
