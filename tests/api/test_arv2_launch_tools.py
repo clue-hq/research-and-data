@@ -42,6 +42,8 @@ from clue_api.arv2.discovery_launch import (
     LaunchArv2DiscoveryTool,
     LaunchArv2DiscoveryV2Input,
     LaunchArv2DiscoveryV2Tool,
+    LaunchArv2DiscoveryV3Input,
+    LaunchArv2DiscoveryV3Tool,
     build_arv2_discovery_tools,
 )
 from clue_core import new_operation_id
@@ -502,11 +504,12 @@ def test_a_discovery_refusal_arrives_as_a_typed_precondition_failure() -> None:
 
 
 def test_the_discovery_tool_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
-    retired, launch = build_arv2_discovery_tools(_FakeDiscoveryService())
+    retired, launch, launch_v3 = build_arv2_discovery_tools(_FakeDiscoveryService())
 
     assert (retired.name, retired.version) == ("launch_arv2_discovery", "1")
     assert launch.name == "launch_arv2_discovery" and launch.version == "2"
-    for tool in (retired, launch):
+    assert (launch_v3.name, launch_v3.version) == ("launch_arv2_discovery", "3")
+    for tool in (retired, launch, launch_v3):
         assert tool.effect_class is ToolEffectClass.SPEND
         assert tool.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
         # ``project`` is the spine row the execution is bound to — a replay identity, not a
@@ -602,3 +605,43 @@ def test_the_discovery_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_tr
         module.main()
 
     assert str(exited.value) == "refused: project_icp_not_pinned: confirm an ICP at the gate first"
+
+
+def test_v3_passes_the_exclude_list_into_the_brief() -> None:
+    """Spec 2026-10-16 §4.5: the companies the Head of ABM chose to leave out ride the brief."""
+
+    async def scenario() -> None:
+        service = _FakeDiscoveryService(receipt=_discovery_receipt())
+        exclude = [{"name": "Marriott", "domains": ["marriott.com"]}]
+        inputs = LaunchArv2DiscoveryV3Input.model_validate(
+            {"project_id": PROJECT, "target_count": 20, **_BRIEF, "exclude": exclude}
+        )
+
+        result = await LaunchArv2DiscoveryV3Tool(service).invoke(inputs, _context())
+
+        brief = service.requests[0].brief
+        assert brief is not None
+        assert brief.model_dump(mode="json") == {**_BRIEF, "exclude": exclude}
+        assert result.version == "3"
+
+    run_async(scenario())
+
+
+def test_v3_refuses_an_exclude_entry_without_a_domain_at_the_input() -> None:
+    """Like a malformed gate, a malformed entry never reaches the launch: the tool's own input
+    schema refuses it, naming the field."""
+    with pytest.raises(ValidationError) as refused:
+        LaunchArv2DiscoveryV3Input.model_validate(
+            {
+                "project_id": PROJECT,
+                **_BRIEF,
+                "exclude": [{"name": "Acme", "domains": ["not a domain"]}],
+            }
+        )
+    assert "exclude.0.domains" in str(refused.value)
+
+
+def test_v2_input_schema_is_unchanged() -> None:
+    """``@2`` is pinned by input-schema hash in historical profiles; it must not grow a field."""
+    assert "exclude" not in LaunchArv2DiscoveryV2Input.model_json_schema()["properties"]
+    assert "exclude" in LaunchArv2DiscoveryV3Input.model_json_schema()["properties"]

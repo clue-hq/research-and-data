@@ -4,12 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from clue_api.arv2.discovery_brief import Gate, parse_window_months
 from clue_api.arv2.discovery_verifier import GateVerdict, disposition
+from clue_research.identity.normalize import registrable_domain
 
 GateRole = Literal["must", "must_not", "prefer"]
 DiscoverySource = Literal["websets", "search"]
@@ -23,12 +32,40 @@ class BriefGate(BaseModel):
     role: GateRole
 
 
+class ExcludedCompany(BaseModel):
+    """One company the search must leave out, with its website domains (spec
+    2026-10-16-discovery-excludes-seller-customers §4.5). Who belongs here is the agent's call;
+    this checks only the shape."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=200)
+    domains: list[str] = Field(min_length=1, max_length=10)
+
+    @field_validator("domains")
+    @classmethod
+    def _real_domains(cls, domains: list[str]) -> list[str]:
+        for domain in domains:
+            if not registrable_domain(domain):
+                raise ValueError(f"{domain!r} is not a website domain")
+        return domains
+
+
 class DiscoveryBrief2(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: DiscoverySource
     query: str = Field(min_length=1, max_length=600)
     criteria: list[str] = Field(min_length=1, max_length=5)
     gates: list[BriefGate] = Field(min_length=2, max_length=8)
+    exclude: list[ExcludedCompany] = Field(default_factory=list, max_length=500)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_exclude(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A brief with no exclusions serializes exactly as it did before the field existed, so a
+        # stored brief and the run id hashed from it never change for the same ask.
+        data: dict[str, Any] = handler(self)
+        if not self.exclude:
+            data.pop("exclude", None)
+        return data
 
     @model_validator(mode="after")
     def _check(self) -> DiscoveryBrief2:
@@ -38,6 +75,17 @@ class DiscoveryBrief2(BaseModel):
         if len(set(keys)) != len(keys):
             raise ValueError("gate keys must be unique")
         return self
+
+
+def excluded_domains(brief: DiscoveryBrief2) -> dict[str, str]:
+    """Every excluded registrable domain, mapped to the first entry that names it."""
+    found: dict[str, str] = {}
+    for company in brief.exclude:
+        for domain in company.domains:
+            folded = registrable_domain(domain)
+            if folded and folded not in found:
+                found[folded] = company.name
+    return found
 
 
 def verifier_gates(brief: DiscoveryBrief2) -> tuple[Gate, ...]:

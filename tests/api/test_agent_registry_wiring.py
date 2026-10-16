@@ -308,7 +308,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (167 -> 168). `head-of-abm@v70` pins both new addresses, so they are available and the
     # addresses they replace drop to role-unavailable.
     # Product management (2026-10-15): `manage_products@1`, granted at head-of-abm@v71 (168 -> 169).
-    assert len(by_address) == 169
+    # launch_arv2_discovery@3 (2026-10-16, the brief's exclude list) (169 -> 170).
+    assert len(by_address) == 170
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -431,7 +432,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
     # launch_arv2_discovery@2 (2026-09-30) (166 -> 167) and read_discovery_run@3 (167 -> 168),
     # both granted at head-of-abm@v70. manage_products@1, granted at head-of-abm@v71 (168 -> 169).
-    assert len(by_address) == 169
+    # launch_arv2_discovery@3 (2026-10-16, the brief's exclude list) (169 -> 170).
+    assert len(by_address) == 170
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
