@@ -44,6 +44,17 @@ For any link, in this order:
 3. **A recording the page offers directly**: a direct audio or video file, an RSS feed, an `<audio>`
    or `<video>` element, schema.org `contentUrl`. Downloaded, prepared with `ffmpeg`, sent to
    Deepgram. A feed episode with a `podcast:transcript` tag uses that transcript instead.
+   **Amended 2026-10-16 (founder ruling, reverses keeping every recording "for repairs"):** an
+   audio file is not downloaded. Deepgram is given its link and fetches it itself. Its length is
+   the feed's or Apple's; failing that, the file's size from one header-only request, read at a
+   cautious 64 kbit/s, so the media allowance is still checked before paying; the allowance then
+   holds Deepgram's measured length. The proof kept is Deepgram's own record of the file it heard
+   (its sha256, request id and duration, in the saved response) and the link. We download only a
+   video file (`ffmpeg` extracts its audio), a recording whose length cannot be known, and a link
+   Deepgram answers it cannot fetch (its `400 REMOTE_CONTENT_ERROR`, which hears nothing): then
+   the bytes we fetched are uploaded. A Deepgram server error or timeout is never retried. A
+   repair re-reads the link; if the publisher has removed the recording, the repair reports it
+   unavailable and the existing transcript stands.
 4. **A YouTube embed on the page** goes to the YouTube path (step 2 onwards for that video).
 
 New: when the plain fetch is refused (403) or finds no recording, the page is fetched again with

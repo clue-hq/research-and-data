@@ -244,6 +244,21 @@ async def finish(
     )
 
 
+async def settle_seconds(runtime: Any, conn: Any, op: dict[str, Any], seconds: int) -> None:
+    """A step reserved an estimate of the recording's length (a link-fed transcription); once
+    the provider has measured it, the job's allowance holds the measured length."""
+    await conn.execute(
+        text("""UPDATE arv2_media_operation SET seconds=:seconds
+      WHERE workspace_id=:ws AND operation_id=:id AND owner_token=:owner"""),
+        {
+            "ws": runtime.scope.workspace_id,
+            "id": op["operation_id"],
+            "owner": op["owner_token"],
+            "seconds": seconds,
+        },
+    )
+
+
 async def call(runtime: Any, op: dict[str, Any], provider: str, fn: Any) -> Any:
     async with runtime._conn_factory() as conn:
         await dispatch(runtime, conn, op)
