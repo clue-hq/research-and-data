@@ -69,6 +69,10 @@ could not open):
    them (title, date, duration, link) for the agent to choose with `episode_hint`. None: next step.
    (The proof of concept's word-overlap guess once returned episode 280 for episode 265; title words
    alone never decide.)
+   **Amended 2026-10-16:** "shared title words" means two words, or half of the shorter title, as
+   before; but when the lengths agree within 5 seconds, one shared word is enough. Channels retitle
+   their videos: The Modern Hotelier #276 was posted the same day at the same 3,040 s under a title
+   that shares only "Kasa" with the episode's, and was sent to Gemini instead of its free transcript.
 5. **From the matched episode:** its `podcast:transcript` if it has one, otherwise its audio sent to
    Deepgram, as in step 1.
 
