@@ -342,13 +342,17 @@ async def set_run_result(
     under ``asyncio.to_thread``, so a worker that loses its lease stops only cooperatively: the
     handler returns at once, but the abandoned thread keeps running and may land a terminal write
     long after a takeover worker re-claimed and re-ran the run. Passing the generation the writer
-    holds makes the UPDATE refuse whenever the row has since moved to a HIGHER one, raising
+    holds makes the UPDATE refuse unless the row still records exactly that generation, raising
     :class:`DesignRunFencedError` instead of clobbering the takeover's result.
 
-    ``<=`` rather than ``=`` is deliberate on the permitted side: the in-flight holder is the row's
-    own generation, and a row whose ``lease_generation`` is NULL has never been claimed at all
-    (nothing to be fenced by). Omitting the argument keeps the pre-D5 unfenced behaviour, which is
-    what the non-fleet callers (the SSE-visible ``set_run_result`` surface) still want.
+    **Equality** (site-turn durability, 2026-10-16; it was ``<=``). Lease generations never
+    repeat any more, and the claim CAS stamps the claimant's generation on the row, so the row's
+    ``lease_generation`` names exactly one attempt: the one that may land the result. A lower
+    generation is a fenced-out attempt; a higher one is a writer that never claimed this run under
+    it. A row whose ``lease_generation`` is NULL has never been claimed at all — nothing to be
+    fenced by — and since the reaper's re-offer stopped clearing the stamp, NULL can only mean
+    that. Omitting the argument keeps the pre-D5 unfenced behaviour, which is what the non-fleet
+    callers (the SSE-visible ``set_run_result`` surface) still want.
     """
     if expected_generation is None:
         outcome = await conn.execute(
@@ -367,7 +371,7 @@ async def set_run_result(
             "UPDATE design_agent_run SET status = CAST(:s AS design_run_status),"
             " result_json = CAST(:result AS jsonb), updated_at = now()"
             " WHERE run_id = :r AND workspace_id = :w"
-            "   AND (lease_generation IS NULL OR lease_generation <= :gen)"
+            "   AND (lease_generation IS NULL OR lease_generation = :gen)"
         ),
         {
             "s": status,
@@ -624,17 +628,18 @@ async def reoffer_stranded_run(
     strand. ``None`` = refused: the run stopped being ``running``, or its budget is spent and the
     caller must terminalize it instead.
 
-    The lease trio is CLEARED — the row is genuinely unowned again, and a stale
-    ``lease_generation`` would fence the very writes the next claimant is supposed to make. The
-    re-offered run re-executes through the checkpoint-restart path (``lumen_agent.checkpoint``):
-    its frozen ``payload`` envelope is unchanged, so the takeover replays the same unit of work.
+    The lease stamp is KEPT (site-turn durability, 2026-10-16; it used to be cleared). Lease
+    generations never repeat, so the next attempt's claim always carries a higher generation and
+    re-stamps the row; until then the row still fences on the dead attempt's generation, where a
+    cleared one let a writer under ANY generation land a result. The re-offered run re-executes
+    through the checkpoint-restart path (``lumen_agent.checkpoint``): its frozen ``payload``
+    envelope is unchanged, so the takeover replays the same unit of work.
     """
     row = (
         await conn.execute(
             text(
                 "UPDATE design_agent_run"
                 " SET status = CAST('queued' AS design_run_status),"
-                "     leased_by = NULL, lease_generation = NULL, leased_at = NULL,"
                 "     reoffer_count = reoffer_count + 1, updated_at = now()"
                 " WHERE work_id = :work_id AND status = 'running'"
                 "   AND reoffer_count < :max"

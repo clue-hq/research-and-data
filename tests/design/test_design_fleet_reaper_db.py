@@ -352,9 +352,10 @@ def test_the_reaper_reoffers_a_stranded_run_once_then_terminalizes_it() -> None:
             row = await _read_run(workspace_id, run_id)
             assert row["status"] == "queued"
             assert row["reoffer_count"] == 1
-            # The lease trio is cleared, or the next claimant's writes would be fenced by a
-            # generation nobody holds.
-            assert (row["leased_by"], row["lease_generation"]) == (None, None)
+            # The dead attempt's stamp is KEPT (2026-10-16; it used to be cleared). Lease
+            # generations never repeat, so the next claimant always holds a higher one and
+            # re-stamps the row at its claim; until then the row still fences on the dead one.
+            assert (row["leased_by"], row["lease_generation"]) == ("worker-dead", 1)
             # And a task actually exists again — a queued row with no task is a WORSE strand.
             assert await _read_task_status(work_id) == FleetTaskStatus.QUEUED.value
 

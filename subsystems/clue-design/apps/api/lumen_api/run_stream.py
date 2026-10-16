@@ -168,8 +168,10 @@ async def fenced_emit(
     1. **The run row is read** (``run_lease_generation``) — which is also the existence and tenancy
        gate. An unknown or cross-workspace run raises :class:`DesignNotFoundError`, exactly as the
        retired ``append_run_event``'s sequence allocator did.
-    2. **The fence is checked before anything is written.** A worker whose lease was superseded
-       (the row's generation is HIGHER than the one it holds) is refused with
+    2. **The fence is checked before anything is written.** A writer whose generation is not the
+       row's own — a superseded attempt, or one that never claimed this run under it (equality
+       since 2026-10-16: generations never repeat, so the row's names exactly one attempt; a row
+       never claimed has nothing to fence by) — is refused with
        :class:`DesignRunFencedError` and leaves no trace at all — no row, no partial write. This is
        the surviving half of the D5 zombie fence: an abandoned turn thread runs to completion
        (a thread cannot be interrupted), so the only thing standing between it and the takeover's
@@ -186,7 +188,7 @@ async def fenced_emit(
     if (
         expected_generation is not None
         and generation is not None
-        and generation > expected_generation
+        and generation != expected_generation
     ):
         raise DesignRunFencedError(run_id, expected_generation, generation)
     row = await emit_design_run_event(

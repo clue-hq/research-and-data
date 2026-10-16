@@ -76,7 +76,9 @@ class DesignArtifactConflictError(DesignStoreError):
 
 
 class DesignRunFencedError(DesignStoreError):
-    """A terminal write was refused: the run's lease generation has moved past the writer's.
+    """A terminal write was refused: the run's lease generation is not the writer's (it moved
+    past it, or the writer never claimed the run under it — the fence is equality since
+    2026-10-16, when lease generations stopped repeating).
 
     Raised by the D5 terminal-write guard (``set_run_result`` under an ``expected_generation``)
     and, since D7, by the run's stream writer (``lumen_api.run_stream.fenced_emit``, which is what
