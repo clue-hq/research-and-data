@@ -38,6 +38,7 @@ def invoke_turn_graph(
     resume_checkpoint_id: str | None = None,
     resume_latest: bool = True,
     durability: str | None = None,
+    control: Any = None,
 ) -> Any:
     """Invoke a compiled turn graph on its thread: fresh, continued, or resumed.
 
@@ -55,8 +56,12 @@ def invoke_turn_graph(
     ``RuntimeError``, a thread whose newest user message already carries ``run_id``: resuming its
     latest checkpoint is only safe for a caller whose files do not depend on it. ``durability`` is
     passed to the graph (``"sync"``: each step's checkpoint is committed before the next starts).
+    ``control`` (a LangGraph ``RunControl``) lets the caller ask the run to stop at its next step
+    boundary; the graph then raises ``GraphDrained`` (the site harness's drain, 2026-10-16).
     """
-    extra = {} if durability is None else {"durability": durability}
+    extra: dict[str, Any] = {} if durability is None else {"durability": durability}
+    if control is not None:
+        extra["control"] = control
     if checkpointer is None or thread_id is None:
         return agent.invoke(initial_state, config=invoke_config, **extra)
 

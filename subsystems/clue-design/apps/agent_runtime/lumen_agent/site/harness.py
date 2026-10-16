@@ -16,6 +16,7 @@ request cannot end on an invalid page; after two reminders it ends with errors) 
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 import time
@@ -501,11 +502,16 @@ class WorkingCopy(AgentMiddleware):
         self._written = self._capture()[3]
 
     def _write(self, runtime: Any, *, always: bool) -> None:
+        info = getattr(runtime, "execution_info", None)
+        self.write_at(getattr(info, "checkpoint_id", None), always=always)
+
+    def write_at(self, checkpoint_id: str | None, *, always: bool = True) -> None:
+        """Write the copy stamped with ``checkpoint_id``: from the hooks, the checkpoint they run
+        from; for a drained turn, the last step its graph committed."""
+
         files, state, files_sha, key = self._capture()
         if key == self._written and not always:
             return
-        info = getattr(runtime, "execution_info", None)
-        checkpoint_id = getattr(info, "checkpoint_id", None)
         if not checkpoint_id:
             return
         try:
@@ -610,6 +616,18 @@ def _final_text(messages: list) -> str:
     return ""
 
 
+def _latest_checkpoint_id(agent: Any, invoke_config: dict) -> str | None:
+    """The newest checkpoint of the turn's thread; ``None`` when it cannot be read (the copy then
+    stays at its last round, and the takeover redoes at most that round)."""
+
+    try:
+        snapshot = agent.get_state({"configurable": dict(invoke_config["configurable"])})
+        return (snapshot.config or {}).get("configurable", {}).get("checkpoint_id")
+    except Exception:  # noqa: BLE001 - a lost restamp costs a redone round, never the drain
+        logger.warning("site_turn.drain_checkpoint_unreadable", exc_info=True)
+        return None
+
+
 def run_site_turn(
     prompt: str,
     *,
@@ -628,7 +646,8 @@ def run_site_turn(
     resume: SiteTurnResume | None = None,
     working_copy_sink: WorkingCopySink | None = None,
 ) -> SiteTurnResult:
-    """Write the workspace, run one request, and read the site back. Never raises.
+    """Write the workspace, run one request, and read the site back. Never raises, except
+    :class:`lumen_agent.drain.TurnDrained`.
 
     ``model`` is a test seam; production builds the orchestrator model through ``_instrument``
     with the run's cancellation probe attached.
@@ -639,8 +658,17 @@ def run_site_turn(
     tools take the stored site as their baseline, its turn state is restored, and the
     conversation resumes from the copy's checkpoint. Without ``resume``, a thread that already
     carries this run is refused rather than resumed at its latest checkpoint.
+
+    Drain (2026-10-16): a turn with a working copy registers in the drain scope its handler
+    selected (:mod:`lumen_agent.drain`). Asked to drain, it stops at its next step boundary,
+    stamps its copy at that step's checkpoint and raises ``TurnDrained``: the worker is shutting
+    down, and the worker that takes the run over continues it from the copy.
     """
 
+    from langgraph.errors import GraphDrained
+    from langgraph.runtime import RunControl
+
+    from .. import drain
     from ..cancellation import CANCELLED_STOP_REASON, TurnCancelled
     from ..checkpoint import RUN_ID_KEY, invoke_turn_graph
     from ..harness import _instrument
@@ -682,15 +710,25 @@ def run_site_turn(
     def calls() -> list[dict]:
         return [item.as_json() for item in collector.calls]
 
+    # Only a turn that keeps a working copy can be drained: a takeover continues it from that copy.
+    control = RunControl() if working_copy is not None else None
     try:
         if cancel_requested is not None and cancel_requested():
             raise TurnCancelled()
-        state = invoke_turn_graph(
-            agent, initial, invoke_config=invoke_config, checkpointer=checkpointer,
-            thread_id=thread_id, run_id=run_id,
-            resume_checkpoint_id=resume.checkpoint_id if resume is not None else None,
-            resume_latest=False, durability="sync",
-        )
+        with drain.registered(control) if control is not None else contextlib.nullcontext():
+            state = invoke_turn_graph(
+                agent, initial, invoke_config=invoke_config, checkpointer=checkpointer,
+                thread_id=thread_id, run_id=run_id,
+                resume_checkpoint_id=resume.checkpoint_id if resume is not None else None,
+                resume_latest=False, durability="sync", control=control,
+            )
+    except GraphDrained as drained:
+        # The worker is shutting down. The graph stopped between two steps, and with
+        # ``durability="sync"`` the last step's checkpoint is committed: stamp the copy there, so the
+        # takeover redoes nothing this attempt finished. Not a failure, and nothing is saved.
+        working_copy.write_at(_latest_checkpoint_id(agent, invoke_config))
+        logger.info("site_turn.drained", run_id=run_id, reason=drained.reason, rounds=turn_limits.rounds)
+        raise drain.TurnDrained(drained.reason) from None
     except TurnCancelled:
         tools._record("cancelled")
         return SiteTurnResult("failed", CANCELLED_SUMMARY, dict(site), CANCELLED_STOP_REASON, [], calls())
