@@ -37,3 +37,18 @@ Run subagent-driven: Opus implementers, controller reviewed every task first-han
 - Live check on the lane stack needs the stack on this branch; lane DB is behind main's migrations since the PR #123 merge.
 - Deferred minors: `_take_color`/gradient regex `[^)]+` cuts a colour with a nested var() alpha (pre-existing);
   script-set attribute strings with U+0000 are not NUL-sanitised before evidence storage (pre-existing).
+
+## 2026-10-16 later — re-captures, publishing fixes, push
+- Lane DB migrated to c8c3d99be272 (backup .artifacts/db-backups/clue_trenton-before-main-migrations-20261016.dump);
+  stack runs site/publish-durability. Re-captured Garner → kit v3, Conduit → kit v4 (both first measured kits; bands
+  readable, no LUMI0609). Ingestion coordinator is hard-coded concurrency=1; a 2nd coordinator was run by hand once.
+- Founder rulings: existing documents keep their kit/indexing; new documents get the latest approved kit and are born
+  noindex (all routes, one DAL rule); ticking "Allow indexing" is enough; web documents will be removed (no further
+  web fixes); renaming during an agent run is refused.
+- Fixed + verified: K6-2 (Republish), K6-3 (+ noindex by default), K1-5 (rename lock). 17 docs were moved to latest kits
+  earlier at founder request; the Garner microsite stays on v2 (site kit pinned at birth by design).
+- K4-1/K4-5 durability: my self-ruled "fresh conversation" lane was STOPPED by the founder — architecture choices go
+  to the founder first (options: restart vs continue-with-files, lease reclaim, deploy drain, session files). Draft
+  edits left uncommitted in worktree scratchpad/lane-d (branch site/durability-k4).
+- S2a-2 scope study: docs/superpowers/research/2026-10-16-s2a-2-agent-sections-in-edit-mode.md (options A–D, awaiting pick).
+- Pushed: puck/integration-wave1 fast-forwarded to 71ff008bd (PR #123 onto research-streaming), 29 commits.
