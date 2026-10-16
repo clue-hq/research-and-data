@@ -10,6 +10,7 @@ caller's (`capture.parse.parse_color_value` reads it, following `var()`).
 from __future__ import annotations
 
 import math
+import re
 
 from .colorspace import _linear_to_srgb, _srgb_to_linear, oklab_to_linear
 
@@ -39,27 +40,44 @@ def _mul(matrix, vector) -> tuple[float, float, float]:
     return tuple(sum(matrix[row][col] * vector[col] for col in range(3)) for row in range(3))  # type: ignore[return-value]
 
 
+# The CSS <number> grammar, ASCII only. Python's float() is looser: it reads `1_0`, `nan`, `inf`
+# and non-ASCII digits, none of which a browser accepts — and a colour the browser refuses must be
+# refused here, never turned into a made-up hex.
+_CSS_NUMBER = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", re.ASCII)
+
+
+def _css_number(text: str, token: str) -> float:
+    """`text` read as a CSS <number>. Raises ValueError for anything else."""
+    if _CSS_NUMBER.fullmatch(text) is None:
+        raise ValueError(token)
+    return _finite(float(text), token)
+
+
+def _finite(value: float, token: str) -> float:
+    if not math.isfinite(value):
+        raise ValueError(token)
+    return value
+
+
 def _number(token: str, percent_of: float) -> float:
     """A channel: `none` is 0, a percentage is a share of `percent_of`. Raises ValueError."""
     text = token.strip().lower()
     if text == "none":
         return 0.0
     if text.endswith("%"):
-        return float(text[:-1]) / 100.0 * percent_of
-    value = float(text)
-    if not math.isfinite(value):
-        raise ValueError(token)
-    return value
+        return _finite(_css_number(text[:-1], token) / 100.0 * percent_of, token)
+    return _css_number(text, token)
 
 
 def _hue(token: str) -> float:
+    """A hue in degrees: `none` is 0, a bare number is degrees. Raises ValueError."""
     text = token.strip().lower()
     if text == "none":
         return 0.0
     for unit, factor in _HUE_UNITS.items():
         if text.endswith(unit):
-            return float(text[: -len(unit)]) * factor
-    return float(text)
+            return _finite(_css_number(text[: -len(unit)], token) * factor, token)
+    return _css_number(text, token)
 
 
 def _channel(value: float) -> int:
@@ -101,7 +119,7 @@ def color4_to_hex(name: str, parts: list[str]) -> str | None:
     name a colour space we do not convert."""
     try:
         if name == "color":
-            if len(parts) < 4:
+            if len(parts) != 4:  # a colour space and exactly three channels
                 return None
             space, values = parts[0].strip().lower(), [_number(p, 1.0) for p in parts[1:4]]
             if space == "srgb":
@@ -113,7 +131,7 @@ def color4_to_hex(name: str, parts: list[str]) -> str | None:
                 xyz = _mul(_LINEAR_P3_TO_XYZ_D65, linear)
                 return _linear_hex(_mul(_XYZ_D65_TO_LINEAR_SRGB, xyz))
             return None
-        if len(parts) < 3:
+        if len(parts) != 3:  # exactly three channels; alpha only after `/`
             return None
         if name == "oklab":
             lab = (_number(parts[0], 1.0), _number(parts[1], 0.4), _number(parts[2], 0.4))

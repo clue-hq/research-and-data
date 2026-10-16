@@ -41,6 +41,8 @@ def test_alpha_is_kept_and_a_var_alpha_is_followed() -> None:
     opaque = parse_color_value("oklch(0.5 0.1 180)", {})
     assert parse_color_value("oklch(0.5 0.1 180 / 0.5)", {}) == opaque + "80"
     assert parse_color_value("oklch(0.5 0.1 180 / var(--a))", {"--a": "25%"}) == opaque + "40"
+    # A comma inside the alpha slot's var() fallback is not legacy comma syntax.
+    assert parse_color_value("oklch(0.5 0.1 180 / var(--o, 0.5))", {}) == opaque + "80"
 
 
 def test_an_unreadable_color4_value_is_one_skipped_swatch_with_a_reason() -> None:
@@ -48,6 +50,27 @@ def test_an_unreadable_color4_value_is_one_skipped_swatch_with_a_reason() -> Non
     assert parse_color_value("oklch(bogus 0 0)", {}, diagnostics=diagnostics) is None
     assert parse_color_value("color(rec2020 1 0 0)", {}, diagnostics=diagnostics) is None
     assert [d["code"] for d in diagnostics] == ["LUMI0511", "LUMI0511"]
+
+
+REFUSED = [
+    "oklch(nan 0 0)",
+    "oklch(nan% 0 0)",
+    "oklch(0.5 0.1 nan)",
+    "oklch(0.5 0.1 infdeg)",
+    "lab(1_0 0 0)",
+    "oklch(\u0665 0 0)",  # an Arabic-Indic five: Python's float() reads it, CSS does not
+    "oklch(0.5 0.1 180 0.5)",
+    "oklch(0.5, 0.1, 180)",
+    "lab(50 40)",
+    "color(srgb 0.1 0.2 0.3 0.4)",
+]
+
+
+@pytest.mark.parametrize("css", REFUSED)
+def test_a_value_the_browser_refuses_is_refused(css: str) -> None:
+    diagnostics: list[dict] = []
+    assert parse_color_value(css, {}, diagnostics=diagnostics) is None
+    assert [d["code"] for d in diagnostics] == ["LUMI0511"]
 
 
 def test_a_box_shadow_coloured_in_oklch_keeps_its_colour_and_lengths() -> None:
@@ -62,7 +85,8 @@ def test_the_parser_agrees_with_the_browser() -> None:
         "oklch(0.4 0.15 30)", "lab(80 -20 60)", "lch(30 60 250)", "oklab(0.3 -0.05 0.08)",
         "color(display-p3 0.2 0.6 0.3)", "color(srgb-linear 0.1 0.5 0.9)", "hwb(300 0% 0%)",
     ]
-    painted = asyncio.run(_paint(values))
+    painted, supported = asyncio.run(_paint(values, REFUSED))
+    assert [v for v, ok in zip(REFUSED, supported, strict=True) if ok] == []
     for value, pixel in zip(values, painted, strict=True):
         got = parse_color_value(value, {})
         assert got is not None, value
@@ -71,7 +95,9 @@ def test_the_parser_agrees_with_the_browser() -> None:
         assert worst <= 1, (value, got, pixel)
 
 
-async def _paint(values: list[str]) -> list[list[int]]:
+async def _paint(
+    values: list[str], refused: list[str]
+) -> tuple[list[list[int]], list[bool]]:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
@@ -91,6 +117,6 @@ async def _paint(values: list[str]) -> list[list[int]]:
                     return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
                 }); }""",
                 values,
-            )
+            ), await page.evaluate("(values) => values.map((v) => CSS.supports('color', v))", refused)
         finally:
             await browser.close()

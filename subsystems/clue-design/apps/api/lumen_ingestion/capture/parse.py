@@ -351,7 +351,9 @@ def parse_color_value(
         if body is None:
             continue
         parts, alpha_slot = _split_color_args(body)
-        hex6 = color4_to_hex(name, parts)
+        # These functions have no legacy comma syntax (Chromium refuses `oklch(0.5, 0.1, 180)`).
+        # Only the channel half is checked: the alpha slot may hold `var(--o, 0.5)`.
+        hex6 = None if "," in body.partition("/")[0] else color4_to_hex(name, parts)
         if hex6 is None:
             _record_color_skip(diagnostics, f"unreadable {name}() value: {text}")
             return None
