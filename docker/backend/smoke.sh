@@ -29,6 +29,7 @@ check "tailwind browser runtime" run test -f /app/subsystems/clue-design/apps/ed
 check "node" run node --version
 check "ffmpeg" quiet run ffmpeg -version
 check "ffprobe" quiet run ffprobe -version
+check "ffmpeg mp3 encoder (research media speech audio)" run bash -c 'ffmpeg -hide_banner -encoders | grep -q libmp3lame'
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
 check "non-root (uid 1000)" runs_as_uid_1000
