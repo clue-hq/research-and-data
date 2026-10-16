@@ -3915,10 +3915,10 @@
      "font": "button.solid-7c4cff.font",
      "height": "button.solid-7c4cff.height",
      "label": "text.inverse",
-     "padding-bottom": "button.solid-7c4cff.padding",
-     "padding-left": "button.solid-7c4cff.padding-2",
-     "padding-right": "button.solid-7c4cff.padding-2",
-     "padding-top": "button.solid-7c4cff.padding",
+     "padding-bottom": "button.solid-7c4cff.padding-y",
+     "padding-left": "button.solid-7c4cff.padding-x",
+     "padding-right": "button.solid-7c4cff.padding-x",
+     "padding-top": "button.solid-7c4cff.padding-y",
      "radius": "button.solid-7c4cff.radius"
     },
     "source": "website:https://fixture.test/",
@@ -6056,23 +6056,7 @@
    }
   },
   "spacing": {
-   "button.solid-7c4cff.padding": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.7c4cff rest padding-top"
-    },
-    "role": "spacing",
-    "value": {
-     "default": {
-      "kind": "number",
-      "unit": "px",
-      "value": 10.0
-     },
-     "modes": {}
-    }
-   },
-   "button.solid-7c4cff.padding-2": {
+   "button.solid-7c4cff.padding-x": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6084,6 +6068,22 @@
       "kind": "number",
       "unit": "px",
       "value": 18.0
+     },
+     "modes": {}
+    }
+   },
+   "button.solid-7c4cff.padding-y": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button solid.7c4cff rest padding-top"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
      },
      "modes": {}
     }

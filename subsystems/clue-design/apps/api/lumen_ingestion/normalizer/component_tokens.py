@@ -83,9 +83,12 @@ _FILL_MODES = frozenset({"none", "forwards", "backwards", "both"})
 _SVG_NAME_CHARS = frozenset(string.ascii_lowercase)
 _SVG_ATTRIBUTE_NAME_CHARS = frozenset(string.ascii_letters + string.digits + "-")
 _SLUG = re.compile(r"[^a-z0-9]+")
-#: A side, corner or ordinal suffix: `padding-top`, `radius-tl`, `shadow-1` and `duration-2` are the
-#: slot kinds `padding`, `radius`, `shadow` and `duration`.
-_SLOT_SUFFIX = re.compile(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$")
+#: A side, axis, corner or ordinal suffix: `padding-top`, `padding-y`, `radius-tl`, `shadow-1` and
+#: `duration-2` are the slot kinds `padding`, `radius`, `shadow` and `duration`. An axis (`-x`, `-y`) is
+#: only ever in a token name (`_within_style_names`); no recipe slot ends in one.
+_SLOT_SUFFIX = re.compile(r"-(?:top|right|bottom|left|x|y|tl|tr|br|bl|\d+)$")
+#: The name a sided kind's shared value takes when the sides it fills make an axis or the whole box.
+_AXES = {frozenset({"top", "bottom"}): "-y", frozenset({"left", "right"}): "-x", frozenset(SIDES): ""}
 #: A number as Rust's `f64::from_str` spells it (the engine's `iterations_ok`): an ASCII sign, digits
 #: with an optional point, an optional exponent; no spaces, no underscores, no other digits.
 _RUST_FLOAT = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", re.ASCII)
@@ -447,13 +450,25 @@ def _state_font(rest: StyleLook, state: StyleLook, fonts: dict[str, str]) -> dic
     return _font(rest.model_copy(update=changed), fonts) if changed else None
 
 
+def _axis_name(slots: set[str]) -> str:
+    """The name for several slots of one kind: `padding-y` for padding-top and padding-bottom,
+    `padding-x` for left and right, `padding` for all four sides (border widths alike); any other
+    set is its kind."""
+    kind = _slot_kind(next(iter(slots)))
+    sides = frozenset(slot.removeprefix(f"{kind}-") for slot in slots)
+    if kind in ("padding", "border-width") and sides in _AXES:
+        return kind + _AXES[sides]
+    return kind
+
+
 def _within_style_names(base: str, asked: list[tuple[str, str, str, dict]]) -> dict[str, str]:
     """`{asked path: path to mint under}` for one style (S6-4). A value asked for in two or more places
     of this style is named after what those places share — the states joined (`hover-pressed`,
     omitted when all at rest), then the slot when they share it, else its kind (`padding` for
     padding-left and padding-right) — instead of after whichever place asked first. Each entry of
     `asked` is `(state or "", slot, group, value)`; places of one value with different kinds are
-    left alone."""
+    left alone. Sides of a padding or border width that make an axis or the whole box say so:
+    `padding-y` (top and bottom), `padding-x` (left and right), `padding` (all four)."""
     groups: list[tuple[str, dict, list[tuple[str, str]]]] = []
     for state, slot, group, value in asked:
         bucket = next((places for g, v, places in groups if g == group and _same(group, v, value)), None)
@@ -468,7 +483,7 @@ def _within_style_names(base: str, asked: list[tuple[str, str, str, dict]]) -> d
         states = [s for s in ("", *STATES) if s in {state for state, _ in places}]
         state_part = "-".join(s or "rest" for s in states) if states != [""] else ""
         slots = {slot for _, slot in places}
-        slot_part = slots.pop() if len(slots) == 1 else _slot_kind(places[0][1])
+        slot_part = slots.pop() if len(slots) == 1 else _axis_name(slots)
         neutral = f"{base}.{state_part + '.' if state_part else ''}{slot_part}"
         for state, slot in places:
             out[f"{base}.{state + '.' if state else ''}{slot}"] = neutral

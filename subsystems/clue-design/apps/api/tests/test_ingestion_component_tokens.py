@@ -132,11 +132,10 @@ def test_a_value_one_style_uses_keeps_its_own_name() -> None:
     assert solid["states"]["hover"]["icon-transform"] == solid["states"]["pressed"]["icon-transform"] \
         == "button.solid-047464.hover-pressed.icon-transform"
     assert solid["icon"]["token"] == "button.solid-047464.icon"
-    # One style using a value in two slots of one kind names it by that kind, not by the side measured
-    # first (S6-4); its other padding value takes the next free name of that kind.
+    # One style using a value on two sides names it by their axis, not by the side measured first (S6-4).
     js = _recipe(kit, result, "button", "#7C4CFF")
-    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding"
-    assert js["rest"]["padding-left"] == js["rest"]["padding-right"] == "button.solid-7c4cff.padding-2"
+    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding-y"
+    assert js["rest"]["padding-left"] == js["rest"]["padding-right"] == "button.solid-7c4cff.padding-x"
 
 
 def _button_styles_reversed(styles: list) -> list:
@@ -181,7 +180,7 @@ def test_identical_values_share_one_token() -> None:
 
 def _kind(name: str) -> str:
     """The kind of slot a name is for: its last segment without a side, corner or ordinal suffix."""
-    return re.sub(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$", "", name.rsplit(".", 1)[-1])
+    return re.sub(r"-(?:top|right|bottom|left|x|y|tl|tr|br|bl|\d+)$", "", name.rsplit(".", 1)[-1])
 
 
 def test_a_minted_token_names_only_its_own_kind_of_slot() -> None:
@@ -444,7 +443,7 @@ def _style(**changes):
     from lumen_ingestion.evidence import EvidencePointer, MeasuredStyle, StyleLook
 
     pointer = EvidencePointer(source="website", locator="https://x.test/?utm_source=a&gclid=" + "C" * 420 + " :: button solid.7c4cff")
-    rest = StyleLook(background="#7C4CFF", color="#FFFFFF", padding=[10.0, 24.0, 10.0, 24.0], radius=[8.0] * 4)
+    rest = StyleLook(background="#7C4CFF", color="#FFFFFF", padding=[10.0, 18.0, 10.0, 18.0], radius=[8.0] * 4)
     base = dict(surface="button", variant="solid.7c4cff", count=1, probed="pointer", rest=rest,
                 hover=StyleLook(background="#5A2FD6"), pressed=StyleLook(background="#5A2FD6"), pointer=pointer)
     return MeasuredStyle(**{**base, **changes})
@@ -459,6 +458,27 @@ def test_s6_4_a_value_used_twice_in_one_style_is_named_after_what_its_places_sha
     assert rest["padding-left"] == rest["padding-right"] and rest["padding-top"] == rest["padding-bottom"], rest
     for slot in ("padding-left", "padding-top"):
         assert not any(side in rest[slot] for side in ("right", "top", "bottom", "left")), rest
+    # A value on two sides names their axis (the Garner kit holds no 10px or 18px spacing token, so
+    # neither is an exact reuse).
+    assert rest["padding-top"] == "button.solid-7c4cff.padding-y", rest
+    assert rest["padding-left"] == "button.solid-7c4cff.padding-x", rest
+
+
+def test_s6_4_a_value_on_all_four_sides_is_named_by_its_kind() -> None:
+    from lumen_ingestion.evidence import StyleLook
+
+    kit = json.loads(GARNER.read_text())
+    # 17px, not a round 16: Garner's `space.4` holds exactly 16px and would be reused instead.
+    rest = StyleLook(background="#7C4CFF", color="#FFFFFF", padding=[17.0] * 4, radius=[8.0] * 4)
+    (recipe,) = mint_component_tokens(kit, [_style(rest=rest)], MotionEvidence()).section["styles"]
+    sides = {recipe["rest"][f"padding-{side}"] for side in ("top", "right", "bottom", "left")}
+    assert sides == {"button.solid-7c4cff.padding"}, recipe["rest"]
+
+
+def test_an_axis_suffix_folds_into_the_slot_kind() -> None:
+    assert component_tokens._slot_kind("button.solid-7c4cff.padding-y") == "padding"
+    assert component_tokens._slot_kind("button.solid-7c4cff.padding-x") == "padding"
+    assert component_tokens._slot_kind("button.solid-7c4cff.border-width-y") == "border-width"
 
 
 def test_s6_5_a_long_tracking_address_keeps_every_measured_style() -> None:
