@@ -395,7 +395,9 @@ GEOMETRY_JS = r"""
       const hcs = getComputedStyle(host);
       if (hcs.visibility === 'hidden' || parseFloat(hcs.opacity) === 0) continue;
       const r = host.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) continue;
+      // Screen-reader-only text (a 1px box, or clipped away) is never painted, so it never votes.
+      if (r.width <= 1 || r.height <= 1) continue;
+      if (/^rect\(0px,? 0px,? 0px,? 0px\)$/.test(hcs.clip) || /^inset\((50|100)%\)$/.test(hcs.clipPath)) continue;
       if (behindOf(host) !== bandBg) continue;
       const ink = hexOf(hcs.color);
       if (!paints(ink)) continue;

@@ -165,3 +165,28 @@ def test_a_page_that_paints_no_background_is_drawn_on_white() -> None:
         finally:
             browser.close()
     assert got == "#FFFFFF"
+
+
+def test_s6_1_screen_reader_only_text_does_not_set_a_bands_ink() -> None:
+    from playwright.sync_api import sync_playwright
+
+    hidden = "Opens in a new window. Skip to main content. This label is read aloud by screen readers and never painted."
+    sr_only = (
+        "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;"
+        "clip:rect(0,0,0,0);white-space:nowrap;border-width:0;color:#FF0000"
+    )
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_content(
+                '<body style="margin:0"><main>'
+                f'<section style="background:#F3F0E8;min-height:240px"><span style="{sr_only}">{hidden}</span>'
+                '<p style="color:#333333">Body copy.</p></section>'
+                '<section style="min-height:240px"><p>Next.</p></section></main></body>'
+            )
+            geometry = page.evaluate(GEOMETRY_JS)
+        finally:
+            browser.close()
+    band = parse_geometry(geometry, page_url="https://sr-only.test/").background_sequence[0]
+    assert (band.background, band.ink) == ("#F3F0E8", "#333333")
