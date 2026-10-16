@@ -104,6 +104,7 @@ from clue_api.arv2.exa_websets_client import (
     WebsetItem,
     WebsetItemsResult,
     WebsetView,
+    import_csv,
 )
 from clue_api.arv2.fleet_task import arv2_discovery_work_id
 from clue_api.arv2.logo_resolution import websets_mark_url
@@ -278,6 +279,8 @@ class _Stopped(Arv2Error):
 
 #: The ``excluded_by_entry`` of a candidate on the seller's own domain (spec 2026-10-16 §4.6).
 SELLER_ENTRY = "seller"
+#: How often a run re-reads its Exa Import's status while waiting for it.
+_IMPORT_POLL_S = 5.0
 
 
 @dataclass
@@ -342,6 +345,9 @@ class _RunState:
     excluded_domains: dict[str, str] = field(default_factory=dict)
     #: The companies the brief excluded, in the order met.
     brief_excluded: list[str] = field(default_factory=list)
+    #: The Exa Import holding ``excluded_domains`` once it is ready; tried once per attempt.
+    import_id: str | None = None
+    import_tried: bool = False
     #: Companies shown with an ``unclear`` disposition.
     unclear_count: int = 0
     #: Why the run ended, once something has decided it (``None`` while it is still running).
@@ -777,6 +783,7 @@ class Arv2DiscoveryWorkHandler:
                     f"ARV2 discovery {run.project_id} {run.icp_key}@{run.icp_version} "
                     f"search {search.ordinal}"
                 )
+                import_ids = await self._ensure_import(state)
                 view = await self._hop(
                     state,
                     lambda caller: self._clients.websets(caller).create(
@@ -789,6 +796,7 @@ class Arv2DiscoveryWorkHandler:
                         # The pool-size estimate is asked once, of the first search: it is what
                         # tells "Exa ran out" apart from "our checks removed some".
                         recall=search.ordinal == 1,
+                        exclude_import_ids=import_ids,
                     ),
                 )
             self._require(view)
@@ -1230,6 +1238,51 @@ class Arv2DiscoveryWorkHandler:
             answered = registrable_domain(str(result.answer.get("website_domain") or ""))
             evidence_url = str(result.answer.get("evidence_url") or "")
         return answered or websets_domain, evidence_url
+
+    async def _ensure_import(self, state: _RunState) -> tuple[str, ...]:
+        """The Exa Import of every excluded domain, so websets never return those companies (spec
+        2026-10-16 §4.6). Made once per attempt; waits up to ``arv2_discovery_import_wait_s`` for
+        Exa to finish reading it. Anything short of ``completed`` goes on without it, counted as the
+        ``brief_import_unavailable`` guard: the domain skip at dispatch still applies."""
+        if state.import_id is not None:
+            return (state.import_id,)
+        if state.import_tried or not state.excluded_domains:
+            return ()
+        state.import_tried = True
+        csv_bytes = import_csv(list(state.excluded_domains))
+        count = len(state.excluded_domains)
+        title = f"ARV2 discovery {state.run.run_id} exclusions"
+        try:
+            handle = await self._hop(
+                state,
+                lambda caller: self._clients.websets(caller).create_import(
+                    csv_bytes=csv_bytes, count=count, title=title
+                ),
+            )
+            await self._hop(
+                state,
+                lambda caller: self._clients.websets(caller).upload_import(
+                    upload_url=handle.upload_url, csv_bytes=csv_bytes
+                ),
+            )
+            waited = 0.0
+            while True:
+                status = await self._hop(
+                    state, lambda caller: self._clients.websets(caller).get_import(handle.import_id)
+                )
+                if status == "completed":
+                    state.import_id = handle.import_id
+                    return (handle.import_id,)
+                if status in ("failed", "canceled"):
+                    break
+                if waited >= self._settings.arv2_discovery_import_wait_s:
+                    break
+                await self._sleep(_IMPORT_POLL_S)
+                waited += _IMPORT_POLL_S
+        except Exception:
+            log.exception("arv2.discovery_import_failed", run_id=str(state.run.run_id))
+        state.count_guard("brief_import_unavailable")
+        return ()
 
     async def _record_brief_exclusion(
         self,

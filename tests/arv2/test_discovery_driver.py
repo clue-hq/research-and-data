@@ -48,6 +48,7 @@ from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow, SearchR
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import ExaAnswerResult, ExaCitation
 from clue_api.arv2.exa_websets_client import (
+    ImportHandle,
     WebsetItem,
     WebsetItemsResult,
     WebsetSearchView,
@@ -460,7 +461,9 @@ class _FakeWebsets:
         items_after_cancel: WebsetItemsResult | None = None,
         websets: Mapping[str, tuple[Sequence[WebsetView], Sequence[WebsetItemsResult]]] = {},
         found: Mapping[str, WebsetView] = {},
+        import_statuses: Sequence[str] = ("completed",),
     ) -> None:
+        self._import_statuses = list(import_statuses)
         self._create_views = (
             [_view(webset_id=webset_id, status="running") for webset_id in websets]
             if websets
@@ -522,6 +525,20 @@ class _FakeWebsets:
     def cancel(self, webset_id: str) -> WebsetView:
         self.calls.append(("cancel", {"webset_id": webset_id}))
         return _view(webset_id=webset_id, status="idle")
+
+    def create_import(self, *, csv_bytes: bytes, count: int, title: str) -> ImportHandle:
+        self.calls.append(("create_import", {"csv_bytes": csv_bytes, "count": count}))
+        return ImportHandle(import_id="i1", upload_url="https://up.example/i1")
+
+    def upload_import(self, *, upload_url: str, csv_bytes: bytes) -> None:
+        self.calls.append(("upload_import", {"upload_url": upload_url, "csv_bytes": csv_bytes}))
+
+    def get_import(self, import_id: str) -> str:
+        self.calls.append(("get_import", {"import_id": import_id}))
+        status = self._import_statuses[0]
+        if len(self._import_statuses) > 1:
+            self._import_statuses.pop(0)
+        return status
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for call, payload in self.calls if call == name]
@@ -2939,3 +2956,82 @@ def test_the_summary_counts_brief_exclusions(monkeypatch: pytest.MonkeyPatch) ->
         "Excluded by the brief (existing customers or the seller): 2 — e.g. Marriott."
         in driver.summary_message(run.run_id, summary)
     )
+
+
+def test_websets_rounds_exclude_the_brief_through_one_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(target_count=2, brief=_excluding(("Marriott", "marriott.com"), geography="must"))
+    store = _Store(run)
+    fails = {"geography": "fail", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers("Acme", "acme.com", fails),
+                "Bolt": _company_answers("Bolt", "bolt.com", fails),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        websets={
+            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Acme", "https://acme.com"))]),
+            "ws-2": ([_view(webset_id="ws-2")], [_items(_item("Bolt", "https://bolt.com"))]),
+        },
+        import_statuses=("processing", "completed"),
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=1),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (made,) = websets.named("create_import")
+    assert made["csv_bytes"] == b"url\nhttps://marriott.com\n"
+    assert websets.named("upload_import")[0]["csv_bytes"] == made["csv_bytes"]
+    creates = websets.named("create")
+    assert len(creates) == 2
+    assert all(call["exclude_import_ids"] == ("i1",) for call in creates)
+
+
+def test_an_import_still_processing_at_the_deadline_is_skipped_and_the_domain_skip_still_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items(_item("Marriott", "https://www.marriott.com"))],
+        import_statuses=("processing",),
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_import_wait_s=0),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create")[0]["exclude_import_ids"] == ()
+    assert [row.domain for row in _brief_excluded(store)] == ["marriott.com"]
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    assert receipt["guards"].get("brief_import_unavailable") == 1
+
+
+def test_no_exclusions_means_no_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _run_row()
+    store = _Store(run)
+    websets = _FakeWebsets()
+    handler, *_ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create_import") == []
+    assert websets.named("create")[0]["exclude_import_ids"] == ()

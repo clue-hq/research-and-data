@@ -21,9 +21,13 @@ from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_websets_client import (
     CREDITS_PER_MATCH,
+    IMPORTS_PATH,
     RECALL_CREDITS,
     WEBSETS_BASE_PATH,
+    ExaImportError,
     ExaWebsetsClient,
+    ImportHandle,
+    import_csv,
     websets_halt_rule,
     websets_items_cost,
 )
@@ -528,3 +532,86 @@ def test_only_a_refusal_to_sell_latches_the_provider() -> None:
     assert websets_halt_rule(HttpResponse(status=404, body=b'{"error": "no such webset"}')) is None
     assert websets_halt_rule(HttpResponse(status=429, body=b"slow down")) is None
     assert websets_halt_rule(_response({"id": "webset_1", "status": "idle"})) is None
+
+
+# -- the brief's excluded companies, as one Exa Import (spec 2026-10-16 §4.6) -------------------
+
+
+def test_the_import_csv_is_one_url_per_excluded_domain_sorted() -> None:
+    assert import_csv(["nobuhotels.com", "marriott.com", "marriott.com"]) == (
+        b"url\nhttps://marriott.com\nhttps://nobuhotels.com\n"
+    )
+
+
+def test_an_import_is_created_as_a_company_csv_of_urls() -> None:
+    client, transport = _client(
+        [
+            _response(
+                {"id": "import_1", "status": "pending", "uploadUrl": "https://up.example/x"},
+                status=201,
+            )
+        ]
+    )
+    csv_bytes = import_csv(["marriott.com", "nobuhotels.com"])
+
+    handle = client.create_import(csv_bytes=csv_bytes, count=2, title="exclusions")
+
+    assert handle == ImportHandle(import_id="import_1", upload_url="https://up.example/x")
+    request = transport.requests[0]
+    assert (request.method, request.url) == ("POST", f"https://api.exa.ai{IMPORTS_PATH}")
+    assert json.loads(request.body) == {
+        "format": "csv",
+        "entity": {"type": "company"},
+        "count": 2,
+        "size": len(csv_bytes),
+        "title": "exclusions",
+        "csv": {"identifier": 1},
+    }
+
+
+def test_the_csv_is_uploaded_to_the_returned_url_without_the_api_key() -> None:
+    client, transport = _client([HttpResponse(200, {}, b"")])
+    csv_bytes = import_csv(["marriott.com", "nobuhotels.com"])
+
+    client.upload_import(upload_url="https://up.example/x", csv_bytes=csv_bytes)
+
+    request = transport.requests[0]
+    assert (request.method, request.url, request.body) == (
+        "PUT",
+        "https://up.example/x",
+        b"url\nhttps://marriott.com\nhttps://nobuhotels.com\n",
+    )
+    assert "x-api-key" not in {key.lower() for key in request.headers}
+
+
+def test_an_import_status_is_read_by_id() -> None:
+    client, transport = _client([_response({"id": "import_1", "status": "completed"})])
+
+    assert client.get_import("import_1") == "completed"
+    assert transport.requests[0].url == f"https://api.exa.ai{IMPORTS_PATH}/import_1"
+
+
+def test_a_refused_import_raises_by_name() -> None:
+    client, _ = _client([_response({"error": "bad"}, status=400)])
+    with pytest.raises(ExaImportError):
+        client.create_import(csv_bytes=b"url\n", count=0, title="t")
+
+
+def test_a_webset_can_exclude_an_import_after_its_websets() -> None:
+    client, transport = _client([_response({"id": "webset_2", "status": "running"}, status=201)])
+
+    client.create(
+        query="ICP",
+        count=2,
+        criteria=["US"],
+        external_id="run-1:2",
+        title="t",
+        exclude_webset_ids=["w1"],
+        exclude_import_ids=["i1"],
+        recall=False,
+    )
+
+    assert json.loads(transport.requests[0].body)["search"]["exclude"] == [
+        {"source": "webset", "id": "w1"},
+        {"source": "import", "id": "i1"},
+    ]

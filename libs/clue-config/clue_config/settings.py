@@ -579,6 +579,11 @@ class Settings(BaseSettings):
     #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
     #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
     arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
+    #: How long a discovery run waits for its Exa Import of excluded companies (the brief's
+    #: ``exclude`` list and the seller's own domain) to finish before its first webset goes ahead
+    #: without it; the domain skip still applies (spec 2026-10-16, §4.6).
+    #: Env: ``CLUE_ARV2_DISCOVERY_IMPORT_WAIT_S``.
+    arv2_discovery_import_wait_s: float = Field(default=120.0, ge=0)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
