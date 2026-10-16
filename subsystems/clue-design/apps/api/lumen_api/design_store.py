@@ -430,6 +430,25 @@ async def _hold_site_save(
         document_id=document_id,
         lease_generation=attempt.lease_generation,
     )
+    await _hold_attempt_lease(conn, work_id, attempt)
+
+
+async def _hold_site_attempt(conn: AsyncConnection, workspace_id: str, attempt: Any) -> None:
+    """The fence on an attempt touching its site's session memory (site-turn durability,
+    2026-10-16, controller ruling S1): the same two halves as :func:`_hold_site_save` — the run
+    row ``running`` at exactly this attempt's generation, and its work lease — without the
+    one-save-per-run check (the session is saved after the run's own save landed)."""
+    work_id = await design_runs.hold_run(
+        conn,
+        workspace_id=workspace_id,
+        run_id=attempt.run_id,
+        lease_generation=attempt.lease_generation,
+    )
+    await _hold_attempt_lease(conn, work_id, attempt)
+
+
+async def _hold_attempt_lease(conn: AsyncConnection, work_id: Any, attempt: Any) -> None:
+    """The work-lease half of an attempt's fence; checked only when the attempt names its worker."""
     if attempt.worker_id is None:
         return
     from clue_fleet.lease import (
@@ -2302,6 +2321,52 @@ class HybridRepository:
         return self._bridge._run(
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
         )
+
+    def get_site_session(self, document_id: str) -> Optional[JsonObject]:
+        """The website's session pointer (``version``, ``manifest_sha256``) or ``None`` when the
+        site has none yet. Sync twin of :func:`clue_design.sessions.get_site_session`."""
+        return self._bridge._run(
+            lambda conn: design_sessions.get_site_session(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def site_attempt_holds(self, attempt: Any) -> bool:
+        """Whether this attempt still holds its run (run row and work lease); see
+        :func:`_hold_site_attempt`. A read: it locks nothing past its own transaction."""
+        try:
+            self._bridge._run(lambda conn: _hold_site_attempt(conn, self.workspace_id, attempt))
+        except DesignRunSaveFencedError:
+            return False
+        return True
+
+    def save_site_session(
+        self,
+        document_id: str,
+        *,
+        expected_version: Optional[int],
+        manifest_sha256: str,
+        attempt: Any = None,
+    ) -> Optional[int]:
+        """Move the website's session pointer with compare-and-set (site-turn durability, K4-5).
+
+        Returns the new version, or ``None`` when someone saved a newer copy meanwhile (nothing
+        written). With an ``attempt``, the fence that it still holds its run is checked in the
+        SAME transaction first, so a zombie can never move the pointer: it raises
+        :class:`DesignRunSaveFencedError` and writes nothing."""
+
+        async def _save(conn: AsyncConnection) -> Optional[int]:
+            if attempt is not None:
+                await _hold_site_attempt(conn, self.workspace_id, attempt)
+            return await design_sessions.save_site_session(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                expected_version=expected_version,
+                manifest_sha256=manifest_sha256,
+            )
+
+        return self._bridge._run(_save)
 
     def latest_agent_written_version(self, document_id: str) -> int | None:
         """The version the DESIGN AGENT last committed to this document, or ``None``.

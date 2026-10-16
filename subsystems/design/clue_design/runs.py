@@ -427,6 +427,36 @@ async def hold_run_for_save(
     The work-lease half of the fence is the caller's (Rule S4: this substrate never learns the
     fleet exists); it keys on the work id returned here.
     """
+    work_id = await hold_run(
+        conn, workspace_id=workspace_id, run_id=run_id, lease_generation=lease_generation
+    )
+    saved = (
+        await conn.execute(
+            text(
+                "SELECT base_revision FROM design_edit_envelope"
+                " WHERE workspace_id = :w AND document_id = :d"
+                "   AND actor_kind = 'agent' AND actor_id = :r"
+                " ORDER BY seq LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id, "r": run_id},
+        )
+    ).first()
+    if saved is not None:
+        raise DesignRunAlreadySavedError(run_id, document_id, int(saved.base_revision) + 1)
+    return work_id
+
+
+async def hold_run(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str, lease_generation: int
+) -> UUID:
+    """The run half of an attempt's fence; returns the run's work id.
+
+    Locks the run row ``FOR SHARE`` until the caller's transaction ends (so a takeover's claim
+    waits for it), then requires the run to be ``running`` with ``lease_generation`` EXACTLY this
+    attempt's; otherwise :class:`DesignRunSaveFencedError`. Shared by the agent-run save
+    (:func:`hold_run_for_save`) and the site's session-memory save (site-turn durability,
+    2026-10-16: only the attempt that still holds the run may touch the session's memory).
+    """
     row = (
         await conn.execute(
             text(
@@ -446,19 +476,6 @@ async def hold_run_for_save(
         raise DesignRunSaveFencedError(
             run_id, lease_generation, row.lease_generation, reason="run_generation"
         )
-    saved = (
-        await conn.execute(
-            text(
-                "SELECT base_revision FROM design_edit_envelope"
-                " WHERE workspace_id = :w AND document_id = :d"
-                "   AND actor_kind = 'agent' AND actor_id = :r"
-                " ORDER BY seq LIMIT 1"
-            ),
-            {"w": workspace_id, "d": document_id, "r": run_id},
-        )
-    ).first()
-    if saved is not None:
-        raise DesignRunAlreadySavedError(run_id, document_id, int(saved.base_revision) + 1)
     return cast(UUID, row.work_id)
 
 

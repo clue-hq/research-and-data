@@ -10,6 +10,7 @@ Writes run inside an explicitly rolled-back transaction, so the lane database ke
 
 from __future__ import annotations
 
+import hashlib
 from uuid import uuid4
 
 import pytest
@@ -18,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import db_lifespan
 from clue_design import runs as design_runs
-from clue_design.sessions import latest_session_manifest_sha256, latest_written_version
+from clue_design.sessions import (
+    get_site_session,
+    latest_session_manifest_sha256,
+    latest_written_version,
+    save_site_session,
+)
 from tests.design.conftest import run_async
 
 
@@ -230,6 +236,64 @@ def test_include_failed_reads_a_failed_turns_manifest_and_the_default_does_not()
                     )
                     == "ff"
                 )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_a_site_session_pointer_moves_only_by_compare_and_set() -> None:
+    """Site-turn durability (2026-10-16, K4-5): a website's session files are ONE versioned copy.
+    The first save inserts version 1 only while there is no row; every later save moves the
+    pointer only from the version it started from. A save that started from an older version (or
+    from "no row" after someone created one) writes nothing, and the newer copy stays. The pointer
+    is scoped to its own document and workspace."""
+    sha = {
+        name: hashlib.sha256(name.encode()).hexdigest() for name in ("r1", "r2", "stale", "other")
+    }
+
+    async def scenario() -> None:
+        ws, other_ws = f"ws_test_sess_{uuid4().hex[:10]}", f"ws_test_sess_{uuid4().hex[:10]}"
+        doc, sibling = f"doc_{uuid4().hex}", f"doc_{uuid4().hex}"
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                await _seed_workspace(conn, ws)
+                await _seed_workspace(conn, other_ws)
+                await _seed_document(conn, workspace_id=ws, document_id=doc)
+                await _seed_document(conn, workspace_id=ws, document_id=sibling)
+
+                async def save(
+                    expected: int | None, manifest: str, document: str = doc
+                ) -> int | None:
+                    return await save_site_session(
+                        conn,
+                        workspace_id=ws,
+                        document_id=document,
+                        expected_version=expected,
+                        manifest_sha256=manifest,
+                    )
+
+                assert await get_site_session(conn, workspace_id=ws, document_id=doc) is None
+                assert await save(None, sha["r1"]) == 1
+                # A second "first save" (it also started from no row) is refused.
+                assert await save(None, sha["stale"]) is None
+                assert await save(1, sha["r2"]) == 2
+                # A save that started from version 1 lost the race: nothing is written.
+                assert await save(1, sha["stale"]) is None
+                assert await get_site_session(conn, workspace_id=ws, document_id=doc) == {
+                    "version": 2,
+                    "manifest_sha256": sha["r2"],
+                }
+
+                # Scoped: another document and another workspace see no row.
+                assert await get_site_session(conn, workspace_id=ws, document_id=sibling) is None
+                assert await get_site_session(conn, workspace_id=other_ws, document_id=doc) is None
+                assert await save(None, sha["other"], sibling) == 1
+                assert (await get_site_session(conn, workspace_id=ws, document_id=doc))[
+                    "version"
+                ] == 2
             finally:
                 await trans.rollback()
 

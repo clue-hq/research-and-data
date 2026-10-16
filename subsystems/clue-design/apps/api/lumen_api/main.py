@@ -11900,7 +11900,7 @@ def run_site_agent_turn(
     workspace_id: str,
     run_id: str,
     session_id: str,
-    session_manifest: JsonObject | None,
+    session: "SiteSessionMemory",
     blobs: DesignBlobStore,
     checkpointer: Any = None,
     cancel_requested: Any = None,
@@ -11924,6 +11924,16 @@ def run_site_agent_turn(
     session's memory files; at the end its folder is mirrored back into the session's own
     ``workspace/``, snapshotted exactly as before, and deleted. ``resume`` and
     ``working_copy_sink`` are the harness's (:func:`lumen_agent.site.harness.run_site_turn`).
+
+    The session files are ONE versioned copy per site (``session``, finding K4-5): the local
+    ``workspace/`` is rebuilt from storage whenever it was built from another version than the
+    pointer names (not only when it is missing); at the end the attempt's memory is snapshotted
+    and the pointer moved with compare-and-set from the version the request started from, and
+    only then mirrored into the local ``workspace/``. A save refused because someone saved a
+    newer copy meanwhile overwrites nothing: it is logged, and the next request reloads the newer
+    copy. Only the attempt that still holds its run touches the session's memory at all
+    (controller ruling S1): a zombie attempt appends no history and moves nothing, and ends
+    ``fenced`` like one whose save was refused.
     """
 
     try:
@@ -11950,9 +11960,17 @@ def run_site_agent_turn(
     attempt_dir = session_dir / "attempts" / f"{run_id}-g{lease_generation if lease_generation is not None else 0}"
     workspace = attempt_dir / "workspace"
     try:
-        if not session_workspace.exists() and session_manifest is not None:
-            restored = restore_session(session_dir, session_manifest, read_blob=blobs.read_blob, history_file=None)
-            api_logger.info("design_session.restored", session_id=session_id, files=restored)
+        if session.local_copy_is_stale(session_dir):
+            manifest = session.manifest()
+            # The local copy is not the version the pointer names (or there is none): rebuild it
+            # from storage rather than run, and later save, on top of stale memory.
+            shutil.rmtree(session_workspace, ignore_errors=True)
+            session.forget_local_copy(session_dir)
+            if manifest is not None:
+                restored = restore_session(session_dir, manifest, read_blob=blobs.read_blob, history_file=None)
+                api_logger.info("design_session.restored", session_id=session_id, files=restored,
+                                session_version=session.version)
+            session.remember_local_copy(session_dir)
         _sweep_stale_site_attempts(session_dir)
         _seed_site_attempt(session_workspace, workspace, exclude=SESSION_REGENERATED)
         if runner is not None:
@@ -11979,6 +11997,13 @@ def run_site_agent_turn(
         # attempt writes neither, and leaves the session folder exactly as it found it.
         shutil.rmtree(attempt_dir, ignore_errors=True)
         return response
+    if not session.holds():
+        # A zombie whose turn never reached a save (unchanged, crashed): it no longer holds the
+        # run, so the same rule applies — no history, no memory, no terminal result.
+        api_logger.warning("design_session.zombie_attempt_left_memory_alone", session_id=session_id, run_id=run_id,
+                           lease_generation=lease_generation, outcome=response.get("outcome") or response.get("status"))
+        shutil.rmtree(attempt_dir, ignore_errors=True)
+        return _site_turn_fenced_response(result, base_version=base_version)
     saved = outcome is not None and outcome.status == "saved"
     workspace.mkdir(parents=True, exist_ok=True)
     append_history(
@@ -11994,13 +12019,140 @@ def run_site_agent_turn(
     )
     shutil.rmtree(workspace / "work", ignore_errors=True)
     try:
-        _mirror_site_attempt(workspace, session_workspace, regenerated=SESSION_REGENERATED)
-        return _stamp_session_manifest(
-            response, session_dir=session_dir, history_file=None, session_id=session_id, blobs=blobs,
+        # Snapshot the ATTEMPT's folder (its keys are the session's own, ``workspace/…``) and move
+        # the pointer; only a copy that became the site's current one is mirrored into the local
+        # session folder, so a refused or fenced save leaves that folder exactly as it was.
+        response = _stamp_session_manifest(
+            response, session_dir=attempt_dir, history_file=None, session_id=session_id, blobs=blobs,
             snapshot_session=functools.partial(snapshot_session, exclude=SESSION_REGENERATED),
         )
+        adopted = session.save(response.get("session_manifest_sha256"), session_id=session_id)
+        if adopted == "fenced":
+            return _site_turn_fenced_response(result, base_version=base_version)
+        if adopted != "saved":
+            # Not the site's copy: the run must not name it, and the next request on this disk
+            # rebuilds the local copy from storage instead of building on it.
+            response.pop("session_manifest_sha256", None)
+            session.forget_local_copy(session_dir)
+            return response
+        session.forget_local_copy(session_dir)
+        _mirror_site_attempt(workspace, session_workspace, regenerated=SESSION_REGENERATED)
+        session.remember_local_copy(session_dir)
+        return response
     finally:
         shutil.rmtree(attempt_dir, ignore_errors=True)
+
+
+def _site_turn_fenced_response(result: Any, *, base_version: int) -> JsonObject:
+    """The response of an attempt that no longer holds its run (see :func:`_site_turn_response`)."""
+    from .site_turn_ports import SitePersistOutcome
+
+    return _site_turn_response(result, SitePersistOutcome("fenced", None, "the run is held by another attempt"),
+                               base_version=base_version)
+
+
+#: Beside ``<session>/workspace`` (so never snapshotted): which version of the site's one session
+#: copy this disk's local copy was built from (site-turn durability, K4-5).
+_SITE_SESSION_MARKER = "session_version.json"
+
+
+class SiteSessionMemory:
+    """A website's one versioned session copy, as one request sees it (site-turn durability,
+    2026-10-16, finding K4-5; table ``design_site_session``).
+
+    ``version`` / ``manifest_sha256`` are the pointer row as it stood when the request STARTED;
+    ``None`` means the site has no row yet, so the old "newest run row" lookup is the fallback
+    (founder point e) and the first save inserts version 1. ``attempt`` is the attempt the request
+    runs as (``None`` for a call that holds no lease): with one, only that attempt, while it still
+    holds its run, may touch the session's memory (controller ruling S1).
+    """
+
+    def __init__(self, store: HybridRepository, blobs: DesignBlobStore, *, document_id: str, attempt: Any = None) -> None:
+        self.store = store
+        self.blobs = blobs
+        self.document_id = document_id
+        self.attempt = attempt
+        row = store.get_site_session(document_id)
+        self.version: Optional[int] = None if row is None else int(row["version"])
+        self.manifest_sha256: Optional[str] = None if row is None else str(row["manifest_sha256"])
+
+    # --- the local copy -------------------------------------------------------------------------
+
+    def _local_marker(self, session_dir: Path) -> Optional[JsonObject]:
+        try:
+            marker = json.loads((session_dir / _SITE_SESSION_MARKER).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return marker if isinstance(marker, dict) else None
+
+    def local_copy_is_stale(self, session_dir: Path) -> bool:
+        """Whether this disk's ``<session>/workspace`` must be rebuilt from storage first.
+
+        With a pointer row: unless the local marker names exactly its version and manifest. With
+        none (a site from before the table): only when the folder is missing, as before."""
+        if self.version is None:
+            return not (session_dir / "workspace").exists()
+        marker = self._local_marker(session_dir)
+        return marker is None or (marker.get("version"), marker.get("manifest_sha256")) != (
+            self.version, self.manifest_sha256)
+
+    def remember_local_copy(self, session_dir: Path) -> None:
+        """Record that the local copy now is the pointer's version (nothing to record without one)."""
+        if self.version is None:
+            return
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / _SITE_SESSION_MARKER).write_text(
+            json.dumps({"version": self.version, "manifest_sha256": self.manifest_sha256}), encoding="utf-8")
+
+    @staticmethod
+    def forget_local_copy(session_dir: Path) -> None:
+        """The local copy is no version of the site's session: the next request rebuilds it."""
+        (session_dir / _SITE_SESSION_MARKER).unlink(missing_ok=True)
+
+    def manifest(self) -> Optional[JsonObject]:
+        """The manifest the local copy is rebuilt from. With a pointer row, its manifest — an
+        unreadable one raises (the turn fails rather than run on memory that is not the site's);
+        without one, the newest run row's, best effort as before."""
+        if self.manifest_sha256 is None:
+            return _session_manifest(self.store, self.blobs, document_id=self.document_id, include_failed=True)
+        _, data = self.blobs.read_blob(self.manifest_sha256)
+        manifest = json.loads(data)
+        if not isinstance(manifest, dict):
+            raise RuntimeError(f"session manifest {self.manifest_sha256} is not an object")
+        return manifest
+
+    # --- the end of the request -----------------------------------------------------------------
+
+    def holds(self) -> bool:
+        """Whether this request's attempt still holds its run (always, for a call with no lease)."""
+        return self.attempt is None or self.store.site_attempt_holds(self.attempt)
+
+    def save(self, manifest_sha256: Optional[str], *, session_id: str) -> str:
+        """Make ``manifest_sha256`` the site's session copy: ``saved``, ``stale`` (someone saved a
+        newer copy meanwhile; nothing written), ``fenced`` (this attempt no longer holds its run;
+        nothing written) or ``failed`` (no snapshot, or the write itself failed)."""
+        from clue_design.errors import DesignRunSaveFencedError
+
+        if manifest_sha256 is None:
+            return "failed"
+        try:
+            version = self.store.save_site_session(self.document_id, expected_version=self.version,
+                                                   manifest_sha256=manifest_sha256, attempt=self.attempt)
+        except DesignRunSaveFencedError:
+            api_logger.warning("design_session.zombie_attempt_left_memory_alone", session_id=session_id,
+                               document_id=self.document_id, at="pointer_save")
+            return "fenced"
+        except Exception as error:  # noqa: BLE001 - a lost pointer write is never a lost turn
+            api_logger.error("design_session.pointer_save_failed", session_id=session_id,
+                             document_id=self.document_id, error=str(error), exc_info=True)
+            return "failed"
+        if version is None:
+            api_logger.warning("design_session.stale_copy_not_saved", session_id=session_id,
+                               document_id=self.document_id, started_from_version=self.version,
+                               manifest_sha256=manifest_sha256)
+            return "stale"
+        self.version, self.manifest_sha256 = version, manifest_sha256
+        return "saved"
 
 
 #: An attempt folder older than this belongs to an attempt that died (a turn's own limit is 30
@@ -12222,11 +12374,16 @@ def _execute_site_turn_job(
             _site_turn_takeover(store, envelope.run_id, checkpointer, lease_generation)
             if runner is None and checkpointer is not None else (None, None)
         )
+        from .toolbelt.site_documents import SiteSaveAttempt
+
+        # The site's one versioned session copy, read as this request starts (K4-5).
+        session = SiteSessionMemory(store, blobs, document_id=document_id,
+                                    attempt=SiteSaveAttempt(**attempt) if attempt is not None else None)
         response = run_site_agent_turn(
             doc, prompt, user_message=payload.prompt, inputs=inputs, persist=persist, workspace_id=workspace_id,
             run_id=envelope.run_id, session_id=design_session_id(workspace_id, document_id),
             # A site turn writes history and snapshots its memory on conflicted, refused and stopped turns too.
-            session_manifest=_session_manifest(store, blobs, document_id=document_id, include_failed=True), blobs=blobs,
+            session=session, blobs=blobs,
             checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
             callbacks=callbacks, event_sink=event_sink, runner=runner, lease_generation=lease_generation,
             resume=resume, working_copy_sink=working_copy_sink,

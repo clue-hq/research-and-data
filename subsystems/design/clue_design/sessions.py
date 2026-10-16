@@ -1,10 +1,13 @@
 """One design document = one design session (design note 2026-09-18).
 
 The session is the unit of MEMORY: it names the LangGraph thread the design agent continues
-across turns and the folder its turns write into. The run stays the unit of work. Nothing here
-is a table — the id is derived, and the last version the agent wrote is read from the newest
+across turns and the folder its turns write into. The run stays the unit of work. The id is
+derived, and the last version the agent wrote is read from the newest
 succeeded run's ``result_json.current_version`` (the ``_leg_scene_version_stamp`` the scene
 executor already writes; the web executor writes ``current_version`` too).
+
+One table lives here: ``design_site_session``, a website's versioned pointer to its one session
+copy (:func:`get_site_session` / :func:`save_site_session`, site-turn durability 2026-10-16).
 
 A continued session holds a scene it wrote, but humans and other legs edit the same document
 between turns. :func:`render_document_drift_note` is how the session is told what moved — as
@@ -91,6 +94,69 @@ async def latest_session_manifest_sha256(
     return None if row is None else str(row.sha)
 
 
+async def get_site_session(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> dict[str, Any] | None:
+    """A website's session pointer — ``{"version", "manifest_sha256"}`` — or ``None``.
+
+    Site-turn durability (2026-10-16, finding K4-5): a site's session files (``plan.md``,
+    ``history.md``, ``fetched/``) are ONE versioned copy per site. The copy is the content-addressed
+    manifest bundle; this row only names the current one. ``None`` means the site has no row yet
+    (a site from before the table): its caller falls back to
+    :func:`latest_session_manifest_sha256`, and the site's first save writes the row.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT version, manifest_sha256 FROM design_site_session"
+                " WHERE workspace_id = :w AND document_id = :d"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    if row is None:
+        return None
+    return {"version": int(row.version), "manifest_sha256": str(row.manifest_sha256)}
+
+
+async def save_site_session(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    document_id: str,
+    expected_version: int | None,
+    manifest_sha256: str,
+) -> int | None:
+    """Move a website's session pointer with compare-and-set; the new version, or ``None``.
+
+    ``expected_version`` is the version the request STARTED from: the pointer moves to
+    ``expected_version + 1`` only while it still names that version. ``None`` means the request
+    started from no row, so the save inserts version 1 only while there still is none. ``None``
+    back means someone saved a newer copy meanwhile: nothing is written, and the caller must not
+    overwrite that copy (its next request loads it instead).
+
+    Callers own the transaction (and, for an agent attempt, the fence that it still holds its run).
+    """
+    params = {"w": workspace_id, "d": document_id, "v": expected_version, "sha": manifest_sha256}
+    if expected_version is None:
+        sql = (
+            "INSERT INTO design_site_session"
+            " (workspace_id, document_id, version, manifest_sha256, updated_at)"
+            " VALUES (:w, :d, 1, :sha, now())"
+            " ON CONFLICT (workspace_id, document_id) DO NOTHING"
+            " RETURNING version"
+        )
+    else:
+        sql = (
+            "UPDATE design_site_session"
+            " SET version = version + 1, manifest_sha256 = :sha, updated_at = now()"
+            " WHERE workspace_id = :w AND document_id = :d AND version = :v"
+            " RETURNING version"
+        )
+    row = (await conn.execute(text(sql), params)).first()
+    return None if row is None else int(row.version)
+
+
 def render_document_drift_note(
     *, previous_version: int, current_version: int, envelopes: list[dict[str, Any]]
 ) -> str:
@@ -114,7 +180,9 @@ def render_document_drift_note(
 
 __all__ = [
     "design_session_id",
+    "get_site_session",
     "latest_session_manifest_sha256",
     "latest_written_version",
     "render_document_drift_note",
+    "save_site_session",
 ]

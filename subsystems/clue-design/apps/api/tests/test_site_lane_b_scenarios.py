@@ -438,11 +438,14 @@ def a_real_site_turn(client: TestClient, model: ModelSeam, garner: Garner, agent
     script = model.next(*steps)
     # The session's memory of an earlier fetch (fetch_page itself would go to the network): the
     # agent cannot write fetched/ (it is read-only to its file tools), so the world does, the way
-    # fetch_page saves a page, before the agent's second step.
-    folder = session_folder(agent_root, store.workspace_id, document_id) / "workspace" / "fetched"
+    # fetch_page saves a page, before the agent's second step. fetch_page writes into the agent's
+    # own workspace, which is this attempt's folder (site-turn durability, 2026-10-16).
+    envelope = envelope_for(document_id, store.workspace_id, REQUEST_1)
+    folder = (session_folder(agent_root, store.workspace_id, document_id) / "attempts" / f"{envelope.run_id}-g1"
+              / "workspace" / "fetched")
     script.hooks[1] = lambda: (folder.mkdir(parents=True, exist_ok=True),
                                (folder / "garner-aon-study.md").write_text("Source: https://garnerhealth.com/aon\n\n7.4% lower spend.\n"))
-    turn = run_turn(client.app, store, document_id, REQUEST_1)
+    turn = run_turn(client.app, store, document_id, REQUEST_1, envelope=envelope)
     return {"store": store, "document_id": document_id, "born": born, "turn": turn, "script": script}
 
 
@@ -2031,3 +2034,231 @@ def test_j_g_a_zombie_and_its_takeover_never_share_a_folder(
     assert PROOF_A not in (folder / "workspace" / "page.json").read_text()
     assert "## 1. " in (folder / "workspace" / "history.md").read_text()
     assert list((folder / "attempts").iterdir()) == []
+
+
+# =================================================================================================
+# K. Session files: one versioned copy per site (site-turn durability, K4-5, Task 5, 2026-10-16).
+#
+# A site's plan.md, history.md and fetched/ are one copy, named by the ``design_site_session``
+# pointer. Two workers' disks are modelled by parking a worker's session folder outside the shared
+# path while the other worker's folder (or none) takes its place.
+# =================================================================================================
+
+PLAN_ONE = "Request one: make the closing call to action free."
+PLAN_TWO = "Request two, on worker B: lead with the study."
+
+
+def disk_path(agent_root: Path, name: str) -> Path:
+    return agent_root.parent / "disks" / name
+
+
+def park_disk(agent_root: Path, store: HybridRepository, document_id: str, name: str) -> None:
+    """The worker ``name`` steps away with its local session folder; the shared path is empty."""
+    folder, parked = session_folder(agent_root, store.workspace_id, document_id), disk_path(agent_root, name)
+    shutil.rmtree(parked, ignore_errors=True)
+    parked.parent.mkdir(parents=True, exist_ok=True)
+    if folder.exists():
+        shutil.move(str(folder), str(parked))
+
+
+def mount_disk(agent_root: Path, store: HybridRepository, document_id: str, name: str) -> None:
+    """The worker ``name`` runs the next request, on the local session folder it kept."""
+    folder, parked = session_folder(agent_root, store.workspace_id, document_id), disk_path(agent_root, name)
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(parked), str(folder))
+
+
+def headings(history: str) -> list[str]:
+    """The request headings of a history.md, as a file or as read_file showed it (numbered lines)."""
+    import re
+
+    lines = (re.sub(r"^\s*\d+\t", "", line) for line in history.splitlines())
+    return [line for line in lines if line.startswith("## ")]
+
+
+class LogRecorder:
+    """Records every event the executor logs (and still logs it)."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner, self.events = inner, []
+
+    def __getattr__(self, level: str) -> Callable[..., Any]:
+        method = getattr(self.inner, level)
+
+        def record(event: str, *args: Any, **kwargs: Any) -> Any:
+            self.events.append((level, event, kwargs))
+            return method(event, *args, **kwargs)
+
+        return record
+
+    def named(self, event: str) -> list[tuple]:
+        return [entry for entry in self.events if entry[1] == event]
+
+
+@pytest.fixture()
+def logged(monkeypatch: pytest.MonkeyPatch) -> LogRecorder:
+    from lumen_api import main as api_main
+
+    recorder = LogRecorder(api_main.api_logger)
+    monkeypatch.setattr(api_main, "api_logger", recorder)
+    return recorder
+
+
+def plan_request(text_: str, n: int = 1) -> list[AIMessage]:
+    return [AIMessage(content="", tool_calls=[call("write_file", {"file_path": "/plan.md", "content": f"# Plan\n\n- {text_}\n"}, n)]),
+            AIMessage(content="Planned.")]
+
+
+def replan_request(old: str, new: str) -> list[AIMessage]:
+    return [AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/plan.md"}, 1)]),
+            AIMessage(content="", tool_calls=[call("edit_file", {"file_path": "/plan.md", "old_string": old, "new_string": new}, 2)]),
+            AIMessage(content="Replanned.")]
+
+
+def test_k_a_a_stale_disk_reloads_the_newer_session_copy_and_overwrites_nothing(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """The K4-5 sequence. Worker A runs request 1; worker B, on another disk, runs request 2; worker
+    A runs request 3 on its own, now stale, folder. Request 3 must see request 2's plan and history
+    (its folder is rebuilt from the site's current copy, not only when it is missing), and its save
+    must keep request 2's work: the history numbers 1, 2, 3 and the pointer moves 1 → 2 → 3."""
+    store = HybridRepository()
+    document_id = f"site_sess_{uuid4().hex[:10]}"
+    store_site(garner.site(document_id))
+
+    model.next(*plan_request(PLAN_ONE))
+    first = run_turn(client.app, store, document_id, "Request one.")
+    assert store.get_site_session(document_id) == {"version": 1, "manifest_sha256": first.response["session_manifest_sha256"]}
+    park_disk(_agent_root, store, document_id, "worker-a")
+
+    model.next(*replan_request(PLAN_ONE, PLAN_TWO))  # worker B: a disk that never ran this session
+    second = run_turn(client.app, store, document_id, "Request two.")
+    assert second.status == "succeeded", second.response
+    assert store.get_site_session(document_id)["version"] == 2
+    park_disk(_agent_root, store, document_id, "worker-b")
+
+    mount_disk(_agent_root, store, document_id, "worker-a")  # A's folder still holds request 1's memory
+    script = model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/plan.md"}, 1),
+                                          call("read_file", {"file_path": "/history.md"}, 2)]),
+        AIMessage(content="Nothing to change."),
+    )
+    third = run_turn(client.app, store, document_id, "Request three.")
+    assert PLAN_TWO in script.text_of("call_1") and PLAN_ONE not in script.text_of("call_1")
+    assert headings(script.text_of("call_2")) == ["## 1. Request one.", "## 2. Request two."]
+
+    folder = session_folder(_agent_root, store.workspace_id, document_id)
+    assert headings((folder / "workspace" / "history.md").read_text()) == [
+        "## 1. Request one.", "## 2. Request two.", "## 3. Request three."]
+    assert PLAN_TWO in (folder / "workspace" / "plan.md").read_text()
+    assert store.get_site_session(document_id) == {"version": 3, "manifest_sha256": third.response["session_manifest_sha256"]}
+    assert PLAN_TWO in manifest_text(client, third, "workspace/plan.md")
+    assert headings(manifest_text(client, third, "workspace/history.md")) == [
+        "## 1. Request one.", "## 2. Request two.", "## 3. Request three."]
+
+
+def newer_copy_elsewhere(client: TestClient, base: Turn, entry: str) -> str:
+    """Another worker's newer session copy: ``base``'s copy with one more history entry. Returns
+    its manifest digest (stored the way a turn stores one)."""
+    blobs = make_blob_store(client.app)
+    history = (manifest_text(client, base, "workspace/history.md") + f"\n## 2. {entry}\n").encode()
+    blobs.register(history, media_type="text/markdown", source_key="design-session/workspace/history.md")
+    manifest = copy.deepcopy(manifest_of(client, base))
+    manifest["files"]["workspace/history.md"] = {"sha256": hashlib.sha256(history).hexdigest(), "size": len(history),
+                                                 "media_type": "text/markdown"}
+    data = json.dumps(manifest, sort_keys=True).encode()
+    blobs.register(data, media_type="application/json", source_key="design-session/manifest")
+    return hashlib.sha256(data).hexdigest()
+
+
+def test_k_b_a_concurrent_stale_save_is_refused_and_the_newer_copy_stands(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path, logged: LogRecorder) -> None:
+    """While request 2 runs, another worker saves a newer copy of the site's session (the pointer
+    moves 1 → 2). Request 2 started from version 1, so its save is refused: nothing is overwritten,
+    a warning is logged, its run names no manifest, and its local folder is not the site's copy. The
+    next request on that disk loads the newer copy."""
+    store = HybridRepository()
+    document_id = f"site_sess_{uuid4().hex[:10]}"
+    store_site(garner.site(document_id))
+    model.next(*plan_request(PLAN_ONE))
+    first = run_turn(client.app, store, document_id, "Request one.")
+    newer = newer_copy_elsewhere(client, first, "Saved by another worker.")
+    moved: list = []
+    model.next(AIMessage(content="Nothing to change."),
+               hooks={0: lambda: moved.append(store.save_site_session(document_id, expected_version=1,
+                                                                         manifest_sha256=newer))})
+    second = run_turn(client.app, store, document_id, "Request two.")
+    assert moved == [2]
+    assert second.status == "succeeded" and "session_manifest_sha256" not in second.response
+    assert "session_manifest_sha256" not in second.row["result"]
+    assert store.get_site_session(document_id) == {"version": 2, "manifest_sha256": newer}
+    (refusal,) = logged.named("design_session.stale_copy_not_saved")
+    assert refusal[0] == "warning" and refusal[2]["started_from_version"] == 1
+
+    script = model.next(AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/history.md"}, 1)]),
+                        AIMessage(content="Nothing to change."))
+    third = run_turn(client.app, store, document_id, "Request three.")
+    assert headings(script.text_of("call_1")) == ["## 1. Request one.", "## 2. Saved by another worker."]
+    assert store.get_site_session(document_id)["version"] == 3
+    assert headings(manifest_text(client, third, "workspace/history.md")) == [
+        "## 1. Request one.", "## 2. Saved by another worker.", "## 3. Request three."]
+
+
+def test_k_c_a_zombie_attempt_appends_no_history_and_moves_no_pointer(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """Controller ruling S1. Attempt A is taken over mid-turn (B holds the lease and the run at
+    generation 2) and ends without a save (it changed nothing), so no save fence stops it. It no
+    longer holds the run, so it must not touch the session's memory: no history entry, no local
+    copy, no pointer, and it ends ``fenced`` (no terminal result). B then runs the request and its
+    history numbers it 1."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    generations: list = []
+    model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/history.md"}, 1)]),
+        AIMessage(content="Nothing to change."),
+        hooks={1: lambda: generations.append(take_over(store, envelope, "worker-b"))},
+    )
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    folder = session_folder(_agent_root, store.workspace_id, document_id)
+    assert a.status == "fenced" and a.response["error"]["code"] == "site_turn.fenced", a.response
+    assert "session_manifest_sha256" not in a.response
+    assert not (folder / "workspace" / "history.md").exists()
+    assert store.get_site_session(document_id) is None
+    assert run_columns(envelope.run_id)["lease_generation"] == generations[0]
+
+    model.next(*proof_edit(born, PROOF_B, 11))
+    b = attempt_turn(client.app, store, envelope, worker_id="worker-b", generation=generations[0])
+    assert b.status == "succeeded" and b.response["saved_version"] == 1, b.response
+    assert headings((folder / "workspace" / "history.md").read_text()) == [f"## 1. {REQUEST_1}"]
+    assert store.get_site_session(document_id) == {"version": 1, "manifest_sha256": b.response["session_manifest_sha256"]}
+
+
+def test_k_d_a_site_with_no_pointer_falls_back_to_the_newest_run_and_creates_the_pointer(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """Founder point e. A site from before the pointer table has its memory only on its newest run
+    row. A fresh worker restores from that run, and the request's save creates the pointer at
+    version 1; old data is never migrated."""
+    from sqlalchemy import text
+
+    store = HybridRepository()
+    document_id = f"site_sess_{uuid4().hex[:10]}"
+    store_site(garner.site(document_id))
+    model.next(*plan_request(PLAN_ONE))
+    first = run_turn(client.app, store, document_id, "Request one.")
+    # The site as it was before the table: no pointer, the memory named only by the run row.
+    store._bridge._run(lambda conn: conn.execute(
+        text("DELETE FROM design_site_session WHERE workspace_id = :w AND document_id = :d"),
+        {"w": store.workspace_id, "d": document_id}))
+    assert store.get_site_session(document_id) is None
+    assert first.row["result"]["session_manifest_sha256"]
+    shutil.rmtree(session_folder(_agent_root, store.workspace_id, document_id))  # a fresh worker
+
+    script = model.next(AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/plan.md"}, 1),
+                                                          call("read_file", {"file_path": "/history.md"}, 2)]),
+                        AIMessage(content="Nothing to change."))
+    second = run_turn(client.app, store, document_id, "Request two.")
+    assert PLAN_ONE in script.text_of("call_1")
+    assert headings(script.text_of("call_2")) == ["## 1. Request one."]
+    assert store.get_site_session(document_id) == {"version": 1, "manifest_sha256": second.response["session_manifest_sha256"]}
+    assert headings(manifest_text(client, second, "workspace/history.md")) == ["## 1. Request one.", "## 2. Request two."]
