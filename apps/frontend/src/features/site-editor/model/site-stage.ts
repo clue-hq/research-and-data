@@ -26,10 +26,22 @@ export interface SiteCanvasBinding {
 
 /** The persistent site stage: mounted while a site is open, or warm (the project has a site or an
  * open design leg) once the workspace has an editor origin. Later tasks add pages and the URL bar. */
+/** What the Share menu needs from the site editor before it publishes (K6-2). */
+export interface SitePublishBinding {
+  /** Waits for every edit on its way (typing the frame has not sent yet, then the saves) and says
+   * whether they all landed — or why one did not. */
+  prepare: (documentId: string) => Promise<SitePublishReadiness>;
+  /** The version the editor last saved or loaded, or null before the first load. */
+  version: number | null;
+}
+
+export type SitePublishReadiness = { ok: true; version: number | null } | { ok: false; message: string };
+
 export interface SiteStageBinding {
   canvas: SiteCanvasBinding;
   mounted: boolean;
   pages: { open: (route: string) => void; rows: SitePageRow[] };
+  publish: SitePublishBinding;
   url: SiteUrlBinding;
   versions: ArtifactVersionsBinding | null;
 }

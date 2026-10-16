@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import type { SiteRepository } from "../data/site.repository";
-import { IDLE_SITE_SAVE_STATE, SiteSaveController, type SiteSaveState } from "./site-save-controller";
+import { IDLE_SITE_SAVE_STATE, SiteSaveController, type SiteSaveState, type SiteSettled } from "./site-save-controller";
 
 export interface SiteSaves extends SiteSaveState {
   save: (site: SiteDocument, intent?: string) => void;
@@ -20,6 +20,11 @@ export interface SiteSaves extends SiteSaveState {
   requestReloadWhenIdle: () => void;
   reportError: (message: string) => void;
   clearMessages: () => void;
+  /** K6-2: where `settled` counts failures from (see the controller). */
+  failureMark: (documentId: string) => number;
+  /** K6-2: once every write to this document is done (a publish waits for it), failing with the
+   * reason of a write refused after `since`. A document this tab never edited has nothing on its way. */
+  settled: (documentId: string, since?: number) => Promise<SiteSettled>;
 }
 
 /** One controller per site document (kept across visits); the open one's state mirrored for rendering. */
@@ -102,6 +107,8 @@ export function useSiteSaves({
       requestReloadWhenIdle: () => controller?.requestReloadWhenIdle(),
       restore: (batchId: string) => controller?.restore(batchId),
       save: (site: SiteDocument, intent?: string) => controller?.save(site, intent),
+      failureMark: (documentId: string) => controllers.failureMark(documentId),
+      settled: (documentId: string, since?: number) => controllers.settled(documentId, since),
       undo: () => controller?.undo(),
     }),
     [controller, controllers],
@@ -121,6 +128,14 @@ class ControllerRegistry {
     const created = this.create(documentId);
     this.byDocument.set(documentId, created);
     return created;
+  }
+
+  failureMark(documentId: string): number {
+    return this.byDocument.get(documentId)?.mark() ?? 0;
+  }
+
+  settled(documentId: string, since?: number): Promise<SiteSettled> {
+    return this.byDocument.get(documentId)?.settled(since) ?? Promise.resolve({ ok: true, version: null });
   }
 
   allIdle(): boolean {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { canonicalJson } from "@clue/site-kit/editor-site";
-import { fakeServer, headingOf, mountSiteSession, withHeading, type MountedSession, type FakeServer } from "./testing/site-session-bridge";
+import { DOC, fakeServer, headingOf, mountSiteSession, withHeading, type MountedSession, type FakeServer } from "./testing/site-session-bridge";
 
 // The sync fix's core promise, end to end: through typing, dock edits, an agent's write, undo, a
 // refused save and a reload racing a slow save, the canvas (the REAL FrameController), the app's
@@ -81,5 +81,43 @@ test("canvas, app copy and server agree through a whole editing session", async 
   await mounted.flushCanvas();
   await agree(mounted, server, "8. editing carries on");
   assert.equal(headingOf(server.site, "cta"), "Last edit");
+  await mounted.unmount();
+});
+
+// K6-2: Publish pressed while an edit is still on its way — typing the frame has not sent yet, then
+// the save carrying it — waits for both, so the version published is the one the marketer sees.
+test("getting ready to publish waits for the frame's unsent typing and the save that carries it", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  await agree(mounted, server, "open");
+
+  server.hold.save = true;
+  mounted.typeOnCanvas("hero", "Typed just before Publish");
+  await mounted.settle();
+  let ready: unknown = null;
+  void mounted.latest().stage.publish.prepare(DOC).then((value) => (ready = value));
+  await mounted.settle();
+  assert.equal(ready, null, "not while the frame still holds the typing");
+  await mounted.runFrameTimers(); // the pause passes: the frame sends the edit, the save goes out (held)
+  await mounted.settle();
+  assert.equal(ready, null, "not while the save carrying it is on its way");
+  server.release("save");
+  await mounted.settle(12);
+  assert.deepEqual(ready, { ok: true, version: server.version });
+  assert.equal(headingOf(server.site), "Typed just before Publish");
+  await mounted.unmount();
+});
+
+test("getting ready to publish says why when the save it waited for is refused", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  await agree(mounted, server, "open");
+
+  server.refuse = (site) => (headingOf(site) === "" ? "page.content.0(hero).heading: Too small" : null);
+  mounted.typeOnCanvas("hero", "");
+  await mounted.settle();
+  const ready = mounted.latest().stage.publish.prepare(DOC);
+  await mounted.runFrameTimers();
+  assert.deepEqual(await ready, { ok: false, message: "page.content.0(hero).heading: Too small" });
   await mounted.unmount();
 });

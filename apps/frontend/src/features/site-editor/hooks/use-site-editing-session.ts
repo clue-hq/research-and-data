@@ -46,6 +46,12 @@ import { fieldsHaveImage, type SiteImageTarget } from "./site-images.logic";
 
 const DEFAULT_REPOSITORY = httpSiteRepository();
 
+/** How long Publish waits for the frame to send typing it still holds (its pause is well under a
+ * second); after that the publish is refused with SITE_EDIT_STILL_WRITING rather than shipping the
+ * version before the edit. */
+const FRAME_FLUSH_WAIT_MS = 4000;
+export const SITE_EDIT_STILL_WRITING = "An edit is still being written on the page.";
+
 export interface SiteEditingSession {
   activeDocumentId: string | null;
   annotations: WebAnnotationsSession;
@@ -145,6 +151,16 @@ export function useSiteEditingSession({
   // Whether the frame holds work it has not sent yet (its `pending` message). Forgotten whenever the
   // frame reboots or is given a document, which drops whatever it held.
   const framePending = useRef(false);
+  // Publish waiting for that unsent work to be sent (K6-2): released when the frame stops holding
+  // it, or forgets it (a reboot or a fresh document).
+  const framePendingWaiters = useRef<(() => void)[]>([]);
+  const setFramePending = useCallback((pending: boolean) => {
+    framePending.current = pending;
+    if (pending) return;
+    const waiters = framePendingWaiters.current;
+    framePendingWaiters.current = [];
+    for (const release of waiters) release();
+  }, []);
   const latest = useRef({ editing, locked, save: saves.save });
   useEffect(() => {
     latest.current = { editing, locked, save: saves.save };
@@ -156,7 +172,7 @@ export function useSiteEditingSession({
       case "ready":
         // A rebooted frame shows no document until its next init lands: the canvas reads
         // "Loading preview…" until the new `navigated`.
-        framePending.current = false;
+        setFramePending(false);
         setShownDocumentId(null);
         setSelection(null);
         return;
@@ -216,12 +232,12 @@ export function useSiteEditingSession({
         openExternalLink(message.payload.href);
         return;
       case "pending":
-        framePending.current = message.payload.pending;
+        setFramePending(message.payload.pending);
         return;
       default:
         return;
     }
-  }, [copy]);
+  }, [copy, setFramePending]);
   // Review K3-1 (fix 2): a different site gets a fresh frame, so code one site's sections loaded
   // cannot act on the next site opened in this tab.
   const frame = useSiteFrameHost({ documentId: activeDocumentId, editorOrigin: origin.origin, onMessage: handleFrameMessage });
@@ -273,7 +289,7 @@ export function useSiteEditingSession({
         };
       }
       sent.current = { initKey, rev: currentSite.rev };
-      framePending.current = false;
+      setFramePending(false);
       post(
         "init",
         {
@@ -293,7 +309,7 @@ export function useSiteEditingSession({
       sent.current = { ...sent.current, rev: sync.rev };
       post("replace_site", { rev: sync.rev, site: currentSite.site }, activeDocumentId);
     }
-  }, [activeDocumentId, boot, currentSite, initGeneration, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
+  }, [activeDocumentId, boot, currentSite, initGeneration, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route, setFramePending]);
 
   // Edit / preview, sent once per change after the frame shows this document.
   const sentMode = useRef<string | null>(null);
@@ -509,6 +525,29 @@ export function useSiteEditingSession({
     values,
   };
 
+  // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.
+  // Typing the frame still holds is sent first (the frame's pause, bounded), then every save of that
+  // document has to land; a refused or unsent save stops the publish with the reason.
+  const { failureMark, settled } = saves;
+  const prepareToPublish = useCallback(
+    async (documentId: string) => {
+      // A save refused while we wait for the frame counts too.
+      const since = failureMark(documentId);
+      if (documentId === activeDocumentId && framePending.current) {
+        const sent = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(false), FRAME_FLUSH_WAIT_MS);
+          framePendingWaiters.current.push(() => {
+            clearTimeout(timer);
+            resolve(true);
+          });
+        });
+        if (!sent) return { ok: false as const, message: SITE_EDIT_STILL_WRITING };
+      }
+      return settled(documentId, since);
+    },
+    [activeDocumentId, failureMark, settled],
+  );
+
   const canvas = siteCanvasState({
     documentId: activeDocumentId,
     editorOrigin: origin.origin,
@@ -548,6 +587,7 @@ export function useSiteEditingSession({
       },
       mounted: siteStageMounted({ editorOrigin: origin.origin, enabled, warm }),
       pages,
+      publish: { prepare: prepareToPublish, version: saves.baseVersion },
       url,
       versions: activeDocumentId ? versions : null,
     },

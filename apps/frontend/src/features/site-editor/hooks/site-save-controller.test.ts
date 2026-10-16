@@ -292,3 +292,60 @@ test("a landed history step and a refusal both report that the working copy is s
   await h.settle();
   assert.deepEqual(superseded, ["undo", "save"], "a plain save and a transport failure do not");
 });
+
+// --- K6-2: a publish waits for the saves on their way, so it ships what the marketer sees ---------
+
+test("settled() waits for the save in flight and every save queued behind it, then names the version", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  h.controller.save(site("b"));
+  let outcome: unknown = null;
+  void h.controller.settled().then((value) => (outcome = value));
+  await h.settle();
+  assert.equal(outcome, null, "not while the first save is in flight");
+  h.pending[0].resolve({ version: 6 });
+  await h.settle();
+  assert.equal(outcome, null, "not while the queued save is still on its way");
+  h.pending[1].resolve({ version: 7 });
+  await h.settle();
+  assert.deepEqual(outcome, { ok: true, version: 7 });
+});
+
+test("settled() answers at once when nothing is on its way", async () => {
+  const h = harness();
+  assert.deepEqual(await h.controller.settled(), { ok: true, version: 5 });
+});
+
+test("settled() says why when a save it waited for is refused", async () => {
+  const h = harness();
+  h.controller.save(site(""));
+  const outcome = h.controller.settled();
+  h.pending[0].reject(
+    new SiteRepositoryError("invalid", { code: "site.invalid", status: 422, errors: ["page.content.0(cta).heading: Too small"] }),
+  );
+  assert.deepEqual(await outcome, { ok: false, message: "page.content.0(cta).heading: Too small" });
+});
+
+test("settled() says why when a save it waited for was overtaken by another change", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  const outcome = h.controller.settled();
+  h.pending[0].reject(
+    new SiteRepositoryError("moved", { code: "edits.base_version_mismatch", status: 409, currentVersion: 9 }),
+  );
+  assert.deepEqual(await outcome, { ok: false, message: SITE_MOVED_ON_NOTE });
+});
+
+test("an edit kept after a transport failure is not saved, so settled() refuses until a save lands", async () => {
+  const h = harness();
+  h.controller.save(site("a"));
+  const waited = h.controller.settled();
+  h.pending[0].reject(new TypeError("Failed to fetch"));
+  assert.deepEqual(await waited, { ok: false, message: "Failed to fetch" });
+  // Idle now, but the edit is still only on this screen.
+  assert.deepEqual(await h.controller.settled(), { ok: false, message: "Failed to fetch" });
+  h.controller.save(site("b"));
+  h.pending[1].resolve({ version: 6 });
+  await h.settle();
+  assert.deepEqual(await h.controller.settled(), { ok: true, version: 6 });
+});

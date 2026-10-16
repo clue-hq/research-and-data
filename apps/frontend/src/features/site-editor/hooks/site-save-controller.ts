@@ -42,6 +42,10 @@ export const IDLE_SITE_SAVE_STATE: SiteSaveState = {
   redoDepth: 0,
 };
 
+/** What the saves on their way came to (K6-2): every one landed, at `version`; or one did not, and
+ * `message` says why (the same words the inspector shows). */
+export type SiteSettled = { ok: true; version: number | null } | { ok: false; message: string };
+
 type HistoryStep = { kind: "undo" } | { kind: "redo" } | { kind: "restore"; batchId: string };
 type QueuedOperation = { kind: "save"; site: SiteDocument; intent?: string } | { kind: "step"; step: HistoryStep };
 
@@ -63,6 +67,14 @@ export class SiteSaveController {
   private queue: QueuedOperation[] = [];
   private reloadWhenIdle = false;
   private disposed = false;
+  /** Callers of `settled()` waiting for the queue to drain, each with the mark it counts from. */
+  private waiters: { resolve: (outcome: SiteSettled) => void; since: number }[] = [];
+  /** Every refused or failed write so far, counted, and the reason of the latest. */
+  private failures = 0;
+  private lastFailure: string | null = null;
+  /** A transport failure keeps the edit in the working copy, not on the server: until a later write
+   * lands, the server does not hold what the marketer sees. */
+  private unsavedFailure: string | null = null;
 
   constructor(private readonly deps: SiteSaveControllerDeps) {}
 
@@ -72,12 +84,30 @@ export class SiteSaveController {
 
   /** The version and stacks of the document as just loaded (first load and every reload). */
   adopt(loaded: { version: number; undoDepth: number; redoDepth: number }): void {
+    // The canvas now shows the copy just read from the server: nothing on screen is unsaved.
+    this.unsavedFailure = null;
     this.update({ baseVersion: loaded.version, undoDepth: loaded.undoDepth, redoDepth: loaded.redoDepth });
   }
 
   /** Nothing in flight and nothing queued. */
   isIdle(): boolean {
     return !this.inFlight && this.queue.length === 0;
+  }
+
+  /** K6-2: where `settled()` counts failures from. A caller that must first wait for something else
+   * (the frame's unsent typing) takes the mark when it starts waiting, so a save refused in between
+   * still counts. */
+  mark(): number {
+    return this.failures;
+  }
+
+  /** K6-2: resolves once nothing is in flight or queued (a publish waits for this, so what it ships
+   * is what the marketer sees). It fails with the reason when a write was refused or did not reach
+   * the server after `since` (default: now), and while an edit kept after a transport failure is
+   * still unsaved. */
+  settled(since: number = this.failures): Promise<SiteSettled> {
+    if (this.isIdle()) return Promise.resolve(this.idleOutcome(since));
+    return new Promise((resolve) => this.waiters.push({ resolve, since }));
   }
 
   /** Reload now when idle; otherwise once the queue drains (a refusal's own reload satisfies it).
@@ -154,6 +184,7 @@ export class SiteSaveController {
     this.begin();
     try {
       const result = await this.deps.repository.save(this.deps.documentId, { site, baseVersion, intent });
+      this.unsavedFailure = null;
       this.update({
         baseVersion: result.version,
         undoDepth: Math.min(this.state.undoDepth + 1, SITE_UNDO_CAP),
@@ -184,6 +215,8 @@ export class SiteSaveController {
           : step.kind === "redo"
             ? { undoDepth: Math.min(this.state.undoDepth + 1, SITE_UNDO_CAP), redoDepth: Math.max(this.state.redoDepth - 1, 0) }
             : { undoDepth: Math.min(this.state.undoDepth + 1, SITE_UNDO_CAP), redoDepth: 0 };
+      // The step reloads the canvas from the server, so an edit kept after a failure is gone too.
+      this.unsavedFailure = null;
       this.update({ baseVersion: result.version, ...depths });
       // Saves queued while the step ran were built on the copy from BEFORE it: running them now
       // would put that older copy back over the step. They are dropped; the step's reload pushes
@@ -219,6 +252,7 @@ export class SiteSaveController {
       this.reloadWhenIdle = false;
       this.notifyReload();
     }
+    this.settleWaiters();
   }
 
   private abandon(): void {
@@ -226,15 +260,37 @@ export class SiteSaveController {
     this.queue = [];
   }
 
-  /** A refusal that reloads: the copy is superseded, and the reload also serves a deferred one. */
+  /** A refusal that reloads: the copy is superseded, and the reload also serves a deferred one. The
+   * reload replaces the copy with what the server holds, so nothing is left unsaved. */
   private refusedAndReload(operation: "save" | HistoryStep["kind"], patch: Partial<SiteSaveState>): void {
     this.reloadWhenIdle = false;
+    this.unsavedFailure = null;
     this.notifySuperseded(operation);
     this.update(patch);
     this.notifyReload();
   }
 
   private refused(cause: unknown, operation: "save" | HistoryStep["kind"]): void {
+    this.refusedWithoutSettling(cause, operation);
+    // Every refusal empties the queue, so the controller is idle: the waiters hear why.
+    this.failures += 1;
+    this.lastFailure = this.state.error ?? this.state.note ?? SITE_SAVE_FAILED;
+    this.settleWaiters();
+  }
+
+  private idleOutcome(since: number): SiteSettled {
+    const message = (this.failures > since ? this.lastFailure : null) ?? this.unsavedFailure;
+    return message === null ? { ok: true, version: this.state.baseVersion } : { ok: false, message };
+  }
+
+  private settleWaiters(): void {
+    if (!this.isIdle()) return;
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const waiter of waiters) waiter.resolve(this.idleOutcome(waiter.since));
+  }
+
+  private refusedWithoutSettling(cause: unknown, operation: "save" | HistoryStep["kind"]): void {
     const error = cause instanceof SiteRepositoryError ? cause : null;
     if (error?.status === 409 && (error.code === "undo.empty" || error.code === "redo.empty")) {
       this.refusedAndReload(operation, { busy: false });
@@ -258,7 +314,9 @@ export class SiteSaveController {
     }
     // A transport failure keeps the edit (the next save carries the whole site again) and does not
     // reload on its own, so a reload deferred behind this save still has to happen (review F3).
-    this.update({ busy: false, note: null, error: cause instanceof Error ? cause.message : SITE_SAVE_FAILED });
+    const message = cause instanceof Error ? cause.message : SITE_SAVE_FAILED;
+    this.unsavedFailure = message;
+    this.update({ busy: false, note: null, error: message });
     if (this.reloadWhenIdle) {
       this.reloadWhenIdle = false;
       this.notifyReload();
