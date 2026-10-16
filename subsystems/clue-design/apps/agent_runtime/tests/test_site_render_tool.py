@@ -61,8 +61,23 @@ def test_overflow_render_notes_and_a_failing_renderer_are_reported(tmp_path: Pat
     text = _tools(tmp_path / "a", wide).render_page()[0]["text"]
     assert "horizontal overflow: yes" in text and text.endswith(" Render notes: clone frag_x has no CSS.")
     failing = _tools(tmp_path / "b", FakeRenderer(fail_code="render.timeout")).render_page()
-    assert failing == ("NOT RENDERED: the page could not be drawn (render.timeout). Validate it and try again; "
-                       "if this repeats, say so in your report.")
+    assert failing == ("NOT RENDERED: the render failed (render.timeout). If this names something in your page, "
+                       "fix that. Otherwise the renderer itself failed: try once more, and if it fails again, say "
+                       "so in your report and carry on; do not rework the page for it.")
+
+
+@needs_node
+def test_a_failed_render_tells_the_agent_what_the_renderer_said_and_which_step_failed(tmp_path: Path) -> None:
+    """The renderer's own message reaches the agent, with the step that failed. Without it (the
+    answer was only a code plus "Validate it and try again") an agent whose previews failed for a
+    platform bug guessed for 19 minutes, rewrote its section nine times and reworked the FAQ."""
+    shot = FakeRenderer(fail_code="render.failed", fail_stage="screenshot",
+                        fail_message="Page.wait_for_function: EvalError: Evaluating a string as JavaScript\n"
+                                     "  violates the Content Security Policy directive")
+    answer = _tools(tmp_path, shot).render_page()
+    assert answer.startswith("NOT RENDERED: the screenshot failed (render.failed): Page.wait_for_function: EvalError: "
+                             "Evaluating a string as JavaScript violates the Content Security Policy directive. ")
+    assert "Validate" not in answer and "do not rework the page for it" in answer
 
 
 @needs_node
@@ -71,5 +86,4 @@ def test_render_page_without_a_renderer_names_render_unavailable(tmp_path: Path)
     inputs = inputs_for(renderer=None, assets=FakeAssets(blobs={HELD: ("image/png", png())}))
     materialize_workspace(workspace, inputs, site=garner_site())
     tools = SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site(), retry_delay_s=0)
-    assert tools.render_page() == ("NOT RENDERED: the page could not be drawn (render.unavailable). Validate it and "
-                                   "try again; if this repeats, say so in your report.")
+    assert tools.render_page().startswith("NOT RENDERED: the render failed (render.unavailable). If this names")

@@ -47,8 +47,9 @@ workspace of plain files with a few tools.
    section: which clone or brand section, and its words.
 4. Build `page.json` and `shell.json` from the plan. Call `validate_page`, fix every error it
    names, and call it again until the page is valid.
-5. Call `render_page`, and look as the reader would (page-review). Fix only what fails, and
-   render again until the review passes, up to 3 renders in all.
+5. Call `render_page`, and look as the reader would (page-review). It checks the page first, so
+   never call `validate_page` right before a render. Fix only what fails, and render again until
+   the review passes, up to 3 renders in all.
 6. Finish with a short report: what you built, what you left out and why, and anything still
    open.
 

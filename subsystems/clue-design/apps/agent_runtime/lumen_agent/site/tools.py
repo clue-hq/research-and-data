@@ -76,7 +76,9 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "render_page": (
         "Render the site and return a desktop (1440 wide) and a mobile (375 wide) full-page "
         "screenshot of one page, with facts about broken images and overflow. route "
-        "is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Refuses while the site is invalid."
+        "is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Checks the page first, exactly as "
+        "validate_page does, and refuses with each error while the site is invalid, so there is no "
+        "need to validate right before a render."
     ),
     "restore_version": (
         "Bring back the site as it was at an earlier saved version (site.md lists them) into "
@@ -158,6 +160,23 @@ def _visible_text(html: str) -> str:
 
     body = re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.S | re.I)
     return html_lib.unescape(re.sub(r"<[^>]+>", " ", body))
+
+
+def render_refusal(stage: str, code: str, error: BaseException | None) -> str:
+    """render_page's answer when the render or the screenshot failed: the stage, the code and the
+    renderer's own words, so the agent can tell its page's fault from the platform's.
+
+    It used to say only the code and "Validate it and try again": with nothing to go on, an agent
+    whose previews kept failing for a platform bug rewrote its section nine times and reworked a
+    section nobody asked about (lane run run_site_590eb594523c, 2026-10-16, 19 minutes lost)."""
+
+    why = getattr(error, "detail", None) or (str(error) if error is not None else "")
+    why = " ".join(str(why).split())
+    why = "".join(ch for ch in why if ch.isprintable())[:400]
+    detail = f": {why}" if why and why != code else ""
+    return (f"NOT RENDERED: the {stage} failed ({code}){detail}. If this names something in your page, "
+            "fix that. Otherwise the renderer itself failed: try once more, and if it fails again, say "
+            "so in your report and carry on; do not rework the page for it.")
 
 
 class SiteTools:
@@ -467,23 +486,19 @@ class SiteTools:
         site = read_site_files(self.workspace, self.base_site, self.sections)
         sections = [self.sections[name] for name in site["agent_sections"]]
 
-        def refused(code: str) -> str:
-            return (f"NOT RENDERED: the page could not be drawn ({code}). Validate it and try again; "
-                    "if this repeats, say so in your report.")
-
         if renderer is None:
-            return refused("render.unavailable")
+            return render_refusal("render", "render.unavailable", None)
         try:
             html, css, warnings = renderer.render(site, self.brand, sections, route=route)
         except Exception as error:  # noqa: BLE001 - a refused render is an answer, not a crash
-            return refused(getattr(error, "code", None) or type(error).__name__)
+            return render_refusal("render", getattr(error, "code", None) or type(error).__name__, error)
         broken = self._broken_images(html)
         blocks: list[dict] = []
         for width in (1440, 375):
             try:
                 png = renderer.screenshot(html, css, width=width)
             except Exception as error:  # noqa: BLE001
-                return refused(getattr(error, "code", None) or type(error).__name__)
+                return render_refusal("screenshot", getattr(error, "code", None) or type(error).__name__, error)
             shot_width, height = self._png_size(png)
             scale = SCALE_BY_WIDTH.get(width, 1.0)
             tiles = self._tiles(png, scale)

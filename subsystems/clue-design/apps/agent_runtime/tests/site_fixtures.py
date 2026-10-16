@@ -109,18 +109,26 @@ class FakeRenderer:
     warnings: list[str] = field(default_factory=list)
     shot: bytes = b""
     fail_code: str | None = None
+    #: The failing call's own message (the code when unset) and which call fails.
+    fail_message: str | None = None
+    fail_stage: str = "render"
     calls: list[tuple] = field(default_factory=list)
+
+    def _fail(self) -> None:
+        error = RuntimeError(self.fail_message or self.fail_code)
+        error.code = self.fail_code  # type: ignore[attr-defined]
+        raise error
 
     def render(self, site, brand, sections, *, route):
         self.calls.append(("render", route, [s.name for s in sections]))
-        if self.fail_code:
-            error = RuntimeError(self.fail_code)
-            error.code = self.fail_code  # type: ignore[attr-defined]
-            raise error
+        if self.fail_code and self.fail_stage == "render":
+            self._fail()
         return self.html, ".x{}", list(self.warnings)
 
     def screenshot(self, html, css, *, width, section_only=False):
         self.calls.append(("screenshot", width, section_only))
+        if self.fail_code and self.fail_stage == "screenshot":
+            self._fail()
         return self.shot or png("white", (width, 2000))
 
 

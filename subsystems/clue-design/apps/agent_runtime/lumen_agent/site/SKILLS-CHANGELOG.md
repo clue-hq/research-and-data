@@ -94,3 +94,10 @@ fails without it).
   string prop of an agent section was edited in place, so in Edit mode `surface` drew as
   `bg-surface-[object Object]`, `alt` read "[object Object]", and a section that capitalised its
   text crashed.
+- 2026-10-17 · page-review and the system prompt (step 5), and render_page's description and
+  refusal: `render_page` checks the page first, so the agent never calls `validate_page` right
+  before a render; a failed render names the step and the renderer's own message, and tells the
+  agent not to rework the page for the renderer's own failure. Failing case: lane run
+  run_site_590eb594523c (2026-10-16): a platform bug failed every preview of a page with two agent
+  sections, the answer said only "Validate it and try again", and the agent spent 19 minutes and
+  17 useless validate calls guessing, rewrote its section nine times and reworked the FAQ.
