@@ -33,3 +33,22 @@ export function notInlineReason(name: string): string | null {
   if (ALT_PROP.test(name)) return "it is an image's description, edited in the editor's side panel";
   return null;
 }
+
+type PropsJsonSchema = { type?: unknown; edit?: unknown; properties?: Record<string, PropsJsonSchema>; items?: PropsJsonSchema };
+
+/** Where a section's props JSON Schema puts the marker on a prop that cannot edit in place, as
+ * write-time refusals (render-core's sectionPropsSchema). Nested props are named by their path
+ * (`cards.linkHref`). */
+export function inlineMarkerErrors(schema: PropsJsonSchema, prefix = ""): string[] {
+  return Object.entries(schema.properties ?? {}).flatMap(([name, property]) => {
+    const path = `${prefix}${name}`;
+    const errors: string[] = [];
+    if (property.edit === EDIT_INLINE) {
+      const why = notInlineReason(name) ?? (property.type === "string" ? null : "it is not text; only z.string() props edit in place");
+      if (why) errors.push(`"${path}" cannot be edited in place: ${why}. Remove .meta({ edit: "inline" }) from it`);
+    }
+    const child = property.items ?? property;
+    if (child.properties) errors.push(...inlineMarkerErrors(child, `${path}.`));
+    return errors;
+  });
+}

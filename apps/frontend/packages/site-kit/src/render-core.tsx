@@ -7,6 +7,7 @@ import { Render } from "@puckeditor/core/rsc";
 import type { Config, Data } from "@puckeditor/core";
 import { z } from "zod";
 import type { AgentSectionModule } from "./agent-kit";
+import { inlineMarkerErrors } from "./agent-props";
 import type { BrandData } from "./brand";
 import { fillClone } from "./clone";
 import { makeConfig, type CloneHtml } from "./config";
@@ -137,6 +138,8 @@ export function sectionPropsSchema(module: { schema?: unknown; render?: unknown 
       }
     }
     props = z.toJSONSchema(module.schema);
+    // S2a-2: the edit-in-place marker belongs on prose only (./agent-props).
+    errors.push(...inlineMarkerErrors(props as Parameters<typeof inlineMarkerErrors>[0]));
   }
   if (typeof module.render !== "function") errors.push("`render` must be a function (props, kit) => JSX");
   return errors.length ? { errors } : { props };

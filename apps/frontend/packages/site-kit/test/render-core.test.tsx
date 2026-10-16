@@ -94,3 +94,49 @@ test("K1-2: a section schema must make its id required text", () => {
   }
   assert.ok("props" in sectionPropsSchema({ schema: z.object({ id: z.string(), surface: z.string() }).strict(), render }));
 });
+
+// S2a-2 (option B): the marker `.meta({ edit: "inline" })` makes a prop edit in place on the canvas.
+// It belongs on prose only; on a brand choice, a link, an image, `alt` or a prop that is not text the
+// section is refused when it is written, with what to do instead.
+test("S2a-2: the edit-in-place marker is refused on a choice, link, image, alt or non-text prop", () => {
+  const render = () => null;
+  const refused: [string, z.ZodType, string][] = [
+    ["surface", z.string(), "it is a brand choice, picked from a list in the editor"],
+    ["ctaLook", z.string(), "it is a brand choice, picked from a list in the editor"],
+    ["cardLook", z.string(), "it is a brand choice, picked from a list in the editor"],
+    ["buttonHref", z.string(), "it is a link, edited in the editor's side panel"],
+    ["heroImage", z.string(), "it is an image, chosen from the brand's assets in the editor"],
+    ["alt", z.string(), "it is an image's description, edited in the editor's side panel"],
+    ["count", z.number(), "it is not text; only z.string() props edit in place"],
+  ];
+  for (const [name, type, why] of refused) {
+    const shape: Record<string, z.ZodType> = { id: z.string(), surface: z.string(), [name]: type.meta({ edit: "inline" }) };
+    const result = sectionPropsSchema({ schema: z.object(shape).strict(), render });
+    assert.deepEqual(result, { errors: [`"${name}" cannot be edited in place: ${why}. Remove .meta({ edit: "inline" }) from it`] }, name);
+  }
+  const nested = sectionPropsSchema({
+    schema: z.object({ id: z.string(), surface: z.string(), cards: z.array(z.object({ title: z.string(), linkHref: z.string().meta({ edit: "inline" }) })) }).strict(),
+    render,
+  });
+  assert.deepEqual(nested, { errors: ['"cards.linkHref" cannot be edited in place: it is a link, edited in the editor\'s side panel. Remove .meta({ edit: "inline" }) from it'] });
+});
+
+test("S2a-2: marked prose passes and the stored props schema carries the marker, inside lists too", () => {
+  const result = sectionPropsSchema({
+    schema: z.object({
+      id: z.string(),
+      surface: z.string(),
+      quote: z.string().min(1).meta({ edit: "inline" }),
+      note: z.string().optional().meta({ edit: "inline" }),
+      caption: z.string(),
+      steps: z.array(z.object({ title: z.string().meta({ edit: "inline" }) })),
+    }).strict(),
+    render: () => null,
+  });
+  assert.ok("props" in result, JSON.stringify(result));
+  const properties = (result.props as { properties: Record<string, { edit?: string; items?: { properties: Record<string, { edit?: string }> } }> }).properties;
+  assert.equal(properties.quote.edit, "inline");
+  assert.equal(properties.note.edit, "inline");
+  assert.equal(properties.caption.edit, undefined);
+  assert.equal(properties.steps.items?.properties.title.edit, "inline");
+});
