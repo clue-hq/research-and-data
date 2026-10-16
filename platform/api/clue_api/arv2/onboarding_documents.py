@@ -377,14 +377,18 @@ def existing_customers_document(
     front.update(_run_footer(run))
 
     def domains(customer: Mapping[str, Any]) -> str:
-        shown = []
+        # Only the domains, so the Head of ABM can copy the cell into a brief's ``exclude`` as is.
+        return ", ".join(str(domain) for domain in customer.get("domains") or [])
+
+    def check(customer: Mapping[str, Any]) -> str:
+        """``confirmed`` when every domain's homepage named the company; otherwise each domain
+        that did not, with the page title that explains why."""
+        doubts = []
         for domain in customer.get("domains") or []:
-            check = checks.get(domain)
-            if check is None or check.status == "confirmed":
-                shown.append(str(domain))
-            else:
-                shown.append(f"{domain} (unconfirmed: {check.title or 'no answer'})")
-        return ", ".join(shown)
+            found = checks.get(domain)
+            if found is not None and found.status == "unconfirmed":
+                doubts.append(f"{domain}: unconfirmed ({found.title or 'no answer'})")
+        return "; ".join(doubts) or "confirmed"
 
     def how(customer: Mapping[str, Any]) -> str:
         via = customer.get("via")
@@ -398,6 +402,7 @@ def existing_customers_document(
         (
             c.get("name"),
             domains(c),
+            check(c),
             how(c),
             c.get("evidence_kind"),
             c.get("quote"),
@@ -406,7 +411,10 @@ def existing_customers_document(
         for index, c in sorted(customers, key=lambda pair: str(pair[1].get("name") or "").lower())
     ]
     table = (
-        _table(("Customer", "Domains", "How they buy", "Evidence", "Quote", "Source"), rows)
+        _table(
+            ("Customer", "Domains", "Domain check", "How they buy", "Evidence", "Quote", "Source"),
+            rows,
+        )
         if rows
         else "_Not established._\n"
     )

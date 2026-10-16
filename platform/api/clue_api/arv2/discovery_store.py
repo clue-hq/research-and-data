@@ -874,13 +874,14 @@ async def project_found_domains(
 
 async def seller_domain(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> str | None:
     """The seller's own domain as the platform knows it: the ``company_domain`` of the brand's most
-    recent completed whole-brand onboarding (spec 2026-10-16 §4.6). ``None`` when the brand was
-    never onboarded; discovery then excludes only what its brief names."""
+    recent whole-brand onboarding, whatever its status (spec 2026-10-16 §4.6) — the domain is known
+    when the run starts, and a discovery launched while its background phase still runs must leave
+    the seller out too. ``None`` when the brand was never onboarded; discovery then excludes only
+    what its brief names."""
     domain = await conn.scalar(
         text(
             "SELECT company_domain FROM onboarding_run "
             "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND kind = 'full' "
-            "AND status IN ('completed', 'completed_with_gaps') "
             "ORDER BY requested_at DESC LIMIT 1"
         ),
         {"workspace_id": workspace_id, "brand_id": brand_id},

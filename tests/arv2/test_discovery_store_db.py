@@ -708,7 +708,7 @@ def test_brief_exclusions_are_not_found_before_for_later_runs() -> None:
     run_async(scenario())
 
 
-def test_seller_domain_reads_the_latest_completed_full_run() -> None:
+def test_seller_domain_reads_the_latest_full_run_whatever_its_status() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             project = await _seed(conn)
@@ -719,8 +719,11 @@ def test_seller_domain_reads_the_latest_completed_full_run() -> None:
             await seed_principal(conn, workspace_id=WORKSPACE, user_id=user)
             for domain, status, at in (
                 ("old.example", "completed", date(2026, 1, 1)),
-                ("https://www.Conduit.ai/", "completed_with_gaps", date(2026, 2, 1)),
-                ("newer-but-failed.example", "failed", date(2026, 3, 1)),
+                ("other.example", "completed_with_gaps", date(2026, 2, 1)),
+                # The newest walk decides, whatever its status: the domain is known when the run
+                # starts, and a discovery launched while the background phase still runs must
+                # leave the seller out too (review finding, 2026-10-16).
+                ("https://www.Conduit.ai/", "failed", date(2026, 3, 1)),
             ):
                 await conn.execute(
                     text(

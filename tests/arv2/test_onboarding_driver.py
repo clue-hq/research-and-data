@@ -1351,7 +1351,7 @@ def test_the_customers_step_checks_domains_and_drains_their_rows() -> None:
     labels = [row.label for _stamp, rows in drain.calls for row in rows]
     assert "onboarding.customer_domain" in labels
     body = next(b for b in artifacts_seen if b"# Existing customers" in b).decode()
-    assert "wynwoodhouse.us (unconfirmed: Personal Care Communities)" in body
+    assert "| wynwoodhouse.us | wynwoodhouse.us: unconfirmed (Personal Care Communities) |" in body
 
 
 def test_a_customers_run_takes_only_the_customers_step() -> None:

@@ -574,6 +574,7 @@ class _FakeExa:
     ) -> None:
         self._respond = respond
         self.search_hits = list(search_hits)
+        self.searches: list[dict[str, Any]] = []
         self.queries: list[str] = []
         self.labels: list[str] = []
         self.models: list[str] = []
@@ -585,7 +586,8 @@ class _FakeExa:
         return self._respond(query)
 
     def search(self, query: str, **kwargs: Any) -> Any:
-        del query, kwargs
+        del query
+        self.searches.append(kwargs)
         return SimpleNamespace(status=200, results=self.search_hits)
 
     def gate_queries(self) -> list[str]:
@@ -2995,6 +2997,13 @@ def test_websets_rounds_exclude_the_brief_through_one_import(
     creates = websets.named("create")
     assert len(creates) == 2
     assert all(call["exclude_import_ids"] == ("i1",) for call in creates)
+    # The person sees the exclusion working even when the Import kept everyone out upfront.
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 1
+    assert (
+        "The Exa import kept 1 excluded domain out of every search upfront."
+        in driver.summary_message(run.run_id, ended["summary"])
+    )
 
 
 def test_an_import_still_processing_at_the_deadline_is_skipped_and_the_domain_skip_still_applies(
@@ -3021,6 +3030,13 @@ def test_an_import_still_processing_at_the_deadline_is_skipped_and_the_domain_sk
     assert [row.domain for row in _brief_excluded(store)] == ["marriott.com"]
     receipt = store.named("finish_discovery_run")[0]["receipt"]
     assert receipt["guards"].get("brief_import_unavailable") == 1
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 0
+    assert ended["summary"]["import_unavailable"] is True
+    assert (
+        "The Exa import of the excluded domains was not ready; they were skipped as they came."
+        in driver.summary_message(run.run_id, ended["summary"])
+    )
 
 
 def test_no_exclusions_means_no_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3035,3 +3051,20 @@ def test_no_exclusions_means_no_import(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert websets.named("create_import") == []
     assert websets.named("create")[0]["exclude_import_ids"] == ()
+
+
+def test_a_search_round_makes_room_for_the_excluded_domains_exa_still_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A seller with many customers matching the ICP: the search asks for one more result per
+    excluded domain, as it does per known one, so the customers do not crowd out new companies."""
+    entries = [(f"Customer {n}", f"customer{n}.com") for n in range(3)]
+    brief = {**_excluding(*entries), "source": "search"}
+    run = _run_row(brief=brief, source="search", target_count=1)
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    handler, *_ = _handler(store, exa=exa, websets=_FakeWebsets(), monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert exa.searches[0]["num_results"] == 2 * 1 + 3

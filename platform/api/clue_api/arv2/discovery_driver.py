@@ -713,13 +713,15 @@ class Arv2DiscoveryWorkHandler:
         """
         run = state.run
         known = state.seen | state.project_domains | state.found_before
+        # Excluded domains take result slots too when Exa returns them (spec 2026-10-16 §4.6).
+        padding = len(known | state.excluded_domains.keys())
         query = state.brief.query
         result = await self._hop(
             state,
             lambda caller: self._clients.exa(caller).search(
                 query,
                 category="company",
-                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + len(known)),
+                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + padding),
                 label=f"discovery-search-{search.ordinal}",
             ),
         )
@@ -1825,6 +1827,10 @@ def build_summary(state: _RunState, *, failure: str | None = None) -> dict[str, 
         "spend_usd": str(state.cost_usd),
         "excluded_by_brief": len(state.brief_excluded),
         "excluded_by_brief_example": state.brief_excluded[0] if state.brief_excluded else None,
+        # How many excluded domains the Exa Import kept out upfront: those companies never come
+        # back, so this is the only trace of them the person sees (spec 2026-10-16 §4.6).
+        "import_domains": len(state.excluded_domains) if state.import_id is not None else 0,
+        "import_unavailable": state.import_tried and state.import_id is None,
     }
     if failure is not None:
         summary["failure"] = failure
@@ -1845,6 +1851,8 @@ def _failure_summary(run: DiscoveryRunRow, failure: str) -> dict[str, Any]:
         "spend_usd": "0",
         "excluded_by_brief": 0,
         "excluded_by_brief_example": None,
+        "import_domains": 0,
+        "import_unavailable": False,
         "failure": failure,
     }
 
@@ -1876,6 +1884,16 @@ def summary_message(run_id: UUID, summary: Mapping[str, Any]) -> str:
         lines.append(
             "Excluded by the brief (existing customers or the seller): "
             f"{summary['excluded_by_brief']} — e.g. {summary.get('excluded_by_brief_example')}."
+        )
+    if summary.get("import_domains"):
+        count = summary["import_domains"]
+        lines.append(
+            f"The Exa import kept {count} excluded domain{'' if count == 1 else 's'} out of every "
+            "search upfront."
+        )
+    elif summary.get("import_unavailable"):
+        lines.append(
+            "The Exa import of the excluded domains was not ready; they were skipped as they came."
         )
     rates = [entry for entry in summary["criteria_rates"] if entry["rate"] is not None]
     if rates:

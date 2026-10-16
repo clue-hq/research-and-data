@@ -69,16 +69,17 @@ def _words(value: str) -> list[str]:
 
 
 def names_company(name: str, page: str) -> bool:
-    """True when every significant word of ``name`` is a word on ``page``, or the name's words
-    run together appear in the page's run-together text ("Host Genius" on a "HostGenius" page).
-    A name with no significant word never matches: the check errs towards ``unconfirmed``."""
+    """True when every significant word of ``name`` is a whole word on ``page``, or a name of two or
+    more words is one whole word there run together ("Host Genius" on a "HostGenius" page). Never a
+    match inside a longer word ("Sage" in "message"), and a name with no significant word never
+    matches: the check errs towards ``unconfirmed``."""
     wanted = [word for word in _words(name) if word not in _NAME_NOISE]
     if not wanted:
         return False
-    on_page = _words(page)
-    if set(wanted) <= set(on_page):
+    on_page = set(_words(page))
+    if set(wanted) <= on_page:
         return True
-    return "".join(wanted) in "".join(on_page)
+    return len(wanted) > 1 and "".join(wanted) in on_page
 
 
 def _homepage(caller: ProviderCaller, domain: str) -> tuple[bool, str | None, str]:

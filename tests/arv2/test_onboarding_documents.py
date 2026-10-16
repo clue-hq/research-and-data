@@ -426,9 +426,14 @@ def test_the_table_shows_domains_with_their_check_how_they_buy_and_the_quote() -
         _customers_run(), company_domain="altcarbon.com", as_of=AS_OF, checks=_CHECKS
     ).body
     assert "# Existing customers" in body
-    assert "| Customer | Domains | How they buy | Evidence | Quote | Source |" in body
-    assert "wynwoodhouse.us (unconfirmed: Personal Care Communities \\| State College)" in body
-    assert "| stripe.com |" in body
+    assert (
+        "| Customer | Domains | Domain check | How they buy | Evidence | Quote | Source |" in body
+    )
+    # The Domains cell holds only domains, so the Head of ABM can copy it into `exclude` as it is;
+    # the check's result has its own column (review finding, 2026-10-16).
+    assert "| Wynwood House | wynwoodhouse.us | wynwoodhouse.us: unconfirmed" in body
+    assert "Personal Care Communities \\| State College" in body
+    assert "| Stripe | stripe.com | confirmed |" in body
     assert "through_coalition via Frontier" in body
     assert "move its guest communication to Conduit." in body
     assert "https://www.conduit.ai/customers/wynwood-house" in body

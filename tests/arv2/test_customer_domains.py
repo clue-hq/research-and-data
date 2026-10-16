@@ -76,3 +76,10 @@ def test_each_domain_is_fetched_once() -> None:
     )
     assert len(wire.requests) == 1
     assert checks["hilton.com"].status == "confirmed"
+
+
+def test_a_short_name_inside_another_word_is_not_a_match() -> None:
+    """The check errs towards unconfirmed: "Sage" is not named by a page that says "message"."""
+    assert not names_company("Sage", "Our message is clear")
+    assert not names_company("Olala", "Holalandia resorts")
+    assert names_company("Sage", "Sage | Accounting software")
