@@ -8,7 +8,7 @@ import { buildCatalog } from "../src/catalog";
 import { lintOptionsFor } from "../src/check-section";
 import { buttonLooks, elementStyle, lookNamed } from "../src/looks";
 import { surfaceChoices } from "../src/surfaces";
-import { tailwindThemeCss, themeCss } from "../src/theme";
+import { pageCanvasCss, tailwindThemeCss, themeCss } from "../src/theme";
 import { kitBrand } from "./fixtures/kits";
 
 const ruleOf = (css: string, selector: string) => {
@@ -216,4 +216,19 @@ test("E1: a token key outside the engine's token-path charset reaches no selecto
   }
   // The kit's real extra surface is still drawn.
   assert.ok(themeCss(brand).includes(".bg-surface-band-014036{"));
+});
+
+test("walk defect 4: the brand root paints the page colour and its text, so gaps between sections are the page", () => {
+  const css = themeCss(kitBrand("probe.minted"));
+  const root = ruleOf(css, ".brand-root");
+  assert.match(root, /background-color:var\(--brand-surface-page\)/);
+  assert.match(root, /(?:^|[;{])color:var\(--brand-on-surface-page\)/);
+});
+
+test("walk defect 4: the document canvas is the page colour with a matching colour scheme", () => {
+  const light = pageCanvasCss(kitBrand("probe.minted"));
+  assert.match(light, /^html\{background-color:#[0-9A-F]{6};color:#[0-9A-F]{6,8};color-scheme:light\}$/);
+  const dark = pageCanvasCss(withColor(withColor(kitBrand("probe.minted"), "surface.page", "#0B0B0B"), "text.primary", "#F5F5F5"));
+  assert.match(dark, /background-color:#0B0B0B/);
+  assert.match(dark, /color-scheme:dark/);
 });

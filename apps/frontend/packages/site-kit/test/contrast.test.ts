@@ -7,7 +7,7 @@ import type { BrandData } from "../src/brand";
 import { alphaOf, contrast, hexOf } from "../src/brand-values";
 import { buildCatalog } from "../src/catalog";
 import { buttonLooks, cardLooks, drawnButton, elementStyle, lookNamed } from "../src/looks";
-import { readableInk } from "../src/surfaces";
+import { inkRole, isDarkSurface, readableInk } from "../src/surfaces";
 import { colorVar, surfaceRoles, themeCss } from "../src/theme";
 import { kitBrand, type KitName } from "./fixtures/kits";
 
@@ -225,4 +225,30 @@ test("audit: no unreadable text or invisible button label on any surface of any 
   }
   assert.deepEqual(failures, [], failures.join("\n"));
   for (const [key, n] of Object.entries(checked)) assert.ok(n > 0, `the audit checked no ${key}`);
+});
+
+test("S6-1: a band whose stored text colour does not read takes the readable one, everywhere inkRole is read", () => {
+  // probe.minted pairs text.band.ffffff (#111111) with surface.band.ffffff; make the stored text the
+  // orange eyebrow the capture used to take (#F5A623 on white is 2.0:1).
+  const brand = withColors(kitBrand("probe.minted"), { "text.band.ffffff": "#F5A623" });
+  assert.equal(inkRole(brand, "surface.band.ffffff"), "text.primary");
+  const band = cascade(brand).on("surface.band.ffffff");
+  assert.ok(ratio(band.ink, band.bg) >= 4.5, `${band.ink} on ${band.bg}`);
+});
+
+test("S6-1: a dark band whose stored text is a card's dark grey takes the light text, and is dark", () => {
+  const brand = withColors(kitBrand("probe.minted"), { "surface.band.ffffff": "#0B2545", "text.band.ffffff": "#222222" });
+  assert.equal(inkRole(brand, "surface.band.ffffff"), "text.inverse");
+  assert.equal(isDarkSurface(brand, "surface.band.ffffff"), true);
+});
+
+test("S6-1: a stored text colour that reads is kept", () => {
+  assert.equal(inkRole(kitBrand("probe.minted"), "surface.band.ffffff"), "text.band.ffffff");
+});
+
+test("S6-1: an oklch pair is left to the existing choice (no hex, no contrast maths)", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  const colors = (brand.kit as { tokens: { colors: Record<string, { value: Record<string, unknown> }> } }).tokens.colors;
+  colors["text.band.ffffff"] = { ...colors["text.band.ffffff"], value: { ...colors["text.band.ffffff"].value, default: { kind: "oklch", l: 0.2, c: 0, h: 0 } } };
+  assert.doesNotThrow(() => inkRole(brand, "surface.band.ffffff"));
 });

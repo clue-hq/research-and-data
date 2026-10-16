@@ -201,7 +201,14 @@ export function themeCss(brand: BrandData): string {
     for (const l of links) if (l.swap.size) vars[l.variable] = l.swap.get(surface) ?? "initial";
   }
 
-  lines.push(rule(".brand-root", { ...root, ...(local.get("surface.page") ?? {}) }));
+  // The root paints the page itself (walk defect 4): a gap between sections, or a section that sets no
+  // surface, shows the brand's page colour and text, never the browser's default canvas.
+  const paintsPage = colorOf(brand, "surface.page") !== undefined;
+  lines.push(rule(".brand-root", {
+    ...root, ...(local.get("surface.page") ?? {}),
+    "background-color": paintsPage ? `var(--brand-${colorVar("surface.page")})` : undefined,
+    color: paintsPage ? inkOn("surface.page") : undefined,
+  }));
   for (const surface of surfaces) lines.push(rule(`.bg-${colorVar(surface)}`, local.get(surface)!));
   for (const role of TYPE_ROLES) lines.push(`.brand-ink-${typeVar(role)}{color:var(--brand-ink-role-${typeVar(role)},currentColor)}`);
   lines.push(
@@ -264,6 +271,21 @@ export function themeCss(brand: BrandData): string {
     '@media (prefers-reduced-motion:reduce),print{.brand-btn,.brand-btn-icon,.brand-link,.brand-navlink,.brand-card{transition:none!important}[class*="brand-motion-"]{animation:none!important}}',
   );
   return lines.filter(Boolean).join("\n");
+}
+
+/** The document's own canvas (walk defect 4): the brand page colour and its text on `html`, so
+ * overscroll and the space under a short page never show the browser's default — near black in a
+ * dark-mode browser — and `color-scheme` tells the browser which way to draw its own controls.
+ * Literal values: the `--brand-*` variables are declared on `.brand-root`, which `html` cannot see.
+ * Empty for a kit with no page colour. */
+export function pageCanvasCss(brand: BrandData): string {
+  const page = colorOf(brand, "surface.page");
+  if (!page) return "";
+  return rule("html", {
+    "background-color": page,
+    color: colorOf(brand, inkRole(brand, "surface.page")),
+    "color-scheme": isDarkSurface(brand, "surface.page") ? "dark" : "light",
+  });
 }
 
 /** One `@theme inline` block mapping Tailwind's names onto the `--brand-*` variables. The published

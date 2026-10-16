@@ -12,7 +12,7 @@ import { fillClone } from "./clone";
 import { makeConfig, type CloneHtml } from "./config";
 import { SiteRoot, brandForPage, liveConfig, type LivePageData } from "./live-page";
 import type { ShellData } from "./shell";
-import { tailwindThemeCss } from "./theme";
+import { pageCanvasCss, tailwindThemeCss } from "./theme";
 
 export type StoredSite = { title?: string; pages: Record<string, unknown>; shell: ShellData | null };
 /** `data` is the live page's data (live mode only): what the browser takes the page over with. */
@@ -92,7 +92,9 @@ export function renderSitePages(input: {
     } else {
       body = renderToStaticMarkup(createElement(Render as never, { config, data } as never));
     }
-    const html = `<!doctype html><html lang="en"><head><title>${escapeHtml(title)}</title></head><body>${body}</body></html>`;
+    const canvas = pageCanvasCss(input.brand);
+    const head = `<title>${escapeHtml(title)}</title>${canvas ? `<style data-clue-page="">${canvas}</style>` : ""}`;
+    const html = `<!doctype html><html lang="en"><head>${head}</head><body>${body}</body></html>`;
     size += html.length;
     if (size > input.maxOutputBytes) {
       throw new RenderRefusal("render.output_too_large", `the rendered site passed ${input.maxOutputBytes} characters at ${route}`);

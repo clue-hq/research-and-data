@@ -19,7 +19,8 @@ test("a stored site renders every route as a document, with its links under the 
   const result = renderSitePages({ site, brand, basePath: "/acme-site", agentSections: {}, maxOutputBytes: 10_000_000 });
   assert.deepEqual(result.pages.map((page) => page.route), ["/", "/analysis"]);
   const home = result.pages[0].html;
-  assert.ok(home.startsWith('<!doctype html><html lang="en"><head><title>Garner Health for Syracuse City School District</title></head><body>'), home.slice(0, 200));
+  assert.ok(home.startsWith('<!doctype html><html lang="en"><head><title>Garner Health for Syracuse City School District</title><style data-clue-page="">html{background-color:#'), home.slice(0, 260));
+  assert.ok(home.includes('</style></head><body>'), home.slice(0, 400));
   assert.ok(home.includes('class="brand-root"'));
   assert.ok(home.includes('href="/acme-site/analysis"'), "the closing clone's /analysis link is rebased");
   assert.ok(result.tailwindTheme.startsWith("@theme inline {"));

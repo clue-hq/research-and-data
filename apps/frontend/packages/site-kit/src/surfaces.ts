@@ -46,14 +46,16 @@ const OUR_ROLES = new Set(Object.values(CHOICE_ROLE));
 /** The kit's surfaces beyond our six: canvas, elevated, accent, then the extras. */
 export const otherSurfaceRoles = (brand: BrandData) => surfaceRoles(brand).filter((role) => !OUR_ROLES.has(role));
 
-/** The colour role text takes on a surface: the kit's contrast pair first, else the better of
- * text.primary and text.inverse. */
+/** The colour role text takes on a surface: the kit's contrast pair when it reads there (4.5:1,
+ * WCAG 1.4.3), else the better of text.primary and text.inverse. A pair that does not read is a
+ * mis-measured one (S6-1: the capture once took a band's first text, an eyebrow or a card's words);
+ * the page must never draw it. A pair whose colours are not hex (oklch) is kept as before. */
 export function inkRole(brand: BrandData, surface: string): string | undefined {
   const bg = hexOf(brand, surface);
   if (!bg) return undefined;
   const pairs = (brand.kit as { constraints?: { contrast_pairs?: { background: string; foreground: string }[] } }).constraints?.contrast_pairs ?? [];
   const pair = pairs.find((p) => p.background === surface && hexOf(brand, p.foreground));
-  if (pair) return pair.foreground;
+  if (pair && contrast(bg.slice(0, 7), hexOf(brand, pair.foreground)!.slice(0, 7)) >= 4.5) return pair.foreground;
   return readableInk(brand, bg);
 }
 
