@@ -2,6 +2,7 @@ import type { DesignEditorConfig } from "../engine/config";
 import {
   fetchWebPublishInfo,
   publishWebDocument,
+  setWebNoindex,
   unpublishWebSite,
   type PublishKind,
   type WebPublishState,
@@ -27,6 +28,9 @@ export interface WebPublishOutcome {
   /** Every route on that custom hostname, built by the server. Empty when the
    * workspace has no active custom hostname. */
   customPageUrls: Record<string, string>;
+  /** K6-2: the document version this publish put on the air (null from a server
+   * that does not say), so the Share menu knows what is live without a re-read. */
+  docVersion: number | null;
 }
 
 /**
@@ -46,11 +50,16 @@ export interface WebPublishRepository {
     documentId: string,
     input: { slug: string; noindex: boolean },
   ): Promise<WebPublishOutcome>;
+  /** K6-3: store the marketer's indexing choice on the document
+   * (`PUT /documents/{id}/web-noindex`, web pages and sites alike). Returns the
+   * value stored. */
+  setNoindex(documentId: string, noindex: boolean): Promise<boolean>;
   /** Take the site offline (`DELETE /web/publishes/{slug}`). */
   unpublish(slug: string): Promise<void>;
 }
 
 const UNPUBLISHED: WebPublishState = {
+  currentVersion: null,
   customOrigin: null,
   customPageUrls: {},
   customUrl: null,
@@ -60,6 +69,7 @@ const UNPUBLISHED: WebPublishState = {
   packageDigest: null,
   pageUrls: {},
   pages: [],
+  noindex: false,
   previousAvailable: false,
   publishId: null,
   publicOrigin: null,
@@ -80,12 +90,16 @@ const FIXTURE_ORIGIN = "https://fixture.pages.test";
  */
 export function createFixtureWebPublishRepository(): WebPublishRepository {
   const published = new Map<string, WebPublishState>();
+  const noindex = new Map<string, boolean>();
   return {
     async publish(documentId, { slug }) {
       const url = `${FIXTURE_ORIGIN}/${slug}`;
+      const docVersion = (published.get(documentId)?.docVersion ?? 0) + 1;
       published.set(documentId, {
         ...UNPUBLISHED,
-        docVersion: (published.get(documentId)?.docVersion ?? 0) + 1,
+        currentVersion: docVersion,
+        docVersion,
+        noindex: noindex.get(documentId) ?? false,
         pageUrls: { "/": url },
         pages: [{ htmlDigest: null, pageId: null, route: "/" }],
         published: true,
@@ -97,13 +111,19 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
       return {
         customPageUrls: {},
         customUrl: null,
+        docVersion,
         pageUrls: { "/": url },
         slug,
         url,
       };
     },
+    async setNoindex(documentId, value) {
+      noindex.set(documentId, value);
+      return value;
+    },
     async state(documentId) {
-      return published.get(documentId) ?? UNPUBLISHED;
+      const state = published.get(documentId) ?? UNPUBLISHED;
+      return { ...state, noindex: noindex.get(documentId) ?? false };
     },
     async unpublish(slug) {
       for (const [documentId, state] of published) {
@@ -137,6 +157,7 @@ export function createHttpWebPublishRepository(
         // local join for them, so an empty map means "no custom hostname".
         customPageUrls: result.customPageUrls,
         customUrl: result.customUrl,
+        docVersion: result.docVersion,
         // The server's own map wins (F5 task 14): it is the only side that
         // knows whether this workspace's sites are served from its handle's
         // host or from the interim tenant path, so joining a root to a route
@@ -149,6 +170,9 @@ export function createHttpWebPublishRepository(
         slug: result.slug,
         url: result.url,
       };
+    },
+    async setNoindex(documentId, noindex) {
+      return setWebNoindex(config, documentId, noindex);
     },
     async state(documentId) {
       return fetchWebPublishInfo(config, documentId, kind);

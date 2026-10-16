@@ -79,6 +79,7 @@ test("a publish on a custom hostname shares the custom address and its pages", a
           "/pricing": "https://go.acme.com/launch/pricing",
         },
         customUrl: "https://go.acme.com/launch",
+        docVersion: 1,
         pageUrls: {
           "/": "https://acme.pages.cluehq.ai/launch",
           "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
@@ -201,8 +202,12 @@ type SharingController = ReturnType<typeof useArtifactSharingController>["contro
 /** Mount the real hook in a DOM (the menu's controller, exactly as the header
  * builds it) and hand back every render's controller. */
 type SharingProps = {
+  /** K6-2: the site editor's wait for edits on their way. */
+  beforePublish?: (documentId: string) => Promise<{ ok: true; version: number | null } | { ok: false; message: string }>;
   /** The document on screen (default doc_1, "Spring launch"); a tab switch changes both. */
   documentId?: string;
+  /** K6-2: the version the open editor last saved. */
+  documentVersion?: number | null;
   kind?: ChatShellArtifactKind;
   publishLocked: boolean;
   /** Absent: the hook builds its own HTTP seam over the BFF, as the header does. */
@@ -233,7 +238,9 @@ async function withSharingController(
   function Probe(props: SharingProps): ReactNode {
     seen.push(
       useArtifactSharingController({
+        beforePublish: props.beforePublish,
         documentId: props.documentId ?? "doc_1",
+        documentVersion: props.documentVersion,
         kind: props.kind ?? "web",
         publishLocked: props.publishLocked,
         repository: props.repository,
@@ -384,8 +391,8 @@ function slugOwnerRepository(published: Map<string, string>, gate?: Promise<void
       const slug = published.get(documentId) ?? null;
       const url = slug ? `http://acme.pages.localhost:8049/${slug}` : null;
       return {
-        customOrigin: null, customPageUrls: {}, customUrl: null, docVersion: slug ? 3 : null,
-        htmlDigest: null, manifestDigest: null, packageDigest: null,
+        currentVersion: 3, customOrigin: null, customPageUrls: {}, customUrl: null, docVersion: slug ? 3 : null,
+        noindex: false, htmlDigest: null, manifestDigest: null, packageDigest: null,
         pageUrls: url ? { "/": url } : {}, pages: [], previousAvailable: false, publishId: null,
         publicOrigin: "http://acme.pages.localhost:8049", published: Boolean(slug), slug,
         status: slug ? "active" : null, updatedAt: null, url,
@@ -399,7 +406,10 @@ function slugOwnerRepository(published: Map<string, string>, gate?: Promise<void
       }
       published.set(documentId, input.slug);
       const url = `http://acme.pages.localhost:8049/${input.slug}`;
-      return { customPageUrls: {}, customUrl: null, pageUrls: { "/": url }, slug: input.slug, url };
+      return { customPageUrls: {}, customUrl: null, docVersion: 3, pageUrls: { "/": url }, slug: input.slug, url };
+    },
+    async setNoindex(_documentId, noindex) {
+      return noindex;
     },
     async unpublish() {},
   } as WebPublishRepository & { sent: { documentId: string; slug: string }[] };
@@ -457,3 +467,157 @@ test("K6-1: a publish that finishes after switching sites never shows on the new
   });
 });
 
+
+// --- K6-2: Share offers Republish once the site has changed since it was published ---------------
+// --- K6-3: "Allow indexing" starts from the document's durable noindex and the choice is kept -----
+
+/** A publish seam with a server's memory: the document's version, its durable noindex, and the
+ * version its live site was published from. Every call is logged in order. */
+function serverRepository(start: { version: number; noindex?: boolean; publishedVersion?: number | null }) {
+  const server = {
+    version: start.version,
+    noindex: start.noindex ?? false,
+    publishedVersion: start.publishedVersion ?? null,
+    calls: [] as string[],
+  };
+  const url = "http://acme.pages.localhost:8049/spring-launch";
+  const repository: WebPublishRepository = {
+    async state() {
+      server.calls.push("state");
+      const live = server.publishedVersion !== null;
+      const pageUrls: Record<string, string> = live ? { "/": url } : {};
+      return {
+        customOrigin: null, customPageUrls: {}, customUrl: null, docVersion: server.publishedVersion,
+        currentVersion: server.version, noindex: server.noindex,
+        htmlDigest: null, manifestDigest: null, packageDigest: null,
+        pageUrls, pages: [], previousAvailable: false, publishId: null,
+        publicOrigin: "http://acme.pages.localhost:8049", published: live, slug: live ? "spring-launch" : null,
+        status: live ? "active" : null, updatedAt: null, url: live ? url : null,
+      };
+    },
+    async publish(_documentId, input) {
+      server.calls.push(`publish noindex=${input.noindex}`);
+      server.publishedVersion = server.version;
+      return { customPageUrls: {}, customUrl: null, docVersion: server.version, pageUrls: { "/": url }, slug: input.slug, url };
+    },
+    async setNoindex(_documentId, noindex) {
+      server.calls.push(`setNoindex ${noindex}`);
+      server.noindex = noindex;
+      return noindex;
+    },
+    async unpublish() {},
+  };
+  return { repository, server };
+}
+
+test("K6-2: a site changed since its publish says so and offers Republish; equal versions do not", async () => {
+  const { repository, server } = serverRepository({ version: 4, publishedVersion: 3 });
+  await withSharingController({ kind: "site", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().publishStatus, "published");
+    assert.equal(latest().changesSincePublish, true);
+    await act(async () => latest().toggleMenu());
+    server.publishedVersion = 4;
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().changesSincePublish, false);
+  });
+});
+
+test("K6-2: after a republish the menu shows the new published version without a reload", async () => {
+  const { repository, server } = serverRepository({ version: 4, publishedVersion: 3 });
+  await withSharingController({ kind: "site", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().changesSincePublish, true);
+    await act(async () => latest().publishAsset());
+    assert.equal(latest().publishStatus, "published");
+    assert.equal(latest().changesSincePublish, false);
+    assert.deepEqual(server.calls, ["state", "publish noindex=false"], "no state re-read was needed");
+  });
+});
+
+test("K6-2: an edit saved while the menu is open counts as a change since publishing", async () => {
+  const { repository } = serverRepository({ version: 3, publishedVersion: 3 });
+  const props = { documentVersion: 3, kind: "site" as const, publishLocked: false, repository };
+  await withSharingController(props, async (latest, rerender) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().changesSincePublish, false);
+    await rerender({ ...props, documentVersion: 4 });
+    assert.equal(latest().changesSincePublish, true);
+  });
+});
+
+test("K6-2: Publish waits for the edits on their way before it publishes", async () => {
+  const { repository, server } = serverRepository({ version: 3, publishedVersion: 3 });
+  let release: (value: { ok: true; version: number }) => void = () => undefined;
+  const saved = new Promise<{ ok: true; version: number }>((resolve) => (release = resolve));
+  const asked: string[] = [];
+  const beforePublish = (documentId: string) => {
+    asked.push(documentId);
+    return saved;
+  };
+  await withSharingController({ beforePublish, kind: "site", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = latest().publishAsset();
+    });
+    assert.deepEqual(asked, ["doc_1"]);
+    assert.equal(latest().publishStatus, "publishing");
+    assert.deepEqual(server.calls, ["state"], "nothing is published while a save is on its way");
+    server.version = 4; // the save lands
+    await act(async () => {
+      release({ ok: true, version: 4 });
+      await pending;
+    });
+    assert.deepEqual(server.calls, ["state", "publish noindex=false"]);
+    assert.equal(server.publishedVersion, 4, "the version published is the one the marketer saw");
+    assert.equal(latest().changesSincePublish, false);
+  });
+});
+
+test("K6-2: a save that fails stops the publish and the menu says why", async () => {
+  const { repository, server } = serverRepository({ version: 3, publishedVersion: null });
+  const beforePublish = async () => ({ ok: false as const, message: "page.content.0(hero).heading: Too small" });
+  await withSharingController({ beforePublish, kind: "site", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(server.calls, ["state"], "nothing was published");
+    assert.equal(latest().publishStatus, "draft");
+    assert.equal(
+      latest().publishFailureNote,
+      "Not published: your latest edit was not saved (page.content.0(hero).heading: Too small).",
+    );
+  });
+});
+
+test("K6-3: Allow indexing starts from the document's durable noindex, and a publish keeps it", async () => {
+  const { repository, server } = serverRepository({ version: 2, noindex: true });
+  await withSharingController({ kind: "site", publishLocked: false, repository }, async (latest) => {
+    assert.equal(latest().allowIndexing, true, "before the state is read");
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().allowIndexing, false);
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(server.calls, ["state", "publish noindex=true"], "nothing to store: the document already says noindex");
+  });
+});
+
+test("K6-3: changing Allow indexing is stored on the document before the publish, so a reload shows it", async () => {
+  const { repository, server } = serverRepository({ version: 2, noindex: false });
+  await withSharingController({ kind: "web", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().allowIndexing, true);
+    await act(async () => latest().setAllowIndexing(false));
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(server.calls, ["state", "setNoindex true", "publish noindex=true"]);
+  });
+  // A reload: a fresh menu over the same document reads the stored choice.
+  await withSharingController({ kind: "web", publishLocked: false, repository }, async (latest) => {
+    await act(async () => latest().toggleMenu());
+    assert.equal(latest().allowIndexing, false);
+    // Ticking it again is the explicit act that makes the page indexable.
+    await act(async () => latest().setAllowIndexing(true));
+    await act(async () => latest().publishAsset());
+    assert.deepEqual(server.calls.slice(-2), ["setNoindex false", "publish noindex=false"]);
+    assert.equal(server.noindex, false);
+  });
+});

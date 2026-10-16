@@ -108,11 +108,13 @@ function ShareCheckbox({
 function ShareMainView({ controller }: { controller: ShareController }) {
   const {
     beginSlugEdit,
+    changesSincePublish,
     copied,
     copyLink,
     editingSlug,
     previewExternally,
     publishAsset,
+    publishFailureNote,
     publishLocked,
     publishLockNote,
     publishStatus,
@@ -126,10 +128,14 @@ function ShareMainView({ controller }: { controller: ShareController }) {
   } = controller;
   const published = publishStatus === "published";
   const publishing = publishStatus === "publishing";
-  // A published site with a pending change (a new slug, new settings) shows the
-  // publish button again, reading "Republish" — the live site keeps serving its
-  // current address until it is pressed.
-  const showingPublishButton = !published || slugDirty;
+  // A published site with a pending change (a new slug, new settings) or edited
+  // since it was published (K6-2: the live version is behind the document) shows
+  // the publish button again, reading "Republish" — the live site keeps serving
+  // what it serves until it is pressed.
+  const showingPublishButton = !published || slugDirty || changesSincePublish;
+  // The line under the button: the agent's lock first, else why the last
+  // publish stopped (an edit that was not saved).
+  const publishNote = publishLockNote ?? publishFailureNote;
   const handleSlugKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") saveSlug();
   };
@@ -140,7 +146,8 @@ function ShareMainView({ controller }: { controller: ShareController }) {
         {published ? (
           <>
             <span className={styles.sharePublishedDot} />
-            <strong>Asset published</strong>
+            {/* FLAGGED K6-2: the menu's own heading slot reused for the changed state; no designed variant yet. */}
+            <strong>{changesSincePublish ? "Changes since you published" : "Asset published"}</strong>
           </>
         ) : (
           <strong>Publish to share outside your workspace</strong>
@@ -205,12 +212,12 @@ function ShareMainView({ controller }: { controller: ShareController }) {
           >
             {publishing
               ? "Publishing…"
-              : slugDirty
+              : published
                 ? "Republish"
                 : "Publish asset"}
           </button>
-          {publishLockNote ? (
-            <p className={styles.sharePublishNote}>{publishLockNote}</p>
+          {publishNote ? (
+            <p className={styles.sharePublishNote}>{publishNote}</p>
           ) : null}
         </>
       )}

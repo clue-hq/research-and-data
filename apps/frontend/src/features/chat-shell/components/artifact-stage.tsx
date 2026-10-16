@@ -484,7 +484,7 @@ export function ArtifactStage({
             redoDisabled={redoDisabled}
             site={
               artifactKind === "site" && site
-                ? { onTogglePages: () => setPagesOpen((open) => !open), pagesOpen, url: site.url }
+                ? { onTogglePages: () => setPagesOpen((open) => !open), pagesOpen, publish: site.publish, url: site.url }
                 : null
             }
             title={artifactTitle}

@@ -14,6 +14,7 @@ import {
 import type { KeyboardEvent } from "react";
 import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
 import type { SiteUrlBinding } from "@/features/site-editor/model/site-pages";
+import type { SitePublishBinding } from "@/features/site-editor/model/site-stage";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 import type {
   ImageExportFormat,
@@ -141,8 +142,15 @@ export function ArtifactHeader({
   publishLocked?: boolean;
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
-  /** C10 (sites): the Pages toggle's state and the URL toolbar. Absent on every other kind. */
-  site?: { onTogglePages: () => void; pagesOpen: boolean; url: SiteUrlBinding } | null;
+  /** C10 (sites): the Pages toggle's state and the URL toolbar. Absent on every other kind.
+   * K6-2: `publish` is the site editor's side of Share — its wait for edits on their way and its
+   * saved version. */
+  site?: {
+    onTogglePages: () => void;
+    pagesOpen: boolean;
+    publish?: SitePublishBinding;
+    url: SiteUrlBinding;
+  } | null;
   title: string;
   /** W3.4: empty-stack disable for the action menu's Undo. */
   undoDisabled?: boolean;
@@ -176,7 +184,14 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ documentId, kind, publishLocked, title });
+  } = useArtifactSharingController({
+    beforePublish: site?.publish?.prepare,
+    documentId,
+    documentVersion: site?.publish?.version ?? null,
+    kind,
+    publishLocked,
+    title,
+  });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,

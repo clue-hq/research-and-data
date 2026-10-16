@@ -29,6 +29,9 @@ export interface ArtifactPublishOutcome {
   status: Extract<ArtifactPublishStatus, "draft" | "published">;
   url: string;
   pageUrls: Record<string, string>;
+  /** The document version now live (K6-2); null on a failure or when the
+   * server does not say. */
+  docVersion: number | null;
   message: string;
   /** True when the server refused because a design run is working on the
    * document (409 `document.agent_run_active`); `message` is then the
@@ -90,6 +93,7 @@ export async function publishWithRepository(
     const result = await repository.publish(documentId, input);
     return {
       agentWorking: false,
+      docVersion: result.docVersion,
       message: "Published",
       status: "published",
       ...shareAddresses(result),
@@ -98,6 +102,7 @@ export async function publishWithRepository(
     const agentWorking = isAgentRunRefusal(error);
     return {
       agentWorking,
+      docVersion: null,
       message: agentWorking
         ? AGENT_RUN_PUBLISH_NOTE
         : error instanceof Error
@@ -143,6 +148,41 @@ export function pageLinkRows(
     }));
 }
 
+/** What the site editor says when Publish asks it to finish the edits on their
+ * way (K6-2): all landed, or the reason one did not. */
+export type PublishReadiness =
+  | { ok: true; version: number | null }
+  | { ok: false; message: string };
+
+/** The line the menu shows when a publish stops because an edit was not saved:
+ * publishing then would ship the version before that edit. */
+export function unsavedEditNote(reason: string): string {
+  return `Not published: your latest edit was not saved (${reason.replace(/\.$/, "")}).`;
+}
+
+/** The line the menu shows when the indexing choice could not be stored, so the
+ * publish does not go out with a setting the next reload would forget. */
+export function indexingNotSavedNote(reason: string): string {
+  return `Not published: the indexing setting was not saved (${reason.replace(/\.$/, "")}).`;
+}
+
+/** K6-2: the live site is behind the document — the document's version (the
+ * server's, or the open editor's own, whichever is newer) is newer than the one
+ * published. Unknown versions never claim a change. */
+export function hasChangesSincePublish({
+  currentVersion,
+  editorVersion,
+  publishedVersion,
+}: {
+  currentVersion: number | null;
+  editorVersion: number | null;
+  publishedVersion: number | null;
+}): boolean {
+  if (publishedVersion === null) return false;
+  const known = [currentVersion, editorVersion].filter((value): value is number => value !== null);
+  return known.length > 0 && Math.max(...known) > publishedVersion;
+}
+
 /** The host shown in front of the slug in the link field — read off the URL the
  * server gave us, never a constant of ours. Empty until there is one. */
 function shareHostOf(shareUrl: string): string {
@@ -155,15 +195,25 @@ function shareHostOf(shareUrl: string): string {
 }
 
 export function useArtifactSharingController({
+  beforePublish,
   documentId,
+  documentVersion = null,
   kind,
   publishLocked = false,
   repository,
   title,
 }: {
+  /** K6-2: the site editor's wait for the edits on their way (typing the frame
+   * has not sent, then the saves). Publish waits for it, so what goes live is
+   * what the marketer sees, and stops with the reason when an edit did not save.
+   * Absent publishes at once. */
+  beforePublish?: (documentId: string) => Promise<PublishReadiness>;
   /** The design document behind the artifact. Absent while the stage has no
    * document yet — publishing is then unavailable rather than faked. */
   documentId?: string | null;
+  /** K6-2: the version the open editor last saved or loaded, so an edit made
+   * while the menu is open counts as a change since publishing. */
+  documentVersion?: number | null;
   kind: ChatShellArtifactKind;
   /** Task 28 (founder 2026-10-13): a design run is working on this page, so a
    * publish now would ship it half-edited. Publish is inert and the menu says
@@ -176,9 +226,21 @@ export function useArtifactSharingController({
 }) {
   const [advancedTab, setAdvancedTab] =
     useState<ArtifactAdvancedTab>("page");
-  // R-F1: an ordinary site indexes. The server ORs the document's durable ABM
-  // `noindex`, so leaving this on can never un-noindex an ABM account page.
-  const [allowIndexing, setAllowIndexing] = useState(true);
+  // R-F1: an ordinary site indexes. K6-3: once the publish state is read, this
+  // starts from the document's durable `noindex` (an account page is born with
+  // it), and a change here is stored on the document at the next publish.
+  // K6-3: the document's durable noindex as last read or stored; null until then.
+  const [durableNoindex, setDurableNoindex] = useState<boolean | null>(null);
+  // The marketer's own tick or untick, until it is stored: a re-read (the menu
+  // opening again) never puts the server's value back over it.
+  const [indexingChoice, setIndexingChoice] = useState<boolean | null>(null);
+  const allowIndexing = indexingChoice ?? (durableNoindex === null ? true : !durableNoindex);
+  // K6-2: the version the live site was published from, and the document's
+  // version as the server last said; null until known.
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
+  const [serverVersion, setServerVersion] = useState<number | null>(null);
+  // K6-2: why the last publish stopped before publishing (an edit not saved).
+  const [publishFailureNote, setPublishFailureNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // FLAGGED F5: designed field, no backend contract yet
   const [customHtml, setCustomHtml] = useState("");
@@ -219,7 +281,11 @@ export function useArtifactSharingController({
     const fresh = slugifyArtifactTitle(title);
     setStateFor(documentId ?? null);
     setAdvancedTab("page");
-    setAllowIndexing(true);
+    setIndexingChoice(null);
+    setDurableNoindex(null);
+    setPublishedVersion(null);
+    setServerVersion(null);
+    setPublishFailureNote(null);
     setCopied(false);
     setCustomHtml("");
     setDescription("");
@@ -262,6 +328,8 @@ export function useArtifactSharingController({
 
   const publishable = isWebsiteKind(kind) && Boolean(documentId);
 
+  const setAllowIndexing = useCallback((allow: boolean) => setIndexingChoice(allow), []);
+
   const settings = useMemo<ArtifactPublishSettings>(
     () => ({
       allowIndexing,
@@ -285,6 +353,7 @@ export function useArtifactSharingController({
     setMenuOpen(false);
     setEditingSlug(false);
     setRefusedByAgentRun(false);
+    setPublishFailureNote(null);
     setView("main");
   }, []);
 
@@ -315,7 +384,10 @@ export function useArtifactSharingController({
       try {
         const state = await resolveRepository().state(documentId);
         if (cancelled) return;
+        setDurableNoindex(Boolean(state.noindex));
+        setServerVersion(state.currentVersion ?? null);
         if (state.published && state.status === "active") {
+          setPublishedVersion(state.docVersion);
           setPublishStatus("published");
           if (state.slug) {
             setSlug(state.slug);
@@ -327,6 +399,7 @@ export function useArtifactSharingController({
           setSlugDirty(false);
         } else {
           setPublishStatus("draft");
+          setPublishedVersion(null);
           setShareUrl("");
           setPageUrls({});
         }
@@ -347,6 +420,7 @@ export function useArtifactSharingController({
       if (current) {
         setEditingSlug(false);
         setRefusedByAgentRun(false);
+        setPublishFailureNote(null);
         setView("main");
       }
       return !current;
@@ -383,24 +457,64 @@ export function useArtifactSharingController({
       setStatusMessage("No document to publish yet");
       return;
     }
+    const wasPublished = publishStatus === "published";
+    // Stopping before the publish leaves the live site as it was, and says why.
+    const stop = (note: string) => {
+      setPublishStatus(wasPublished ? "published" : "draft");
+      setStatusMessage(note);
+      setPublishFailureNote(note);
+    };
     setPublishStatus("publishing");
     setStatusMessage("Publishing asset");
     setRefusedByAgentRun(false);
-    const outcome = await publishWithRepository(
-      resolveRepository(),
-      documentId,
-      { noindex: !allowIndexing, slug },
-    );
+    setPublishFailureNote(null);
+    const seam = resolveRepository();
+    // K6-2: the edits on their way land first, so the version published is the one on screen.
+    if (beforePublish) {
+      const ready = await beforePublish(documentId);
+      if (documentRef.current !== documentId) return;
+      if (!ready.ok) {
+        stop(unsavedEditNote(ready.message));
+        return;
+      }
+      if (ready.version !== null) {
+        const saved = ready.version;
+        setServerVersion((known) => Math.max(known ?? saved, saved));
+      }
+    }
+    // K6-3: a changed indexing choice is stored on the document first — the explicit act that
+    // keeps it across reloads (and the only one that can make an account page indexable). With the
+    // stored value unknown, only noindex is stored; the server ORs the stored flag either way.
+    const noindex = !allowIndexing;
+    if (durableNoindex === null ? noindex : durableNoindex !== noindex) {
+      try {
+        const stored = await seam.setNoindex(documentId, noindex);
+        if (documentRef.current !== documentId) return;
+        setDurableNoindex(stored);
+        setIndexingChoice(null);
+      } catch (error) {
+        if (documentRef.current !== documentId) return;
+        stop(indexingNotSavedNote(error instanceof Error ? error.message : "Request failed"));
+        return;
+      }
+    }
+    const outcome = await publishWithRepository(seam, documentId, { noindex, slug });
     // The publish happened (or not) for ITS document; if the marketer has switched tabs meanwhile,
     // it says nothing here. Opening that site's menu again reads its real state.
     if (documentRef.current !== documentId) return;
-    setPublishStatus(outcome.status);
+    // A refused REpublish leaves the site live at its last version.
+    setPublishStatus(outcome.status === "published" || !wasPublished ? outcome.status : "published");
     setStatusMessage(outcome.message);
     setRefusedByAgentRun(outcome.agentWorking);
     if (outcome.status !== "published") return;
     setShareUrl(outcome.url);
     setPageUrls(outcome.pageUrls);
     setSlugDirty(false);
+    if (outcome.docVersion !== null) {
+      const live = outcome.docVersion;
+      setPublishedVersion(live);
+      setServerVersion((known) => Math.max(known ?? live, live));
+    }
     window.dispatchEvent(
       new CustomEvent("clue:artifact-publish-request", {
         detail: { kind, settings },
@@ -408,9 +522,12 @@ export function useArtifactSharingController({
     );
   }, [
     allowIndexing,
+    beforePublish,
     documentId,
+    durableNoindex,
     kind,
     publishLocked,
+    publishStatus,
     resolveRepository,
     settings,
     slug,
@@ -481,6 +598,10 @@ export function useArtifactSharingController({
       advancedTab,
       allowIndexing,
       beginSlugEdit,
+      /** K6-2: the live site is behind the document — the menu says so and offers Republish. */
+      changesSincePublish:
+        publishStatus === "published" &&
+        hasChangesSincePublish({ currentVersion: serverVersion, editorVersion: documentVersion, publishedVersion }),
       closeMenu,
       copied,
       copyLink,
@@ -496,6 +617,8 @@ export function useArtifactSharingController({
        * `null`. One sentence for both reasons it can wait. */
       publishLockNote:
         publishLocked || refusedByAgentRun ? AGENT_RUN_PUBLISH_NOTE : null,
+      /** K6-2/K6-3: why the last publish stopped before publishing, or `null`. */
+      publishFailureNote,
       publishStatus,
       regenerateDescriptionOnPublish,
       requestDescriptionGeneration,

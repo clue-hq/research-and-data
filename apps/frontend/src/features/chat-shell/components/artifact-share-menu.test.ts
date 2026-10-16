@@ -28,9 +28,9 @@ const noop = () => {};
 /** The share menu's controller as a website artifact's share button hands it over. */
 function websiteController(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    advancedTab: "page", allowIndexing: true, beginSlugEdit: noop, closeMenu: noop, copied: false,
+    advancedTab: "page", allowIndexing: true, beginSlugEdit: noop, changesSincePublish: false, closeMenu: noop, copied: false,
     copyLink: noop, customHtml: "", description: "", editingSlug: false, menuOpen: true, pageUrls: {},
-    previewExternally: noop, publishAsset: async () => {}, publishLocked: false, publishLockNote: null,
+    previewExternally: noop, publishAsset: async () => {}, publishFailureNote: null, publishLocked: false, publishLockNote: null,
     publishStatus: "draft",
     regenerateDescriptionOnPublish: false, requestDescriptionGeneration: noop, saveAdvancedSettings: noop,
     saveSlug: noop, setAdvancedTab: noop, setAllowIndexing: noop, setCustomHtml: noop, setDescription: noop,
@@ -92,4 +92,33 @@ test("with no run in the way the Publish button is live and there is no note", (
   const button = html.match(PUBLISH_BUTTON)?.[0] ?? "";
   assert.doesNotMatch(button, /disabled/);
   assert.doesNotMatch(html, /design agent is working/);
+});
+
+// K6-2: a site changed since it was published says so and offers Republish.
+
+const PUBLISHED = {
+  publishStatus: "published",
+  shareHost: "acme.pages.cluehq.ai",
+  shareUrl: "https://acme.pages.cluehq.ai/spring-launch",
+};
+
+test("a published site changed since its publish says so and offers Republish", () => {
+  const html = renderedModule.exports.render(websiteController({ ...PUBLISHED, changesSincePublish: true }));
+  assert.match(html, /Changes since you published/);
+  assert.match(html, /<button[^>]*>Republish<\/button>/);
+  assert.doesNotMatch(html, /Asset published/);
+});
+
+test("a published site with no changes shows the published state, with no Republish", () => {
+  const html = renderedModule.exports.render(websiteController(PUBLISHED));
+  assert.match(html, /Asset published/);
+  assert.doesNotMatch(html, /Changes since you published|Republish/);
+});
+
+test("a publish stopped by an unsaved edit says why right under the button", () => {
+  const note = "Not published: your latest edit was not saved (Failed to fetch).";
+  const html = renderedModule.exports.render(websiteController({ publishFailureNote: note }));
+  const button = html.match(PUBLISH_BUTTON)?.[0] ?? "";
+  const after = html.slice(html.indexOf(button) + button.length);
+  assert.ok(after.startsWith(`<p class="`) && after.includes(note), after.slice(0, 200));
 });

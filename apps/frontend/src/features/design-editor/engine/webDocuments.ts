@@ -2068,6 +2068,13 @@ export interface WebPublishState {
   /** The same routes on the workspace's active custom hostname, computed by the
    * server. Empty when the workspace has no active custom hostname. */
   customPageUrls: Record<string, string>;
+  /** K6-2: the document's own version now, in both states. Newer than
+   * `docVersion` means the site changed since it was published. Null from a
+   * server that predates the field. */
+  currentVersion: number | null;
+  /** K6-3: the document's durable noindex, in both states. Every publish ORs it
+   * into its pages, so it is what the next publish will do about indexing. */
+  noindex: boolean;
 }
 
 /** Which publish routes a document uses: a web page publishes through
@@ -2110,6 +2117,8 @@ export async function fetchWebPublishInfo(
     pages?: unknown;
     page_urls?: unknown;
     custom_page_urls?: unknown;
+    current_version?: unknown;
+    noindex?: unknown;
   };
   return {
     published: payload.published === true,
@@ -2128,8 +2137,37 @@ export async function fetchWebPublishInfo(
     htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
     pages: parseWebPublishPages(payload.pages),
     pageUrls: parseStringMap(payload.page_urls),
-    customPageUrls: parseStringMap(payload.custom_page_urls)
+    customPageUrls: parseStringMap(payload.custom_page_urls),
+    currentVersion: typeof payload.current_version === "number" ? payload.current_version : null,
+    noindex: payload.noindex === true
   };
+}
+
+/** Store the marketer's indexing choice on the document (`PUT
+ * /documents/{id}/web-noindex`, web pages and sites alike — K6-3). It is the
+ * one explicit act that can take noindex off a page, and every later publish
+ * honours it. Returns the value stored; throws the server's message on a
+ * refusal. */
+export async function setWebNoindex(
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
+  documentId: string,
+  noindex: boolean
+): Promise<boolean> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web-noindex`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ noindex })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Indexing setting failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { web_noindex?: unknown };
+  return payload.web_noindex === true;
 }
 
 /** The `pages` array of a publish state — anything that is not a route-bearing
