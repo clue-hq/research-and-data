@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from clue_fleet import (
 )
 from clue_fleet.lease import (
     WORK_LEASE_PRUNE,
+    hold_work_lease,
     prune_released_work_leases,
     prune_released_work_leases_if_due,
     revoke_work_lease,
@@ -325,5 +327,62 @@ def test_the_fleet_prunes_ended_leases_once_per_interval_on_the_maintenance_cloc
                 )
             ).scalar_one()
             assert last == t0 + timedelta(hours=25)
+
+    run_async(scenario())
+
+
+# --- site-turn durability, task 2 (2026-10-16): a write fenced by the lease -------------------
+
+
+def test_a_fenced_write_holds_the_lease_against_a_takeover_until_it_commits() -> None:
+    """``hold_work_lease`` is the lease half of the site save's fence. A lapsed lease nobody took
+    is still its holder's, and holding it locks the row: a takeover's acquire waits until the
+    fenced write's transaction commits, then moves the generation on, after which the old holder
+    no longer holds it. Committed rows on purpose (two connections must see each other)."""
+    from clue_db import create_engine
+
+    async def scenario() -> None:
+        engine = create_engine()
+        work_id = WorkId(uuid4())
+        try:
+            async with engine.begin() as conn:
+                lapsed = await acquire_work_lease(
+                    conn, work_id=work_id, worker_id="holder", ttl=timedelta(0)
+                )
+            assert lapsed is not None and lapsed.generation == 1 and not lapsed.live
+
+            async def take_over() -> object:
+                async with engine.begin() as conn:
+                    return await acquire_work_lease(
+                        conn, work_id=work_id, worker_id="taker", ttl=timedelta(seconds=60)
+                    )
+
+            async with engine.connect() as fencing:
+                await fencing.begin()
+                assert await hold_work_lease(
+                    fencing, work_id=work_id, worker_id="holder", generation=LeaseGeneration(1)
+                )
+                assert not await hold_work_lease(
+                    fencing, work_id=work_id, worker_id="taker", generation=LeaseGeneration(1)
+                )
+                taker = asyncio.create_task(take_over())
+                await asyncio.sleep(0.5)
+                assert not taker.done(), "the takeover must wait for the fenced write"
+                await fencing.commit()
+            taken = await taker
+            assert taken is not None and taken.generation == 2  # type: ignore[attr-defined]
+            async with engine.connect() as conn:
+                assert not await hold_work_lease(
+                    conn, work_id=work_id, worker_id="holder", generation=LeaseGeneration(1)
+                )
+                assert await hold_work_lease(
+                    conn, work_id=work_id, worker_id="taker", generation=LeaseGeneration(2)
+                )
+        finally:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("DELETE FROM work_lease WHERE work_id = :w"), {"w": work_id}
+                )
+            await engine.dispose()
 
     run_async(scenario())

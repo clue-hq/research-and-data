@@ -70,7 +70,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, dump_json_opt, iso, load_json, load_json_opt
 from clue_design.enums import DesignRunKind, DesignRunStatus
-from clue_design.errors import DesignNotFoundError, DesignRunFencedError
+from clue_design.errors import (
+    DesignNotFoundError,
+    DesignRunAlreadySavedError,
+    DesignRunFencedError,
+    DesignRunSaveFencedError,
+)
 
 #: The shipped run-id shape (``run_<uuid4 hex>``), which :func:`work_id_for_run` inverts exactly.
 #: Byte-identical to the D5 migration's backfill regex, deliberately — see that function.
@@ -386,6 +391,68 @@ async def set_run_result(
         # a fenced-out run is the expected outcome of a takeover and must be logged as such.
         current = await _current_lease_generation(conn, workspace_id=workspace_id, run_id=run_id)
         raise DesignRunFencedError(run_id, expected_generation, current)
+
+
+async def hold_run_for_save(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    run_id: str,
+    document_id: str,
+    lease_generation: int,
+) -> UUID:
+    """The run half of an agent-run save's fence; returns the run's work id.
+
+    Called inside the save's own transaction, before the document is written (site-turn
+    durability, 2026-10-16). It locks the run row ``FOR SHARE`` until that transaction ends, so a
+    takeover's claim (an UPDATE of this row) waits for the save to commit or roll back and can
+    never interleave with it. Then:
+
+    * the run must be ``running`` with ``lease_generation`` EXACTLY this attempt's — a NULL
+      (never-claimed) row does not pass here, unlike :func:`set_run_result`: an agent save only
+      ever comes from an attempt that claimed its run. Otherwise
+      :class:`DesignRunSaveFencedError`.
+    * the run must not have saved this document already: one run makes at most one version. An
+      earlier attempt's save is found by its history envelope, which an agent-run save stamps
+      with the run id as ``actor_id``. Otherwise :class:`DesignRunAlreadySavedError` naming the
+      version it saved.
+
+    The work-lease half of the fence is the caller's (Rule S4: this substrate never learns the
+    fleet exists); it keys on the work id returned here.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT work_id, status, lease_generation FROM design_agent_run"
+                " WHERE run_id = :r AND workspace_id = :w FOR SHARE"
+            ),
+            {"r": run_id, "w": workspace_id},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    if row.status != DesignRunStatus.RUNNING.value:
+        raise DesignRunSaveFencedError(
+            run_id, lease_generation, row.lease_generation, reason="run_status"
+        )
+    if row.lease_generation != lease_generation:
+        raise DesignRunSaveFencedError(
+            run_id, lease_generation, row.lease_generation, reason="run_generation"
+        )
+    saved = (
+        await conn.execute(
+            text(
+                "SELECT base_revision FROM design_edit_envelope"
+                " WHERE workspace_id = :w AND document_id = :d"
+                "   AND actor_kind = 'agent' AND actor_id = :r"
+                " ORDER BY seq LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id, "r": run_id},
+        )
+    ).first()
+    if saved is not None:
+        raise DesignRunAlreadySavedError(run_id, document_id, int(saved.base_revision) + 1)
+    return cast(UUID, row.work_id)
 
 
 # --- the cancellation request (A3, defect R3-D) ------------------------------------------------

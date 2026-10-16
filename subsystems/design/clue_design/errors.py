@@ -108,6 +108,51 @@ class DesignRunFencedError(DesignStoreError):
         self.current_generation = current_generation
 
 
+class DesignRunSaveFencedError(DesignRunFencedError):
+    """An agent-run document save was refused: the attempt making it no longer holds its run.
+
+    Raised inside the save's own transaction (site-turn durability, 2026-10-16), before anything
+    is written, when the run row is not ``running`` at exactly this attempt's lease generation,
+    or when the platform ``work_lease`` row no longer names this attempt's worker and generation.
+    ``reason`` says which (``run_status``, ``run_generation`` or ``lease``). A subclass of
+    :class:`DesignRunFencedError` because it is the same hazard — a taken-over attempt's late
+    write — met one write earlier than the terminal result.
+    """
+
+    def __init__(
+        self,
+        run_id: str,
+        expected_generation: int,
+        current_generation: int | None,
+        *,
+        reason: str,
+    ) -> None:
+        super().__init__(run_id, expected_generation, current_generation)
+        self.args = (
+            f"design run {run_id} save refused ({reason}): the attempt at lease generation "
+            f"{expected_generation} no longer holds the run (current generation "
+            f"{current_generation})",
+        )
+        self.reason = reason
+
+
+class DesignRunAlreadySavedError(DesignStoreError):
+    """An agent-run document save was refused: this run already saved a version of the document.
+
+    One run makes at most one version (site-turn durability, 2026-10-16). A takeover attempt that
+    redoes a request whose earlier attempt already saved, and ends with a DIFFERENT site, is told
+    so instead of stacking a second version on top. ``version`` is the version the run saved.
+    """
+
+    def __init__(self, run_id: str, document_id: str, version: int) -> None:
+        super().__init__(
+            f"design run {run_id} already saved document {document_id} as version {version}"
+        )
+        self.run_id = run_id
+        self.document_id = document_id
+        self.version = version
+
+
 class DesignJobFencedError(DesignStoreError):
     """An ingestion-job write was refused: the job's lease generation moved past the writer's.
 

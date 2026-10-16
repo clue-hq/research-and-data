@@ -131,6 +131,7 @@ from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
     DesignNotFoundError,
+    DesignRunSaveFencedError,
     DesignSourceVersionConflictError,
     DesignVersionConflictError,
 )
@@ -400,6 +401,57 @@ class DesignStoreBridge:
             if str(sqlstate).startswith("22"):
                 raise sqlite3.IntegrityError(str(exc.orig)) from exc
             raise
+
+
+async def _hold_site_save(
+    conn: AsyncConnection, workspace_id: str, document_id: str, attempt: Any
+) -> None:
+    """The fence on an agent-run site save, inside the save's own transaction.
+
+    Two halves, both locked ``FOR SHARE`` until the save commits, so neither a takeover's claim
+    nor its lease acquire can slip in between this check and the write:
+
+    1. the run row (``clue_design.runs.hold_run_for_save``): ``running`` at exactly this
+       attempt's generation, and no version of this document saved by the run yet;
+    2. the platform ``work_lease`` row for the run's work id still names this attempt's worker
+       and generation. A lapsed lease nobody took is still held (Task 1's reclaim rule). Checked
+       only when the attempt names its worker — every fleet and inline-lane attempt does; a
+       direct executor call in a test that holds no lease names none.
+
+    Refusals raise :class:`DesignRunSaveFencedError` / :class:`DesignRunAlreadySavedError`;
+    nothing is written either way. The fleet import is local for the same reason as in
+    :meth:`HybridRepository.create_run_and_offer`.
+    """
+    work_id = await design_runs.hold_run_for_save(
+        conn,
+        workspace_id=workspace_id,
+        run_id=attempt.run_id,
+        document_id=document_id,
+        lease_generation=attempt.lease_generation,
+    )
+    if attempt.worker_id is None:
+        return
+    from clue_fleet.lease import (
+        LeaseGeneration,
+        WorkId,
+        get_work_lease,
+        hold_work_lease,
+    )
+
+    if await hold_work_lease(
+        conn,
+        work_id=WorkId(work_id),
+        worker_id=attempt.worker_id,
+        generation=LeaseGeneration(attempt.lease_generation),
+    ):
+        return
+    lease = await get_work_lease(conn, WorkId(work_id))
+    raise DesignRunSaveFencedError(
+        attempt.run_id,
+        attempt.lease_generation,
+        lease.generation if lease is not None else None,
+        reason="lease",
+    )
 
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
@@ -806,6 +858,7 @@ class HybridRepository:
         reverts_batch_id: Optional[str] = None,
         reapplies_batch_id: Optional[str] = None,
         expected_base_version: Optional[int] = None,
+        attempt: Any = None,
     ) -> JsonObject:
         """The Puck site state write (Wave 2 Contract 2).
 
@@ -813,9 +866,17 @@ class HybridRepository:
         reuses it, with the same row lock, CAS, stack moves and 50-step cap. Unlike
         ``update_web_document`` it runs no WebDoc fragment or component validators: their page walk
         is WebDoc-shaped (a list of node maps) and means nothing for a site's dict of routes. The
-        site's own checks (shape, custody, the site-kit validator) run in the tool before this."""
-        return self._bridge._run(
-            lambda conn: design_documents.update_web_document(
+        site's own checks (shape, custody, the site-kit validator) run in the tool before this.
+
+        ``attempt`` (site-turn durability, 2026-10-16) is the run attempt an agent-run save is made
+        by (``run_id``, ``lease_generation``, ``worker_id``). With one, the write lands only if, in
+        this SAME transaction, the attempt still holds its run — see :func:`_hold_site_save` — and
+        its history rows carry the run id. Without one (a human's save) nothing changes."""
+
+        async def write(conn: AsyncConnection) -> JsonObject:
+            if attempt is not None:
+                await _hold_site_save(conn, self.workspace_id, document_id, attempt)
+            return await design_documents.update_web_document(
                 conn,
                 workspace_id=self.workspace_id,
                 document_id=document_id,
@@ -830,8 +891,10 @@ class HybridRepository:
                 reverts_batch_id=reverts_batch_id,
                 reapplies_batch_id=reapplies_batch_id,
                 expected_base_version=expected_base_version,
+                actor_id=attempt.run_id if attempt is not None else None,
             )
-        )
+
+        return self._bridge._run(write)
 
     def set_agent_instructions(self, document_id: str, instructions: Optional[str]) -> JsonObject:
         return self._bridge._run(

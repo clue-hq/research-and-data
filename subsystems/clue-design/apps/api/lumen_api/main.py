@@ -10764,11 +10764,15 @@ def execute_agent_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    lease_worker_id: Optional[str] = None,
     spend_drain: Any = None,
     callbacks: Any = None,
     session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn under its own spend scope — see :func:`_execute_agent_turn_job`.
+
+    ``lease_worker_id`` is accepted for the fleet's one call shape and ignored: only the site
+    turn's save is fenced by the attempt's worker (site-turn durability, 2026-10-16).
 
     Every paid call the turn makes (image generation, the ad style-group tie-break) runs through
     this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
@@ -11484,11 +11488,15 @@ def execute_web_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    lease_worker_id: Optional[str] = None,
     spend_drain: Any = None,
     callbacks: Any = None,
     session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`.
+
+    ``lease_worker_id`` is accepted for the fleet's one call shape and ignored: only the site
+    turn's save is fenced by the attempt's worker (site-turn durability, 2026-10-16).
 
     ``callbacks`` (lane 3 slice 5): the platform's injected ``TurnCallbacks``. Same treatment as
     the scene executor — the turn's own collector is added here and its receipts are stamped onto
@@ -11821,6 +11829,30 @@ def _execute_web_turn_job(
         return "failed", {**failed, "doc_kind": "web"}, "error", {"message": str(error)}
 
 
+#: A site turn's attempt that no longer holds its run: it saved nothing and lands no result.
+SITE_TURN_FENCED = "site_turn.fenced"
+
+
+def site_turn_save_key(run_id: str, lease_generation: int) -> str:
+    """The idempotency key of one attempt's site save (site-turn durability, 2026-10-16).
+
+    Per ATTEMPT, not per run. A retry within the attempt replays its first save (one version).
+    A per-run key would let a refused or interrupted save of one attempt pin the key's journal
+    node to that attempt's body, so the run's real holder could never save under it (a different
+    body is an operation conflict, the same body replays the refusal). One version per run is
+    instead enforced by the save's own fence (``clue_design.runs.hold_run_for_save``)."""
+    return f"site-turn-save:{run_id}:g{lease_generation}"
+
+
+def _run_saved_version(store: HybridRepository, document_id: str, run_id: str) -> Optional[int]:
+    """The version an earlier attempt of ``run_id`` saved, from its history envelope."""
+    for row in store.list_envelopes(document_id, newest_first=False):
+        actor = row.get("actor") or {}
+        if actor.get("kind") == "agent" and actor.get("id") == run_id:
+            return int(row["base_revision"]) + 1
+    return None
+
+
 def _site_turn_response(result: Any, outcome: Any, *, base_version: int) -> JsonObject:
     """The site turn's result_json (Contract 7), from the runtime's result and the write's outcome."""
 
@@ -11841,6 +11873,17 @@ def _site_turn_response(result: Any, outcome: Any, *, base_version: int) -> Json
         conflicted = conflicted_web_turn_response(base_version, int(outcome.version or base_version))
         return {**conflicted, **common, "saved_version": None,
                 "error": {"code": "site_turn.version_conflict", "message": conflicted["summary"]}}
+    if outcome.status == "fenced":
+        message = "This attempt no longer holds the run (another worker took it over), so it saved nothing."
+        failed = failed_agent_turn_response(SITE_TURN_FENCED, message, outcome.detail or "")
+        return {**failed, **common, "current_version": base_version, "saved_version": None,
+                "error": {"code": SITE_TURN_FENCED, "message": message}}
+    if outcome.status == "already_saved":
+        saved_as = f"version {outcome.version}" if outcome.version is not None else "a version"
+        summary = (f"This request was already saved as {saved_as} by an earlier attempt, "
+                   "so this attempt's changes were not saved.")
+        return {**common, "status": "applied", "outcome": "already_saved", "summary": summary,
+                "current_version": base_version, "saved_version": None}
     message = f"The website could not be saved: {outcome.detail or 'the write was refused'}"
     failed = failed_agent_turn_response("site_turn.write_refused", message, outcome.detail or "")
     return {**failed, **common, "current_version": base_version, "saved_version": None,
@@ -11916,6 +11959,10 @@ def run_site_agent_turn(
     base_version = int(document["current_version"])
     outcome = persist(result.site) if result.status == "applied" and result.site != document["scene"] else None
     response = _site_turn_response(result, outcome, base_version=base_version)
+    if outcome is not None and outcome.status == "fenced":
+        # Another attempt holds the run now and owns this request's history and memory: a fenced
+        # attempt writes neither, and leaves the session folder exactly as it found it.
+        return response
     saved = outcome is not None and outcome.status == "saved"
     workspace.mkdir(parents=True, exist_ok=True)
     append_history(
@@ -11944,6 +11991,7 @@ def execute_site_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    lease_worker_id: Optional[str] = None,
     spend_drain: Any = None,
     callbacks: Any = None,
     session_continued: bool = False,
@@ -11951,7 +11999,13 @@ def execute_site_turn_job(
     """One Puck site turn under its own spend scope and model-call collector (Contract 7).
 
     ``session_continued`` is accepted for the fleet's one call shape and ignored: a site request
-    always opens a fresh thread (its memory is the session folder)."""
+    always opens a fresh thread (its memory is the session folder).
+
+    ``lease_generation`` and ``lease_worker_id`` name the attempt (site-turn durability,
+    2026-10-16): with a generation, the turn's save is fenced by it — it lands only while this
+    attempt holds the run (and, with a worker id, the work lease) — and is idempotent per attempt.
+    A fenced attempt returns status ``fenced``: it saved nothing, and its caller must not land a
+    terminal result for the run."""
 
     from . import spend as _spend
 
@@ -11961,7 +12015,7 @@ def execute_site_turn_job(
         try:
             status, response, event_type, event_data = _execute_site_turn_job(
                 envelope, store=store, host=host, event_sink=event_sink, checkpointer=checkpointer,
-                lease_generation=lease_generation, callbacks=turn_callbacks,
+                lease_generation=lease_generation, lease_worker_id=lease_worker_id, callbacks=turn_callbacks,
             )
             return status, _with_model_calls(response, collector), event_type, event_data
         finally:
@@ -11976,9 +12030,11 @@ def _execute_site_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    lease_worker_id: Optional[str] = None,
     callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     from .site_live import live_sites_enabled
+    from .toolbelt.site_documents import SITE_ALREADY_SAVED_BY_RUN, SITE_SAVE_FENCED
     from .site_turn_ports import (
         DurableSiteAssetPort,
         DurableSiteSectionPort,
@@ -12030,13 +12086,20 @@ def _execute_site_turn_job(
         blobs = _turn_blob_store(host, workspace_id)
         invocations = _turn_design_tools(host, run_subject)
 
+        # The attempt this turn runs as. Its save is fenced by it and keyed per attempt.
+        attempt = None if lease_generation is None else {
+            "run_id": envelope.run_id, "lease_generation": int(lease_generation), "worker_id": lease_worker_id}
+
         def persist(site: JsonObject) -> Any:
+            body = {"document_id": document_id, "site": site, "expected_base_version": base_version,
+                    "intent": payload.prompt[:120], "actor_kind": "agent", "source": "agent"}
             try:
                 written = invocations.invoke(
                     "design_write_site",
-                    {"document_id": document_id, "site": site, "expected_base_version": base_version,
-                     "intent": payload.prompt[:120], "actor_kind": "agent", "source": "agent"},
+                    {**body, "attempt": attempt} if attempt is not None else body,
                     workspace_id=workspace_id, actor="agent", actor_id=envelope.run_id,
+                    idempotency_key=(site_turn_save_key(envelope.run_id, int(lease_generation))
+                                     if lease_generation is not None else None),
                 )
             except WebDocumentVersionConflict as conflict:
                 return SitePersistOutcome("conflicted", int(conflict.current), None)
@@ -12047,7 +12110,13 @@ def _execute_site_turn_job(
                 # routes treat it. Any other error leaves the write's state unknown and stays a crash.
                 return SitePersistOutcome("refused", None, str(unavailable)[:500])
             except PreconditionFailed as refused:
-                return SitePersistOutcome("refused", None, "; ".join(f.message for f in refused.failures)[:500])
+                detail = "; ".join(f.message for f in refused.failures)[:500]
+                if SITE_SAVE_FENCED in refused.reason_codes:
+                    return SitePersistOutcome("fenced", None, detail)
+                if SITE_ALREADY_SAVED_BY_RUN in refused.reason_codes:
+                    return SitePersistOutcome("already_saved", _run_saved_version(store, document_id, envelope.run_id),
+                                              detail)
+                return SitePersistOutcome("refused", None, detail)
             except TurnCancelled:
                 # Stop pressed between the agent's last step and the save: nothing is written.
                 return SitePersistOutcome("refused", None, "it was stopped")
@@ -12089,6 +12158,9 @@ def _execute_site_turn_job(
             checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
             callbacks=callbacks, event_sink=event_sink, runner=runner,
         )
+        if (response.get("error") or {}).get("code") == SITE_TURN_FENCED:
+            # No event and no terminal result: the attempt holding the run now owns both.
+            return "fenced", {**response, "doc_kind": "site"}, "result", {"status": "fenced"}
         if response.get("saved_version") is not None and event_sink is not None:
             # Contract 7: the forwarder turns this into the chat's design.checkpoint frame.
             event_sink("site_document_saved", {"document_id": document_id, "version": int(response["saved_version"])})

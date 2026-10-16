@@ -146,6 +146,19 @@ _GET_SQL = text(
 )
 
 
+# Does the row still name this worker and generation? Locked FOR SHARE until the caller's
+# transaction ends, so an acquire (an UPDATE of this row) cannot move it under a write the caller is
+# fencing with it. Expiry is deliberately not checked: a lapsed lease nobody took is still its
+# holder's (the renew rule above).
+_HOLD_SQL = text(
+    """
+    SELECT generation FROM work_lease
+    WHERE work_id = :work_id AND worker_id = :worker_id AND generation = :generation
+    FOR SHARE
+    """
+)
+
+
 async def acquire_work_lease(
     conn: AsyncConnection,
     *,
@@ -199,6 +212,28 @@ async def release_work_lease(
         _RELEASE_SQL,
         {"work_id": work_id, "worker_id": worker_id, "generation": generation},
     )
+
+
+async def hold_work_lease(
+    conn: AsyncConnection,
+    *,
+    work_id: WorkId,
+    worker_id: str,
+    generation: LeaseGeneration,
+) -> bool:
+    """Whether ``worker_id`` still holds ``work_id`` at ``generation``, for a domain write made in
+    ``conn``'s transaction (the site turn's fenced save).
+
+    True when the row still names this worker and generation, live or lapsed, and the row is then
+    locked ``FOR SHARE`` until that transaction ends; False when anyone else has acquired it
+    since, or the row is gone.
+    """
+    row = (
+        await conn.execute(
+            _HOLD_SQL, {"work_id": work_id, "worker_id": worker_id, "generation": generation}
+        )
+    ).first()
+    return row is not None
 
 
 async def revoke_work_lease(conn: AsyncConnection, *, work_id: WorkId) -> None:

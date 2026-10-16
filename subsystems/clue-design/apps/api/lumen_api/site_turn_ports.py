@@ -176,8 +176,11 @@ class DurableSiteAssetPort:
 class SitePersistOutcome:
     """What the governed site write did with one request's site."""
 
-    status: Literal["saved", "conflicted", "refused"]
-    #: The new version when saved; the stored version when conflicted; None when refused.
+    #: ``fenced``: the attempt no longer holds its run, so nothing was saved (and it must not
+    #: report as the run). ``already_saved``: an earlier attempt of this run saved the site.
+    status: Literal["saved", "conflicted", "refused", "fenced", "already_saved"]
+    #: The new version when saved; the stored version when conflicted; the version the run saved
+    #: when already_saved (None if it could not be read); None when refused or fenced.
     version: int | None
     detail: str | None = None
 

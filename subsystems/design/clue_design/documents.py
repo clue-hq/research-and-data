@@ -628,12 +628,16 @@ async def update_web_document(
     reverts_batch_id: str | None = None,
     reapplies_batch_id: str | None = None,
     expected_base_version: int | None = None,
+    actor_id: str | None = None,
 ) -> JsonObject:
     """The website-mode state write (ported verbatim; see the module docstring's undo model).
 
     The row lock serializes concurrent writers; the CAS predicate is kept as well so an
     explicit ``expected_base_version`` mismatch surfaces as the typed conflict rather than a
     silent overwrite — same double guard as the SQLite layer's version predicate.
+
+    ``actor_id`` is stamped on the history rows. An agent-run site save passes its run id, which
+    is how :func:`clue_design.runs.hold_run_for_save` knows the run has already saved.
     """
     document = await get_document(
         conn, workspace_id=workspace_id, document_id=document_id, for_update=True
@@ -708,7 +712,7 @@ async def update_web_document(
         envelope=envelope,
         source=source,
         actor_kind=actor_kind,
-        actor_id=None,
+        actor_id=actor_id,
     )
     await _history.append_operations(
         conn,
@@ -717,7 +721,7 @@ async def update_web_document(
         operations=operations,
         source=source,
         actor_kind=actor_kind,
-        actor_id=None,
+        actor_id=actor_id,
         diagnostics=[],
         batch_id=batch_id,
     )

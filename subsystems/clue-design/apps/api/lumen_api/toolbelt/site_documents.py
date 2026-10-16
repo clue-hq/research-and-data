@@ -13,6 +13,15 @@ Three tools over one store write (``HybridRepository.update_site_document``):
   replaced, so an undo reinstalls the inverse and a redo the forward snapshot, with no replay.
 
 The CAS is ``expected_base_version``, checked under the row lock inside the write.
+
+**The agent-run save is fenced** (site-turn durability, 2026-10-16). A site turn's persist passes
+``attempt`` (the run, the lease generation and the worker of the attempt saving). The write then
+lands only if, in its own transaction, that attempt still holds the run — the run row at exactly
+its generation and the work lease still naming it — and the run has not saved this document
+already. A refusal is a typed precondition failure (``site_save_fenced`` /
+``site_already_saved_by_run``) and writes nothing. The persist's idempotency key is per attempt,
+so a retried save of the same attempt replays its first result instead of making a second
+version.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from typing import Any, ClassVar, Literal
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
+    PreconditionFailed,
     PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
@@ -36,6 +46,9 @@ from .documents import DocumentStateRef, document_failures
 
 __all__ = [
     "REPLACE_SITE",
+    "SITE_ALREADY_SAVED_BY_RUN",
+    "SITE_SAVE_FENCED",
+    "SiteSaveAttempt",
     "RedoSiteTool",
     "SiteHistoryEmpty",
     "SiteHistoryInput",
@@ -50,6 +63,10 @@ __all__ = [
 
 JsonObject = dict[str, Any]
 REPLACE_SITE = "replace_site"
+#: The attempt saving no longer holds its run (another worker took it over): nothing was written.
+SITE_SAVE_FENCED = "site_save_fenced"
+#: The run already saved a version of this site (an earlier attempt did): nothing was written.
+SITE_ALREADY_SAVED_BY_RUN = "site_already_saved_by_run"
 
 
 def replace_site_payload(operations: Any) -> JsonObject | None:
@@ -96,8 +113,11 @@ def write_site_document(
     source: str,
     expected_base_version: int,
     restore_of: str | None = None,
+    attempt: "SiteSaveAttempt | None" = None,
 ) -> DocumentStateRef:
-    """THE site save: check the contracts, then write one whole-site snapshot."""
+    """THE site save: check the contracts, then write one whole-site snapshot.
+
+    With ``attempt`` the write is fenced by that run attempt (see the module docstring)."""
     from ..site_doc_inputs import load_section_modules
     from ..site_doc_validate import SiteDocumentInvalid, check_site_document, prepare_site_for_write
     from ..site_render import SECTION_MODULE_MISSING, SiteRenderError
@@ -142,6 +162,7 @@ def write_site_document(
         actor_kind=actor_kind,
         source=source,
         expected_base_version=expected_base_version,
+        attempt=attempt,
     )
     return DocumentStateRef(
         document_id=updated["id"], current_version=updated["current_version"], status=updated["status"]
@@ -178,6 +199,16 @@ def step_site_history(
     )
 
 
+class SiteSaveAttempt(ToolInput):
+    """The run attempt an agent-run save is made by: the run, and the lease that attempt holds."""
+
+    run_id: str
+    lease_generation: int
+    #: The worker holding the lease. Every fleet and inline-lane attempt names it, and the save then
+    #: also checks the platform work lease; None checks the run row alone.
+    worker_id: str | None = None
+
+
 class WriteSiteInput(ToolInput):
     document_id: str
     #: The whole site document (Contract 1). The stored theme always wins over the one sent.
@@ -191,6 +222,8 @@ class WriteSiteInput(ToolInput):
     restore_of: str | None = None
     #: The version the save was made from. Required: a turn taking minutes must never clobber a save.
     expected_base_version: int
+    #: A site turn's persist: the run attempt saving. The save lands only while it holds the run.
+    attempt: SiteSaveAttempt | None = None
 
 
 class SiteHistoryInput(ToolInput):
@@ -206,7 +239,8 @@ _REPLAY = ReplaySafety(
     notes=(
         "each execution bumps current_version and appends an envelope, so a blind retry is a "
         "second write; expected_base_version is checked under the row lock inside the write "
-        "transaction, so a stale retry raises the typed version conflict instead"
+        "transaction, so a stale retry raises the typed version conflict instead; a site turn's "
+        "persist passes one idempotency key per run attempt, so its retry replays the first result"
     ),
 )
 
@@ -235,22 +269,33 @@ class WriteSiteTool(DesignTool):
         )
 
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        from clue_design.errors import DesignRunAlreadySavedError, DesignRunSaveFencedError
+
         assert isinstance(inputs, WriteSiteInput)
-        return write_site_document(
-            repository=self.host.repository(ctx.workspace_id),
-            blobs=self.host.blobs(ctx.workspace_id),
-            node_bin=self.host.need("web_export_node_bin"),
-            brand_loader=self.host.need("site_brand_loader"),
-            section_loader=self.host.need("site_section_loader"),
-            document_id=inputs.document_id,
-            site=inputs.site,
-            intent=inputs.intent,
-            checkpoint_label=inputs.checkpoint_label,
-            actor_kind=inputs.actor_kind,
-            source=inputs.source,
-            expected_base_version=inputs.expected_base_version,
-            restore_of=inputs.restore_of,
-        )
+        try:
+            return write_site_document(
+                repository=self.host.repository(ctx.workspace_id),
+                blobs=self.host.blobs(ctx.workspace_id),
+                node_bin=self.host.need("web_export_node_bin"),
+                brand_loader=self.host.need("site_brand_loader"),
+                section_loader=self.host.need("site_section_loader"),
+                document_id=inputs.document_id,
+                site=inputs.site,
+                intent=inputs.intent,
+                checkpoint_label=inputs.checkpoint_label,
+                actor_kind=inputs.actor_kind,
+                source=inputs.source,
+                expected_base_version=inputs.expected_base_version,
+                restore_of=inputs.restore_of,
+                attempt=inputs.attempt,
+            )
+        except DesignRunSaveFencedError as fenced:
+            # Expected after a takeover, so a precondition (a warning), never a crash report.
+            raise PreconditionFailed((PreconditionFailure(reason_code=SITE_SAVE_FENCED, message=str(fenced)),)) from fenced
+        except DesignRunAlreadySavedError as saved:
+            raise PreconditionFailed(
+                (PreconditionFailure(reason_code=SITE_ALREADY_SAVED_BY_RUN, message=str(saved)),)
+            ) from saved
 
 
 class UndoSiteTool(DesignTool):

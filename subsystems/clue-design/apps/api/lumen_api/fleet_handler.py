@@ -348,7 +348,7 @@ class DesignJobWorkHandler:
         )
 
         body = asyncio.create_task(
-            asyncio.to_thread(self._execute, envelope, generation, host)
+            asyncio.to_thread(self._execute, envelope, generation, host, context.worker_id)
         )
         fence = asyncio.create_task(_first_of(context.lease_lost, context.stop_requested))
         try:
@@ -411,7 +411,7 @@ class DesignJobWorkHandler:
         )
         return WorkResult(outcome=status, references=_refs(context, subject))
 
-    def _execute(self, envelope: Any, generation: int, host: Any) -> str:
+    def _execute(self, envelope: Any, generation: int, host: Any, worker_id: Optional[str] = None) -> str:
         """Dispatch one claimed envelope to its executor, on the worker thread."""
         from .main import execute_ingestion_job
 
@@ -431,6 +431,7 @@ class DesignJobWorkHandler:
             self._checkpointer_factory,
             spend_drain=self._spend_drain,
             turn_callbacks_factory=self._turn_callbacks,
+            worker_id=worker_id,
         )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
@@ -658,11 +659,19 @@ def _execute_turn(
     *,
     spend_drain: Any = None,
     turn_callbacks_factory: Any = None,
+    worker_id: Optional[str] = None,
 ) -> str:
     """Run ONE design turn to a terminal result. Synchronous by nature; called via to_thread.
 
-    Returns the terminal run status (``succeeded`` / ``failed``), or ``fenced`` when the terminal
-    write was refused because a takeover worker owns the run.
+    Returns the terminal run status (``succeeded`` / ``failed``), or ``fenced`` when a takeover
+    worker owns the run: either the terminal write was refused, or the executor itself reported
+    ``fenced`` (a site turn whose save found the attempt no longer holding the run — site-turn
+    durability, 2026-10-16). In the second case no terminal write is even attempted: when only the
+    LEASE has moved and the new holder has not claimed the run yet, the row still carries this
+    attempt's generation and the write would land, ending the run under the new holder's feet.
+
+    ``worker_id`` is the attempt's lease holder, handed to the executor with ``generation`` so the
+    site turn's save can check the work lease too.
 
     The lazy ``lumen_api.main`` import (in :func:`executor_for_kind`) breaks a genuine cycle:
     ``main`` imports THIS module to build the embedded worker, and the turn executors live in
@@ -716,11 +725,21 @@ def _execute_turn(
             # D7: the turn's governed tool invocations reach the same stream, fenced by the same
             # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
             lease_generation=generation,
+            lease_worker_id=worker_id,
             spend_drain=spend_drain,
             callbacks=callbacks,
             session_continued=session_continued,
         )
 
+    if status == "fenced":
+        logger.warning(
+            "design_job.save_fenced",
+            run_id=envelope.run_id,
+            worker_id=worker_id,
+            lease_generation=generation,
+            detail="this attempt no longer holds the run; it saved nothing and writes no result",
+        )
+        return "fenced"
     try:
         store.complete_run(
             envelope.run_id,

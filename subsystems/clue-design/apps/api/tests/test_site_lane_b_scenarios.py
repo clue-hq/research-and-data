@@ -699,7 +699,9 @@ def test_c_a_race_the_agent_loses_to_a_human_save(client: TestClient, model: Mod
 def test_c_a_takeover_that_saved_first_wins_the_race(client: TestClient, model: ModelSeam, garner: Garner) -> None:
     """The race the lock cannot stop: a lease takeover. The fleet re-grants the running row to a
     second worker (generation 2) whose own persist lands first; the first worker (generation 1) runs
-    on, and its save must lose to the version it never saw. Its terminal write is then fenced."""
+    on, and its save must lose to the version it never saw. Since site-turn durability (2026-10-16)
+    it loses one step earlier than the version CAS: the save itself is fenced by the attempt's
+    generation, so it is refused as no longer holding the run. Its terminal write is fenced too."""
     from clue_design import runs as design_runs
     from clue_design.errors import DesignRunFencedError
 
@@ -716,15 +718,16 @@ def test_c_a_takeover_that_saved_first_wins_the_race(client: TestClient, model: 
 
     state = lose_the_race(client, model, garner, human_write=takeover_saves, claim=True, complete=False)
     store, document_id, human, turn = (state[k] for k in ("store", "document_id", "human", "turn"))
-    # The zombie's save lost: conflicted, nothing announced; the takeover's version stands alone.
-    assert turn.status == "failed" and turn.response["error"]["code"] == "site_turn.version_conflict"
+    # The zombie's save lost: fenced, nothing announced; the takeover's version stands alone.
+    assert turn.status == "fenced" and turn.response["error"]["code"] == "site_turn.fenced"
     assert saves(turn) == []
     stored = store.require_document(document_id)
     assert stored["current_version"] == 1 and stored["scene"] == human
     assert len(store.list_envelopes(document_id)) == 1
-    # Its terminal write is refused: the row belongs to generation 2 now.
+    # The fleet lands no terminal write for a fenced attempt; and one attempted anyway is refused:
+    # the row belongs to generation 2 now.
     with pytest.raises(DesignRunFencedError):
-        complete_turn(store, turn)
+        store.complete_run(turn.run_id, "failed", turn.response, *turn.terminal, expected_generation=1)
     assert store.require_run(turn.run_id)["status"] == "running"
 
 
@@ -1425,3 +1428,263 @@ def test_h_a_generated_image_placed_and_saved(client: TestClient, model: ModelSe
     # The editor's read serves the bytes the page names.
     served = client.get(file)
     assert served.status_code == 200 and served.content == data
+
+
+# =================================================================================================
+# I. The fenced, idempotent save (site-turn durability, K4-1, 2026-10-16).
+#
+# Each attempt below holds the run the way the fleet holds it: a REAL ``work_lease`` row taken
+# with ``clue_fleet``'s own acquire (generations never repeat, Task 1), then the run claimed under
+# that generation. A takeover lets the lease lapse and acquires it as another worker, exactly the
+# state a dead or stalled worker leaves behind.
+# =================================================================================================
+
+PROOF_A = "Attempt A's proof heading"
+PROOF_B = "Attempt B's proof heading"
+
+
+def take_lease(store: HybridRepository, work_id: Any, worker_id: str) -> int:
+    from clue_fleet.lease import acquire_work_lease
+
+    lease = store._bridge._run(lambda conn: acquire_work_lease(conn, work_id=work_id, worker_id=worker_id))
+    assert lease is not None, f"{worker_id} could not take the lease"
+    return int(lease.generation)
+
+
+def lapse_lease(store: HybridRepository, work_id: Any) -> None:
+    from sqlalchemy import text
+
+    store._bridge._run(lambda conn: conn.execute(
+        text("UPDATE work_lease SET expires_at = now() - interval '1 second' WHERE work_id = :w"), {"w": work_id}))
+
+
+def hold_run(store: HybridRepository, envelope: Any, worker_id: str) -> int:
+    """The fleet's way into a run: take the work lease, then claim the run under its generation."""
+    from clue_design import runs as design_runs
+
+    generation = take_lease(store, envelope.work_id, worker_id)
+    claimed = store._bridge._run(lambda conn: design_runs.claim_run_for_execution(
+        conn, work_id=envelope.work_id, worker_id=worker_id, lease_generation=generation))
+    assert claimed is not None and claimed["lease_generation"] == generation
+    return generation
+
+
+def take_over(store: HybridRepository, envelope: Any, worker_id: str) -> int:
+    """A second worker takes the run: the first holder's lease lapses, the second acquires it."""
+    lapse_lease(store, envelope.work_id)
+    return hold_run(store, envelope, worker_id)
+
+
+def attempt_turn(app: Any, store: HybridRepository, envelope: Any, *, worker_id: str, generation: int) -> Turn:
+    """One attempt at a site turn through the REAL executor, as the worker holding ``generation``.
+    Not completed: the caller lands (or is refused) the terminal write itself."""
+    from lumen_api.main import execute_site_turn_job
+
+    events: list = []
+    status, response, event_type, event_data = execute_site_turn_job(
+        envelope, store=store, host=turn_host(app), event_sink=lambda kind, data: events.append((kind, data)),
+        lease_generation=generation, lease_worker_id=worker_id,
+    )
+    return Turn(envelope.run_id, status, response, events, {}, (event_type, event_data))
+
+
+def run_columns(run_id: str) -> dict:
+    (row,) = query("SELECT status, leased_by, lease_generation FROM design_agent_run WHERE run_id = :r", {"r": run_id})
+    return row
+
+
+def proof_edit(site: dict, text_: str, n: int) -> list[AIMessage]:
+    return [
+        AIMessage(content="", tool_calls=[edit_heading_call(site, "/", "proof", text_, n), call("validate_page", {}, n + 1)]),
+        AIMessage(content=f"The proof heading now reads {text_!r}."),
+    ]
+
+
+def fresh_site_run(garner: Garner) -> tuple[HybridRepository, str, dict, Any]:
+    store = HybridRepository()
+    document_id = f"site_fence_{uuid4().hex[:10]}"
+    born = store_site(garner.site(document_id))["scene"]
+    envelope = envelope_for(document_id, store.workspace_id, REQUEST_1)
+    open_run(store, envelope, claim=False)
+    return store, document_id, born, envelope
+
+
+def test_i_a_a_fenced_out_attempt_saves_nothing_and_the_holder_saves_after_it(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """Attempt A holds the run at generation 1. While A's agent works, A's lease lapses and worker B
+    acquires it (generation 2) and claims the run. A's agent finishes and A's save is refused: it no
+    longer holds the run. Nothing is written, nothing claims a save, A writes no terminal result and
+    no history. B's own save then lands, so a refused save never blocks the run's real holder. A
+    human save meanwhile meets exactly the lock it met before (the run is active), and lands once
+    B's run is done."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    held: dict = {}
+
+    def b_takes_over() -> None:
+        held["b"] = take_over(store, envelope, "worker-b")
+
+    model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 1)]),
+        *proof_edit(born, PROOF_A, 2),
+        hooks={1: b_takes_over},
+    )
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    generation_b = held["b"]
+    assert generation_b == generation_a + 1
+
+    assert a.status == "fenced", a.response
+    assert a.response["saved_version"] is None and a.response["error"]["code"] == "site_turn.fenced"
+    assert saves(a) == []
+    stored = store.require_document(document_id)
+    assert stored["current_version"] == 0 and stored["scene"] == born
+    assert store.list_envelopes(document_id) == []
+    # A fenced attempt leaves the session folder alone: no "## 1." entry claims anything.
+    history = session_folder(_agent_root, store.workspace_id, document_id) / "workspace" / "history.md"
+    assert not history.exists() or "## " not in history.read_text()
+    assert run_columns(envelope.run_id) == {"status": "running", "leased_by": "worker-b",
+                                            "lease_generation": generation_b}
+
+    # A human save while B's run is active meets the agent-run lock, as before this change.
+    refused = put_site(client, document_id, with_heading(born, "/", "proof", "Human edit"), 0)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {"code": "document.agent_run_active", "run_id": envelope.run_id}
+
+    # B, the holder, saves.
+    model.next(*proof_edit(born, PROOF_B, 1))
+    b = attempt_turn(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert b.status == "succeeded" and b.response["saved_version"] == 1, b.response
+    assert saves(b) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+    assert store.require_document(document_id)["scene"] == with_heading(born, "/", "proof", PROOF_B)
+    assert len(store.list_envelopes(document_id)) == 1
+    store.complete_run(envelope.run_id, b.status, b.response, *b.terminal, expected_generation=generation_b)
+    assert store.require_run(envelope.run_id)["status"] == "succeeded"
+
+    # The run is done, so the human's save lands on top of B's.
+    expect_ok(put_site(client, document_id, with_heading(born, "/", "proof", "Human edit"), 1), 2, document_id)
+
+
+def test_i_b_a_fenced_attempt_through_the_fleet_handler_writes_no_terminal_result(
+        client: TestClient, model: ModelSeam, garner: Garner) -> None:
+    """The same takeover through the fleet's own handler (``DesignJobWorkHandler``), which is where
+    the attempt's worker id and generation come from in production. A's save is refused, the
+    handler reports the attempt fenced, and the run row stays B's: no terminal write landed on it,
+    which matters most when only the LEASE has moved and B has not claimed the run yet."""
+    import asyncio
+
+    from clue_fleet import WorkContext
+    from lumen_api.fleet_handler import DesignJobWorkHandler
+
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = take_lease(store, envelope.work_id, "worker-a")
+
+    def b_takes_the_lease_only() -> None:
+        lapse_lease(store, envelope.work_id)
+        take_lease(store, envelope.work_id, "worker-b")
+
+    model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 1)]),
+        *proof_edit(born, PROOF_A, 2),
+        hooks={1: b_takes_the_lease_only},
+    )
+    handler = DesignJobWorkHandler(host_provider=lambda: turn_host(client.app), named_trace=False)
+    context = WorkContext(task_id=uuid4(), work_id=envelope.work_id, worker_id="worker-a",
+                          lease_generation=generation_a, payload=envelope.model_dump(mode="json"),
+                          stop_requested=asyncio.Event(), lease_lost=asyncio.Event())
+    result = asyncio.run(handler.handle(context))
+
+    assert result.outcome == "fenced", result
+    stored = store.require_document(document_id)
+    assert stored["current_version"] == 0 and stored["scene"] == born
+    assert store.list_envelopes(document_id) == []
+    # The run row is still A's claim, untouched by any terminal write: B's claim can take it.
+    assert run_columns(envelope.run_id) == {"status": "running", "leased_by": "worker-a",
+                                            "lease_generation": generation_a}
+    assert store.require_run(envelope.run_id)["result"] is None
+
+
+def test_i_c_a_lapsed_lease_nobody_took_still_lets_its_holder_save(
+        client: TestClient, model: ModelSeam, garner: Garner) -> None:
+    """A's lease lapses mid-turn but nobody takes it: the lease is still A's (Task 1's reclaim
+    rule), so A's save lands and A's terminal write lands after it."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation = hold_run(store, envelope, "worker-a")
+    model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 1)]),
+        *proof_edit(born, PROOF_A, 2),
+        hooks={1: lambda: lapse_lease(store, envelope.work_id)},
+    )
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation)
+    assert a.status == "succeeded" and a.response["saved_version"] == 1, a.response
+    assert store.require_document(document_id)["scene"] == with_heading(born, "/", "proof", PROOF_A)
+    store.complete_run(envelope.run_id, a.status, a.response, *a.terminal, expected_generation=generation)
+    assert store.require_run(envelope.run_id)["status"] == "succeeded"
+
+
+def test_i_d_a_retried_save_of_the_same_site_is_one_version(
+        client: TestClient, model: ModelSeam, garner: Garner, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The holder's save is delivered twice (an at-least-once retry of the same call, same attempt,
+    same site). The second is a replay of the first: one version, one history step, and the turn
+    reports the version the save made."""
+    from lumen_api.toolbelt.wiring import DesignToolInvocations
+
+    real_invoke = DesignToolInvocations.invoke
+    delivered: list = []
+
+    def invoke_twice(self, name, body, **kwargs):
+        if name != "design_write_site":
+            return real_invoke(self, name, body, **kwargs)
+        delivered.append(real_invoke(self, name, body, **kwargs))
+        delivered.append(real_invoke(self, name, body, **kwargs))
+        return delivered[-1]
+
+    monkeypatch.setattr(DesignToolInvocations, "invoke", invoke_twice)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation = hold_run(store, envelope, "worker-a")
+    model.next(*proof_edit(born, PROOF_A, 1))
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation)
+
+    first, second = delivered
+    assert (first.replayed, second.replayed) == (False, True)
+    assert first.references["current_version"] == second.references["current_version"] == 1
+    assert a.status == "succeeded" and a.response["saved_version"] == 1
+    assert store.require_document(document_id)["current_version"] == 1
+    assert len(store.list_envelopes(document_id)) == 1
+    assert saves(a) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+
+
+def test_i_e_a_takeover_after_the_save_landed_never_makes_a_second_version(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """A saves (version 1) and dies before its terminal write. B takes the run over and redoes the
+    request. If B ends with the site A saved, there is nothing to save. If B ends with a DIFFERENT
+    site, it is refused as already saved by this run: still one version, and B's result says so
+    instead of claiming a save."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    model.next(*proof_edit(born, PROOF_A, 1))
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert a.response["saved_version"] == 1  # ...and A dies here, before complete_run.
+    saved_by_a = with_heading(born, "/", "proof", PROOF_A)
+
+    # B redoes the request and ends where A did: nothing to save.
+    generation_b = take_over(store, envelope, "worker-b")
+    model.next(AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/page.json"}, 1)]),
+               AIMessage(content="The proof heading already reads as asked."))
+    same = attempt_turn(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert same.status == "succeeded" and same.response["outcome"] == "unchanged"
+    assert store.require_document(document_id)["current_version"] == 1
+
+    # A third attempt redoes it differently: refused, still one version, said plainly.
+    generation_c = take_over(store, envelope, "worker-c")
+    model.next(*proof_edit(saved_by_a, PROOF_B, 1))
+    different = attempt_turn(client.app, store, envelope, worker_id="worker-c", generation=generation_c)
+    assert different.response["saved_version"] is None, different.response
+    assert different.status == "succeeded" and different.response["outcome"] == "already_saved"
+    assert different.response["current_version"] == 1
+    assert "already saved" in different.response["summary"] and "version 1" in different.response["summary"]
+    assert saves(different) == []
+    stored = store.require_document(document_id)
+    assert stored["current_version"] == 1 and stored["scene"] == saved_by_a
+    assert len(store.list_envelopes(document_id)) == 1
+    history = (session_folder(_agent_root, store.workspace_id, document_id) / "workspace" / "history.md").read_text()
+    assert "- Saved: no, an earlier attempt of this request already saved version 1\n" in history

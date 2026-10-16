@@ -464,6 +464,9 @@ def saved_line(
         return "no, the site changed while this request ran"
     if outcome_status == "refused":
         return "no, the save was refused"
+    if outcome_status == "already_saved":
+        saved_as = f"version {version}" if version is not None else "a version"
+        return f"no, an earlier attempt of this request already saved {saved_as}"
     if status == "applied":
         return "nothing to save"
     if stop_reason == "site_invalid":
