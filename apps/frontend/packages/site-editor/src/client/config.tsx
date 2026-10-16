@@ -57,7 +57,7 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
   for (const section of sections) {
     const component = config.components[section.name];
     if (!component) continue;
-    component.fields = puckFieldsFromJsonSchema(section.propsSchema);
+    component.fields = puckFieldsFromJsonSchema(section.propsSchema, brand);
   }
   return config;
 }

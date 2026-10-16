@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buttonLookOptions, cardLooks, surfaceChoices } from "@clue/site-kit";
 import { garner } from "../../site-kit/test/fixtures/garner";
 import { buildPageConfig, shellFieldDescriptions } from "../src/client/config";
 import { describeFields, fieldsForComponent, humanize, puckFieldsFromJsonSchema } from "../src/client/fields";
@@ -64,33 +65,92 @@ test("the header and footer describe their own fields", () => {
   ]);
 });
 
-test("an agent section's props schema becomes inline-editable Puck fields and dock fields", () => {
-  const puck = puckFieldsFromJsonSchema({
-    type: "object",
-    properties: {
-      id: { type: "string" },
-      heading: { type: "string" },
-      body: { type: "string" },
-      ctaHref: { type: "string" },
-      heroImage: { type: "string" },
-      tone: { type: "string", enum: ["calm", "bold"] },
-      featured: { type: "boolean" },
-      count: { type: "integer" },
-      steps: { type: "array", items: { type: "object", properties: { title: { type: "string" } } } },
-      tags: { type: "array", items: { type: "string" } },
+test("an agent section's props schema becomes Puck fields and dock fields; only marked prose edits in place", () => {
+  const puck = puckFieldsFromJsonSchema(
+    {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        heading: { type: "string", edit: "inline" },
+        body: { type: "string", edit: "inline" },
+        caption: { type: "string" },
+        ctaHref: { type: "string" },
+        heroImage: { type: "string" },
+        tone: { type: "string", enum: ["calm", "bold"] },
+        featured: { type: "boolean" },
+        count: { type: "integer" },
+        steps: { type: "array", items: { type: "object", properties: { title: { type: "string", edit: "inline" }, note: { type: "string" } } } },
+        tags: { type: "array", items: { type: "string" } },
+      },
     },
-  }) as Record<string, { type: string; contentEditable?: boolean }>;
+    brand,
+  ) as Record<string, { type: string; contentEditable?: boolean; arrayFields?: Record<string, { type: string; contentEditable?: boolean }> }>;
   assert.equal("id" in puck, false);
   assert.deepEqual([puck.heading.type, puck.heading.contentEditable], ["text", true]);
   assert.deepEqual([puck.body.type, puck.body.contentEditable], ["textarea", true]);
-  assert.deepEqual([puck.ctaHref.type, puck.ctaHref.contentEditable], ["text", false]);
+  assert.deepEqual([puck.caption.type, Boolean(puck.caption.contentEditable)], ["text", false], "unmarked text is edited in the side panel");
+  assert.deepEqual([puck.ctaHref.type, Boolean(puck.ctaHref.contentEditable)], ["text", false]);
   assert.equal(puck.heroImage.type, "custom");
+  assert.deepEqual([puck.steps.arrayFields?.title.type, puck.steps.arrayFields?.title.contentEditable], ["text", true], "marked text inside a list edits in place");
+  assert.equal(Boolean(puck.steps.arrayFields?.note.contentEditable), false);
   assert.equal("tags" in puck, false, "an array of plain strings has no dock control yet");
   const described = byName(describeFields(puck as never));
   assert.deepEqual(
-    ["heading", "body", "ctaHref", "heroImage", "tone", "featured", "count", "steps"].map((name) => described[name].kind),
-    ["text", "textarea", "link", "image", "select", "boolean", "number", "list"],
+    ["heading", "body", "caption", "ctaHref", "heroImage", "tone", "featured", "count", "steps"].map((name) => described[name].kind),
+    ["text", "textarea", "text", "link", "image", "select", "boolean", "number", "list"],
   );
+});
+
+test("an agent section's brand choices are pick-lists from this brand, never typed or edited in place", () => {
+  const puck = puckFieldsFromJsonSchema(
+    {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        surface: { type: "string", edit: "inline" },
+        heroSurface: { type: "string" },
+        look: { type: "string" },
+        ctaLook: { type: "string", edit: "inline" },
+        cardLook: { type: "string" },
+        alt: { type: "string", edit: "inline" },
+        imageAlt: { type: "string", edit: "inline" },
+        buttonHref: { type: "string", edit: "inline" },
+        heroImage: { type: "string", edit: "inline" },
+        cards: { type: "array", items: { type: "object", properties: { title: { type: "string", edit: "inline" }, cardLook: { type: "string" } } } },
+      },
+    },
+    brand,
+  ) as Record<string, { type: string; contentEditable?: boolean; options?: { label: string; value: unknown }[]; arrayFields?: Record<string, { type: string; options?: unknown[] }> }>;
+  const surfaces = surfaceChoices(brand).map((choice) => ({ label: choice.label, value: choice.value }));
+  const buttonStyles = buttonLookOptions(brand);
+  const cardStyles = [{ label: "Standard", value: "" }, ...cardLooks(brand).map((look) => ({ label: look.label, value: look.name }))];
+  assert.ok(cardStyles.length > 1, "Garner's kit records card styles");
+  for (const name of ["surface", "heroSurface"]) assert.deepEqual([puck[name].type, puck[name].options], ["select", surfaces], name);
+  for (const name of ["look", "ctaLook"]) assert.deepEqual([puck[name].type, puck[name].options], ["select", buttonStyles], name);
+  assert.deepEqual([puck.cardLook.type, puck.cardLook.options], ["select", cardStyles]);
+  assert.deepEqual([puck.cards.arrayFields?.cardLook.type, puck.cards.arrayFields?.cardLook.options], ["select", cardStyles]);
+  for (const name of ["surface", "ctaLook", "alt", "imageAlt", "buttonHref", "heroImage"]) {
+    assert.equal(Boolean(puck[name].contentEditable), false, `a marked ${name} is still not edited in place`);
+  }
+  assert.equal(puck.heroImage.type, "custom");
+  const described = byName(describeFields(puck as never));
+  assert.deepEqual([described.surface.kind, described.surface.options], ["select", surfaces]);
+  assert.deepEqual([described.ctaLook.kind, described.ctaLook.options], ["select", buttonStyles]);
+  assert.deepEqual([described.cardLook.kind, described.cardLook.options], ["select", cardStyles]);
+  assert.deepEqual([described.alt.kind, described.buttonHref.kind], ["text", "link"]);
+});
+
+test("the page config gives an agent section its fields with this brand's choices", () => {
+  const section = {
+    name: "QuoteBlock",
+    module: { schema: { safeParse: () => ({ success: true }) }, render: () => null },
+    propsSchema: { type: "object", properties: { id: { type: "string" }, surface: { type: "string" }, quote: { type: "string", edit: "inline" } } },
+  };
+  const withSection = buildPageConfig(brand, null, [section as never]);
+  const fields = byName(fieldsForComponent(withSection, brand, "QuoteBlock", { id: "q" }));
+  assert.equal(fields.surface.kind, "select");
+  assert.deepEqual(fields.surface.options, surfaceChoices(brand).map((choice) => ({ label: choice.label, value: choice.value })));
+  assert.equal(fields.quote.kind, "textarea");
 });
 
 test("the button style and surface choices come from this brand", () => {

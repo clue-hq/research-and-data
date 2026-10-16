@@ -15,11 +15,12 @@ export {
 } from "./clone";
 export { FALLBACKS, isComponentToken } from "./brand-values";
 export { extraSurfaceRoles, surfaceChoices, surfaceLabels, surfaceRoles, type SurfaceChoice } from "./surfaces";
-export { buttonLookOptions, buttonLooks, cardLooks, motionClassNames, motionEntries, type Look } from "./looks";
+export { buttonLookOptions, buttonLooks, cardLookOptions, cardLooks, motionClassNames, motionEntries, type Look } from "./looks";
 export { SPACING_ROLES, editorThemeCss, tailwindThemeCss, themeCss } from "./theme";
 export * from "./schemas";
 export { makeConfig, type ConfigOptions, type EditorParts } from "./config";
 export { makeKit, type AgentSectionModule, type Kit } from "./agent-kit";
+export { EDIT_INLINE, IMAGE_PROP, LINK_PROP, brandChoice, notInlineReason, type BrandChoice } from "./agent-props";
 export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";

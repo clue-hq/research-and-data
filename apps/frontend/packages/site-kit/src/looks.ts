@@ -92,6 +92,11 @@ export function buttonLookOptions(brand: BrandData): { label: string; value: str
   return [{ label: "Standard", value: "" }, ...buttonLooks(brand).map((look) => ({ label: look.label, value: look.name }))];
 }
 
+/** The dock's "Card style" options for an agent section's `cardLook` (S2a-2). */
+export function cardLookOptions(brand: BrandData): { label: string; value: string }[] {
+  return [{ label: "Standard", value: "" }, ...cardLooks(brand).map((look) => ({ label: look.label, value: look.name }))];
+}
+
 /** The site's most measured style of an element the kit draws without a choice (styles are stored
  * most frequent first). */
 export function elementStyle(brand: BrandData, component: "link" | "nav_link"): MeasuredRecipe | null {
