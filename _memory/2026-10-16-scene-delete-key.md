@@ -31,3 +31,22 @@
   Two early `account_name` removals were selections made in the shared browser pane, not a bug. Document left at its
   original 8 elements (version 64).
 - Not yet walked live: the nested-container note and a Layers multi-select (this ad is flat).
+
+## Same branch, later the same day: Replace-image menu + asset-library Logo search
+- Replace-image menu was see-through: it is portaled to <body>, outside every `--chat-shell-*` carrier, so its
+  colours resolved to nothing. Now reads the `--clue-ds-*` tokens directly (`7c3213563`).
+- Logo search (founder spec in chat, mockup approved incl. empty states): a "Logo search" tab beside "Library"
+  in the asset library. Any company's website → every version the shared lookup finds
+  (`lumen_agent.tools.logo_fetch.fetch_logo_family`: Brandfetch + logo ladder + arbiter + per-workspace cache),
+  shown as captioned tiles; nothing auto-chosen. Click = save that ONE version + place it (one undo frame).
+  Calls the founder accepted without deciding: only the placed version is saved; fetched logos (tag
+  `logo-ladder`) list under "Logos". Not included: name-only search, binding as the account's logo.
+- Backend: `POST /assets/logo-search` (previews as data URIs, saves nothing) and `POST /assets/logo-search/save`
+  (re-runs the lookup → cache hit → ingest + register). `lumen_api/logo_search.py`; tests
+  `apps/api/tests/test_logo_search.py` (6, on throwaway `clue_dushanbe_test`, migrated to `1ecc7437e5bc`).
+  Test-env quirk: `_ensure_workspace` memoises even when its transaction rolls back, so a 404 GET before the
+  first write leaves the test workspace row missing — assert absence via the list route instead.
+- Delete key now ignores presses inside `[role=dialog|menu|listbox]` (a focused library tile must not delete the image).
+- Live walk on the Atrium ad: stripe.com → 7 versions in 21 s (Brandfetch 200); save 5 s, no second Brandfetch
+  call; exactly one Stripe asset registered; placement undone afterwards. Frontend `npm test` 3338/3338, lint clean.
+- Not run: `npm run build` (the lane's dev server holds `.next`); the wider design-API pytest suite.
