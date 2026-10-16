@@ -4,6 +4,9 @@ import type { AssetRecord } from "../engine/asset-types";
 import {
   IMAGE_ASSET_KINDS,
   listImageAssets,
+  LogoSearchError,
+  saveSearchedLogo,
+  searchLogos,
   uploadWebAsset,
   WebAssetListError,
   WebAssetUploadError,
@@ -193,4 +196,39 @@ test("listImageAssets refuses with the API's words on a non-ok response", async 
     assert.equal(error.status, 401);
     return true;
   });
+});
+
+/* ── logo search ─────────────────────────────────────────────────────────── */
+
+test("logo search posts the website to the BFF and returns every version", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const logos = [{ asset_id: "asset_ing_1", kind: "Full logo", background: "light", source: "Brandfetch", content_type: "image/svg+xml", preview: "data:image/svg+xml;base64,AA==" }];
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ schema_version: 1, query: "stripe.com", name: "stripe.com", logos }), { status: 200 });
+  }) as typeof fetch;
+  const result = await searchLogos("stripe.com", { fetchImpl });
+  assert.deepEqual(calls, [{ url: "/api/clue/design/assets/logo-search", body: { url: "stripe.com" } }]);
+  assert.deepEqual(result, { name: "stripe.com", logos });
+});
+
+test("logo search surfaces the server's plain-words refusal", async () => {
+  const fetchImpl = (async () => new Response(
+    JSON.stringify({ detail: { code: "logo_search.bad_url", message: "Enter a website, like stripe.com." } }),
+    { status: 422 },
+  )) as typeof fetch;
+  await assert.rejects(searchLogos("https://", { fetchImpl }), (error: unknown) =>
+    error instanceof LogoSearchError && error.message === "Enter a website, like stripe.com." && error.code === "logo_search.bad_url");
+});
+
+test("saving a searched logo sends the website and the clicked version, and returns the record", async () => {
+  const calls: unknown[] = [];
+  const asset = { id: "asset_ing_1", label: "stripe.com logo", kind: "vector", status: "ready", source: { kind: "website", url: "https://stripe.com", captured_at: null }, tags: ["logo-ladder"] };
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push([String(input), JSON.parse(String(init?.body))]);
+    return new Response(JSON.stringify({ schema_version: 1, asset }), { status: 200 });
+  }) as typeof fetch;
+  const saved = await saveSearchedLogo("stripe.com", "asset_ing_1", { fetchImpl });
+  assert.deepEqual(calls, [["/api/clue/design/assets/logo-search/save", { url: "stripe.com", asset_id: "asset_ing_1" }]]);
+  assert.equal(saved.id, "asset_ing_1");
 });

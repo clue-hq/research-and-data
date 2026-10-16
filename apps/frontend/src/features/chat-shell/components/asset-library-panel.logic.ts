@@ -61,3 +61,18 @@ export function nextFocusIndex(current: number, key: string, count: number, colu
     default: return null;
   }
 }
+
+/** A logo search tile's two lines: what the version is (and the background it is for, when the
+ * source claimed one), then who served it. */
+export function logoResultCaption(logo: { kind: string; background: "light" | "dark" | null; source: string }) {
+  return {
+    title: logo.background ? `${logo.kind} · ${logo.background} bg` : logo.kind,
+    source: logo.source,
+  };
+}
+
+/** The results heading: the company's domain and how many versions came back. */
+export function logoSearchHeading(name: string | null, count: number): string {
+  const versions = count === 1 ? "1 version found" : `${count} versions found`;
+  return name ? `${name} · ${versions}` : versions;
+}
