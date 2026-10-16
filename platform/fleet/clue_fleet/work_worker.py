@@ -79,6 +79,16 @@ PAYLOAD_CONTEXT_KEYS: tuple[str, ...] = (
 )
 
 
+class WorkDrained(BaseException):
+    """Raised out of a handler's body when the worker's drain bound stopped its work at a step
+    boundary (site-turn durability, 2026-10-16): the work is saved where it stopped and another
+    worker continues it. The worker hands the task back to the queue; it is not a failure.
+
+    A ``BaseException`` so that no ``except Exception`` between the work and the worker records it
+    as an error. A handler that can return instead returns ``WorkResult(requeue=True)``; this is for
+    a body that cannot, such as an agent turn whose inline design lane was drained."""
+
+
 @runtime_checkable
 class WorkHandler(Protocol):
     @property
@@ -111,6 +121,19 @@ class CapabilityGated(Protocol):
 
     @property
     def task_capabilities(self) -> tuple[TaskCapability, ...]: ...
+
+
+@runtime_checkable
+class DrainAware(Protocol):
+    """A handler whose running work can stop early at a safe point when the worker shuts down.
+
+    After :meth:`LeasedWorkWorker.stop`, the worker lets running work finish. Once its drain bound
+    has passed, it calls ``request_drain`` on every handler of this kind: the handler asks its
+    running work to stop at the next safe point and hands each task back to the queue (a
+    requeueing ``WorkResult``, or :class:`WorkDrained`). Its own protocol, like ``CapabilityGated``.
+    """
+
+    def request_drain(self, reason: str) -> None: ...
 
 
 @runtime_checkable
@@ -155,6 +178,12 @@ class LeasedWorkWorker:
     ends every slot) and ``_next_kind``, the round-robin cursor. Slots racing on the cursor can
     make two of them try the same kind first; the claim is atomic in the database, so they get
     different rows and fairness is unaffected — a lock there would buy nothing.
+
+    Drain (site-turn durability, 2026-10-16): after :meth:`stop` no slot claims another task, and
+    running tasks are never cancelled; :meth:`run` returns once they have all finished. With a
+    ``drain_bound``, once that long has passed since the stop every :class:`DrainAware` handler is
+    asked to drain, so its running work stops at a safe point and goes back to the queue before the
+    container is killed (``stop_grace_period`` is the bound plus a margin). ``None`` never asks.
     """
 
     def __init__(
@@ -169,6 +198,7 @@ class LeasedWorkWorker:
         heartbeat_interval: float = 10.0,
         task_stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
         concurrency: int = 1,
+        drain_bound: timedelta | None = None,
     ) -> None:
         if not handlers:
             raise ValueError("a leased worker requires at least one work handler")
@@ -196,6 +226,7 @@ class LeasedWorkWorker:
         self._heartbeat_interval = heartbeat_interval
         self._task_stale_after = task_stale_after
         self._concurrency = concurrency
+        self._drain_bound = drain_bound
         self._stop = asyncio.Event()
         self._active_work: set[WorkId] = set()
         self._in_flight: dict[FleetTaskKind, int] = {}
@@ -228,7 +259,13 @@ class LeasedWorkWorker:
             asyncio.create_task(self._drain_loop(slot), name=f"{self.worker_id}:slot-{slot}")
             for slot in range(self._concurrency)
         ]
-        outcomes = await asyncio.gather(*slots, return_exceptions=True)
+        drain = asyncio.create_task(self._drain_at_bound(), name=f"{self.worker_id}:drain")
+        try:
+            outcomes = await asyncio.gather(*slots, return_exceptions=True)
+        finally:
+            drain.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await drain
         failures = [
             outcome
             for outcome in outcomes
@@ -243,6 +280,41 @@ class LeasedWorkWorker:
         )
         if failures:
             raise failures[0]
+
+    async def _drain_at_bound(self) -> None:
+        """After the stop, wait the drain bound, then ask every drain-aware handler to drain.
+
+        Cancelled by :meth:`run` as soon as every slot has ended, so a worker whose work finished
+        inside the bound exits at once."""
+        await self._stop.wait()
+        if self._drain_bound is None:
+            return
+        bound_s = self._drain_bound.total_seconds()
+        log.info(
+            "worker.draining",
+            worker_id=self.worker_id,
+            in_flight=len(self._active_work),
+            drain_bound_s=bound_s,
+        )
+        await asyncio.sleep(bound_s)
+        reason = (
+            f"worker {self.worker_id} is shutting down and its drain bound of {bound_s:g}s passed"
+        )
+        log.warning(
+            "worker.drain_bound_reached",
+            worker_id=self.worker_id,
+            in_flight=len(self._active_work),
+            drain_bound_s=bound_s,
+        )
+        for handler in self._handlers.values():
+            if not isinstance(handler, DrainAware):
+                continue
+            try:
+                handler.request_drain(reason)
+            except Exception:
+                log.exception(
+                    "worker.request_drain_error", worker_id=self.worker_id, kind=handler.kind.value
+                )
 
     async def _drain_loop(self, slot: int) -> None:
         """One slot: today's claim -> handle -> finish loop, unchanged, with a slot label."""
@@ -309,6 +381,9 @@ class LeasedWorkWorker:
         or a single-shot drain), which belongs to no slot.
         """
         for offset in range(len(self._kind_order)):
+            if self._stop.is_set():
+                # A stopping worker claims nothing more, even mid-pass over its kinds.
+                return False
             index = (self._next_kind + offset) % len(self._kind_order)
             kind = self._kind_order[index]
             try:
@@ -507,6 +582,16 @@ class LeasedWorkWorker:
                 with contextlib.suppress(asyncio.CancelledError):
                     await work
                 result = WorkResult(outcome="lease_lost", references={}, requeue=True)
+        except WorkDrained as drained:
+            log.info(
+                "worker.work_drained",
+                worker_id=self.worker_id,
+                slot=slot,
+                work_id=str(task.work_id),
+                kind=task.kind.value,
+                reason=str(drained),
+            )
+            result = WorkResult(outcome="drained", references={}, requeue=True)
         except Exception as exc:
             log.exception(
                 "worker.work_error",
@@ -653,8 +738,10 @@ async def enqueue_work(
 __all__ = [
     "PAYLOAD_CONTEXT_KEYS",
     "CapabilityGated",
+    "DrainAware",
     "LeasedWorkWorker",
     "WorkContext",
+    "WorkDrained",
     "WorkHandler",
     "WorkResult",
     "enqueue_work",

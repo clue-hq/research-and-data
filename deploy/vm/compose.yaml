@@ -57,6 +57,9 @@ services:
 
   chat:
     <<: *worker
+    # Drain on deploy (2026-10-16): a running turn gets CLUE_FLEET_DRAIN_BOUND_S (10 min) to finish,
+    # then its site turn stops at a step and is handed back; one more minute to exit.
+    stop_grace_period: 11m
     environment:
       <<: *worker-env
       CLUE_FLEET_WORKER_KINDS: agent_turn
@@ -64,6 +67,9 @@ services:
 
   design:
     <<: *worker
+    # Drain on deploy (2026-10-16): a running turn gets CLUE_FLEET_DRAIN_BOUND_S (10 min) to finish,
+    # then its site turn stops at a step and is handed back; one more minute to exit.
+    stop_grace_period: 11m
     environment:
       <<: *worker-env
       CLUE_FLEET_WORKER_KINDS: design_job

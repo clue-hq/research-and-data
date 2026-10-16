@@ -266,6 +266,13 @@ class Settings(BaseSettings):
     # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
     # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
     fleet_task_stale_after_s: float = 60.0
+    # Drain on deploy (site-turn durability, 2026-10-16): after SIGTERM a worker takes no new tasks
+    # and lets running ones finish; once this many seconds have passed, it asks its still-running
+    # site turns to stop at their next step boundary (their working copy and checkpoint are saved,
+    # so the next worker continues them) and hands them back to the queue. Keep it below the
+    # container's stop_grace_period (deploy/vm/compose.yaml: 11m for chat and design).
+    # Env: ``CLUE_FLEET_DRAIN_BOUND_S``.
+    fleet_drain_bound_s: float = Field(default=600.0, ge=0)
     # The worker process's thread pool: every blocking provider call AND the event loop's DNS
     # lookups (a fresh DB connection, the lease heartbeat's included) share it. Python's default,
     # min(32, cpu + 4), is filled by a few research jobs; threads start only on demand.
