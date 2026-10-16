@@ -380,3 +380,30 @@ test("S2a-2: a marked prop put in the page as it is, or as a button's words, pas
   assert.deepEqual(lint(source), []);
   assert.deepEqual(typeCheckSource("Good", source), []);
 });
+
+// S2a-2 (§6 skill wording, founder-approved 2026-10-16): the skills' own examples mark their prose to
+// edit in place, and the check accepts them as written.
+const SKILLS = "../../../../../subsystems/clue-design/apps/agent_runtime/lumen_agent/site";
+const skillExample = (skill: string) => {
+  const text = fs.readFileSync(new URL(`${SKILLS}/${skill}/SKILL.md`, import.meta.url), "utf-8");
+  const example = /```tsx\n([\s\S]*?)```/.exec(text)?.[1];
+  assert.ok(example, `${skill} has a tsx example`);
+  return example;
+};
+
+test("S2a-2: the writing-a-section example marks its prose and passes the check and the type check", () => {
+  const example = skillExample("skills-e5/writing-a-section");
+  assert.match(example, /quote: z\.string\(\)\.min\(1\)\.meta\(\{ edit: "inline" \}\),/);
+  assert.match(example, /attribution: z\.string\(\)\.meta\(\{ edit: "inline" \}\),/);
+  assert.match(example, /surface: z\.string\(\),/);
+  assert.deepEqual(lint(example, lintOptionsFor(kitBrand("garner"))), []);
+  assert.deepEqual(typeCheckSource("SkillWriting", example), []);
+});
+
+test("S2a-2: the interactive accordion marks its heading, questions and answers and passes the type check", () => {
+  const example = skillExample("skills-live/making-a-section-interactive");
+  for (const prop of ["heading", "question", "answer"]) {
+    assert.match(example, new RegExp(`${prop}: z\\.string\\(\\)(\\.min\\(1\\))?\\.meta\\(\\{ edit: "inline" \\}\\)`), prop);
+  }
+  assert.deepEqual(typeCheckSource("SkillAccordion", example), []);
+});

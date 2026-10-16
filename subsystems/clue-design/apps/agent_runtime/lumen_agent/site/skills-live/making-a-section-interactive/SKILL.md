@@ -39,8 +39,11 @@ import type { Kit } from "@/puck/agent-kit";
 export const schema = z.object({
   id: z.string(),
   surface: z.string(),
-  heading: z.string().min(1),
-  items: z.array(z.object({ question: z.string().min(1), answer: z.string() })),
+  heading: z.string().min(1).meta({ edit: "inline" }),
+  items: z.array(z.object({
+    question: z.string().min(1).meta({ edit: "inline" }),
+    answer: z.string().meta({ edit: "inline" }),
+  })),
 }).strict();
 
 function Items({ items, editing }: { items: z.infer<typeof schema>["items"]; editing: boolean }) {

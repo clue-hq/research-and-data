@@ -17,8 +17,8 @@ import type { Kit } from "@/puck/agent-kit";
 export const schema = z.object({
   id: z.string(),
   surface: z.string(),
-  quote: z.string().min(1),
-  attribution: z.string(),
+  quote: z.string().min(1).meta({ edit: "inline" }),
+  attribution: z.string().meta({ edit: "inline" }),
 }).strict();
 
 export function render(props: z.infer<typeof schema>, kit: Kit) {
@@ -61,5 +61,12 @@ The kit gives you these pieces, with exactly these props:
   refuses them.
 - Props are content: plain text, brand choices (surface, heading role), images from
   brand/brand.md.
+- Mark every prop a marketer reads as words on the page (a heading, a paragraph, a quote, a button's
+  words, a card's title) with `.meta({ edit: "inline" })`. The marketer can then click those words
+  and type. While they do, such a prop is not text but an editable piece of the page: put it into
+  the page exactly as it is (`{props.quote}`), and never change it in code (no capitals, splitting,
+  cutting or joining). For capitals, use the `uppercase` class. For separate lines, use a list of
+  items. Do not mark choices (surface, look, cardLook), links, images or `alt`: the editor offers
+  those from lists and fields. write_section refuses a section that breaks these rules and says why.
 - Make it look like the seller's sections around it. Render and compare.
 - Place it in page.json by its name, like any other section.

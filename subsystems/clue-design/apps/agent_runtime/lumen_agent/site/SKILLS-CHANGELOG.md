@@ -85,3 +85,12 @@ fails without it).
   the server and the browser drew a section differently", and step 1 names
   `making-a-section-interactive` "when a section needs to respond to the visitor". No failing case:
   the skill was in a live prompt that never named it.
+- 2026-10-16 · writing-a-section, rebuilding-a-section and making-a-section-interactive (S2a-2,
+  option B; founder-approved wording 2026-10-16): mark every prop a marketer reads as words on the
+  page with `.meta({ edit: "inline" })`, put it into the page exactly as it is and never change it
+  in code; never mark choices, links, images or `alt`. The writing-a-section example marks `quote`
+  and `attribution`; rebuilding-a-section step 2 marks headings, paragraphs and button words; the
+  accordion marks `heading`, `question` and `answer`. Failing case: S2a-2 (review 2026-10-14), every
+  string prop of an agent section was edited in place, so in Edit mode `surface` drew as
+  `bg-surface-[object Object]`, `alt` read "[object Object]", and a section that capitalised its
+  text crashed.

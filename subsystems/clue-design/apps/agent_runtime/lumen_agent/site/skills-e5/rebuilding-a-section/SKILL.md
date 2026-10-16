@@ -16,6 +16,8 @@ can change any word, image, link or item.
      spacing.
    - Make the content props: every heading, paragraph, button, link and image the original shows.
      Repeated items (cards, steps, logos) are a list, so a page can use more or fewer.
+   - Mark every heading, paragraph and button's words with `.meta({ edit: "inline" })`, as the
+     writing-a-section skill says, so the marketer can edit them on the page.
    - Use the original's images by default; they are in brand/brand.md. If the original shows a video
      or an image that is not in brand/brand.md, use the closest brand image, and say so in your
      report.
