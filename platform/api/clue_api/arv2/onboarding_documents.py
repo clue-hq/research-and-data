@@ -22,12 +22,14 @@ from typing import Any
 import yaml
 
 from clue_api.arv2.calls import CallCost
+from clue_api.arv2.customer_domains import DomainCheck
 from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 
 __all__ = [
     "KnowledgeDocument",
     "company_overview_document",
     "customer_reviews_document",
+    "existing_customers_document",
     "demote_headings",
     "product_catalog_document",
     "product_research_document",
@@ -336,6 +338,93 @@ def customer_reviews_document(
         kind="customer-reviews",
         folder="proof",
         path="proof/customer-reviews.md",
+        front_matter=front,
+        body=body,
+        cost=run.cost,
+    )
+
+
+# -- existing customers (spec 2026-10-16-discovery-excludes-seller-customers §4.3) ---------------
+
+
+def _customer_source(grounding: Sequence[Any], index: int) -> str | None:
+    """The first page Exa cited for customer ``index`` (its quote first, then its name)."""
+    for field in (f"structured.customers[{index}].quote", f"structured.customers[{index}].name"):
+        for row in grounding:
+            if isinstance(row, dict) and row.get("field") == field:
+                for citation in row.get("citations") or []:
+                    if isinstance(citation, dict) and citation.get("url"):
+                        return str(citation["url"])
+    return None
+
+
+def existing_customers_document(
+    run: ExaAgentRun,
+    *,
+    company_domain: str,
+    as_of: date,
+    checks: Mapping[str, DomainCheck],
+) -> KnowledgeDocument:
+    """``proof/customers.md``. The list lives in the body only: the Brand-context editor copies a
+    document's old front matter forward when a person edits its body, so a second copy there would
+    silently ignore their correction. The front matter carries the run header and sources."""
+    data = _structured(run)
+    customers = [
+        (index, c) for index, c in enumerate(data.get("customers") or []) if isinstance(c, dict)
+    ]
+    seller_domains = [d for d in (data.get("seller_domains") or []) if isinstance(d, str)]
+    front = _run_header(run, kind="existing-customers", as_of=as_of, company_domain=company_domain)
+    front.update(_run_footer(run))
+
+    def domains(customer: Mapping[str, Any]) -> str:
+        shown = []
+        for domain in customer.get("domains") or []:
+            check = checks.get(domain)
+            if check is None or check.status == "confirmed":
+                shown.append(str(domain))
+            else:
+                shown.append(f"{domain} (unconfirmed: {check.title or 'no answer'})")
+        return ", ".join(shown)
+
+    def how(customer: Mapping[str, Any]) -> str:
+        via = customer.get("via")
+        return (
+            f"{customer.get('relationship')} via {via}"
+            if via
+            else str(customer.get("relationship"))
+        )
+
+    rows = [
+        (
+            c.get("name"),
+            domains(c),
+            how(c),
+            c.get("evidence_kind"),
+            c.get("quote"),
+            _customer_source(run.grounding, index),
+        )
+        for index, c in sorted(customers, key=lambda pair: str(pair[1].get("name") or "").lower())
+    ]
+    table = (
+        _table(("Customer", "Domains", "How they buy", "Evidence", "Quote", "Source"), rows)
+        if rows
+        else "_Not established._\n"
+    )
+    gaps = [_failure_note(run)] if run.status != "completed" else []
+    body = "\n".join(
+        [
+            "# Existing customers",
+            "",
+            "## Customers\n\n" + table,
+            "Seller's own domains: " + (", ".join(seller_domains) or company_domain) + "\n",
+            _list_section("Not established", gaps, "Nothing was left unestablished."),
+            _sources_section(front["sources"]),
+        ]
+    )
+    return KnowledgeDocument(
+        kind="existing-customers",
+        folder="proof",
+        path="proof/customers.md",
         front_matter=front,
         body=body,
         cost=run.cost,
