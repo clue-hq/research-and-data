@@ -33,7 +33,15 @@ export function surfaceUtilityCss(brand: BrandData): string {
  * Called while the section draws in Puck's preview, which shares Puck's React tree. */
 function useRawProps(): (id: string) => Record<string, unknown> | undefined {
   const getPuck = useGetPuck();
-  return (id) => getPuck().getItemById(id)?.props as Record<string, unknown> | undefined;
+  return (id) => {
+    // Puck's getItemById throws for an id it has not indexed; that must cost this section its second
+    // try (the failed marker), never the editor.
+    try {
+      return getPuck().getItemById(id)?.props as Record<string, unknown> | undefined;
+    } catch {
+      return undefined;
+    }
+  };
 }
 
 /** The page config: site-kit's sections, the seller's clones, the shell drawn around every page,
