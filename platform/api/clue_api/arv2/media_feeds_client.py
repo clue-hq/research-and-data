@@ -68,9 +68,10 @@ ENCLOSURE_HEAD_TIMEOUT_S = 30.0
 #: The largest feed document this client will parse. Feeds are third-party XML we do not control,
 #: and ``ET.fromstring`` builds the whole tree in memory; a show with thousands of episodes (or a
 #: host serving something that is not a feed at all) should be refused with the raw record named,
-#: not turned into an unbounded allocation on a fleet worker. Five megabytes is ~an order of
-#: magnitude above the largest real podcast feed observed.
-MAX_FEED_BYTES = 5_000_000
+#: not turned into an unbounded allocation on a fleet worker. A long-running daily show's feed is
+#: big: The Daily's is 20.4 MB (3,008 episodes; parsing it peaks at ~155 MB) and Hospitality
+#: Daily's 8.6 MB, measured 2026-10-16. The earlier 5 MB refused both.
+MAX_FEED_BYTES = 30 * 1024 * 1024
 
 #: The three URL forms a video id appears in, ported verbatim from the proof-of-concept probe.
 _VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/|/live/)([A-Za-z0-9_-]{11})")
