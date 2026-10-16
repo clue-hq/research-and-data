@@ -378,16 +378,33 @@ GEOMETRY_JS = r"""
     return (top === null) ? null : [top, bottom];
   };
 
-  // The text colour a band carries (Wave 2 A9): its first visible heading or paragraph, so a minted
-  // band surface can say what text the seller put on it.
-  const inkOf = (el) => {
-    const nodes = Array.from(el.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, blockquote')).slice(0, 40);
-    for (const node of nodes) {
-      const r = node.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0 || !(node.textContent || '').trim()) continue;
-      return opaque(getComputedStyle(node).color);
+  // The text colour a band carries (S6-1): of the text drawn directly on the band's own backdrop —
+  // never text inside a card or panel that paints its own background — the colour covering the most
+  // text area (characters × font size), so headings and body outweigh a small eyebrow line. A
+  // translucent text colour is taken as it reads on the band. null when no text sits on the band.
+  const inkOf = (el, bandBg) => {
+    if (!bandBg) return null;
+    const weights = new Map();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node, seen = 0;
+    while ((node = walker.nextNode()) && seen < 400) {
+      const text = (node.textContent || '').trim();
+      const host = node.parentElement;
+      if (!text || !host) continue;
+      seen += 1;
+      const hcs = getComputedStyle(host);
+      if (hcs.visibility === 'hidden' || parseFloat(hcs.opacity) === 0) continue;
+      const r = host.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (behindOf(host) !== bandBg) continue;
+      const ink = hexOf(hcs.color);
+      if (!paints(ink)) continue;
+      const drawn = alphaOf(ink) >= 1 ? ink : over(ink, bandBg);
+      weights.set(drawn, (weights.get(drawn) || 0) + text.length * (parseFloat(hcs.fontSize) || 16));
     }
-    return null;
+    let best = null, most = 0;
+    for (const [ink, weight] of weights) { if (weight > most) { best = ink; most = weight; } }
+    return best;
   };
 
   const sections = [];
@@ -417,6 +434,7 @@ GEOMETRY_JS = r"""
     if (rect.height < 40 || rect.width < innerWidth * 0.5) { noteSkip(el, 'small'); continue; }
     const bgImage = notNone(cs.backgroundImage);
     const top = rect.top + window.scrollY;
+    const backdrop = behindOf(el);
     sections.push({
       index: sections.length,
       tag: el.tagName.toLowerCase(),
@@ -428,9 +446,9 @@ GEOMETRY_JS = r"""
       id: el.getAttribute('id'),
       classes: el.getAttribute('class'),
       top: r2(top),
-      bg: behindOf(el),
+      bg: backdrop,
       bgImage: bgImage,
-      ink: inkOf(el),
+      ink: inkOf(el, backdrop),
       gradient: bgImage ? /gradient\(/i.test(bgImage) : false,
       height: r2(rect.height),
       padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]

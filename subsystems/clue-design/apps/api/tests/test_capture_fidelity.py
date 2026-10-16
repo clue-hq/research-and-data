@@ -102,3 +102,66 @@ def test_s6_7_a_fully_transparent_fill_is_an_outline_not_a_filled_look(engine: s
     variants = sorted(_buttons(_run(engine, "clear_fill.html")))
     assert "outline.ffffff" in variants and "outline.f5a623" in variants, variants
     assert not any(v.startswith("solid.ffffff00") for v in variants), variants
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_1_a_bands_text_colour_is_its_heading_and_body_not_an_eyebrow_or_a_card(engine: str) -> None:
+    bands = {b.background: b.ink for b in _run(engine, "band_ink.html")["parsed"].background_sequence}
+    assert bands.get("#F3F0E8") == "#333333", bands   # the body copy outweighs the orange eyebrow
+    assert bands.get("#0B2545") == "#FFFFFF", bands   # the white card's text is not on the navy band
+
+
+def test_behind_of_composites_translucent_layers_and_skips_alpha_zero() -> None:
+    from playwright.sync_api import sync_playwright
+
+    from lumen_ingestion.capture.geometry import COLOR_FN
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(
+                '<div id="band" style="background:#0B2545"><div id="clear" style="background:rgba(255,255,255,0)">'
+                '<div id="glass" style="background:rgba(255,255,255,0.5)"><p id="t">x</p></div></div></div>'
+            )
+            got = page.evaluate("() => {" + COLOR_FN + "return [behindOf(document.getElementById('clear')), behindOf(document.getElementById('t'))]; }")
+        finally:
+            browser.close()
+    assert got[0] == "#0B2545"
+    assert got[1] == "#8592A2"   # 50% white over #0B2545, rounded per channel
+
+
+def test_s6_1_a_band_whose_only_text_sits_in_a_card_has_no_ink() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_content(
+                '<body style="margin:0"><main>'
+                '<section style="background:#0B2545;min-height:240px"><div style="background:#fff;color:#222;padding:24px">'
+                '<p>Only a quote, in a white card.</p></div></section>'
+                '<section style="min-height:240px"><p>Next.</p></section></main></body>'
+            )
+            geometry = page.evaluate(GEOMETRY_JS)
+        finally:
+            browser.close()
+    band = parse_geometry(geometry, page_url="https://card.test/").background_sequence[0]
+    assert (band.background, band.ink) == ("#0B2545", None)
+
+
+def test_a_page_that_paints_no_background_is_drawn_on_white() -> None:
+    from playwright.sync_api import sync_playwright
+
+    from lumen_ingestion.capture.geometry import COLOR_FN
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<p id="t">plain</p>')
+            got = page.evaluate("() => {" + COLOR_FN + "return behindOf(document.getElementById('t')); }")
+        finally:
+            browser.close()
+    assert got == "#FFFFFF"
