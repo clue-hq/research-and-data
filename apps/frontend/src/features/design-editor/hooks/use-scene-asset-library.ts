@@ -12,7 +12,13 @@ import {
   type AssetLibraryItem,
   type KitLibraryEntry,
 } from "../adapter/scene-asset-library";
-import { listImageAssets } from "../data/assets";
+import {
+  listImageAssets,
+  saveSearchedLogo,
+  searchLogos,
+  type LogoSearchResponse,
+  type LogoSearchResult,
+} from "../data/assets";
 import { DESIGN_API_BFF_PREFIX } from "../data/design-bff";
 import type { AssetRecord, Node, Operation } from "../engine/scene/contracts";
 import {
@@ -69,7 +75,44 @@ export function createSceneAssetLibraryPick(
   };
 }
 
+/** The panel's two tabs: the workspace library, and a lookup for any company's logo. */
+export type AssetLibraryTab = "library" | "logo-search";
+
+/**
+ * The Logo search tab's state (founder request 2026-10-16). A search shows every version the shared
+ * lookup found and saves nothing; clicking one saves THAT version and places it through the same
+ * batch a library pick uses.
+ */
+export interface LogoSearchState {
+  query: string;
+  /** "idle" before the first search; "done" carries `results`, possibly empty. */
+  status: "idle" | "searching" | "done";
+  /** The query the shown results answer — the empty state names it, not the edited box. */
+  searchedFor: string;
+  name: string | null;
+  results: LogoSearchResult[];
+  /** The version being saved and placed, so its tile can say so. */
+  savingAssetId: string | null;
+  error: string | null;
+}
+
+const IDLE_LOGO_SEARCH: LogoSearchState = {
+  query: "",
+  status: "idle",
+  searchedFor: "",
+  name: null,
+  results: [],
+  savingAssetId: null,
+  error: null,
+};
+
 export interface SceneAssetLibraryBinding {
+  tab: AssetLibraryTab;
+  setTab: (tab: AssetLibraryTab) => void;
+  logoSearch: LogoSearchState;
+  setLogoQuery: (query: string) => void;
+  searchLogos: () => void;
+  pickLogo: (assetId: string) => void;
   isOpen: boolean;
   open: () => void;
   close: () => void;
@@ -88,8 +131,13 @@ export interface SceneAssetLibraryBinding {
 export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
   kitEntries: readonly KitLibraryEntry[];
   list?: () => Promise<AssetRecord[]>;
+  search?: (url: string) => Promise<LogoSearchResponse>;
+  save?: (url: string, assetId: string) => Promise<AssetRecord>;
 }): SceneAssetLibraryBinding {
-  const { applyOps, canApply, documentId, kitEntries, list = listImageAssets, node, onError } = options;
+  const {
+    applyOps, canApply, documentId, kitEntries, list = listImageAssets, node, onError,
+    search = searchLogos, save = saveSearchedLogo,
+  } = options;
   // The document this picker was opened for, STAMPED and DERIVED rather than
   // reset in an effect (`react-hooks/set-state-in-effect` forbids the effect
   // form, and the session stamps everything that must not survive an artifact
@@ -102,6 +150,8 @@ export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<AssetLibraryCategory | "all">("all");
+  const [tab, setTab] = useState<AssetLibraryTab>("library");
+  const [logoSearch, setLogoSearch] = useState<LogoSearchState>(IDLE_LOGO_SEARCH);
 
   // Latest-value ref, written in a passive effect (this repo's react-hooks rule).
   const depsRef = useRef<SceneAssetLibraryDeps>({ applyOps, canApply, documentId, node, onError });
@@ -132,6 +182,8 @@ export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
   const open = useCallback(() => {
     setQuery("");
     setCategory("all");
+    setTab("library");
+    setLogoSearch(IDLE_LOGO_SEARCH);
     setOpenFor(documentId);
     refresh();
   }, [documentId, refresh]);
@@ -152,10 +204,74 @@ export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
     pickRef.current(assetId);
   }, []);
 
+  const logoSearchRef = useRef(logoSearch);
+  useEffect(() => { logoSearchRef.current = logoSearch; });
+  const setLogoQuery = useCallback(
+    (value: string) => setLogoSearch((current) => ({ ...current, query: value })),
+    [],
+  );
+
+  // Only the newest search may write its answer: a slow lookup for the previous company must never
+  // replace the results for the one the person typed after it.
+  const searchGeneration = useRef(0);
+  const runLogoSearch = useCallback(() => {
+    const url = logoSearchRef.current.query.trim();
+    if (!url) return;
+    const generation = ++searchGeneration.current;
+    setLogoSearch((current) => ({
+      ...current, status: "searching", searchedFor: url, results: [], name: null, error: null,
+    }));
+    void search(url)
+      .then((response) => {
+        if (generation !== searchGeneration.current) return;
+        setLogoSearch((current) => ({
+          ...current, status: "done", name: response.name, results: response.logos,
+        }));
+      })
+      .catch((cause: unknown) => {
+        if (generation !== searchGeneration.current) return;
+        setLogoSearch((current) => ({
+          ...current, status: "idle", error: cause instanceof Error ? cause.message : String(cause),
+        }));
+      });
+  }, [search]);
+
+  const pickLogo = useCallback((assetId: string) => {
+    const deps = depsRef.current;
+    const current = logoSearchRef.current;
+    if (current.savingAssetId) return;
+    // The placement's own gates, asked BEFORE the save: a logo that cannot be placed is not saved.
+    if (!deps.documentId || !deps.canApply()) {
+      deps.onError(NOT_ACCEPTING_EDITS);
+      return;
+    }
+    if (!deps.node || !sceneImageReplacementTarget(deps.node)) {
+      deps.onError(NOT_AN_IMAGE_TARGET);
+      return;
+    }
+    const url = current.searchedFor;
+    setLogoSearch((state) => ({ ...state, savingAssetId: assetId, error: null }));
+    void save(url, assetId)
+      .then((record) => {
+        // The saved logo joins the Library tab at once, under Logos.
+        setRegistry((records) => [record, ...records.filter((item) => item.id !== record.id)]);
+        createSceneAssetLibraryPick(() => depsRef.current, () => record)(record.id);
+        setLogoSearch((state) => ({ ...state, savingAssetId: null }));
+      })
+      .catch((cause: unknown) => {
+        setLogoSearch((state) => ({
+          ...state, savingAssetId: null, error: cause instanceof Error ? cause.message : String(cause),
+        }));
+      });
+  }, [save]);
+
   const thumbnailUrl = useCallback(
     (record: AssetRecord) => `${DESIGN_API_BFF_PREFIX}/assets/${encodeURIComponent(record.id)}/bytes`,
     [],
   );
 
-  return { category, close, error, isOpen, items, loading, open, pick, query, refresh, setCategory, setQuery, thumbnailUrl };
+  return {
+    category, close, error, isOpen, items, loading, logoSearch, open, pick, pickLogo, query, refresh,
+    searchLogos: runLogoSearch, setCategory, setLogoQuery, setQuery, setTab, tab, thumbnailUrl,
+  };
 }

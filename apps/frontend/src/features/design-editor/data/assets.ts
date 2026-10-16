@@ -135,3 +135,95 @@ export async function listImageAssets(
   }
   return records;
 }
+
+/** One logo version a logo search found: what it is, which background it is for (null when the
+ * source made no such claim), who served it, and an inline preview. Not yet in the registry. */
+export interface LogoSearchResult {
+  asset_id: string;
+  kind: string;
+  background: "light" | "dark" | null;
+  source: string;
+  content_type: string;
+  preview: string;
+}
+
+export interface LogoSearchResponse {
+  /** The company's domain as the lookup understood it; null when nothing was found. */
+  name: string | null;
+  logos: LogoSearchResult[];
+}
+
+/** A typed refusal from the logo search seam — the same shape as the upload's. */
+export class LogoSearchError extends Error {
+  readonly code: string | null;
+  readonly status: number;
+  constructor(message: string, options: { code?: string | null; status: number }) {
+    super(message);
+    this.name = "LogoSearchError";
+    this.code = options.code ?? null;
+    this.status = options.status;
+  }
+}
+
+async function postLogoSearch<T>(
+  path: string,
+  body: Record<string, string>,
+  fallback: string,
+  fetchImpl?: typeof fetch,
+): Promise<T> {
+  const doFetch: typeof fetch = fetchImpl ?? ((input, init) => fetch(input, init));
+  const response = await doFetch(`${DESIGN_API_BFF_PREFIX}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let payload: (T & { detail?: { code?: string; message?: string } | string }) | null = null;
+  try {
+    payload = (await response.json()) as T & { detail?: { code?: string; message?: string } | string };
+  } catch {
+    // A non-JSON body keeps the fallback message below.
+  }
+  if (!response.ok || payload === null) {
+    const detail = payload?.detail;
+    const message = typeof detail === "string" ? detail : (detail?.message ?? fallback);
+    throw new LogoSearchError(message, {
+      code: typeof detail === "string" ? null : (detail?.code ?? null),
+      status: response.status,
+    });
+  }
+  return payload;
+}
+
+/** The asset library's Logo search (`POST /assets/logo-search`): every version found for any
+ * company's website, as previews. Saves nothing. */
+export async function searchLogos(
+  url: string,
+  { fetchImpl }: { fetchImpl?: typeof fetch } = {},
+): Promise<LogoSearchResponse> {
+  const payload = await postLogoSearch<Partial<LogoSearchResponse>>(
+    "/assets/logo-search",
+    { url },
+    "Logo search failed. Try again.",
+    fetchImpl,
+  );
+  return { name: payload.name ?? null, logos: Array.isArray(payload.logos) ? payload.logos : [] };
+}
+
+/** Save the ONE version the person clicked as a workspace asset (`POST /assets/logo-search/save`).
+ * Placement stays the caller's. */
+export async function saveSearchedLogo(
+  url: string,
+  assetId: string,
+  { fetchImpl }: { fetchImpl?: typeof fetch } = {},
+): Promise<AssetRecord> {
+  const payload = await postLogoSearch<{ asset?: AssetRecord }>(
+    "/assets/logo-search/save",
+    { url, asset_id: assetId },
+    "That logo couldn't be saved. Try again.",
+    fetchImpl,
+  );
+  if (!payload.asset) {
+    throw new LogoSearchError("That logo couldn't be saved. Try again.", { status: 200 });
+  }
+  return payload.asset;
+}
