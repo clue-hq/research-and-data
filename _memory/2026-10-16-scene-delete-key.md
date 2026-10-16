@@ -19,3 +19,15 @@
 
 ## Owed
 - Live browser walk on the dushanbe stack (:3022) — needs the founder to sign in (Clerk is a hosted IdP).
+
+## Live check (2026-10-16, dushanbe stack :3022)
+- Founder ruling: dushanbe's stack now runs on **nashville's DB `clue_nashville_pm`** (the only DB with the
+  `aryan+clerk_test_arv2@example.com` account — 4 workspaces incl. Conduit AI — at this branch's head `1ecc7437e5bc`),
+  with `CLUE_STORAGE_BACKEND=s3` (same R2 bucket `clue-dev-bench` nashville uses). Nashville's stack was stopped first
+  (`scripts/dev_stack_nashville.sh down`) so the two stacks' workers never share the DB. `.env` backup:
+  `.env.bak-2026-10-16-before-nashville-db`. Old lane DB `clue_dushanbe` untouched (1 workspace, 0 designs).
+- Walked on "Atrium Hospitality 1:1 LinkedIn ad" (doc_e15da7b1…, Conduit AI): Layers-selected leaf deleted exactly
+  the selected node (temporary debug log confirmed selection → plan → op log 1:1), no note for a leaf, ⌘Z restored it.
+  Two early `account_name` removals were selections made in the shared browser pane, not a bug. Document left at its
+  original 8 elements (version 64).
+- Not yet walked live: the nested-container note and a Layers multi-select (this ad is flat).
