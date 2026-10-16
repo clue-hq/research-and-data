@@ -266,6 +266,70 @@ def test_kind_image_matches_raster_and_vector_records(tmp_path: Path):
     assert _ids(logos) == ["asset_l"]
 
 
+def test_logo_search_finds_fetched_svg_and_raster_assets(tmp_path: Path):
+    """Fetched logos retain image storage kinds; that must not hide them as logos."""
+    tools = _tools(
+        tmp_path,
+        asset_library={
+            "asset_library_logo": {"record": _record(
+                "asset_library_logo", kind="vector", label="Example corporate logo",
+                tags=["target-account", "logo-ladder"],
+            )},
+        },
+        brand_kit_assets={
+            "asset_kit_logo": {"record": _record(
+                "asset_kit_logo", kind="raster_image", label="Example corporate logo",
+                tags=["target-account", "logo-ladder"],
+            )},
+        },
+    )
+    tools.web_doc["assets"]["asset_document_logo"] = _record(
+        "asset_document_logo", kind="vector", label="Example corporate logo",
+        tags=["target-account", "logo-ladder"],
+    )
+    tools.web_doc["assets"]["asset_document_logo"]["provenance"] = {
+        "created_by": "brandfetch", "source_label": "brandfetch",
+    }
+    tools.config.brand_kit_assets["asset_kit_logo"]["record"]["provenance"] = {
+        "created_by": "logo_ladder", "source_label": "website",
+    }
+    tools.config.asset_library["asset_library_logo"]["record"]["provenance"] = {
+        "created_by": "logo_ladder", "source_label": "website",
+    }
+
+    result = _search(tools, "Example corporate logo", kind="logo")
+    assert set(_ids(result)) == {
+        "asset_document_logo", "asset_kit_logo", "asset_library_logo",
+    }
+    assert {row["origin"] for row in result["results"]} == {
+        "document", "brand_kit", "library",
+    }
+    # This filter is an additional semantic alias, not a rewrite of storage kinds.
+    assert set(_ids(_search(tools, "Example", kind="image"))) == set(_ids(result))
+    exact = _search(tools, "asset_document_logo", kind="logo")["results"][0]
+    assert exact["kind"] == "vector"
+    assert "kind_note" not in exact
+
+
+def test_logo_search_does_not_infer_identity_from_labels_or_non_image_tags(tmp_path: Path):
+    tools = _tools(tmp_path, asset_library={
+        "asset_photo": {"record": _record(
+            "asset_photo", label="Example logo on a building",
+        )},
+        "asset_pdf": {"record": _record(
+            "asset_pdf", kind="document", label="Example logo guide",
+            tags=["target-account", "logo-ladder"],
+        )},
+        "asset_partial": {"record": _record(
+            "asset_partial", label="Example logo", tags=["target-account"],
+        )},
+    })
+    tools.config.asset_library["asset_pdf"]["record"]["provenance"] = {
+        "created_by": "brandfetch", "source_label": "brandfetch",
+    }
+    assert _search(tools, "Example", kind="logo")["results"] == []
+
+
 def test_the_raw_record_kind_still_filters(tmp_path: Path):
     """Reconciliation ADDS the agent vocabulary; it does not remove the engine's."""
     tools = _tools(

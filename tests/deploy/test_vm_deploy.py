@@ -71,6 +71,7 @@ GOOD_ENV = "\n".join(
         "CLUE_STORAGE_S3_REGION=auto",
         "CLUE_METRICS_EXPORTER=otlp",
         "CLUE_METRICS_OTLP_ENDPOINT=https://otlp-gateway.example/otlp/v1/metrics",
+        "CLUE_LANGFUSE_ENVIRONMENT=production",
         "CLUE_AUTH_ENABLED=true",
         "CLUE_AUTH_ENVIRONMENT=production",
         "CLUE_AUTH_MODE=clerk",

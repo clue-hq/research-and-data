@@ -56,7 +56,7 @@ relationships without retaining its exact page skeleton.
 
 Use `knowledge/scene/components.md` for native text, optional button geometry,
 authentic logo and independent product layers. Reuse approved launch artwork when
-permitted. If new imagery is required, follow `knowledge/scene/references.md` and
+permitted. If new imagery is required, follow `/.deepagent/skills/generative-imagery/SKILL.md` and
 generate a separate scene or treatment; keep exact names, dates and logos outside
 the raster. A generated product mockup cannot demonstrate unreleased functionality.
 

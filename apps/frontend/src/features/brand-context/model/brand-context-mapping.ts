@@ -79,6 +79,12 @@ export interface BrandContextMappingOptions {
    * image panel composes, so the two surfaces cannot disagree.
    */
   readonly registryRecords?: readonly DesignAssetListRecord[];
+  /**
+   * Minted colour tokens the measured view shows in its own groups (`MeasuredBrandView.movedColors`,
+   * Task X6), so "Semantic roles" leaves them out. Absent for a kit made before measurement: the
+   * groups are then exactly as before.
+   */
+  readonly movedColors?: ReadonlySet<string>;
 }
 
 /**
@@ -122,7 +128,7 @@ export function toBrandContextWorkspace(
         new Set(brandKitAssetIds(kit)),
       ),
     ],
-    colorGroups: toColorGroups(json.tokens?.colors),
+    colorGroups: toColorGroups(json.tokens?.colors, options.movedColors),
     id: kit.brand_kit.id,
     knowledgeFolders: toKnowledgeFolders(kit),
     name: kit.brand_kit.name,
@@ -187,12 +193,15 @@ type ColorTokens = Readonly<Record<string, BrandColorToken | null>>;
  * The kit's colour catalog, grouped the way the screen reads it: every
  * semantic role in one group, then one group per `palette.<family>.*` ramp.
  */
-function toColorGroups(colors: ColorTokens | undefined): BrandColorGroup[] {
+function toColorGroups(
+  colors: ColorTokens | undefined,
+  moved: ReadonlySet<string> = new Set(),
+): BrandColorGroup[] {
   if (!colors) return [];
   const groups = new Map<string, BrandColorGroup>();
 
   for (const path of Object.keys(colors).sort(comparePaths)) {
-    if (!colors[path]) continue;
+    if (!colors[path] || moved.has(path)) continue;
     const lightValue = resolveColor(colors, path, "light", 0);
     if (!lightValue) continue;
     const family = paletteFamily(path);

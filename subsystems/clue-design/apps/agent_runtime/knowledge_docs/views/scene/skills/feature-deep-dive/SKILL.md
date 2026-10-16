@@ -52,8 +52,8 @@ An enlarged decorative button with no explanation is still an unexplained featur
 
 Read `knowledge/scene/components.md` for native text, callouts, frames, logo and
 CTA construction. Keep exact UI or product pixels as independent authentic image
-layers; crop only with supported operations. Read `knowledge/scene/references.md`
-when imagery is involved. Generate a separate contextual background or material
+layers; crop only with supported operations. Read `/.deepagent/skills/generative-imagery/SKILL.md`
+before generating any imagery. Generate a separate contextual background or material
 treatment when requested or justified, preserving the product independently.
 Generated UI is not evidence of a real control or output.
 

@@ -59,7 +59,7 @@ shield icon or row of check marks. A lock illustration is atmosphere, not eviden
 Use `knowledge/scene/components.md` for native text, qualification, optional CTA
 geometry, authentic logo and independently placeable product evidence. Reuse
 suitable source imagery; requested new artwork is generated separately under
-`knowledge/scene/references.md`. Never generate certification seals, fake support
+`/.deepagent/skills/generative-imagery/SKILL.md`. Never generate certification seals, fake support
 messages or fabricated customer proof. Typography alone may carry a supported
 answer when imagery is optional.
 

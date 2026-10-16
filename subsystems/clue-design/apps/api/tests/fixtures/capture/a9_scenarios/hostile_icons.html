@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Hostile icons fixture</title>
+<!-- A9 scenario A4: buttons whose icons carry an event handler (after a space and after a `/`), a
+     script, a <use href> and a child-element handler. Each button has its own fill so each is its own
+     measured style. The handlers only set window flags. Served from 127.0.0.1; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  p { font: 400 16px/1.5 Arial; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+  .hb { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; color: #fff; border: 0;
+        border-radius: 8px; font: 500 14px/1.4 Arial; cursor: pointer; }
+  .h1 { background: #1b5e20; }
+  .h2 { background: #b71c1c; }
+  .h3 { background: #0d47a1; }
+  .h4 { background: #4a148c; }
+  .h5 { background: #e65100; }
+  .hb:hover { filter: brightness(0.9); }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>Icons that try things</h1>
+  <p>Each button's icon carries something a generated page must never carry.</p>
+  <div class="wrap">
+    <button class="hb h1" id="h-onload">After a space <svg onload="window.__h1=1" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <button class="hb h2" id="h-slash">After a slash <svg/onload="window.__h2=1" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <button class="hb h3" id="h-script">A script <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><script>window.__h3 = 1;</script><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <button class="hb h4" id="h-use">A use href <svg width="12" height="12" viewBox="0 0 12 12"><use href="#arrow"/></svg></button>
+    <button class="hb h5" id="h-child">A child handler <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path onclick="window.__h5=1" d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+  </div>
+  <svg width="0" height="0" style="position:absolute"><symbol id="arrow" viewBox="0 0 12 12"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none"/></symbol></svg>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

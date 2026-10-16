@@ -52,6 +52,11 @@ ALLOWLIST: dict[Tuple[str, str], str] = {
     # Liveness for Railway's health check, the uptime monitors and the CI boot smoke test
     # (first deployment spec §9.5): answers before any workspace exists and touches no tenant state.
     ("GET", "/healthz"): "process liveness, no tenant state",
+    # Wave 2 Contract 4: an agent-written section module for the editor's own server, which cannot
+    # send a workspace header; a 10-minute HMAC link token (minted by a header-gated route) carries
+    # the workspace, and the module is read from that workspace only.
+    ("GET", "/site-sections/{digest}.mjs"): "HMAC section-link token carries tenancy",
+    ("GET", "/site-sections/{digest}.css"): "HMAC section-link token carries tenancy",
 }
 
 _PARAM = re.compile(r"{[^}]+}")

@@ -25,13 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.claim_writer import TIER_FOR_METHOD
 from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
-    BODY_CHARS,
     EVIDENCE_CHARS,
     MAX_CANDIDATES,
     READ_REFERENCES_BUDGET_BYTES,
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
+    read_cited_claims,
     read_claims,
     read_discovery_run,
     receipt_bytes,
@@ -838,6 +838,69 @@ def test_the_claims_read_holds_back_exactly_what_the_account_page_holds_back() -
     run_async(scenario())
 
 
+def test_with_verification_off_findings_and_narratives_are_served_and_real_rules_hold() -> None:
+    """Founder ruling 2026-10-09: a research finding or a value narrative is born outreach-unsafe
+    only because nobody has verified it yet. While verification is off, the claims read serves
+    them. A claim held back by a real rule (here a reputation risk) stays held back either way."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn, claims, project, account, label="finding",
+                field_key="account.research_finding",
+                value={"topic": "Budget", "finding": "Healthcare up $4.2 million", "notes": []},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn, claims, project, account, label="narrative",
+                field_key="account.value_narrative",
+                value={"persona": "economic_buyer", "argument": "Cut specialty waste in network"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn, claims, project, account, label="risk",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+
+            permissive = await read_account_research(
+                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
+                section="claims", settings=PERMISSIVE,
+            )
+            unverified_only = {claims["finding"], claims["narrative"]}
+            assert {c.claim_id for c in permissive.claims} == unverified_only
+            assert permissive.excluded == {
+                "sensitive": 0,
+                "unverified": 0,
+                "outreach_unsafe": 1,
+            }
+
+            query = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=PERMISSIVE,
+            )
+            assert {c.claim_id for c in query.claims} == unverified_only
+
+            verifying = await read_account_research(
+                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
+                section="claims", settings=VERIFYING,
+            )
+            assert verifying.claims == ()
+            assert verifying.excluded == {
+                "sensitive": 0,
+                "unverified": 0,
+                "outreach_unsafe": 3,
+            }
+
+    run_async(scenario())
+
+
 def test_the_claims_read_fits_the_governed_receipt_and_pages_the_rest() -> None:
     """The 2026-09-13 live defect: 72 claims built a valid result the runtime then refused
     ("bounded operation receipt exceeds 16 KiB"). The read now stops at the byte budget, says so,
@@ -1130,8 +1193,68 @@ def test_the_claims_read_names_the_account_s_claim_families() -> None:
     run_async(scenario())
 
 
-def test_a_long_overview_body_is_capped_and_says_so() -> None:
-    """M4: the stored body has no bound of its own, so the read gives it one."""
+def test_a_long_overview_pages_by_whole_section_and_loses_nothing() -> None:
+    """A long overview is read across pages, never cut: each page holds whole sections."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            # Nothing in the display package caps `items`. One of these is under a page on its
+            # own (the old 6000-character section cap clipped it); three are past one page.
+            long_body = {"items": [{"text": "They opened four ABM roles. " * 400}]}
+            keys = ("why-now", "why-they-fit", "buying-committee")
+            for section_key in keys:
+                await _seed_block(conn, project, account, section_key=section_key, body=long_body)
+
+            seen: list[str] = []
+            offset = 0
+            pages = 0
+            while True:
+                page = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=offset,
+                )
+                pages += 1
+                assert page.offset == offset
+                assert receipt_bytes([s.model_dump() for s in page.overview]) <= (
+                    READ_REFERENCES_BUDGET_BYTES
+                )
+                for section in page.overview:
+                    # Served whole: the body is the stored JSON, untouched.
+                    assert section.body_truncated is False
+                    assert json.loads(section.body_text) == long_body
+                    seen.append(section.section_key)
+                assert page.truncated is (page.next_offset is not None)
+                if page.next_offset is None:
+                    break
+                offset = page.next_offset
+
+            assert sorted(seen) == sorted(keys)
+            assert len(seen) == len(set(seen))
+            assert pages > 1
+
+            with pytest.raises(Arv2ReadRefused) as past:
+                await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=len(keys),
+                )
+            assert past.value.code == "offset_past_end"
+
+    run_async(scenario())
+
+
+def test_a_section_larger_than_a_page_is_served_alone_and_says_it_was_clipped() -> None:
+    """The one cut left: a single section bigger than a whole page, clipped to fit and flagged."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -1143,51 +1266,45 @@ def test_a_long_overview_body_is_capped_and_says_so() -> None:
                 project,
                 account,
                 section_key="why-now",
-                # Nothing in the display package caps `items`; one long section is enough.
-                body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+                body={"items": [{"text": "Ölçeklenen ABM ekipleri. " * 900}]},
             )
-
-            research = await read_account_research(
+            await _seed_block(
                 conn,
-                workspace_id=project.workspace_id,
-                account_entity_id=str(account),
-                section="overview",
-                settings=VERIFYING,
+                project,
+                account,
+                section_key="why-they-fit",
+                body={"items": [{"text": "A short section."}]},
             )
 
-            section = research.overview[0]
-            assert len(section.body_text) == BODY_CHARS
-            assert section.body_text.endswith("…")
-            assert section.body_truncated is True
-            # One capped section still fits the receipt, so nothing was left out.
-            assert research.truncated is False
-
-            # Two more of the same: the per-section cap is not a bound on the *page*, and three
-            # capped sections are past the receipt's budget. The read serves what fits and says so.
-            for section_key in ("why-they-fit", "buying-committee"):
-                await _seed_block(
+            served: dict[str, Any] = {}
+            offset: int | None = 0
+            while offset is not None:
+                page = await read_account_research(
                     conn,
-                    project,
-                    account,
-                    section_key=section_key,
-                    body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=offset,
                 )
+                # Held to the receipt's own byte bound, multi-byte text included.
+                assert receipt_bytes([s.model_dump() for s in page.overview]) <= (
+                    READ_REFERENCES_BUDGET_BYTES
+                )
+                for section in page.overview:
+                    if section.body_truncated:
+                        # The oversized section rides alone on its page.
+                        assert len(page.overview) == 1
+                    served[section.section_key] = section
+                offset = page.next_offset
 
-            crowded = await read_account_research(
-                conn,
-                workspace_id=project.workspace_id,
-                account_entity_id=str(account),
-                section="overview",
-                settings=VERIFYING,
-            )
-
-            assert len(crowded.overview) < 3
-            assert crowded.truncated is True
-            assert receipt_bytes([s.model_dump() for s in crowded.overview]) <= (
-                READ_REFERENCES_BUDGET_BYTES
-            )
-            # The overview is not paged in this hotfix: a cut overview sends the model to claims.
-            assert (crowded.offset, crowded.next_offset) == (0, None)
+            assert set(served) == {"why-now", "why-they-fit"}
+            assert served["why-now"].body_truncated is True
+            assert served["why-now"].body_text.endswith("…")
+            assert served["why-they-fit"].body_truncated is False
+            assert json.loads(served["why-they-fit"].body_text) == {
+                "items": [{"text": "A short section."}]
+            }
 
     run_async(scenario())
 
@@ -2421,5 +2538,398 @@ def test_the_excluded_list_is_bounded_and_its_total_is_the_whole_run() -> None:
             assert len(run.excluded) == MAX_CANDIDATES
             assert run.excluded_total == MAX_CANDIDATES + 3
             assert run.candidates == () and run.candidate_total == 0
+
+    run_async(scenario())
+
+
+# --- read_account_research@3: the insights page and the buying committee (2026-10-05) --------
+
+
+async def _seed_page_block(
+    conn: AsyncConnection,
+    project: Project,
+    subject_id: EntityId,
+    *,
+    subject_kind: str,
+    page: str,
+    section_key: str,
+    body: dict[str, object],
+) -> None:
+    """One live ``display_block`` on any page of any subject (the legacy display lane)."""
+
+    await conn.execute(
+        text(
+            "INSERT INTO display_block (workspace_id, subject_kind, subject_id, page, "
+            "section_key, body_json, cited_claim_ids, model, prompt_version, recipe_version, "
+            "generated_at) VALUES (:ws, :kind, :subject, :page, :section, "
+            "CAST(:body AS jsonb), CAST(:cited AS uuid[]), 'luna', 'v1+v1', 1, "
+            "CAST(:now AS timestamptz))"
+        ),
+        {
+            "ws": project.workspace_id,
+            "kind": subject_kind,
+            "subject": subject_id,
+            "page": page,
+            "section": section_key,
+            "body": json.dumps(body),
+            "cited": [],
+            "now": _NOW,
+        },
+    )
+
+
+def test_the_insights_section_serves_the_insights_page_and_refuses_when_unwritten() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="insights",
+                    settings=VERIFYING,
+                )
+            assert refused.value.code == "insights_not_written"
+
+            await _seed_page_block(
+                conn,
+                project,
+                account,
+                subject_kind="account",
+                page="insights",
+                section_key="watch-outs",
+                body={"items": [{"text": "A new CFO joined in June."}]},
+            )
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="insights",
+                settings=VERIFYING,
+            )
+            assert research.section == "insights"
+            assert [section.section_key for section in research.overview] == ["watch-outs"]
+            assert "A new CFO joined in June." in research.overview[0].body_text
+            assert (research.claims, research.contacts) == ((), ())
+
+    run_async(scenario())
+
+
+def test_the_contacts_section_lists_the_committee_with_each_person_s_contact_page() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            written = await _seed_contact(
+                conn,
+                account,
+                name="Nick Fisher",
+                linkedin="https://www.linkedin.com/in/nicholastfisher",
+            )
+            unwritten = await _seed_contact(
+                conn, account, name="Ada Lane", linkedin="https://www.linkedin.com/in/adalane"
+            )
+            # The legacy committee is the contacts under the account holding a live claim.
+            for label, contact, title in (
+                ("t1", written, "VP of Marketing"),
+                ("t2", unwritten, "CFO"),
+            ):
+                await _seed_contact_claim(
+                    conn,
+                    claims,
+                    project,
+                    contact,
+                    label=label,
+                    field_key="contact.current_title",
+                    value=title,
+                )
+            await _seed_page_block(
+                conn,
+                project,
+                written,
+                subject_kind="contact",
+                page="contact",
+                section_key="why-this-person",
+                body={"items": [{"text": "Owns the ABM budget."}]},
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="contacts",
+                settings=VERIFYING,
+            )
+            by_id = {person.contact_entity_id: person for person in research.contacts}
+            assert set(by_id) == {str(written), str(unwritten)}
+            assert by_id[str(written)].name == "Nick Fisher"
+            # The title the committee card shows, from the person's title claim.
+            assert by_id[str(written)].title == "VP of Marketing"
+            assert by_id[str(unwritten)].title == "CFO"
+            assert by_id[str(written)].page_written is True
+            assert by_id[str(written)].sections[0].section_key == "why-this-person"
+            assert "Owns the ABM budget." in by_id[str(written)].sections[0].body_text
+            # A person whose page is not written yet is still on the committee.
+            assert by_id[str(unwritten)].page_written is False
+            assert by_id[str(unwritten)].sections == ()
+            assert research.next_offset is None and research.overview == ()
+
+    run_async(scenario())
+
+
+def test_overview_and_insights_read_the_current_lane_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The current research lane's pages, not just the legacy blocks (regression 2026-10-05:
+    ``_PAGE_WRITTEN_AT`` gained ``kind``/``page`` binds and the overview path still passed three,
+    so every current-lane overview read raised)."""
+
+    import clue_api.arv2.quality_pages as quality_pages
+    import clue_api.arv2.quality_read as quality_read
+
+    context_id = uuid4()
+
+    class _Selection:
+        scope = object()
+        metadata: dict[str, object] = {"committee": []}
+
+        def __init__(self) -> None:
+            self.context_id = context_id
+
+    async def fake_select(*_args: object, **_kwargs: object) -> _Selection:
+        return _Selection()
+
+    asked: list[str] = []
+
+    async def fake_read_page(_conn: object, _scope: object, *, context_id: UUID, page: str):
+        asked.append(page)
+        text_by_page = {"overview": "They run 40 schools.", "insights": "A levy vote in May."}
+        return {
+            "display_block": {
+                "sections": [{"key": f"{page}-one", "h1": page, "intro": [{"text": text_by_page[page]}]}]
+            }
+        }
+
+    monkeypatch.setattr(quality_read, "select_quality_context", fake_select)
+    monkeypatch.setattr(quality_pages, "read_page", fake_read_page)
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            for section, words in (("overview", "They run 40 schools."), ("insights", "A levy vote in May.")):
+                research = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section=section,
+                    settings=VERIFYING,
+                    project_id=project.project_id,
+                )
+                assert [s.section_key for s in research.overview] == [f"{section}-one"]
+                assert words in research.overview[0].body_text
+        assert asked == ["overview", "insights"]
+
+    run_async(scenario())
+
+
+def test_current_lane_contacts_carry_the_committee_card_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The current lane's committee (``committee()`` over the quality selection) carries no
+    title of its own; the read fills it from the title claim, as the committee card does
+    (found live 2026-10-05: every current-lane contact came back with title None)."""
+
+    import clue_api.arv2.quality_pages as quality_pages
+    import clue_api.arv2.quality_read as quality_read
+
+    members: list[dict[str, object]] = []
+
+    class _Scope:
+        account_name = "Alpha Health"
+        account_domain = "alpha.example"
+
+    class _Selection:
+        scope = _Scope()
+        context_id = uuid4()
+
+        @property
+        def metadata(self) -> dict[str, object]:
+            return {"committee": members}
+
+    async def fake_select(*_args: object, **_kwargs: object) -> _Selection:
+        return _Selection()
+
+    async def fake_read_page(_conn: object, _scope: object, *, context_id: UUID, page: str):
+        return {"display_block": {"sections": [
+            {"key": "why-this-person", "h1": "Why this person", "intro": [{"text": "Owns the budget."}]}
+        ]}}
+
+    monkeypatch.setattr(quality_read, "select_quality_context", fake_select)
+    monkeypatch.setattr(quality_pages, "read_page", fake_read_page)
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            contact = await _seed_contact(
+                conn, account, name="Nick Fisher", linkedin="https://www.linkedin.com/in/nfisher"
+            )
+            await _seed_contact_claim(
+                conn, {}, project, contact, label="t1",
+                field_key="contact.current_title", value="VP of Marketing",
+            )
+            members.append({
+                "contact_id": str(contact), "assessment_claim_id": str(uuid4()),
+                "persona_key": "champion", "proposed_role": "champion", "state": "supported",
+                "employment_claim_ids": [],
+            })
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="contacts",
+                settings=VERIFYING,
+                project_id=project.project_id,
+            )
+            (person,) = research.contacts
+            assert (person.name, person.committee_role, person.title) == (
+                "Nick Fisher", "champion", "VP of Marketing"
+            )
+            assert [s.section_key for s in person.sections] == ["why-this-person"]
+
+    run_async(scenario())
+
+
+def test_cited_claims_say_why_each_id_was_held_or_missing() -> None:
+    """Review focus 2: the design agent drops a research statement only when the claim under it
+    is held back by a real rule, so the read must say which rule, per id."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            contact = await _seed_contact(
+                conn, account, name="Nalisa Clark", linkedin="https://www.linkedin.com/in/nclark"
+            )
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="plain",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="finding",
+                field_key="account.research_finding",
+                value={"topic": "Budget", "finding": "Healthcare up $4.2 million"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="risk",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="sensitive",
+                field_key="account.resonance.buying_culture",
+                value="A fact about the founder's health",
+                use_class=UseClass.SENSITIVE,
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="contact_finding",
+                field_key="contact.research_finding",
+                value={"topic": "Role", "finding": "Leads benefits"},
+                outreach_safe=False,
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="contact_plain",
+                field_key="contact.current_title",
+                value="Chief Human Capital Officer",
+            )
+            missing = str(uuid4())
+            ids = [
+                claims[label]
+                for label in (
+                    "plain",
+                    "finding",
+                    "risk",
+                    "sensitive",
+                    "contact_finding",
+                    "contact_plain",
+                )
+            ] + [missing, "not-a-uuid"]
+
+            page = await read_cited_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                claim_ids=ids,
+                settings=PERMISSIVE,
+            )
+
+            assert page.dispositions == {
+                claims["plain"]: "served",
+                claims["finding"]: "served",  # verification off: findings pass the gate
+                claims["risk"]: "held:outreach_unsafe",
+                claims["sensitive"]: "held:sensitive",
+                claims["contact_finding"]: "held:unverified_finding",
+                claims["contact_plain"]: "held:other_entity",
+                missing: "not_found",
+                "not-a-uuid": "not_found",
+            }
+            assert [c.claim_id for c in page.claims] == [claims["plain"], claims["finding"]]
+
+            verifying = await read_cited_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                claim_ids=[claims["finding"], claims["risk"]],
+                settings=VERIFYING,
+            )
+            # Under verification the finding is held, but only as an unverified finding.
+            assert verifying.dispositions == {
+                claims["finding"]: "held:unverified_finding",
+                claims["risk"]: "held:outreach_unsafe",
+            }
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_cited_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(uuid4()),
+                    claim_ids=ids,
+                    settings=PERMISSIVE,
+                )
+            assert refused.value.code == "entity_not_found"
 
     run_async(scenario())

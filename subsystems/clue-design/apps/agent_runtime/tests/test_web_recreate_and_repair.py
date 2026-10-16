@@ -26,7 +26,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent.tools.web_substrate import LumenWebTools
 from lumen_api.agent_cloned_sections import _resolve_lineages
@@ -1512,6 +1511,15 @@ def _author_prompt() -> str:
     return build_web_author_prompt(brand_card="{}", theme_token_names="brand, ink")
 
 
+def _solo_prompt() -> str:
+    from lumen_agent.prompts_web import build_web_solo_prompt
+
+    return build_web_solo_prompt(
+        doc_title="Insight Health", has_existing_content=False,
+        brand_card="{}", theme_token_names="brand, ink",
+    )
+
+
 @pytest.mark.parametrize("prompt_of", ["director", "author"])
 def test_the_old_absolutist_law_that_protected_brokenness_is_gone(prompt_of: str) -> None:
     """F2's "never edit a cloned section's internals" is exactly what D-F6 amends away.
@@ -1667,9 +1675,9 @@ def _squashed(text: str) -> str:
     return " ".join(text.split())
 
 
-@pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt])
-def test_a_repair_is_released_only_by_the_user_in_chat_is_prompt_law(prompt_of) -> None:
-    """R-X9's two clauses, in the RENDERED prompt (both builders are f-strings).
+@pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt, _solo_prompt])
+def test_a_vocabulary_repair_is_released_only_by_the_user_in_chat_is_prompt_law(prompt_of) -> None:
+    """R-X9 applies to vocabulary drafts, never raw repairs or campaign variants.
 
     Explain first, ask second, call third — and no UI gate anywhere, because there is none to
     point at.
@@ -1683,15 +1691,20 @@ def test_a_repair_is_released_only_by_the_user_in_chat_is_prompt_law(prompt_of) 
     assert "does not release repairs" in lowered
     # And the ask lives in the conversation, because there is nowhere else for it to live.
     assert "user" in lowered
+    assert "vocabulary" in lowered
+    assert "existing explicit approval for this repair stands" in lowered
+    assert "raw" in lowered and "released at mint" in lowered
 
 
-def test_the_author_prompt_says_explain_then_ask_then_call() -> None:
+@pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt, _solo_prompt])
+def test_composing_role_explains_then_asks_then_calls(prompt_of) -> None:
     """"First of all you need to explain" — the ORDER is the law, not just the ingredients."""
-    prompt = _squashed(_author_prompt())
+    prompt = _squashed(prompt_of())
 
     explain = prompt.index("FIRST EXPLAIN")
     ask = prompt.index("THEN ASK")
-    assert explain < ask
+    call = prompt.index("THEN CALL")
+    assert explain < ask < call
     assert "wait for a yes" in prompt
     assert "No answer is not a yes" in prompt
     # What the explanation must contain — the reason, the change, the evidence.

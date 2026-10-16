@@ -1,0 +1,19 @@
+/* The site editor stylesheet: Tailwind over site-kit's sources with the brand-token mapping the
+   D2 spike proved (trials/puck-spike/app/globals.css), plus Puck's own CSS. Agent sections bring
+   their own per-module CSS (/sections/<digest>.css). */
+@import "tailwindcss" source(none);
+@import "@puckeditor/core/puck.css";
+@source "../../../site-kit/src";
+
+/* The brand-token mapping is generated, not written here: scripts/build.ts puts site-kit's
+   editorThemeCss() in place of the line below, the same builder the published page's theme uses
+   (review finding K5-2). */
+/* @clue-brand-theme */
+
+/* The frame fills its iframe; the page scrolls inside it. */
+html, body, #root { height: 100%; margin: 0; }
+#root { overflow: auto; }
+
+/* DESIGN REVIEW (DR5): the selected header or footer. The shell is drawn by the page root, not
+   by a Puck component, so Puck draws no outline for it. */
+[data-site-shell-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: -2px; }

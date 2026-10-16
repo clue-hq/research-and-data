@@ -9,6 +9,7 @@ the effect/replay/pin classification a standing recipe admits.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import pytest
@@ -16,12 +17,14 @@ import pytest
 from clue_agents.manual import tool_manual_link
 from clue_api.arv2.read_tools import (
     MAX_CANDIDATES,
+    MAX_CITED_CLAIMS,
     MAX_CLAIMS,
     READ_REFERENCES_BUDGET_BYTES,
     AccountClaimView,
     AccountOverviewSection,
     AccountResearch,
     Arv2ReadRefused,
+    CitedClaimsPage,
     ClaimsQueryPage,
     DiscoveryCandidateV3View,
     DiscoveryCandidateView,
@@ -33,6 +36,9 @@ from clue_api.arv2.read_tools import (
     ReadAccountResearchTool,
     ReadAccountResearchV2Input,
     ReadAccountResearchV2Tool,
+    ReadCitedClaimsInput,
+    ReadCitedClaimsOutput,
+    ReadCitedClaimsTool,
     ReadClaimsInput,
     ReadClaimsOutput,
     ReadClaimsTool,
@@ -123,6 +129,9 @@ class _FakeService:
     claims_reads: list[
         tuple[str, str, str | None, int | None, str | None, str | None, int, int]
     ] = field(default_factory=list)
+    cited: CitedClaimsPage | None = None
+    #: ``(workspace, entity, claim ids)`` — the ambient workspace and the exact ids asked for.
+    cited_reads: list[tuple[str, str, tuple[str, ...]]] = field(default_factory=list)
 
     async def list_project_accounts(
         self,
@@ -204,6 +213,15 @@ class _FakeService:
             raise self.refusal
         assert self.claims is not None
         return self.claims
+
+    async def read_cited_claims(
+        self, *, workspace_id: str, entity_id: str, claim_ids: Sequence[str]
+    ) -> CitedClaimsPage:
+        self.cited_reads.append((workspace_id, entity_id, tuple(claim_ids)))
+        if self.refusal is not None:
+            raise self.refusal
+        assert self.cited is not None
+        return self.cited
 
 
 def test_an_uncomposed_read_surface_refuses_before_it_touches_anything() -> None:
@@ -1154,7 +1172,7 @@ def test_the_claims_query_declares_the_classification_and_the_manual_the_registr
 # -- the registered surface ------------------------------------------------------------------------
 
 
-def test_the_builder_yields_the_four_reads_and_an_uncomposed_one_refuses_by_name() -> None:
+def test_the_builder_yields_the_five_reads_and_an_uncomposed_one_refuses_by_name() -> None:
     """Registered on every deployment, composed where the lane is — the ARV2 registration posture.
 
     Uncomposed the four still register, so an agent that reaches for a read gets the named
@@ -1171,12 +1189,14 @@ def test_the_builder_yields_the_four_reads_and_an_uncomposed_one_refuses_by_name
             "read_account_research",
             "read_discovery_run",
             "read_claims",
+            "read_cited_claims",
         ]
         inputs: dict[str, ToolInput] = {
             "read_project_accounts": ReadProjectAccountsInput(project_id=PROJECT),
             "read_account_research": ReadAccountResearchInput(account_entity_id=ACCOUNT_ID),
             "read_discovery_run": ReadDiscoveryRunInput(project_id=PROJECT),
             "read_claims": ReadClaimsInput(entity_id=ACCOUNT_ID),
+            "read_cited_claims": ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=[CLAIM_ID]),
         }
         for tool in tools:
             failures = await tool.preconditions(inputs[tool.name], _context())
@@ -1188,6 +1208,7 @@ def test_the_builder_yields_the_four_reads_and_an_uncomposed_one_refuses_by_name
             research=_research(),
             discovery=_discovery(),
             claims=_claims_page(),
+            cited=_cited_page(),
         )
         for tool in build_arv2_read_tools(service):
             assert await tool.preconditions(inputs[tool.name], _context()) == ()
@@ -1220,3 +1241,89 @@ def test_the_paged_pair_registers_beside_the_frozen_ones_on_the_same_composition
             assert await tool.preconditions(inputs[tool.name], _context()) == ()
 
     run_async(scenario())
+
+
+def _cited_page() -> CitedClaimsPage:
+    return CitedClaimsPage(
+        entity_id=ACCOUNT_ID,
+        claims=(
+            AccountClaimView(
+                claim_id=CLAIM_ID,
+                field_key="account.research_finding",
+                value={"finding": "Healthcare up $4.2 million"},
+                source_url="https://alpha.example/budget.pdf",
+                evidence="Healthcare increase of $4.2 million",
+                evidence_truncated=False,
+                tier=2,
+                verification_status="unverified",
+                outreach_safe=False,
+                collected_at="2026-09-12T12:00:00+00:00",
+            ),
+        ),
+        dispositions={
+            CLAIM_ID: "served",
+            "66666666-6666-5666-8666-666666666666": "held:outreach_unsafe",
+            "77777777-7777-5777-8777-777777777777": "not_found",
+        },
+    )
+
+
+def test_the_cited_claims_read_asks_about_the_ambient_workspace_and_serves_dispositions() -> None:
+    async def scenario() -> None:
+        service = _FakeService(cited=_cited_page())
+        tool = ReadCitedClaimsTool(service)
+        ids = [
+            CLAIM_ID,
+            "66666666-6666-5666-8666-666666666666",
+            "77777777-7777-5777-8777-777777777777",
+        ]
+
+        result = await tool.invoke(
+            ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=ids), _context()
+        )
+
+        assert service.cited_reads == [(WORKSPACE, ACCOUNT_ID, tuple(ids))]
+        assert result.references["entity_id"] == ACCOUNT_ID
+        assert [claim["claim_id"] for claim in result.references["claims"]] == [CLAIM_ID]
+        assert result.references["dispositions"] == {
+            CLAIM_ID: "served",
+            "66666666-6666-5666-8666-666666666666": "held:outreach_unsafe",
+            "77777777-7777-5777-8777-777777777777": "not_found",
+        }
+        canonical = validate_tool_output_references(ReadCitedClaimsOutput, result.references)
+        assert canonical["dispositions"][CLAIM_ID] == "served"
+
+    run_async(scenario())
+
+
+def test_the_cited_claims_read_is_bounded_and_refuses_by_name() -> None:
+    with pytest.raises(ValueError):
+        ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=[])
+    with pytest.raises(ValueError):
+        ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=[CLAIM_ID] * (MAX_CITED_CLAIMS + 1))
+
+    async def scenario() -> None:
+        tool = ReadCitedClaimsTool(
+            _FakeService(refusal=Arv2ReadRefused("entity_not_found", "no such entity"))
+        )
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(
+                ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=[CLAIM_ID]), _context()
+            )
+        assert [f.reason_code for f in refused.value.failures] == ["entity_not_found"]
+        uncomposed = ReadCitedClaimsTool(None)
+        failures = await uncomposed.preconditions(
+            ReadCitedClaimsInput(entity_id=ACCOUNT_ID, claim_ids=[CLAIM_ID]), _context()
+        )
+        assert [f.reason_code for f in failures] == ["arv2_reads_not_composed"]
+
+    run_async(scenario())
+
+
+def test_the_cited_claims_read_declares_its_classification() -> None:
+    tool = ReadCitedClaimsTool(_FakeService())
+    assert (tool.name, tool.version) == ("read_cited_claims", "1")
+    assert tool.effect_class is ToolEffectClass.READ
+    assert tool.replay.policy is ReplayPolicy.EFFECT_FREE
+    assert tool.pin_requirements == ("project",)
+    assert tool.descriptor.recipe_safe

@@ -9,7 +9,7 @@ wrote `data-icon="globe"` in a footer, and the entire batch was discarded with
 
 So the closed set is now stated in the AUTHOR PROMPT (in context for every token
 it emits), not only in a skill file it reads once. Three copies therefore exist
-— the Rust registry, the prompt constant, and the create-website skill — and
+— the Rust registry, the prompt constant, and the create-website typed reference — and
 they are only useful if they cannot drift apart. This module is that guard: the
 Rust registry is the source of truth, the other two are checked against it.
 """
@@ -20,18 +20,10 @@ import re
 from pathlib import Path
 
 from lumen_agent.prompts_web import WEB_ICON_NAMES, build_web_author_prompt
+from test_web_skill_family import read_required_skill_reference
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ICONS_RS = REPO_ROOT / "crates" / "lumen-core" / "src" / "icons.rs"
-SKILL_MD = (
-    REPO_ROOT
-    / "apps"
-    / "agent_runtime"
-    / "knowledge_docs"
-    / "skills"
-    / "create-website"
-    / "SKILL.md"
-)
 
 
 def _registry_icon_names() -> list[str]:
@@ -54,8 +46,11 @@ def test_the_author_prompt_vocabulary_matches_the_rust_registry() -> None:
     assert WEB_ICON_NAMES.split() == _registry_icon_names()
 
 
-def test_the_create_website_skill_vocabulary_matches_the_rust_registry() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+def test_the_create_website_skill_vocabulary_matches_the_rust_registry(tmp_path) -> None:
+    text = read_required_skill_reference(
+        tmp_path, "create-website", "typed authoring reference",
+        before="Use the ", after=" before `author_web_page` / `author_web_subtree`.",
+    )
     block = text.split("**Icon names — the COMPLETE set.**", 1)[1].split("`.", 1)[0]
     # `*`, not `+`: the single-character icon `x` is a real name.
     listed = re.findall(r"[a-z][a-z0-9-]*", block.split("`", 1)[1])

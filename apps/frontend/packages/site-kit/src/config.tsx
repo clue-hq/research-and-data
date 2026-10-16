@@ -1,0 +1,258 @@
+import { Component, type ReactNode } from "react";
+import type { Config, Fields } from "@puckeditor/core";
+import type { BrandData } from "./brand";
+import type { Clone, LinkReplacement, SlotValues, TextReplacement } from "./clone";
+
+/** A cloned section's markup from its clone and props. `fillClone` (./clone) is one; a live page
+ * passes its own (live-page's liveConfig). `id` is the section's component id. */
+export type CloneHtml = (clone: Clone, values: SlotValues, replacements: TextReplacement[], links: LinkReplacement[], id: string) => string;
+import { CloneMarkup } from "./clone-markup";
+import { themeCss } from "./theme";
+import { makeSections } from "./sections";
+import { makeKit, type AgentSectionModule } from "./agent-kit";
+import { buttonLookOptions } from "./looks";
+import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
+
+type ClonedSectionProps = {
+  fragmentId: string;
+  slots: SlotValues;
+  replacements: TextReplacement[];
+  links: LinkReplacement[];
+};
+
+const SLOT_FIELD = {
+  text: { type: "textarea" },
+  href: { type: "text" },
+  image: { type: "text" },
+  visibility: {
+    type: "radio",
+    options: [
+      { label: "Shown", value: true },
+      { label: "Hidden", value: false },
+    ],
+  },
+} as const;
+
+/** Editor-only pieces, injected by the editor route so published pages never bundle them. */
+export type EditorParts = {
+  CloneEditor: (props: {
+    itemId: string;
+    clone: import("./clone").Clone;
+    html: string;
+    /** The markup this section would have with one text slot set to `value` (CloneEditor redraws
+     * when a write leaves the markup unchanged, so the canvas shows what will publish). */
+    htmlFor: (key: string, value: string) => string;
+  }) => React.ReactNode;
+  AssetPicker: (props: { assets: BrandData["assets"]; value: string; onChange: (value: string) => void }) => React.ReactNode;
+};
+
+export type ConfigOptions = {
+  /** Where this site is served, e.g. "/s/garner-syracuse"; internal links ("/analysis") resolve under it.
+   * Without one, internal links stay as written (a site served at its domain's root). */
+  basePath?: string;
+  shell?: ShellData;
+  /** "page" edits a route; "shell" edits the shared header and footer. */
+  mode?: "page" | "shell";
+  editor?: EditorParts;
+  /** The site's agent-written sections (E5), by section name; they join its pages. */
+  agentSections?: Record<string, AgentSectionModule>;
+  /** How a cloned section gets its markup: `fillClone` (./clone) in the editor and the server
+   * render; on a live page in the browser, the markup the server drew (live-page's liveConfig).
+   * Passed in, never imported here, so the published page's runtime carries no HTML parser. */
+  cloneHtml: CloneHtml;
+  /** "page": the clones' CSS is drawn once outside the tree (a live page, render-core); otherwise
+   * each clone carries its own. */
+  cloneCss?: "inline" | "page";
+};
+
+/** The one error boundary around every agent section, in the editor and on the published page
+ * alike. A section that fails while drawing in the browser — for example because the editor's
+ * policy refused something it tried — takes only itself down and leaves an empty
+ * data-agent-section-failed marker where it was; the rest of the page, and the editor, stay alive
+ * (an uncaught render error unmounts a whole React root; Review focus 1 of live publishing). `name`
+ * is the section, which the live page's error report reads from the boundary that caught the error
+ * (hydrateSite). While nothing fails it renders no element of its own, so the server HTML is
+ * unchanged (boundaries do nothing on the server: a section that throws there fails the render). */
+export class SectionBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? <div data-agent-section-failed={this.props.name} /> : this.props.children;
+  }
+}
+
+// One config per brand and site. Fields and renders close over the brand's clone library and
+// assets; the editor (client) and the published route (server) both call this.
+export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
+  const href = (value: string) =>
+    options.basePath && value && value.startsWith("/") && !value.startsWith("//")
+      ? `${options.basePath}${value === "/" ? "" : value}`
+      : value;
+  const brandCss = themeCss(brand);
+  const BrandRoot = ({ children, withShell }: { children: React.ReactNode; withShell: boolean }) => (
+    <div className="brand-root">
+      <style dangerouslySetInnerHTML={{ __html: brandCss }} />
+      {withShell && options.shell ? <SiteHeader brand={brand} header={options.shell.header} href={href} /> : null}
+      {children}
+      {withShell && options.shell ? <SiteFooter brand={brand} footer={options.shell.footer} href={href} /> : null}
+    </div>
+  );
+
+  if (options.mode === "shell") {
+    const shellConfig: Config<{ SiteHeader: HeaderProps; SiteFooter: FooterProps }> = {
+      root: { render: ({ children }) => <BrandRoot withShell={false}>{children}</BrandRoot> },
+      components: {
+        SiteHeader: {
+          label: "Site header",
+          fields: {
+            preparedFor: { type: "text", label: "Prepared for" },
+            accountLogo: { type: "text", label: "Account logo URL (optional)" },
+            ctaLabel: { type: "text", label: "Button label" },
+            ctaHref: { type: "text", label: "Button link" },
+            ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select", label: "Button style", options: buttonLookOptions(brand) } } : {}),
+            nav: {
+              type: "array",
+              label: "Navigation links",
+              arrayFields: { label: { type: "text" }, href: { type: "text", label: "Link (/page or URL)" } },
+              getItemSummary: (item: { label?: string }) => item.label || "Link",
+            },
+          } as never,
+          render: (props) => <SiteHeader brand={brand} header={props} href={href} />,
+        },
+        SiteFooter: {
+          label: "Site footer",
+          fields: {
+            legal: { type: "text", label: "Legal line" },
+            privacyHref: { type: "text", label: "Privacy link" },
+            termsHref: { type: "text", label: "Terms link" },
+          },
+          render: (props) => <SiteFooter brand={brand} footer={props} href={href} />,
+        },
+      },
+    };
+    return shellConfig as unknown as Config;
+  }
+
+  const cloneOptions = [
+    { label: "Choose a section…", value: "" },
+    ...Object.values(brand.clones).map((clone) => ({
+      label: `${clone.label?.slice(0, 60)} (${new URL(clone.page_url).pathname})`,
+      value: clone.id,
+    })),
+  ];
+  const sections = makeSections(brand, href, options.editor?.AssetPicker);
+  // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit fields.
+  const kit = makeKit(href, brand);
+  const agentSections = Object.fromEntries(
+    Object.entries(options.agentSections ?? {}).map(([name, module]) => {
+      // The section draws inside its own component, so its boundary catches what it throws. This is
+      // the one place module.render is called. Props travel whole (not spread), so none is dropped.
+      // kit.editing: true while the marketer edits the page (Puck's puck.isEditing), so the section
+      // shows its first state and starts nothing.
+      const Drawn = ({ props }: { props: never }) =>
+        module.render(props, { ...kit, editing: Boolean((props as { puck?: { isEditing?: boolean } }).puck?.isEditing) });
+      return [
+        name,
+        {
+          label: `${name} (agent)`,
+          fields: {},
+          // The wrapper lets compare_section find the component whatever its root element is.
+          render: (props: never) => (
+            <div data-agent-section={name}>
+              <SectionBoundary name={name}>
+                <Drawn props={props} />
+              </SectionBoundary>
+            </div>
+          ),
+        },
+      ];
+    }),
+  );
+
+  const config: Config<{
+    ClonedSection: ClonedSectionProps;
+    StatsBand: Record<string, unknown>;
+    FeatureSplit: Record<string, unknown>;
+    ProofCard: Record<string, unknown>;
+    CtaBand: Record<string, unknown>;
+  }> = {
+    root: { render: ({ children }) => <BrandRoot withShell>{children}</BrandRoot> },
+    categories: {
+      clones: { title: "The seller's sections", components: ["ClonedSection"] },
+      brand: { title: "Brand sections", components: ["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"] },
+      ...(Object.keys(agentSections).length
+        ? { agent: { title: "Agent sections", components: Object.keys(agentSections) as never } }
+        : {}),
+    },
+    components: {
+      ...(sections as unknown as Record<"StatsBand" | "FeatureSplit" | "ProofCard" | "CtaBand", never>),
+      ...(agentSections as unknown as Record<string, never>),
+      ClonedSection: {
+        label: "Cloned section",
+        defaultProps: { fragmentId: "", slots: {}, replacements: [], links: [] },
+        fields: {
+          fragmentId: { type: "select", label: "Section", options: cloneOptions },
+          slots: { type: "object", label: "Slots", objectFields: {} },
+          replacements: {
+            type: "array",
+            label: "Text replacements (text with no slot)",
+            arrayFields: { find: { type: "text" }, replace: { type: "text" } },
+            getItemSummary: (item) => item.find || "New replacement",
+          },
+          links: {
+            type: "array",
+            label: "Link replacements (* = every link)",
+            arrayFields: { find: { type: "text" }, replace: { type: "text" } },
+            getItemSummary: (item) => item.find || "New link",
+          },
+        },
+        resolveFields: (data, { fields }) => {
+          const clone = brand.clones[data.props.fragmentId];
+          const objectFields = Object.fromEntries(
+            Object.entries(clone?.slots ?? {}).map(([key, slot]) => [
+              key,
+              { ...SLOT_FIELD[slot.kind], label: `${key} (${slot.kind})` },
+            ]),
+          );
+          return { ...fields, slots: { type: "object", label: "Slots", objectFields } } as Fields<ClonedSectionProps>;
+        },
+        // No resolveData (review finding S1-1). Puck runs it on every page mount against the last
+        // section it saw with the same id on ANY page or site in the frame (a module-wide cache), so
+        // a rule that pre-filled the slots when the clone changed reset the agent's copy to the seller's wording on
+        // a page switch, and the frame saved it. Nothing swaps a clone through this path: the agent
+        // writes its slots itself, and the dock never changes `fragmentId`.
+        render: ({ id, fragmentId, slots, replacements, links, puck }) => {
+          const clone = brand.clones[fragmentId];
+          if (!clone) {
+            return (
+              <div className="p-card-padding text-center font-body text-body text-ink-muted">
+                Choose a cloned section
+              </div>
+            );
+          }
+          const fill = options.cloneHtml;
+          const resolvedSlots = Object.fromEntries(
+            Object.entries(slots ?? {}).map(([key, value]) => [
+              key,
+              clone.slots[key]?.kind === "href" && typeof value === "string" ? href(value) : value,
+            ]),
+          );
+          const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
+          const html = fill(clone, resolvedSlots, replacements, resolvedLinks, id);
+          const Editor = options.editor?.CloneEditor;
+          if (puck?.isEditing && Editor) {
+            const htmlFor = (key: string, value: string) =>
+              fill(clone, { ...resolvedSlots, [key]: value }, replacements, resolvedLinks, id);
+            return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
+          }
+          return <CloneMarkup clone={clone} html={html} inlineCss={options.cloneCss !== "page"} />;
+        },
+      },
+    },
+  };
+
+  // Pages are loaded from storage as untyped Data, so callers take the config untyped.
+  return config as unknown as Config;
+}

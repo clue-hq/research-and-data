@@ -26,3 +26,13 @@ for _path in (RUNTIME_ROOT, REPO_ROOT / "apps" / "api", REPO_ROOT):
 @pytest.fixture(autouse=True)
 def _brandfetch_vendor_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "brandfetch_api_key", "")
+
+
+# Compaction is sized from the model's context window, which `clue_gateway.model_windows` reads
+# from OpenRouter's public catalogue once per process. An empty cache answers "window unknown"
+# without the network, so a harness built in a test compacts at the fixed fallback.
+@pytest.fixture(autouse=True)
+def _model_windows_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    import clue_gateway.model_windows as model_windows
+
+    monkeypatch.setattr(model_windows, "_cache", {})

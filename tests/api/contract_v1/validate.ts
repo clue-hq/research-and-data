@@ -16,6 +16,14 @@
  *       A key is `optional` when it accepts `undefined`: `.optional()`, `.nullish()`, or a
  *       `.default(...)`. A bare `.nullable()` is REQUIRED-but-nullable and stays in `required`.
  *
+ *   tsx validate.ts --enums
+ *       Prints stable JSON — `{"<Schema>.<path>": [values...]}` — for every field, at any depth,
+ *       whose allowed values are a fixed list (a `z.enum`, a `z.literal` or a union of them). A
+ *       nested object field's path is `parent.child`; an array's element is `parent[]`. The test
+ *       checks that every value the backend may send at that path is one this list accepts (review
+ *       finding K1-1: `"site"` was added to the backend's artifact types and not here, and the whole
+ *       accounts read failed; `--shapes` compares field names only, and only at the top level).
+ *
  *   tsx validate.ts <payload.json> <SchemaName>
  *       Parses the file with the named schema. Exit 0 on success; exit 1 with the Zod error
  *       on stderr otherwise.
@@ -72,14 +80,106 @@ function shapes(): string {
   return `${JSON.stringify(out, null, 2)}\n`;
 }
 
+type ZodDef = {
+  type?: string;
+  shape?: Record<string, unknown>;
+  element?: unknown;
+  innerType?: unknown;
+  entries?: Record<string, string | number>;
+  values?: unknown[];
+  options?: unknown[];
+  in?: unknown;
+  getter?: () => unknown;
+};
+
+function defOf(schema: unknown): ZodDef | undefined {
+  return (schema as { _zod?: { def?: ZodDef } })?._zod?.def;
+}
+
+/** The fixed values a schema accepts, or null when it accepts more than a fixed list. */
+function fixedValues(schema: unknown): unknown[] | null {
+  const def = defOf(schema);
+  if (!def) return null;
+  switch (def.type) {
+    case "enum":
+      return Object.values(def.entries ?? {});
+    case "literal":
+      return [...(def.values ?? [])];
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+    case "readonly":
+      return fixedValues(def.innerType);
+    case "union": {
+      const all: unknown[] = [];
+      for (const option of def.options ?? []) {
+        const values = fixedValues(option);
+        if (values === null) return null;
+        all.push(...values);
+      }
+      return all;
+    }
+    default:
+      return null;
+  }
+}
+
+function walkEnums(schema: unknown, path: string, out: Record<string, unknown[]>, seen: Set<unknown>): void {
+  const def = defOf(schema);
+  if (!def || seen.has(schema)) return;
+  const values = fixedValues(schema);
+  if (values !== null) {
+    out[path] = [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b)));
+    return;
+  }
+  seen.add(schema);
+  switch (def.type) {
+    case "object":
+      for (const key of Object.keys(def.shape ?? {}).sort()) walkEnums(def.shape![key], `${path}.${key}`, out, seen);
+      break;
+    case "array":
+      walkEnums(def.element, `${path}[]`, out, seen);
+      break;
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+    case "readonly":
+      walkEnums(def.innerType, path, out, seen);
+      break;
+    case "union":
+      for (const option of def.options ?? []) walkEnums(option, path, out, seen);
+      break;
+    case "pipe":
+      walkEnums(def.in, path, out, seen);
+      break;
+    case "lazy":
+      if (def.getter) walkEnums(def.getter(), path, out, seen);
+      break;
+  }
+  seen.delete(schema);
+}
+
+function enums(): string {
+  const out: Record<string, unknown[]> = {};
+  for (const name of Object.keys(SCHEMAS).sort()) walkEnums(SCHEMAS[name], name, out, new Set());
+  const sorted = Object.fromEntries(Object.keys(out).sort().map((key) => [key, out[key]]));
+  return `${JSON.stringify(sorted, null, 2)}\n`;
+}
+
 function main(argv: string[]): number {
   if (argv.length === 1 && argv[0] === "--shapes") {
     process.stdout.write(shapes());
     return 0;
   }
+  if (argv.length === 1 && argv[0] === "--enums") {
+    process.stdout.write(enums());
+    return 0;
+  }
   if (argv.length !== 2) {
     process.stderr.write(
-      "usage: validate.ts --shapes | validate.ts <payload.json> <SchemaName>\n",
+      "usage: validate.ts --shapes | validate.ts --enums | validate.ts <payload.json> <SchemaName>\n",
     );
     return 2;
   }

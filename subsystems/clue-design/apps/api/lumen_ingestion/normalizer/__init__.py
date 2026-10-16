@@ -8,7 +8,7 @@ calls (created_at is a parameter). An optional `RoleAssist` may refine the draft
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..assist import AssistDraft, NullRoleAssist, RoleAssist
 from ..colorspace import (
@@ -18,19 +18,27 @@ from ..colorspace import (
     with_lightness,
 )
 from ..evidence import BrandEvidence
+from .bands import build_band_surfaces, opaque_hex, readable_ink
 from .cluster import cluster_colors
+from .component_tokens import mint_component_tokens
 from .emit import KitBuilder, build_constraints
+from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
+from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .ramps import derive_ramp, neutral_hue
 from .roles import (
     RoleAssignment,
     assign_light_roles,
     build_dark_colorway,
 )
-from .bands import build_band_surfaces
-from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
-from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
-from .typography import build_type_styles, custodied_weights, resolve_anchors
+from .typography import (
+    TYPE_MEASUREMENT_FIELDS,
+    anchor_for_role,
+    build_type_styles,
+    custodied_weights,
+    measured_style_fields,
+    resolve_anchors,
+)
 
 _CONTRAST_MIN = 4.5
 
@@ -40,6 +48,7 @@ class NormalizeResult:
     brand_kit: dict
     ingestion_report: dict
     diagnostics: list[dict]
+    measured_components: dict | None = None
 
 
 def normalize_evidence(
@@ -123,16 +132,17 @@ def normalize_evidence(
         if cluster.name and _is_path_safe(cluster.name) and cluster.name != slug:
             builder.add_alias(cluster.name, extra_path, "ingestion alias")
 
-    # Measured band surfaces. The page's background rhythm is measured; a color
-    # the page RECURS on (or stands on for a fifth of its scroll) is a surface
-    # the brand owns, so it gets a name instead of reaching the brief agent as
-    # an unnamed hex. Runs after the extras so the dedupe sees every color the
-    # kit already carries. Geometry-gated: evidence without a measured band
-    # sequence mints nothing and its kit stays byte-identical.
-    for band in build_band_surfaces(
-        evidence.geometry.background_sequence,
-        [entry["value"]["default"]["value"] for entry in builder.colors.values()],
-    ):
+    # Measured section backgrounds (Wave 2 A9): every flat band colour no surface token holds
+    # exactly becomes `surface.band.<hex>`, with the text measured on it as its contrast pair.
+    # Geometry-gated: evidence without a measured band sequence mints nothing.
+    surface_colors = {
+        path: str(entry["value"]["default"].get("value") or "")
+        for path, entry in builder.colors.items()
+        if path.startswith("surface.") and entry["value"]["default"].get("kind") == "hex"
+    }
+    bands, skipped_bands = build_band_surfaces(evidence.geometry.background_sequence, surface_colors)
+    band_pairs: list[dict] = []
+    for band in bands:
         builder.add_color(
             band.path,
             RoleAssignment(band.hex, "measured", band.provenance),
@@ -140,6 +150,29 @@ def normalize_evidence(
             confidence=MEASURED_CONFIDENCE,
             description=band.description,
         )
+        if band.ink_hex:
+            candidates = [
+                str(builder.colors[path]["value"]["default"].get("value") or "")
+                for path in ("text.primary", "text.inverse") if path in builder.colors
+            ]
+            ink, measured = readable_ink(band, candidates)
+            if not measured:
+                diagnostics.append({
+                    "code": "LUMI0609", "severity": "warning",
+                    "message": (
+                        f"the text measured on section background {band.hex} ({band.ink_hex}, ratio "
+                        f"{contrast_ratio(band.ink_hex, band.hex):.2f}) does not read there; its text uses {ink}"
+                    ),
+                })
+            band_pairs.append({
+                "foreground": _band_ink(builder, replace(band, ink_hex=ink), measured=measured),
+                "background": band.path, "min_ratio": 4.5,
+            })
+    if skipped_bands:
+        diagnostics.append({
+            "code": "LUMI0607", "severity": "warning",
+            "message": f"{skipped_bands} more section background colour(s) were not minted (the cap of 12 band surfaces)",
+        })
 
     # accent alias (spec §4).
     builder.add_alias("accent.primary", "surface.accent", "ingestion alias")
@@ -155,9 +188,19 @@ def normalize_evidence(
         anchors, cta_color=cta_color, custodied=custodied_weights(evidence)
     )
     diagnostics.extend(type_diags)
-    type_pointer = _type_pointer(evidence)
-    type_basis = "evidence" if evidence.type_samples or evidence.fonts else "default"
     for path, style in styles.items():
+        anchor = anchor_for_role(path.removeprefix("type."), anchors)
+        measured = measured_style_fields(anchors, path, style)
+        if measured == TYPE_MEASUREMENT_FIELDS and anchor is not None:
+            type_basis = "evidence"
+            type_pointer = f"{anchor.pointer.source}:{anchor.pointer.locator}"
+        else:
+            type_basis = "derived" if evidence.type_samples or evidence.fonts else "default"
+            type_pointer = "default:type-scale"
+            if type_basis == "derived":
+                type_pointer = f"derived:{path}; measured=" + (",".join(sorted(measured)) or "none")
+                if anchor is not None and measured:
+                    type_pointer += f" @ {anchor.pointer.source}:{anchor.pointer.locator}"
         builder.add_typography(path, style, type_basis, type_pointer)
 
     # Number scales. Measured geometry (design-brief slice 2) claims the steps
@@ -216,11 +259,17 @@ def normalize_evidence(
     diagnostics.extend(builder.diagnostics)
 
     constraints = build_constraints(evidence, tone_override, cta_color=cta_color)
+    constraints["contrast_pairs"].extend(band_pairs)
     notes = _provenance_notes(evidence, dark.basis, description)
 
     brand_kit = builder.build(notes, constraints)
     if description:
         brand_kit["description"] = description
+
+    # Measured component styles and motion (Wave 2 A9): minted after every other token exists, so
+    # exact-match reuse sees the whole kit, band surfaces included.
+    mint = mint_component_tokens(brand_kit, evidence.geometry.styles, evidence.geometry.motion)
+    diagnostics.extend(mint.diagnostics)
 
     ingestion_report = _build_report(
         evidence, clusters, builder, dark.basis, asset_gaps, description, tone_override
@@ -230,6 +279,7 @@ def normalize_evidence(
         brand_kit=brand_kit,
         ingestion_report=ingestion_report,
         diagnostics=diagnostics,
+        measured_components=mint.section,
     )
 
 
@@ -323,20 +373,36 @@ def _brand_text(brand_hex: str, page_hex: str, primary_ramp: dict[str, str]) -> 
     return primary_ramp["950"]
 
 
+def _band_ink(builder: KitBuilder, band, *, measured: bool = True) -> str:
+    """The colour token for a band's text: an exact match, alpha included (an ink first), else
+    `text.band.<hex of the band>` — described as measured, or as chosen to read (S6-1)."""
+    matches = sorted(
+        (
+            path for path, entry in builder.colors.items()
+            if entry["value"]["default"].get("kind") == "hex"
+            and opaque_hex(str(entry["value"]["default"].get("value") or "")) == band.ink_hex
+        ),
+        key=lambda path: (not path.startswith("text."), path),
+    )
+    if matches:
+        return matches[0]
+    path = "text.band." + band.path.rsplit(".", 1)[1]
+    provenance = band.provenance.replace("section background", "text on section background")
+    builder.add_color(
+        path,
+        RoleAssignment(band.ink_hex, "measured" if measured else "derived", provenance),
+        None,
+        confidence=MEASURED_CONFIDENCE,
+        description="text measured on that section background" if measured
+        else "text chosen to read on that section background (the measured text did not)",
+    )
+    return path
+
+
 def _family_in_evidence(evidence: BrandEvidence, family: str) -> bool:
     if any(f.family == family for f in evidence.fonts):
         return True
     return any(s.family == family for s in evidence.type_samples)
-
-
-def _type_pointer(evidence: BrandEvidence) -> str:
-    if evidence.type_samples:
-        p = evidence.type_samples[0].pointer
-        return f"{p.source}:{p.locator}"
-    if evidence.fonts:
-        p = evidence.fonts[0].pointer
-        return f"{p.source}:{p.locator}"
-    return "default:type-scale"
 
 
 def _emit_fonts(builder: KitBuilder, anchors) -> None:

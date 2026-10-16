@@ -46,6 +46,8 @@ exactly, with ISO-string timestamps.
 from __future__ import annotations
 
 import hashlib
+import re
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import text
@@ -353,13 +355,20 @@ async def require_web_publish(conn: AsyncConnection, *, workspace_id: str, slug:
 async def get_web_publish_for_document(
     conn: AsyncConnection, *, workspace_id: str, document_id: str
 ) -> JsonObject | None:
-    """The most recently updated publish of one document (ported ordering)."""
+    """The document's live publish, else its most recently updated one.
+
+    The live (``active``) row comes first because recency alone picks the wrong address after a
+    move: ``unpublish_other_slugs`` re-stamps ``updated_at`` on the slugs it retires, so the
+    address the document moved FROM is the most recently updated row. When nothing is live
+    (everything unpublished), the newest row is still returned, so an unpublished document's
+    state keeps reporting ``status: "unpublished"``.
+    """
     row = (
         await conn.execute(
             text(
                 "SELECT slug FROM design_web_publish"
                 " WHERE workspace_id = :w AND document_id = :d"
-                " ORDER BY updated_at DESC LIMIT 1"
+                " ORDER BY (status = 'active') DESC, updated_at DESC LIMIT 1"
             ),
             {"w": workspace_id, "d": document_id},
         )
@@ -533,8 +542,67 @@ DELIVERY_CSP_META = (
 DELIVERY_CSP_HEADER = DELIVERY_CSP_META + "; frame-ancestors 'self'"
 
 
-def delivery_csp(*, meta: bool = False) -> str:
+#: A Puck SITE publish (Wave 2 Contract 3). Published sites are script-free, so script is refused
+#: outright; styles may be same-origin or inline (the theme and the clones' captured CSS are
+#: inline); images and fonts same-origin or data:; media same-origin. Chosen per publish by the
+#: manifest's ``delivery`` field (``manifest_delivery``).
+SITE_DELIVERY_CSP_META = (
+    "default-src 'none'; script-src 'none'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src 'none'; "
+    "form-action 'none'; base-uri 'none'"
+)
+SITE_DELIVERY_CSP_HEADER = SITE_DELIVERY_CSP_META + "; frame-ancestors 'self'"
+
+
+#: A LIVE Puck site publish (publishing live sites, phase 1): the page runs its own files from
+#: /p-assets (the site runtime, the host shims, the agent section modules) and the one inline import
+#: map, allowed by its hash. Nothing else runs; it may connect only to its own origin; it frames and
+#: submits nothing (forms, embeds and snippets come in later phases and widen this per site).
+SITE_LIVE_DELIVERY = "site_live"
+_HASH_TOKEN = re.compile(r"^sha256-[A-Za-z0-9+/]{43}=$")
+
+
+def site_live_csp(script_hashes: Sequence[str], *, meta: bool) -> str:
+    hashes = "".join(
+        f" '{token}'" for token in sorted(set(script_hashes)) if _HASH_TOKEN.fullmatch(token)
+    )
+    policy = (
+        f"default-src 'none'; script-src 'self'{hashes}; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src 'self'; "
+        "object-src 'none'; worker-src 'none'; frame-src 'none'; form-action 'none'; "
+        "base-uri 'none'"
+    )
+    return policy if meta else policy + "; frame-ancestors 'self'"
+
+
+def delivery_csp(
+    *, meta: bool = False, delivery: str = "web", script_hashes: Sequence[str] = ()
+) -> str:
+    if delivery == SITE_LIVE_DELIVERY:
+        return site_live_csp(script_hashes, meta=meta)
+    if delivery == "site":
+        return SITE_DELIVERY_CSP_META if meta else SITE_DELIVERY_CSP_HEADER
     return DELIVERY_CSP_META if meta else DELIVERY_CSP_HEADER
+
+
+def manifest_delivery(manifest: object) -> str:
+    """Which policy a publish is served under, from its manifest's ``delivery`` field."""
+    if isinstance(manifest, dict) and manifest.get("delivery") in ("site", SITE_LIVE_DELIVERY):
+        return str(manifest["delivery"])
+    return "web"
+
+
+def live_script_hashes(manifest: object) -> tuple[str, ...]:
+    """The inline-script hashes a live site page is allowed, from ``manifest["live"]``.
+
+    Only well-formed ``sha256-<base64>`` tokens survive, so a manifest can never smuggle another
+    CSP source (``'unsafe-eval'``, a host) into the policy through this list.
+    """
+    live = manifest.get("live") if isinstance(manifest, dict) else None
+    hashes = live.get("script_hashes") if isinstance(live, dict) else None
+    if not isinstance(hashes, list | tuple):
+        return ()
+    return tuple(h for h in hashes if isinstance(h, str) and _HASH_TOKEN.fullmatch(h))
 
 
 PUBLISH_ASSET_EXTENSIONS: tuple[str, ...] = ("js", "css", "html")
@@ -556,12 +624,21 @@ def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension:
     the bytes must hash to the digest in the URL — so ``/{digest}.css`` can never serve JavaScript.
     Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
     import ``lumen_api``) and the design API share one rule.
+
+    Only the type itself is compared, not its parameters: an agent section's module is first stored
+    by the section tool as ``text/javascript``, and its artifact row keeps that type when the publish
+    registers the same bytes as a page asset. The canonical type is what is served either way.
     """
     expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
     if expected is None:
         raise PublishAssetMismatch("publish asset media type does not match its URL")
     if hashlib.sha256(data).hexdigest() != digest:
         raise PublishAssetMismatch("publish asset failed its integrity check")
-    if media_type != expected:
+    if _essence(media_type) != _essence(expected):
         raise PublishAssetMismatch("publish asset media type does not match its URL")
     return expected
+
+
+def _essence(media_type: str) -> str:
+    """``type/subtype`` alone, lower-cased: ``text/javascript; charset=utf-8`` → ``text/javascript``."""
+    return media_type.split(";", 1)[0].strip().lower()

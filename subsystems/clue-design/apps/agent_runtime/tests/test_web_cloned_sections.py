@@ -111,6 +111,11 @@ class FakeRegistry:
         return {
             "schema_version": 1,
             "workspace_id": "ws_test",
+            "total": sum(
+                section["status"] == "approved"
+                and (section_role is None or section["section_role"] == section_role)
+                for section in self.sections.values()
+            ),
             "sections": [
                 {
                     key: value
@@ -416,6 +421,124 @@ def test_a_bad_limit_is_refused(tmp_path: Path, registry: FakeRegistry) -> None:
         json.loads(_tools(tmp_path, registry).search_cloned_sections(limit=0))["error_code"]
         == "cloned_section.bad_limit"
     )
+
+
+def test_search_can_reach_every_match_without_redescribing_earlier_pages(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    expected = []
+    for index in range(44):
+        fragment_id = f"frag_{index:016x}"
+        expected.append(fragment_id)
+        registry.add(fragment_id, role="features", label="Product", html="<section/>")
+    tools = _tools(tmp_path, registry)
+    pages = []
+    offset = 0
+    while offset is not None:
+        page = json.loads(tools.search_cloned_sections(q="product", limit=20, offset=offset))
+        assert page["offset"] == offset
+        assert page["total"] == 44
+        assert page["inventory_truncated"] is False
+        pages.append([row["fragment_id"] for row in page["results"]])
+        offset = page["next_offset"]
+    assert [len(page) for page in pages] == [20, 20, 4]
+    assert [fragment_id for page in pages for fragment_id in page] == expected
+    assert registry.describe_calls == pages
+
+
+def test_page_filter_precedes_pagination_and_preserves_source_lineage(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    urls = ["https://insight.example/", "https://insight.example/product?tab=care"]
+    for index in range(6):
+        registry.add(
+            f"frag_{index:016x}", role="features", label="Product", html="<section/>",
+            source_url=urls[index % 2],
+        )
+    derived = registry.sections["frag_0000000000000003"]
+    derived.update(composed="agent", derived_from="frag_0000000000000001")
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.search_cloned_sections(page_url=urls[1], limit=1, offset=1))
+    assert result["total"] == 3
+    assert result["page_url"] == urls[1]
+    assert result["next_offset"] == 2
+    row = result["results"][0]
+    assert row["fragment_id"] == derived["fragment_id"]
+    assert row["composed"] == "agent"
+    assert row["derived_from"] == "frag_0000000000000001"
+    assert registry.describe_calls == [[derived["fragment_id"]]]
+    # Exact URL filtering does not silently drop query parameters or override the filter
+    # for a named ID. The URL identifies a recorded page, not captured-code authenticity.
+    missing = json.loads(tools.search_cloned_sections(
+        q="frag_0000000000000000", page_url=urls[1],
+    ))
+    assert missing["results"] == []
+    assert "no cloned sections released" not in missing["note"]
+
+
+def test_an_exhausted_search_page_is_not_reported_as_an_empty_library(
+    tmp_path: Path, registry: FakeRegistry,
+) -> None:
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.search_cloned_sections(offset=2))
+    assert result["results"] == []
+    assert result["total"] == 2
+    assert result["next_offset"] is None
+    assert "offset" in result["note"]
+    assert "no cloned sections released" not in result["note"]
+    assert registry.describe_calls == []
+
+
+def test_search_exposes_a_registry_cap_instead_of_claiming_complete_coverage(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = registry.list_sections()
+    listing["total"] = 203  # Registry can expose only a bounded inventory.
+    monkeypatch.setattr(registry, "list_sections", lambda role: listing)
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+    assert result["total"] == 2
+    assert result["inventory_scanned"] == 2
+    assert result["inventory_total"] == 203
+    assert result["inventory_truncated"] is True
+    assert result["next_offset"] is None
+    assert "203" in result["inventory_note"]
+    assert "complete" in result["inventory_note"]
+
+
+@pytest.mark.parametrize("offset", [-1, True, 1.5, "20"])
+def test_bad_search_offsets_refuse_before_reading_the_registry(
+    tmp_path: Path, registry: FakeRegistry, offset,
+) -> None:
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections(offset=offset))
+    assert result["error_code"] == "cloned_section.bad_offset"
+    assert registry.list_calls == []
+
+
+def test_native_search_tool_accepts_page_arguments_and_keeps_the_document_unchanged(
+    tmp_path: Path, registry: FakeRegistry,
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    tools = _tools(tmp_path, registry)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(StructuredTool.from_function(tools.search_cloned_sections).invoke({
+        "page_url": "https://insight.example/", "limit": 1, "offset": 1,
+    }))
+    assert [row["fragment_id"] for row in result["results"]] == [NAV_ID]
+    assert result["offset"] == 1 and result["next_offset"] is None
+    assert registry.describe_calls == [[NAV_ID]]
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_search_does_not_invent_an_inventory_total_from_missing_metadata(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = registry.list_sections()
+    listing.pop("total")
+    monkeypatch.setattr(registry, "list_sections", lambda role: listing)
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+    assert result["total"] == 2
+    assert result["inventory_total"] is None
+    assert result["inventory_truncated"] is None
+    assert "unknown" in result["inventory_note"]
 
 
 # --------------------------------------------------------------------------- #
@@ -1097,7 +1220,11 @@ def test_search_says_how_many_matched_not_only_how_many_it_showed(
     narrowed = json.loads(_tools(tmp_path, registry).search_cloned_sections(limit=1))
     assert narrowed["count"] == 1
     assert narrowed["total"] > 1
-    assert "of" in narrowed["note"] and "limit" in narrowed["note"]
+    assert narrowed["next_offset"] == 1
+    remainder = json.loads(_tools(tmp_path, registry).search_cloned_sections(
+        offset=narrowed["next_offset"],
+    ))
+    assert remainder["count"] + narrowed["count"] == narrowed["total"]
 
 
 def _seed_doc_with_two_pins_of_one_band(fragment_id: str = HERO_ID) -> dict:
@@ -1254,6 +1381,113 @@ def test_inspect_cloned_section_shows_the_real_html_and_css(tmp_path: Path) -> N
     assert missing["status"] == "error" and missing["error_code"] == "cloned_section.not_found"
 
 
+def test_inspect_cloned_section_default_still_returns_bounded_source_prefixes(
+    tmp_path: Path,
+) -> None:
+    registry = FakeRegistry(tmp_path)
+    html = "<section>" + "é🧭" * 10_000 + "</section>"
+    css = ".card{color:red}" * 2_000
+    registry.add("frag_long", role="feature", label="Long source", html=html, css=css)
+
+    result = json.loads(_tools(tmp_path, registry).inspect_cloned_section("frag_long"))
+
+    for kind, source in (("html", html), ("css", css)):
+        assert result[kind] == source[:12_000]
+        assert result[f"{kind}_chars"] == len(source)
+        assert result[f"{kind}_truncated"] is True
+        assert result[f"{kind}_offset"] == 0
+        assert result[f"{kind}_end_offset"] == 12_000
+        assert result[f"{kind}_slice_chars"] == 12_000
+        assert result[f"{kind}_next_offset"] == 12_000
+
+
+def test_inspect_cloned_section_pages_reassemble_exact_source_without_mutation(
+    tmp_path: Path,
+) -> None:
+    registry = FakeRegistry(tmp_path)
+    sources = {
+        "html": ("é🧭<a href='/demo'>Read</a>" * 2_000)[:42_268],
+        "css": (".café{color:red} /* 🧭 */\n" * 10_000)[:195_384],
+    }
+    registry.add("frag_long", role="feature", label="Long source", **sources)
+    tools = _tools(tmp_path, registry)
+    original_doc = json.dumps(tools.web_doc, sort_keys=True)
+    original_registry = json.dumps(registry.sections, sort_keys=True)
+    offsets = {"html": 0, "css": 0}
+    chunks = {"html": [], "css": []}
+
+    for _ in range(20):
+        result = json.loads(tools.inspect_cloned_section(
+            "frag_long", html_offset=offsets["html"], css_offset=offsets["css"],
+        ))
+        assert result["status"] == "ok"
+        assert result["fragment_id"] == "frag_long"
+        for kind, source in sources.items():
+            chunk = result[kind]
+            end = offsets[kind] + len(chunk)
+            assert len(chunk) <= 12_000
+            assert chunk == source[offsets[kind]:end]
+            assert result[f"{kind}_offset"] == offsets[kind]
+            assert result[f"{kind}_end_offset"] == end
+            assert result[f"{kind}_chars"] == len(source)
+            assert result[f"{kind}_slice_chars"] == len(chunk)
+            assert result[f"{kind}_next_offset"] == (end if end < len(source) else None)
+            assert result[f"{kind}_truncated"] is (end < len(source))
+            chunks[kind].append(chunk)
+            offsets[kind] = end
+        if all(result[f"{kind}_next_offset"] is None for kind in sources):
+            break
+    else:
+        pytest.fail("bounded inspection did not reach the end of both source streams")
+
+    assert {kind: "".join(parts) for kind, parts in chunks.items()} == sources
+    assert json.dumps(tools.web_doc, sort_keys=True) == original_doc
+    assert json.dumps(registry.sections, sort_keys=True) == original_registry
+    assert tools.operations_ledger == []
+
+
+@pytest.mark.parametrize("field", ["html_offset", "css_offset"])
+@pytest.mark.parametrize("offset", [-1, True, 1.5, "1", None, 10**30])
+def test_inspect_cloned_section_refuses_invalid_offsets(tmp_path: Path, field, offset) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_small", role="feature", label="Small", html="html", css="css")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_small", **{field: offset}))
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "cloned_section.bad_offset"
+    assert "html" not in result and "css" not in result
+    assert tools.operations_ledger == []
+
+
+def test_inspect_cloned_section_empty_source_and_end_offsets_are_terminal(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_small", role="feature", label="Small", html="html", css="")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_small", html_offset=4))
+
+    assert result["status"] == "ok"
+    for kind in ("html", "css"):
+        assert result[kind] == ""
+        assert result[f"{kind}_slice_chars"] == 0
+        assert result[f"{kind}_next_offset"] is None
+        assert result[f"{kind}_truncated"] is False
+
+
+def test_inspect_cloned_section_continuation_still_uses_workspace_registry(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_here", role="feature", label="Local", html="local")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_other_workspace", html_offset=12_000))
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "cloned_section.not_found"
+    assert "html" not in result and "css" not in result
+
+
 # --------------------------------------------------------------------------- #
 # A pin is born with a human name (R-A5)
 # --------------------------------------------------------------------------- #
@@ -1355,6 +1589,10 @@ def test_inspect_lists_the_human_text_overrides_on_every_pin_of_that_clone(
             "size": 1,
         }
     ]
+    terminal = json.loads(tools.inspect_cloned_section(
+        HERO_ID, html_offset=result["html_chars"], css_offset=result["css_chars"],
+    ))
+    assert terminal["text_overrides"] == result["text_overrides"]
 
 
 def test_a_clone_nobody_has_edited_lists_no_overrides(
@@ -1363,3 +1601,322 @@ def test_a_clone_nobody_has_edited_lists_no_overrides(
     tools = _tools(tmp_path, registry)
     tools.insert_cloned_section(HERO_ID)
     assert json.loads(tools.inspect_cloned_section(HERO_ID))["text_overrides"] == []
+
+
+def test_source_version_evidence_survives_search_and_inspection(tmp_path: Path) -> None:
+    class SourceRegistry(FakeRegistry):
+        def read_source(self, fragment_id):
+            return {**super().read_source(fragment_id), **metadata}
+
+    metadata = {
+        "source_kit_id": "kit_original", "source_kit_version": 1,
+        "source_kit_bindings": [{"brand_kit_id": "kit_current", "version": 2}],
+        "page_url": "https://insight.example/product", "section_index": 3,
+        "created_at": "2026-09-19T00:00:00Z", "payload_digest": "a" * 64,
+        "capture_evidence": {"snapshot_id": "snap_old", "dead_height_check": {
+            "assessed": False, "because": "no_preview"}},
+        "behavior_evidence": {"basis": "sanitized_html_snapshot",
+                              "controller_status": "controller_not_retained",
+                              "behavior_test": "not_performed"},
+    }
+    registry = SourceRegistry(tmp_path)
+    registry.add("frag_evidence", role="hero", label="Product hero", html=HERO_HTML)
+    registry.sections["frag_evidence"].update(metadata)
+    tools = _tools(tmp_path, registry)
+    found = json.loads(tools.search_cloned_sections())["results"][0]
+    assert found["brand_kit"] == {"id": "kit_original", "version": 1}
+    assert found["source_kit_bindings"] == metadata["source_kit_bindings"]
+    assert found["page_url"] == metadata["page_url"]
+    inspected = json.loads(tools.inspect_cloned_section("frag_evidence"))
+    for key, value in metadata.items():
+        assert inspected[key] == value
+    # Association is not freshness or visual acceptance.
+    assert "fidelity_verified" not in inspected
+    assert "captured_at" not in inspected
+
+
+def test_authored_product_band_is_not_mislabeled_as_campaign_chrome(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_product", role="feature", label="Product", html=HERO_HTML)
+    registry.sections["frag_product"]["composed"] = "agent"
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())["results"][0]
+    assert result["composed"] == "agent"
+    assert "authored" in result["composed_note"]
+    assert "shell" not in result["composed_note"]
+
+
+class HrefRegistry(FakeRegistry):
+    def __init__(self, tmp_path):
+        super().__init__(tmp_path)
+        from lumen_api.fragments.artifact import build_fragment_artifact
+        from lumen_api.fragments.slots import SlotSpec
+
+        source = build_fragment_artifact(
+            html=HERO_HTML.replace(
+                "</section>", '<a href="/demo">Lower one</a><a href="/demo">Lower two</a></section>'
+            ),
+            css=".clone-hero{padding:64px}@media(max-width:600px){.clone-hero{padding:16px}}",
+            rehosted={}, slots=[SlotSpec(key="headline", kind="text", selector="h1"),
+                                SlotSpec(key="cta_href", kind="href", selector="a")],
+        )
+        self.original = source.fragment_id
+        self.payloads = {}
+        self.mint_calls = []
+        self.install(source)
+
+    def install(self, artifact):
+        payload = artifact.payload
+        self.payloads[artifact.fragment_id] = payload
+        self.add(artifact.fragment_id, role="hero", label="Captured hero", html=payload["html"],
+                 css=payload["css"], slots=[{"key": key, "kind": spec["kind"]}
+                                          for key, spec in payload["slot_manifest"].items()])
+
+    def mint_href_repair(self, *, replaces, replacements=None, label_replacements=None, rung, note):
+        from lumen_api.fragments.href_repair import build_href_repair
+
+        self.mint_calls.append(replacements)
+        repair = build_href_repair(self.payloads[replaces], replacements, label_replacements=label_replacements)
+        self.install(repair.artifact)
+        return {"fragment_id": repair.artifact.fragment_id, "status": "approved",
+                "match_counts": repair.match_counts, "label_match_counts": repair.label_match_counts,
+                "lineage_kept": True, "converged": False}
+
+
+class RawRepairRegistry(HrefRegistry):
+    """Real sanitize/slot/scoping primitives; only artifact custody is in memory."""
+
+    def __init__(self, tmp_path):
+        FakeRegistry.__init__(self, tmp_path)
+        from lumen_api.fragments import build_fragment_artifact
+        from lumen_ingestion.sections.slotdetect import detect_slots
+
+        html = (
+            '<section class="clone-hero"><h1>Original headline</h1>'
+            '<p>Original body</p><img src="/asset-store/' + 'a' * 64 + '" alt="Brand">'
+            '<a href="https://seller.example/demo">Book a demo</a></section>'
+        )
+        source = build_fragment_artifact(
+            html=html, css='.clone-hero { padding: 160px }',
+            rehosted={}, slots=detect_slots(html).specs,
+        )
+        self.original = source.fragment_id
+        self.payloads = {}
+        self.install(source)
+
+    def mint_repair(self, *, replaces, html, css, rung, note, release=False):
+        from lumen_api.fragments import build_fragment_artifact, sanitize_fragment_html
+        from lumen_ingestion.sections.slotdetect import detect_slots
+
+        sanitized = sanitize_fragment_html(html, rehosted={})
+        artifact = build_fragment_artifact(
+            html=sanitized.html, css=css, rehosted={},
+            slots=detect_slots(sanitized.html).specs, source_fragment_id=replaces,
+        )
+        self.install(artifact)
+        source = self.payloads[replaces]
+        return {
+            'fragment_id': artifact.fragment_id, 'status': 'approved', 'derived_from': replaces,
+            'preserves_pin_content': source['html'] == artifact.payload['html']
+            and source['slot_manifest'] == artifact.payload['slot_manifest'],
+        }
+
+
+def test_css_only_raw_repair_preserves_live_copy_logo_and_human_edit_in_place(tmp_path):
+    registry = RawRepairRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original,
+        slot_values_json=json.dumps({'body': 'Account-specific body', 'image': 'asset_logo_1'}),
+    ))
+    assert pin['status'] == 'ok', pin
+    assert json.loads(tools.web_ops(json.dumps([{
+        'kind': 'set_node_props', 'page_id': 'home', 'id': pin['section_node_id'],
+        'props': {'kind': 'section', 'tag': 'section', 'anchor_id': 'account-insights'},
+    }, {
+        'kind': 'set_fragment_text_override', 'page_id': 'home', 'id': pin['node_id'],
+        'path': ':nth-child(1) > :nth-child(1)',
+        'override': {'text': 'Human account headline', 'bold': True},
+    }])))['status'] == 'ok'
+    before = json.loads(json.dumps(tools.web_doc))
+    source = registry.payloads[registry.original]
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html=source['html'], css=source['css'].replace('160px', '32px'),
+        note='Reduce spacing only; keep current copy and logo',
+    ))
+    assert result['status'] == 'ok', result
+    expected = before
+    expected['pages'][0]['nodes'][pin['node_id']]['fragment_id'] = result['repair_fragment_id']
+    assert tools.web_doc == expected
+    assert result['section_node_id'] == pin['section_node_id']
+    assert tools.operations_ledger[-1]['kind'] == 'set_node_props'
+    for mode in ('editor', 'delivery'):
+        rendered = tools.core.web_render(
+            tools.web_doc, 'home', mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )['html']
+        assert 'Human account headline' in rendered
+        assert 'Account-specific body' in rendered
+        assert 'id="account-insights"' in rendered
+
+
+def test_raw_copy_change_is_not_masked_by_old_copy_overrides(tmp_path):
+    registry = RawRepairRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({'headline': 'Old bound headline'}),
+    ))
+    source = registry.payloads[registry.original]
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html=source['html'].replace('Original headline', 'Revised campaign'),
+        css=source['css'], note='Change campaign headline',
+    ))
+    assert result['status'] == 'ok', result
+    assert result['section_node_id'] != pin['section_node_id']
+    rendered = tools.core.web_render(
+        tools.web_doc, 'home', fragments=tools._fragment_render_map(),
+        fragment_css=tools._fragment_css(),
+    )['html']
+    assert 'Revised campaign' in rendered
+    assert 'Old bound headline' not in rendered
+
+
+def test_exact_href_tool_schema_and_real_render_preserve_pin_human_edits_and_binding(tmp_path):
+    from langchain_core.tools import StructuredTool
+    from selectolax.lexbor import LexborHTMLParser
+
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({"cta_href": "https://client.example/bound"})
+    ))
+    tools.web_ops(json.dumps([{
+        "kind": "set_fragment_text_override", "page_id": "home", "id": pin["node_id"],
+        "path": ":nth-child(1) > :nth-child(1)",
+        "override": {"text": "Human headline", "bold": True},
+    }]))
+    before = json.loads(json.dumps(tools.web_doc))
+    original_source = json.loads(json.dumps(registry.payloads[registry.original]))
+    exposed = StructuredTool.from_function(tools.repair_cloned_section)
+    schema = exposed.args_schema.model_json_schema()
+    assert schema["required"] == ["fragment_id"]
+    result = json.loads(exposed.invoke({
+        "fragment_id": registry.original, "note": "Restore the two inherited navigation targets",
+        "href_replacements_json": json.dumps({"/demo": "https://client.example/demo"}),
+    }))
+    assert result["status"] == "ok", result
+    assert result["match_counts"] == {"/demo": 2}
+    expected = before
+    expected["pages"][0]["nodes"][pin["node_id"]]["fragment_id"] = result["repair_fragment_id"]
+    assert tools.web_doc == expected
+    assert registry.payloads[registry.original] == original_source
+    assert tools.operations_ledger[-1]["kind"] == "set_node_props"
+    for mode in ("editor", "delivery"):
+        rendered = tools.core.web_render(
+            tools.web_doc, "home", mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )
+        tree = LexborHTMLParser(rendered["html"])
+        assert [a.attributes["href"] for a in tree.css(".clone-hero a")] == [
+            "https://client.example/bound", "https://client.example/demo", "https://client.example/demo",
+        ]
+        assert tree.css_first(".clone-hero h1").text() == "Human headline"
+
+
+@pytest.mark.parametrize("mapping", ["{}", "[]", "not json", '{"/demo":"javascript:x"}',
+                                    '{"/demo":"/a","/demo":"/b"}', "x" * 40_001],
+                         ids=["empty", "array", "malformed", "unsafe", "duplicate", "oversized"])
+def test_exact_href_tool_rejects_bad_input_before_registry_mint(tmp_path, mapping):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json=mapping,
+    ))
+    assert result["error_code"] == "repair.bad_href_map"
+    assert not registry.mint_calls
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_exact_href_tool_refuses_multiple_pins_and_mixed_source_inputs(tmp_path):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html="replacement", note="Fix links",
+        href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.bad_href_map"
+    tools.insert_cloned_section(registry.original)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.ambiguous_pin"
+    assert not registry.mint_calls
+
+
+def test_exact_href_tool_reports_released_artifact_when_swap_fails(tmp_path, monkeypatch):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    monkeypatch.setattr(
+        tools.core, "web_apply_ops", lambda *_: {"ok": False, "diagnostics": ["refused"]},
+    )
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.swap_rejected"
+    assert result["released"] is True and result["pinned"] is False
+    assert result["fragment_id"] in registry.payloads
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_exact_label_tool_changes_rendered_cta_without_losing_personalized_copy(tmp_path):
+    from langchain_core.tools import StructuredTool
+    from selectolax.lexbor import LexborHTMLParser
+
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({"headline": "A relevant account argument"})
+    ))
+    before = json.loads(json.dumps(tools.web_doc))
+    exposed = StructuredTool.from_function(tools.repair_cloned_section)
+    assert "cta_label_replacements_json" in exposed.args_schema.model_json_schema()["properties"]
+    result = json.loads(exposed.invoke({
+        "fragment_id": registry.original, "note": "Match the page's primary action",
+        "cta_label_replacements_json": '{"Book a demo":"Explore the workflow"}',
+    }))
+    assert result["status"] == "ok", result
+    assert result["label_match_counts"] == {"Book a demo": 1}
+    expected = before
+    expected["pages"][0]["nodes"][pin["node_id"]]["fragment_id"] = result["repair_fragment_id"]
+    assert tools.web_doc == expected
+    for mode in ("editor", "delivery"):
+        html = tools.core.web_render(
+            tools.web_doc, "home", mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )["html"]
+        tree = LexborHTMLParser(html)
+        assert tree.css_first(".clone-hero h1").text() == "A relevant account argument"
+        assert tree.css_first(".clone-hero a").text() == "Explore the workflow"
+        assert tree.css_first(".clone-hero a").attributes["href"] == "https://insight.example/demo"
+
+
+def test_label_tool_cannot_silently_mask_existing_human_text_overrides(tmp_path):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(registry.original))
+    tools.web_ops(json.dumps([{
+        "kind": "set_fragment_text_override", "page_id": "home", "id": pin["node_id"],
+        "path": ":nth-child(1) > :nth-child(2)", "override": {"text": "Human CTA"},
+    }]))
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Match action",
+        cta_label_replacements_json='{"Book a demo":"Explore"}',
+    ))
+    assert result["error_code"] == "repair.label_override_conflict"
+    assert not registry.mint_calls
+    assert json.dumps(tools.web_doc, sort_keys=True) == before

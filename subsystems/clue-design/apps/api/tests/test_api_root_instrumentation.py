@@ -58,7 +58,12 @@ print("GUARD OK")
 """
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(_DESIGN_ROOT), str(_DESIGN_ROOT / "apps/api"), str(_DESIGN_ROOT / "apps/agent_runtime")]
+        [
+            str(_DESIGN_ROOT),
+            str(_DESIGN_ROOT / "apps/api"),
+            str(_DESIGN_ROOT / "apps/agent_runtime"),
+            env.get("PYTHONPATH", ""),
+        ]
     )
     env["CLUE_SENTRY_ENABLED"] = "false"
     env.pop("CLUE_LANGFUSE_PUBLIC_KEY", None)

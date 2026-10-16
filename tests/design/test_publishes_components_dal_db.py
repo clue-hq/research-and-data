@@ -219,6 +219,83 @@ def test_publish_upsert_shifts_current_to_previous_and_rollback_swaps_back(
     run_async(_check())
 
 
+async def _stamp(conn: AsyncConnection, ws: str, slug: str, seconds_ago: int) -> None:
+    """Put one publish row's ``updated_at`` at a point on an explicit timeline.
+
+    Inside one rolled-back test transaction ``now()`` is frozen, so every DAL write stamps the
+    same instant. Production runs each repository call in its own transaction, so the clock moves
+    between them; this lays that production timeline out explicitly.
+    """
+    await conn.execute(
+        text(
+            "UPDATE design_web_publish SET updated_at = now() - make_interval(secs => :s)"
+            " WHERE workspace_id = :w AND slug = :slug"
+        ),
+        {"s": seconds_ago, "w": ws, "slug": slug},
+    )
+
+
+async def _updated_at(conn: AsyncConnection, ws: str, slug: str) -> Any:
+    return (
+        await conn.execute(
+            text("SELECT updated_at FROM design_web_publish WHERE workspace_id = :w AND slug = :s"),
+            {"w": ws, "s": slug},
+        )
+    ).scalar_one()
+
+
+def test_a_moved_document_reads_as_the_publish_it_now_lives_at(require_design_db: None) -> None:
+    """A move (publish at A, then at B, then retire A) leaves A with the LATER ``updated_at``:
+    ``unpublish_other_slugs`` re-stamps the rows it retires. The document's publish is still B,
+    the live one. With nothing live, the newest row is returned, unpublished."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn, "move")
+            doc = await _seed_document(conn, ws)
+            slug_a, slug_b = f"slug-a-{uuid4().hex[:8]}", f"slug-b-{uuid4().hex[:8]}"
+            for slug, seconds_ago in ((slug_a, 40), (slug_b, 30)):
+                await design_publishes.upsert_web_publish(
+                    conn,
+                    workspace_id=ws,
+                    slug=slug,
+                    document_id=doc,
+                    doc_version=1,
+                    html=f"<html>{slug}</html>",
+                    runtime_version=None,
+                    publish_id=None,
+                )
+                await _stamp(conn, ws, slug, seconds_ago)
+            assert await _updated_at(conn, ws, slug_b) > await _updated_at(conn, ws, slug_a)
+
+            retired = await design_publishes.unpublish_other_slugs(
+                conn, workspace_id=ws, document_id=doc, keep_slug=slug_b
+            )
+            assert retired == [slug_a]
+            await _stamp(conn, ws, slug_a, 20)  # the retire statement commits after B's upsert
+            assert await _updated_at(conn, ws, slug_a) > await _updated_at(conn, ws, slug_b)
+
+            live = await design_publishes.get_web_publish_for_document(
+                conn, workspace_id=ws, document_id=doc
+            )
+            assert live is not None
+            assert (live["slug"], live["status"]) == (slug_b, "active")
+
+            # Nothing live any more: the newest row (B, just unpublished) is the answer.
+            await design_publishes.set_web_publish_status(
+                conn, workspace_id=ws, slug=slug_b, status="unpublished"
+            )
+            assert await _updated_at(conn, ws, slug_b) > await _updated_at(conn, ws, slug_a)
+            newest = await design_publishes.get_web_publish_for_document(
+                conn, workspace_id=ws, document_id=doc
+            )
+            assert newest is not None
+            assert (newest["slug"], newest["status"]) == (slug_b, "unpublished")
+            await txn.rollback()
+
+    run_async(_check())
+
+
 def test_rollback_markers_and_a_publish_with_no_history(require_design_db: None) -> None:
     """The ported string markers survive the port: 'not_found' and 'no_previous'."""
 

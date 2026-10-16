@@ -26,6 +26,7 @@ PAGE_MAX_BYTES = HTML_MAX_BYTES
 CSS_MAX_BYTES = 5 * 1024 * 1024
 FONT_MAX_BYTES = 10 * 1024 * 1024
 IMAGE_MAX_BYTES = 15 * 1024 * 1024
+VIDEO_MAX_BYTES = 50 * 1024 * 1024
 
 REQUEST_TIMEOUT_SECONDS = 15.0
 MAX_REDIRECT_HOPS = 5
@@ -40,7 +41,7 @@ _USER_AGENT = (
 )
 _DEFAULT_HEADERS = {"User-Agent": _USER_AGENT, "Accept-Language": "en"}
 
-ResourceKind = Literal["page", "css", "font", "image", "logo", "screenshot"]
+ResourceKind = Literal["page", "css", "font", "image", "logo", "screenshot", "video"]
 
 _CAP_BY_KIND: dict[str, int] = {
     "page": PAGE_MAX_BYTES,
@@ -49,6 +50,7 @@ _CAP_BY_KIND: dict[str, int] = {
     "image": IMAGE_MAX_BYTES,
     "logo": IMAGE_MAX_BYTES,
     "screenshot": IMAGE_MAX_BYTES,
+    "video": VIDEO_MAX_BYTES,
 }
 
 
@@ -201,6 +203,8 @@ class BoundedFetcher:
                 current = str(response.url.join(location))
                 await guard_url(current)
                 continue
+            if response.status_code >= 400:
+                raise CaptureError("LUMI0503", f"page returned HTTP {response.status_code}: {url}")
             body, capped = _read_capped(response, PAGE_MAX_BYTES)
             if capped:
                 raise CaptureError(
@@ -255,46 +259,54 @@ class BoundedFetcher:
     async def _fetch_one(self, request: FetchRequest) -> FetchResult:
         if request.url in self._cache:
             return self._cache[request.url]
-        # SSRF re-guard on every fetched resource (assets can be off-origin).
-        await guard_url(request.url)
         cap = _CAP_BY_KIND.get(request.kind, IMAGE_MAX_BYTES)
-        async with self._semaphore:
-            response = await self._client.get(
-                request.url, headers=_DEFAULT_HEADERS, follow_redirects=True
-            )
-        if response.status_code >= 400:
-            diagnostic = _fetch_failure_diagnostic(
-                request.url, f"HTTP {response.status_code}"
-            )
-            self._diagnostics.append(diagnostic)
-            result = FetchResult(
-                url=request.url,
-                kind=request.kind,
-                ok=False,
-                status=response.status_code,
-                diagnostics=[diagnostic],
-            )
+        current = request.url
+        for _ in range(MAX_REDIRECT_HOPS + 1):
+            # Re-guard every redirect, not only the original asset URL.
+            await guard_url(current)
+            async with self._semaphore, self._client.stream(
+                "GET", current, headers=_DEFAULT_HEADERS, follow_redirects=False
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise CaptureError("LUMI0503", "asset redirect has no location")
+                    current = str(response.url.join(location))
+                    continue
+                diagnostics = []
+                body: bytes | None = None
+                if response.status_code >= 400:
+                    diagnostics.append(_fetch_failure_diagnostic(
+                        request.url, f"HTTP {response.status_code}"
+                    ))
+                elif request.kind == "video" and response.headers.get("content-type", "").split(";", 1)[0].lower() not in {"video/webm", "video/mp4", "video/ogg", "video/quicktime"}:
+                    diagnostics.append(_fetch_failure_diagnostic(
+                        request.url,
+                            "video source did not return a supported video content type"
+                    ))
+                else:
+                    buffer = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(buffer) + len(chunk) > cap:
+                            diagnostics.append(_size_cap_diagnostic(request.url, cap))
+                            break
+                        buffer.extend(chunk)
+                    if not diagnostics:
+                        body = bytes(buffer)
+                result = FetchResult(
+                    url=request.url,
+                    kind=request.kind,
+                    ok=not diagnostics,
+                    status=response.status_code,
+                    content_type=response.headers.get("content-type"),
+                    body=body,
+                    final_url=str(response.url),
+                    diagnostics=diagnostics,
+                )
+            self._diagnostics.extend(diagnostics)
             self._cache[request.url] = result
             return result
-
-        body, capped = _read_capped(response, cap)
-        result = FetchResult(
-            url=request.url,
-            kind=request.kind,
-            ok=True,
-            status=response.status_code,
-            content_type=response.headers.get("content-type"),
-            body=body,
-            final_url=str(response.url),
-        )
-        if capped:
-            diagnostic = _size_cap_diagnostic(request.url, cap)
-            result.ok = False
-            result.body = None
-            result.diagnostics.append(diagnostic)
-            self._diagnostics.append(diagnostic)
-        self._cache[request.url] = result
-        return result
+        raise CaptureError("LUMI0501", f"blocked url — too many asset redirects: {request.url}")
 
 
 def _read_capped(response: httpx.Response, cap: int) -> tuple[bytes, bool]:

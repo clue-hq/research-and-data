@@ -31,10 +31,11 @@ from clue_api.arv2.project_documents import (
     read_project_document,
 )
 from clue_api.client_context_binding import workspace_client_entity_id
-from clue_api.design_leg_wiring import project_design_documents
+from clue_api.design_leg_wiring import project_design_documents, wire_kind
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
     resolve_scene_targets,
+    validate_site_targets,
     validate_web_targets,
 )
 from clue_api.frontend_read.accounts_list import read_spine_page
@@ -67,7 +68,7 @@ __all__ = [
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v71"
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v74"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
@@ -297,7 +298,7 @@ async def validated_context_refs(
                 "the targeted design document is not available in this workspace",
             ) from exc
         target_doc_kind = target_document.get("doc_kind")
-        if target_doc_kind not in {"scene", "web"}:
+        if target_doc_kind not in {"scene", "web", "site"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design node targets require a scene or web document",
@@ -313,6 +314,11 @@ async def validated_context_refs(
             # an inner ``#`` path naming the annotated element inside its node.
             if target_doc_kind == "scene":
                 resolve_scene_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
+            elif target_doc_kind == "site":
+                validate_site_targets(
                     target_document.get("scene") or {},
                     tuple(ref.object_id for ref in design_nodes),
                 )
@@ -825,6 +831,6 @@ async def context_ref_presentations(
         for design_id, row in rows.items():
             result[("design_document", design_id)] = {
                 "label": str(row["title"] or "Design"),
-                "kind": "web" if row["doc_kind"] == "web" else "ad",
+                "kind": wire_kind(str(row["doc_kind"])),
             }
     return result

@@ -716,7 +716,7 @@ class DesignArtifactWire(_Wire):
     id: str
     project_id: str
     document_id: str
-    kind: Literal["web", "ad"]
+    kind: Literal["web", "ad", "site"]
     title: str
     status: str
     current_version_id: str

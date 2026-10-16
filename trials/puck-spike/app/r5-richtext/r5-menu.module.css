@@ -1,0 +1,46 @@
+/* R5 spike: the platform rich-text toolbar's skin (apps/frontend/src/features/design-editor/components/
+   web-rich-text-toolbar.module.css: .row, .tool, .divider) with the design-system tokens resolved to their
+   values (apps/frontend/packages/design-system/generated/tokens.css), because the spike app does not ship
+   the tokens: border-neutral #D6D9E0, bg-neutral #FFFFFF, content-neutral #1C2028, bg-neutral-hover
+   #00256E07, bg-neutral-pressed #001E4B11, border-subtle #E6E9ED. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 0.5px solid #d6d9e0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%);
+  color: #1c2028;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.row :global(button) {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #1c2028;
+  cursor: pointer;
+}
+
+.row :global(button:hover:not(:disabled)) {
+  background: #00256e07;
+}
+
+/* Puck 0.23 marks an active inline control only by its hashed module class
+   (`_ActionBarAction--active_<hash>`; chunk-K2LNXU54.mjs, `Action`) — no aria-pressed. */
+.row :global(button[class*="ActionBarAction--active"]) {
+  background: #001e4b11;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: #e6e9ed;
+}

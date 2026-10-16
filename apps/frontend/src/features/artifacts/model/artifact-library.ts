@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { collateralTypeFor, editedLabelFor, sizeFor } from "@/features/design-editor/adapter/gallery";
+import { DesignDocumentKindSchema, type DesignDocumentKind } from "@/features/design-editor/model/artifact";
 import {
   ProjectArtifactSchema,
   type ProjectArtifact,
@@ -11,7 +12,7 @@ export const ArtifactWireSchema = z.object({
   document_id: z.string().min(1),
   project_id: z.string().min(1),
   project_title: z.string().min(1),
-  kind: z.enum(["web", "ad"]),
+  kind: DesignDocumentKindSchema,
   title: z.string().min(1),
   status: z.string().min(1),
   current_version: z.number().int().nonnegative(),
@@ -51,7 +52,7 @@ export type LibraryArtifact = ProjectArtifact & {
   projectId: string;
   projectTitle: string;
   documentId: string;
-  kind: "web" | "ad";
+  kind: DesignDocumentKind;
   account?: LibraryAccount;
   archivedAt?: string;
   saved: boolean;
@@ -92,6 +93,7 @@ export function toLibraryArtifact(row: ArtifactWire, now = new Date()): LibraryA
     ...(account ? { accountId: account.id, accountName: account.name } : {}),
     ...(account?.domain ? { accountLogoPath: `/api/source-favicon?domain=${encodeURIComponent(account.domain)}` } : {}),
     createdAt: utcInstant(row.created_at),
+    documentKind: row.kind,
     editedLabel: editedLabelFor(row.updated_at, now),
     id: row.id,
     imagePath: `/api/clue/design/documents/${encodeURIComponent(row.document_id)}/thumbnail?v=${encodeURIComponent(String(row.current_version))}`,

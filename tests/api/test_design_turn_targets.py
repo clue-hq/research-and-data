@@ -8,8 +8,12 @@ from clue_agents import DomainObjectRef
 from clue_api.chat.composer_context import ContextReferenceError, validated_context_refs
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
+    SiteTarget,
+    refs_for_document,
     resolve_scene_targets,
+    resolve_site_targets,
     resolve_web_targets,
+    validate_site_targets,
     validate_web_targets,
 )
 
@@ -201,3 +205,168 @@ def test_validated_context_refs_refuses_an_unknown_node_on_a_web_document(
         )
 
     assert refused.value.code == "CONTEXT_REF_NOT_FOUND"
+
+
+# --- site targets (Puck site documents, Wave 2 Lane A) -----------------------------------------
+
+
+def _site_doc() -> dict[str, object]:
+    return {
+        "id": "doc_site",
+        "pages": {
+            "/": {
+                "root": {"props": {}},
+                "content": [{"type": "StatsBand", "props": {"id": "proof", "heading": "H"}}],
+            },
+            "/analysis": {
+                "root": {"props": {}},
+                "content": [
+                    {
+                        "type": "FeatureSplit",
+                        "props": {"id": "Hero-1a2b", "title": "T", "body": "B"},
+                    },
+                    {"type": "Quote", "props": {"id": "v2.quote", "quote": "Q"}},
+                ],
+            },
+        },
+        "shell": {"header": {"preparedFor": "SCSD", "ctaLabel": "Go"}, "footer": {"legal": "©"}},
+    }
+
+
+def test_site_targets_name_a_component_its_prop_and_the_shell() -> None:
+    assert validate_site_targets(
+        _site_doc(),
+        (
+            "site:/analysis#Hero-1a2b.title",
+            "site:/#proof",
+            "site:shell#header.ctaLabel",
+            "site:shell#footer",
+            "site:/analysis#v2.quote",
+        ),
+    ) == (
+        SiteTarget(route="/analysis", component_id="Hero-1a2b", prop="title"),
+        SiteTarget(route="/", component_id="proof", prop=None),
+        SiteTarget(route="shell", component_id="header", prop="ctaLabel"),
+        SiteTarget(route="shell", component_id="footer", prop=None),
+        # An id with a dot in it is read whole first, so "v2.quote" is a component, not a prop.
+        SiteTarget(route="/analysis", component_id="v2.quote", prop=None),
+    )
+
+
+@pytest.mark.parametrize(
+    ("targets", "code"),
+    [
+        ((), "CONTEXT_REF_RELATIONSHIP_MISMATCH"),
+        (("site:/#proof", "site:/#proof"), "CONTEXT_REF_DUPLICATE"),
+        (("frg_a",), "CONTEXT_REF_RELATIONSHIP_MISMATCH"),
+        (("site:/pricing#proof",), "CONTEXT_REF_NOT_FOUND"),
+        (("site:/#ghost",), "CONTEXT_REF_NOT_FOUND"),
+        (("site:/#proof.colour",), "CONTEXT_REF_NOT_FOUND"),
+        (("site:shell#sidebar",), "CONTEXT_REF_NOT_FOUND"),
+        (("site:/Analysis#Hero-1a2b",), "CONTEXT_REF_NOT_FOUND"),
+    ],
+)
+def test_site_targets_refuse_what_the_stored_site_cannot_support(
+    targets: tuple[str, ...], code: str
+) -> None:
+    with pytest.raises(DesignTurnTargetError) as refused:
+        validate_site_targets(_site_doc(), targets)
+    assert refused.value.code == code
+
+
+def test_resolve_site_targets_keeps_order_and_notes() -> None:
+    resolved = resolve_site_targets(
+        _site_doc(),
+        [
+            _web_ref("doc_site", object_type="design_document"),
+            _web_ref("site:/#proof", "1. Bigger"),
+            _web_ref("site:shell#header.ctaLabel", "2. Shorter"),
+        ],
+    )
+    assert resolved is not None
+    assert [
+        (n.target.route, n.target.component_id, n.target.prop, n.note)
+        for n in resolved.target_notes
+    ] == [
+        ("/", "proof", None, "1. Bigger"),
+        ("shell", "header", "ctaLabel", "2. Shorter"),
+    ]
+    assert (
+        resolve_site_targets(_site_doc(), [_web_ref("doc_site", object_type="design_document")])
+        is None
+    )
+
+
+def test_validated_context_refs_accepts_targets_on_a_site_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_document(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"id": "doc_site", "doc_kind": "site", "current_version": 9, "scene": _site_doc()}
+
+    from clue_design import documents
+
+    monkeypatch.setattr(documents, "get_document", get_document)
+    refs = (
+        DomainObjectRef(
+            workspace_id="ws_1", object_type="design_document", object_id="doc_site", version=9
+        ),
+        _web_ref("site:/analysis#Hero-1a2b.title", "1. Shorter"),
+    )
+    assert (
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws_1",
+                refs=refs,
+                design_leg_document_ids=("doc_site",),
+            )
+        )
+        == refs
+    )
+    bad = (refs[0], _web_ref("site:/analysis#nope", "1."))
+    with pytest.raises(ContextReferenceError) as refused:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws_1",
+                refs=bad,
+                design_leg_document_ids=("doc_site",),
+            )
+        )
+    assert refused.value.code == "CONTEXT_REF_NOT_FOUND"
+
+
+# Review finding S5-2: a message's notes were handed to EVERY site the turn addressed. Site targets
+# are written as page + section (`site:/#hero`), and sites built from one template share those, so a
+# note drawn on Initech's hero ("shorter headline") was applied to Umbrella's hero too. A message's
+# design_node refs all belong to its one design_document ref (the composer enforces it), so each
+# addressed document gets the notes only when it is that document.
+def _ref(object_type: str, object_id: str, note: str | None = None) -> DomainObjectRef:
+    return DomainObjectRef(
+        workspace_id="ws_1", object_type=object_type, object_id=object_id, note=note
+    )
+
+
+def test_notes_go_only_to_the_document_they_were_drawn_on() -> None:
+    refs = (
+        _ref("design_document", "doc_initech"),
+        _ref("design_node", "site:/#hero", "shorter headline"),
+        _ref("design_asset", "asset_1"),
+        _ref("account", "acc_1"),
+    )
+    own = refs_for_document(refs, "doc_initech")
+    assert own == refs
+    sibling = refs_for_document(refs, "doc_umbrella")
+    assert [ref.object_type for ref in sibling] == ["design_document", "design_asset", "account"]
+
+
+def test_a_message_without_notes_is_the_same_for_every_document() -> None:
+    refs = (_ref("design_asset", "asset_1"), _ref("design_document", "doc_a"))
+    assert refs_for_document(refs, "doc_b") == refs
+    assert refs_for_document((), "doc_b") == ()
+
+
+def test_notes_with_no_document_named_reach_no_document() -> None:
+    """The composer never lets this through; if it ever did, no site gets a note it cannot place."""
+    refs = (_ref("design_node", "site:/#hero", "x"),)
+    assert refs_for_document(refs, "doc_a") == ()

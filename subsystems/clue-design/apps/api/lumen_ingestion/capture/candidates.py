@@ -27,9 +27,9 @@ Coverage, and the origin tag each reference carries:
   ``picture-dark`` a ``<picture><source media="(prefers-color-scheme: dark)">`` rung; the tag
                    rides on ``dark_scheme`` too, and survives into the snapshot and evidence
   ``css-url``      every ``url()`` in an asset-bearing declaration (background, mask,
-                   border-image, list-style-image, content, cursor) from inline ``style``
-                   attributes and EVERY fetched stylesheet. ``@font-face`` ``src`` is
-                   deliberately excluded — the font path owns it and double-counting it would
+                   border-image, list-style-image, content, cursor, and custom properties) from
+                   inline ``style`` attributes and EVERY fetched stylesheet. ``@font-face`` ``src``
+                   is deliberately excluded — the font path owns it and double-counting it would
                    make one file two candidates
   ``svg-ref``      an inline ``<svg>``'s external references (``<use href>``, ``<image href>``,
                    and their ``xlink:`` forms); the fragment is stripped, because the fragment
@@ -46,6 +46,8 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import urldefrag, urljoin
 
+import tinycss2
+
 from .. import logo_ladder
 from .budget import MAX_ASSET_COUNT, budget_diagnostic
 from .cssurl import iter_css_urls
@@ -54,7 +56,17 @@ from .parse import font_face_source_rungs
 
 #: Origin tags, in the order the collector emits them. Task 3 and the F2 clone harvest read
 #: these off the candidate, so they are part of this module's contract, not decoration.
-ORIGINS = ("logo-rung", "font", "img", "srcset", "picture-dark", "css-url", "svg-ref")
+ORIGINS = (
+    "logo-rung",
+    "font",
+    "img",
+    "srcset",
+    "picture-dark",
+    "poster",
+    "video",
+    "css-url",
+    "svg-ref",
+)
 
 #: ``net.ResourceKind`` for each origin — what byte cap the fetcher applies.
 _KIND_BY_ORIGIN = {
@@ -63,16 +75,28 @@ _KIND_BY_ORIGIN = {
     "img": "image",
     "srcset": "image",
     "picture-dark": "image",
+    "poster": "image",
+    "video": "video",
     "css-url": "image",
     "svg-ref": "image",
 }
 
-#: CSS declarations that can carry a fetchable ``url()``. ``src`` is NOT here on purpose
-#: (``@font-face`` owns it). Longest names first so ``mask-image`` wins over ``mask``.
-_CSS_ASSET_DECL_RE = re.compile(
-    r"(-webkit-mask-image|-webkit-mask|border-image-source|border-image|list-style-image"
-    r"|background-image|background|mask-image|mask|content|cursor)\s*:\s*([^;{}]*)",
-    re.IGNORECASE,
+#: Standard asset-bearing declarations. Custom properties are included separately because
+#: their URL values can feed any of these through var(). Font-face ``src`` retains its path.
+_CSS_ASSET_PROPERTIES = frozenset(
+    {
+        "-webkit-mask-image",
+        "-webkit-mask",
+        "border-image-source",
+        "border-image",
+        "list-style-image",
+        "background-image",
+        "background",
+        "mask-image",
+        "mask",
+        "content",
+        "cursor",
+    }
 )
 
 _DARK_MEDIA_RE = re.compile(r"prefers-color-scheme\s*:\s*dark", re.IGNORECASE)
@@ -133,8 +157,7 @@ def collect_asset_candidates(tree, base_url: str, stylesheets) -> CandidateHarve
         )
 
     sheet_pairs = [
-        (getattr(sheet, "url", "") or "", getattr(sheet, "text", "") or "")
-        for sheet in stylesheets
+        (getattr(sheet, "url", "") or "", getattr(sheet, "text", "") or "") for sheet in stylesheets
     ]
 
     # 1 — everything the logo machinery can score. Whatever the ladder ranks, we hold bytes
@@ -154,6 +177,18 @@ def collect_asset_candidates(tree, base_url: str, stylesheets) -> CandidateHarve
     #     srcset rung, so nothing a page offered is left unfetched.
     for node in tree.css("img"):
         _add_image_references(node, base_url, add)
+
+    # A video source is a dependency of the cloned markup, even when it is
+    # decorative. Keep every source rendition plus the poster in original URL
+    # spelling after base resolution. The transport applies a separate byte cap.
+    for node in tree.css("video"):
+        poster = (node.attributes.get("poster") or "").strip()
+        if poster and not poster.startswith(("data:", "blob:")):
+            add(urljoin(base_url, poster), "poster", detail="video poster")
+        for source in [node, *node.css("source")]:
+            src = (source.attributes.get("src") or "").strip()
+            if src and not src.startswith(("data:", "blob:")):
+                add(urljoin(base_url, src), "video", detail="video source")
 
     # 4 — CSS url() from inline style attributes and every fetched sheet.
     for node in tree.css("[style]"):
@@ -252,17 +287,86 @@ def _add_image_references(node, base_url: str, add) -> None:
 
 
 def _css_urls(css_text: str, base: str) -> list[tuple[str, str]]:
-    """``(absolutized url, property name)`` for every asset-bearing ``url()`` in some CSS."""
-    if "url(" not in css_text.lower():
-        return []
+    """Asset URLs in declaration order, including media carried by custom properties."""
     found: list[tuple[str, str]] = []
-    for declaration in _CSS_ASSET_DECL_RE.finditer(css_text):
-        prop = declaration.group(1).lower()
-        for raw in iter_css_urls(declaration.group(2)):
-            if raw.startswith("data:") or raw.startswith("#"):
-                continue
-            found.append((urljoin(base, raw), prop))
+    for declaration in _css_asset_declarations(css_text):
+        prop = declaration.name if declaration.name.startswith("--") else declaration.lower_name
+        # Visit actual URL tokens, not strings/comments containing text that resembles url().
+        # The shared seam still owns URL escape decoding, including quoted and unquoted URLs.
+        pending = list(reversed(declaration.value))
+        while pending:
+            token = pending.pop()
+            if token.type == "url" or (token.type == "function" and token.lower_name == "url"):
+                for raw in iter_css_urls(tinycss2.serialize([token])):
+                    if raw.startswith(("data:", "#")):
+                        continue
+                    try:
+                        url = urljoin(base, raw)
+                    except ValueError:
+                        # A malformed URL is not fetchable; keep its valid neighbours.
+                        continue
+                    found.append((url, prop))
+            elif token.type == "function":
+                pending.extend(reversed(token.arguments))
+            elif token.type in {"() block", "[] block", "{} block"}:
+                pending.extend(reversed(token.content))
     return found
+
+
+def _css_asset_declarations(css_text: str):
+    """Read inline declarations and nested stylesheet blocks with tinycss2 >= 1.3.
+
+    Split only at token-level semicolons or rule blocks; punctuation inside a URL, string,
+    or function cannot terminate a declaration. Keeping rule blocks separate also handles
+    declarations following a nested selector, which parse_declaration_list alone skips.
+    """
+    pending = [(tinycss2.parse_component_value_list(css_text, skip_comments=True), False)]
+    declarations = []
+
+    def collect(statement, registration):
+        for item in tinycss2.parse_declaration_list(
+            statement, skip_comments=True, skip_whitespace=True
+        ):
+            if item.type == "declaration" and (
+                item.name.startswith("--")
+                or item.lower_name in _CSS_ASSET_PROPERTIES
+                or (registration and item.lower_name == "initial-value")
+            ):
+                declarations.append(item)
+
+    while pending:
+        tokens, registration = pending.pop()
+        statement = []
+        for token in tokens:
+            if token.type == "literal" and token.value == ";":
+                collect(statement, registration)
+                statement = []
+            elif token.type == "{} block":
+                head = [item for item in statement if item.type != "whitespace"][:2]
+                if (
+                    len(head) == 2
+                    and head[0].type == "ident"
+                    and head[0].value.startswith("--")
+                    and head[1].type == "literal"
+                    and head[1].value == ":"
+                ):
+                    # A custom-property value can itself contain a brace block.
+                    statement.append(token)
+                else:
+                    is_registration = (
+                        len(head) == 2
+                        and head[0].type == "at-keyword"
+                        and head[0].lower_value == "property"
+                        and head[1].type == "ident"
+                        and head[1].value.startswith("--")
+                    )
+                    pending.append((token.content, is_registration))
+                    statement = []
+            else:
+                statement.append(token)
+        collect(statement, registration)
+
+    return sorted(declarations, key=lambda item: (item.source_line, item.source_column))
 
 
 # --------------------------------------------------------------------------- #

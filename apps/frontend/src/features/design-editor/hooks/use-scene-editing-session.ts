@@ -100,6 +100,7 @@ export function useSceneEditingSession({
   agentRunLocked = false,
   documentIds,
   enabled = true,
+  onScreen = true,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
   activeArtifactId: string | null;
@@ -124,6 +125,9 @@ export function useSceneEditingSession({
    * so a caller that only ever mounts ads needs nothing extra.
    */
   enabled?: boolean;
+  /** The artifact is on screen (the artifact surface, panel open): undo/redo keys act only then
+   * (review finding S2b-6). Defaults to true. */
+  onScreen?: boolean;
 }) {
   const activeDocumentId =
     enabled && activeArtifactId
@@ -533,6 +537,7 @@ export function useSceneEditingSession({
     lockNote: AGENT_RUN_LOCK_NOTE,
     locked: agentRunLocked,
     onReload: onWriteReload,
+    onScreen,
     pageId,
     palette,
     tokenMaps,

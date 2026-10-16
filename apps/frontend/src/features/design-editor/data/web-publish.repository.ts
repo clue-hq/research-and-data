@@ -1,10 +1,14 @@
-import { defaultDesignFetch, type DesignEditorConfig } from "../engine/config";
+import type { DesignEditorConfig } from "../engine/config";
 import {
   fetchWebPublishInfo,
   publishWebDocument,
+  setWebNoindex,
   unpublishWebSite,
+  type PublishKind,
   type WebPublishState,
 } from "../engine/webDocuments";
+
+export { WebPublishError, type PublishKind } from "../engine/webDocuments";
 
 /** What a publish just put on the air.
  *
@@ -24,6 +28,9 @@ export interface WebPublishOutcome {
   /** Every route on that custom hostname, built by the server. Empty when the
    * workspace has no active custom hostname. */
   customPageUrls: Record<string, string>;
+  /** K6-2: the document version this publish put on the air (null from a server
+   * that does not say), so the Share menu knows what is live without a re-read. */
+  docVersion: number | null;
 }
 
 /**
@@ -37,66 +44,22 @@ export interface WebPublishOutcome {
 export interface WebPublishRepository {
   /** The document's durable publish state (`GET /documents/{id}/web/publish`). */
   state(documentId: string): Promise<WebPublishState>;
-  /** Publish or republish (`POST /documents/{id}/web/publish`). */
+  /** Publish or republish (`POST /documents/{id}/web/publish`). A server
+   * refusal rejects with a `WebPublishError` carrying its status and code. */
   publish(
     documentId: string,
     input: { slug: string; noindex: boolean },
   ): Promise<WebPublishOutcome>;
+  /** K6-3: store the marketer's indexing choice on the document
+   * (`PUT /documents/{id}/web-noindex`, web pages and sites alike). Returns the
+   * value stored. */
+  setNoindex(documentId: string, noindex: boolean): Promise<boolean>;
   /** Take the site offline (`DELETE /web/publishes/{slug}`). */
   unpublish(slug: string): Promise<void>;
-  /**
-   * The whole site as a static-site ZIP (`GET /documents/{id}/web/export`) —
-   * one folder per page since F5. The `filename` is the server's own
-   * `Content-Disposition` name, so the download is named the way every other
-   * consumer of that route names it.
-   */
-  exportZip(documentId: string): Promise<{ blob: Blob; filename: string }>;
-  /**
-   * The whole site as one PDF (`GET /documents/{id}/web/export.pdf`) — every
-   * page of the site printed by the server's own browser, in document order.
-   * The `filename` is the server's `Content-Disposition` name, as for the ZIP.
-   */
-  exportPdf(documentId: string): Promise<{ blob: Blob; filename: string }>;
-}
-
-/** The empty-ZIP end-of-central-directory record: a 22-byte archive that is a
- * real, openable (if empty) zip. The fixture serves this so a fixture-mode
- * download produces a genuine `.zip`, never a text file wearing the suffix. */
-const EMPTY_ZIP_BYTES = new Uint8Array([
-  0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
-
-/** A minimal one-page PDF, for the same reason the empty zip above exists: a
- * fixture-mode download must produce a genuine `.pdf`, not a text file wearing
- * the suffix. */
-const TINY_PDF = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj
-trailer<</Root 1 0 R>>
-%%EOF
-`;
-
-/**
- * The download name to use, read off a `Content-Disposition` header.
- *
- * Pure and header-shaped: it accepts both the quoted (`filename="a.zip"`) and
- * the bare (`filename=a.zip`) forms servers send, drops any directory part a
- * header might carry, and falls back when there is no header or no usable name
- * in it — the caller then still gets a sane file rather than an empty name.
- */
-export function downloadFilenameFrom(
-  contentDisposition: string | null,
-  fallback: string,
-): string {
-  if (!contentDisposition) return fallback;
-  const match = /filename\s*=\s*(?:"([^"]*)"|([^;]*))/i.exec(contentDisposition);
-  const raw = (match?.[1] ?? match?.[2] ?? "").trim();
-  const name = raw.split(/[\\/]/).pop()?.trim() ?? "";
-  return name || fallback;
 }
 
 const UNPUBLISHED: WebPublishState = {
+  currentVersion: null,
   customOrigin: null,
   customPageUrls: {},
   customUrl: null,
@@ -106,6 +69,7 @@ const UNPUBLISHED: WebPublishState = {
   packageDigest: null,
   pageUrls: {},
   pages: [],
+  noindex: false,
   previousAvailable: false,
   publishId: null,
   publicOrigin: null,
@@ -126,26 +90,16 @@ const FIXTURE_ORIGIN = "https://fixture.pages.test";
  */
 export function createFixtureWebPublishRepository(): WebPublishRepository {
   const published = new Map<string, WebPublishState>();
+  const noindex = new Map<string, boolean>();
   return {
-    async exportPdf(documentId) {
-      const slug = published.get(documentId)?.slug ?? "site";
-      return {
-        blob: new Blob([TINY_PDF], { type: "application/pdf" }),
-        filename: `${slug}.pdf`,
-      };
-    },
-    async exportZip(documentId) {
-      const slug = published.get(documentId)?.slug ?? "site";
-      return {
-        blob: new Blob([EMPTY_ZIP_BYTES], { type: "application/zip" }),
-        filename: `${slug}.zip`,
-      };
-    },
     async publish(documentId, { slug }) {
       const url = `${FIXTURE_ORIGIN}/${slug}`;
+      const docVersion = (published.get(documentId)?.docVersion ?? 0) + 1;
       published.set(documentId, {
         ...UNPUBLISHED,
-        docVersion: (published.get(documentId)?.docVersion ?? 0) + 1,
+        currentVersion: docVersion,
+        docVersion,
+        noindex: noindex.get(documentId) ?? false,
         pageUrls: { "/": url },
         pages: [{ htmlDigest: null, pageId: null, route: "/" }],
         published: true,
@@ -157,13 +111,19 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
       return {
         customPageUrls: {},
         customUrl: null,
+        docVersion,
         pageUrls: { "/": url },
         slug,
         url,
       };
     },
+    async setNoindex(documentId, value) {
+      noindex.set(documentId, value);
+      return value;
+    },
     async state(documentId) {
-      return published.get(documentId) ?? UNPUBLISHED;
+      const state = published.get(documentId) ?? UNPUBLISHED;
+      return { ...state, noindex: noindex.get(documentId) ?? false };
     },
     async unpublish(slug) {
       for (const [documentId, state] of published) {
@@ -178,44 +138,18 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
  *
  * Pass `designBffConfig()` in the browser: `apiBaseUrl` is the page origin and
  * its `fetchImpl` re-mounts every engine URL under `/api/clue/design`, where
- * the proxy stamps the workspace header server-side.
+ * the proxy stamps the workspace header server-side. `kind` picks the
+ * document's own publish and state routes (a site's are `/site/publish`);
+ * unpublish is the same for both.
  */
 export function createHttpWebPublishRepository(
   config: DesignEditorConfig,
+  kind: PublishKind = "web",
 ): WebPublishRepository {
-  async function download(
-    documentId: string,
-    path: string,
-    fallbackFilename: string,
-  ): Promise<{ blob: Blob; filename: string }> {
-    const { apiBaseUrl, fetchImpl = defaultDesignFetch } = config;
-    const response = await fetchImpl(
-      new URL(
-        `/documents/${encodeURIComponent(documentId)}/${path}`,
-        apiBaseUrl,
-      ),
-    );
-    if (!response.ok) {
-      throw new Error(`Site export failed (HTTP ${response.status}).`);
-    }
-    return {
-      blob: await response.blob(),
-      filename: downloadFilenameFrom(
-        response.headers.get("content-disposition"),
-        fallbackFilename,
-      ),
-    };
-  }
-
   return {
-    async exportPdf(documentId) {
-      return download(documentId, "web/export.pdf", "site.pdf");
-    },
-    async exportZip(documentId) {
-      return download(documentId, "web/export", "site.zip");
-    },
     async publish(documentId, { noindex, slug }) {
       const result = await publishWebDocument(config, documentId, slug, {
+        kind,
         noindex,
       });
       return {
@@ -223,6 +157,7 @@ export function createHttpWebPublishRepository(
         // local join for them, so an empty map means "no custom hostname".
         customPageUrls: result.customPageUrls,
         customUrl: result.customUrl,
+        docVersion: result.docVersion,
         // The server's own map wins (F5 task 14): it is the only side that
         // knows whether this workspace's sites are served from its handle's
         // host or from the interim tenant path, so joining a root to a route
@@ -236,8 +171,11 @@ export function createHttpWebPublishRepository(
         url: result.url,
       };
     },
+    async setNoindex(documentId, noindex) {
+      return setWebNoindex(config, documentId, noindex);
+    },
     async state(documentId) {
-      return fetchWebPublishInfo(config, documentId);
+      return fetchWebPublishInfo(config, documentId, kind);
     },
     async unpublish(slug) {
       await unpublishWebSite(config, slug);

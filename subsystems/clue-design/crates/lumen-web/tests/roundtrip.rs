@@ -307,7 +307,7 @@ fn tier2_components_round_trip_and_rewire() {
     let delivery = render_page(&doc, &page_id, &theme, &RenderOptions::delivery("/asset-store"))
         .expect("delivery render");
     assert!(delivery.html.contains(
-        "<button type=\"button\" data-btn=\"outline\" commandfor=\"dlg_book\" command=\"show-modal\">Contact sales</button>"
+        "<button type=\"button\" data-btn=\"outline\" commandfor=\"dlg_book\" command=\"show-modal\" data-lumen-command=\"true\">Contact sales</button>"
     ));
     assert!(delivery.html.contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
     assert!(delivery.html.contains("__lumenRuntimeV2"));

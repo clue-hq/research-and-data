@@ -340,7 +340,10 @@ def test_pipeline_ingested_assets_get_db_records(
     png_bytes = LOGO_PNG_PATH.read_bytes()
     ingested_ids: list[str] = []
 
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False
+    ):
+        assert discover_pages is True
         class Outcome:
             tier = "static"
             escalated = False

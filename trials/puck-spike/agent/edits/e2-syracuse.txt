@@ -1,0 +1,10 @@
+Change the hero headline to: Same plan. Same network. Lower specialty spend.
+Swap the proof for a different Garner case study from Garner's own website, and tell me which one you chose and why.
+Add a short section for staff on the HDHP 2 plan about what Garner would mean for them.
+Make the proof section dark.
+Move the proof section above the how-it-works section.
+Hide the row of customer logos.
+Shorten the text on the four cards to one short sentence each.
+Change every button on the page to say "Request the analysis".
+Add a second page at /analysis that explains what the free analysis includes and how the 30-minute review works. Add it to the header navigation and link to it from the offer section.
+Make it feel more premium.

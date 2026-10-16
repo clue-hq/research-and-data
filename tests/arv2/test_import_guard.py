@@ -66,6 +66,12 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     # Platform execution journal + run-event writer (C5.1 composition over clue_execution, which is
     # already allowed); account reconciliation emits its run events through it since 2026-09-28.
     "clue_api.execution_wiring",
+    # The verified, content-addressed read of a knowledge file's bytes (a platform storage seam,
+    # no research owner); project documents read a decision's source file through it.
+    "clue_api.knowledge_bytes",
+    # The display pages' readers (ARV2's account and contact pages); the read tools list an
+    # account's buying committee exactly as the account screen does, reading only.
+    "clue_api.frontend_read.display_pages",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.

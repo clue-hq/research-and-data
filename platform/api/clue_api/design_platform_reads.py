@@ -23,6 +23,11 @@ project's confirmed product set and the path of the ICP it pinned — the same s
 turn composed from, at the same versions. A leg whose opening turn pinned nothing gets an honestly
 empty set, never a failure: a design turn that cannot find the seller's files still has its brief.
 
+The project-context read exposes only the opening turn's pinned project instructions and
+decisions, with their exact text and source references. This is not a live project view and
+does not synthesize new instructions from the delegation brief. It stays behind the injected
+adapter like every other read.
+
 **Every read is its own logical operation.** A9 idempotency caches on
 ``(execution, operation_id)``, so a read that reused one operation id would have page two answered
 by page one's receipt. Each call therefore mints a fresh operation id, which is correct rather than
@@ -54,6 +59,7 @@ from clue_api.brand_knowledge_context import (
     read_pinned_documents,
 )
 from clue_api.design_loop_bridge import PlatformLoopBridge
+from clue_api.project_context_files import get_project_files_pin, read_pinned_project_files
 from clue_core import operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design.envelopes import DesignTurnEnvelope
@@ -67,7 +73,7 @@ log = get_logger("clue_api.design_platform_reads")
 _T = TypeVar("_T")
 
 #: The one read asked for at a version other than its default alias (ruling T1-1).
-_PINNED_VERSIONS = {"read_account_research": "2"}
+_PINNED_VERSIONS = {"read_account_research": "3"}
 
 
 class DesignPlatformReadError(RuntimeError):
@@ -239,6 +245,72 @@ class DesignPlatformReads:
             if value is not None:
                 body[key] = value
         return self._invoke("read_claims", body)
+
+    def read_cited_claims(self, *, entity_id: str, claim_ids: list[str]) -> dict[str, Any]:
+        """The claims an account's research cites, by id, each with its disposition.
+
+        ``read_cited_claims@1`` (Contract 5): ``served`` claims come back in ``claims``; every id
+        gets ``served``, ``held:<reason>`` or ``not_found`` in ``dispositions``. At most 200 ids
+        per call; the caller chunks.
+        """
+
+        return self._invoke(
+            "read_cited_claims", {"entity_id": entity_id, "claim_ids": list(claim_ids)}
+        )
+
+    # --- original project instructions --------------------------------------------------------
+
+    def project_design_context(self) -> dict[str, Any]:
+        """Exact opening-turn sources behind a delegated brief, never a live project view.
+
+        Only the canonical instruction and decision files cross this seam. Account research
+        still travels through the governed reads above; no project-wide file dump is exposed.
+        """
+        bundle = self._envelope.config.get("delegation_bundle")
+        opened_by = bundle.get("opened_by_turn_id") if isinstance(bundle, dict) else None
+        workspace_id = self._envelope.workspace_id
+        project_id = self._envelope.project_id
+        empty: dict[str, Any] = {
+            "status": "not_pinned",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "source_turn_id": str(opened_by) if opened_by else None,
+            "source_pin_sha256": None,
+            "is_live_project_view": False,
+            "files": [],
+        }
+        if not opened_by or project_id is None:
+            return empty
+
+        async def read() -> dict[str, Any]:
+            async with self._conn_factory() as conn:
+                pin = await get_project_files_pin(
+                    conn, workspace_id=workspace_id, turn_id=UUID(str(opened_by))
+                )
+                if pin is None:
+                    return empty
+                if pin.project_id != project_id:
+                    raise DesignPlatformReadError("read_failed")
+                selected = tuple(
+                    ref for ref in pin.files if ref.path in {"instructions.md", "decisions.md"}
+                )
+                # A bounded read view, not a new durable pin. The reported source digest
+                # continues to identify the ORIGINAL full opening-turn pin.
+                documents = await read_pinned_project_files(
+                    conn, self._storage, pin=pin.model_copy(update={"files": selected})
+                )
+            return {
+                **empty,
+                "status": "available",
+                "source_pin_sha256": pin.files_sha256,
+                "pinned_at": pin.pinned_at.isoformat(),
+                "files": [
+                    {**doc.ref.model_dump(mode="json"), "body_text": doc.body.decode("utf-8")}
+                    for doc in documents
+                ],
+            }
+
+        return self._guarded(read, tool="project_design_context")
 
     # --- the one spend tool on this seam --------------------------------------------------------
 

@@ -100,3 +100,50 @@ def test_format_custody_preview_analysis_and_overrides(mime, format, tmp_path, w
     assert 'https://assets.example/' in html
     assert record['media']['digest']['value'] in html
     assert '<img ' in html and 'alt="Format check"' in html
+
+
+def test_enrichment_stores_an_image_vector_the_turn_can_read(tmp_path, workspace_id, design_storage, monkeypatch):
+    """Hybrid asset search (2026-10-05), end to end on a real database: an uploaded image is
+    enriched, the enrichment step writes its CLIP vector, a second run leaves it alone, and the
+    turn-time loader reads it back for this workspace only."""
+    from lumen_api import asset_embeddings
+
+    model_dir = Path(settings.lumen_asset_embedding_model_dir or '/nonexistent').expanduser()
+    if not (model_dir / 'image.onnx').is_file():
+        pytest.skip('no CLIP ONNX model directory configured')
+    image = Image.new('RGB', (160, 120), '#d23c3c')
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+
+    class Describer:
+        active = True
+        def describe(self, items):
+            return [DescribeResult(item.asset_id, 'Red block', 'A plain red rectangle image.', 'Usage', [],
+                    analysis=analysis('Red block', item.source_occurrences)) for item in items]
+
+    monkeypatch.setattr(pipeline, 'resolve_describer', lambda: Describer())
+    app = create_app(tmp_path / 'cache', storage=design_storage)
+    client = TestClient(app, headers={'X-Workspace-Id': workspace_id})
+    body = client.post('/assets', files={'file': ('red.png', buffer.getvalue(), 'image/png')},
+                       data={'creative_type': 'background'}, headers={'Idempotency-Key': uuid4().hex}).json()
+    aid = body['asset']['id']
+    run_asset_enrichment(str(tmp_path / 'cache'), body['enrichment']['job_id'], workspace_id=workspace_id, storage=design_storage)
+
+    vectors = asset_embeddings.load_workspace_embeddings(workspace_id)
+    assert list(vectors) == [aid] and len(vectors[aid]) == 512
+    assert abs(sum(x * x for x in vectors[aid]) - 1) < 1e-3
+    red = asset_embeddings.embed_query('a plain red rectangle')
+    blue = asset_embeddings.embed_query('a photo of a blue ocean')
+    import numpy as np
+    v = np.array(vectors[aid], np.float32)
+    assert float(v @ red) > float(v @ blue)
+    stranger = f'ws_never_{uuid4().hex[:12]}'
+    assert asset_embeddings.load_workspace_embeddings(stranger) == {}
+    # Loading vectors is a read: it must not create the unknown workspace's row.
+    from sqlalchemy import text
+    from lumen_api.design_store import DesignStoreBridge
+
+    async def exists(conn):
+        return (await conn.execute(text('SELECT 1 FROM workspace WHERE workspace_id = :w'), {'w': stranger})).first()
+
+    assert DesignStoreBridge(stranger, ensure_workspace=False)._run(exists) is None

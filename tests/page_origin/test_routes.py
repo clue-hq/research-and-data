@@ -4,7 +4,7 @@ import hashlib
 
 from fastapi.testclient import TestClient
 
-from clue_design.publishes import DELIVERY_CSP_HEADER
+from clue_design.publishes import DELIVERY_CSP_HEADER, SITE_DELIVERY_CSP_HEADER, site_live_csp
 
 from .conftest import HOST, WS, FakePageReads, edge
 
@@ -212,3 +212,79 @@ def test_route_catch_all_answers_head_and_refuses_post(
     head = client.head("/annual-report/pricing", headers=edge())
     assert head.status_code == 200 and head.content == b""
     assert client.post("/annual-report/pricing", headers=edge()).status_code == 405
+
+
+def test_a_site_publish_is_served_under_the_site_policy_on_every_route(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish(
+        "acme-site",
+        "<html>home</html>",
+        routes={"/": "<html>home</html>", "/analysis": "<html>a</html>"},
+        delivery="site",
+    )
+    for path in ("/acme-site", "/acme-site/analysis", "/acme-site/manifest.json"):
+        response = client.get(path, headers=edge())
+        assert response.status_code == 200, path
+        assert response.headers["content-security-policy"] == SITE_DELIVERY_CSP_HEADER, path
+    reads.publish("annual-report", "<html>web</html>")
+    assert (
+        client.get("/annual-report", headers=edge()).headers["content-security-policy"]
+        == DELIVERY_CSP_HEADER
+    )
+
+
+HASH = "sha256-" + "B" * 43 + "="
+
+
+def test_a_live_site_page_is_served_under_its_own_policy_with_its_import_map_hash(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish(
+        "acme-site",
+        "<html>live</html>",
+        routes={"/": "<html>live</html>", "/analysis": "<html>a</html>"},
+        delivery="site_live",
+        script_hashes=(HASH,),
+    )
+    for path in ("/acme-site", "/acme-site/analysis", "/acme-site/manifest.json"):
+        response = client.get(path, headers=edge())
+        assert response.status_code == 200, path
+        assert response.headers["content-security-policy"] == site_live_csp([HASH], meta=False), (
+            path
+        )
+
+
+def test_a_live_sites_javascript_is_served_as_javascript_and_immutable(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    data = b"export default 1;\n"
+    digest = hashlib.sha256(data).hexdigest()
+    reads.assets[(WS, digest)] = ("text/javascript; charset=utf-8", data)
+    response = client.get(f"/p-assets/{digest}.js", headers=edge())
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_a_large_page_and_asset_travel_gzipped_with_a_weak_etag_and_plain_without(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    """A live page and its runtime are hundreds of KB: the origin gzips them for a client that asks,
+    and their ETag turns weak (the gzipped bytes are another representation of the same content)."""
+    script = b"export const n = 1;\n" * 4000
+    digest = hashlib.sha256(script).hexdigest()
+    reads.assets[(WS, digest)] = ("text/javascript; charset=utf-8", script)
+    page = "<!doctype html><html><body>" + "<p>Top Providers.</p>" * 4000 + "</body></html>"
+    reads.publish("annual-report", page)
+    for path, body in ((f"/p-assets/{digest}.js", script), ("/annual-report", page.encode())):
+        zipped = client.get(path, headers={**edge(), "Accept-Encoding": "gzip"})
+        assert zipped.status_code == 200, path
+        assert zipped.headers["content-encoding"] == "gzip", path
+        assert zipped.num_bytes_downloaded < len(body) // 10, path
+        assert zipped.content == body, path  # httpx un-gzips
+        assert zipped.headers["etag"].startswith('W/"sha256-'), path
+        assert "accept-encoding" in zipped.headers["vary"].lower(), path
+        plain = client.get(path, headers={**edge(), "Accept-Encoding": "identity"})
+        assert "content-encoding" not in plain.headers, path
+        assert plain.content == body and plain.headers["etag"].startswith('"sha256-'), path

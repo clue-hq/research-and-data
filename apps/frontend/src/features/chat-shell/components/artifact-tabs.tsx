@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellOpenArtifact, ChatShellSurface } from "../model/chat-shell";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
+import { isWebsiteKind } from "../model/artifact-kind";
 import { ChatShellIcon } from "./chat-shell-icon";
 import { ProjectIcon } from "@/features/projects/components/project-icon";
 import styles from "./chat-shell.module.css";
@@ -59,9 +60,9 @@ function ArtifactTab({
     >
       {renaming ? (
         <div className={styles.artifactTabMain}>
-          <ChatShellIcon name={kind === "web" ? "web-output" : "ad-canvas"} size={12} />
+          <ChatShellIcon name={isWebsiteKind(kind) ? "web-output" : "ad-canvas"} size={12} />
           <input
-            aria-label={`Rename ${kind === "web" ? "web" : "image"} output`}
+            aria-label={`Rename ${isWebsiteKind(kind) ? "web" : "image"} output`}
             className={styles.artifactTabRenameInput}
             onBlur={commitRename}
             onChange={(event) => setDraftTitle(event.target.value)}
@@ -84,7 +85,7 @@ function ArtifactTab({
           title={`${title} — double-click to rename`}
           type="button"
         >
-          <ChatShellIcon name={kind === "web" ? "web-output" : "ad-canvas"} size={12} />
+          <ChatShellIcon name={isWebsiteKind(kind) ? "web-output" : "ad-canvas"} size={12} />
           <span>{title}</span>
         </button>
       )}

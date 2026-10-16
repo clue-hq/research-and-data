@@ -12,14 +12,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
-from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
 from .geometry import GEOMETRY_JS
-from .net import BoundedFetcher, CaptureError, FetchRequest, guard_url, require_complete_html
+from .states import REVEAL_BEFORE_JS, probe_states
+from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
-from .static import _collect_assets, _extract_meta, fetch_imported_sheets
+from .static import _collect_assets, _extract_meta
+from .stylesheets import collect_ordered_stylesheets
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
@@ -43,10 +44,24 @@ _EVALUATE_JS = r"""
       borderRadius: cs.borderRadius, area: c.w * c.h,
     };
   };
-  const take = (sel, n) => Array.from(document.querySelectorAll(sel)).slice(0, n);
+  // Only what a visitor can see is evidence of the brand's type: a heading inside a closed
+  // cookie modal, behind opacity 0 or under display:none once became a kit's headline.
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (typeof el.checkVisibility === 'function'
+        && !el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return false;
+    return !el.closest('dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
+  };
+  const take = (sel, n) => Array.from(document.querySelectorAll(sel)).filter(visible).slice(0, n);
+  // Headings: enough of them to see the page's real section-heading size (the first few are
+  // often tab labels), and none from navigation or footers, which are not section headings.
+  const content = (el) => !el.closest('nav, footer');
+  const takeHeadings = (sel, n) =>
+    Array.from(document.querySelectorAll(sel)).filter((el) => visible(el) && content(el)).slice(0, n);
   const samples = [];
   for (const el of take('body', 1)) samples.push(sample(el, 'body'));
-  for (const t of ['h1','h2','h3','h4','h5','h6']) for (const el of take(t, 3)) samples.push(sample(el, t));
+  for (const t of ['h1','h2','h3','h4','h5','h6']) for (const el of takeHeadings(t, 20)) samples.push(sample(el, t));
   for (const el of take('p', 3)) samples.push(sample(el, 'p'));
   for (const el of take('a', 5)) samples.push(sample(el, 'a'));
   for (const el of take('button, .btn', 5)) samples.push(sample(el, 'button'));
@@ -54,7 +69,8 @@ _EVALUATE_JS = r"""
   const all = Array.from(document.querySelectorAll('*')).map((el) => {
     const r = el.getBoundingClientRect(); const c = clip(r);
     return {el, area: c.w * c.h};
-  }).filter((x) => x.area > 0).sort((a, b) => b.area - a.area).slice(0, 40);
+  }).filter((x) => x.area > 0).sort((a, b) => b.area - a.area)
+    .filter((x) => visible(x.el) && (!/^H[1-6]$/.test(x.el.tagName) || content(x.el))).slice(0, 40);
   for (const x of all) samples.push(sample(x.el, x.el.tagName.toLowerCase()));
 
   const props = {};
@@ -66,13 +82,14 @@ _EVALUATE_JS = r"""
 
   const sheets = [];
   for (const s of Array.from(document.styleSheets)) {
-    if (s.href) { sheets.push({href: s.href, text: null}); continue; }
+    const context = {media: s.media?.mediaText || "", disabled: !!s.disabled};
+    if (s.href) { sheets.push({href: s.href, text: null, ...context}); continue; }
     try {
       const text = Array.from(s.cssRules).map((r) => r.cssText).join('\n');
-      sheets.push({href: null, text});
+      sheets.push({href: null, text, ...context});
     } catch (e) { /* cross-origin without href — skip */ }
   }
-  return {samples, props, sheets};
+  return {samples, props, sheets, base_url: document.baseURI};
 }
 """
 
@@ -195,7 +212,7 @@ _PROBE_JS = r"""
     const r = el.getBoundingClientRect();
     if (cs.backgroundImage.includes('url(') && r.width > 40 && r.height > 40) media.push(abs(r));
     if (cs.backgroundImage.includes('gradient(') && r.width * r.height > 20000 && visible(el)) {
-      const stops = cs.backgroundImage.match(/rgba?\([^)]+\)/g) || [];
+      const stops = cs.backgroundImage.match(/(?:rgba?|hsla?|hwb|oklab|oklch|lab|lch|color)\([^)]+\)/g) || [];
       if (stops.length) gradients.push({box: abs(r), stops: stops.slice(0, 12)});
     }
   }
@@ -234,45 +251,10 @@ async def _scroll_until_settled(page) -> None:
 
 
 async def collect_stylesheets(
-    sheet_records: list[dict], fetcher: BoundedFetcher
+    sheet_records: list[dict], fetcher: BoundedFetcher, *, base_url: str = ""
 ) -> tuple[list[Stylesheet], list[dict]]:
-    """The rendered tier's stylesheets, from one ``document.styleSheets`` harvest.
-
-    Split out of :func:`fetch_rendered` so it is testable without a browser, and because since
-    the founder's 2026-08-20 always-render ruling it carries the static tier's ``@import``
-    follow as well: EVERY website ingestion now renders, so anything the static tier used to
-    contribute for a well-server-rendered site has to survive here or it is lost outright. The
-    CSSOM exposes an imported sheet only as the parent's one-line ``@import`` rule text, so
-    without :func:`fetch_imported_sheets` a brand whose ``@font-face`` or palette lives behind
-    an import would simply stop being read.
-
-    An inline record (``text`` present) is taken verbatim from the CSSOM — that is the rendered
-    tier's advantage over static, since it has the post-JS rules — and an ``href`` record is
-    fetched, both exactly as before.
-    """
-    stylesheets: list[Stylesheet] = []
-    diagnostics: list[dict] = []
-    href_requests: list[FetchRequest] = []
-    for index, sheet in enumerate(sheet_records):
-        if sheet.get("text") is not None:
-            stylesheets.append(Stylesheet(url=f"inline:{index}", text=sheet["text"]))
-        elif sheet.get("href"):
-            href_requests.append(FetchRequest(url=sheet["href"], kind="css"))
-    if href_requests:
-        results = await fetcher.fetch_many(href_requests)
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                stylesheets.append(
-                    Stylesheet(
-                        url=result.url, text=result.body.decode("utf-8", errors="replace")
-                    )
-                )
-
-    imported, import_diagnostics = await fetch_imported_sheets(stylesheets, fetcher)
-    stylesheets.extend(imported)
-    diagnostics.extend(import_diagnostics)
-    return stylesheets, diagnostics
+    """Retain CSSOM order, owner conditions and bounded in-place imports."""
+    return await collect_ordered_stylesheets(sheet_records, fetcher, base_url=base_url)
 
 
 #: The one viewport both render backends use; the probe also records the live
@@ -341,7 +323,7 @@ async def _capture_html(page) -> str:
     return require_complete_html(html)
 
 
-async def _harvest_page(page, diagnostics: list[dict]) -> dict:
+async def _harvest_page(page, diagnostics: list[dict], *, measure_states: bool = False) -> dict:
     """Everything we take from a live, already-navigated page.
 
     Shared verbatim by the plain-Chromium and stealth backends so the two can
@@ -350,6 +332,14 @@ async def _harvest_page(page, diagnostics: list[dict]) -> dict:
     harvest, the render probe, html, the full-page screenshot, and geometry
     LAST (it focuses elements and must never touch the captured pixels).
     """
+    # Entrance reveals can only be seen before the page is scrolled (Wave 2 A9): read-only, so the
+    # captured pixels and HTML are untouched.
+    reveal_before = None
+    if measure_states:
+        try:
+            reveal_before = await page.evaluate(REVEAL_BEFORE_JS)
+        except Exception:  # noqa: BLE001 — a reveal we cannot see is a reveal we do not record
+            reveal_before = None
     await _scroll_until_settled(page)
 
     # Return to the top and clean the stage before ANY harvest or pixel
@@ -402,6 +392,12 @@ async def _harvest_page(page, diagnostics: list[dict]) -> dict:
                 "message": f"geometry measurement failed; scales fall back to the derived defaults: {error}",
             }
         )
+    # Interaction states, motion and behaviour (Wave 2 A9), after everything that was captured. The
+    # entry page only: it is the page the kit is about, and the pass costs up to ~10 s.
+    if measure_states and isinstance(harvest["geometry"], dict):
+        harvest["geometry"]["states"] = await probe_states(
+            page, harvest["geometry"], reveal_before=reveal_before, diagnostics=diagnostics
+        )
     return harvest
 
 
@@ -411,6 +407,7 @@ async def fetch_rendered(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     """Rendered capture behind the backend dispatcher.
 
@@ -429,7 +426,9 @@ async def fetch_rendered(
 
     if os.environ.get("LUMEN_RENDER_STEALTH", "1") != "0":
         try:
-            snapshot = await _fetch_rendered_stealth(url, fetcher, reporter, fetched_at=fetched_at)
+            snapshot = await _fetch_rendered_stealth(
+                url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+            )
             snapshot.diagnostics.append(
                 {
                     "code": "LUMI0535",
@@ -439,8 +438,10 @@ async def fetch_rendered(
             )
             return snapshot
         except Exception as error:  # noqa: BLE001 — fallback, loudly
-            if isinstance(error, CaptureError) and error.code == "LUMI0507":
-                # A size refusal is deterministic, not a broken browser backend.
+            if isinstance(error, CaptureError) and error.code in {
+                "LUMI0501", "LUMI0503", "LUMI0507"
+            }:
+                # URL, HTTP and size refusals are not broken browser backends.
                 raise
             fallback_note = {
                 "code": "LUMI0536",
@@ -453,7 +454,9 @@ async def fetch_rendered(
     else:
         fallback_note = None
 
-    snapshot = await _fetch_rendered_chromium(url, fetcher, reporter, fetched_at=fetched_at)
+    snapshot = await _fetch_rendered_chromium(
+        url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+    )
     if fallback_note is not None:
         snapshot.diagnostics.append(fallback_note)
     return snapshot
@@ -465,6 +468,7 @@ async def _fetch_rendered_stealth(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     from scrapling.fetchers import StealthyFetcher  # lazy: never at import time
 
@@ -475,23 +479,25 @@ async def _fetch_rendered_stealth(
     harvest: dict = {}
 
     async def _drive(page):
-        harvest.update(await _harvest_page(page, diagnostics))
+        harvest.update(await _harvest_page(page, diagnostics, measure_states=measure_states))
         return page
 
     # network_idle mirrors the chromium path's goto wait; the generous timeout
-    # covers scroll-settle (<=12s) + hero dwell (3s) on slow marketing pages.
+    # covers scroll-settle (<=12s) + hero dwell (3s) + the state pass (<=10s) on slow marketing pages.
     # NO context overrides: scrapling generates a COHERENT fingerprint
     # (screen/viewport/UA agree), and overriding the viewport to our chromium
     # constant broke it — sarvam.ai's WebGL hero refused to paint for a
     # 1440x2000 "screen" (live finding, 2026-08-30). The probe records the live
     # viewport width, so the census scale never depended on the constant.
-    await StealthyFetcher.async_fetch(
+    response = await StealthyFetcher.async_fetch(
         url,
         headless=True,
         network_idle=True,
         timeout=90_000,
         page_action=_drive,
     )
+    if response.status >= 400:
+        raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
     if not harvest.get("html"):
         raise RuntimeError("stealth backend returned no page harvest")
     return await _snapshot_from_harvest(
@@ -505,6 +511,7 @@ async def _fetch_rendered_chromium(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     from playwright.async_api import async_playwright  # lazy: never at import time
 
@@ -522,8 +529,9 @@ async def _fetch_rendered_chromium(
                 # hero — we are here to see what real visitors see.
                 reduced_motion="no-preference",
             )
+            response = None
             try:
-                await page.goto(url, wait_until="networkidle", timeout=30_000)
+                response = await page.goto(url, wait_until="networkidle", timeout=30_000)
             except Exception:  # noqa: BLE001 — networkidle timeout is non-fatal
                 diagnostics.append(
                     {
@@ -532,7 +540,9 @@ async def _fetch_rendered_chromium(
                         "message": "render wait_until=networkidle timed out; proceeding",
                     }
                 )
-            harvest = await _harvest_page(page, diagnostics)
+            if response is not None and response.status >= 400:
+                raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
+            harvest = await _harvest_page(page, diagnostics, measure_states=measure_states)
         finally:
             await browser.close()
 
@@ -569,7 +579,7 @@ async def _snapshot_from_harvest(
     )
 
     stylesheets, sheet_diagnostics = await collect_stylesheets(
-        data.get("sheets", []), fetcher
+        data.get("sheets", []), fetcher, base_url=data.get("base_url") or final_url
     )
     diagnostics.extend(sheet_diagnostics)
 

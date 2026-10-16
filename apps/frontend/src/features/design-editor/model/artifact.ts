@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 /**
+ * Contract 8 (Wave 2): every design document kind the wire carries. `site` is the
+ * Puck site document (Lane A/B); it is a website to the marketer but opens in its
+ * own editor, so nothing may fold it into `web` or `ad`.
+ */
+export const DesignDocumentKindSchema = z.enum(["web", "ad", "site"]);
+export type DesignDocumentKind = z.infer<typeof DesignDocumentKindSchema>;
+
+/**
  * W1.3: the artifact→design-document read seam, frontend shape.
  *
  * `ChatShellArtifact` is the contract-doc shape the editor shell consumes
@@ -14,7 +22,7 @@ export const ChatShellArtifactSchema = z.object({
   id: z.string().min(1),
   projectId: z.string().min(1),
   documentId: z.string().min(1),
-  kind: z.enum(["web", "ad"]),
+  kind: DesignDocumentKindSchema,
   title: z.string().min(1),
   currentVersionId: z.string().min(1),
   status: z.string().min(1),
@@ -28,7 +36,7 @@ const DesignArtifactItemWireSchema = z.object({
   id: z.string().min(1),
   project_id: z.string().min(1),
   document_id: z.string().min(1),
-  kind: z.enum(["web", "ad"]),
+  kind: DesignDocumentKindSchema,
   title: z.string().min(1),
   status: z.string().min(1),
   current_version_id: z.string().min(1),

@@ -27,7 +27,7 @@ TELEMETRY_SETTING_DEFAULTS: dict[str, object] = {
     # lane 3 slice 3
     "langfuse_enabled": True,
     "langfuse_host": "https://cloud.langfuse.com",
-    "langfuse_environment": "lane-san-salvador",
+    "langfuse_environment": "default",
 }
 TELEMETRY_SECRET_FIELDS = (
     "sentry_dsn",

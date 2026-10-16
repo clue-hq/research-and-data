@@ -29,6 +29,7 @@ import type {
 } from "@/features/projects/model/project-workspace";
 import type { WebAnnotation } from "@/features/design-editor/adapter/annotations";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
+import { useSiteEditingSession } from "@/features/site-editor/hooks/use-site-editing-session";
 import { useSceneLiveReveal } from "@/features/design-editor/hooks/use-scene-live-reveal";
 import type { Operation } from "@/features/design-editor/engine/scene/contracts";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
@@ -37,6 +38,7 @@ import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactsToAutoOpen } from "../model/artifact-auto-open";
+import { isWebsiteKind } from "../model/artifact-kind";
 import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
@@ -65,6 +67,8 @@ import { ChatShellHeader } from "./chat-shell-header";
 import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
+import { SiteImageField } from "./site-image-field";
+import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 
 // The chats route's view layer (Phase C, C-3): the co-founder's chat-shell
@@ -225,10 +229,27 @@ export function ChatSurface({
     state: chat.agentRunLock,
     threadBusy: chat.threadBusy,
   });
-  // Consumed on the AD lane only. The website lane has the same exposure and no
-  // scene editor, so widening the lock to it is a separate decision with its own
-  // surfaces — not something to acquire by accident here.
+  // Editing: consumed on the AD lane only. The website lane has the same
+  // exposure and no scene editor, so widening the EDITING lock to it is a
+  // separate decision with its own surfaces — not something to acquire by
+  // accident here.
   const sceneLocked = agentRunLock.locked && shell.artifactKind === "ad";
+  // Ruling (Wave 2): the agent-run lock applies to sites too — the same derivation, the site lane.
+  const siteLocked = agentRunLock.locked && shell.artifactKind === "site";
+  // Publishing: founder ruling 2026-10-13 — a person's publish waits while the
+  // design agent works on the page, and the Share menu says so. This widens the
+  // lock to the website lane (web and site) for PUBLISHING ONLY; editing on the
+  // web lane is unchanged (a site's editing lock is `siteLocked` above). The
+  // server refuses mid-run either way (409 `document.agent_run_active` on both
+  // publish routes); this is the honest UX in front of it.
+  const publishLocked =
+    agentRunLock.locked && isWebsiteKind(shell.artifactKind);
+  // K1-5 (founder ruling 2026-10-16): no rename while a design run drives the
+  // document — every kind, so the lock is not filtered by lane. A rename moves
+  // the document version, and a run that saves against the version it started
+  // from would lose its whole request to it. The server refuses mid-run either
+  // way (409 `document.agent_run_active` on `PUT /documents/{id}/title`).
+  const renameLocked = agentRunLock.locked;
 
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
@@ -254,14 +275,19 @@ export function ChatSurface({
   // design leg a `design_node` ref means nothing, so rather than send a turn
   // that silently drops its annotations, the button is simply absent.
   const annotationLaneOpen = chat.designLegOpen && shell.artifactKind === "web";
+  // C7: the site lane opens the same annotation lane beside an open design leg.
+  const siteAnnotationLaneOpen = chat.designLegOpen && shell.artifactKind === "site";
   const sendAnnotationRef = useRef<((note: string) => void) | null>(null);
   const dispatchSendAnnotation = useCallback((note: string) => {
     sendAnnotationRef.current?.(note);
   }, []);
+  // S2b-6: the open artifact's undo/redo keys act only while it is actually on screen.
+  const artifactOnScreen = shell.surface === "artifact" && shell.panelOpen;
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
     enabled: shell.artifactKind === "web",
+    onScreen: artifactOnScreen,
     onSendAnnotation: annotationLaneOpen ? dispatchSendAnnotation : undefined,
   });
   const sceneSession = useSceneEditingSession({
@@ -269,11 +295,24 @@ export function ChatSurface({
     agentRunLocked: sceneLocked,
     documentIds,
     enabled: shell.artifactKind === "ad",
+    onScreen: artifactOnScreen,
+  });
+  // Lane C: the site lane's session. Warm (the editor frame mounted ahead of time) once the project
+  // has a site or this thread has an open design leg that may birth one.
+  const siteSession = useSiteEditingSession({
+    activeArtifactId: shell.activeArtifactId,
+    documentIds,
+    editing: shell.editing,
+    enabled: shell.artifactKind === "site",
+    locked: siteLocked,
+    onScreen: artifactOnScreen,
+    onSendAnnotation: siteAnnotationLaneOpen ? dispatchSendAnnotation : undefined,
+    warm: feedArtifacts.some((artifact) => artifact.documentKind === "site") || chat.designLegOpen,
   });
   // Exactly one lane can be enabled, so this is the active document either
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
-    session.activeDocumentId ?? sceneSession.activeDocumentId;
+    session.activeDocumentId ?? sceneSession.activeDocumentId ?? siteSession.activeDocumentId;
   /**
    * Task 9 (scene live-streaming rung B): the live reveal.
    *
@@ -472,8 +511,16 @@ export function ChatSurface({
   // own document.
   const webAnnotationsEnabled =
     annotationLaneOpen && session.activeDocumentId !== null;
-  const annotationChipList = webAnnotationsEnabled
-    ? annotationChips(session.annotations.state.items)
+  const siteAnnotationsEnabled =
+    siteAnnotationLaneOpen && siteSession.activeDocumentId !== null;
+  // One annotation lane at a time: the open artifact's.
+  const activeAnnotations = webAnnotationsEnabled
+    ? { annotations: session.annotations, documentId: session.activeDocumentId, version: session.webSelection.document?.currentVersion ?? null }
+    : siteAnnotationsEnabled
+      ? { annotations: siteSession.annotations, documentId: siteSession.activeDocumentId, version: siteSession.saves.baseVersion ?? siteSession.version }
+      : null;
+  const annotationChipList = activeAnnotations
+    ? annotationChips(activeAnnotations.annotations.state.items)
     : [];
 
   // The clarification card (spec 2026-09-20 §2.5): a design document that
@@ -574,6 +621,7 @@ export function ChatSurface({
   }, [feedRevision, router]);
   const reloadWebCanvas = session.onWriteReload;
   const reloadSceneCanvas = sceneSession.onWriteReload;
+  const reloadSiteCanvas = siteSession.reload;
   useEffect(() => {
     if (canvasRevision === 0) return;
     // The SAME seam a committed inspector write uses — one reload mechanism,
@@ -582,7 +630,8 @@ export function ChatSurface({
     // frame that fired names a document, not a kind.
     reloadWebCanvas();
     reloadSceneCanvas();
-  }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
+    reloadSiteCanvas();
+  }, [canvasRevision, reloadSceneCanvas, reloadSiteCanvas, reloadWebCanvas]);
 
   // The header's rename is a document write, so it goes through the design API
   // and the tab takes the title the backend STORED. The rename advances the
@@ -594,12 +643,14 @@ export function ChatSurface({
       setArtifactTitleFor(artifactId, persisted);
       reloadWebCanvas();
       reloadSceneCanvas();
+      reloadSiteCanvas();
       router.refresh();
     },
-    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+    [reloadSceneCanvas, reloadSiteCanvas, reloadWebCanvas, router, setArtifactTitleFor],
   );
   const renameArtifact = useArtifactRename({
     documentIds,
+    locked: renameLocked,
     onRenamed: onArtifactRenamed,
   });
 
@@ -780,15 +831,14 @@ export function ChatSurface({
     }
     // Slice 2 (R-A2): the annotations, snapshotted for the same reason — the
     // turn owns the notes that were on screen when it was sent.
-    const annotationItems = webAnnotationsEnabled
-      ? [...session.annotations.state.items, ...(justAdded ? [justAdded] : [])]
+    const annotationItems = activeAnnotations
+      ? [...activeAnnotations.annotations.state.items, ...(justAdded ? [justAdded] : [])]
       : [];
     const annotationSnapshot =
-      webAnnotationsEnabled && session.activeDocumentId && annotationItems.length
+      activeAnnotations?.documentId && annotationItems.length
         ? {
-            documentId: session.activeDocumentId,
-            documentVersion:
-              session.webSelection.document?.currentVersion ?? null,
+            documentId: activeAnnotations.documentId,
+            documentVersion: activeAnnotations.version,
             items: annotationItems,
           }
         : null;
@@ -838,6 +888,7 @@ export function ChatSurface({
     // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
     // the marketer their notes.
     session.annotations.clear();
+    siteSession.annotations.clear();
     controller.completeSubmissionContext(
       entityContextRefs.map((reference) => reference.objectId),
     );
@@ -849,7 +900,7 @@ export function ChatSurface({
   // popover's Send button already refuses), and the composer's own text rides
   // along — "Send to chat" is a send, not a second, separate channel.
   const sendAnnotation = (note: string) => {
-    const stored = session.annotations.add(note);
+    const stored = (activeAnnotations?.annotations ?? session.annotations).add(note);
     if (stored === null) return;
     void submitTurn(controller.prompt, controller.selectedEntityIds, stored).then(
       (accepted) => {
@@ -988,6 +1039,22 @@ export function ChatSurface({
               />
             </div>
           ) : null}
+          {dockContent === "site-inspector" ? (
+            <div className={styles.inspectorDock}>
+              <SiteInspector
+                // Keyed on the selection only (the web dock's rule): a new selection starts with
+                // fresh drafts; a write never remounts the panel.
+                binding={siteSession.inspector}
+                key={siteSession.inspector.selectionKey}
+                renderImageField={(field, path, value) => {
+                  const binding = siteSession.imageField(path, value);
+                  return binding ? (
+                    <SiteImageField binding={binding} disabled={siteLocked} key={path} label={field.label} />
+                  ) : null;
+                }}
+              />
+            </div>
+          ) : null}
           {dockContent === "conversation" ? (
             <div
               aria-label="Conversation"
@@ -1034,7 +1101,7 @@ export function ChatSurface({
                       <button
                         aria-label={`Remove annotation ${chip.n}`}
                         className={styles.editTargetRemove}
-                        onClick={() => session.annotations.remove(chip.n)}
+                        onClick={() => activeAnnotations?.annotations.remove(chip.n)}
                         type="button"
                       >
                         ×
@@ -1171,7 +1238,7 @@ export function ChatSurface({
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce + siteSession.reloadNonce}
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         // The website pane's "agent is generating" motion (cofounder handoff
@@ -1214,6 +1281,7 @@ export function ChatSurface({
         // changing, which is the whole of what the ruling forbids.
         sceneGestureDisabled={sceneLocked}
         onSceneLockedEdit={sceneSession.onLockedEdit}
+        publishLocked={publishLocked}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
         scenePalette={sceneSession.palette}
@@ -1250,6 +1318,7 @@ export function ChatSurface({
             id: artifact.id,
             title: artifact.title,
             type: artifact.source?.type,
+            documentKind: artifact.source?.documentKind,
             document: artifact.document,
           });
           if (target.surface === "plan") {
@@ -1264,9 +1333,15 @@ export function ChatSurface({
         }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
-            renameArtifact(shell.activeArtifactId, title);
+            renameArtifact.rename(shell.activeArtifactId, title);
           }
         }}
+        renameLockNote={agentRunLock.note}
+        renameNote={
+          renameArtifact.refusal?.artifactId === shell.activeArtifactId
+            ? renameArtifact.refusal.note
+            : null
+        }
         // The tab strip's rename of a NON-active tab is unchanged local state
         // (it carries no document handle of its own here).
         onRenameArtifactFor={shell.setArtifactTitleFor}
@@ -1277,7 +1352,7 @@ export function ChatSurface({
         // while the lock holds — an editor whose every control is inert is not
         // an editor — but LEAVING it never is, or a lock engaging mid-edit would
         // trap the user in a dock they cannot close.
-        editDisabled={sceneLocked && !shell.editing}
+        editDisabled={(sceneLocked || siteLocked) && !shell.editing}
         // 2026-09-04 port: the motion follows the CANVAS lock (`sceneLocked`),
         // not the Edit pill's `editDisabled`, so it also runs when the lock
         // engages mid-edit (leaving edit mode is never refused, so
@@ -1295,6 +1370,11 @@ export function ChatSurface({
               library={sceneSession.assetLibrary}
               onUploadFile={sceneSession.onReplaceImage}
             />
+          ) : siteSession.images.library?.isOpen ? (
+            <AssetLibraryPanel
+              library={siteSession.images.library}
+              onUploadFile={siteSession.images.uploadToLibraryTarget}
+            />
           ) : null
         }
         projectTitle={workspace.title}
@@ -1307,14 +1387,19 @@ export function ChatSurface({
         redoDisabled={
           shell.artifactKind === "ad"
             ? sceneSession.redoDisabled
-            : session.redoDisabled
+            : shell.artifactKind === "site"
+              ? siteSession.history.redoDisabled
+              : session.redoDisabled
         }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
+        site={siteSession.stage}
         surface={shell.surface}
         undoDisabled={
           shell.artifactKind === "ad"
             ? sceneSession.undoDisabled
-            : session.undoDisabled
+            : shell.artifactKind === "site"
+              ? siteSession.history.undoDisabled
+              : session.undoDisabled
         }
       />
     </main>

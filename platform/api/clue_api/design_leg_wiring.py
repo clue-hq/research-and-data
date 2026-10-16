@@ -92,6 +92,7 @@ from clue_api.design_memory import (
 )
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
+    refs_for_document,
     resolve_scene_targets,
     resolve_web_targets,
 )
@@ -347,6 +348,21 @@ def design_run_failure_note(result: Any) -> str | None:
     return f"The last design turn failed while designing (error: {codes})."
 
 
+def design_kind_label(kind: str | None) -> str:
+    """How the exit judge and the summaries name a design document. A Puck site and a WebDoc are
+    both a "web page" (ruling 2026-10-11); a scene document — wire kind "ad" — is a "scene ad"."""
+    return "web page" if kind in ("web", "site") else "scene ad"
+
+
+def _card_account_id(row: Mapping[str, Any] | None) -> str | None:
+    """The target account a leg document carries for the G2 account card: web and site documents
+    are 1:1 pages for one account; a scene ad carries none here."""
+    if row is None or row.get("doc_kind") not in ("web", "site"):
+        return None
+    account_id = row.get("account_id")
+    return str(account_id) if account_id else None
+
+
 async def _exit_judge_artifact_lines(
     conn: AsyncConnection,
     *,
@@ -372,7 +388,7 @@ async def _exit_judge_artifact_lines(
         document_id = document.get("document_id")
         if not document_id:
             continue
-        kind = "web page" if document.get("doc_kind") == "web" else "scene ad"
+        kind = design_kind_label(document.get("doc_kind"))
         title = str(document.get("title") or "Untitled design")
         line = f'{int(document["position"]) + 1}. "{title}" ({kind})'
         account_id = document.get("account_id")
@@ -442,7 +458,7 @@ async def _exit_judge_tag_lines(
         if ref.object_type == "design_document":
             shown = presentations.get(key, {})
             label = shown.get("label") or "Design"
-            kind = "web page" if shown.get("kind") == "web" else "scene ad"
+            kind = design_kind_label(shown.get("kind"))
             position = positions.get(str(ref.object_id))
             suffix = "" if position is None else f" (artifact {position + 1})"
             lines.append(f'design "{label}" ({kind}){suffix}')
@@ -760,6 +776,21 @@ def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
     return None
 
 
+def wire_kind(doc_kind: str) -> Literal["web", "ad", "site"]:
+    """THE mapping from a document's ``doc_kind`` to the kind every artifact list and the composer
+    send to the frontend (Contract 8): ``site`` and ``web`` as themselves, a scene as ``ad``."""
+    if doc_kind == "site":
+        return "site"
+    return "web" if doc_kind == "web" else "ad"
+
+
+def head_of_abm_doc_kind(doc_kind: str) -> str:
+    """What the Head of ABM's own reads call a document's kind. It opens a website leg with
+    doc_kind="web" and is unchanged by the Puck lane (ruling 2026-10-09), so a site reads as "web"
+    to it (founder question Q1, recommendation (b))."""
+    return "web" if doc_kind == "site" else doc_kind
+
+
 def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
     """What a listed design document says about itself, for every artifact list.
 
@@ -771,7 +802,7 @@ def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
     pixels = document_page_pixels(document.get("pages_json"))
     artifact_type = document.get("artifact_type")
     return {
-        "kind": "web" if document["doc_kind"] == "web" else "ad",
+        "kind": wire_kind(str(document["doc_kind"])),
         "artifact_type": str(artifact_type) if artifact_type else None,
         "width_px": pixels[0] if pixels else None,
         "height_px": pixels[1] if pixels else None,
@@ -903,7 +934,12 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     """
 
     result = run.get("result") or {}
-    if str(result.get("doc_kind") or "") == "web":
+    if str(result.get("doc_kind") or "") == "site":
+        # Contract 7: a site turn may stop to ask; it designed nothing, so it reads as the question.
+        sentence = clarification_sentence(result)
+        if sentence is not None:
+            return sentence
+    if str(result.get("doc_kind") or "") in ("web", "site"):
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
     sentence = clarification_sentence(result)
@@ -1006,7 +1042,7 @@ def batch_summary(items: Sequence[tuple[Mapping[str, Any], dict[str, Any]]]) -> 
         if str(run.get("status") or "") == "succeeded":
             sentence = _assistant_summary(run)
             # The web sentence already names its document and version; the scene one does not.
-            if str(result.get("doc_kind") or "") != "web" and stands_at:
+            if str(result.get("doc_kind") or "") not in ("web", "site") and stands_at:
                 sentence = f"{sentence}{stands_at}"
             lines.append(f"{title}: {sentence}")
             continue
@@ -1067,6 +1103,7 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
     """
 
     return {
+        "account_id": account["account_id"],
         "name": account["name"],
         "domain": account["domain"],
         "logo_asset_id": account["logo_asset_id"],
@@ -1076,13 +1113,18 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
 
 
 def receipts_from_design_run(
-    run_result: Mapping[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
+    run_result: Mapping[str, Any],
+    *,
+    turn_id: UUID,
+    workspace_id: str,
+    sequence_offset: int = 0,
 ) -> tuple[AgentModelCallReceipt, ...]:
     """The design run's collected model calls as receipts on the leg's own turn.
 
     The collector on the design side stamped each call from the governed gateway's metadata; this
     only re-keys them onto the platform's turn and writes ``role=design`` (the profile role, the
-    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs.
+    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs. The execution is
+    the turn's derived design-leg execution, the one every run of the turn is stamped with.
 
     ``cost_cents`` arrives as a STRING (the collector's ``as_json``, so the Decimal survives the
     jsonb round trip) and becomes USD here; ``None`` stays ``None`` — an unpriced call is never a
@@ -1105,9 +1147,9 @@ def receipts_from_design_run(
         receipts.append(
             AgentModelCallReceipt(
                 model_call_id=UUID(str(item["run_id"])),
-                turn_id=request.turn_id,
-                execution_id=request.constitution.execution_id,
-                workspace_id=request.constitution.workspace_id,
+                turn_id=turn_id,
+                execution_id=design_leg_execution_id(turn_id),
+                workspace_id=workspace_id,
                 sequence=int(item["sequence"]) + sequence_offset,
                 requested_model=str(item["requested_model"]),
                 answering_model=item.get("answering_model"),
@@ -1545,11 +1587,7 @@ class DesignLegTurnRunner:
             for document in addressed:
                 key = str(document.get("document_id") or "")
                 row = document_rows.get(key)
-                account_id = (
-                    row.get("account_id")
-                    if row is not None and row.get("doc_kind") == "web"
-                    else None
-                )
+                account_id = _card_account_id(row)
                 if not account_id:
                     continue
                 async with self._conn_factory() as conn:
@@ -2259,7 +2297,29 @@ class DesignLegTurnRunner:
             await self._lane.drive(envelope=envelopes[0])
         elif envelopes:
             await self._lane.drive_batch(envelopes=envelopes)
+        await self._record_stopped_turn_receipts(workspace_id=workspace_id, turn_id=turn_id)
         await self._hand_back_stopped_leg(workspace_id=workspace_id, turn_id=turn_id)
+
+    async def _record_stopped_turn_receipts(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """A stopped turn's model calls were paid for; land them like a finished turn's.
+
+        Live 2026-10-04: a design turn stopped after 75 metered calls ($3.81) left nothing on
+        ``agent_model_call`` — only the dispatch path recorded receipts, and a stop never returns
+        there. Every terminal run of the batch is recorded in position order with the same
+        offsets the dispatch path computes, so a stop racing a normal finish converges on the
+        rows already written (``record_model_call`` is idempotent on the call id).
+        """
+        async with self._conn_factory() as conn:
+            runs = await self._batch_runs(conn, workspace_id=workspace_id, turn_id=turn_id)
+        # Position order, recovered from the run id each position derives (``design_leg_run_id``).
+        positions = {design_leg_run_id(turn_id, k): k for k in range(len(runs))}
+        sequence_offset = 0
+        for run in sorted(runs, key=lambda run: positions.get(str(run["run_id"]), len(runs))):
+            if run["status"] not in _TERMINAL_RUN_STATUSES:
+                continue
+            sequence_offset = await self._record_design_receipts(
+                run, turn_id=turn_id, workspace_id=workspace_id, sequence_offset=sequence_offset
+            )
 
     async def _hand_back_stopped_leg(self, *, workspace_id: str, turn_id: UUID) -> None:
         async with self._conn_factory() as conn:
@@ -2278,7 +2338,7 @@ class DesignLegTurnRunner:
     # -- dispatch ------------------------------------------------------------------------------
 
     async def _record_design_receipts(
-        self, run: dict[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
+        self, run: dict[str, Any], *, turn_id: UUID, workspace_id: str, sequence_offset: int = 0
     ) -> int:
         """Land a terminal design run's collected model calls on the leg's own turn.
 
@@ -2300,7 +2360,10 @@ class DesignLegTurnRunner:
         """
 
         receipts = receipts_from_design_run(
-            run.get("result") or {}, request=request, sequence_offset=sequence_offset
+            run.get("result") or {},
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            sequence_offset=sequence_offset,
         )
         for call in receipts:
             await self._turns.record_model_call(receipt=call)
@@ -2399,7 +2462,8 @@ class DesignLegTurnRunner:
                     document_id=document.get("document_id"),
                     account_card=account_cards.get(key),
                     artifact=_artifact_context(document, count=leg_document_count),
-                    focus_refs=focus_refs,
+                    # A note goes only to the document it was drawn on (review finding S5-2).
+                    focus_refs=refs_for_document(focus_refs, document.get("document_id")),
                     workspace_id=workspace_id,
                     scope_pin=scope_pin,
                     turn_request=turn_request,
@@ -2552,7 +2616,10 @@ class DesignLegTurnRunner:
         sequence_offset = 0
         for item in prepared:
             sequence_offset = await self._record_design_receipts(
-                results[item.run_id], request=turn_request, sequence_offset=sequence_offset
+                results[item.run_id],
+                turn_id=turn_request.turn_id,
+                workspace_id=turn_request.constitution.workspace_id,
+                sequence_offset=sequence_offset,
             )
 
         return [(item.document, results[item.run_id]) for item in prepared]
@@ -2654,13 +2721,18 @@ class DesignLegTurnRunner:
         reference_asset_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
         )
-        # B1: the leg document's kind decides which design runtime executes the turn. A web
-        # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
-        # scene document (or no pinned document at all — nothing to read a kind from) keeps
-        # the shipped ``agent_turn`` request byte-for-byte.
-        kind: Literal["agent_turn", "web_turn"] = (
-            "web_turn" if document.get("doc_kind") == "web" else "agent_turn"
+        doc_kind = document.get("doc_kind")
+        # B1 + Lane B (Contract 7): the leg document's kind decides which design runtime executes
+        # the turn. A scene document (or no pinned document at all) keeps the shipped
+        # ``agent_turn`` request byte-for-byte.
+        kind: Literal["agent_turn", "web_turn", "site_turn"] = (
+            "site_turn" if doc_kind == "site" else "web_turn" if doc_kind == "web" else "agent_turn"
         )
+        if kind == "site_turn":
+            # Fresh session per request (founder ruling 2026-10-11): the site agent's thread is this
+            # run; its memory across requests is the session folder (plan.md, history.md,
+            # fetched/), which the design side syncs.
+            thread_id = run_id
         # Targets are resolved with the runtime that will consume them, never before the
         # branch: a web document's ``scene`` column holds a WEB document (pages carry their
         # own ``nodes``), so running the scene page-resolver over it would refuse every web
@@ -2690,7 +2762,23 @@ class DesignLegTurnRunner:
             ):
                 previous_outcome = "clarification_requested"
         request: dict[str, JsonValue]
-        if kind == "web_turn":
+        if kind == "site_turn":
+            # Ruling R9: the parts the person pointed at, in their order, as submitted. Not
+            # re-checked against the stored site (the composer did, Lane A Task 14); a part deleted
+            # since then reaches the agent, which says so. Absent when nothing was pointed at, so a
+            # targetless request stays exactly {prompt, base_version}.
+            site_targets: list[JsonValue] = [
+                {"object_id": ref.object_id, "note": ref.note}
+                for ref in focus_refs
+                if ref.object_type == "design_node"
+            ]
+            request = {
+                "prompt": message_text,
+                # The executor re-reads the document and persists under CAS on the version it read.
+                "base_version": int(document.get("current_version") or 0),
+                **({"targets": site_targets} if site_targets else {}),
+            }
+        elif kind == "web_turn":
             request = {
                 "prompt": message_text,
                 # Read once, HERE, because the envelope is frozen as the run row's payload and

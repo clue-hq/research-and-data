@@ -55,7 +55,11 @@ GOOD_PLATFORM = {
     "CLUE_APP_ORIGIN": "https://app.cluehq.ai",
     "CLUE_DESIGN_API_BASE_URL": "http://design-api.railway.internal:8010",
 }
-GOOD_DESIGN = {**GOOD_APP, "LUMEN_EMBEDDED_FLEET_WORKER": "0"}
+GOOD_DESIGN = {
+    **GOOD_APP,
+    "LUMEN_EMBEDDED_FLEET_WORKER": "0",
+    "CLUE_SITE_SECTION_LINK_SECRET": "0123456789abcdef0123456789abcdef0123456789abcdef",
+}
 GOOD_WORKER = {
     **GOOD_APP,
     "CLUE_REDIS_URL": "rediss://default:p@proxy.example:41235/0?ssl_cert_reqs=none",
@@ -173,7 +177,27 @@ def test_the_image_sets_every_path_the_check_keeps_out_of_env_files() -> None:
     dockerfile = (_PATH.parents[1] / "docker" / "backend" / "Dockerfile").read_text("utf-8")
     for name in IMAGE_OWNED:
         assert f"{name}=/" in dockerfile, name
-    assert set(check.IMAGE_OWNED) == set(IMAGE_OWNED)
+    assert set(check.IMAGE_OWNED) == {*IMAGE_OWNED, SANDBOX}
+
+
+# Review finding S7-1, option A: the image sets the site renderer's Chromium sandbox off, because
+# the containers cannot give Chromium one. An env line would override the image, and
+# `.env.example`'s value (1, for Macs) is exactly the one that breaks every render in a container.
+SANDBOX = "LUMEN_SITE_RENDER_CHROMIUM_SANDBOX"
+
+
+@pytest.mark.parametrize("role", list(GOOD))
+@pytest.mark.parametrize("value", ["1", "0", "true", ""])
+def test_an_env_line_for_the_renderers_chromium_sandbox_is_refused(role: str, value: str) -> None:
+    env = {**GOOD[role], SANDBOX: value}
+    found = [p for p in check.problems(env, role) if p.startswith(f"{SANDBOX} must not be set")]
+    assert found, check.problems(env, role)
+    assert "2026-10-14-site-render-chromium-sandbox-decision" in found[0], "it names the decision"
+
+
+def test_the_image_sets_the_renderers_chromium_sandbox() -> None:
+    dockerfile = (_PATH.parents[1] / "docker" / "backend" / "Dockerfile").read_text("utf-8")
+    assert f"{SANDBOX}=0" in dockerfile
 
 
 def test_workers_must_not_pick_their_own_kinds_in_the_shared_env_file() -> None:
@@ -196,6 +220,23 @@ def test_page_origin_needs_the_edge_secret() -> None:
 def test_no_other_service_needs_the_edge_secret(role: str) -> None:
     """Only page-origin reads it; a secret lives in as few places as possible."""
     assert "CLUE_PAGES_EDGE_SECRET" not in GOOD[role]
+    assert check.problems(GOOD[role], role) == []
+
+
+def test_the_design_api_needs_the_section_link_secret() -> None:
+    """Wave 2 Contract 4: without it every editor section load answers 503."""
+    for env in (
+        {k: v for k, v in GOOD_DESIGN.items() if k != "CLUE_SITE_SECTION_LINK_SECRET"},
+        {**GOOD_DESIGN, "CLUE_SITE_SECTION_LINK_SECRET": ""},
+    ):
+        assert "CLUE_SITE_SECTION_LINK_SECRET must be set" in check.problems(env, "design-api")
+    assert check.problems(GOOD_DESIGN, "design-api") == []
+
+
+@pytest.mark.parametrize("role", ["platform-api", "worker", "page-origin"])
+def test_no_other_service_needs_the_section_link_secret(role: str) -> None:
+    """Only the design API mints and serves section links."""
+    assert "CLUE_SITE_SECTION_LINK_SECRET" not in GOOD[role]
     assert check.problems(GOOD[role], role) == []
 
 
@@ -263,6 +304,16 @@ def test_telemetry_is_labelled_production(name: str) -> None:
     assert any(name in p for p in check.problems(env, "platform-api"))
 
 
+def test_an_unset_langfuse_label_is_not_production() -> None:
+    """Unset, the code default files traces under the development environment `default`."""
+    env = {k: v for k, v in GOOD_PLATFORM.items() if k != "CLUE_LANGFUSE_ENVIRONMENT"}
+    assert any(
+        "CLUE_LANGFUSE_ENVIRONMENT must be set" in p for p in check.problems(env, "platform-api")
+    )
+    off = {**env, "CLUE_LANGFUSE_ENABLED": "false"}
+    assert not any("CLUE_LANGFUSE_ENVIRONMENT" in p for p in check.problems(off, "platform-api"))
+
+
 # --- values a shell would have expanded, but Railway and docker's env_file do not ---------------
 
 
@@ -308,7 +359,7 @@ def test_the_workers_redis_goes_over_tls_to_a_self_signed_server(url: str) -> No
 
 def test_an_unknown_role_is_refused() -> None:
     with pytest.raises(ValueError):
-        check.problems(GOOD_PLATFORM, "frontend")
+        check.problems(GOOD_PLATFORM, "cron")
 
 
 def test_parse_reads_an_env_file_with_comments_quotes_and_blank_values() -> None:
@@ -385,3 +436,260 @@ def test_the_integration_pilot_path_turns_sumble_on_by_default(role: str) -> Non
         "CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED": "false",
     }
     assert check.problems(off, role) == []
+
+
+def test_the_pages_suffix_may_move_to_its_own_domain() -> None:
+    env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example"}
+    assert check.problems(env, "platform-api") == []
+
+
+def test_the_pages_suffix_never_moves_to_another_cluehq_name_or_localhost() -> None:
+    for value in ("pages2.cluehq.ai", "cluehq.ai"):
+        env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": value}
+        assert any(
+            "CLUE_PAGES_SYSTEM_SUFFIX must be pages.cluehq.ai or a hostname on the published "
+            "pages' own domain" in p
+            for p in check.problems(env, "platform-api")
+        ), value
+    env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "pages.localhost"}
+    assert any(
+        "CLUE_PAGES_SYSTEM_SUFFIX points at localhost" in p
+        for p in check.problems(env, "platform-api")
+    )
+    missing = {k: v for k, v in GOOD_PLATFORM.items() if k != "CLUE_PAGES_SYSTEM_SUFFIX"}
+    assert any(
+        "CLUE_PAGES_SYSTEM_SUFFIX must be set" in p for p in check.problems(missing, "platform-api")
+    )
+
+
+def test_after_the_move_the_old_suffix_stays_a_legacy_suffix() -> None:
+    env = {
+        **GOOD_PLATFORM,
+        "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example",
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "old.example",
+    }
+    assert any(
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES must keep pages.cluehq.ai" in p
+        for p in check.problems(env, "platform-api")
+    )
+    kept = {**env, "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "old.example,pages.cluehq.ai"}
+    assert check.problems(kept, "platform-api") == []
+
+
+# --- Review finding S7-4: the section-link secret ---------------------------------------------
+# Every agent-written section loads in the editor through a link the design API signs with this
+# secret. A placeholder or a one-character value used to pass, and every section then failed to
+# load, silently. A literal value must be long enough to be a secret; a Railway ${{shared.…}}
+# reference cannot be seen from here, so the design API itself refuses to start without one.
+SECRET = "CLUE_SITE_SECTION_LINK_SECRET"
+
+
+@pytest.mark.parametrize("value", ["x", "section-link", "a" * 31])
+def test_a_short_section_link_secret_is_refused(value: str) -> None:
+    env = {**GOOD_DESIGN, SECRET: value}
+    found = [p for p in check.problems(env, "design-api") if p.startswith(SECRET)]
+    assert found and "at least 32" in found[0], check.problems(env, "design-api")
+
+
+def test_a_long_secret_or_a_railway_reference_passes_the_file_check() -> None:
+    assert check.problems({**GOOD_DESIGN, SECRET: "a" * 32}, "design-api") == []
+    ref = {**GOOD_DESIGN, SECRET: "${{shared.CLUE_SITE_SECTION_LINK_SECRET}}"}
+    assert check.problems(ref, "design-api") == []
+
+
+# --- Review finding S7-2: the frontend and the site editor service ----------------------------
+# The app needs CLUE_SITE_EDITOR_SUFFIX to open any site, and the editor service must serve that
+# same suffix and allow that same app origin, or every site shows "not configured" or loads forever.
+GOOD_FRONTEND = {
+    "CLUE_APP_ORIGIN": "https://app.cluehq.ai",
+    "CLUE_SITE_EDITOR_SUFFIX": "edit.deeppresence.ai",
+    "CLUE_AUTH_ENABLED": "true",
+    "CLERK_SECRET_KEY": "sk_live_x",
+}
+GOOD_EDITOR = {
+    "CLUE_APP_ORIGIN": "https://app.cluehq.ai",
+    "CLUE_SITE_EDITOR_SUFFIX": "edit.deeppresence.ai",
+    "LUMEN_API_BASE_URL": "http://design-api.railway.internal:8010",
+}
+
+
+def test_correct_frontend_and_editor_envs_have_no_problems() -> None:
+    assert check.problems(GOOD_FRONTEND, "frontend") == []
+    assert check.problems(GOOD_EDITOR, "site-editor") == []
+    assert check.editor_pair_problems(GOOD_FRONTEND, GOOD_EDITOR) == []
+
+
+@pytest.mark.parametrize("role", ["frontend", "site-editor"])
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "",
+        "https://edit.deeppresence.ai",
+        "edit.deeppresence.ai:443",
+        "localhost",
+        "editor.localhost:3129",
+        "deeppresence",
+    ],
+)
+def test_the_editor_suffix_must_be_a_real_domain(role: str, suffix: str) -> None:
+    env = {
+        **(GOOD_FRONTEND if role == "frontend" else GOOD_EDITOR),
+        "CLUE_SITE_EDITOR_SUFFIX": suffix,
+    }
+    assert any(p.startswith("CLUE_SITE_EDITOR_SUFFIX") for p in check.problems(env, role)), suffix
+
+
+@pytest.mark.parametrize("role", ["frontend", "site-editor"])
+@pytest.mark.parametrize(
+    "origin", ["", "http://app.cluehq.ai", "https://app.cluehq.ai/home", "http://localhost:3029"]
+)
+def test_the_app_origin_must_be_the_https_app_origin(role: str, origin: str) -> None:
+    env = {**(GOOD_FRONTEND if role == "frontend" else GOOD_EDITOR), "CLUE_APP_ORIGIN": origin}
+    assert any(p.startswith("CLUE_APP_ORIGIN") for p in check.problems(env, role)), origin
+
+
+@pytest.mark.parametrize("value", ["", "http://localhost:8019"])
+def test_the_editor_needs_the_design_apis_private_address(value: str) -> None:
+    env = {**GOOD_EDITOR, "LUMEN_API_BASE_URL": value}
+    assert any(p.startswith("LUMEN_API_BASE_URL") for p in check.problems(env, "site-editor"))
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "CLERK_SECRET_KEY",
+        "CLUE_DATABASE_URL",
+        "CLUE_SITE_SECTION_LINK_SECRET",
+        "CLUE_OPENROUTER_API_KEY",
+        "CLUE_STORAGE_S3_SECRET_ACCESS_KEY",
+    ],
+)
+def test_the_editor_service_carries_no_secret_and_no_database(name: str) -> None:
+    """Agent-written code runs on the editor's domain: the service holds no login, secret or
+    database."""
+    env = {**GOOD_EDITOR, name: "anything"}
+    assert any(p.startswith(name) for p in check.problems(env, "site-editor")), name
+
+
+def test_the_app_and_the_editor_must_agree_on_the_suffix_and_the_app_origin() -> None:
+    other_suffix = {**GOOD_EDITOR, "CLUE_SITE_EDITOR_SUFFIX": "edit.example.com"}
+    assert any(
+        "CLUE_SITE_EDITOR_SUFFIX" in p
+        for p in check.editor_pair_problems(GOOD_FRONTEND, other_suffix)
+    )
+    other_origin = {**GOOD_EDITOR, "CLUE_APP_ORIGIN": "https://www.cluehq.ai"}
+    assert any(
+        "CLUE_APP_ORIGIN" in p for p in check.editor_pair_problems(GOOD_FRONTEND, other_origin)
+    )
+
+
+def test_the_cli_checks_the_editor_against_the_frontend_and_the_pages(tmp_path: Path) -> None:
+    def write(name: str, env: dict[str, str]) -> Path:
+        path = tmp_path / name
+        path.write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8")
+        return path
+
+    def run(*paths: Path) -> subprocess.CompletedProcess[str]:
+        command = [sys.executable, str(_PATH), "site-editor", *map(str, paths)]
+        return subprocess.run(command, capture_output=True, text=True)
+
+    editor, frontend = write("editor.env", GOOD_EDITOR), write("frontend.env", GOOD_FRONTEND)
+    platform = write("platform.env", GOOD_PLATFORM)
+    ok = run(editor, frontend, platform)
+    assert ok.returncode == 0 and ok.stdout.strip().endswith("OK"), ok.stdout
+    bad = write(
+        "bad-frontend.env", {**GOOD_FRONTEND, "CLUE_SITE_EDITOR_SUFFIX": "edit.example.com"}
+    )
+    refused = run(editor, bad, platform)
+    assert refused.returncode == 1 and "CLUE_SITE_EDITOR_SUFFIX" in refused.stdout
+    on_pages = write(
+        "pages-platform.env", {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "deeppresence.ai"}
+    )
+    refused = run(editor, frontend, on_pages)
+    assert refused.returncode == 1 and "published pages" in refused.stdout
+    # The editor is always checked against the app it serves and the pages beside it.
+    assert run(editor).returncode == 2
+    assert run(editor, frontend).returncode == 2
+
+
+# --- Review findings S2b-9 and K3-8: keep the editor's domain apart ----------------------------
+# Agent-written code runs on the editor's domain. On the app's registrable domain it could set
+# cookies for the app (S2b-9); on the published pages' domain the edge Worker would send editor
+# traffic to the page origin, and every editor would go down (K3-8).
+@pytest.mark.parametrize("role", ["frontend", "site-editor"])
+@pytest.mark.parametrize("suffix", ["edit.cluehq.ai", "cluehq.ai"])
+def test_s2b_9_the_editor_domain_is_never_the_apps(role: str, suffix: str) -> None:
+    env = {
+        **(GOOD_FRONTEND if role == "frontend" else GOOD_EDITOR),
+        "CLUE_SITE_EDITOR_SUFFIX": suffix,
+    }
+    found = check.problems(env, role)
+    assert any("app's" in p for p in found), found
+
+
+@pytest.mark.parametrize(
+    ("pages", "legacy"),
+    [
+        ("deeppresence.ai", None),
+        ("pages.deeppresence.ai", None),
+        ("pages.cluehq.ai", "deeppresence.ai"),
+    ],
+)
+def test_k3_8_the_pages_domain_is_never_the_editors(pages: str, legacy: str | None) -> None:
+    platform = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": pages}
+    if legacy is not None:
+        platform["CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES"] = f"pages.cluehq.ai,{legacy}"
+    found = check.editor_domain_problems(GOOD_EDITOR, platform)
+    assert any("published pages" in p for p in found), found
+
+
+def test_k3_8_separate_domains_pass() -> None:
+    assert check.editor_domain_problems(GOOD_EDITOR, GOOD_PLATFORM) == []
+
+
+# --- Review finding S7-3: a pages domain under a two-label public suffix -----------------------
+# The edge Worker reads "our zone" as a suffix's last two labels (`co.uk` for
+# `pages.clue.co.uk`), while the platform uses the Public Suffix List (`clue.co.uk`): every
+# customer domain under `.co.uk` would then be treated as one of our own records and passed
+# through unserved.
+@pytest.mark.parametrize("role", list(GOOD))
+@pytest.mark.parametrize("suffix", ["pages.clue.co.uk", "clue.co.uk", "pages.clue.com.au"])
+def test_s7_3_the_pages_domain_is_never_under_a_two_label_public_suffix(
+    role: str, suffix: str
+) -> None:
+    env = {
+        **GOOD[role],
+        "CLUE_PAGES_SYSTEM_SUFFIX": suffix,
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai",
+    }
+    zone = ".".join(suffix.split(".")[-2:])
+    assert check.problems(env, role) == [
+        f"CLUE_PAGES_SYSTEM_SUFFIX {suffix!r} sits under the two-label public suffix {zone!r}: "
+        "the pages edge Worker reads the zone as the domain's last two labels, so every customer "
+        f"domain under .{zone} would pass through unserved; choose a domain directly under a "
+        "one-label suffix such as .com"
+    ]
+
+
+@pytest.mark.parametrize("role", list(GOOD))
+def test_s7_3_a_legacy_pages_suffix_is_held_to_the_same_rule(role: str) -> None:
+    env = {
+        **GOOD[role],
+        "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example",
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai,pages.clue.co.uk",
+    }
+    found = check.problems(env, role)
+    assert len(found) == 1 and found[0].startswith(
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES 'pages.clue.co.uk' sits under the two-label public "
+        "suffix 'co.uk'"
+    ), found
+
+
+def test_s7_3_a_domain_under_a_one_label_suffix_passes() -> None:
+    for suffix in ("clue-pages.com", "pages.clue.page", "clue.uk"):
+        env = {
+            **GOOD_PLATFORM,
+            "CLUE_PAGES_SYSTEM_SUFFIX": suffix,
+            "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "pages.cluehq.ai",
+        }
+        assert check.problems(env, "platform-api") == [], suffix

@@ -4,13 +4,12 @@ import { createContext, useContext, useMemo } from "react";
 import { useClerk, useSignIn, useSignUp, useUser } from "@clerk/nextjs";
 import type {
   OnboardingAuthAdapter,
-  OnboardingAuthResult,
 } from "../model/onboarding";
 import {
   acceptInvitationTicket,
   pendingVerificationEmail,
   resendPendingEmailCode,
-  runClerkStep,
+  startGoogleSignIn,
   startPasswordSignIn,
   startPasswordSignUp,
   verifyPendingEmailCode,
@@ -47,8 +46,6 @@ export function OnboardingAuthProvider({
   return <ClerkOnboardingAuth>{children}</ClerkOnboardingAuth>;
 }
 
-const SSO_CALLBACK_PATH = "/onboarding/sso-callback";
-const SESSION_ESTABLISH_PATH = "/session/establish";
 function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
   // Clerk v7 custom-flow ("future") resources expose a real state machine after every driver
   // call. `finalize()` is legal only at `complete`; Device Trust and email MFA first route through
@@ -56,7 +53,8 @@ function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
   // so the live SDK contract is covered without rendering Clerk UI.
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
-  const { signOut } = useClerk();
+  const clerk = useClerk();
+  const { signOut } = clerk;
   const { user } = useUser();
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
   const pendingEmail = pendingVerificationEmail(signIn, signUp);
@@ -73,25 +71,12 @@ function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
       acceptInvitation: (params) => acceptInvitationTicket(signUp, params),
       verifyEmailCode: (code) => verifyPendingEmailCode(signIn, signUp, code),
       resendEmailCode: () => resendPendingEmailCode(signIn, signUp),
-      signInWithGoogle: () =>
-        (async (): Promise<OnboardingAuthResult> => {
-          // Lands on /onboarding/sso-callback (which also handles the first-time-user
-          // sign-in → sign-up transfer), then completes at /session/establish; a brand-new
-          // identity is routed onward to /onboarding/profile by the session DAL repair.
-          const started = await runClerkStep(() =>
-            signIn.sso({
-              strategy: "oauth_google",
-              redirectCallbackUrl: SSO_CALLBACK_PATH,
-              redirectUrl: SESSION_ESTABLISH_PATH,
-            }),
-          );
-          return started.ok ? { status: "complete" } : started.result;
-        })(),
+      signInWithGoogle: () => startGoogleSignIn(clerk.client?.signIn),
       async signOut() {
         await signOut({ redirectUrl: "/onboarding/sign-in" });
       },
     }),
-    [email, pendingEmail, signIn, signUp, signOut],
+    [email, pendingEmail, signIn, signUp, signOut, clerk],
   );
 
   return (

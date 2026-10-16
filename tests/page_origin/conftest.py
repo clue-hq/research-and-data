@@ -38,9 +38,18 @@ class FakePageReads:
         noindex: bool = False,
         routes: dict[str, str] | None = None,
         workspace_id: str = WS,
+        delivery: str = "web",
+        script_hashes: tuple[str, ...] = (),
     ) -> None:
-        """Publish a site; ``routes`` are its F5 page rows (none = a pre-F5 publish)."""
-        manifest = {"slug": slug, **({"robots": "noindex"} if noindex else {})}
+        """Publish a site; ``routes`` are its F5 page rows (none = a pre-F5 publish); ``delivery``
+        "site" marks a Puck site publish (Wave 2 Contract 3) and "site_live" a live one, as its
+        manifest does; ``script_hashes`` are a live page's import-map hashes (``manifest.live``)."""
+        manifest = {
+            "slug": slug,
+            **({"robots": "noindex"} if noindex else {}),
+            **({"delivery": delivery} if delivery in ("site", "site_live") else {}),
+            **({"live": {"script_hashes": list(script_hashes)}} if script_hashes else {}),
+        }
         manifest_json = json.dumps(
             manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=True
         )
@@ -50,6 +59,8 @@ class FakePageReads:
             manifest_json=manifest_json,
             manifest_digest=_sha(manifest_json),
             noindex=noindex,
+            delivery=delivery,
+            script_hashes=tuple(script_hashes),
         )
         for route, page_html in (routes or {}).items():
             self.pages[(workspace_id, slug, route)] = page_html
@@ -68,10 +79,20 @@ class FakePageReads:
             return None
         html = self.pages.get((workspace_id, slug, route))
         if html is not None:
-            return ServedPage(html=html, html_digest=_sha(html), noindex=publish.noindex)
+            return ServedPage(
+                html=html,
+                html_digest=_sha(html),
+                noindex=publish.noindex,
+                delivery=publish.delivery,
+                script_hashes=publish.script_hashes,
+            )
         if route == "/":
             return ServedPage(
-                html=publish.html, html_digest=publish.html_digest, noindex=publish.noindex
+                html=publish.html,
+                html_digest=publish.html_digest,
+                noindex=publish.noindex,
+                delivery=publish.delivery,
+                script_hashes=publish.script_hashes,
             )
         return None
 
@@ -106,7 +127,9 @@ def dev_client(reads: FakePageReads) -> TestClient:
 
 
 def edge(host: str = HOST, *, secret: str | None = SECRET) -> dict[str, str]:
-    headers = {"X-Clue-Public-Host": host}
+    # The plain representation: these tests read each route's own headers and bytes; the gzipped
+    # one has its own test (test_routes.py).
+    headers = {"X-Clue-Public-Host": host, "Accept-Encoding": "identity"}
     if secret is not None:
         headers["X-Clue-Edge-Auth"] = secret
     return headers

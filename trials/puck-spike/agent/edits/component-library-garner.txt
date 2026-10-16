@@ -1,0 +1,6 @@
+Rebuild the seller's section frag_95041c54da629d99 as a component.
+Rebuild the seller's section frag_79934268c8621bd2 as a component.
+Rebuild the seller's section frag_9a8550d2f42f1196 as a component.
+Rebuild the seller's section frag_1f86b8d67557b66b as a component.
+Rebuild the seller's section frag_9fa31f37a0b94447 as a component.
+Build the landing page for Syracuse City School District (syracusecityschools.com) described in /brief.md, using only the seller's rebuilt components (catalog/seller-components.md) and our brand sections — no clones.

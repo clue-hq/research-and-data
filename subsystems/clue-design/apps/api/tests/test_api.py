@@ -1014,6 +1014,39 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
     assert all(cache_blob_path(cache_dir, digest).is_file() for digest in digests)
 
 
+def test_agent_turn_forwards_the_workspace_image_vectors_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hybrid asset search (2026-10-05): the scene turn's config carries the workspace's CLIP
+    vectors BY VALUE next to the library, read for the turn's own workspace — and an empty map
+    (visual search off or unavailable) still lets the turn run."""
+    from lumen_api import asset_embeddings
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+    asked = []
+
+    def fake_load(workspace_id, asset_ids=None):
+        asked.append(workspace_id)
+        return {asset_id: [0.0] * 511 + [1.0]}
+
+    monkeypatch.setattr(asset_embeddings, "load_workspace_embeddings", fake_load)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+    workspace = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    run_agent_turn_preview(AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+                           repo_root(), workspace_id=workspace)
+    assert asked == [workspace]
+    assert list(captured["config"].asset_embeddings) == [asset_id]
+
+    monkeypatch.setattr(asset_embeddings, "load_workspace_embeddings", lambda *a, **k: {})
+    captured = _stub_scene_turn_runtime(monkeypatch)
+    run_agent_turn_preview(AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+                           repo_root(), workspace_id=workspace)
+    assert captured["config"].asset_embeddings == {}
+
+
 def test_agent_turn_asset_library_keeps_older_assets_without_a_recent_cap(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1202,6 +1235,41 @@ def test_describe_assets_backfill_republishes_kit_with_metadata(
         ]
         == 6
     )
+
+
+def test_logo_curation_keeps_the_kit_sections_the_engine_does_not_know(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave 2 A9 (Task X5): the logo route publishes the engine's validated kit, which dropped the
+    brief, the grammar audit and the measured components; they are carried across now."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={"source": valid_styles_source(), "brand_kit_id": "brand_kit_insight_health", "version": 4, "name": "Insight Health"},
+    )
+    assert compiled.status_code == 200, compiled.text
+    sections = {
+        "brief": {"schema_version": 1, "characterization": {"words": ["calm", "clinical"], "support": "s", "confidence": "low"}},
+        "grammar_audit": {"schema_version": 1},
+        "measured_components": {"schema_version": 1, "source": "website:https://example.test/", "styles": [],
+                                "motion": {"animations": [], "reveals": [], "scripted": []}},
+    }
+    original = HybridRepository.require_brand_kit
+
+    def stored_with_sections(self, brand_kit_id, version=None):
+        record = original(self, brand_kit_id, version)
+        return {**record, "brand_kit": {**record["brand_kit"], **sections}} if version is None else record
+
+    monkeypatch.setattr(HybridRepository, "require_brand_kit", stored_with_sections)
+    uploaded = upload_logo(client, label="The real lockup")
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": uploaded.json()["asset"]["id"], "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    monkeypatch.setattr(HybridRepository, "require_brand_kit", original)
+    kit_json = client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"]
+    for key, value in sections.items():
+        assert kit_json[key] == value, key
 
 
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(

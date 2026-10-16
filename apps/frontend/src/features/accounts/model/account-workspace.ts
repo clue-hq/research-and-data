@@ -18,7 +18,9 @@ export const WorkspaceInsightSchema = z.object({
 export const AccountArtifactSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  type: z.enum(["presentation", "document", "web", "ad", "email"]),
+  // `site`: a website on Puck (Wave 2). The backend sends it for a site built for this account;
+  // without it here one such artifact failed the whole accounts read (review finding K1-1).
+  type: z.enum(["presentation", "document", "web", "ad", "email", "site"]),
   accountId: z.string().min(1).optional(),
   projectName: z.string().min(1).optional(),
   updatedAt: z.string().datetime().optional(),

@@ -233,6 +233,61 @@ async def _seed(
     return project, storage, artifacts
 
 
+def test_library_refreshes_changed_renderer_without_churning_unchanged_generations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Existing rows must get newly preserved provenance on the next fresh turn."""
+    import clue_api.project_library as library
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "format")
+            await _seed_statement(conn, project, artifacts)
+            root, factory, _sink = make_factory(tmp_path)
+            current_render = library.render_decisions_markdown
+            try:
+                with monkeypatch.context() as old:
+                    old.setattr(library, "_LIBRARY_FORMAT_VERSION", 1, raising=False)
+                    old.setattr(library, "render_decisions_markdown", lambda _: "old decision view")
+                    first = await ensure_project_library(
+                        conn,
+                        storage,
+                        artifacts,
+                        factory,
+                        workspace_id=project.workspace_id,
+                        project_id=project.project_id,
+                    )
+                monkeypatch.setattr(library, "_LIBRARY_FORMAT_VERSION", 2, raising=False)
+                second = await ensure_project_library(
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                )
+                tree = root / project.workspace_id / "projects" / project.project_id / "library"
+                assert second.digest != first.digest
+                assert (tree / "decisions.md").read_text() != "old decision view"
+                assert _QUOTE in (tree / "decisions.md").read_text()
+                assert library.render_decisions_markdown is current_render
+                before = tree.stat()
+                third = await ensure_project_library(
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                )
+                assert third.digest == second.digest
+                assert tree.stat().st_ino == before.st_ino
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
 def test_the_library_is_rebuilt_only_when_a_contributing_row_changes(tmp_path: Path) -> None:
     """The whole point of the library: it is compiled once, not once per turn.
 

@@ -15,6 +15,8 @@ import hashlib
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from selectolax.parser import HTMLParser
+
 from ..evidence import (
     BrandEvidence,
     ColorEvidence,
@@ -29,8 +31,10 @@ from ..evidence import (
     TypeSample,
 )
 from .budget import MAX_NAMED_DROPS, short_url
-from .font_instances import plan_font_instances
+from .candidates import collect_asset_candidates
+from .font_instances import instance_weights, plan_font_instances
 from .geometry import parse_geometry
+from .motion import attach_keyframes
 from .parse import ParsedSite, parse_color_value, parse_site
 
 INGEST_CONCURRENCY = 4
@@ -47,6 +51,8 @@ class _AssetJob:
     #: A provenance note for a DERIVED asset (a static instance of a variable font); None for a
     #: plain rehost.
     note: str | None = None
+    captured_at: str | None = None
+    page_url: str | None = None
 
 
 def _pointer(locator: str) -> EvidencePointer:
@@ -250,7 +256,10 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             # renderers can match by weight, and a variable file is matched at its default only.
             if face_sha and asset_id is not None and face.style in ("normal", "italic"):
                 plan = plan_font_instances(
-                    font.family, sha_bytes[face_sha], italic=(face.style == "italic")
+                    font.family,
+                    sha_bytes[face_sha],
+                    italic=(face.style == "italic"),
+                    weights=instance_weights(font.family, type_samples),
                 )
                 if plan.variable and plan.instances:
                     declared_weight = face.weight or 400
@@ -396,6 +405,10 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # chose, the mask a stylesheet pulls, and the sprite an inline <svg> points at. They are
     # stored, not narrated: nothing here invents evidence for them.
     for entry in snapshot.downloads:
+        if entry.kind == "video":
+            # Retained by site_snapshot and the fragment byte rehoster. The
+            # image/font ingest engine cannot analyze video; do not mislabel it.
+            continue
         queue(
             entry.sha256,
             entry.url,
@@ -403,6 +416,10 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             _filename_from_url(entry.url, entry.kind),
             context=f"captured {entry.origin or entry.kind}",
         )
+
+    # Supporting pages expand the reusable library, never the homepage's brand evidence.
+    # Queue after the entry page so content-identical shared assets keep its source identity.
+    _queue_supporting_assets(outcome, jobs, drops)
 
     # --- ingest all queued assets concurrently ---
     ingest_failures: list[dict] = []
@@ -416,6 +433,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # brief agent reads. A static-tier capture (or a failed probe) carries no
     # harvest, so this contributes nothing and the derived scale stands.
     geometry = parse_geometry(snapshot.geometry, page_url=snapshot.final_url)
+    # Motion (Wave 2 A9): the probe saw which animations run; their @keyframes bodies are in the
+    # stylesheets this capture fetched, cross-origin ones included.
+    geometry_evidence = geometry.evidence()
+    geometry_evidence = geometry_evidence.model_copy(
+        update={"motion": attach_keyframes(geometry_evidence.motion, snapshot.stylesheets)}
+    )
     outcome_diagnostics = getattr(outcome, "diagnostics", None)
     if geometry.diagnostics and isinstance(outcome_diagnostics, list):
         outcome_diagnostics.extend(geometry.diagnostics)
@@ -536,10 +559,62 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         declared_roles=declared,
         state_styles=state_styles,
         render_truth=render_truth,
-        geometry=geometry.evidence(),
+        geometry=geometry_evidence,
         screenshots=screenshots,
         narrative=narrative,
     )
+
+
+def _queue_supporting_assets(
+    outcome, jobs: dict[str, _AssetJob], drops: list[tuple[str, str, str]]
+) -> None:
+    """Register captured dependencies from the already-bounded page plan, entry first.
+
+    Snapshot rows retain every referring page. Each library record has one primary source:
+    the first captured occurrence, with its own asset URL and capture time. Videos remain
+    in snapshot/fragment custody because the image/font engine cannot ingest them.
+    """
+    for snapshot in getattr(outcome, "snapshots", None) or []:
+        if snapshot is outcome.snapshot:
+            continue
+        page_url = snapshot.final_url or snapshot.requested_url
+        fetch_reasons = _fetch_failure_reasons(snapshot)
+        downloaded_urls = {entry.url for entry in snapshot.downloads}
+        harvest = collect_asset_candidates(
+            HTMLParser(snapshot.html), page_url, snapshot.stylesheets
+        )
+        for candidate in harvest.candidates:
+            if candidate.kind == "video" or candidate.url in downloaded_urls:
+                continue
+            drops.append(
+                (
+                    candidate.url,
+                    fetch_reasons.get(candidate.url, "no bytes were captured for it"),
+                    f"{candidate.origin} on {short_url(page_url)}",
+                )
+            )
+        for entry in snapshot.downloads:
+            if entry.kind == "video" or entry.sha256 in jobs:
+                continue
+            try:
+                body = base64.b64decode(entry.bytes_b64, validate=True)
+                if not body:
+                    raise ValueError("captured bytes are empty")
+                if hashlib.sha256(body).hexdigest() != entry.sha256:
+                    raise ValueError("captured bytes do not match their digest")
+            except ValueError as error:
+                drops.append((entry.url, str(error), f"captured asset on {short_url(page_url)}"))
+                continue
+            jobs[entry.sha256] = _AssetJob(
+                url=entry.url,
+                sha256=entry.sha256,
+                body=body,
+                kind="font" if entry.kind == "font" else "image",
+                filename=_stored_filename(entry.sha256, entry.url, entry.kind),
+                content_type=entry.content_type,
+                captured_at=snapshot.fetched_at,
+                page_url=page_url,
+            )
 
 
 def _sha_for_url(snapshot, url: str) -> str | None:
@@ -789,6 +864,10 @@ def _ingest_one(job: _AssetJob, core, store_root: str, snapshot) -> dict | None:
 
 
 def _call_ingest(job: _AssetJob, core, store_root: str, snapshot, asset_id: str):
+    captured_at = job.captured_at or snapshot.fetched_at
+    notes = [job.note] if job.note else []
+    if job.page_url:
+        notes.append(f"Referenced by captured page {job.page_url}")
     return core.ingest_asset(
         store_root=store_root,
         bytes_base64=base64.b64encode(job.body).decode("ascii"),
@@ -799,12 +878,12 @@ def _call_ingest(job: _AssetJob, core, store_root: str, snapshot, asset_id: str)
         kind="font" if job.kind == "font" else None,
         provenance={
             "created_by": "lumen_ingestion",
-            "created_at": snapshot.fetched_at,
+            "created_at": captured_at,
             "source_label": "website",
             "confidence": 0.7,
-            "notes": [job.note] if job.note else [],
+            "notes": notes,
         },
-        source={"kind": "website", "url": job.url, "captured_at": snapshot.fetched_at}
+        source={"kind": "website", "url": job.url, "captured_at": captured_at}
         if job.url
         else {"kind": "manual", "label": job.filename},
         tags=["brand-ingestion", "font" if job.kind == "font" else "image"],

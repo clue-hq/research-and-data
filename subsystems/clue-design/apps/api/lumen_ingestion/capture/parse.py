@@ -16,6 +16,7 @@ import tinycss2
 from clue_core.normalize import canonical_workspace_name
 from selectolax.parser import HTMLParser
 
+from ..css_color4 import COLOR4_FUNCTIONS, color4_to_hex
 from .budget import (
     MAX_ASSET_COUNT,
     MAX_STATE_STYLE_COUNT,
@@ -344,6 +345,23 @@ def parse_color_value(
             return hex6
         _record_color_skip(diagnostics, f"unreadable hsl() value: {text}")
         return None
+
+    for name in COLOR4_FUNCTIONS:
+        body = _function_body(text, (name,))
+        if body is None:
+            continue
+        parts, alpha_slot = _split_color_args(body)
+        # These functions have no legacy comma syntax (Chromium refuses `oklch(0.5, 0.1, 180)`).
+        # Only the channel half is checked: the alpha slot may hold `var(--o, 0.5)`.
+        hex6 = None if "," in body.partition("/")[0] else color4_to_hex(name, parts)
+        if hex6 is None:
+            _record_color_skip(diagnostics, f"unreadable {name}() value: {text}")
+            return None
+        if alpha_slot is not None:
+            alpha = _alpha_or_opaque(alpha_slot, text, custom_props, diagnostics)
+            if alpha < 255:
+                return hex6 + "%02X" % alpha
+        return hex6
 
     return None
 

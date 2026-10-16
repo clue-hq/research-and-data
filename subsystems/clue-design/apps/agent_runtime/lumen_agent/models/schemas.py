@@ -114,7 +114,7 @@ class ClarificationQuestion(BaseModel):
     """One brief-clarification question the orchestrator asks the user before
     spending any authoring effort. Every question MUST carry a `default` — the
     "if you don't care, I'll do X" fallback — so an unanswered question never
-    blocks the design (see the clarify-design-brief skill)."""
+    blocks the design."""
 
     id: str
     question: str

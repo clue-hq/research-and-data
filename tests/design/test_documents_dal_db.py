@@ -14,6 +14,7 @@ All writes run in rolled-back transactions against the session-migrated DB.
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -36,6 +37,17 @@ def _scene(doc_id: str, title: str = "T") -> dict[str, object]:
 
 def _web_doc(doc_id: str, title: str = "W") -> dict[str, object]:
     return {"id": doc_id, "title": title, "theme": {}, "pages": [], "assets": {}}
+
+
+def _site_doc(doc_id: str, title: str = "S") -> dict[str, object]:
+    return {
+        "id": doc_id,
+        "title": title,
+        "theme": {},
+        "pages": {"/": {"root": {"props": {"title": title}}, "content": []}},
+        "shell": None,
+        "agent_sections": {},
+    }
 
 
 async def _seed_ws(conn: AsyncConnection) -> str:
@@ -161,6 +173,42 @@ def test_web_documents_stamp_only_the_latest_approved_kit_at_birth(
     run_async(_check())
 
 
+def test_site_documents_are_born_like_web_documents(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="approved")
+            doc_id = f"site_{uuid4().hex}"
+            born = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_site_doc(doc_id), doc_kind="site"
+            )
+            assert born["doc_kind"] == "site"
+            assert born["title"] == "S"
+            assert born["scene"]["theme"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+            renamed = await design_documents.rename_document(
+                conn, workspace_id=ws, document_id=doc_id, title="Renamed"
+            )
+            assert renamed["scene"]["title"] == "Renamed"  # top-level title, not meta.title
+            updated = await design_documents.update_web_document(
+                conn,
+                workspace_id=ws,
+                document_id=doc_id,
+                web_doc={**renamed["scene"], "shell": {"header": {}}},
+                intent="site_write",
+                checkpoint_label=None,
+                operations=[{"op": "replace_site"}],
+                inverse_operations=[{"op": "replace_site", "site": renamed["scene"]}],
+                expected_base_version=renamed["current_version"],
+            )
+            assert updated["current_version"] == renamed["current_version"] + 1
+            await txn.rollback()
+
+    run_async(_check())
+
+
 def test_web_document_default_fails_closed_for_a_multi_brand_workspace(
     require_design_db: None,
 ) -> None:
@@ -237,6 +285,72 @@ def test_scene_birth_without_an_approved_kit_stays_unbranded(require_design_db: 
             )
             assert doc["scene"]["meta"].get("brand_kit") is None
             assert doc["effective_brand_kit_id"] is None
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_every_new_website_document_is_born_noindex_and_a_scene_is_not(
+    require_design_db: None,
+) -> None:
+    """Founder ruling 2026-10-16: every NEW web or site document is born with the durable
+    ``web_noindex``, whichever insert births it (a plain document, a derivation, a template); a
+    scene has no publish surface and stays false. A document that already exists keeps what it
+    holds — nothing here rewrites a row — and only an explicit clear makes a page indexable."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+
+            # A document from before the ruling: an indexable web row, as every old one was born.
+            existing_id = f"web_existing_{uuid4().hex}"
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document (id, workspace_id, title, status, doc_kind,"
+                    " current_scene_json, current_version, web_noindex)"
+                    " VALUES (:d, :w, 'Old', 'draft', 'web', CAST(:s AS jsonb), 0, false)"
+                ),
+                {"d": existing_id, "w": ws, "s": json.dumps(_web_doc(existing_id))},
+            )
+
+            web = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_web_doc(f"web_{uuid4().hex}"), doc_kind="web"
+            )
+            site = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_site_doc(f"site_{uuid4().hex}"), doc_kind="site"
+            )
+            derived = await design_documents.create_document(
+                conn,
+                workspace_id=ws,
+                scene=_web_doc(f"web_derived_{uuid4().hex}"),
+                doc_kind="web",
+                template_document_id=str(web["id"]),
+                template_doc_version=0,
+            )
+            template = await design_documents.create_web_template(
+                conn, workspace_id=ws, web_doc=_web_doc(f"web_template_{uuid4().hex}")
+            )
+            scene = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_scene(f"doc_{uuid4().hex}")
+            )
+            assert [d["web_noindex"] for d in (web, site, derived, template)] == [True] * 4
+            assert scene["web_noindex"] is False
+
+            # The births touched no other row.
+            old = await design_documents.get_document(
+                conn, workspace_id=ws, document_id=existing_id
+            )
+            assert old["web_noindex"] is False
+
+            # "Allow indexing" is the explicit clear, and it holds.
+            cleared = await design_documents.set_web_noindex(
+                conn, workspace_id=ws, document_id=str(web["id"]), enabled=False
+            )
+            assert cleared["web_noindex"] is False
+            again = await design_documents.get_document(
+                conn, workspace_id=ws, document_id=str(web["id"])
+            )
+            assert again["web_noindex"] is False
             await txn.rollback()
 
     run_async(_check())

@@ -4,6 +4,10 @@ import { AssetContextSchema, AssetSourceSchema } from "./asset-context";
 export const BrandContextSectionSchema = z.enum([
   "colors",
   "typography",
+  // Wave 2 A9 (Task X6): listed only for a kit made after measurement.
+  "components",
+  "spacing",
+  "motion",
   "assets",
   "knowledge",
 ]);

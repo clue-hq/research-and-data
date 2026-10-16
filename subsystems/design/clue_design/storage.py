@@ -64,6 +64,11 @@ SOURCE_KEY_SITE_SNAPSHOT = "design_site_snapshot"
 #: image itself. Cited by ``design_web_fragment`` rows. Distinct from the snapshot key because a
 #: snapshot is what a site LOOKED like and a fragment is what we now hold and will render.
 SOURCE_KEY_WEB_FRAGMENT = "design_web_fragment"
+#: Lane B (Contract 4) — an agent-written Puck section's source, compiled module and CSS, cited by
+#: ``design_site_section`` rows. NEVER public: :func:`read_public_design_blob` skips this key, so
+#: ``/asset-store/{digest}`` and the page origin cannot serve agent code. The editor gets a module
+#: through a short-lived signed link; the renderer reads it with the workspace-scoped read.
+SOURCE_KEY_SITE_SECTION = "design_site_section"
 
 #: The ``media.location.provider`` label a D4 asset record carries (ruling R-D4-4). The bytes it
 #: names live in platform storage under :func:`design_storage_key`, never on a local disk.
@@ -230,7 +235,8 @@ async def read_public_design_blob(
     SKIPPED rather than fatal: the rows are only metadata, and refusing to serve bytes that
     demonstrably exist because some other tenant's row happens to be older would be a 404 the
     caller can neither explain nor fix. The scan is bounded; identical bytes held by more
-    workspaces than that are still served from the first live one.
+    workspaces than that are still served from the first live one. It never serves an
+    agent-written section's bytes (``SOURCE_KEY_SITE_SECTION``, Contract 4).
     """
     if not _SHA256_SHAPE.fullmatch(sha256):
         raise DesignNotFoundError("design_blob", sha256)
@@ -239,9 +245,15 @@ async def read_public_design_blob(
             "SELECT storage_key, media_type FROM artifact "
             "WHERE content_sha256 = :sha AND split_part(storage_key, '/', 2) = :segment "
             "AND erased_at IS NULL AND purged_at IS NULL "
+            "AND source_key IS DISTINCT FROM :site_section "
             "ORDER BY created_at, storage_key LIMIT :limit"
         ),
-        {"sha": sha256, "segment": DESIGN_KEY_SEGMENT, "limit": _PUBLIC_READ_CANDIDATES},
+        {
+            "sha": sha256,
+            "segment": DESIGN_KEY_SEGMENT,
+            "site_section": SOURCE_KEY_SITE_SECTION,
+            "limit": _PUBLIC_READ_CANDIDATES,
+        },
     )
     for row in result.mappings().all():
         try:

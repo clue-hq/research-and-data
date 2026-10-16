@@ -127,7 +127,10 @@ def client(tmp_path: Path) -> TestClient:
 def test_ingest_website_happy_path_persists_kit_and_report(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
+        assert discover_pages is True
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -186,7 +189,9 @@ def test_reingest_existing_website_kit_publishes_a_new_approved_version(
     """Slice 4: a client-supplied existing kit id means NEXT version, not a doomed
     create-at-version-1 collision. Both extractions are approved without a browser mutation."""
 
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
         return FakeCaptureOutcome()
 
     _bypass_ssrf_guard(monkeypatch)
@@ -236,7 +241,9 @@ def test_reingest_existing_website_kit_publishes_a_new_approved_version(
 def test_ingested_kit_attaches_to_document(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
         return FakeCaptureOutcome()
 
     _bypass_ssrf_guard(monkeypatch)
@@ -274,7 +281,9 @@ def test_ingested_kit_attaches_to_document(
 def test_capture_failure_marks_job_failed_no_kit(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def boom_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def boom_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
         raise RuntimeError("capture exploded")
 
     _bypass_ssrf_guard(monkeypatch)
@@ -307,7 +316,9 @@ def test_capture_failure_marks_job_failed_no_kit(
 def test_stage_progression_reaches_preparing_before_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -341,7 +352,9 @@ def test_stage_progression_reaches_preparing_before_success(
 
 
 def _capture_recording_force_render(seen: dict) -> Callable[..., Any]:
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False,
+    ):
         seen["force_render"] = force_render
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome(tier="rendered")
@@ -480,3 +493,26 @@ def test_live_e2e_ingests_real_site(client: TestClient) -> None:
     assert kit["brand_kit"]["approval_status"] == "approved"
     colors = kit["brand_kit_json"]["tokens"]["colors"]
     assert "surface.brand" in colors and "text.primary" in colors
+
+
+def test_explicit_supporting_pages_are_guarded_before_any_job_is_queued(client, monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+
+    calls = []
+
+    async def guard(url):
+        calls.append(url)
+        if url == "http://127.0.0.1/private":
+            raise CaptureError("LUMI0501", "blocked private address")
+        return url
+
+    monkeypatch.setattr(main_module, "_resolve_guard_url", lambda: guard)
+    response = client.post(
+        "/brand-kits/ingest/website",
+        json={
+            "url": "https://example.com/",
+            "page_urls": ["http://127.0.0.1/private"],
+        },
+    )
+    assert response.status_code == 422
+    assert calls == ["https://example.com/", "http://127.0.0.1/private"]

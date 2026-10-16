@@ -43,6 +43,7 @@ section — at which point every inner binding being moot is the intent, not a d
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from lumen_api.fragments import MAX_FRAGMENT_SLOTS, SlotSpec, asset_url_digest
@@ -52,6 +53,8 @@ from selectolax.lexbor import LexborHTMLParser, LexborNode
 #: one section is not an editing surface, and the tail of a long section is boilerplate.
 MAX_BODY_SLOTS = 8
 MAX_IMAGE_SLOTS = 8
+MAX_HEADLINE_SLOTS = 8
+MAX_CTA_SLOTS = 8
 
 #: Heading tags in the order a section's dominant headline is looked for.
 _HEADING_TAGS = ("h1", "h2", "h3")
@@ -132,6 +135,7 @@ def detect_slots(sanitized_html: str) -> DetectedSlots:
     _detect_headline(body, specs, marks)
     _detect_cta(body, specs, notes, marks)
     _detect_images(body, specs, notes, marks)
+    _detect_secondary_headlines(body, specs, notes, marks)
     _detect_body(body, specs, notes, marks)
     _detect_visibility(body, specs, notes)
 
@@ -145,7 +149,7 @@ def detect_slots(sanitized_html: str) -> DetectedSlots:
 
 
 # --------------------------------------------------------------------------- #
-# the five detectors
+# detectors
 # --------------------------------------------------------------------------- #
 
 
@@ -171,21 +175,39 @@ def _detect_cta(
     when the anchor's words are its own text node there is nowhere to put it, and that is said
     out loud rather than left as a mysteriously missing key.
     """
-    anchor = _cta_anchor(body, marks)
-    if anchor is None:
-        return
-    specs.append(SlotSpec(selector=_selector(anchor), key="cta_href", kind="href"))
-    marks.add(anchor, consumes=False)
+    for ordinal, anchor in enumerate(_cta_anchors(body, marks), 1):
+        if ordinal > MAX_CTA_SLOTS:
+            notes.append(f"capped this section at {MAX_CTA_SLOTS} CTA pairs; remaining links keep source values")
+            break
+        specs.append(SlotSpec(selector=_selector(anchor), key=_numbered("cta_href", ordinal), kind="href"))
+        marks.add(anchor, consumes=False)
+        label = _label_element(anchor)
+        label_key = _numbered("cta_label", ordinal)
+        if label is None or marks.blocked(label, consuming=True):
+            notes.append(
+                f"no {label_key} slot: label has no independent text element; use exact label "
+                "repair for a single text node, or a reviewed variant for mixed styled text"
+            )
+            continue
+        specs.append(SlotSpec(selector=_selector(label), key=label_key, kind="text"))
+        marks.add(label, consumes=True)
 
-    label = _label_element(anchor)
-    if label is None or marks.blocked(label, consuming=True):
-        notes.append(
-            "no cta_label slot: the call to action's words are the anchor's own text, and the "
-            "anchor already carries cta_href (one element holds one slot marker)"
-        )
-        return
-    specs.append(SlotSpec(selector=_selector(label), key="cta_label", kind="text"))
-    marks.add(label, consumes=True)
+
+def _detect_secondary_headlines(
+    body: LexborNode, specs: list[SlotSpec], notes: list[str], marks: _Marks,
+) -> None:
+    # Keep the original dominant headline key. Additional headings follow DOM order;
+    # they cannot consume images or CTA markers already admitted above.
+    count = sum(spec.key == "headline" for spec in specs)
+    for node in body.css("h1,h2,h3,h4,h5,h6"):
+        if node.mem_id in marks.marked or not _visible_text(node) or marks.blocked(node, consuming=True):
+            continue
+        if count >= MAX_HEADLINE_SLOTS:
+            notes.append(f"capped this section at {MAX_HEADLINE_SLOTS} headline slots; remaining headings keep source copy")
+            return
+        count += 1
+        specs.append(SlotSpec(selector=_selector(node), key=_numbered("headline", count), kind="text"))
+        marks.add(node, consumes=True)
 
 
 def _detect_images(
@@ -265,7 +287,7 @@ def _detect_visibility(body: LexborNode, specs: list[SlotSpec], notes: list[str]
 # --------------------------------------------------------------------------- #
 
 
-def _cta_anchor(body: LexborNode, marks: _Marks) -> LexborNode | None:
+def _cta_anchors(body: LexborNode, marks: _Marks) -> Iterator[LexborNode]:
     for node in body.css("a"):
         if node.mem_id in marks.marked or marks.blocked(node, consuming=False):
             continue
@@ -273,8 +295,7 @@ def _cta_anchor(body: LexborNode, marks: _Marks) -> LexborNode | None:
         if not href or href == "#":
             continue
         if _looks_like_a_button(node):
-            return node
-    return None
+            yield node
 
 
 def _looks_like_a_button(node: LexborNode) -> bool:
@@ -292,12 +313,17 @@ def _label_element(anchor: LexborNode) -> LexborNode | None:
     and the choice is obvious; one holding two is a shape whose label is genuinely ambiguous, and
     guessing which half a human meant is how a slot ends up editing the wrong words.
     """
+    if any(child.tag == "-text" and child.text().strip() for child in anchor.iter(include_text=True)):
+        return None
     bearers = [
         child
         for child in anchor.iter(include_text=False)
-        if child.tag and _visible_text(child)
+        if child.tag not in {"svg", "img", "math"}
+        and child.attributes.get("aria-hidden") != "true" and _visible_text(child)
     ]
-    return bearers[0] if len(bearers) == 1 else None
+    if len(bearers) != 1 or bearers[0].css("svg, img, math, [aria-hidden=true]"):
+        return None
+    return bearers[0]
 
 
 def _visible_text(node: LexborNode) -> str:
@@ -334,7 +360,10 @@ def _selector(node: LexborNode) -> str:
 def _element_index(parent: LexborNode, child: LexborNode) -> int:
     index = 0
     for candidate in parent.iter(include_text=False):
-        if not candidate.tag:
+        # Lexbor still returns -comment nodes when include_text=False.
+        # CSS :nth-child counts elements only; React suspense comments must not
+        # shift the selector onto a different child or outside the subtree.
+        if not candidate.tag or candidate.tag.startswith("-"):
             continue
         index += 1
         if candidate.mem_id == child.mem_id:

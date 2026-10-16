@@ -1,3 +1,4 @@
+import { isWebsiteKind } from "@/features/chat-shell/model/artifact-kind";
 import type { ChatMessageRef } from "../model/chat-message";
 import {
   chatUploadBytesUrl,
@@ -51,7 +52,7 @@ export function ChatMessageReference({
     >
       <ChatMentionVisual
         entityType={reference.objectType}
-        icon={entity?.icon ?? (reference.kind === "web" ? "web" : undefined)}
+        icon={entity?.icon ?? (isWebsiteKind(reference.kind) ? "web" : undefined)}
         imagePath={entity?.imagePath}
         label={label}
       />

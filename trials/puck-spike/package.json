@@ -1,0 +1,28 @@
+{
+  "name": "puck-spike",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "next dev -p 3047",
+    "build": "next build",
+    "start": "next start -p 3047",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@puckeditor/core": "0.23.0",
+    "next": "16.2.12",
+    "node-html-parser": "^7.1.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  }
+}

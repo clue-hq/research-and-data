@@ -48,6 +48,8 @@ __all__ = [
     "UnpublishWebDocumentTool",
     "WebPublishRef",
     "WebPublishStatusRef",
+    "PublishSiteTool",
+    "publish_site_document",
     "publish_web_document",
 ]
 
@@ -92,59 +94,20 @@ class WebPublishStatusRef(ToolOutput):
 # ---------------------------------------------------------------------------------------------
 
 
-def publish_web_document(
-    *,
-    repository: Any,
-    blobs: Any,
-    core: Any,
-    node_bin: str,
-    document: dict[str, Any],
-    slug: str,
-    noindex: bool = False,
-) -> WebPublishRef:
-    """Build, persist and point one publish at ``slug``. The ONE publish write path.
-
-    ``noindex`` is the REQUEST's answer; ``document["web_noindex"]`` is the PAGE's own, stored
-    on the row (clone-fidelity F4.3, ruling R-F1). They are OR'd here, at the single write every
-    publish path goes through — the plain HTTP route, the governed tool, the ABM batch — which
-    is what makes "applied on every republish, whichever route publishes it" a property of the
-    system rather than a promise each caller has to keep. The direction is one-way on purpose: a
-    publish can only ever ADD the robots meta, and nothing that publishes can take it off.
-
-    The site's public address comes from the hostname registry (custom-domain publishing §6.1,
-    reconciliation 2026-09-28): ``site_address(repository, slug)`` on the workspace's always-live
-    system hostname, never the request. And the first successful publish LOCKS the workspace's
-    system label (F5 R-F5-5): something is now on the air at that address, so its host segment
-    stops being editable.
-    """
-
+def _commit_publish_package(*, repository: Any, blobs: Any, document: dict[str, Any], slug: str, package: Any) -> WebPublishRef:
+    """THE publish write sequence, for a WebDoc package and a Puck site package alike: persist the
+    delivery assets, register the immutable revision (with its pages), lock the workspace's system
+    label, swap the slug's pointer, and stop serving the document at any other slug."""
     from .. import web_export
     from ..database import utc_now
-    from ..public_pages import site_address
 
-    noindex = bool(noindex) or bool(document.get("web_noindex"))
-    address = site_address(repository, slug)
-    # Workspace page defaults (custom-domain publishing §4.2), read here — at the ONE publish
-    # write path — so every route that publishes picks them up, and so a default set today
-    # reaches a page on its next republish rather than only through the screen that set it.
-    defaults = repository.pages_defaults()
-    package = web_export.build_publish_package(
-        core,
-        repository,
-        document,
-        blobs=blobs,
-        slug=slug,
-        site_address=address,
-        workspace_id=repository.workspace_id,
-        default_description=defaults["page_description"],
-        default_social_preview_sha256=defaults["social_preview_sha256"],
-        node_bin=node_bin,
-        noindex=noindex,
-    )
+    # A live site's runtime, shims and section modules are recorded under manifest["live"] (their
+    # media type with them); a WebDoc's custom-component bundles under "custom_components".
+    live = package.manifest.get("live") or {}
     web_export.persist_publish_assets(
         blobs,
         package.assets,
-        package.manifest["custom_components"].get("assets"),
+        [*(package.manifest["custom_components"].get("assets") or []), *(live.get("assets") or [])],
     )
     publish_id = f"webpub_{package.package_digest}"
     repository.register_web_publish_revision(
@@ -207,6 +170,97 @@ def publish_web_document(
     )
 
 
+def publish_web_document(
+    *,
+    repository: Any,
+    blobs: Any,
+    core: Any,
+    node_bin: str,
+    document: dict[str, Any],
+    slug: str,
+    noindex: bool = False,
+) -> WebPublishRef:
+    """Build, persist and point one publish at ``slug``. The ONE publish write path.
+
+    ``noindex`` is the REQUEST's answer; ``document["web_noindex"]`` is the PAGE's own, stored
+    on the row (clone-fidelity F4.3, ruling R-F1). They are OR'd here, at the single write every
+    publish path goes through — the plain HTTP route, the governed tool, the ABM batch — which
+    is what makes "applied on every republish, whichever route publishes it" a property of the
+    system rather than a promise each caller has to keep. The direction is one-way on purpose: a
+    publish can only ever ADD the robots meta, and nothing that publishes can take it off.
+
+    The site's public address comes from the hostname registry (custom-domain publishing §6.1,
+    reconciliation 2026-09-28): ``site_address(repository, slug)`` on the workspace's always-live
+    system hostname, never the request. And the first successful publish LOCKS the workspace's
+    system label (F5 R-F5-5): something is now on the air at that address, so its host segment
+    stops being editable.
+    """
+
+    from .. import web_export
+    from ..public_pages import site_address
+
+    noindex = bool(noindex) or bool(document.get("web_noindex"))
+    address = site_address(repository, slug)
+    # Workspace page defaults (custom-domain publishing §4.2), read here — at the ONE publish
+    # write path — so every route that publishes picks them up, and so a default set today
+    # reaches a page on its next republish rather than only through the screen that set it.
+    defaults = repository.pages_defaults()
+    package = web_export.build_publish_package(
+        core,
+        repository,
+        document,
+        blobs=blobs,
+        slug=slug,
+        site_address=address,
+        workspace_id=repository.workspace_id,
+        default_description=defaults["page_description"],
+        default_social_preview_sha256=defaults["social_preview_sha256"],
+        node_bin=node_bin,
+        noindex=noindex,
+    )
+    return _commit_publish_package(repository=repository, blobs=blobs, document=document, slug=slug, package=package)
+
+
+def publish_site_document(
+    *,
+    repository: Any,
+    blobs: Any,
+    node_bin: str,
+    brand_loader: Any,
+    section_loader: Any,
+    document: dict[str, Any],
+    slug: str,
+    noindex: bool = False,
+) -> WebPublishRef:
+    """Publish a Puck site (Wave 2): build its package — live when the workspace is on
+    ``LUMEN_SITE_LIVE_WORKSPACES`` (``site_live.live_sites_enabled``) — then the same write sequence
+    as the web."""
+    from .. import site_publish
+    from ..public_pages import site_address
+    from ..site_doc_inputs import load_section_modules
+    from ..site_live import live_sites_enabled
+
+    noindex = bool(noindex) or bool(document.get("web_noindex"))
+    defaults = repository.pages_defaults()
+    package = site_publish.build_site_publish_package(
+        repository,
+        document,
+        blobs=blobs,
+        brand=brand_loader(repository, blobs, document),
+        sections=load_section_modules(section_loader, repository, blobs, document["scene"]),
+        slug=slug,
+        site_address=site_address(repository, slug),
+        default_description=defaults["page_description"],
+        default_social_preview_sha256=defaults["social_preview_sha256"],
+        noindex=noindex,
+        node_bin=node_bin,
+        # Publishing live sites, phase 1: a workspace on LUMEN_SITE_LIVE_WORKSPACES publishes a
+        # live site; every other workspace publishes the static page exactly as before.
+        live=live_sites_enabled(repository.workspace_id),
+    )
+    return _commit_publish_package(repository=repository, blobs=blobs, document=document, slug=slug, package=package)
+
+
 # ---------------------------------------------------------------------------------------------
 # tools
 # ---------------------------------------------------------------------------------------------
@@ -256,6 +310,16 @@ class PublishWebDocumentTool(DesignTool):
     parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
         safe_display_fields=("document_id", "slug")
     )
+    _kind: ClassVar[str] = "web"
+
+    def _kind_failure(self, document_id: str) -> PreconditionFailure:
+        return PreconditionFailure(
+            reason_code="design_document_not_web",
+            message=(
+                f"document {document_id!r} is not a website-mode document; "
+                "only web documents publish"
+            ),
+        )
 
     def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
         assert isinstance(inputs, PublishWebDocumentInput)
@@ -280,16 +344,8 @@ class PublishWebDocumentTool(DesignTool):
                     message=f"no design document {inputs.document_id!r} in this workspace",
                 ),
             )
-        if document.get("doc_kind", "scene") != "web":
-            return (
-                PreconditionFailure(
-                    reason_code="design_document_not_web",
-                    message=(
-                        f"document {inputs.document_id!r} is not a website-mode document; "
-                        "only web documents publish"
-                    ),
-                ),
-            )
+        if document.get("doc_kind", "scene") != self._kind:
+            return (self._kind_failure(inputs.document_id),)
         existing = repository.get_web_publish(inputs.slug)
         if existing is not None and existing["document_id"] != inputs.document_id:
             return (
@@ -308,6 +364,50 @@ class PublishWebDocumentTool(DesignTool):
             blobs=self.host.blobs(ctx.workspace_id),
             core=self.host.need("core"),
             node_bin=self.host.need("web_export_node_bin"),
+            document=repository.require_document(inputs.document_id),
+            slug=inputs.slug,
+            noindex=inputs.noindex,
+        )
+
+
+class PublishSiteTool(PublishWebDocumentTool):
+    """Publish one Puck site document to a workspace-local public slug (Wave 2 Lane A)."""
+
+    name = "design_publish_site"
+    version = "1"
+    model_description = (
+        "Publish a Puck site document to a public slug as static, script-free pages. Returns "
+        "publish references (slug, publish id, content digests), never the rendered HTML."
+    )
+    replay: ClassVar[ReplaySafety] = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="workspace + slug + content-derived webpub_<package_digest> revision",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes=(
+            "the revision row is content-addressed and insert-or-no-op, but the slug's "
+            "current/previous pointer rotates on every upsert, so only a same-operation retry "
+            "(journal + A9) is a true no-op; the render runs in a local hardened browser and the "
+            "CSS compile in a local node subprocess, neither an external provider"
+        ),
+    )
+    _kind: ClassVar[str] = "site"
+
+    def _kind_failure(self, document_id: str) -> PreconditionFailure:
+        return PreconditionFailure(
+            reason_code="design_document_not_site",
+            message=f"document {document_id!r} is not a site document; only site documents publish here",
+        )
+
+    def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        assert isinstance(inputs, PublishWebDocumentInput)
+        repository = self.host.repository(ctx.workspace_id)
+        return publish_site_document(
+            repository=repository,
+            blobs=self.host.blobs(ctx.workspace_id),
+            node_bin=self.host.need("web_export_node_bin"),
+            brand_loader=self.host.need("site_brand_loader"),
+            section_loader=self.host.need("site_section_loader"),
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
             noindex=inputs.noindex,

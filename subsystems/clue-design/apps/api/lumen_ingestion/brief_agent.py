@@ -15,9 +15,10 @@ module loads verbatim and must never rewrite).
 
 **Nothing here may fail an ingestion** (plan constraint 6). A refusal, an invalid
 brief, a hung gateway and an agent that throws all land as a diagnostic on the
-kit and a briefless publish. With no agent configured the stage is *silent* — no
-call, no diagnostic, no `brief` key — so an un-keyed deployment publishes exactly
-the kit it publishes today.
+kit and a briefless publish. With no agent configured the stage makes no call and
+writes no `brief` key; the pipeline flags the kit briefless (LUMI0904), because a
+briefless kit offers only the standard button though its styles were measured
+(plan Q-A9-2).
 
 Diagnostic codes:
 
@@ -25,6 +26,7 @@ Diagnostic codes:
 * ``LUMI0902`` — the agent answered, but the answer failed `BrandBrief@1`
   validation or the token law. Never trusted, never partially kept.
 * ``LUMI0903`` — the stage errored entirely (gateway, import, anything else).
+* ``LUMI0904`` — the stage did not run (off, or no model). The kit is briefless.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from typing import Any, ClassVar, Protocol, Sequence, runtime_checkable
 from py_lumen_config import settings
 
 from .brief import BriefRefused, kit_token_names, validate_brief
+from .normalizer.component_tokens import is_component_token
 
 logger = logging.getLogger(__name__)
 
@@ -318,18 +321,20 @@ def build_brief_request(
         url=getattr(narrative, "url", None),
         tokens=tokens,
         shapes=[_dump(shape) for shape in getattr(geometry, "surfaces", []) or []],
+        # The band text colour (Wave 2 A9) is minted into the kit, not sent to the model.
         background_sequence=[
-            _dump(band) for band in getattr(geometry, "background_sequence", []) or []
+            _dump(band, exclude={"ink"}) for band in getattr(geometry, "background_sequence", []) or []
         ],
-        spacing_ladder=[row for row in tokens if row["group"] == "spacing"],
+        # The ladder is the kit's scale; minted component paddings are not rungs of it.
+        spacing_ladder=[row for row in tokens if row["group"] == "spacing" and not is_component_token(row["name"])],
         screenshots=list(screenshots)[:MAX_SCREENSHOTS],
         token_names=kit_token_names(brand_kit),
         text_excerpt=excerpt[:_MAX_EXCERPT] if excerpt else None,
     )
 
 
-def _dump(model: Any) -> dict[str, Any]:
-    return model.model_dump() if hasattr(model, "model_dump") else dict(model)
+def _dump(model: Any, exclude: set[str] | None = None) -> dict[str, Any]:
+    return model.model_dump(exclude=exclude) if hasattr(model, "model_dump") else dict(model)
 
 
 def _token_rows(brand_kit: dict[str, Any]) -> list[dict[str, Any]]:

@@ -1358,8 +1358,12 @@ def test_the_handler_is_not_composed_without_the_flag_or_the_key(tmp_path: Any) 
     settings = Settings(_env_file=None, arv2_discovery_enabled=True)
 
     assert (
+        # Discovery is on by default since 2026-10-04, so the flag-off case says so explicitly.
         build_arv2_discovery_handler(
-            Settings(_env_file=None), keyless, storage=object(), artifacts=SimpleNamespace()
+            Settings(_env_file=None, arv2_discovery_enabled=False),
+            keyless,
+            storage=object(),
+            artifacts=SimpleNamespace(),
         )
         is None
     )

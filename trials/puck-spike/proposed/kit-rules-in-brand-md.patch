@@ -1,0 +1,60 @@
+diff --git a/trials/puck-spike/scripts/build-catalog.ts b/trials/puck-spike/scripts/build-catalog.ts
+index db9868e17..64f3df0e9 100644
+--- a/trials/puck-spike/scripts/build-catalog.ts
++++ b/trials/puck-spike/scripts/build-catalog.ts
+@@ -169,13 +169,14 @@ function brandFile(brand: BrandData, seller?: string): string {
+     name?: string;
+     tokens: { colors: Record<string, Token>; typography: Record<string, Token> };
+     constraints?: { contrast_pairs?: { background: string; foreground: string }[] };
++    brief?: { constraints?: ({ rule?: string } | string)[] };
+   };
+   const color = (role: string) => String(kit.tokens.colors[role]?.value.default.value ?? "");
+   const pairs = kit.constraints?.contrast_pairs ?? [];
+   const surfaces = SURFACES.map((choice) => {
+     const role = SURFACE_ROLE[choice];
+     const ink = pairs.find((pair) => pair.background === role)?.foreground ?? "chosen by contrast";
+-    return `| ${choice} | ${SURFACE_LABELS[choice]} | ${color(role)} | ${ink}${ink.startsWith("text.") ? ` ${color(ink)}` : ""} |`;
++    return `| ${choice} | ${role} | ${SURFACE_LABELS[choice]} | ${color(role)} | ${ink}${ink.startsWith("text.") ? ` ${color(ink)}` : ""} |`;
+   });
+   const typeRow = (role: string) => {
+     const style = kit.tokens.typography[`type.${role}`]?.value.default as
+@@ -185,6 +186,10 @@ function brandFile(brand: BrandData, seller?: string): string {
+   };
+   const button = brand.measured?.primary_button;
+   const heading = brand.measured?.heading_on_light;
++  const rules = (kit.brief?.constraints ?? [])
++    .map((entry) => (typeof entry === "string" ? entry : entry.rule ?? ""))
++    .filter(Boolean)
++    .map((rule) => `- ${rule.replace(/\s+/g, " ")}`);
+   const assets = Object.entries(brand.assets).map(
+     ([key, asset]) => `- \`${asset.file}\` (${asset.kind}${key.startsWith("asset_") ? `, ${key}` : ""}): ${(asset.description ?? asset.label ?? "").replace(/\s+/g, " ").slice(0, 220)}`,
+   );
+@@ -195,8 +200,8 @@ function brandFile(brand: BrandData, seller?: string): string {
+     "(for example `surface: \"brand\"`); you never write a colour or a size.",
+     "",
+     "## Surfaces",
+-    "| choice | name | colour | text on it |",
+-    "|---|---|---|---|",
++    "| choice | kit name | name | colour | text on it |",
++    "|---|---|---|---|---|",
+     ...surfaces,
+     "",
+     "## Heading sizes and body text",
+@@ -212,8 +217,16 @@ function brandFile(brand: BrandData, seller?: string): string {
+     "## Button",
+     button
+       ? `The brand's primary button, measured from its own hero: background ${button.background}, text ${button.color}, radius ${button.borderRadius}, ${button.fontWeight} weight. On dark surfaces it switches to its light version automatically.`
+-      : "No measured button; the brand surface colour is used.",
++      : "No measured button; the kit's own button is used (its brand colour fill, its pill shape).",
+     "",
++    ...(rules.length
++      ? [
++          "## The brand's own rules (from its brand kit)",
++          "Where a rule names a kit colour such as `surface.brand`, the matching choice is in the surfaces table.",
++          ...rules,
++          "",
++        ]
++      : []),
+     "## Assets (the only images and logos a page may use)",
+     ...assets,
+     "",

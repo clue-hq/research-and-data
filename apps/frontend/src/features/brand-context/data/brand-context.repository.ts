@@ -16,6 +16,7 @@ import {
   BrandKitSummaryListSchema,
   DesignAssetListRecordSchema,
   DesignAssetRecordSchema,
+  type BrandKitDetail,
   type BrandKitSummary,
   type DesignAssetListRecord,
   type DesignAssetRecord,
@@ -24,6 +25,8 @@ import {
   toBrandKitMeta,
   type BrandKitMeta,
 } from "../model/brand-kit-actions";
+import { toMeasuredBrand } from "../model/measured-brand";
+import type { MeasuredBrandView } from "../model/measured-view";
 import { brandContextFixture } from "./brand-context.fixture";
 import { readBrandKnowledgeFolders } from "./brand-knowledge.repository";
 
@@ -39,6 +42,12 @@ import { readBrandKnowledgeFolders } from "./brand-knowledge.repository";
 export interface BrandContextView {
   workspace: BrandContextWorkspace;
   kit: BrandKitMeta | null;
+  /**
+   * What the brand-kit extraction measured on the seller's site (Wave 2 A9, Task X6): the page's
+   * Components, Spacing and Motion sections and its extra colour groups. `null` for a kit made before
+   * measurement, no kit, or any failure — the page is then exactly as before.
+   */
+  measured: MeasuredBrandView | null;
 }
 
 export interface BrandContextRepository extends AssetRepository {
@@ -88,7 +97,7 @@ export function httpBrandContextRepository({
         return await readWorkspace(await designFetch(), Promise.resolve([]));
       } catch (error) {
         console.warn("[brand-context] serving no brand kit; the brand-kit read failed:", error);
-        return { kit: null, workspace: emptyBrandContextWorkspace() };
+        return { kit: null, measured: null, workspace: emptyBrandContextWorkspace() };
       }
     },
     getKnowledgeFolders() {
@@ -108,6 +117,7 @@ export function httpBrandContextRepository({
         );
         return {
           kit: null,
+          measured: null,
           workspace: withPlatformFolders(
             emptyBrandContextWorkspace(),
             await platformFolders,
@@ -208,7 +218,8 @@ async function readWorkspace(
   );
   const registryRecords: DesignAssetListRecord[] = byKind.flat();
 
-  const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords})
+  const measured = kit ? measuredOrNull(kit) : null;
+  const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords, movedColors: new Set(measured?.movedColors ?? [])})
     : {...emptyBrandContextWorkspace(), assets: toRegistryAssets(registryRecords, new Set())};
   try {
     const metadata = await httpAssetRepository(() => designFetch).readMetadata(workspace.assets.map(asset => asset.id));
@@ -219,8 +230,18 @@ async function readWorkspace(
         sources: context.source_occurrences.length ? [...new Set(context.source_occurrences.map(occurrence => occurrence.source))] : asset.sources} : asset;
     });
   } catch (error) { console.warn("[brand-context] asset metadata unavailable", error); }
-  return {kit: kit ? toBrandKitMeta(kit) : null, workspace: withPlatformFolders(workspace, await platformFolders)};
+  return {kit: kit ? toBrandKitMeta(kit) : null, measured, workspace: withPlatformFolders(workspace, await platformFolders)};
 
+}
+
+/** The measured view, or none: an unreadable measured section never costs the page its kit. */
+function measuredOrNull(kit: BrandKitDetail): MeasuredBrandView | null {
+  try {
+    return toMeasuredBrand(kit);
+  } catch (error) {
+    console.warn("[brand-context] serving the kit without its measured styles:", error);
+    return null;
+  }
 }
 
 /**
@@ -267,7 +288,7 @@ function selectBrandKit(
 const fixtureBrandContextRepository: BrandContextRepository = {
   ...fixtureAssetRepository(),
   async getKitView() {
-    return { kit: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
+    return { kit: null, measured: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
   },
   async getKnowledgeFolders() {
     return [];
@@ -275,7 +296,7 @@ const fixtureBrandContextRepository: BrandContextRepository = {
   async getWorkspace() {
     // No kit meta: the dummy is a DESIGN, not a stored kit — there is nothing to approve or
     // re-extract, and inventing a status chip for it would be the first lie on this page.
-    return { kit: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
+    return { kit: null, measured: null, workspace: BrandContextWorkspaceSchema.parse(brandContextFixture) };
   },
 };
 

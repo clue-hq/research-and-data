@@ -32,8 +32,10 @@ from lumen_api.database import NotFoundError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
+from .brief import kit_token_names
 from .grammar_audit import extract_grammar_audit
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
+from .measured_components import MeasuredComponentsRefused, validate_measured_components
 from .normalizer import normalize_evidence
 
 JsonObject = dict[str, Any]
@@ -49,6 +51,7 @@ class _CaptureCallable(Protocol):
         reporter: StageReporter,
         force_render: bool = ...,
         page_urls: "Sequence[str] | None" = ...,
+        discover_pages: bool = ...,
     ) -> Awaitable[Any]: ...
 
 
@@ -64,11 +67,13 @@ def _default_capture(
     reporter: StageReporter,
     force_render: bool = False,
     page_urls: "Sequence[str] | None" = None,
+    discover_pages: bool = False,
 ) -> Awaitable[Any]:
     from .capture import capture_website
 
     return capture_website(
-        url, reporter=reporter, force_render=force_render, page_urls=page_urls
+        url, reporter=reporter, force_render=force_render, page_urls=page_urls,
+        discover_pages=discover_pages,
     )
 
 
@@ -542,6 +547,16 @@ def _maybe_write_brief(
         # `generate_brief` re-checks this; asking here too keeps an unconfigured
         # stage from reading (and base64-ing) every stored screenshot first.
         if not getattr(agent, "active", False):
+            diagnostics.append(
+                {
+                    "code": "LUMI0904",
+                    "severity": "warning",
+                    "message": (
+                        "no brief: the brief stage is off or has no model, so this kit offers "
+                        "only the standard button; its measured styles are still on the Brand page"
+                    ),
+                }
+            )
             return None
         request = build_brief_request(
             evidence, brand_kit, screenshots=_brief_screenshots(evidence, resolve_bytes)
@@ -587,6 +602,27 @@ def _maybe_extract_grammar_audit(
             }
         )
         return None
+
+
+def _attach_measured_components(
+    validated_kit: JsonObject, measured: "JsonObject | None", diagnostics: list
+) -> JsonObject:
+    """The kit with its `MeasuredComponents@1`, or the kit as it was with a diagnostic.
+
+    It rides the validated kit for the brief's reason (the engine's BrandKit has no field for it);
+    the tokens it names were minted into `tokens` before the engine round trip, so they are there.
+    """
+    if measured is None:
+        return validated_kit
+    try:
+        section = validate_measured_components(measured, token_names=kit_token_names(validated_kit))
+    except MeasuredComponentsRefused as refusal:
+        diagnostics.append({
+            "code": "LUMI0608", "severity": "warning",
+            "message": f"measured component styles were not kept on the kit: {refusal.reason}",
+        })
+        return validated_kit
+    return {**validated_kit, "measured_components": section}
 
 
 def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
@@ -988,8 +1024,11 @@ def _ingest(
     # and drained asynchronously by a fleet worker and the checklist row streams its stage and
     # progress the whole time. If ingestion ever becomes synchronous again, this is the line
     # that makes it unaffordable.
+    # Old frozen job requests retain single-page semantics; new API requests
+    # carry their discovery decision explicitly and are replayable as recorded.
+    capture_options = {"discover_pages": True} if request.get("discover_pages") is True else {}
     outcome = asyncio.run(
-        capture(url, reporter=reporter, force_render=True, page_urls=page_urls)
+        capture(url, reporter=reporter, force_render=True, page_urls=page_urls, **capture_options)
     )
     evidence = build_evidence(
         outcome, core=core, store_root=cache_dir, reporter=reporter
@@ -1093,6 +1132,11 @@ def _ingest(
     if audit is not None:
         validated_kit = {**validated_kit, "grammar_audit": audit}
 
+    measured_diagnostics: list = []
+    validated_kit = _attach_measured_components(
+        validated_kit, result.measured_components, measured_diagnostics
+    )
+
     diagnostics = (
         result.diagnostics
         + _capture_diagnostics(outcome)
@@ -1100,6 +1144,7 @@ def _ingest(
         + describe_diagnostics
         + brief_diagnostics
         + audit_diagnostics
+        + measured_diagnostics
         + snapshot_diagnostics
     )
 
@@ -1131,6 +1176,8 @@ def _ingest(
         site_snapshots=snapshot_refs,
         web_fragments=mint_refs,
         fragment_diagnostics=mint_diagnostics,
+        page_coverage=getattr(outcome, "page_coverage", None),
+        missing_page_roles=getattr(outcome, "missing_page_roles", None),
     )
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
@@ -1146,6 +1193,22 @@ def _kit_name(evidence: Any, url: str) -> str:
     return host or url
 
 
+def _allocate_fragment_budget(counts: list[int], budget: int, per_page_cap: int) -> list[int]:
+    """Round-robin allocation; a dense homepage cannot consume the entire library."""
+    allocated = [0] * len(counts)
+    remaining = max(0, budget)
+    while remaining:
+        progressed = False
+        for index, count in enumerate(counts):
+            if allocated[index] < min(count, per_page_cap) and remaining:
+                allocated[index] += 1
+                remaining -= 1
+                progressed = True
+        if not progressed:
+            break
+    return allocated
+
+
 def _mint_page_fragments(
     outcome: Any,
     *,
@@ -1153,83 +1216,82 @@ def _mint_page_fragments(
     blobs: DesignBlobStore,
     brand_kit_id: str,
     brand_kit_version: int,
-    snapshot_refs: "list[Any]",
-) -> "tuple[list[JsonObject], list[JsonObject]]":
-    """Mint one fragment per section of every page this capture produced (clone-fidelity F2.2).
+    snapshot_refs: list[Any],
+) -> tuple[list[JsonObject], list[JsonObject]]:
+    """Mint captured sections with separate visible/dormant pools and fair page shares.
 
-    **Additive, and never fatal.** The ingestion's product is the brand kit; a cloned section is
-    a bonus on top of it. So this runs after the publish, per page, inside a guard — a byte store
-    that hiccups or a page whose markup defeats the segmenter costs diagnostics on the job's
-    evidence payload and a line in the worker log, never the kit a human was waiting for. It is
-    the same posture ``_persist_site_snapshots`` takes, for the same reason.
-
-    The BUDGET is per ingest, not per page: an eight-page walk must not mint ninety-six sections
-    because each page was individually under the cap. Pages are minted entry-page first, so what
-    the cap keeps is the homepage — which is what anyone cloning a site wants.
-
-    Reads the LIVE capture rather than the persisted snapshot, deliberately: the rehost map needs
-    the downloaded BYTES, and ``design_site_snapshot`` stores the html, the stylesheets and the
-    screenshot but not the assets. Re-reading them would mean re-fetching somebody's site.
+    Legacy captures keep their original total budget. New library captures use
+    the documented library budget, still bounded by the existing per-page cap.
+    Acquisition, fragment readiness and visual fidelity are separate outcomes.
     """
     from lumen_ingestion.sections import mint as section_mint
     from lumen_ingestion.sections.segment import segment_snapshot
 
+    from .capture.geometry import captured_font_context
+    from .capture.page_plan import MAX_CAPTURE_PAGES
+
     refs: list[JsonObject] = []
     diagnostics: list[JsonObject] = []
-    snapshots = _outcome_snapshots(outcome)
+    snapshots = list(_outcome_snapshots(outcome))
     if not snapshots:
         return refs, diagnostics
-
     by_index = {ref.page_index: ref for ref in snapshot_refs}
-    snapshots = list(snapshots)
-    budget = section_mint.SECTION_MINT_CAP
-    # A SEPARATE ingestion-wide pool for the sections the site hides (F3.0, ruling R-I2). Sharing
-    # one budget let a single CMS homepage carrying a dozen `w-condition-invisible` variants
-    # exhaust the cap and leave later pages' VISIBLE sections uncloned — the clone losing the
-    # thing it exists for in order to keep sections nobody can see. Same size, because it is the
-    # same runaway backstop and not a working limit; separate, so it can never take from the
-    # visible one.
-    dormant_budget = section_mint.SECTION_MINT_CAP
-
-    rehost = section_mint.make_asset_rehoster(blobs)
-    mark_degraded = section_mint.make_degraded_marker(workspace_id=repo.workspace_id)
-
-    for page_index, snapshot in enumerate(snapshots):
-        if budget <= 0:
-            # The per-page cap already says "this page had more"; nothing said "and these pages
-            # were not looked at" — so a three-page walk could clone page one and drop the rest
-            # in silence, which is the same silent truncation one level up.
-            dropped = [
-                getattr(later, "requested_url", "") or f"page {index}"
-                for index, later in enumerate(snapshots[page_index:], start=page_index)
-            ]
-            diagnostics.append(
-                {
-                    "code": section_mint.MINT_CAPPED_CODE,
-                    "severity": "warning",
-                    "message": (
-                        f"this ingestion's {section_mint.SECTION_MINT_CAP}-section budget was "
-                        f"spent before reaching {len(dropped)} more captured page(s), which were "
-                        f"not cloned at all: {', '.join(dropped[:10])}"
-                    ),
-                    # Every LUMI0532 says which pool it is about: the mint path emits
-                    # "visible"/"dormant" per page, and this one is the whole-pages case.
-                    "scope": "pages",
-                    "cap": section_mint.SECTION_MINT_CAP,
-                    "pages_not_minted": dropped[:10],
-                    "remaining_pages": len(dropped),
-                }
-            )
-            break
+    total = section_mint.SECTION_MINT_CAP
+    if getattr(outcome, "library_capture", False):
+        total = min(
+            section_mint.LIBRARY_MINT_CAP, MAX_CAPTURE_PAGES * section_mint.SECTION_MINT_CAP
+        )
+    segmentations = []
+    for index, snapshot in enumerate(snapshots):
         try:
             segmentation = segment_snapshot(
-                _SnapshotView(snapshot, snapshot_id=getattr(by_index.get(page_index), "snapshot_id", None))
+                _SnapshotView(
+                    snapshot,
+                    snapshot_id=getattr(by_index.get(index), "snapshot_id", None),
+                )
             )
             diagnostics.extend(dict(entry) for entry in segmentation.diagnostics)
+            segmentations.append(segmentation)
+        except Exception as error:  # noqa: BLE001 — report one failed page and continue
+            diagnostics.append(
+                {
+                    "code": section_mint.MINT_FAILED_CODE,
+                    "severity": "error",
+                    "page_url": snapshot.requested_url,
+                    "message": f"page segmentation failed: {type(error).__name__}: {error}",
+                }
+            )
+            segmentations.append(None)
+    visible = _allocate_fragment_budget(
+        [
+            section_mint.visible_mint_capacity(s, snapshot.html) if s else 0
+            for s, snapshot in zip(segmentations, snapshots, strict=True)
+        ],
+        total,
+        section_mint.SECTION_MINT_CAP,
+    )
+    dormant = _allocate_fragment_budget(
+        [len(s.hidden_sections) if s else 0 for s in segmentations],
+        total,
+        section_mint.SECTION_MINT_CAP,
+    )
+    rehost = section_mint.make_asset_rehoster(blobs)
+    mark_degraded = section_mint.make_degraded_marker(workspace_id=repo.workspace_id)
+    coverage = {row["url"]: row for row in getattr(outcome, "page_coverage", [])}
+    for index, (snapshot, segmentation) in enumerate(zip(snapshots, segmentations, strict=True)):
+        page = coverage.get(snapshot.requested_url)
+        if page is not None:
+            page["fragments"] = {"status": "failed", "minted": 0}
+        if segmentation is None:
+            continue
+        try:
             result = section_mint.mint_sections(
                 segmentation,
                 html=snapshot.html,
                 stylesheets=list(getattr(snapshot, "stylesheets", None) or []),
+                initial_font_px=captured_font_context(getattr(snapshot, "geometry", None)).get(
+                    "initial_font_px"
+                ),
                 captured=section_mint.captured_assets(snapshot),
                 screenshot=_screenshot_bytes(snapshot),
                 source_kit_id=brand_kit_id,
@@ -1239,28 +1301,38 @@ def _mint_page_fragments(
                     blobs.storage, workspace_id=repo.workspace_id
                 ),
                 mark_degraded=mark_degraded,
-                limit=budget,
-                dormant_limit=dormant_budget,
+                limit=visible[index],
+                dormant_limit=dormant[index],
             )
-        except Exception as error:  # noqa: BLE001 — cloning must not kill an ingestion
-            logger.exception("fragment minting failed for page %s", page_index)
+        except Exception as error:  # noqa: BLE001 — fragment failure does not discard capture
+            logger.exception("fragment minting failed for page %s", index)
             diagnostics.append(
                 {
                     "code": section_mint.MINT_FAILED_CODE,
                     "severity": "error",
-                    "message": (
-                        f"no sections were cloned from page {page_index}: "
-                        f"{type(error).__name__}: {error}"
-                    ),
-                    "page_index": page_index,
+                    "page_url": snapshot.requested_url,
+                    "message": f"page mint failed: {type(error).__name__}: {error}",
                 }
             )
             continue
-        dormant = sum(1 for minted in result.minted if minted.hidden_on_source)
-        budget -= len(result.minted) - dormant
-        dormant_budget -= dormant
         refs.extend(minted.as_job_ref() for minted in result.minted)
         diagnostics.extend(dict(entry) for entry in result.diagnostics)
+        if page is not None:
+            wanted = len(segmentation.sections) + len(segmentation.hidden_sections)
+            page["fragments"] = {
+                "status": (
+                    "minted"
+                    if len(result.minted) == wanted and wanted
+                    and not any(
+                        d.get("code") == section_mint.MINT_FAILED_CODE for d in result.diagnostics
+                    )
+                    else "partial"
+                ),
+                "segmented": wanted,
+                "minted": len(result.minted),
+                "visible_budget": visible[index],
+                "dormant_budget": dormant[index],
+            }
     return refs, diagnostics
 
 
@@ -1276,7 +1348,11 @@ class _SnapshotView:
     def __init__(self, snapshot: Any, *, snapshot_id: "str | None") -> None:
         geometry = getattr(snapshot, "geometry", None)
         self.html = getattr(snapshot, "html", "") or ""
-        self.page_url = getattr(snapshot, "requested_url", "") or ""
+        # Relative references belong to the document that actually loaded,
+        # including redirects to www or a canonical product path.
+        self.page_url = (
+            getattr(snapshot, "final_url", "") or getattr(snapshot, "requested_url", "") or ""
+        )
         self.snapshot_id = snapshot_id
         self.viewport_width = _viewport_from_geometry(geometry)
         from .sections.bands import (
@@ -1331,6 +1407,8 @@ def _evidence_dump(
     site_snapshots: "list[Any] | None" = None,
     web_fragments: "list[JsonObject] | None" = None,
     fragment_diagnostics: "list[JsonObject] | None" = None,
+    page_coverage: list[JsonObject] | None = None,
+    missing_page_roles: list[str] | None = None,
 ) -> Optional[str]:
     """Dump BrandEvidence to JSON for the job row (it carries no raw bytes).
 
@@ -1350,6 +1428,31 @@ def _evidence_dump(
         payload = {**payload, "web_fragments": list(web_fragments)}
     if fragment_diagnostics:
         payload = {**payload, "web_fragment_diagnostics": list(fragment_diagnostics)}
+    if page_coverage is not None:
+        payload = {
+            **payload,
+            "page_coverage": page_coverage,
+            "outcome": {
+                "kind": "website_capture",
+                "fidelity_verified": False,
+                "pages": [
+                    {
+                        key: row[key]
+                        for key in (
+                            "url",
+                            "final_url",
+                            "role",
+                            "status",
+                            "asset_count",
+                            "fragments",
+                        )
+                        if key in row
+                    }
+                    for row in page_coverage
+                ],
+                "missing_page_roles": missing_page_roles or [],
+            },
+        }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 

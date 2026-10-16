@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from clue_config import Secrets, Settings
-from clue_page_origin.main import build_gate
+from clue_page_origin.main import build_gate, build_reads
 
 
 def test_build_gate_refuses_trust_with_a_secret() -> None:
@@ -24,3 +24,24 @@ def test_build_gate_dev_and_prod_shapes() -> None:
         Secrets(_env_file=None, pages_edge_secret="s"),  # type: ignore[call-arg]
     )
     assert prod is not None
+
+
+def test_k3_6_the_origin_serves_system_addresses_on_the_system_and_every_legacy_suffix() -> None:
+    """Review finding K3-6: during a domain move the origin answers `<label>.<s>` for the new
+    suffix and the old one, so every step of the move leaves every link working."""
+    settings = Settings(
+        _env_file=None,
+        pages_system_suffix="clue-pages.example",
+        pages_legacy_system_suffixes="pages.cluehq.ai, ,clue-pages.example",
+    )
+    reads = build_reads(settings, Secrets(_env_file=None))  # type: ignore[call-arg]
+    assert reads.system_suffixes == ("clue-pages.example", "pages.cluehq.ai")
+    today = build_reads(
+        Settings(
+            _env_file=None,
+            pages_system_suffix="pages.cluehq.ai",
+            pages_legacy_system_suffixes="pages.cluehq.ai",
+        ),
+        Secrets(_env_file=None),  # type: ignore[call-arg]
+    )
+    assert today.system_suffixes == ("pages.cluehq.ai",)  # production today: one suffix

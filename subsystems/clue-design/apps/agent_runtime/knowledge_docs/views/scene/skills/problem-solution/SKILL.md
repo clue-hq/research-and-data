@@ -44,8 +44,8 @@ direction from the available kit and product facts without claiming fidelity.
   diagrams so they do not masquerade as measured process data.
 
 These are alternatives, not required panels or proportions. Do not default to a
-red unhappy half and a green happy half. Choose the image treatment from inspected
-sources, including their actual texture, lighting and spatial behavior.
+red unhappy half and a green happy half. Choose the image treatment from the seller's
+inspected imagery under `/.deepagent/skills/generative-imagery/SKILL.md`.
 
 ## Build and judge
 

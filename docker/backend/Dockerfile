@@ -32,6 +32,17 @@ COPY subsystems/clue-design/scripts/vendor_tailwind_runtime.sh ./scripts/
 RUN bash scripts/vendor_tailwind_runtime.sh \
     && test -f apps/editor/public/vendor/tailwind-browser.js
 
+# --- Site kit bundles (Puck sites: the hardened-browser render bundle and the validator CLI) -----
+FROM node:24-bookworm-slim AS sitekit
+WORKDIR /src/apps/frontend
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./
+COPY apps/frontend/packages/design-system/package.json ./packages/design-system/package.json
+COPY apps/frontend/packages/site-kit ./packages/site-kit
+RUN npm ci --ignore-scripts && npm run build -w @clue/site-kit \
+    && test -f packages/site-kit/dist/render-browser.js \
+    && test -f packages/site-kit/dist/validate-site.mjs \
+    && test -f packages/site-kit/dist/build-catalog.mjs
+
 # --- Runtime ------------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS runtime
 COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /usr/local/bin/uv
@@ -55,13 +66,25 @@ RUN python -m playwright install --with-deps chromium && chmod -R a+rX /ms-playw
 COPY --from=helper /usr/local/bin/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
 COPY --from=editor /src/subsystems/clue-design/apps/editor/public/vendor /app/subsystems/clue-design/apps/editor/public/vendor
+COPY --from=sitekit /src/apps/frontend/packages/site-kit/dist /app/apps/frontend/packages/site-kit/dist
+# Lane B (Contract 4): the section compiler needs the frontend toolchain at run time (tsc with the
+# react and zod types, esbuild, tsx); the site-kit sources come with `COPY . /app`.
+COPY --from=sitekit /src/apps/frontend/node_modules /app/apps/frontend/node_modules
 # CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings
 # default, .artifacts/arv2, is relative and would land under the root-owned /app.
+# LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0: the site renderer's Chromium runs WITHOUT its own sandbox in
+# containers. Docker's default seccomp profile (CI, the VM; Railway is no better) refuses the user
+# namespace the sandbox needs, so with it on no site renders and the release smoke fails. Option A
+# of docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md (founder, 2026-10-14): read it before changing this, and before any upgrade.
 ENV LUMEN_CORE_HELPER=/app/subsystems/clue-design/target/release/lumen-api-helper \
     LUMEN_FONT_LIBRARY_MANIFEST_PATH=/app/subsystems/clue-design/apps/api/font-library/manifest.json \
-    CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw
+    CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw \
+    LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=0
 COPY docker/backend/entrypoint.sh /usr/local/bin/clue
+# The section compiler (Lane B, Contract 4) type-checks each agent section in a throwaway folder
+# inside site-kit, where react and zod resolve; the runtime user must be able to create it.
 RUN useradd --uid 1000 --create-home clue && chown -R clue:clue /app/subsystems/clue-design \
-    && mkdir -p /var/lib/clue/arv2-raw && chown -R 1000:1000 /var/lib/clue/arv2-raw
+    && mkdir -p /var/lib/clue/arv2-raw && chown -R 1000:1000 /var/lib/clue/arv2-raw \
+    && mkdir -p /app/apps/frontend/packages/site-kit/.section-check && chown 1000:1000 /app/apps/frontend/packages/site-kit/.section-check
 USER 1000:1000
 ENTRYPOINT ["clue"]
