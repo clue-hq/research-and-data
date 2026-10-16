@@ -2831,8 +2831,10 @@ def build_toolbelt(
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
     # ``@1`` stays registered for replay and refuses ``discovery_tool_retired``; ``@2`` (the brief
     # the Head of ABM writes) owns the name-only default.
+    # The name-only alias follows the version the active profile pins: `head-of-abm@v72` pins `@3`
+    # (the brief's exclude list, spec 2026-10-16); `@1` and `@2` stay registered for replay.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
-        registry.register(tool, make_default=tool.version == "2")
+        registry.register(tool, make_default=tool.version == "3")
     # The other side of the lane: what the project's rows already say. Registered everywhere like
     # its launching neighbours, but composed with no flag of its own — these four read
     # ``project_account``, the display blocks, the claim store and the discovery run, all of which

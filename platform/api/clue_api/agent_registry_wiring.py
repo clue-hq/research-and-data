@@ -258,7 +258,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # add, rename, merge or remove the brand's products when the person asks (founder ruling D3:
     # applied directly; when the agent only suspects, it asks). The conversation recipe moves
     # 33 -> 34 for the new address and the manual re-mints at `manual-*@v17`. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v71",
+    # v72 (discovery excludes the seller's customers, spec 2026-10-16): v71's surface with
+    # `launch_arv2_discovery` RE-PINNED at `@3`, whose brief adds `exclude` — the companies the
+    # search leaves out, chosen from `brand/knowledge/proof/customers.md` (stage0-interview v45).
+    # The conversation recipe moves 34 -> 35 and the manual re-mints at `manual-*@v18`. Prompt v18
+    # stays.
+    AgentRole.HEAD_OF_ABM: "v72",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -883,10 +888,10 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
     # Agent-authored discovery (2026-09-30) registered `launch_arv2_discovery@2`, which takes the
     # brief the Head of ABM writes; `@1` stays registered only to refuse `discovery_tool_retired`.
-    # The grant follows the version the active profile pins: `head-of-abm@v70` pins `@2`, so `@1`
-    # is held by nobody.
+    # The grant follows the version the active profile pins: `head-of-abm@v72` pins `@3` (the
+    # brief's exclude list, spec 2026-10-16), so `@1` and `@2` are held by nobody.
     if name == "launch_arv2_discovery":
-        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@2" else ()
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@3" else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":
