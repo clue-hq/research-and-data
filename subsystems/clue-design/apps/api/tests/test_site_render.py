@@ -126,6 +126,25 @@ def test_read_section_schema_reads_the_props_schema_inside_the_page() -> None:
     assert refused.value.code == RENDER_FAILED and 'the props need "id"' in refused.value.message
 
 
+def test_read_section_schema_keeps_the_edit_in_place_marker_and_refuses_it_on_a_choice() -> None:
+    # S2a-2: the marker reaches the stored props schema through the page's own zod (the section
+    # imports zod from the page), inside lists too; on a brand choice the section is refused.
+    marked = (
+        'import { z } from "zod";\n'
+        'export const schema = z.object({ id: z.string(), surface: z.string(), quote: z.string().meta({ edit: "inline" }),'
+        ' steps: z.array(z.object({ title: z.string().meta({ edit: "inline" }) })) }).strict();\n'
+        "export function render() { return null; }\n"
+    )
+    schema = read_section_schema(marked)
+    assert schema["properties"]["quote"]["edit"] == "inline"
+    assert schema["properties"]["steps"]["items"]["properties"]["title"]["edit"] == "inline"
+    assert "edit" not in schema["properties"]["surface"]
+    with pytest.raises(SiteRenderError) as refused:
+        read_section_schema(marked.replace('surface: z.string()', 'surface: z.string().meta({ edit: "inline" })'))
+    assert refused.value.code == RENDER_FAILED
+    assert '"surface" cannot be edited in place: it is a brand choice' in refused.value.message
+
+
 def test_a_section_that_never_finishes_times_out() -> None:
     site, module = hostile("Loop", "export function render(props, kit) { for (;;) {} }\n")
     started = time.monotonic()
