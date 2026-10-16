@@ -593,7 +593,7 @@ The six Critical findings across the whole review:
 ### S6 — Brand capture, minting, the engine's brand tokens and the Brand page (A9)
 
 #### S6-1 — A section background's text colour is taken from the wrong text, so the section's words become unreadable
-- **Severity:** Important. Status: open.
+- **Severity:** Important. Status: **fixed** 2026-10-16 (`971ffca49` site-kit, `c73e3602b`+`c19144058` capture, `70dc10fc3`+`11b0b9485` mint gate, LUMI0609).
 - **What a person sees:** a seller's site has a cream section that opens with an orange label ("WHY TEAMS
   SWITCH") above dark headings and body, or a navy section whose first words sit in a white quote card. On
   every site made from that brand, all text on those backgrounds is drawn in the orange (contrast 1.78:1,
@@ -611,7 +611,7 @@ The six Critical findings across the whole review:
   only if it is readable, otherwise pick a readable colour.
 
 #### S6-2 — A button icon that the seller's CSS sizes or colours never shows on our sites
-- **Severity:** Important. Status: **size half fixed** 2026-10-15 (`73e96999a`): site-kit draws the icon at the size the kit stores. Still open: the colour half (capture must write the icon's computed fill and stroke; existing kits gain it only on a founder-approved re-capture).
+- **Severity:** Important. Status: **fixed** 2026-10-16: size half `73e96999a`; colour half `32cc7ee4f` (computed paint written onto the icon; existing kits gain it on a founder-approved re-capture).
 - **What a person sees:** the seller's buttons carry an arrow icon sized by CSS classes (the common
   Tailwind/Heroicons and Font Awesome pattern). The Brand page shows the arrow, so the marketer believes
   the brand's buttons have it; on every site the icon is missing (drawn 0×0). An icon coloured by a CSS
@@ -628,7 +628,7 @@ The six Critical findings across the whole review:
   size the icon from the size the kit stores.
 
 #### S6-3 — Brands whose colours are written in `oklch()` (Tailwind v4, shadcn/ui) lose their button colours
-- **Severity:** Important (the root predates Wave 2; the merging of measured button styles is new). Status: open.
+- **Severity:** Important (the root predates Wave 2; the merging of measured button styles is new). Status: **fixed** 2026-10-16 (`7e3d74df3`+`896a8761e` parser, `57a16feb4` in-page colour reader).
 - **What a person sees:** on a Tailwind v4 or shadcn site, a blue "Book a demo" and a green "Start free"
   button become one colourless "text only" style; hover colours and section backgrounds written that way
   are lost. The agent's button styles have no colour.
@@ -641,46 +641,46 @@ The six Critical findings across the whole review:
   parser the newer CSS colour formats.
 
 #### S6-4 — Some style names on the Brand page say the wrong thing
-- **Severity:** Minor (cosmetic but visible). Status: open. A value used in two places in one style is
+- **Severity:** Minor (cosmetic but visible). Status: **fixed** 2026-10-16 (`5def4178d`+`5a7ace71f`). A value used in two places in one style is
   named after the first place, so "pressed fill" shows as `…hover.fill`, and left padding as `…padding-right`.
 - **Where:** `lumen_ingestion/normalizer/component_tokens.py:306-325`. Confirmed in the committed `probe.minted` kit.
 
 #### S6-5 — A homepage address with long tracking parameters drops every measured style
-- **Severity:** Minor. Status: open. A pasted URL with UTM/`gclid` parameters over 392 characters fails a
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`5def4178d`). A pasted URL with UTM/`gclid` parameters over 392 characters fails a
   400-character limit, so all measured styles, states and motion are dropped, and the leftover colours
   show on the Brand page under machine names.
 - **Where:** `lumen_ingestion/normalizer/component_tokens.py:635-661`; `lumen_ingestion/measured_components.py:28,73,93`.
 - **Fix direction:** strip the query and fragment from the stored source address.
 
 #### S6-6 — A cookie banner makes the capture read the wrong element's animation
-- **Severity:** Minor. Status: open. Removing the banner shifts element positions between the "before" and
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`e415e99b8`). Removing the banner shifts element positions between the "before" and
   "after" reads, so a real fade-in is lost and a false "scripted animation in the footer" note appears.
 - **Where:** `lumen_ingestion/capture/states.py:230-276,438-460`; `lumen_ingestion/capture/rendered.py:347-352`.
 
 #### S6-7 — A fully transparent button background is called "Filled"
-- **Severity:** Minor. Status: open. Also breaks the agreed rule that a main call-to-action needs a visible fill.
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`57a16feb4`). Also breaks the agreed rule that a main call-to-action needs a visible fill.
 - **Where:** `lumen_ingestion/capture/geometry.py:243,806-813`.
 
 #### S6-8 — Buttons inside web components or iframes are not measured at all
-- **Severity:** Minor (missing, not wrong). Status: open.
+- **Severity:** Minor (missing, not wrong). Status: **fixed** 2026-10-16 (`e21a439c8`+`5ffbe4136`).
 - **Where:** `lumen_ingestion/capture/geometry.py:276-296`.
 
 #### S6-9 — An element with two animations keeps only the first; animations named with quotes are never matched
-- **Severity:** Minor. Status: open.
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`ee7c39bba`+`0dec27d50`).
 - **Where:** `lumen_ingestion/capture/geometry.py:1101-1111`; `lumen_ingestion/capture/motion.py:96`.
 
 #### S6-10 — Some sprite icons are drawn at half size in the corner
-- **Severity:** Minor. Status: open.
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`32cc7ee4f`).
 - **Where:** `lumen_ingestion/capture/states.py:155-173`.
 
 #### S6-11 — Large stylesheets make one ingestion step slow (up to about 3 minutes)
-- **Severity:** Minor (performance). Status: open. Each stylesheet is re-read once per animation name; the
+- **Severity:** Minor (performance). Status: **fixed** 2026-10-16 (`ee7c39bba`). Each stylesheet is re-read once per animation name; the
   controller measured 5 s for 1 MB of CSS, 24 s for 4 MB and 92 s for 16 MB.
 - **Where:** `lumen_ingestion/capture/motion.py:103-114`.
 - **Fix direction:** read each stylesheet once.
 
 #### S6-12 — A malicious page can make its own brand ingestion fail outright
-- **Severity:** Minor. Status: open. A few odd number spellings pass the Python check but fail the
+- **Severity:** Minor. Status: **fixed** 2026-10-16 (`5def4178d`). A few odd number spellings pass the Python check but fail the
   engine's, and one such value fails the whole kit instead of dropping one animation.
 - **Where:** `lumen_ingestion/normalizer/component_tokens.py:512-518` against `crates/lumen-core/src/brand.rs:1677-1683`.
 
@@ -920,6 +920,8 @@ these fixes must be deployed and migration `abf95e465478` run.
 
 ### 4.6 Brand capture misses common modern patterns
 **Findings:** S6-1, S6-2, S6-3, and S6-4 to S6-12.
+
+**Status: fixed (2026-10-16)** by `docs/superpowers/plans/2026-10-16-brand-capture-fidelity.md` (spec `docs/superpowers/specs/2026-10-16-brand-capture-fidelity-design.md`), branch `brand/capture-fidelity`: the capture reads every colour through the browser and composites the colour behind each element; section text is measured from text on the section and stored only when it reads; site-kit never draws an unreadable stored pair and published pages paint the page colour. Existing kits read correctly on screen at once; their stored values change only on a founder-approved re-capture.
 
 The capture works on the patterns it was tested with. It misses common ones:
 - section text colour taken from an eyebrow line or card (S6-1);
