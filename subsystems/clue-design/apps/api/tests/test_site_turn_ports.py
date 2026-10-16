@@ -171,6 +171,44 @@ def test_a_live_renderer_shows_the_page_after_its_effects_ran() -> None:
     assert dark_live > dark_static + 0.02, (dark_live, dark_static)
 
 
+def test_a_live_screenshot_of_a_page_with_two_different_agent_sections_is_drawn() -> None:
+    """The live preview page forbids eval. A screenshot wait written as a bare expression is run
+    through eval and fails whenever the page has not come alive by Playwright's first check — which
+    two different section modules (imported one after the other) make certain. The agent then got
+    NOT RENDERED for every such page (lane run run_site_590eb594523c, 2026-10-16: 10 of 16 renders).
+    The wait is a function, so a page with two sections is shot like any other."""
+
+    from site_kit_support import chromium_available, ensure_site_kit_dist, garner_brand, garner_site
+
+    if not chromium_available():
+        pytest.skip("playwright chromium not installed")
+    ensure_site_kit_dist()
+    from lumen_api.site_render import SectionModule
+
+    def module(name: str, text: str) -> SectionModule:
+        js = (
+            'import { jsx } from "react/jsx-runtime";\nimport { useEffect, useState } from "react";\nimport { z } from "zod";\n'
+            'export const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n'
+            f'function {name}() {{ const [on, setOn] = useState(false); useEffect(() => setOn(true), []);\n'
+            f'  return jsx("p", {{ children: on ? "{text} alive" : "{text}" }}); }}\n'
+            f'export function render() {{ return jsx({name}, {{}}); }}\n'
+        )
+        return SectionModule(name=name, digest=hashlib.sha256(js.encode("utf-8")).hexdigest(), module_js=js, css="", props_schema={})
+
+    first, second = module("Quote", "quote"), module("Faq", "faq")
+    site = garner_site("doc_two_sections")
+    site["pages"]["/"]["content"] += [
+        {"type": "Quote", "props": {"id": "quote", "surface": "page"}},
+        {"type": "Faq", "props": {"id": "faq", "surface": "page"}},
+    ]
+    site["agent_sections"] = {"Quote": first.digest, "Faq": second.digest}
+    live = PlatformSiteRenderer(live=True)
+    html, css, _warnings = live.render(site, garner_brand(), [first, second], route="/")
+    for _ in range(3):
+        png = live.screenshot(html, css, width=1440)
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def _dark_share(png: bytes) -> float:
     from PIL import Image
 

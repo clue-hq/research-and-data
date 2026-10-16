@@ -36,7 +36,7 @@ def test_a_replaced_site_keeps_the_selection_on_the_same_section(
     page.wait_for_timeout(800)
     frame.get_by_text(PROOF).first.click(force=True)
     page.wait_for_function(
-        "window.__received.some((m) => m.type === 'selected' && m.payload.componentId === 'proof')"
+        "() => window.__received.some((m) => m.type === 'selected' && m.payload.componentId === 'proof')"
     )
     mark = len(received(page))
 
@@ -63,7 +63,7 @@ def test_a_replaced_site_without_the_selected_section_clears_the_selection(
     page.wait_for_timeout(800)
     frame.get_by_text(PROOF).first.click(force=True)
     page.wait_for_function(
-        "window.__received.some((m) => m.type === 'selected' && m.payload.componentId === 'proof')"
+        "() => window.__received.some((m) => m.type === 'selected' && m.payload.componentId === 'proof')"
     )
     mark = len(received(page))
     site = copy.deepcopy(app.init_payload["site"])

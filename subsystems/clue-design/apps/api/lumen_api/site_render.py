@@ -129,6 +129,8 @@ _RENDER_CSP = (
     "font-src 'none'; media-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; "
     "worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'"
 )
+#: Polled until a live preview page has come alive (``site_live``'s runtime sets the flag).
+_HYDRATED = "() => window.__clueHydrated === true"
 #: Polled until the render answers: ``true`` once it has; ``'replaced'`` once the page shows a
 #: document other than the one the shell pinned (a ``javascript:`` URL whose script returns a string
 #: replaces it, and Chromium reports no navigation for that, so only this question catches it).
@@ -535,8 +537,11 @@ def capture_site_screenshot(
                     shot.set_content(html, wait_until="load", timeout=remaining_ms())
                     try:
                         # At most half the time limit, so a page that never comes alive still has
-                        # the other half to be shot in.
-                        shot.wait_for_function("window.__clueHydrated === true", timeout=min(remaining_ms(), timeout_ms / 2))
+                        # the other half to be shot in. A FUNCTION, like ``_DONE``: Playwright polls a
+                        # bare expression with eval inside the page, which the preview policy forbids,
+                        # so every page not yet alive at the first check failed (two agent sections
+                        # made that certain; lane run run_site_590eb594523c, 2026-10-16).
+                        shot.wait_for_function(_HYDRATED, timeout=min(remaining_ms(), timeout_ms / 2), polling=50)
                     except PlaywrightTimeout:
                         pass  # a page that never comes alive is still what the agent should see
                     shot.wait_for_timeout(_FONT_SETTLE_MS)

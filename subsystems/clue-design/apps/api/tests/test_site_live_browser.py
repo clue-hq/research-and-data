@@ -83,7 +83,7 @@ def test_a_live_site_comes_alive_and_an_agent_section_with_state_answers_a_click
             page.on("console", lambda m: errors.append(f"{m.text} [{m.location.get('url', '')}]") if m.type == "error" else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(origin + "/acme", wait_until="load")
-            page.wait_for_function("window.__clueHydrated === true", timeout=10_000)
+            page.wait_for_function("() => window.__clueHydrated === true", timeout=10_000)
             assert page.locator("#counter").inner_text() == "clicked 0"
             page.locator("#counter").click()
             assert page.locator("#counter").inner_text() == "clicked 1"

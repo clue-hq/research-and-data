@@ -42,7 +42,7 @@ def test_the_editor_renders_a_site_and_reports_selections(
     # force: with drag off (C13), dnd-kit marks every Puck item aria-disabled, and Playwright treats
     # everything inside an aria-disabled element as not clickable. A real click still selects.
     frame.get_by_text(PROOF).first.click(force=True)
-    page.wait_for_function("window.__received.some((m) => m.type === 'selected')")
+    page.wait_for_function("() => window.__received.some((m) => m.type === 'selected')")
     selected = next(message for message in received(page) if message["type"] == "selected")
     assert selected["payload"]["componentId"] == "proof"
     assert selected["payload"]["componentType"] == "StatsBand"
@@ -82,7 +82,7 @@ def test_the_editor_renders_a_site_and_reports_selections(
 
     frame.locator(".brand-root > header").click()
     page.wait_for_function(
-        "window.__received.some((m) => m.type === 'selected' && m.payload.route === 'shell')"
+        "() => window.__received.some((m) => m.type === 'selected' && m.payload.route === 'shell')"
     )
     shell = [
         m for m in received(page) if m["type"] == "selected" and m["payload"]["route"] == "shell"
@@ -162,7 +162,7 @@ def test_the_app_navigates_the_frame_and_the_frame_never_navigates_the_app(
     frame.get_by_text(PROOF).first.wait_for(timeout=20000)
     page.evaluate("window.__send('navigate', { route: '/analysis' })")
     page.wait_for_function(
-        "window.__received.some((m) => m.type === 'navigated' && m.payload.route === '/analysis')"
+        "() => window.__received.some((m) => m.type === 'navigated' && m.payload.route === '/analysis')"
     )
     frame.get_by_text("Request SCSD's free analysis").first.wait_for(timeout=10000)
     assert page.url == app.origin + "/"
