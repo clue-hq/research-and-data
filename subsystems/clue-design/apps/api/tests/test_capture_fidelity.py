@@ -265,3 +265,11 @@ def test_s6_8_web_component_and_iframe_ctas_are_measured_with_their_hover(engine
     assert "solid.047464" in buttons and "solid.1565c0" in buttons, sorted(buttons)
     assert buttons["solid.047464"].hover is not None and buttons["solid.047464"].hover.background == "#035A4E"
     assert buttons["solid.1565c0"].hover is not None and buttons["solid.1565c0"].hover.background == "#0D47A1"
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_9_both_animations_of_an_element_and_a_quoted_name_are_kept(engine: str) -> None:
+    run = _run(engine, "shadow_iframe_anim.html")
+    kept = {a.name: len(a.frames) for a in run["motion"].animations}
+    assert kept.get("rise", 0) >= 2 and kept.get("float", 0) >= 2, kept
+    assert kept.get("glow pulse", 0) >= 2, kept

@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from lumen_ingestion.brief_agent import build_brief_request
 from lumen_ingestion.capture.geometry import measured_styles, parse_geometry
 from lumen_ingestion.capture.motion import attach_keyframes, clean_icon_svg, keyframe_steps
@@ -224,3 +226,32 @@ def test_the_brief_agents_evidence_is_unchanged_by_the_new_measurements() -> Non
         "background_sequence": [band.model_copy(update={"ink": None}) for band in geometry.background_sequence],
     })})
     assert build_brief_request(with_new, {}).evidence_json() == build_brief_request(without, {}).evidence_json()
+
+
+def test_s6_11_each_stylesheet_is_parsed_once_whatever_the_number_of_animations(monkeypatch) -> None:
+    import tinycss2
+
+    from lumen_ingestion.capture import motion as motion_module
+    from lumen_ingestion.evidence import EvidencePointer, MeasuredAnimation, MotionEvidence
+
+    names = ["spin", "ping", "pulse", "bounce", "fade", "slide"]
+    css = "".join(f"@keyframes {n}{{from{{opacity:0}}to{{opacity:1}}}}" for n in names)
+    sheets = [_sheet(css), _sheet(css + ".x{color:red}")]
+    calls = []
+    real = tinycss2.parse_stylesheet
+    monkeypatch.setattr(motion_module.tinycss2, "parse_stylesheet", lambda *a, **k: calls.append(1) or real(*a, **k))
+    pointer = EvidencePointer(source="website", locator="https://x.test/ :: animation")
+    kept = motion_module.attach_keyframes(
+        MotionEvidence(animations=[MeasuredAnimation(name=n, duration_ms=500, pointer=pointer) for n in names]), sheets)
+    assert len(kept.animations) == 6
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("raw, name", [
+    ('"glow pulse"', "glow pulse"), ("'glow pulse'", "glow pulse"), ("glow\\ pulse", "glow pulse"),
+    ("fade\\31 ", "fade1"), ("spin", "spin"),
+])
+def test_s6_9_a_keyframes_name_is_read_as_the_cascade_means_it(raw: str, name: str) -> None:
+    from lumen_ingestion.capture.motion import css_name
+
+    assert css_name(raw) == name

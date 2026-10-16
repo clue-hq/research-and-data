@@ -44,7 +44,7 @@ from ..evidence import (
     StyleTransition,
     SurfaceShape,
 )
-from .motion import clean_icon_svg
+from .motion import clean_icon_svg, css_name
 from .parse import parse_color_value
 
 # Surfaces above this radius are read as "pill / fully round", never as a scale
@@ -565,7 +565,7 @@ GEOMETRY_JS = r"""
     if (found) { found.count += 1; continue; }
     const cls = el.getAttribute('class');
     animations.set(key, {
-      name: cs.animationName.slice(0, 120), duration: cs.animationDuration,
+      name: cs.animationName.slice(0, 240), duration: cs.animationDuration,
       easing: cs.animationTimingFunction.slice(0, 120), delay: cs.animationDelay,
       iterations: cs.animationIterationCount, direction: cs.animationDirection, fill: cs.animationFillMode,
       where: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')
@@ -1196,17 +1196,28 @@ def measured_styles(surfaces: list[dict], states: dict | None, url: str) -> list
     return out
 
 
-def _first(value: object) -> str:
-    """The first entry of a computed comma list (`"pulse, spin"` → `"pulse"`), parentheses kept."""
-    text, depth = str(value or ""), 0
+#: The most animations a capture keeps (MeasuredComponents@1 holds at most 12 animation tokens).
+MAX_ANIMATIONS = 12
+
+
+def _items(value: object) -> list[str]:
+    """Every entry of a computed comma list (`"pulse, spin"` → `["pulse", "spin"]`), parentheses kept."""
+    text, depth, start, out = str(value or ""), 0, 0, []
     for index, ch in enumerate(text):
         if ch == "(":
             depth += 1
         elif ch == ")":
             depth -= 1
         elif ch == "," and depth == 0:
-            return text[:index].strip()
-    return text.strip()
+            out.append(text[start:index].strip())
+            start = index + 1
+    out.append(text[start:].strip())
+    return [item for item in out if item] or [""]
+
+
+def _first(value: object) -> str:
+    """The first entry of a computed comma list (`"pulse, spin"` → `"pulse"`), parentheses kept."""
+    return _items(value)[0]
 
 
 def _ms(value: object) -> float:
@@ -1220,19 +1231,32 @@ def _ms(value: object) -> float:
 def measured_motion(raw: dict, url: str) -> MotionEvidence:
     """The page's CSS animations, its CSS reveals (deduplicated) and its scripted-motion notes."""
     animations: list[MeasuredAnimation] = []
+    seen: dict[tuple, MeasuredAnimation] = {}
     for entry in _list(raw.get("animations")):
         if not isinstance(entry, dict):
             continue
-        name = _first(entry.get("name"))[:120]
-        if not name or name == "none":
-            continue
-        animations.append(MeasuredAnimation(
-            name=name, duration_ms=_ms(entry.get("duration")), easing=_first(entry.get("easing")) or "ease",
-            delay_ms=_ms(entry.get("delay")), iterations=_first(entry.get("iterations")) or "1",
-            direction=_first(entry.get("direction")) or "normal", fill_mode=_first(entry.get("fill")) or "none",
-            count=max(1, int(_float(entry.get("count")) or 1)), where=str(entry.get("where") or "")[:120],
-            pointer=_pointer(url, f"animation {name}"),
-        ))
+        lists = {key: _items(entry.get(key)) for key in ("duration", "easing", "delay", "iterations", "direction", "fill")}
+        count = max(1, int(_float(entry.get("count")) or 1))
+        for i, raw_name in enumerate(_items(entry.get("name"))):
+            name = css_name(raw_name)[:120]
+            if not name or name == "none":
+                continue
+            at = lambda key: lists[key][i % len(lists[key])]  # noqa: E731 — CSS repeats a shorter list
+            animation = MeasuredAnimation(
+                name=name, duration_ms=_ms(at("duration")), easing=at("easing") or "ease",
+                delay_ms=_ms(at("delay")), iterations=at("iterations") or "1",
+                direction=at("direction") or "normal", fill_mode=at("fill") or "none",
+                count=count, where=str(entry.get("where") or "")[:120],
+                pointer=_pointer(url, f"animation {name}"),
+            )
+            key = (animation.name, animation.duration_ms, animation.easing, animation.iterations, animation.direction)
+            if key in seen:
+                seen[key].count += count
+                continue
+            if len(animations) >= MAX_ANIMATIONS:
+                continue
+            seen[key] = animation
+            animations.append(animation)
     states = raw.get("states") if isinstance(raw.get("states"), dict) else {}
     reveals: dict[tuple, MeasuredReveal] = {}
     scripted: list[ScriptedMotion] = []

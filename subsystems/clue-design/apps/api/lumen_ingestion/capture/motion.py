@@ -58,6 +58,19 @@ _SVG_GEOMETRY = {
 }
 
 
+_CSS_ESCAPE = re.compile(r"\\(?:([0-9a-fA-F]{1,6})[ \t\n]?|(.))", re.DOTALL)
+
+
+def css_name(raw: str) -> str:
+    """A keyframes name as the cascade means it (S6-9): the quotes off a name written as a CSS string
+    (`"glow pulse"`), the escapes resolved in one written as an identifier — Chromium reports a
+    string-named animation as `glow\\ pulse`."""
+    text = str(raw or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    return _CSS_ESCAPE.sub(lambda m: chr(min(int(m.group(1), 16), 0x10FFFF)) if m.group(1) else m.group(2), text)
+
+
 def safe_style_value(value: str) -> bool:
     """A CSS value that only draws: plain characters, nothing that loads or substitutes."""
     lower = value.lower()
@@ -93,24 +106,30 @@ def _keyframes_rules(rules: Iterable[Any]) -> Iterator[tuple[str, list]]:
             continue
         keyword = rule.lower_at_keyword
         if keyword in ("keyframes", "-webkit-keyframes"):
-            yield tinycss2.serialize(rule.prelude).strip().strip("\"'"), rule.content
+            yield css_name(tinycss2.serialize(rule.prelude)), rule.content
         elif keyword in ("media", "supports", "layer", "container"):
             yield from _keyframes_rules(
                 tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
             )
 
 
-def keyframe_steps(stylesheets: Iterable[Any], name: str) -> list[KeyframeStep]:
-    """The last `@keyframes <name>` in cascade order, as clean steps; `[]` when absent or unusable."""
-    found = None
+def _keyframes_index(stylesheets: Iterable[Any], names: set[str]) -> dict[str, list]:
+    """The last `@keyframes <name>` in cascade order for each wanted name; each sheet that holds any
+    keyframes parsed once, however many animations are wanted (S6-11)."""
+    found: dict[str, list] = {}
     for sheet in stylesheets:
         text = getattr(sheet, "text", "") or ""
-        if name not in text:
+        if not names or "keyframes" not in text.lower():
             continue
         parsed = tinycss2.parse_stylesheet(text, skip_comments=True, skip_whitespace=True)
         for rule_name, content in _keyframes_rules(parsed):
-            if rule_name == name:
-                found = content
+            if rule_name in names:
+                found[rule_name] = content
+    return found
+
+
+def _steps(found: list | None) -> list[KeyframeStep]:
+    """One `@keyframes` body as clean steps; `[]` when absent or unusable."""
     if found is None:
         return []
     steps: dict[float, dict[str, str]] = {}
@@ -135,12 +154,17 @@ def keyframe_steps(stylesheets: Iterable[Any], name: str) -> list[KeyframeStep]:
     return ordered if 2 <= len(ordered) <= MAX_KEYFRAME_STEPS else []
 
 
+def keyframe_steps(stylesheets: Iterable[Any], name: str) -> list[KeyframeStep]:
+    """The last `@keyframes <name>` in cascade order, as clean steps; `[]` when absent or unusable."""
+    return _steps(_keyframes_index(stylesheets, {name}).get(name))
+
+
 def attach_keyframes(motion: MotionEvidence, stylesheets: Iterable[Any]) -> MotionEvidence:
     """The animations whose definition the capture holds, with it; the rest are dropped."""
-    sheets = list(stylesheets)
+    index = _keyframes_index(list(stylesheets), {animation.name for animation in motion.animations})
     kept = []
     for animation in motion.animations:
-        steps = keyframe_steps(sheets, animation.name)
+        steps = _steps(index.get(animation.name))
         if steps:
             kept.append(animation.model_copy(update={"frames": steps}))
     return motion.model_copy(update={"animations": kept})
