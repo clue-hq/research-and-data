@@ -46,12 +46,17 @@ def offline_models(monkeypatch, responses=None):
     return built, checked
 
 
-def test_scene_solo_env_defaults_off_and_explicit_boolean_reaches_factory_config(
+def test_scene_solo_env_defaults_on_and_explicit_boolean_reaches_factory_config(
     tmp_path, monkeypatch
 ):
+    # Founder ruling 2026-10-04, restated 2026-10-16: the scene agent always runs solo, so solo
+    # and the candidate bundle it requires are the code defaults.
     monkeypatch.delenv("LUMEN_AGENT_SCENE_SOLO", raising=False)
+    monkeypatch.delenv("LUMEN_AGENT_SCENE_SKILL_BUNDLE", raising=False)
     default = Settings(_env_file=None)
-    assert getattr(default, "lumen_agent_scene_solo", None) is False
+    assert getattr(default, "lumen_agent_scene_solo", None) is True
+    assert default.lumen_agent_scene_skill_bundle == "candidate"
+    assert default.lumen_agent_fast_loop is True
     monkeypatch.setenv("LUMEN_AGENT_SCENE_SOLO", "1")
     enabled = Settings(_env_file=None)
     monkeypatch.setattr(config_module, "settings", enabled)

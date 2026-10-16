@@ -122,8 +122,12 @@ def test_solo_prompt_is_the_merged_persona_with_the_shared_rubric(
 
 
 def test_flag_off_keeps_the_trio_composition_byte_identical(tmp_path, monkeypatch) -> None:
-    config = replace(AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "ws")
-    assert config.web_solo is False
+    # Solo is the default (founder rulings 2026-09-04 / 2026-10-04); the trio is only reachable by
+    # turning the flag off explicitly, and when it is, it must still compose unchanged.
+    assert AgentRuntimeConfig.from_env(REPO_ROOT).web_solo is True
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "ws", web_solo=False
+    )
     captured = _create_web_agent(tmp_path, monkeypatch, config)
     assert [sa["name"] for sa in captured["subagents"]] == [AUTHOR, REVIEWER]
     assert captured["skills"] is None
