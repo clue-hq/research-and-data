@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..colorspace import hex_alpha
+from ..colorspace import contrast_ratio, hex_alpha
 from ..evidence import SectionBackground
 
 MAX_BAND_SURFACES = 12
@@ -99,3 +99,20 @@ def _height(band: SectionBackground) -> float:
 def _page(band: SectionBackground) -> str:
     """The page URL out of the band's `<url> :: section N (tag)` locator."""
     return band.pointer.locator.split(" :: ", 1)[0]
+
+
+#: A band's text must read on it (WCAG 1.4.3), the normalizer's `_CONTRAST_MIN`.
+READABLE_RATIO = 4.5
+
+
+def readable_ink(band: BandSurface, candidates: list[str]) -> tuple[str, bool]:
+    """The text colour to store for a band, and whether it is the one measured there (S6-1). The
+    measured colour when it reads on the band; else the best-reading of `candidates` (the kit's
+    text.primary and text.inverse); else black or white, whichever reads better. `band.ink_hex` must
+    be set."""
+    measured = str(band.ink_hex)
+    if contrast_ratio(measured, band.hex) >= READABLE_RATIO:
+        return measured, True
+    options = [c[:7].upper() for c in candidates if c] + ["#FFFFFF", "#0B0F14"]
+    best = max(options, key=lambda option: contrast_ratio(option, band.hex))
+    return best, False

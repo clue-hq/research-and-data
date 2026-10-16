@@ -8,7 +8,7 @@ calls (created_at is a parameter). An optional `RoleAssist` may refine the draft
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..assist import AssistDraft, NullRoleAssist, RoleAssist
 from ..colorspace import (
@@ -18,7 +18,7 @@ from ..colorspace import (
     with_lightness,
 )
 from ..evidence import BrandEvidence
-from .bands import build_band_surfaces, opaque_hex
+from .bands import build_band_surfaces, opaque_hex, readable_ink
 from .cluster import cluster_colors
 from .component_tokens import mint_component_tokens
 from .emit import KitBuilder, build_constraints
@@ -151,7 +151,23 @@ def normalize_evidence(
             description=band.description,
         )
         if band.ink_hex:
-            band_pairs.append({"foreground": _band_ink(builder, band), "background": band.path, "min_ratio": 4.5})
+            candidates = [
+                str(builder.colors[path]["value"]["default"].get("value") or "")
+                for path in ("text.primary", "text.inverse") if path in builder.colors
+            ]
+            ink, measured = readable_ink(band, candidates)
+            if not measured:
+                diagnostics.append({
+                    "code": "LUMI0609", "severity": "warning",
+                    "message": (
+                        f"the text measured on section background {band.hex} ({band.ink_hex}, ratio "
+                        f"{contrast_ratio(band.ink_hex, band.hex):.2f}) does not read there; its text uses {ink}"
+                    ),
+                })
+            band_pairs.append({
+                "foreground": _band_ink(builder, replace(band, ink_hex=ink), measured=measured),
+                "background": band.path, "min_ratio": 4.5,
+            })
     if skipped_bands:
         diagnostics.append({
             "code": "LUMI0607", "severity": "warning",
@@ -357,9 +373,9 @@ def _brand_text(brand_hex: str, page_hex: str, primary_ramp: dict[str, str]) -> 
     return primary_ramp["950"]
 
 
-def _band_ink(builder: KitBuilder, band) -> str:
-    """The colour token for the text measured on a band: an exact match, alpha included (an ink
-    first), else `text.band.<hex of the band>`."""
+def _band_ink(builder: KitBuilder, band, *, measured: bool = True) -> str:
+    """The colour token for a band's text: an exact match, alpha included (an ink first), else
+    `text.band.<hex of the band>` — described as measured, or as chosen to read (S6-1)."""
     matches = sorted(
         (
             path for path, entry in builder.colors.items()
@@ -371,12 +387,14 @@ def _band_ink(builder: KitBuilder, band) -> str:
     if matches:
         return matches[0]
     path = "text.band." + band.path.rsplit(".", 1)[1]
+    provenance = band.provenance.replace("section background", "text on section background")
     builder.add_color(
         path,
-        RoleAssignment(band.ink_hex, "measured", band.provenance.replace("section background", "text on section background")),
+        RoleAssignment(band.ink_hex, "measured" if measured else "derived", provenance),
         None,
         confidence=MEASURED_CONFIDENCE,
-        description="text measured on that section background",
+        description="text measured on that section background" if measured
+        else "text chosen to read on that section background (the measured text did not)",
     )
     return path
 

@@ -23,6 +23,7 @@ test_measured_components.test_site_kit_fixture_kits_are_current fails when a com
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from lumen_ingestion.brief import kit_token_names
@@ -31,7 +32,7 @@ from lumen_ingestion.capture.motion import attach_keyframes
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import EvidencePointer, MeasuredStyle, MotionEvidence, SectionBackground, StyleLook
 from lumen_ingestion.measured_components import validate_measured_components
-from lumen_ingestion.normalizer.bands import BandSurface, build_band_surfaces, opaque_hex
+from lumen_ingestion.normalizer.bands import BandSurface, build_band_surfaces, opaque_hex, readable_ink
 from lumen_ingestion.normalizer.component_tokens import mint_component_tokens
 from lumen_ingestion.normalizer.emit import _color_role, _color_value, _mode_value, _provenance
 from lumen_ingestion.normalizer.geometry import MEASURED_CONFIDENCE
@@ -86,9 +87,10 @@ def _measured_color(path: str, hex_value: str, description: str, provenance: str
             "description": description, "provenance": _provenance(provenance, MEASURED_CONFIDENCE)}
 
 
-def _band_ink(colors: dict, band: BandSurface) -> str:
+def _band_ink(colors: dict, band: BandSurface, *, measured: bool = True) -> str:
     """`normalizer._band_ink` over a kit's colours: the token holding the band's ink exactly, alpha
-    included (an ink first), else `text.band.<hex of the band>`, minted here."""
+    included (an ink first), else `text.band.<hex of the band>`, minted here — described as measured,
+    or as chosen to read (S6-1)."""
     matches = sorted(
         (
             path for path, entry in colors.items()
@@ -100,7 +102,9 @@ def _band_ink(colors: dict, band: BandSurface) -> str:
     if matches:
         return matches[0]
     path = "text.band." + band.path.rsplit(".", 1)[1]
-    colors[path] = _measured_color(path, band.ink_hex, "text measured on that section background",
+    description = ("text measured on that section background" if measured
+                   else "text chosen to read on that section background (the measured text did not)")
+    colors[path] = _measured_color(path, band.ink_hex, description,
                                    band.provenance.replace("section background", "text on section background"))
     return path
 
@@ -115,9 +119,13 @@ def _add_bands(kit: dict, sequence: list[SectionBackground]) -> None:
     for band in bands:
         colors[band.path] = _measured_color(band.path, band.hex, band.description, band.provenance)
         if band.ink_hex:
-            kit["constraints"]["contrast_pairs"].append(
-                {"foreground": _band_ink(colors, band), "background": band.path, "min_ratio": 4.5}
-            )
+            candidates = [str(colors[path]["value"]["default"].get("value") or "")
+                          for path in ("text.primary", "text.inverse") if path in colors]
+            ink, measured = readable_ink(band, candidates)
+            kit["constraints"]["contrast_pairs"].append({
+                "foreground": _band_ink(colors, replace(band, ink_hex=ink), measured=measured),
+                "background": band.path, "min_ratio": 4.5,
+            })
 
 
 def _finish(kit: dict, section: dict | None) -> dict:

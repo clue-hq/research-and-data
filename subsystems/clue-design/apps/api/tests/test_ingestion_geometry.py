@@ -575,3 +575,33 @@ def test_anything_else_passes_through_unchanged() -> None:
                   "matrix(a, b, c, d, e, f)", 3):
         assert normalize_transform(value) == value, value
 
+
+
+def _normalized(evidence):
+    return normalize_evidence(evidence, brand_kit_id="brand_kit_geometry", version=1, name="Geometry", created_at=_CREATED_AT)
+
+
+def test_s6_1_a_band_text_colour_that_does_not_read_is_replaced_by_one_that_does() -> None:
+    result = _normalized(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        {**_section(1, "rgb(243, 240, 232)", 700), "ink": "rgb(245, 166, 35)"},   # orange on cream, 1.78:1
+        {**_section(2, "rgb(11, 37, 69)", 600), "ink": "rgb(34, 34, 34)"},        # dark grey on navy, 1.03:1
+    ]))
+    kit, diagnostics = result.brand_kit, result.diagnostics
+    colors, pairs = kit["tokens"]["colors"], kit["constraints"]["contrast_pairs"]
+    by_band = {p["background"]: p["foreground"] for p in pairs if p["background"].startswith("surface.band.")}
+    from lumen_ingestion.colorspace import contrast_ratio
+    for band, ink in by_band.items():
+        ratio = contrast_ratio(colors[ink]["value"]["default"]["value"], colors[band]["value"]["default"]["value"])
+        assert ratio >= 4.5, (band, ink, ratio)
+    assert [d["code"] for d in diagnostics if d["code"] == "LUMI0609"] == ["LUMI0609", "LUMI0609"]
+    assert "#F5A623" in next(d["message"] for d in diagnostics if d["code"] == "LUMI0609")
+
+
+def test_s6_1_a_band_text_colour_that_reads_is_kept_as_measured() -> None:
+    result = _normalized(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        {**_section(1, "rgb(40, 36, 30)", 600), "ink": "rgb(250, 245, 230)"},
+    ]))
+    assert result.brand_kit["tokens"]["colors"]["text.band.28241e"]["value"]["default"]["value"] == "#FAF5E6"
+    assert not [d for d in result.diagnostics if d["code"] == "LUMI0609"]
