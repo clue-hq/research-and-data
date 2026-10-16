@@ -347,6 +347,8 @@ class _RunState:
     brief_excluded: list[str] = field(default_factory=list)
     #: The Exa Import holding ``excluded_domains`` once it is ready; tried once per attempt.
     import_id: str | None = None
+    #: How many rows Exa read from that Import — what it really keeps out, never what was sent.
+    import_count: int = 0
     import_tried: bool = False
     #: Companies shown with an ``unclear`` disposition.
     unclear_count: int = 0
@@ -1245,7 +1247,8 @@ class Arv2DiscoveryWorkHandler:
         """The Exa Import of every excluded domain, so websets never return those companies (spec
         2026-10-16 §4.6). Made once per attempt; waits up to ``arv2_discovery_import_wait_s`` for
         Exa to finish reading it. Anything short of ``completed`` goes on without it, counted as the
-        ``brief_import_unavailable`` guard: the domain skip at dispatch still applies."""
+        ``brief_import_unavailable`` guard: the domain skip at dispatch still applies. So does an
+        Import Exa ``completed`` having read no rows, which would exclude nothing."""
         if state.import_id is not None:
             return (state.import_id,)
         if state.import_tried or not state.excluded_domains:
@@ -1272,10 +1275,20 @@ class Arv2DiscoveryWorkHandler:
                 status = await self._hop(
                     state, lambda caller: self._clients.websets(caller).get_import(handle.import_id)
                 )
-                if status == "completed":
+                if status.status == "completed":
+                    if not status.count:
+                        log.warning(
+                            "arv2.discovery_import_empty",
+                            run_id=str(state.run.run_id),
+                            import_id=handle.import_id,
+                            sent=count,
+                            read=status.count,
+                        )
+                        break
                     state.import_id = handle.import_id
+                    state.import_count = status.count
                     return (handle.import_id,)
-                if status in ("failed", "canceled"):
+                if status.status in ("failed", "canceled"):
                     break
                 if waited >= self._settings.arv2_discovery_import_wait_s:
                     break
@@ -1829,7 +1842,7 @@ def build_summary(state: _RunState, *, failure: str | None = None) -> dict[str, 
         "excluded_by_brief_example": state.brief_excluded[0] if state.brief_excluded else None,
         # How many excluded domains the Exa Import kept out upfront: those companies never come
         # back, so this is the only trace of them the person sees (spec 2026-10-16 §4.6).
-        "import_domains": len(state.excluded_domains) if state.import_id is not None else 0,
+        "import_domains": state.import_count if state.import_id is not None else 0,
         "import_unavailable": state.import_tried and state.import_id is None,
     }
     if failure is not None:
@@ -1893,7 +1906,8 @@ def summary_message(run_id: UUID, summary: Mapping[str, Any]) -> str:
         )
     elif summary.get("import_unavailable"):
         lines.append(
-            "The Exa import of the excluded domains was not ready; they were skipped as they came."
+            "The Exa import of the excluded domains could not be used; they were skipped as they "
+            "came."
         )
     rates = [entry for entry in summary["criteria_rates"] if entry["rate"] is not None]
     if rates:

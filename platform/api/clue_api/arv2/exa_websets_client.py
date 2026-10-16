@@ -94,6 +94,7 @@ __all__ = [
     "IMPORTS_PATH",
     "ExaImportError",
     "ImportHandle",
+    "ImportStatus",
     "import_csv",
     "ITEMS_PAGE_LIMIT",
     "ITEMS_TIMEOUT_S",
@@ -145,6 +146,16 @@ class ExaImportError(RuntimeError):
 class ImportHandle:
     import_id: str
     upload_url: str
+
+
+@dataclass(frozen=True)
+class ImportStatus:
+    """An Import as Exa last described it: its ``status`` and ``count``, the rows Exa read from the
+    file (``None`` while Exa has not said). ``completed`` with ``count`` 0 is an Import that holds
+    nothing and so excludes nothing."""
+
+    status: str
+    count: int | None
 
 
 def import_csv(domains: Sequence[str]) -> bytes:
@@ -571,8 +582,10 @@ class ExaWebsetsClient:
                 "count": count,
                 "size": len(csv_bytes),
                 "title": title,
-                # The URL column, by its position (Exa's documented example uses 1).
-                "csv": {"identifier": 1},
+                # The URL column, by its position counted from 0. Exa's documented example shows 1,
+                # but 1 names a column this file does not have, and Exa then completes the Import
+                # having read none of its rows (live, 2026-10-16: 0 of 24 read at 1, 24 of 24 at 0).
+                "csv": {"identifier": 0},
             },
             estimate=SpendEstimate(),
             cost_reader=_zero_cost_reader,
@@ -608,9 +621,9 @@ class ExaWebsetsClient:
         if not 200 <= result.response.status < 300:
             raise ExaImportError(f"import upload refused: http {result.response.status}")
 
-    def get_import(self, import_id: str) -> str:
-        """The Import's status: ``pending``, ``processing``, ``completed``, ``failed`` or
-        ``canceled``."""
+    def get_import(self, import_id: str) -> ImportStatus:
+        """The Import's status (``pending``, ``processing``, ``completed``, ``failed`` or
+        ``canceled``) and how many rows Exa read from its file."""
         result = self._call(
             operation="import-get",
             label="websets-import-get",
@@ -624,7 +637,12 @@ class ExaWebsetsClient:
         refusal = _refusal(result.response)
         if refusal is not None:
             raise ExaImportError(refusal)
-        return _str(_body_json(result.response).get("status")) or "unknown"
+        body = _body_json(result.response)
+        count = body.get("count")
+        return ImportStatus(
+            status=_str(body.get("status")) or "unknown",
+            count=count if isinstance(count, int) and not isinstance(count, bool) else None,
+        )
 
     def cancel(self, webset_id: str) -> WebsetView:
         """Stop every search still running on a webset. Free; Exa marks the webset ``idle``.

@@ -27,6 +27,7 @@ from clue_api.arv2.exa_websets_client import (
     ExaImportError,
     ExaWebsetsClient,
     ImportHandle,
+    ImportStatus,
     import_csv,
     websets_halt_rule,
     websets_items_cost,
@@ -565,7 +566,9 @@ def test_an_import_is_created_as_a_company_csv_of_urls() -> None:
         "count": 2,
         "size": len(csv_bytes),
         "title": "exclusions",
-        "csv": {"identifier": 1},
+        # Exa counts CSV columns from 0: identifier 1 names a column the file does not have, and
+        # Exa then reads none of its rows (live, 2026-10-16: 0 of 24 read, against 24 of 24 at 0).
+        "csv": {"identifier": 0},
     }
 
 
@@ -584,11 +587,17 @@ def test_the_csv_is_uploaded_to_the_returned_url_without_the_api_key() -> None:
     assert "x-api-key" not in {key.lower() for key in request.headers}
 
 
-def test_an_import_status_is_read_by_id() -> None:
-    client, transport = _client([_response({"id": "import_1", "status": "completed"})])
+def test_an_import_status_is_read_by_id_with_the_rows_exa_read() -> None:
+    client, transport = _client([_response({"id": "import_1", "status": "completed", "count": 24})])
 
-    assert client.get_import("import_1") == "completed"
+    assert client.get_import("import_1") == ImportStatus(status="completed", count=24)
     assert transport.requests[0].url == f"https://api.exa.ai{IMPORTS_PATH}/import_1"
+
+
+def test_an_import_with_no_count_reads_as_none() -> None:
+    client, _ = _client([_response({"id": "import_1", "status": "processing"})])
+
+    assert client.get_import("import_1") == ImportStatus(status="processing", count=None)
 
 
 def test_a_refused_import_raises_by_name() -> None:

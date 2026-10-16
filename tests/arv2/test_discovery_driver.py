@@ -49,6 +49,7 @@ from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import ExaAnswerResult, ExaCitation
 from clue_api.arv2.exa_websets_client import (
     ImportHandle,
+    ImportStatus,
     WebsetItem,
     WebsetItemsResult,
     WebsetSearchView,
@@ -461,7 +462,7 @@ class _FakeWebsets:
         items_after_cancel: WebsetItemsResult | None = None,
         websets: Mapping[str, tuple[Sequence[WebsetView], Sequence[WebsetItemsResult]]] = {},
         found: Mapping[str, WebsetView] = {},
-        import_statuses: Sequence[str] = ("completed",),
+        import_statuses: Sequence[str | ImportStatus] = ("completed",),
     ) -> None:
         self._import_statuses = list(import_statuses)
         self._create_views = (
@@ -533,12 +534,16 @@ class _FakeWebsets:
     def upload_import(self, *, upload_url: str, csv_bytes: bytes) -> None:
         self.calls.append(("upload_import", {"upload_url": upload_url, "csv_bytes": csv_bytes}))
 
-    def get_import(self, import_id: str) -> str:
+    def get_import(self, import_id: str) -> ImportStatus:
         self.calls.append(("get_import", {"import_id": import_id}))
         status = self._import_statuses[0]
         if len(self._import_statuses) > 1:
             self._import_statuses.pop(0)
-        return status
+        if isinstance(status, ImportStatus):
+            return status
+        # A completed Import read every row it was sent unless a test says otherwise.
+        sent = self.named("create_import")[-1]["count"] if self.named("create_import") else 0
+        return ImportStatus(status=status, count=sent if status == "completed" else None)
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for call, payload in self.calls if call == name]
@@ -3034,9 +3039,61 @@ def test_an_import_still_processing_at_the_deadline_is_skipped_and_the_domain_sk
     assert ended["summary"]["import_domains"] == 0
     assert ended["summary"]["import_unavailable"] is True
     assert (
-        "The Exa import of the excluded domains was not ready; they were skipped as they came."
+        "The Exa import of the excluded domains could not be used; they were skipped as they came."
         in driver.summary_message(run.run_id, ended["summary"])
     )
+
+
+def test_a_completed_import_exa_read_no_rows_from_is_not_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live 2026-10-16: Exa marked the Import ``completed`` having read 0 of its 24 rows, the
+    search excluded nothing through it, and the summary still said it kept 24 domains out. An
+    empty Import is no exclusion: it is never attached, and the summary says so."""
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items(_item("Marriott", "https://www.marriott.com"))],
+        import_statuses=(ImportStatus(status="completed", count=0),),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create")[0]["exclude_import_ids"] == ()
+    assert [row.domain for row in _brief_excluded(store)] == ["marriott.com"]
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    assert receipt["guards"].get("brief_import_unavailable") == 1
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 0
+    assert ended["summary"]["import_unavailable"] is True
+    message = driver.summary_message(run.run_id, ended["summary"])
+    assert "kept" not in message
+    assert (
+        "The Exa import of the excluded domains could not be used; they were skipped as they came."
+        in message
+    )
+
+
+def test_the_summary_counts_the_rows_exa_read_not_the_rows_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(brief=_excluding(("Marriott", "marriott.com"), ("Nobu Hotel", "nobuhotels.com")))
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        items_results=[_items()],
+        import_statuses=(ImportStatus(status="completed", count=1),),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create_import")[0]["count"] == 2
+    assert websets.named("create")[0]["exclude_import_ids"] == ("i1",)
+    (ended,) = store.named("end_discovery_run")
+    assert ended["summary"]["import_domains"] == 1
 
 
 def test_no_exclusions_means_no_import(monkeypatch: pytest.MonkeyPatch) -> None:
