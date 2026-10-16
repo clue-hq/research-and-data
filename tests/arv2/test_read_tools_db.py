@@ -2423,3 +2423,42 @@ def test_the_excluded_list_is_bounded_and_its_total_is_the_whole_run() -> None:
             assert run.candidates == () and run.candidate_total == 0
 
     run_async(scenario())
+
+
+def test_brief_exclusions_are_served_apart_with_the_gate_exclusions() -> None:
+    """Spec 2026-10-16 §4.6: a company the brief excluded (an existing customer, or the seller) is
+    listed with the run's excluded companies, never among the candidates the human may be shown.
+    ``@3``'s schema is pinned by hash, so the entry rides only as the disposition."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            await _seed_candidate(
+                conn, project, run_id, "Alpha Health", disposition="pass", fit=0.9
+            )
+            await _seed_candidate(conn, project, run_id, "Marriott", disposition="pending")
+            await conn.execute(
+                text(
+                    "UPDATE arv2_discovery_candidate SET disposition = 'excluded_by_brief', "
+                    "excluded_by_entry = 'Marriott' WHERE run_id = :run AND name = 'Marriott'"
+                ),
+                {"run": run_id},
+            )
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=str(run_id),
+                limit=25,
+                excluded_apart=True,
+            )
+
+            assert [c.name for c in run.candidates] == ["Alpha Health"]
+            assert [(c.name, c.disposition, c.excluded_by_gate) for c in run.excluded] == [
+                ("Marriott", "excluded_by_brief", None)
+            ]
+            assert run.excluded_total == 1
+
+    run_async(scenario())
