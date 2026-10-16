@@ -3915,19 +3915,19 @@
      "font": "button.solid-7c4cff.font",
      "height": "button.solid-7c4cff.height",
      "label": "text.inverse",
-     "padding-bottom": "button.solid-7c4cff.padding-top",
-     "padding-left": "button.solid-7c4cff.padding-right",
-     "padding-right": "button.solid-7c4cff.padding-right",
-     "padding-top": "button.solid-7c4cff.padding-top",
+     "padding-bottom": "button.solid-7c4cff.padding",
+     "padding-left": "button.solid-7c4cff.padding-2",
+     "padding-right": "button.solid-7c4cff.padding-2",
+     "padding-top": "button.solid-7c4cff.padding",
      "radius": "button.solid-7c4cff.radius"
     },
     "source": "website:https://fixture.test/",
     "states": {
      "hover": {
-      "fill": "button.solid-7c4cff.hover.fill"
+      "fill": "button.solid-7c4cff.hover-pressed.fill"
      },
      "pressed": {
-      "fill": "button.solid-7c4cff.hover.fill"
+      "fill": "button.solid-7c4cff.hover-pressed.fill"
      }
     },
     "variant": "solid.7c4cff"
@@ -3977,12 +3977,12 @@
      "hover": {
       "fill": "button.shared-035a4e.fill",
       "shadow-1": "button.shared-ded46d.shadow",
-      "transform": "button.solid-28241e.hover.transform"
+      "transform": "button.solid-28241e.hover-pressed.transform"
      },
      "pressed": {
       "fill": "button.shared-023f37.fill",
       "shadow-1": "button.shared-ded46d.shadow",
-      "transform": "button.solid-28241e.hover.transform"
+      "transform": "button.solid-28241e.hover-pressed.transform"
      }
     },
     "variant": "solid.28241e"
@@ -4058,12 +4058,12 @@
      },
      "hover": {
       "fill": "button.shared-035a4e.fill",
-      "icon-transform": "button.solid-047464.hover.icon-transform",
+      "icon-transform": "button.solid-047464.hover-pressed.icon-transform",
       "shadow-1": "button.shared-ded46d.shadow"
      },
      "pressed": {
       "fill": "button.shared-023f37.fill",
-      "icon-transform": "button.solid-047464.hover.icon-transform",
+      "icon-transform": "button.solid-047464.hover-pressed.icon-transform",
       "shadow-1": "button.shared-ded46d.shadow",
       "transform": "button.shared-409803.transform"
      }
@@ -4130,11 +4130,11 @@
       "outline-width": "stroke.width.bold"
      },
      "hover": {
-      "fill": "button.solid-0a4a8a.hover.fill",
+      "fill": "button.solid-0a4a8a.hover-pressed.fill",
       "shadow-1": "button.shared-ded46d.shadow"
      },
      "pressed": {
-      "fill": "button.solid-0a4a8a.hover.fill",
+      "fill": "button.solid-0a4a8a.hover-pressed.fill",
       "shadow-1": "button.shared-ded46d.shadow",
       "transform": "button.shared-409803.transform"
      }
@@ -4172,13 +4172,13 @@
     "source": "website:https://fixture.test/",
     "states": {
      "hover": {
-      "decoration": "link.ghost-0d2b25.hover.decoration",
-      "decoration-thickness": "link.ghost-0d2b25.hover.decoration-thickness",
+      "decoration": "link.ghost-0d2b25.hover-pressed.decoration",
+      "decoration-thickness": "link.ghost-0d2b25.hover-pressed.decoration-thickness",
       "label": "text.brand"
      },
      "pressed": {
-      "decoration": "link.ghost-0d2b25.hover.decoration",
-      "decoration-thickness": "link.ghost-0d2b25.hover.decoration-thickness",
+      "decoration": "link.ghost-0d2b25.hover-pressed.decoration",
+      "decoration-thickness": "link.ghost-0d2b25.hover-pressed.decoration-thickness",
       "label": "text.brand"
      }
     },
@@ -4252,10 +4252,10 @@
     "source": "website:https://fixture.test/",
     "states": {
      "hover": {
-      "shadow-1": "card.solid-f1f0de.hover.shadow-1"
+      "shadow-1": "card.solid-f1f0de.hover-pressed.shadow-1"
      },
      "pressed": {
-      "shadow-1": "card.solid-f1f0de.hover.shadow-1"
+      "shadow-1": "card.solid-f1f0de.hover-pressed.shadow-1"
      }
     },
     "variant": "solid.f1f0de"
@@ -4555,7 +4555,7 @@
      "modes": {}
     }
    },
-   "button.solid-0a4a8a.hover.fill": {
+   "button.solid-0a4a8a.hover-pressed.fill": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -4600,7 +4600,7 @@
      "modes": {}
     }
    },
-   "button.solid-7c4cff.hover.fill": {
+   "button.solid-7c4cff.hover-pressed.fill": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -5454,7 +5454,7 @@
      "modes": {}
     }
    },
-   "link.ghost-0d2b25.hover.decoration-thickness": {
+   "link.ghost-0d2b25.hover-pressed.decoration-thickness": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6037,7 +6037,7 @@
      "modes": {}
     }
    },
-   "card.solid-f1f0de.hover.shadow-1": {
+   "card.solid-f1f0de.hover-pressed.shadow-1": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6056,23 +6056,7 @@
    }
   },
   "spacing": {
-   "button.solid-7c4cff.padding-right": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.7c4cff rest padding-right"
-    },
-    "role": "spacing",
-    "value": {
-     "default": {
-      "kind": "number",
-      "unit": "px",
-      "value": 18.0
-     },
-     "modes": {}
-    }
-   },
-   "button.solid-7c4cff.padding-top": {
+   "button.solid-7c4cff.padding": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6084,6 +6068,22 @@
       "kind": "number",
       "unit": "px",
       "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "button.solid-7c4cff.padding-2": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button solid.7c4cff rest padding-right"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 18.0
      },
      "modes": {}
     }
@@ -6690,7 +6690,7 @@
      "modes": {}
     }
    },
-   "button.solid-047464.hover.icon-transform": {
+   "button.solid-047464.hover-pressed.icon-transform": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6720,7 +6720,7 @@
      "modes": {}
     }
    },
-   "button.solid-28241e.hover.transform": {
+   "button.solid-28241e.hover-pressed.transform": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
@@ -6779,7 +6779,7 @@
      "modes": {}
     }
    },
-   "link.ghost-0d2b25.hover.decoration": {
+   "link.ghost-0d2b25.hover-pressed.decoration": {
     "description": null,
     "provenance": {
      "confidence": 0.8,

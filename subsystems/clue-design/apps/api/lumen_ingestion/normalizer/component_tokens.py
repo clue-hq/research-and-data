@@ -15,8 +15,10 @@ reveals become named motion entries. Three rules, each enforced here:
   component (a link's text is not a button's label), since its name says what it is.
 * Stable names made by code. A value one style uses is named from where it was measured:
   `button.solid-047464.fill`, `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`.
-  A value two or more styles of one component use in one kind of slot is named by that component,
-  that kind and the value: `button.shared-035a4e.fill` (a colour's hex), `button.shared-ded46d.shadow`
+  A value one style uses in several places is named after what those places share
+  (`button.solid-047464.hover-pressed.fill`, `button.solid-7c4cff.padding` for top and bottom), never
+  after whichever place asked first (S6-4). A value two or more styles of one component use in one
+  kind of slot is named by that component, that kind and the value: `button.shared-035a4e.fill` (a colour's hex), `button.shared-ded46d.shadow`
   and `motion.button.shared-b23804.duration` (any other value: six hex digits of the sha1 of its
   canonical JSON). A first pass over every style finds those values and mints nothing
   (`_shared_values`); a shared token's provenance names every style that shares it, sorted
@@ -39,11 +41,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import string
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from ..colorspace import hex_alpha
 from ..evidence import EvidencePointer, MeasuredAnimation, MeasuredReveal, MeasuredStyle, MotionEvidence, StyleLook
@@ -82,6 +86,9 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 #: A side, corner or ordinal suffix: `padding-top`, `radius-tl`, `shadow-1` and `duration-2` are the
 #: slot kinds `padding`, `radius`, `shadow` and `duration`.
 _SLOT_SUFFIX = re.compile(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$")
+#: A number as Rust's `f64::from_str` spells it (the engine's `iterations_ok`): an ASCII sign, digits
+#: with an optional point, an optional exponent; no spaces, no underscores, no other digits.
+_RUST_FLOAT = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", re.ASCII)
 #: Values a rest look carries that are no choice of the brand's; never minted at rest. A rest
 #: `text-decoration-line: none` IS a choice (the browser underlines links), so it is minted.
 _REST_DEFAULTS = {
@@ -440,6 +447,34 @@ def _state_font(rest: StyleLook, state: StyleLook, fonts: dict[str, str]) -> dic
     return _font(rest.model_copy(update=changed), fonts) if changed else None
 
 
+def _within_style_names(base: str, asked: list[tuple[str, str, str, dict]]) -> dict[str, str]:
+    """`{asked path: path to mint under}` for one style (S6-4). A value asked for in two or more places
+    of this style is named after what those places share — the states joined (`hover-pressed`,
+    omitted when all at rest), then the slot when they share it, else its kind (`padding` for
+    padding-left and padding-right) — instead of after whichever place asked first. Each entry of
+    `asked` is `(state or "", slot, group, value)`; places of one value with different kinds are
+    left alone."""
+    groups: list[tuple[str, dict, list[tuple[str, str]]]] = []
+    for state, slot, group, value in asked:
+        bucket = next((places for g, v, places in groups if g == group and _same(group, v, value)), None)
+        if bucket is None:
+            groups.append((group, value, [(state, slot)]))
+        else:
+            bucket.append((state, slot))
+    out: dict[str, str] = {}
+    for _group, _value, places in groups:
+        if len(places) < 2 or len({_slot_kind(slot) for _, slot in places}) != 1:
+            continue
+        states = [s for s in ("", *STATES) if s in {state for state, _ in places}]
+        state_part = "-".join(s or "rest" for s in states) if states != [""] else ""
+        slots = {slot for _, slot in places}
+        slot_part = slots.pop() if len(slots) == 1 else _slot_kind(places[0][1])
+        neutral = f"{base}.{state_part + '.' if state_part else ''}{slot_part}"
+        for state, slot in places:
+            out[f"{base}.{state + '.' if state else ''}{slot}"] = neutral
+    return out
+
+
 def _mint_style(m: _Minter | _Requests, style: MeasuredStyle, fonts: dict[str, str], page: str) -> dict:
     root = COMPONENT_ROOTS[style.surface]
     slug = style.variant.replace(".", "-")
@@ -449,27 +484,32 @@ def _mint_style(m: _Minter | _Requests, style: MeasuredStyle, fonts: dict[str, s
         "component": style.surface, "variant": style.variant, "count": style.count, "probed": style.probed,
         "source": f"website:{page}", "rest": {}, "states": {}, "motion": [], "icon": None, "browser_focus_ring": False,
     }
-    for slot, group, value in _slots(style.rest, at_rest=True, fonts=fonts):
-        token = m.name(f"{base}.{slot}", group, value, pointer=f"{where} rest {slot}", slot=slot)
-        if token:
-            recipe["rest"][slot] = token
+    # Everything this style asks for is listed first, so a value it uses in several places is named
+    # after all of them (`_within_style_names`), never after whichever place asked first.
+    asked: list[tuple[str, str, str, dict]] = [
+        ("", slot, group, value) for slot, group, value in _slots(style.rest, at_rest=True, fonts=fonts)
+    ]
     for state in STATES:
         look = getattr(style, state)
         if look is None:
             continue
-        if state == "focus" and look.browser_focus_ring:
-            recipe["browser_focus_ring"] = True
-        slots: dict[str, str] = {}
         pairs = [s for s in _slots(look, at_rest=False, fonts=fonts) if s[0] != "font"]
         font = _state_font(style.rest, look, fonts)
         if font:
             pairs.append(("font", "typography", font))
-        for slot, group, value in pairs:
-            token = m.name(f"{base}.{state}.{slot}", group, value, pointer=f"{where} {state} {slot}", slot=slot)
-            if token:
-                slots[slot] = token
-        if slots:
-            recipe["states"][state] = slots
+        asked.extend((state, slot, group, value) for slot, group, value in pairs)
+    names = _within_style_names(base, asked)
+    for state, slot, group, value in asked:
+        path = f"{base}.{state + '.' if state else ''}{slot}"
+        token = m.name(names.get(path, path), group, value, pointer=f"{where} {state or 'rest'} {slot}", slot=slot)
+        if not token:
+            continue
+        if state:
+            recipe["states"].setdefault(state, {})[slot] = token
+        else:
+            recipe["rest"][slot] = token
+    if style.focus is not None and style.focus.browser_focus_ring:
+        recipe["browser_focus_ring"] = True
     for index, transition in enumerate(style.transitions, 1):
         if not _PROPERTY.match(transition.property) or not easing_ok(transition.easing):
             continue
@@ -510,12 +550,15 @@ def _slug(name: str, used: set[str]) -> str:
 
 
 def _iterations_ok(value: str) -> bool:
+    """An iteration count the engine accepts (`brand.rs` `iterations_ok`): `infinite`, or a number in
+    Rust's own float spelling — finite, above 0, at most 1000 (S6-12: `float()` also accepts `1_000`,
+    padding and non-ASCII digits, which the engine refuses and which would fail the whole kit)."""
     if value == "infinite":
         return True
-    try:
-        return 0 < float(value) <= 1000
-    except ValueError:
+    if not _RUST_FLOAT.fullmatch(value):
         return False
+    number = float(value)
+    return math.isfinite(number) and 0 < number <= 1000
 
 
 def _mint_animation(m: _Minter, animation: MeasuredAnimation, used: set[str], page: str) -> str | None:
@@ -619,6 +662,16 @@ def _shared_values(styles: list[MeasuredStyle], fonts: dict[str, str], page: str
     }
 
 
+def _source_page(locator: str) -> str:
+    """The page a measurement came from, as `scheme://host/path` (S6-5): a pasted homepage address
+    with UTM or gclid parameters runs past MeasuredComponents@1's 400-character limit and would drop
+    every measured style; the query and fragment name the visit, not the page. A path still too long
+    leaves the host alone."""
+    parts = urlsplit(locator.split(" :: ", 1)[0])
+    page = urlunsplit((parts.scheme, parts.netloc, parts.path or "/", "", ""))
+    return page if len(page) <= 392 else urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+
+
 @dataclass
 class MintResult:
     #: The `measured_components` payload (validated in `lumen_ingestion.measured_components`), or None.
@@ -632,7 +685,7 @@ def mint_component_tokens(kit: dict, styles: list[MeasuredStyle], motion: Motion
     if not styles and not motion.animations and not motion.reveals and not motion.scripted:
         return MintResult(None, [], [])
     pointers = [s.pointer for s in styles] + [a.pointer for a in motion.animations] + [r.pointer for r in motion.reveals] + [n.pointer for n in motion.scripted]
-    page = pointers[0].locator.split(" :: ", 1)[0] if pointers else ""
+    page = _source_page(pointers[0].locator) if pointers else ""
     fonts = {
         str(font.get("family") or "").lower(): key
         for key, font in ((kit.get("assets") or {}).get("fonts") or {}).items()

@@ -128,11 +128,15 @@ def test_a_value_several_styles_share_is_named_by_its_value() -> None:
 def test_a_value_one_style_uses_keeps_its_own_name() -> None:
     kit, result = _mint()
     solid = _recipe(kit, result, "button", "#047464")
-    assert solid["states"]["hover"]["icon-transform"] == "button.solid-047464.hover.icon-transform"
+    # Its hover and pressed looks nudge the icon the same way, so the one token is named for both (S6-4).
+    assert solid["states"]["hover"]["icon-transform"] == solid["states"]["pressed"]["icon-transform"] \
+        == "button.solid-047464.hover-pressed.icon-transform"
     assert solid["icon"]["token"] == "button.solid-047464.icon"
-    # One style using a value in two slots of one kind still names it from where it measured it first.
+    # One style using a value in two slots of one kind names it by that kind, not by the side measured
+    # first (S6-4); its other padding value takes the next free name of that kind.
     js = _recipe(kit, result, "button", "#7C4CFF")
-    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding-top"
+    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding"
+    assert js["rest"]["padding-left"] == js["rest"]["padding-right"] == "button.solid-7c4cff.padding-2"
 
 
 def _button_styles_reversed(styles: list) -> list:
@@ -298,6 +302,21 @@ def test_a_kit_with_minted_tokens_comes_back_from_the_engine_whole() -> None:
         assert returned.get(group, {}) == kit["tokens"].get(group, {}), group
 
 
+#: The tokens an animation value names, all valid, so only its own fields decide the engine's verdict.
+_ANIMATION_PARTS = {
+    "motion.keyframes.fade": {"kind": "keyframes", "frames": [
+        {"offset": 0.0, "declarations": {"opacity": "0"}}, {"offset": 100.0, "declarations": {"opacity": "1"}},
+    ]},
+    "motion.animation.fade.duration": {"kind": "duration", "ms": 400.0},
+    "motion.animation.fade.easing": {"kind": "easing", "function": "ease-out"},
+}
+_ANIMATION = {
+    "kind": "animation", "keyframes": "motion.keyframes.fade", "duration": "motion.animation.fade.duration",
+    "easing": "motion.animation.fade.easing", "delay": None, "iterations": "1", "direction": "normal",
+    "fill_mode": "both",
+}
+
+
 @pytest.mark.parametrize(
     "value,expected",
     [
@@ -320,19 +339,29 @@ def test_a_kit_with_minted_tokens_comes_back_from_the_engine_whole() -> None:
         ({"kind": "svg", "markup": "<svg/onload=x()></svg>", "width": 12.0, "height": 12.0}, False),
         ({"kind": "svg", "markup": "<svg\nonload=x()></svg>", "width": 12.0, "height": 12.0}, False),
         ({"kind": "svg", "markup": '<svg a="1"onload="x()"></svg>', "width": 12.0, "height": 12.0}, False),
+        # S6-12: an animation's iteration count, read with the engine's own number spelling.
+        *(({**_ANIMATION, "iterations": count}, ok) for count, ok in (
+            ("1_000", False), ("\u0665", False), ("\uff15", False), ("+5", True), (".5", True), ("5.", True),
+        )),
     ],
 )
 def test_ingestion_and_the_engine_agree_on_every_style_value(value: dict, expected: bool) -> None:
+    from lumen_ingestion.normalizer.component_tokens import _iterations_ok
+
     python_ok = {
         "keyword": lambda v: keyword_ok(v["property"], v["value"]),
         "easing": lambda v: easing_ok(v["function"]),
         "transform": lambda v: transform_ok(v["value"]),
         "glyph": lambda v: glyph_ok(v["text"]),
         "svg": lambda v: svg_ok(v["markup"]),
+        "animation": lambda v: _iterations_ok(v["iterations"]),
     }[value["kind"]](value)
     assert python_ok is expected
     kit = _kit()
-    kit["tokens"]["styles"] = {"button.solid-047464.x": {"value": {"default": value, "modes": {}}, "description": None, "provenance": None}}
+    kit["tokens"]["styles"] = {
+        name: {"value": {"default": default, "modes": {}}, "description": None, "provenance": None}
+        for name, default in {**_ANIMATION_PARTS, "button.solid-047464.x": value}.items()
+    }
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     engine_ok = not any(d["severity"] == "error" and d["code"].startswith("LUMB026") for d in validation["diagnostics"])
     assert engine_ok is expected
@@ -409,3 +438,45 @@ def test_the_brief_agents_spacing_ladder_has_no_minted_tokens() -> None:
     request = build_brief_request(evidence, kit)
     assert request.spacing_ladder and not any(is_component_token(row["name"]) for row in request.spacing_ladder)
     assert any(is_component_token(row["name"]) for row in request.tokens), "the model may still name them"
+
+
+def _style(**changes):
+    from lumen_ingestion.evidence import EvidencePointer, MeasuredStyle, StyleLook
+
+    pointer = EvidencePointer(source="website", locator="https://x.test/?utm_source=a&gclid=" + "C" * 420 + " :: button solid.7c4cff")
+    rest = StyleLook(background="#7C4CFF", color="#FFFFFF", padding=[10.0, 24.0, 10.0, 24.0], radius=[8.0] * 4)
+    base = dict(surface="button", variant="solid.7c4cff", count=1, probed="pointer", rest=rest,
+                hover=StyleLook(background="#5A2FD6"), pressed=StyleLook(background="#5A2FD6"), pointer=pointer)
+    return MeasuredStyle(**{**base, **changes})
+
+
+def test_s6_4_a_value_used_twice_in_one_style_is_named_after_what_its_places_share() -> None:
+    kit = json.loads(GARNER.read_text())
+    recipe = next(r for r in mint_component_tokens(kit, [_style()], MotionEvidence()).section["styles"])
+    hover, pressed = recipe["states"]["hover"]["fill"], recipe["states"]["pressed"]["fill"]
+    assert hover == pressed == "button.solid-7c4cff.hover-pressed.fill", recipe["states"]
+    rest = recipe["rest"]
+    assert rest["padding-left"] == rest["padding-right"] and rest["padding-top"] == rest["padding-bottom"], rest
+    for slot in ("padding-left", "padding-top"):
+        assert not any(side in rest[slot] for side in ("right", "top", "bottom", "left")), rest
+
+
+def test_s6_5_a_long_tracking_address_keeps_every_measured_style() -> None:
+    from lumen_ingestion.brief import kit_token_names
+    from lumen_ingestion.measured_components import validate_measured_components
+
+    kit = json.loads(GARNER.read_text())
+    section = mint_component_tokens(kit, [_style()], MotionEvidence()).section
+    assert section["source"] == "website:https://x.test/", section["source"]
+    validate_measured_components(section, token_names=kit_token_names(kit))
+
+
+@pytest.mark.parametrize("value, ok", [
+    ("1", True), ("2.5", True), (".5", True), ("5.", True), ("1e3", True), ("infinite", True), ("+5", True),
+    ("1_000", False), ("\u0665", False), ("\uff15", False), (" 5", False), ("5 ", False), ("inf", False), ("nan", False),
+    ("0", False), ("1000.0000001", False),
+])
+def test_s6_12_iteration_counts_follow_the_engines_own_number_rule(value: str, ok: bool) -> None:
+    from lumen_ingestion.normalizer.component_tokens import _iterations_ok
+
+    assert _iterations_ok(value) is ok
