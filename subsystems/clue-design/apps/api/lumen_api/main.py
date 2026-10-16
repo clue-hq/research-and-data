@@ -2767,8 +2767,13 @@ def create_app(
         payload: RenameDocumentRequest,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        """Artifacts page (2026-09-15): rename from the library preview or the editor header."""
+        """Artifacts page (2026-09-15): rename from the library preview or the editor header.
+
+        K1-5 (founder ruling 2026-10-16): refused while a design run drives the document — a
+        rename moves the version, and a run that saves against its starting version would lose
+        its whole request to it (``_refuse_if_agent_running``)."""
         require_document(repo, document_id)
+        _refuse_if_agent_running(document_id, repo)
         written = run_design_tool(
             "design_rename_document",
             {"document_id": document_id, "title": payload.title},
@@ -8419,6 +8424,12 @@ def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
     checkpoints as it goes, so the version on the air would be whatever the agent happened to have
     written so far. Reading the publish state, unpublish and rollback stay open — they change what
     is live, not the document the agent is editing.
+
+    And the RENAME route — ``PUT /documents/{id}/title`` (K1-5, founder ruling 2026-10-16: "this
+    should not be allowed by default"), for every document kind. A rename advances the document
+    version, and a site turn saves once, at the end, only if the version has not moved since it
+    began — so a rename mid-run threw away the agent's whole request. Archiving stays open: it is a
+    library state that moves no version.
 
     And the website batch (``POST /documents/{id}/web/batch``, ``POST /web/batches/{id}/resume``):
     both refuse while the agent works on the batch's TEMPLATE (every account page would be built
