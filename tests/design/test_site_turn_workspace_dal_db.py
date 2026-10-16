@@ -28,7 +28,9 @@ SHA = "a" * 64
 
 async def _seed_ws(conn: AsyncConnection) -> str:
     ws = f"ws_test_copy_{uuid4().hex[:10]}"
-    await conn.execute(text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws})
+    await conn.execute(
+        text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws}
+    )
     return ws
 
 
@@ -42,7 +44,12 @@ async def _site_run(
 ) -> str:
     run_id = f"run_{uuid4().hex}"
     await design_runs.create_run(
-        conn, workspace_id=ws, run_id=run_id, document_id=None, kind=kind, checkpoint_thread_id=thread
+        conn,
+        workspace_id=ws,
+        run_id=run_id,
+        document_id=None,
+        kind=kind,
+        checkpoint_thread_id=thread,
     )
     claimed = await design_runs.claim_run_for_execution(
         conn,
@@ -54,7 +61,9 @@ async def _site_run(
     return run_id
 
 
-async def _put(conn: AsyncConnection, ws: str, run_id: str, *, checkpoint: str, gen: int | None) -> bool:
+async def _put(
+    conn: AsyncConnection, ws: str, run_id: str, *, checkpoint: str, gen: int | None
+) -> bool:
     return await copies.put_site_turn_workspace(
         conn,
         workspace_id=ws,
@@ -71,7 +80,8 @@ async def _checkpoint(conn: AsyncConnection, thread: str) -> None:
     """One row in each LangGraph checkpoint table for ``thread``."""
     await conn.execute(
         text(
-            "INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, checkpoint, metadata)"
+            "INSERT INTO checkpoints"
+            " (thread_id, checkpoint_ns, checkpoint_id, checkpoint, metadata)"
             " VALUES (:t, '', :c, '{}'::jsonb, '{}'::jsonb)"
         ),
         {"t": thread, "c": uuid4().hex},
@@ -134,7 +144,12 @@ def test_one_copy_per_run_overwritten_in_place_and_only_by_the_holder() -> None:
         assert await _put(conn, ws, run_id, checkpoint="cp-2", gen=2)
         row = await copies.get_site_turn_workspace(conn, workspace_id=ws, run_id=run_id)
         assert row is not None
-        assert (row["checkpoint_id"], row["files"], row["turn_state"], row["attempt_generation"]) == (
+        assert (
+            row["checkpoint_id"],
+            row["files"],
+            row["turn_state"],
+            row["attempt_generation"],
+        ) == (
             "cp-2",
             {"page.json": "{}"},
             {"rounds": 2},
@@ -170,7 +185,11 @@ def test_every_terminal_write_prunes_the_copy_and_the_runs_checkpoints() -> None
 
         fenced_complete = await prepared()
         await design_runs.set_run_result(
-            conn, workspace_id=ws, run_id=fenced_complete, status="succeeded", result=result,
+            conn,
+            workspace_id=ws,
+            run_id=fenced_complete,
+            status="succeeded",
+            result=result,
             expected_generation=1,
         )
         assert await _counts(conn, fenced_complete, fenced_complete) == empty
@@ -208,7 +227,10 @@ def test_a_running_run_and_a_session_thread_are_never_pruned() -> None:
         await _checkpoint(conn, running)
         assert not await copies.prune_site_turn_state(conn, run_id=running)
         assert await _counts(conn, running, running) == {
-            "copy": 1, "checkpoints": 1, "checkpoint_blobs": 1, "checkpoint_writes": 1
+            "copy": 1,
+            "checkpoints": 1,
+            "checkpoint_blobs": 1,
+            "checkpoint_writes": 1,
         }
 
         # A web turn's thread is its document's session: ending the run leaves it alone.
@@ -219,6 +241,10 @@ def test_a_running_run_and_a_session_thread_are_never_pruned() -> None:
             conn, workspace_id=ws, run_id=web, status="succeeded", result={}, expected_generation=1
         )
         counts = await _counts(conn, web, session)
-        assert (counts["checkpoints"], counts["checkpoint_blobs"], counts["checkpoint_writes"]) == (1, 1, 1)
+        assert (counts["checkpoints"], counts["checkpoint_blobs"], counts["checkpoint_writes"]) == (
+            1,
+            1,
+            1,
+        )
 
     _in_rolled_back_txn(body)
