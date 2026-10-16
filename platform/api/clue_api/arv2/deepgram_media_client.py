@@ -234,7 +234,10 @@ class DeepgramMediaClient:
         duration_s: int,
         expected_hash: str,
         media_url: str | None = None,
+        keyterms: tuple[str, ...] = (),
     ) -> DeepgramTranscript:
+        """``keyterms`` are names Deepgram should expect (the account, the person): nova-3 spells
+        them as given instead of as the nearest common word ("Casa" for "Kasa")."""
         if self.api_key is None or not self.api_key.get_secret_value():
             raise ValueError("CLUE_DEEPGRAM_API_KEY is required for recording transcription")
         body = json.dumps({"url": public_url(media_url)}).encode() if media_url else audio
@@ -245,7 +248,8 @@ class DeepgramMediaClient:
                 label="media.transcribe",
                 request=HttpRequest(
                     "POST",
-                    "https://api.deepgram.com/v1/listen?" + urlencode(parameters(self.language)),
+                    "https://api.deepgram.com/v1/listen?"
+                    + urlencode(parameters(self.language, keyterms), doseq=True),
                     headers={
                         "Authorization": f"Token {self.api_key.get_secret_value()}",
                         "Content-Type": "application/json" if media_url else mime,

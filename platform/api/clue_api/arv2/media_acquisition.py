@@ -390,6 +390,8 @@ async def acquire(
                 lines=sentence_lines(resolution.transcript),
             )
         elif audio is not None and prepared is not None:
+            names = (runtime.scope.account_name, runtime.scope.person_name)
+            keyterms = tuple(dict.fromkeys(n.strip() for n in names if n and n.strip()))
             transcript = await ops.call(
                 runtime,
                 op,
@@ -400,6 +402,7 @@ async def acquire(
                     duration_s=duration,
                     expected_hash=expected_hash,
                     media_url=remote_url,
+                    keyterms=keyterms,
                 ),
             )
         if transcript is None:

@@ -80,6 +80,31 @@ def test_native_wire_ledger_and_saved_raw_response(url):
     assert record.request.headers["Authorization"] != "Token secret"
 
 
+def test_keyterms_are_sent_as_separate_keyterm_parameters():
+    from datetime import UTC, datetime
+
+    from clue_spend.calls import ProviderCaller
+
+    def send(**extra):
+        wire = ScriptedTransport([HttpResponse(200, body=json.dumps(speech()).encode())])
+        client = DeepgramMediaClient(
+            ProviderCaller(
+                transport=wire,
+                raw_sink=MemoryRawSink(),
+                ledger=MemoryLedger(),
+                now=lambda: datetime.now(UTC),
+            ),
+            SecretStr("secret"),
+        )
+        client.transcribe(
+            audio=b"audio", mime="audio/mpeg", duration_s=2, expected_hash="expected", **extra
+        )
+        return parse_qs(urlsplit(wire.requests[0].url).query)
+
+    assert send(keyterms=("Kasa", "Roman Pedan"))["keyterm"] == ["Kasa", "Roman Pedan"]
+    assert "keyterm" not in send()
+
+
 @pytest.mark.parametrize("duration", [0, 2.125, 2570])
 def test_cost_uses_provider_duration_and_configured_rate(duration):
     from clue_api.arv2.deepgram_media_client import read_cost

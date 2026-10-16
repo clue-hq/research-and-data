@@ -747,6 +747,7 @@ def embeddings(count=1):
 @pytest.mark.parametrize("duration", [60, 601])
 def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
     import json
+    from urllib.parse import parse_qs, urlsplit
 
     from clue_api.arv2.media_tools import ReadMediaArgs, read_media
 
@@ -783,6 +784,9 @@ def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
             requests = [r for r in wire.requests if "/v1/listen?" in r.url]
             assert len(requests) == 1
             assert json.loads(requests[0].body) == {"url": "https://example.com/source.mp3"}
+            # The job's own names steer recognition: "Kasa", not "Casa".
+            sent = parse_qs(urlsplit(requests[0].url).query)
+            assert rt.scope.account_name and sent["keyterm"] == [rt.scope.account_name]
             seconds = (
                 await conn.execute(
                     text(
