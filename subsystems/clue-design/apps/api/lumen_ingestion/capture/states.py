@@ -308,19 +308,18 @@ ENABLE_JS = r"""
 """
 
 #: Read BEFORE the page is scrolled (rendered.py): elements that start hidden or shifted and carry
-#: motion — the candidates for an entrance reveal. Read-only; elements are re-found by child path.
+#: motion — the candidates for an entrance reveal. Read-only; each element is held in a page-side list
+#: (never the DOM) and re-found by its place in that list, so an overlay removed in between cannot
+#: shift it (S6-6).
 REVEAL_BEFORE_JS = r"""
 () => {
   const out = [];
   const body = document.body;
   if (!body) return out;
   const els = Array.from(body.querySelectorAll('*')).slice(0, 6000);
-  const pathOf = (el) => {
-    const parts = []; let node = el;
-    while (node && node !== body) { const p = node.parentElement; if (!p) return null; parts.unshift(Array.prototype.indexOf.call(p.children, node)); node = p; }
-    return parts;
-  };
   const ms = (v) => String(v).trim().endsWith('ms') ? parseFloat(v) : parseFloat(v) * 1000;
+  const held = [];
+  window[Symbol.for('lumen.reveal')] = held;
   for (const el of els) {
     if (out.length >= 24) break;
     const r = el.getBoundingClientRect();
@@ -332,9 +331,8 @@ REVEAL_BEFORE_JS = r"""
     const shifted = cs.transform !== 'none' && moving;
     if (!hidden && !shifted) continue;
     if (out.some((o) => o.el.contains(el))) continue;
-    const path = pathOf(el);
-    if (!path) continue;
-    out.push({ el, path, tag: el.tagName.toLowerCase(), opacity: parseFloat(cs.opacity), transform: cs.transform,
+    held.push(el);
+    out.push({ el, ref: held.length - 1, tag: el.tagName.toLowerCase(), opacity: parseFloat(cs.opacity), transform: cs.transform,
       classes: (el.getAttribute('class') || '').slice(0, 240) });
   }
   return out.map(({ el, ...rest }) => rest);
@@ -344,10 +342,10 @@ REVEAL_BEFORE_JS = r"""
 REVEAL_AFTER_JS = r"""
 (items) => {
 """ + _TRANSITIONS_FN + r"""
+  const held = window[Symbol.for('lumen.reveal')] || [];
   return items.map((item) => {
-    let node = document.body;
-    for (const i of item.path) { node = node && node.children[i]; }
-    if (!node) return null;
+    const node = held[item.ref];
+    if (!node || !node.isConnected) return null;
     const cs = getComputedStyle(node);
     const cls = node.getAttribute('class');
     return { tag: node.tagName.toLowerCase(), opacity: parseFloat(cs.opacity), transform: cs.transform,

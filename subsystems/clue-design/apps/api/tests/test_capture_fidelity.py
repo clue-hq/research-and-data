@@ -273,3 +273,33 @@ def test_s6_9_both_animations_of_an_element_and_a_quoted_name_are_kept(engine: s
     kept = {a.name: len(a.frames) for a in run["motion"].animations}
     assert kept.get("rise", 0) >= 2 and kept.get("float", 0) >= 2, kept
     assert kept.get("glow pulse", 0) >= 2, kept
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_s6_6_a_reveal_behind_a_removed_cookie_wall_is_read_from_its_own_element(engine: str) -> None:
+    from lumen_ingestion.capture.rendered import _harvest_page
+
+    async def harvest() -> dict:
+        if engine == "patchright":
+            from patchright.async_api import async_playwright
+        else:
+            from playwright.async_api import async_playwright
+        diagnostics: list[dict] = []
+        async with async_playwright() as pw:
+            try:
+                browser = await pw.chromium.launch(headless=True)
+            except Exception as error:  # noqa: BLE001
+                pytest.skip(f"{engine} chromium unavailable: {error}")
+            try:
+                page = await browser.new_page(viewport={"width": 1440, "height": 900})
+                await page.goto((FIXTURES / "overlay_reveal.html").as_uri())
+                result = await _harvest_page(page, diagnostics, measure_states=True)
+            finally:
+                await browser.close()
+        return {"harvest": result, "diagnostics": diagnostics}
+
+    run = asyncio.run(harvest())
+    reveals = run["harvest"]["geometry"]["states"]["reveals"]
+    assert "LUMI0530" in [d["code"] for d in run["diagnostics"]]   # the wall was removed
+    assert any(r["where"].startswith("section#rv") and r["kind"] == "css" for r in reveals), reveals
+    assert not any(r["where"].startswith("section#foot3") for r in reveals), reveals
