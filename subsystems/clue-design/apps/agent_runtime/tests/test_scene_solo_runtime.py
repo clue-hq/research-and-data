@@ -103,6 +103,8 @@ def test_solo_compiled_graph_has_no_dispatch_and_builds_only_the_active_model(
         "view", "render_preview", "inspect", "compile_dsl_block", "asset", "fetch_logo",
         "validate_binding_set", "preflight_design", "validate_creative_direction",
         "record_gap", "finalize_run", "read_file", "write_file", "edit_file", "write_todos",
+        # A follow-up's targeted edit goes through the typed edit builder, not a compile.
+        "apply_structured_edit",
     } <= names
     assert tools.fast_loop_budget is not None
     assert config.scene_reviewer_enabled is False

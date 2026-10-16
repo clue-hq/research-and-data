@@ -790,6 +790,9 @@ def create_design_deepagent(
 
         orchestrator_tools.extend([
             tools.compile_dsl_block, tools.asset, tools.search_assets, fetch_logo, tools.validate_binding_set,
+            # A follow-up's targeted edit (text, style, size, position, image placement, delete,
+            # move) goes straight through the engine's typed edit builder instead of a compile.
+            tools.apply_structured_edit,
         ])
         tools.record(
             "orchestrator", "scene_agent_topology",

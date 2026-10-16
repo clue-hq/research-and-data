@@ -48,3 +48,24 @@ def test_candidate_frame_does_not_reintroduce_delegation_or_block_discovery(tmp_
     assert "do not `ls`, `glob` or `grep` for context" not in payload
     assert "creative-direction.json" in payload
     assert "source_assets.json" in payload
+
+
+def test_solo_prompt_gives_follow_up_targeted_edits_a_short_routine():
+    """Founder target 2026-10-16: a small targeted follow-up edit finishes within 4 minutes."""
+    prompt = prompts.build_scene_solo_prompt("/run_edit/workspace")
+    routine = prompt[prompt.index("Follow-up turns."):]
+    for required in (
+        "replaces steps 1-6",
+        "Read only the skills, guides and files this request needs",
+        "do not\nrewrite or re-validate creative-direction.json",
+        "Inspect only the elements the request touches",
+        "apply_structured_edit",
+        "view('preview') once",
+        "a longer headline that now wraps\nonto two lines is the requested result",
+        "fix it once and look once more",
+        'finalize_run(status="edit_applied")',
+        "Do not write critique.json",
+        "follows the full routine above",
+        "If you genuinely cannot tell which it\nis, ask.",
+    ):
+        assert required in routine, required
