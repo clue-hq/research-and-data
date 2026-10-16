@@ -178,6 +178,7 @@ class SiteTools:
         #: The brand this turn validates with: the stored brand, the account's logos, and every
         #: image the turn generates or finds (Contract 1: a blob of this workspace).
         self.brand = turn_brand(inputs.brand, inputs.account_logos)
+        self._initial_asset_ids = frozenset(self.brand.get("assets") or {})
         #: Sections the pages may place: the workspace's, plus any written this turn.
         self.sections: dict[str, SiteSection] = dict(inputs.agent_sections)
         self._seen: Counter[str] = Counter()
@@ -222,6 +223,21 @@ class SiteTools:
         """True while the agent has not touched the site's files this request."""
 
         return self._site_files() == self._initial_files
+
+    def turn_assets(self) -> dict[str, dict]:
+        """The images this turn added to its brand (generated or found), by asset id."""
+
+        return {
+            asset_id: dict(entry)
+            for asset_id, entry in (self.brand.get("assets") or {}).items()
+            if asset_id not in self._initial_asset_ids and isinstance(entry, dict)
+        }
+
+    def turn_sections(self) -> dict[str, SiteSection]:
+        """The sections this turn wrote (a new name, or a pinned name with new code)."""
+
+        pinned = self.inputs.agent_sections
+        return {name: section for name, section in self.sections.items() if pinned.get(name) != section}
 
     def _asset_by_file(self) -> dict[str, dict]:
         return {

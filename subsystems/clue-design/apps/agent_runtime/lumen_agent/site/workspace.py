@@ -18,7 +18,9 @@ Under the session folder's `workspace/`:
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import os
 import re
 import shutil
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -39,6 +41,14 @@ REGENERATED = (
 #: pin by `write_seller_knowledge`), `work/` (one request's compaction offloads) and
 #: `large_tool_results/` (deepagents' one-request offloads of large tool results).
 SESSION_REGENERATED = frozenset({*REGENERATED, "seller", "work", "large_tool_results"})
+#: Left out of a running turn's working copy (site-turn durability, 2026-10-16): the inputs rebuilt
+#: for every request. The site files are rebuilt too, but they are the turn's work, so they travel;
+#: so do plan.md, history.md, fetched/, and the offloads the conversation may refer to later
+#: (large_tool_results/, work/conversation_history/).
+WORKING_COPY_EXCLUDED = frozenset({*REGENERATED, "seller"} - {"page.json", "pages", "shell.json"})
+#: The working copy's budget. Over it, large_tool_results/ entries are dropped oldest first.
+WORKING_COPY_MAX_BYTES = 20 * 1024 * 1024
+_SITE_FILES = ("page.json", "shell.json")
 #: The display gate's real rules (read_cited_claims@1). A research statement citing a claim held
 #: for one of these leaves the research files; one citing an unverified finding or another
 #: entity's claim stays (the spike's rule, `run_agent.py:93-94`).
@@ -318,6 +328,74 @@ def read_site_files(
         "shell": shell,
         "agent_sections": {name: sections[name].digest for name in sorted(used) if name in sections},
     }
+
+
+def collect_working_copy(workspace: Path) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """The turn's working copy: ``{relative path: text}`` for every file outside
+    :data:`WORKING_COPY_EXCLUDED`, and notes ``{"skipped": [...], "dropped": [...]}``.
+
+    Symlinks and files that are not UTF-8 text are skipped (a link names a path on this host; the
+    copy is text). Over :data:`WORKING_COPY_MAX_BYTES`, ``large_tool_results/`` entries are dropped
+    oldest first; whatever was dropped or skipped is named, never silently lost."""
+
+    files: dict[str, str] = {}
+    mtimes: dict[str, float] = {}
+    skipped: list[str] = []
+    root = Path(workspace)
+    if not root.is_dir():
+        return files, {"skipped": skipped, "dropped": []}
+    for directory, folders, names in os.walk(root, followlinks=False):
+        here = Path(directory)
+        if here == root:
+            folders[:] = [f for f in folders if f not in WORKING_COPY_EXCLUDED]
+            names = [n for n in names if n not in WORKING_COPY_EXCLUDED]
+        for folder in list(folders):
+            if (here / folder).is_symlink():
+                skipped.append((here / folder).relative_to(root).as_posix())
+                folders.remove(folder)
+        for name in sorted(names):
+            path = here / name
+            key = path.relative_to(root).as_posix()
+            if path.is_symlink() or not path.is_file():
+                skipped.append(key)
+                continue
+            try:
+                files[key] = path.read_bytes().decode("utf-8")
+            except UnicodeDecodeError:
+                skipped.append(key)
+                continue
+            mtimes[key] = path.stat().st_mtime
+    dropped: list[str] = []
+    total = sum(len(text.encode("utf-8")) for text in files.values())
+    offloads = sorted((k for k in files if k.startswith("large_tool_results/")), key=lambda k: (mtimes[k], k))
+    for key in offloads:
+        if total <= WORKING_COPY_MAX_BYTES:
+            break
+        total -= len(files.pop(key).encode("utf-8"))
+        dropped.append(key)
+    return files, {"skipped": sorted(skipped), "dropped": dropped}
+
+
+def working_copy_digest(files: Mapping[str, str]) -> str:
+    """The sha256 of a working copy's files (paths and text)."""
+
+    return hashlib.sha256(json.dumps(dict(files), sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def overlay_working_copy(workspace: Path, files: Mapping[str, str]) -> None:
+    """Lay a working copy over a freshly materialized workspace. The site files end up exactly as
+    the copy has them (a page the turn removed stays removed); every other file is written over."""
+
+    for name in _SITE_FILES:
+        (workspace / name).unlink(missing_ok=True)
+    shutil.rmtree(workspace / "pages", ignore_errors=True)
+    root = workspace.resolve()
+    for key, text in files.items():
+        target = workspace / key
+        if not target.resolve().is_relative_to(root) or Path(key).parts[0] in WORKING_COPY_EXCLUDED:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
 
 
 def _when(value: object) -> str:

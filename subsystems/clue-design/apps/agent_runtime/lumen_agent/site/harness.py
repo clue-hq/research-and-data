@@ -27,10 +27,22 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from py_lumen_obs import get_logger
+
 from ..config import AgentRuntimeConfig
-from .inputs import SiteTurnInputs
+from .inputs import SiteSection, SiteTurnInputs
 from .tools import SiteTools, site_tool_set
-from .workspace import SITE_DIR, materialize_workspace, read_site_files
+from .workspace import (
+    SITE_DIR,
+    collect_working_copy,
+    materialize_workspace,
+    overlay_working_copy,
+    read_site_files,
+    record_component,
+    working_copy_digest,
+)
+
+logger = get_logger("lumen_agent.site.harness")
 
 #: Context clearing starts only once a session passes this many tokens (founder, 2026-10-08).
 CLEAR_FROM_TOKENS = 60_000
@@ -275,6 +287,17 @@ class TurnLimits(AgentMiddleware):
         self.rounds += 1
         return None
 
+    def seconds_used(self) -> float:
+        return self._clock() - self.started
+
+    def carry_over(self, *, rounds: int, seconds_used: float, stop_reason: str | None) -> None:
+        """A taken-over turn keeps the rounds and time its earlier attempts used (founder point d):
+        repeated takeovers can never buy it a fresh 100 rounds or 30 minutes."""
+
+        self.rounds = int(rounds)
+        self.started = self._clock() - float(seconds_used)
+        self.stop_reason = stop_reason
+
 
 class RoundShape(AgentMiddleware):
     """At most ``limit`` tool calls of one response run; the rest are refused, each with a result
@@ -381,6 +404,128 @@ def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = Tru
     return _base_prompt(workspace, live=live).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
 
 
+# --- the working copy (site-turn durability, 2026-10-16) -----------------------------------------
+#
+# A running turn keeps ONE working copy, overwritten in place: the text of its editable files and
+# the in-memory state a takeover must not lose, stamped with the conversation checkpoint they match.
+# A worker that dies mid-turn is taken over by another that lays the copy over a folder rebuilt
+# from the stored site and resumes the conversation from that checkpoint, so nothing finished is
+# redone (docs/superpowers/plans/2026-10-16-site-turn-durability.md §2.1).
+
+#: ``sink(checkpoint_id, files, turn_state, files_sha256)``: the executor's port to the copy's row.
+WorkingCopySink = Callable[[str, dict, dict, str], Any]
+
+
+@dataclass(frozen=True)
+class SiteTurnResume:
+    """A taken-over turn's starting point: the working copy's checkpoint, files and turn state."""
+
+    checkpoint_id: str
+    files: dict
+    turn_state: dict
+
+
+def capture_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuard, notes: dict) -> dict:
+    """What a takeover must restore that the files do not hold."""
+
+    return {
+        "schema_version": 1,
+        "sections": {
+            name: {"digest": s.digest, "props_schema": s.props_schema, "module_js": s.module_js, "css": s.css}
+            for name, s in tools.turn_sections().items()
+        },
+        "assets": tools.turn_assets(),
+        "rounds": limits.rounds,
+        "seconds_used": limits.seconds_used(),
+        "stop_reason": limits.stop_reason,
+        "finish": {"status": guard.status, "reminders": list(guard.reminders), "errors": list(guard.errors)},
+        "skipped_files": list(notes.get("skipped") or []),
+        "dropped_files": list(notes.get("dropped") or []),
+    }
+
+
+def restore_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuard, state: dict) -> None:
+    """Put a working copy's turn state back: the turn's sections (over any older pinned digest of
+    the same name, and back in catalog/seller-components.md), its images, its round and time
+    counters, and the finish guard's reminders."""
+
+    for name, section in (state.get("sections") or {}).items():
+        tools.sections[name] = SiteSection(
+            name=name, digest=section["digest"], props_schema=section["props_schema"],
+            module_js=section["module_js"], css=section["css"],
+        )
+        record_component(tools.workspace, name, section["props_schema"])
+    tools.brand.setdefault("assets", {}).update(state.get("assets") or {})
+    limits.carry_over(
+        rounds=int(state.get("rounds") or 0),
+        seconds_used=float(state.get("seconds_used") or 0.0),
+        stop_reason=state.get("stop_reason"),
+    )
+    finish = state.get("finish") or {}
+    guard.status = finish.get("status") or "running"
+    guard.reminders = list(finish.get("reminders") or [])
+    guard.errors = list(finish.get("errors") or [])
+
+
+class WorkingCopy(AgentMiddleware):
+    """First in the middleware list. Before each model call (the previous round's tools are done
+    and its checkpoint, under ``durability="sync"``, committed) it writes the working copy when
+    the files or the turn's sections and images changed; after the agent's answer it stamps the
+    final copy, so a takeover after the last step makes no model call at all.
+
+    A sink that fails is logged and retried at the next round: the turn goes on, its copy one round
+    older. Anything that is not an ``Exception`` (a dying worker) is never caught here."""
+
+    def __init__(self, tools: SiteTools, sink: WorkingCopySink) -> None:
+        super().__init__()
+        self.site_tools = tools
+        self.sink = sink
+        self.turn_limits: TurnLimits | None = None
+        self.guard: FinishGuard | None = None
+        self._written: tuple[str, str] | None = None
+
+    def bind(self, *, turn_limits: "TurnLimits", guard: FinishGuard) -> None:
+        self.turn_limits, self.guard = turn_limits, guard
+
+    def _capture(self) -> tuple[dict, dict, str, tuple[str, str]]:
+        files, notes = collect_working_copy(self.site_tools.workspace)
+        state = capture_turn_state(self.site_tools, self.turn_limits, self.guard, notes)
+        files_sha = working_copy_digest(files)
+        turn = json.dumps({"sections": state["sections"], "assets": state["assets"]}, sort_keys=True)
+        return files, state, files_sha, (files_sha, turn)
+
+    def prime(self) -> None:
+        """Take the workspace as it stands (the start of the turn, or the restored copy) as the
+        last copy written, so the first round writes nothing unless something changed."""
+
+        self._written = self._capture()[3]
+
+    def _write(self, runtime: Any, *, always: bool) -> None:
+        files, state, files_sha, key = self._capture()
+        if key == self._written and not always:
+            return
+        info = getattr(runtime, "execution_info", None)
+        checkpoint_id = getattr(info, "checkpoint_id", None)
+        if not checkpoint_id:
+            return
+        try:
+            self.sink(checkpoint_id, files, state, files_sha)
+        except Exception:  # noqa: BLE001 - a lost copy costs a redone round, never the turn
+            logger.warning("site_turn.working_copy_write_failed", checkpoint_id=checkpoint_id, exc_info=True)
+            return
+        if state["dropped_files"]:
+            logger.warning("site_turn.working_copy_dropped_offloads", dropped=len(state["dropped_files"]))
+        self._written = key
+
+    def before_model(self, state, runtime):
+        self._write(runtime, always=False)
+        return None
+
+    def after_agent(self, state, runtime):
+        self._write(runtime, always=True)
+        return None
+
+
 def build_site_agent(
     tools: SiteTools,
     *,
@@ -391,8 +536,9 @@ def build_site_agent(
     compaction: Any = None,
     allow_new_sections: bool = True,
     live: bool = False,
+    working_copy: WorkingCopy | None = None,
 ):
-    """Returns ``(agent, finish_guard, turn_limits)``."""
+    """Returns ``(agent, finish_guard, turn_limits)``. ``working_copy`` goes first in the list."""
 
     from clue_agents import compaction_config
     from clue_agents.compaction import build_compaction_middleware
@@ -412,7 +558,10 @@ def build_site_agent(
     summariser, compact_tool = build_compaction_middleware(
         model, backend, compaction or compaction_config.compaction_for(model_id), history_under_work=True
     )
+    if working_copy is not None:
+        working_copy.bind(turn_limits=turn_limits, guard=guard)
     middleware = [
+        *([working_copy] if working_copy is not None else []),
         FilesystemMiddleware(
             backend=backend,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
@@ -476,11 +625,20 @@ def run_site_turn(
     event_sink: Any = None,
     limits: TurnLimitsConfig = TurnLimitsConfig(),
     model: Any = None,
+    resume: SiteTurnResume | None = None,
+    working_copy_sink: WorkingCopySink | None = None,
 ) -> SiteTurnResult:
     """Write the workspace, run one request, and read the site back. Never raises.
 
     ``model`` is a test seam; production builds the orchestrator model through ``_instrument``
     with the run's cancellation probe attached.
+
+    Site-turn durability (2026-10-16): the graph runs with ``durability="sync"``. With
+    ``working_copy_sink`` the turn keeps its working copy (:class:`WorkingCopy`). With ``resume``
+    (a taken-over turn) the copy's files are laid over the freshly built workspace AFTER the
+    tools take the stored site as their baseline, its turn state is restored, and the
+    conversation resumes from the copy's checkpoint. Without ``resume``, a thread that already
+    carries this run is refused rather than resumed at its latest checkpoint.
     """
 
     from ..cancellation import CANCELLED_STOP_REASON, TurnCancelled
@@ -491,14 +649,23 @@ def run_site_turn(
     tools: SiteTools | None = None
     try:
         materialize_workspace(workspace, inputs, site=site)
+        # The baseline of "did this turn change anything" is the STORED site, taken before any
+        # working copy is laid over the folder.
         tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, event_sink=event_sink)
+        if resume is not None:
+            overlay_working_copy(workspace, resume.files)
         if model is None:
             cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
             model = _instrument(config, tools, config.orchestrator_model, "site", **cancel_kwargs)
+        working_copy = WorkingCopy(tools, working_copy_sink) if working_copy_sink is not None else None
         agent, guard, turn_limits = build_site_agent(
             tools, model=model, model_id=config.orchestrator_model, checkpointer=checkpointer, limits=limits,
-            live=inputs.live_sites,
+            live=inputs.live_sites, working_copy=working_copy,
         )
+        if resume is not None:
+            restore_turn_state(tools, turn_limits, guard, resume.turn_state)
+        if working_copy is not None:
+            working_copy.prime()
         collector, handlers = turn_collector(callbacks)
     except Exception as error:  # noqa: BLE001 - a setup failure is the same honest crash, before any model call
         detail = f"{type(error).__name__}: {error}"[:500]
@@ -521,6 +688,8 @@ def run_site_turn(
         state = invoke_turn_graph(
             agent, initial, invoke_config=invoke_config, checkpointer=checkpointer,
             thread_id=thread_id, run_id=run_id,
+            resume_checkpoint_id=resume.checkpoint_id if resume is not None else None,
+            resume_latest=False, durability="sync",
         )
     except TurnCancelled:
         tools._record("cancelled")

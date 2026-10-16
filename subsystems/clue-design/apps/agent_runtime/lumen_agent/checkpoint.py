@@ -8,6 +8,12 @@ user message) resumes from the last checkpoint with input ``None``. ``PatchToolC
 (deepagents, installed on both graphs) repairs a dangling tool call left by an interrupted attempt.
 The tool substrate is reconstructible now: the scene is reloaded from the document at turn start
 and per-turn files live under the session folder's ``turns/<run_id>``.
+
+The site harness (site-turn durability, 2026-10-16) never resumes the LATEST checkpoint: its
+folder is rebuilt from the stored site, so a conversation that had already edited files would
+continue over a folder that no longer holds those edits (finding K4-1). It resumes from the
+checkpoint its working copy was stamped with (``resume_checkpoint_id``), whose files it has laid
+back first, and otherwise refuses a thread that already carries this run (``resume_latest=False``).
 """
 
 from __future__ import annotations
@@ -29,6 +35,9 @@ def invoke_turn_graph(
     checkpointer: Any = None,
     thread_id: str | None = None,
     run_id: str | None = None,
+    resume_checkpoint_id: str | None = None,
+    resume_latest: bool = True,
+    durability: str | None = None,
 ) -> Any:
     """Invoke a compiled turn graph on its thread: fresh, continued, or resumed.
 
@@ -40,18 +49,40 @@ def invoke_turn_graph(
     a checkpointer that cannot report its own state must not be able to fail a turn that would
     otherwise run, so the lookup is best-effort and logged, and an unreadable thread is treated
     as fresh.
+
+    ``resume_checkpoint_id`` resumes the thread from that exact checkpoint with input ``None``
+    (the site harness's working copy names it). ``resume_latest=False`` refuses, with a
+    ``RuntimeError``, a thread whose newest user message already carries ``run_id``: resuming its
+    latest checkpoint is only safe for a caller whose files do not depend on it. ``durability`` is
+    passed to the graph (``"sync"``: each step's checkpoint is committed before the next starts).
     """
+    extra = {} if durability is None else {"durability": durability}
     if checkpointer is None or thread_id is None:
-        return agent.invoke(initial_state, config=invoke_config)
+        return agent.invoke(initial_state, config=invoke_config, **extra)
+
+    if resume_checkpoint_id is not None:
+        logger.info(
+            "turn.checkpoint_resume_at", thread_id=thread_id, run_id=run_id, checkpoint_id=resume_checkpoint_id
+        )
+        config = {
+            **invoke_config,
+            "configurable": {**invoke_config.get("configurable", {}), "checkpoint_id": resume_checkpoint_id},
+        }
+        return agent.invoke(None, config=config, **extra)
 
     last_run = _last_user_run_id(agent, invoke_config, thread_id)
     if last_run is None:
-        return agent.invoke(initial_state, config=invoke_config)
+        return agent.invoke(initial_state, config=invoke_config, **extra)
     if run_id is not None and last_run == run_id:
+        if not resume_latest:
+            raise RuntimeError(
+                f"thread {thread_id} already carries run {run_id} but no checkpoint to resume from was named; "
+                "resuming its latest checkpoint over a rebuilt folder would lose its file work"
+            )
         logger.info("turn.checkpoint_resume", thread_id=thread_id, run_id=run_id)
-        return agent.invoke(None, config=invoke_config)
+        return agent.invoke(None, config=invoke_config, **extra)
     logger.info("turn.checkpoint_continue", thread_id=thread_id, run_id=run_id, after_run=last_run)
-    return agent.invoke(initial_state, config=invoke_config)
+    return agent.invoke(initial_state, config=invoke_config, **extra)
 
 
 def _last_user_run_id(agent: Any, invoke_config: dict, thread_id: str) -> str | None:
