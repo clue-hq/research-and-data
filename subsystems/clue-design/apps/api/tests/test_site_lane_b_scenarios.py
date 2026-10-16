@@ -182,6 +182,40 @@ def _agent_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.fixture(autouse=True)
+def _no_run_left_open(monkeypatch: pytest.MonkeyPatch):
+    """Every design run a test here creates is terminal when the test ends, whatever its outcome.
+
+    Many scenarios end with a run deliberately still ``running`` or ``queued`` (a takeover not yet
+    completed, a fenced attempt, a drained turn). The fleet reaper sweeps the WHOLE database, so a
+    later test's reaper pass would re-offer such a run — with a queued ``design_job`` task that
+    another suite's fleet worker then claims instead of its own (site-turn durability fix pass, F4).
+    So the runs are recorded as they are made and failed at teardown through the DAL's own terminal
+    write (which also prunes their working copies and checkpoints), and any live fleet task for
+    them is removed. A run the test already finished is left exactly as it is."""
+    from clue_design import runs as design_runs
+    from sqlalchemy import text
+
+    created: list[tuple[str, Any]] = []
+    real_create_run = HybridRepository.create_run
+
+    def recording_create_run(self, run_id, *args, **kwargs):
+        row = real_create_run(self, run_id, *args, **kwargs)
+        created.append((self.workspace_id, design_runs.work_id_for_run(run_id)))
+        return row
+
+    monkeypatch.setattr(HybridRepository, "create_run", recording_create_run)
+    yield
+    closed = {"status": "failed", "error": {"code": "test.teardown", "message": "closed by the test's teardown"}}
+    for workspace_id, work_id in created:
+        async def close(conn, work_id=work_id):
+            await design_runs.fail_dispatched_run(conn, work_id=work_id, result=closed)
+            await conn.execute(text("DELETE FROM fleet_task WHERE work_id = :w AND status IN ('queued', 'claimed')"),
+                               {"w": work_id})
+
+        HybridRepository(workspace_id=workspace_id)._bridge._run(close)
+
+
 @pytest.fixture()
 def client(tmp_path: Path, design_storage) -> TestClient:
     ensure_site_kit_dist()

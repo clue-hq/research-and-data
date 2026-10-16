@@ -38,6 +38,7 @@ from test_site_lane_b_scenarios import (  # noqa: F401 - fixtures are used by na
     Garner,
     ModelSeam,
     _agent_root,
+    _no_run_left_open,
     another_disk,
     call,
     checkpoint_rows,
