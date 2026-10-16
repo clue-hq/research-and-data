@@ -250,8 +250,27 @@ def test_s6_11_each_stylesheet_is_parsed_once_whatever_the_number_of_animations(
 @pytest.mark.parametrize("raw, name", [
     ('"glow pulse"', "glow pulse"), ("'glow pulse'", "glow pulse"), ("glow\\ pulse", "glow pulse"),
     ("fade\\31 ", "fade1"), ("spin", "spin"),
+    ("a\\0 b", "a\ufffdb"), ("a\\d800 b", "a\ufffdb"), ("a\\110000 b", "a\ufffdb"),
 ])
 def test_s6_9_a_keyframes_name_is_read_as_the_cascade_means_it(raw: str, name: str) -> None:
     from lumen_ingestion.capture.motion import css_name
 
     assert css_name(raw) == name
+
+
+@pytest.mark.parametrize("raw", ["a\\0 b", "a\\d800 b", "a\\110000 b", "a\x00b", "a\ud800b", '"a\x00b"'])
+def test_s6_9_a_keyframes_name_always_encodes(raw: str) -> None:
+    from lumen_ingestion.capture.motion import css_name
+
+    encoded = css_name(raw).encode("utf-8")
+    assert b"\x00" not in encoded
+
+
+def test_s6_9_a_hostile_animation_name_cannot_fail_its_own_ingestion() -> None:
+    from lumen_ingestion.capture.geometry import measured_motion
+
+    motion = measured_motion({"animations": [{"name": "x\\0 y", "duration": "1s"}]}, "https://x.test/")
+    assert len(motion.animations) == 1
+    encoded = motion.animations[0].name.encode("utf-8")
+    assert b"\x00" not in encoded
+    assert motion.model_dump_json().encode("utf-8")

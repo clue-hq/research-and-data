@@ -59,16 +59,28 @@ _SVG_GEOMETRY = {
 
 
 _CSS_ESCAPE = re.compile(r"\\(?:([0-9a-fA-F]{1,6})[ \t\n]?|(.))", re.DOTALL)
+#: What text storage refuses: a NUL (Postgres text/jsonb) and a lone surrogate (UTF-8, JSON).
+_UNENCODABLE = re.compile("[\x00\ud800-\udfff]")
+
+
+def _code_point(digits: str) -> str:
+    """A hex escape's character; U+FFFD for 0, a surrogate or one past U+10FFFF, as CSS reads it."""
+    value = int(digits, 16)
+    return "\ufffd" if value == 0 or 0xD800 <= value <= 0xDFFF or value > 0x10FFFF else chr(value)
 
 
 def css_name(raw: str) -> str:
     """A keyframes name as the cascade means it (S6-9): the quotes off a name written as a CSS string
     (`"glow pulse"`), the escapes resolved in one written as an identifier — Chromium reports a
-    string-named animation as `glow\\ pulse`."""
+    string-named animation as `glow\\ pulse`. The name is the page's to choose, so anything text
+    storage refuses (a NUL, a lone surrogate) comes out as U+FFFD: a hostile name cannot fail the
+    capture that holds it."""
     text = str(raw or "").strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
-        return text[1:-1]
-    return _CSS_ESCAPE.sub(lambda m: chr(min(int(m.group(1), 16), 0x10FFFF)) if m.group(1) else m.group(2), text)
+        name = text[1:-1]
+    else:
+        name = _CSS_ESCAPE.sub(lambda m: _code_point(m.group(1)) if m.group(1) else m.group(2), text)
+    return _UNENCODABLE.sub("\ufffd", name)
 
 
 def safe_style_value(value: str) -> bool:
