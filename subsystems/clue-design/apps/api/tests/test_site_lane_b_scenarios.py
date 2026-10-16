@@ -1688,3 +1688,346 @@ def test_i_e_a_takeover_after_the_save_landed_never_makes_a_second_version(
     assert len(store.list_envelopes(document_id)) == 1
     history = (session_folder(_agent_root, store.workspace_id, document_id) / "workspace" / "history.md").read_text()
     assert "- Saved: no, an earlier attempt of this request already saved version 1\n" in history
+
+
+# =================================================================================================
+# J. A turn taken over after its worker dies continues from its working copy (site-turn
+#    durability, Task 3, 2026-10-16).
+#
+# Each attempt runs through the REAL executor with the REAL Postgres checkpointer
+# (``postgres_design_checkpointer``, the one the fleet composes) and holds the run the way the
+# fleet does (section I's real lease + claim). A worker's death is ``WorkerDied``, a BaseException
+# no ``except Exception`` in the turn can swallow. The takeover runs on ANOTHER disk: the session
+# folder the dead attempt used is deleted first.
+# =================================================================================================
+
+CTA_A = "Request SCSD's free analysis, attempt A"
+
+
+class WorkerDied(BaseException):
+    """The worker process died here."""
+
+
+def die() -> None:
+    raise WorkerDied()
+
+
+def durable_attempt(app: Any, store: HybridRepository, envelope: Any, *, worker_id: str, generation: int) -> Turn:
+    """One attempt through the real executor on the real Postgres checkpointer, as the fleet runs it."""
+    from lumen_api.fleet_handler import postgres_design_checkpointer
+    from lumen_api.main import execute_site_turn_job
+
+    events: list = []
+    with postgres_design_checkpointer(envelope.run_id) as saver:
+        status, response, event_type, event_data = execute_site_turn_job(
+            envelope, store=store, host=turn_host(app), event_sink=lambda kind, data: events.append((kind, data)),
+            checkpointer=saver, lease_generation=generation, lease_worker_id=worker_id,
+        )
+    return Turn(envelope.run_id, status, response, events, {}, (event_type, event_data))
+
+
+def dies(app: Any, store: HybridRepository, envelope: Any, *, worker_id: str, generation: int) -> None:
+    with pytest.raises(WorkerDied):
+        durable_attempt(app, store, envelope, worker_id=worker_id, generation=generation)
+
+
+def another_disk(agent_root: Path, store: HybridRepository, document_id: str) -> None:
+    """The takeover's worker has none of the dead worker's local files."""
+    shutil.rmtree(session_folder(agent_root, store.workspace_id, document_id), ignore_errors=True)
+
+
+def checkpoint_rows(run_id: str) -> int:
+    (row,) = query("SELECT count(*) AS n FROM checkpoints WHERE thread_id = :r", {"r": run_id})
+    return int(row["n"])
+
+
+def finish(store: HybridRepository, turn: Turn, generation: int) -> None:
+    store.complete_run(turn.run_id, turn.status, turn.response, *turn.terminal, expected_generation=generation)
+
+
+def tool_results_in(messages: list) -> set[str]:
+    return {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+
+
+def test_j_a_dies_right_before_the_save_and_the_takeover_saves_what_it_built(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The K4-1 probe. A builds the page and dies at its save. B, on another disk, restores A's
+    files and the conversation at A's last step: it makes no model call and saves A's page."""
+    from lumen_api.toolbelt.wiring import DesignToolInvocations
+
+    real_invoke = DesignToolInvocations.invoke
+    deaths: list = []
+
+    def die_at_the_first_save(self, name, body, **kwargs):
+        if name == "design_write_site" and not deaths:
+            deaths.append(body["attempt"])
+            die()
+        return real_invoke(self, name, body, **kwargs)
+
+    monkeypatch.setattr(DesignToolInvocations, "invoke", die_at_the_first_save)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    a = model.next(*proof_edit(born, PROOF_A, 1))
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert len(a.seen) == 2 and deaths and deaths[0]["lease_generation"] == generation_a
+    copy = store.get_site_turn_workspace(envelope.run_id)
+    assert copy is not None and PROOF_A in copy["files"]["page.json"] and copy["attempt_generation"] == generation_a
+    assert store.require_document(document_id)["current_version"] == 0
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next()
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert b.seen == [], "the takeover asked the model again for finished work"
+    assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response
+    assert turn.response["summary"] == f"The proof heading now reads {PROOF_A!r}."
+    assert store.require_document(document_id)["scene"] == with_heading(born, "/", "proof", PROOF_A)
+    assert saves(turn) == [("site_document_saved", {"document_id": document_id, "version": 1})]
+
+    finish(store, turn, generation_b)
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+
+
+def test_j_b_dies_mid_turn_and_the_takeover_does_not_rebuild_its_pages(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """A edits two pages (one round each) and dies before its third model call. B continues: its
+    first call already holds both edits, it only validates and answers, and the save has both. The
+    round and time counters carry over."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    a = model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/", "proof", PROOF_A, 1)]),
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/analysis", "cta", CTA_A, 2)]),
+        AIMessage(content="", tool_calls=[call("validate_page", {}, 3)]),
+        AIMessage(content="never reached"),
+        hooks={2: die},
+    )
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert len(a.seen) == 3
+    copy_a = store.get_site_turn_workspace(envelope.run_id)
+    assert copy_a["turn_state"]["rounds"] == 2
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next(AIMessage(content="", tool_calls=[call("validate_page", {}, 13)]),
+                   AIMessage(content="Both headings are updated."))
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert len(b.seen) == 2
+    assert {"call_1", "call_2"} <= tool_results_in(b.seen[0])
+    assert b.text_of("call_13") == "VALID."
+    assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response
+    both = with_heading(with_heading(born, "/", "proof", PROOF_A), "/analysis", "cta", CTA_A)
+    assert store.require_document(document_id)["scene"] == both
+    # A used rounds 1-2; B's are rounds 3 and 4, not a fresh 1 and 2.
+    copy_b = store.get_site_turn_workspace(envelope.run_id)
+    assert copy_b["turn_state"]["rounds"] == 4
+    assert copy_b["turn_state"]["seconds_used"] >= copy_a["turn_state"]["seconds_used"]
+    assert copy_b["attempt_generation"] == generation_b
+
+    finish(store, turn, generation_b)
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+
+
+def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A's round-2 checkpoint is committed but A dies while writing the copy that matches it. B
+    resumes from the copy before it: round 1 stands, only round 2 is asked again."""
+    real_put = HybridRepository.put_site_turn_workspace
+    writes: list = []
+
+    def die_on_the_second_copy(self, run_id, **kwargs):
+        writes.append(kwargs["checkpoint_id"])
+        if len(writes) == 2:
+            die()
+        return real_put(self, run_id, **kwargs)
+
+    monkeypatch.setattr(HybridRepository, "put_site_turn_workspace", die_on_the_second_copy)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    a = model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/", "proof", PROOF_A, 1)]),
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/analysis", "cta", CTA_A, 2)]),
+        AIMessage(content="never reached"),
+    )
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert len(a.seen) == 2 and len(writes) == 2
+    copy = store.get_site_turn_workspace(envelope.run_id)
+    assert copy["checkpoint_id"] == writes[0] and CTA_A not in copy["files"]["pages/analysis.json"]
+    monkeypatch.setattr(HybridRepository, "put_site_turn_workspace", real_put)
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/analysis", "cta", CTA_A, 12),
+                                          call("validate_page", {}, 13)]),
+        AIMessage(content="Both headings are updated."),
+    )
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    seen = tool_results_in(b.seen[0])
+    assert "call_1" in seen and "call_2" not in seen  # round 1 kept, round 2 redone
+    assert len(b.seen) == 2 and b.text_of("call_13") == "VALID."
+    assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response
+    assert store.require_document(document_id)["scene"] == with_heading(
+        with_heading(born, "/", "proof", PROOF_A), "/analysis", "cta", CTA_A)
+
+
+def test_j_d_no_copy_yet_restarts_from_the_top_and_the_site_is_saved(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dies in its first round, after its edit landed in its folder: no copy was written yet, but
+    its conversation has checkpoints. Resuming them over a folder rebuilt from the stored site would
+    lose the edit (the turn would end "unchanged"). B instead drops them and starts the turn from
+    the top, so the request's edit is made again and saved."""
+    from lumen_agent.site.tools import SiteTools
+
+    real_validate = SiteTools.validate_page
+    died: list = []
+
+    def die_once(self):
+        if not died:
+            died.append(True)
+            die()
+        return real_validate(self)
+
+    monkeypatch.setattr(SiteTools, "validate_page", die_once)
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    model.next(*proof_edit(born, PROOF_A, 1))
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert store.get_site_turn_workspace(envelope.run_id) is None
+    assert checkpoint_rows(envelope.run_id) > 0
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next(*proof_edit(born, PROOF_A, 11))
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    first = b.seen[0]
+    assert not tool_results_in(first) and not [m for m in first if isinstance(m, AIMessage)]
+    assert sum(isinstance(m, HumanMessage) for m in first) == 1
+    assert turn.status == "succeeded" and turn.response["outcome"] == "saved", turn.response
+    assert store.require_document(document_id)["scene"] == with_heading(born, "/", "proof", PROOF_A)
+
+
+@needs_chromium
+def test_j_e_a_section_written_and_an_image_generated_before_the_death_survive_it(
+        client: TestClient, model: ModelSeam, garner: Garner, workspace_id: str, _agent_root: Path,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The site pins QuoteBand at an older digest. A rewrites QuoteBand (a new digest) and generates
+    an image, places the image, and dies. B validates and saves: the image is one of the turn's own
+    (validation passes) and the saved site pins the NEW QuoteBand, not the pinned old one."""
+    import lumen_api.site_turn_ports as ports
+
+    old_js, old_source, old_css = quote_module(uuid4().hex)
+    old_digest = record_section(client, workspace_id, "QuoteBand", old_js, old_source, old_css).references["digest"]
+    new_js, new_source, new_css = quote_module(uuid4().hex)
+    # The section toolchain's TypeScript/Tailwind half is replaced by its known output; the governed
+    # record (the hardened page reading the schema) stays real.
+    monkeypatch.setattr(ports, "compile_section_source", lambda **kwargs: {"ok": True, "moduleJs": new_js})
+    monkeypatch.setattr(ports, "compile_tailwind_css", lambda *args, **kwargs: new_css)
+    fake_image_provider(monkeypatch)
+
+    store = HybridRepository()
+    document_id = f"site_fence_{uuid4().hex[:10]}"
+    site = garner.site(document_id)
+    quote = {"type": "QuoteBand", "props": {"id": "quote", "surface": "page", "quote": "Fewer surprises for SCSD."}}
+    site["pages"]["/"]["content"].insert(0, quote)
+    site["agent_sections"] = {"QuoteBand": old_digest}
+    born = store_site(site)["scene"]
+    envelope = envelope_for(document_id, store.workspace_id, "Rework the quote band and give the review a photo.")
+    open_run(store, envelope, claim=False)
+    generation_a = hold_run(store, envelope, "worker-a")
+    after_image = next(item["props"]["image"] for item in born["pages"]["/analysis"]["content"]
+                       if item["props"]["id"] == "after")
+    holder: dict = {}
+
+    def steps():
+        yield AIMessage(content="", tool_calls=[
+            call("write_section", {"name": "QuoteBand", "code": new_source}, 1),
+            call("generate_image", {"prompt": "An HR team at work", "aspect_ratio": "4:3"}, 2),
+        ])
+        holder["file"] = generated_file(holder["a"], "call_2")
+        yield AIMessage(content="", tool_calls=[call("edit_file", {
+            "file_path": "/pages/analysis.json", "old_string": json.dumps(after_image),
+            "new_string": json.dumps(holder["file"])}, 3)])
+        yield AIMessage(content="never reached")
+
+    holder["a"] = a = Script(messages=steps(), hooks={2: die})
+    model.scripts.append(a)
+    dies(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    assert a.text_of("call_1").startswith("WRITTEN"), a.text_of("call_1")
+    new_digest = store.get_site_turn_workspace(envelope.run_id)["turn_state"]["sections"]["QuoteBand"]["digest"]
+    assert new_digest != old_digest
+
+    another_disk(_agent_root, store, document_id)
+    generation_b = take_over(store, envelope, "worker-b")
+    b = model.next(AIMessage(content="", tool_calls=[call("validate_page", {}, 14)]),
+                   AIMessage(content="The quote band is reworked and the review has its photo."))
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-b", generation=generation_b)
+    assert b.text_of("call_14") == "VALID.", b.text_of("call_14")
+    assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response
+    stored = store.require_document(document_id)["scene"]
+    assert stored["agent_sections"] == {"QuoteBand": new_digest}
+    after = next(item for item in stored["pages"]["/analysis"]["content"] if item["props"]["id"] == "after")
+    assert after["props"]["image"] == holder["file"]
+
+
+def test_j_f_a_failed_turn_leaves_no_copy_and_no_checkpoints(
+        client: TestClient, model: ModelSeam, garner: Garner) -> None:
+    """A turn that ends failed (here: stopped) is terminal like a saved one: its working copy and
+    its conversation checkpoints are gone with its terminal write."""
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation = hold_run(store, envelope, "worker-a")
+    model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/", "proof", PROOF_A, 1)]),
+        AIMessage(content="", tool_calls=[call("ls", {"path": "/"}, 2)]),
+        AIMessage(content="never reached"),
+        hooks={2: lambda: store.request_run_cancellation(envelope.run_id)},
+    )
+    turn = durable_attempt(client.app, store, envelope, worker_id="worker-a", generation=generation)
+    assert turn.status == "failed" and turn.response["stop_reason"] == "cancelled_by_request"
+    assert store.get_site_turn_workspace(envelope.run_id) is not None and checkpoint_rows(envelope.run_id) > 0
+    finish(store, turn, generation)
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+
+
+def test_j_g_a_zombie_and_its_takeover_never_share_a_folder(
+        client: TestClient, model: ModelSeam, garner: Garner, _agent_root: Path) -> None:
+    """On ONE disk (production workers share one bind mount): while A is stalled mid-turn, B takes
+    the run over and finishes it. Each works in its own attempt folder, so neither sees the other's
+    edits; B's work reaches the session folder, and A, fenced at its save, leaves it alone."""
+    import threading
+
+    store, document_id, born, envelope = fresh_site_run(garner)
+    generation_a = hold_run(store, envelope, "worker-a")
+    folder = session_folder(_agent_root, store.workspace_id, document_id)
+    seen: dict = {}
+
+    def b_takes_over_and_finishes() -> None:
+        generation_b = take_over(store, envelope, "worker-b")
+        seen["a_folder_mid_turn"] = (folder / "attempts" / f"{envelope.run_id}-g{generation_a}" / "workspace" / "page.json").read_text()
+        model.next(*proof_edit(born, PROOF_B, 11))
+        worker = threading.Thread(target=lambda: seen.__setitem__("b", attempt_turn(
+            client.app, store, envelope, worker_id="worker-b", generation=generation_b)))
+        worker.start()
+        worker.join()
+        seen["generation_b"] = generation_b
+
+    model.next(
+        AIMessage(content="", tool_calls=[edit_heading_call(born, "/", "proof", PROOF_A, 1)]),
+        AIMessage(content="", tool_calls=[call("validate_page", {}, 2)]),
+        AIMessage(content="A is done."),
+        hooks={1: b_takes_over_and_finishes},
+    )
+    a = attempt_turn(client.app, store, envelope, worker_id="worker-a", generation=generation_a)
+    b = seen["b"]
+    assert PROOF_A in seen["a_folder_mid_turn"] and PROOF_B not in seen["a_folder_mid_turn"]
+    assert b.status == "succeeded" and b.response["saved_version"] == 1, b.response
+    assert a.status == "fenced"
+    assert store.require_document(document_id)["scene"] == with_heading(born, "/", "proof", PROOF_B)
+    # The session folder holds B's request and none of A's edits; both attempt folders are gone.
+    assert PROOF_B in (folder / "workspace" / "page.json").read_text()
+    assert PROOF_A not in (folder / "workspace" / "page.json").read_text()
+    assert "## 1. " in (folder / "workspace" / "history.md").read_text()
+    assert list((folder / "attempts").iterdir()) == []

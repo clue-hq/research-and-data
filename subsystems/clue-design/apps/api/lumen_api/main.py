@@ -11907,6 +11907,9 @@ def run_site_agent_turn(
     callbacks: Any = None,
     event_sink: Any = None,
     runner: Any = None,
+    lease_generation: Optional[int] = None,
+    resume: Any = None,
+    working_copy_sink: Any = None,
 ) -> JsonObject:
     """One Puck site request: restore the session folder, run, persist under CAS, write history,
     snapshot memory. Never raises — every failure folds into a failed response.
@@ -11914,6 +11917,13 @@ def run_site_agent_turn(
     Fresh session per request (founder ruling 2026-10-11): the LangGraph thread is ``run_id``; the
     agent's memory across requests is the session folder's plan.md, history.md and fetched/, which
     are synced; everything the view rebuilds is left out of the snapshot.
+
+    Each ATTEMPT works in its own folder, ``<session>/attempts/<run_id>-g<generation>/workspace``
+    (site-turn durability, 2026-10-16): a zombie attempt and its takeover on one disk (production
+    workers share one bind mount) never write into the same place. The attempt is seeded with the
+    session's memory files; at the end its folder is mirrored back into the session's own
+    ``workspace/``, snapshotted exactly as before, and deleted. ``resume`` and
+    ``working_copy_sink`` are the harness's (:func:`lumen_agent.site.harness.run_site_turn`).
     """
 
     try:
@@ -11936,11 +11946,15 @@ def run_site_agent_turn(
         )
     config = replace(AgentRuntimeConfig.from_env(repo_root()), session_id=session_id, run_id=run_id)
     session_dir = config.session_dir()
-    workspace = session_dir / "workspace"
+    session_workspace = session_dir / "workspace"
+    attempt_dir = session_dir / "attempts" / f"{run_id}-g{lease_generation if lease_generation is not None else 0}"
+    workspace = attempt_dir / "workspace"
     try:
-        if not session_dir.exists() and session_manifest is not None:
+        if not session_workspace.exists() and session_manifest is not None:
             restored = restore_session(session_dir, session_manifest, read_blob=blobs.read_blob, history_file=None)
             api_logger.info("design_session.restored", session_id=session_id, files=restored)
+        _sweep_stale_site_attempts(session_dir)
+        _seed_site_attempt(session_workspace, workspace, exclude=SESSION_REGENERATED)
         if runner is not None:
             result = runner(prompt, document=document, workspace=workspace, run_id=run_id, callbacks=callbacks)
         else:
@@ -11951,9 +11965,10 @@ def run_site_agent_turn(
             result = run_site_turn(
                 prompt, config=config, inputs=inputs, workspace=workspace, site=document["scene"], run_id=run_id,
                 checkpointer=checkpointer, thread_id=run_id, cancel_requested=cancel_requested,
-                callbacks=callbacks, event_sink=event_sink,
+                callbacks=callbacks, event_sink=event_sink, resume=resume, working_copy_sink=working_copy_sink,
             )
     except Exception as error:
+        shutil.rmtree(attempt_dir, ignore_errors=True)
         return failed_agent_turn_response("agent_runtime.failed", "Site agent failed before returning a result.", str(error))
 
     base_version = int(document["current_version"])
@@ -11962,6 +11977,7 @@ def run_site_agent_turn(
     if outcome is not None and outcome.status == "fenced":
         # Another attempt holds the run now and owns this request's history and memory: a fenced
         # attempt writes neither, and leaves the session folder exactly as it found it.
+        shutil.rmtree(attempt_dir, ignore_errors=True)
         return response
     saved = outcome is not None and outcome.status == "saved"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -11977,10 +11993,62 @@ def run_site_agent_turn(
                          version=outcome.version if outcome else None),
     )
     shutil.rmtree(workspace / "work", ignore_errors=True)
-    return _stamp_session_manifest(
-        response, session_dir=session_dir, history_file=None, session_id=session_id, blobs=blobs,
-        snapshot_session=functools.partial(snapshot_session, exclude=SESSION_REGENERATED),
-    )
+    try:
+        _mirror_site_attempt(workspace, session_workspace, regenerated=SESSION_REGENERATED)
+        return _stamp_session_manifest(
+            response, session_dir=session_dir, history_file=None, session_id=session_id, blobs=blobs,
+            snapshot_session=functools.partial(snapshot_session, exclude=SESSION_REGENERATED),
+        )
+    finally:
+        shutil.rmtree(attempt_dir, ignore_errors=True)
+
+
+#: An attempt folder older than this belongs to an attempt that died (a turn's own limit is 30
+#: minutes, plus the drain): it is removed when a later attempt of the same site starts.
+_STALE_SITE_ATTEMPT_S = 6 * 3600
+
+
+def _sweep_stale_site_attempts(session_dir: Path) -> None:
+    """Remove attempt folders left behind by attempts that died long ago (best effort)."""
+    folder = session_dir / "attempts"
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - _STALE_SITE_ATTEMPT_S
+    for entry in folder.iterdir():
+        try:
+            if entry.is_dir() and not entry.is_symlink() and entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _seed_site_attempt(session_workspace: Path, workspace: Path, *, exclude: frozenset) -> None:
+    """A fresh attempt folder holding the session's memory (plan.md, history.md, fetched/ and any
+    other file the session snapshot carries); everything rebuilt per request is left out."""
+    shutil.rmtree(workspace.parent, ignore_errors=True)
+    workspace.mkdir(parents=True)
+    if not session_workspace.is_dir():
+        return
+    for entry in session_workspace.iterdir():
+        if entry.name in exclude:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.copytree(entry, workspace / entry.name, symlinks=True)
+        else:
+            shutil.copy2(entry, workspace / entry.name, follow_symlinks=False)
+
+
+def _mirror_site_attempt(workspace: Path, session_workspace: Path, *, regenerated: frozenset) -> None:
+    """Copy a finished attempt's folder back into the session's ``workspace/``: what is rebuilt per
+    request is replaced by this request's, the memory files are written over."""
+    session_workspace.mkdir(parents=True, exist_ok=True)
+    for name in regenerated:
+        path = session_workspace / name
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        elif path.exists() or path.is_symlink():
+            path.unlink()
+    shutil.copytree(workspace, session_workspace, symlinks=True, dirs_exist_ok=True)
 
 
 def execute_site_turn_job(
@@ -12150,13 +12218,18 @@ def _execute_site_turn_job(
                     store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand, interactive=live
                 ),
             )
+        resume, working_copy_sink = (
+            _site_turn_takeover(store, envelope.run_id, checkpointer, lease_generation)
+            if runner is None and checkpointer is not None else (None, None)
+        )
         response = run_site_agent_turn(
             doc, prompt, user_message=payload.prompt, inputs=inputs, persist=persist, workspace_id=workspace_id,
             run_id=envelope.run_id, session_id=design_session_id(workspace_id, document_id),
             # A site turn writes history and snapshots its memory on conflicted, refused and stopped turns too.
             session_manifest=_session_manifest(store, blobs, document_id=document_id, include_failed=True), blobs=blobs,
             checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
-            callbacks=callbacks, event_sink=event_sink, runner=runner,
+            callbacks=callbacks, event_sink=event_sink, runner=runner, lease_generation=lease_generation,
+            resume=resume, working_copy_sink=working_copy_sink,
         )
         if (response.get("error") or {}).get("code") == SITE_TURN_FENCED:
             # No event and no terminal result: the attempt holding the run now owns both.
@@ -12169,6 +12242,46 @@ def _execute_site_turn_job(
     except Exception as error:  # pragma: no cover - defensive
         failed = failed_agent_turn_response("agent_runtime.failed", "Website turn crashed before returning a result.", str(error))
         return "failed", {**failed, "doc_kind": "site"}, "error", {"message": str(error)}
+
+
+def _site_turn_takeover(
+    store: HybridRepository, run_id: str, checkpointer: Any, lease_generation: Optional[int]
+) -> Tuple[Any, Any]:
+    """Where a site turn starts, and the sink its working copy is written through (site-turn
+    durability, 2026-10-16). Returns ``(resume, working_copy_sink)``.
+
+    * The run has a working copy: an earlier attempt died mid-turn. Resume from the copy's
+      checkpoint over its files.
+    * No copy, but the run's thread has checkpoints: the earlier attempt died before any file work
+      was recorded, so the files its conversation refers to are gone. Its checkpoints are deleted
+      and the turn starts from the top (at most its first round is redone); resuming the latest
+      checkpoint over a folder rebuilt from the stored site was finding K4-1.
+    * Neither: a fresh turn.
+
+    Only with a durable checkpointer: without one there is no conversation to resume, and no copy
+    is kept."""
+    from lumen_agent.site.harness import SiteTurnResume
+
+    resume = None
+    row = store.get_site_turn_workspace(run_id)
+    if row is not None:
+        resume = SiteTurnResume(row["checkpoint_id"], dict(row["files"]), dict(row["turn_state"]))
+        api_logger.info("site_turn.resumed_from_working_copy", run_id=run_id, checkpoint_id=row["checkpoint_id"],
+                        written_by_generation=row["attempt_generation"], lease_generation=lease_generation)
+    elif checkpointer.get_tuple({"configurable": {"thread_id": run_id}}) is not None:
+        checkpointer.delete_thread(run_id)
+        api_logger.warning("site_turn.restarted_without_working_copy", run_id=run_id, lease_generation=lease_generation)
+
+    def working_copy_sink(checkpoint_id: str, files: JsonObject, turn_state: JsonObject, files_sha256: str) -> None:
+        written = store.put_site_turn_workspace(
+            run_id, checkpoint_id=checkpoint_id, files=files, turn_state=turn_state, files_sha256=files_sha256,
+            attempt_generation=lease_generation,
+        )
+        if not written:
+            # This attempt no longer holds the run; its save will be refused too.
+            api_logger.warning("site_turn.working_copy_fenced", run_id=run_id, lease_generation=lease_generation)
+
+    return resume, working_copy_sink
 
 
 def execute_ingestion_job(

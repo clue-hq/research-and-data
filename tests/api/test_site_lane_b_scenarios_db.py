@@ -727,9 +727,22 @@ def _selection(leg: SiteLeg) -> tuple[DomainObjectRef, ...]:
 
 
 def test_p1_a_chat_message_becomes_a_saved_website_version_across_the_boundary(
-    design_env: DesignEnv, model: ModelSeam, logos: list[dict]
+    design_env: DesignEnv, model: ModelSeam, logos: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from langgraph.checkpoint.postgres import PostgresSaver
+
     registry = _registry()
+    # Every checkpoint the production saver commits, by thread (the run's own are pruned once it
+    # is terminal, site-turn durability 2026-10-16, so they are counted as they land).
+    committed: dict[str, int] = {}
+    real_put = PostgresSaver.put
+
+    def counting_put(self, config, *args, **kwargs):
+        thread = config["configurable"]["thread_id"]
+        committed[thread] = committed.get(thread, 0) + 1
+        return real_put(self, config, *args, **kwargs)
+
+    monkeypatch.setattr(PostgresSaver, "put", counting_put)
 
     async def scenario() -> None:
         async with db_lifespan():
@@ -829,7 +842,9 @@ def test_p1_a_chat_message_becomes_a_saved_website_version_across_the_boundary(
             ) == ("applied", "saved", "site", 1, 1)
             assert result_json["summary"] == REPLY_1
             assert len(result_json["model_calls"]) == len(script.seen) == 3
-            # The production Postgres checkpointer held the graph under this request's own thread.
+            # The production Postgres checkpointer held the graph under this request's own thread,
+            # and the run's terminal write pruned those checkpoints and its working copy.
+            assert committed.get(run_id, 0) > 0
             async with transaction() as conn:
                 checkpoints = (
                     await conn.execute(
@@ -837,7 +852,13 @@ def test_p1_a_chat_message_becomes_a_saved_website_version_across_the_boundary(
                         {"thread": run_id},
                     )
                 ).scalar_one()
-            assert int(checkpoints) > 0
+                copies = (
+                    await conn.execute(
+                        text("SELECT count(*) FROM design_site_turn_workspace WHERE run_id = :r"),
+                        {"r": run_id},
+                    )
+                ).scalar_one()
+            assert int(checkpoints) == 0 and int(copies) == 0
             # The design run's model calls, as receipts on the platform's own turn.
             async with transaction() as conn:
                 receipts = (
