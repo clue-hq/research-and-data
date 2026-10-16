@@ -76,6 +76,7 @@ from clue_design.errors import (
     DesignRunFencedError,
     DesignRunSaveFencedError,
 )
+from clue_design.site_turn_workspace import prune_site_turn_state
 
 #: The shipped run-id shape (``run_<uuid4 hex>``), which :func:`work_id_for_run` inverts exactly.
 #: Byte-identical to the D5 migration's backfill regex, deliberately — see that function.
@@ -358,6 +359,10 @@ async def set_run_result(
     fenced by — and since the reaper's re-offer stopped clearing the stamp, NULL can only mean
     that. Omitting the argument keeps the pre-D5 unfenced behaviour, which is what the non-fleet
     callers (the SSE-visible ``set_run_result`` surface) still want.
+
+    A terminal write also prunes a site turn's working copy and conversation checkpoints, in the
+    same transaction (:func:`clue_design.site_turn_workspace.prune_site_turn_state`), as do
+    :func:`fail_dispatched_run` and :func:`fail_stranded_run`.
     """
     if expected_generation is None:
         outcome = await conn.execute(
@@ -370,6 +375,7 @@ async def set_run_result(
         )
         if outcome.rowcount == 0:
             raise DesignNotFoundError("agent_run", run_id)
+        await prune_site_turn_state(conn, run_id=run_id)
         return
     outcome = await conn.execute(
         text(
@@ -391,6 +397,7 @@ async def set_run_result(
         # a fenced-out run is the expected outcome of a takeover and must be logged as such.
         current = await _current_lease_generation(conn, workspace_id=workspace_id, run_id=run_id)
         raise DesignRunFencedError(run_id, expected_generation, current)
+    await prune_site_turn_state(conn, run_id=run_id)
 
 
 async def hold_run_for_save(
@@ -793,7 +800,10 @@ async def fail_dispatched_run(
             params,
         )
     ).first()
-    return None if row is None else _agent_run_job_from_row(row)
+    if row is None:
+        return None
+    await prune_site_turn_state(conn, run_id=row.run_id)
+    return _agent_run_job_from_row(row)
 
 
 async def fail_stranded_run(
@@ -819,7 +829,10 @@ async def fail_stranded_run(
             {"work_id": work_id, "result": dump_json(result)},
         )
     ).first()
-    return None if row is None else _agent_run_job_from_row(row)
+    if row is None:
+        return None
+    await prune_site_turn_state(conn, run_id=row.run_id)
+    return _agent_run_job_from_row(row)
 
 
 #: The two terminal ``design_run_status`` labels. Named once here so the retention scan below and

@@ -123,6 +123,7 @@ from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import sessions as design_sessions
 from clue_design import site_sections as design_site_sections
+from clue_design import site_turn_workspace as design_site_turn_workspace
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -2145,6 +2146,40 @@ class HybridRepository:
         return self._bridge._run(
             lambda conn: design_runs.require_run(
                 conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def get_site_turn_workspace(self, run_id: str) -> Optional[JsonObject]:
+        """A running site turn's working copy (site-turn durability, Task 3), or ``None``."""
+        return self._bridge._run(
+            lambda conn: design_site_turn_workspace.get_site_turn_workspace(
+                conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def put_site_turn_workspace(
+        self,
+        run_id: str,
+        *,
+        checkpoint_id: str,
+        files: JsonObject,
+        turn_state: JsonObject,
+        files_sha256: str,
+        attempt_generation: Optional[int],
+    ) -> bool:
+        """Overwrite the run's working copy; ``False`` when the attempt no longer holds the run."""
+        return bool(
+            self._bridge._run(
+                lambda conn: design_site_turn_workspace.put_site_turn_workspace(
+                    conn,
+                    workspace_id=self.workspace_id,
+                    run_id=run_id,
+                    checkpoint_id=checkpoint_id,
+                    files=files,
+                    turn_state=turn_state,
+                    files_sha256=files_sha256,
+                    attempt_generation=attempt_generation,
+                )
             )
         )
 
