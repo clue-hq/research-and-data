@@ -20,7 +20,8 @@ from uuid import uuid4
 
 from clue_agents.contracts import ArtifactRef
 from clue_api.arv2 import onboarding_driver
-from clue_api.arv2.calls import CallCost
+from clue_api.arv2.calls import CallCost, ProviderCaller
+from clue_api.arv2.customer_domains import check_domains
 from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 from clue_api.arv2.onboarding_driver import (
     LINEUP_SYSTEM_PROMPT,
@@ -34,6 +35,7 @@ from clue_api.arv2.onboarding_driver import (
 from clue_api.arv2.onboarding_lineage import ProductLink
 from clue_api.arv2.provider_ledger import DrainReport, LedgerStamp
 from clue_api.arv2.sinks import LedgerRow
+from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 from clue_config import Settings
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
@@ -131,6 +133,21 @@ PRODUCT: dict[str, Any] = {
 }
 
 
+CUSTOMERS: dict[str, Any] = {
+    "customers": [
+        {
+            "name": "Wynwood House",
+            "domains": ["wynwoodhouse.us"],
+            "relationship": "direct",
+            "via": None,
+            "evidence_kind": "case_study",
+            "quote": "Wynwood House moved its guest communication to Insight Health.",
+        }
+    ],
+    "seller_domains": ["insighthealth.ai"],
+}
+
+
 @dataclass
 class FakeExa:
     """Answers by label; records the order calls were made in and which thread they ran on."""
@@ -142,6 +159,7 @@ class FakeExa:
     concurrent: int = 0
     peak: int = 0
     queries: list[str] = field(default_factory=list)
+    efforts: dict[str, str] = field(default_factory=dict)
     guard: threading.Lock = field(default_factory=threading.Lock)
 
     def agent_run(
@@ -155,8 +173,9 @@ class FakeExa:
         poll_interval_s: float = 4.0,
         timeout_s: float = 900.0,
     ) -> ExaAgentRun:
-        del query, output_schema, effort, system_prompt, poll_interval_s, timeout_s
+        del query, output_schema, system_prompt, poll_interval_s, timeout_s
         with self.guard:
+            self.efforts[label.split(":")[0]] = effort
             self.threads.add(threading.get_ident())
             self.concurrent += 1
             self.peak = max(self.peak, self.concurrent)
@@ -196,6 +215,7 @@ class FakeStore:
     documents: dict[Any, Any] = field(default_factory=dict)
     opened: dict[Any, tuple[str, Any]] = field(default_factory=dict)
     settled: dict[Any, dict[str, Any]] = field(default_factory=dict)
+    phases: dict[str, str] = field(default_factory=dict)
 
     async def create_run(self, conn: Any, **kw: Any) -> None:
         self.events.append(("create_run", kw))
@@ -206,6 +226,7 @@ class FakeStore:
     async def start_step(self, conn: Any, **kw: Any) -> None:
         self.events.append(("start_step", kw["kind"], kw.get("subject_ref")))
         self.opened[kw["step_id"]] = (kw["kind"], kw.get("subject_ref"))
+        self.phases[kw["kind"]] = kw["phase"]
 
     async def open_document(self, conn: Any, **kw: Any) -> int:
         self.events.append(("open_document", kw["path"]))
@@ -373,6 +394,8 @@ def _handler(
     settings_overrides: dict[str, Any] | None = None,
     drain: Any = None,
     catalog_regenerator: Any = None,
+    domain_caller: Any = None,
+    domain_checker: Any = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
     return OnboardingRunWorkHandler(
@@ -389,7 +412,30 @@ def _handler(
         reconciler_factory=reconciler_factory,
         drain=drain or FakeDrain(),
         catalog_regenerator=catalog_regenerator,
+        domain_caller=domain_caller or _scripted_domain_caller([]),
+        domain_checker=domain_checker or _no_domain_checks,
     )
+
+
+def _no_domain_checks(caller: Any, customers: Any) -> dict[str, Any]:
+    """The offline default: no homepage is fetched, so no test reaches the network."""
+    del caller, customers
+    return {}
+
+
+def _scripted_domain_caller(script: list[Any]) -> Any:
+    """A public-web caller over a scripted transport and the step's own sinks."""
+
+    def factory(*, raw: Any, ledger: Any) -> ProviderCaller:
+        return ProviderCaller(
+            transport=ScriptedTransport(script),
+            raw_sink=raw,
+            ledger=ledger,
+            now=lambda: datetime(2026, 9, 7, tzinfo=UTC),
+            sleep=lambda _: None,
+        )
+
+    return factory
 
 
 def _icp(key: str) -> IcpRef:
@@ -403,6 +449,7 @@ def _all_answers(products: list[dict[str, Any]] | None = None) -> FakeExa:
             "overview": _agent(OVERVIEW),
             "reviews": _agent(REVIEWS),
             "product_research": _agent(PRODUCT),
+            "customers": _agent(CUSTOMERS),
         },
         _deep(
             products
@@ -1240,9 +1287,10 @@ def test_every_provider_step_drains_its_rows_with_the_run_as_the_job() -> None:
 
     asyncio.run(_handler(exa, FakeStore(), drain=drain).handle(_context(run_id)))
 
-    assert len(drain.calls) == 4
+    # + the customers step's agent drain and its domain-check drain (spec 2026-10-16 §4.1-4.2).
+    assert len(drain.calls) == 6
     labels = sorted(row.label for _stamp, rows in drain.calls for row in rows)
-    assert labels == sorted(["lineup", "overview", "reviews"])
+    assert labels == sorted(["customers", "lineup", "overview", "reviews"])
     assert {stamp for stamp, _rows in drain.calls} == {
         LedgerStamp(workspace_id="ws-drv", job_id=run_id)
     }
@@ -1267,3 +1315,53 @@ def test_a_step_whose_provider_call_raises_still_drains() -> None:
 
     assert store.landed("reviews")["status"] == "failed"
     assert any(row.label == "reviews" for _stamp, rows in drain.calls for row in rows)
+
+
+def test_a_full_run_researches_customers_in_the_background_with_xhigh() -> None:
+    exa = _all_answers()
+    store = FakeStore()
+
+    asyncio.run(_handler(exa, store).handle(_context(uuid4())))
+
+    assert exa.efforts["customers"] == "xhigh"
+    assert store.phases["customers"] == "background"
+    landed = store.landed("customers")
+    assert landed["status"] == "completed"
+    assert ("open_document", "proof/customers.md") in store.events
+
+
+def test_the_customers_step_checks_domains_and_drains_their_rows() -> None:
+    page = HttpResponse(
+        200, {"content-type": "text/html"}, b"<title>Personal Care Communities</title>"
+    )
+    exa = _all_answers()
+    drain = FakeDrain()
+    artifacts_seen: list[bytes] = []
+    handler = _handler(
+        exa,
+        FakeStore(),
+        drain=drain,
+        domain_caller=_scripted_domain_caller([page]),
+        domain_checker=check_domains,
+    )
+    handler._artifacts.bodies = artifacts_seen  # type: ignore[attr-defined]
+
+    asyncio.run(handler.handle(_context(uuid4())))
+
+    labels = [row.label for _stamp, rows in drain.calls for row in rows]
+    assert "onboarding.customer_domain" in labels
+    body = next(b for b in artifacts_seen if b"# Existing customers" in b).decode()
+    assert "wynwoodhouse.us (unconfirmed: Personal Care Communities)" in body
+
+
+def test_a_customers_run_takes_only_the_customers_step() -> None:
+    exa = _all_answers()
+    store = FakeStore()
+    context = _context(uuid4())
+    context = replace(context, payload={**context.payload, "kind": "customers"})
+
+    asyncio.run(_handler(exa, store).handle(context))
+
+    assert [kind for kind, _subject in store.opened.values()] == ["customers"]
+    assert exa.calls == ["customers"]
+    assert store.events[-1][0] == "finish_run"

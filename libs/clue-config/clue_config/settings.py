@@ -600,6 +600,10 @@ class Settings(BaseSettings):
     # ``high`` per deployment if the product files read thin).
     # Env: ``CLUE_ONBOARDING_PRODUCT_EFFORT``.
     onboarding_product_effort: str = "medium"
+    # Exa Agent effort for the existing-customers run (spec 2026-10-16-discovery-excludes-seller-
+    # customers §4.1: ``xhigh`` found 28 of 29 and 13 of 15 known customers in the live tests,
+    # where a one-shot search found 17 of 29). Env: ``CLUE_ONBOARDING_CUSTOMERS_EFFORT``.
+    onboarding_customers_effort: str = "xhigh"
     # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
     onboarding_reviews_phase: Literal["fast", "background"] = "fast"
     # Cap on concurrent background per-product Exa Agent runs.
