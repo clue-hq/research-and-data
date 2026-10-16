@@ -61,6 +61,17 @@ it("delete key: any modifier, a held key, or a focused field is not ours", () =>
   assert.equal(deleteShortcut(KEY, { isContentEditable: true, tagName: "DIV" }), false);
 });
 
+it("delete key: a press inside an open panel, menu or dropdown belongs to it", () => {
+  const inside = (selector: string) => ({
+    isContentEditable: false,
+    tagName: "BUTTON",
+    closest: (asked: string) => (asked.includes(selector) ? {} : null),
+  });
+  assert.equal(deleteShortcut(KEY, inside('[role="dialog"]')), false);
+  assert.equal(deleteShortcut(KEY, inside('[role="menu"]')), false);
+  assert.equal(deleteShortcut(KEY, { isContentEditable: false, tagName: "BUTTON", closest: () => null }), true);
+});
+
 it("plan: a single leaf element is removed with no note", () => {
   assert.deepEqual(plan(clone(), ["image_hero"]), {
     kind: "delete",

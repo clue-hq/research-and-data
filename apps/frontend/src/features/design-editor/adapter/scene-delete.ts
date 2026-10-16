@@ -44,15 +44,24 @@ export function deleteShortcut(
     repeat: boolean;
     shiftKey: boolean;
   },
-  target: { isContentEditable: boolean; tagName: string } | null,
+  target: {
+    isContentEditable: boolean;
+    tagName: string;
+    closest?: (selector: string) => unknown;
+  } | null,
 ): boolean {
   if (event.key !== "Backspace" && event.key !== "Delete") return false;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
   // Holding the key must not chew through the tree one level at a time.
   if (event.repeat) return false;
   if (isTypingTarget(target) || target?.tagName === "SELECT") return false;
+  // A key pressed inside an open panel, menu or dropdown (the asset library, the Replace-image
+  // menu) belongs to it: a focused library tile must not delete the image it would replace.
+  if (target?.closest?.(OVERLAY_SELECTOR)) return false;
   return true;
 }
+
+const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"]';
 
 function descendantIds(scene: Scene, nodeId: NodeId): NodeId[] {
   const found: NodeId[] = [];
