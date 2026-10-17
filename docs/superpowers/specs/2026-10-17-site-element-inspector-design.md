@@ -180,6 +180,12 @@ the `data-puck-rte-menu` marker on our panel so a click does not blur the editor
 lives in the app, outside the frame; prove the range survives a click across the frame boundary, or keep a
 minimal in-frame bar for B / I / U and colour*).
 
+**Changed by plan 2 (2026-10-17, ruling R1):** the stored grammar is inline only — `strong em u s br`,
+`a` and `span[data-s]`, optionally inside the one outer `<p>` the editor writes (the render drops it).
+No `ul ol li` and no second `<p>`: Enter makes a line break. The panel's controls act on the range by
+writing the `data-s` span and its `_edits` entry, through the stored text, not through Puck's inline
+menu, so no in-frame bar is needed.
+
 Which text is rich: every brand-section text field that is edited in place today, and every agent prop
 marked for inline editing. Clone text slots of kind `text` accept the same allow-listed HTML (the clone
 filler sets it as sanitized HTML instead of text). Clone text that is not a slot can be styled as a whole
