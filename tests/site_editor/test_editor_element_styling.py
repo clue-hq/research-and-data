@@ -204,3 +204,26 @@ def test_an_agent_sections_named_text_is_selectable_and_a_hostile_name_is_not(
     mark = len(received(page))
     frame.get_by_text("Hostile name").first.click(force=True)
     wait_selected(page, mark, None, "named")
+
+
+TWELVE = ["display", "headline", "title", "subtitle", "body", "body.small", "caption", "eyebrow", "label", "cta", "stat", "legal"]
+
+
+def test_a_hand_set_size_shrinks_on_a_phone_with_the_brand(app: Any, browser_page: Any, editor_origin: str) -> None:
+    """Responsive brand type (founder 2026-10-18): in a kit that measured how its type changes with the
+    window, a size set in the inspector is exact on desktop and shrinks with the headline's steps on a
+    phone. The app's device preview narrows the editor's frame; the test narrows it the same way."""
+    init = garner_init(mode="edit")
+    roles = {f"type.{role}": [] for role in TWELVE}
+    roles["type.headline"] = [{"max_width": 991, "font_size": 62}, {"max_width": 767, "font_size": 44}]
+    init["brand"]["kit"]["responsive_type"] = {"version": 1, "measured_from": 1440, "widths": [991, 767], "source": {}, "roles": roles}
+    proof = next(item for item in init["site"]["pages"]["/"]["content"] if item["props"]["id"] == "proof")
+    proof["props"]["_edits"] = {"heading": {"fontSize": 60}}
+    page, frame = open_site(app, browser_page, editor_origin, init)
+    heading = '[data-puck-component="proof"] [data-clue-el="heading"]'
+    size = lambda: float(computed(frame, heading, "fontSize").removesuffix("px"))  # noqa: E731
+    assert frame.evaluate("() => innerWidth") > 991
+    assert abs(size() - 60) < 0.5, size()
+    page.evaluate("() => { document.querySelector('iframe').style.width = '390px'; }")
+    frame.wait_for_function("() => innerWidth <= 767", timeout=10000)
+    assert abs(size() - 60 * 44 / 87) < 0.5, size()

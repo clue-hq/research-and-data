@@ -7,7 +7,7 @@
 // entry then styles nothing.
 import { z } from "zod";
 import type { BrandData } from "./brand";
-import { colorOf, colorVar, cssString, isComponentToken, tokenGroups } from "./brand-values";
+import { colorOf, colorVar, cssString, isComponentToken, tokenGroups, typeSteps, typographyOf } from "./brand-values";
 import { ComponentIdSchema } from "./site-document";
 
 /** The reserved prop on a section (and on the shell's header and footer) that holds its edits. */
@@ -195,12 +195,25 @@ function radiusCss(radius: StyleOverride["radius"]): string | undefined {
   return typeof radius === "number" ? `${radius}px` : radius.map((value) => `${value}px`).join(" ");
 }
 
+/** A hand-set font size (responsive brand type, founder 2026-10-18): in a kit that measured how its
+ * type changes with the window, a share of the nearest role's size — the headline's at or above the
+ * title size, else the body's — so it is exactly `px` on desktop and shrinks with the seller's own
+ * steps on smaller screens (marketers will not check the phone view). Plain px otherwise. */
+export function fontSizeCss(brand: BrandData, px: number): string {
+  const steps = typeSteps(brand);
+  const title = typographyOf(brand, "type.title")?.size;
+  const role = title !== undefined && px >= title ? "headline" : "body";
+  const size = typographyOf(brand, `type.${role}`)?.size;
+  if (!steps?.has(role) || !size) return `${px}px`;
+  return `calc(var(--brand-text-${role}) * ${Math.round((px / size) * 10_000) / 10_000})`;
+}
+
 /** One element's override as CSS declarations, in the schema's order. */
 function declarations(brand: BrandData, override: StyleOverride): string[] {
   const out: [string, string | undefined][] = [
     ["color", override.color && colorCss(brand, override.color)],
     ["font-family", override.fontFamily && cssString(override.fontFamily) ? `"${cssString(override.fontFamily)}", ${genericFamily(brand, override.fontFamily)}` : undefined],
-    ["font-size", override.fontSize !== undefined ? `${override.fontSize}px` : undefined],
+    ["font-size", override.fontSize !== undefined ? fontSizeCss(brand, override.fontSize) : undefined],
     ["font-weight", override.fontWeight !== undefined ? String(override.fontWeight) : undefined],
     // Off is a value too: it undoes italic or underline the element has by default (an <em>, a link).
     ["font-style", override.italic === undefined ? undefined : override.italic ? "italic" : "normal"],

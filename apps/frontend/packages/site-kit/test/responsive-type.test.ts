@@ -59,3 +59,21 @@ test("brand.md says how type changes with the window", () => {
   assert.match(buildCatalog(still, "Garner Health")["brand/brand.md"], /Type sizes do not change with the window on this site\./);
   assert.doesNotMatch(buildCatalog(garner(), "Garner Health")["brand/brand.md"], /change with the window/);
 });
+
+// Task 5: a font size set in the inspector follows the nearest role's steps (founder 2026-10-18).
+import { editsCss, fontSizeCss } from "../src/edits";
+
+test("a hand-set size follows the nearest role: headline at or above the title size, else body", () => {
+  const brand = measured(); // headline 87, title 56, body 16 in this kit
+  assert.equal(fontSizeCss(brand, 60), "calc(var(--brand-text-headline) * 0.6897)");
+  assert.equal(fontSizeCss(brand, 56), "calc(var(--brand-text-headline) * 0.6437)");
+  assert.equal(fontSizeCss(brand, 14), "calc(var(--brand-text-body) * 0.875)");
+  const css = editsCss("proof", { heading: { fontSize: 60 }, "heading~1": { fontSize: 14 } }, brand);
+  assert.match(css, /\[data-clue-el="heading"\]\{font-size:calc\(var\(--brand-text-headline\) \* 0\.6897\) !important\}/);
+  assert.match(css, /\[data-s="heading~1"\]\{font-size:calc\(var\(--brand-text-body\) \* 0\.875\) !important\}/);
+});
+
+test("without the section a hand-set size stays px", () => {
+  assert.equal(fontSizeCss(garner(), 48), "48px");
+  assert.match(editsCss("proof", { heading: { fontSize: 48 } }, garner()), /font-size:48px !important/);
+});
