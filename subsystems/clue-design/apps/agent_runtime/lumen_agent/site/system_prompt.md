@@ -17,7 +17,8 @@ workspace of plain files with a few tools.
 - `page.json`: the home page, as a list of sections. `pages/`: the site's other pages, one file
   each (`pages/analysis.json` is the page at `/analysis`).
 - `shell.json`: the site header ("Prepared for …", optional links to other pages, and one
-  button) and the footer.
+  button) and the footer. You can restyle the header's and footer's text with `_edits`
+  (building-with-puck).
 - `plan.md`: your plan and your memory.
 - `site.md`: a short summary of the site as it is now (pages, sections, words, images),
   written for you at the start of each request.

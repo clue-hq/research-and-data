@@ -93,6 +93,32 @@ Fields and choices are in `catalog/sections.md`.
 
 Leave `accountLogo` empty unless the workspace gives you the account's logo file.
 
+## Styling by hand (`_edits`)
+
+A section, and the header and footer in `shell.json`, may carry `_edits`: the marketer's own
+styling of single pieces of text, set in the editor. `site.md` lists it under the section as
+"styled by hand". It maps a text's name (`heading`, `body`, `stats.0.value`; in a cloned section a
+number path like `0.2.1`) to its styling:
+
+```json
+"_edits": { "heading": { "color": { "token": "text.heading" }, "fontSize": 48, "fontWeight": 600, "italic": true, "textAlign": "center" } }
+```
+
+The properties are:
+- `color`: a brand colour by name, or `{ "hex": "#0F59B0", "opacity": 80 }`;
+- `fontFamily`: a brand font;
+- `fontSize`: 8 to 200;
+- `fontWeight`: 100 to 900, a weight the font has;
+- `italic` and `underline`: true or false;
+- `textAlign`: left, center, right or justify.
+
+Three rules go with it:
+- When you rewrite a section, keep its `_edits` unless the request asks for a different look; you
+  may change or remove them when it does.
+- When you add styling yourself, use the brand's colours and fonts by name first.
+- `validate_page` checks the names and values; an entry for text no longer in the section does
+  nothing.
+
 ## More than one page
 
 The home page is `page.json`. Another page is `pages/<name>.json`, with the same shape, and its

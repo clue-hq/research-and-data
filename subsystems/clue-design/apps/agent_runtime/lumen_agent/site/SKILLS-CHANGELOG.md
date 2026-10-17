@@ -101,3 +101,10 @@ fails without it).
   run_site_590eb594523c (2026-10-16): a platform bug failed every preview of a page with two agent
   sections, the answer said only "Validate it and try again", and the agent spent 19 minutes and
   17 useless validate calls guessing, rewrote its section nine times and reworked the FAQ.
+- 2026-10-17 · writing-a-section, rules (founder-approved): "Name every heading, paragraph and
+  label: add `data-clue-el="<name>"`…; for `kit.Eyebrow` and `kit.Link`, pass `el`"; the example
+  names its quote and attribution. building-with-puck: new part "Styling by hand (`_edits`)"; system
+  prompt: the header's and footer's text can be restyled with `_edits`. Not a failing run: the site
+  element inspector (plan 1) gives the marketer per-element styling, which only reaches agent
+  sections whose text is named, and the agent must keep, change or drop the marketer's `_edits`
+  knowingly.

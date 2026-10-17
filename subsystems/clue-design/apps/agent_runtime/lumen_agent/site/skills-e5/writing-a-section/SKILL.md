@@ -24,8 +24,8 @@ export const schema = z.object({
 export function render(props: z.infer<typeof schema>, kit: Kit) {
   return (
     <kit.Shell surface={props.surface}>
-      <blockquote className="brand-heading max-w-[30ch] font-headline text-headline">{props.quote}</blockquote>
-      <p className="mt-6 font-body text-body text-ink-secondary">{props.attribution}</p>
+      <blockquote data-clue-el="quote" className="brand-heading max-w-[30ch] font-headline text-headline">{props.quote}</blockquote>
+      <p data-clue-el="attribution" className="mt-6 font-body text-body text-ink-secondary">{props.attribution}</p>
     </kit.Shell>
   );
 }
@@ -68,5 +68,11 @@ The kit gives you these pieces, with exactly these props:
   cutting or joining). For capitals, use the `uppercase` class. For separate lines, use a list of
   items. Do not mark choices (surface, look, cardLook), links, images or `alt`: the editor offers
   those from lists and fields. write_section refuses a section that breaks these rules and says why.
+- Name every heading, paragraph and label: add `data-clue-el="<name>"` to its element, for example
+  `<h2 data-clue-el="headline" …>`. Use letters and digits, with dots, underscores or dashes between
+  them, and give each element its own name within the section. For `kit.Eyebrow` and `kit.Link`,
+  pass `el="<name>"` instead. The marketer can then click that text in the editor and change its
+  colour, font, size, weight and alignment. Text without a name can still be edited as words, but
+  not restyled.
 - Make it look like the seller's sections around it. Render and compare.
 - Place it in page.json by its name, like any other section.
