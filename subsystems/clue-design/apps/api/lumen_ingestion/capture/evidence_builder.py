@@ -29,6 +29,8 @@ from ..evidence import (
     NarrativeEvidence,
     StateStyle,
     TypeSample,
+    TypeWidth,
+    TypeWidths,
 )
 from .budget import MAX_NAMED_DROPS, short_url
 from .candidates import collect_asset_candidates
@@ -122,8 +124,8 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     ]
 
     reporter("Matching your typography…", 0.75)
-    type_samples = [
-        TypeSample(
+    def _type_sample(t) -> TypeSample:
+        return TypeSample(
             label=t.label,
             family=t.family,
             weight=t.weight,
@@ -134,9 +136,19 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             background=t.background,
             area=t.area,
             pointer=_pointer(t.locator),
+            sample_index=t.sample_index,
         )
-        for t in parsed.type_samples
-    ]
+
+    type_samples = [_type_sample(t) for t in parsed.type_samples]
+    # Responsive brand type: the same samples at each narrower width the capture read.
+    type_widths = (
+        TypeWidths(
+            capture_width=parsed.type_capture_width,
+            widths=[TypeWidth(width=width, type_samples=[_type_sample(t) for t in samples]) for width, samples in parsed.type_widths],
+        )
+        if parsed.type_capture_width and parsed.type_widths
+        else None
+    )
 
     # --- resolve download bytes for asset ingest ---
     sha_bytes: dict[str, bytes] = {}
@@ -554,6 +566,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         source=source,
         colors=colors,
         type_samples=type_samples,
+        type_widths=type_widths,
         fonts=fonts,
         logos=logos,
         images=images,

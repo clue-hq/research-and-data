@@ -77,6 +77,8 @@ class TypeSample(BaseModel):
     background: str | None = None
     area: float | None = None
     pointer: EvidencePointer
+    #: Which rendered sample it came from (responsive brand type reads the same one at each width).
+    sample_index: int | None = None
 
     @field_validator("color", "background")
     @classmethod
@@ -579,6 +581,24 @@ class RenderTruth(BaseModel):
     canvas_viewport_fraction: float = 0.0
 
 
+class TypeWidth(BaseModel):
+    """Responsive brand type: the type samples as drawn at one narrower window width."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    width: int
+    type_samples: list[TypeSample] = []
+
+
+class TypeWidths(BaseModel):
+    """The capture's own width and the type samples at each narrower width it read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capture_width: int
+    widths: list[TypeWidth] = []
+
+
 class BrandEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -600,6 +620,9 @@ class BrandEvidence(BaseModel):
     # and None for every pre-probe bundle and every non-website capture, so
     # `schema_version` stays 1 and old bundles keep the cluster election.
     render_truth: RenderTruth | None = None
+    # Responsive brand type: additive and None for every earlier bundle and every non-website
+    # capture, so `schema_version` stays 1.
+    type_widths: TypeWidths | None = None
     geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []

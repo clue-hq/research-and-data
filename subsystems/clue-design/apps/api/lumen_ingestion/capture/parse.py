@@ -53,6 +53,8 @@ class ParsedType:
     color: str | None = None
     background: str | None = None
     area: float | None = None
+    #: Which computed sample it came from, so the same element can be read at other widths.
+    sample_index: int | None = None
 
 
 @dataclass
@@ -155,6 +157,9 @@ class ParsedSite:
     declared_roles: list[DeclaredRole] = field(default_factory=list)
     state_styles: list[ParsedStateStyle] = field(default_factory=list)
     diagnostics: list[dict] = field(default_factory=list)
+    #: Responsive brand type: the capture's own width and the type samples at each narrower width.
+    type_capture_width: int | None = None
+    type_widths: list[tuple[int, list[ParsedType]]] = field(default_factory=list)
 
 
 # --- color parsing --------------------------------------------------------------
@@ -1044,6 +1049,9 @@ def parse_site(snapshot: SiteSnapshot) -> ParsedSite:
     _parse_css(snapshot, parsed, custom_props, base_url)
     if snapshot.computed_samples:
         _parse_computed_samples(snapshot, parsed)
+        parsed.type_widths = parse_type_widths(snapshot, custom_props)
+        if parsed.type_widths and snapshot.type_widths:
+            parsed.type_capture_width = int(snapshot.type_widths["capture_width"])
     _parse_dom(snapshot, parsed, base_url)
     _parse_narrative(snapshot, parsed, base_url)
     return parsed
@@ -1249,7 +1257,31 @@ _SAMPLE_HINTS: dict[str, tuple[list[str], list[str]]] = {
 
 
 def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
-    for sample in snapshot.computed_samples or []:
+    _parse_samples(enumerate(snapshot.computed_samples or []), parsed)
+
+
+def parse_type_widths(snapshot: SiteSnapshot, custom_props: dict[str, str]) -> list[tuple[int, list[ParsedType]]]:
+    """Responsive brand type: the type samples at each width the capture narrowed to, parsed exactly
+    as desktop's (the desktop sample with that width's size, line height and letter spacing). A
+    sample with no reading at a width (gone, hidden) is left out there; each keeps its index."""
+    measured = snapshot.type_widths or {}
+    samples = snapshot.computed_samples or []
+    out: list[tuple[int, list[ParsedType]]] = []
+    for entry in measured.get("widths") or []:
+        reads = entry.get("samples") or []
+        indexed = [
+            (index, {**sample, **{key: read[key] for key in ("fontSize", "lineHeight", "letterSpacing") if key in read}})
+            for index, (sample, read) in enumerate(zip(samples, reads))
+            if isinstance(read, dict)
+        ]
+        scratch = ParsedSite(custom_props=dict(custom_props))
+        _parse_samples(indexed, scratch)
+        out.append((int(entry["width"]), scratch.type_samples))
+    return out
+
+
+def _parse_samples(indexed, parsed: ParsedSite) -> None:
+    for index, sample in indexed:
         tag = str(sample.get("tag") or sample.get("selectorish") or "").lower()
         area = float(sample.get("area") or 0.0)
         weight = max(0.5, math.log2(1 + area) / 4.0)
@@ -1298,6 +1330,7 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
                     color=ink,
                     background=backdrop,
                     area=box,
+                    sample_index=index,
                 )
             )
 
