@@ -4,6 +4,7 @@
 // (@clue/site-kit/validate, /catalog, /check-section); the editor-only parts are @clue/site-kit/editor.
 export { brandData, type BrandAsset, type BrandData, type FontFace } from "./brand";
 export {
+  cloneButtonAt,
   cloneLinkAt,
   fillClone,
   slotDefaults,

@@ -72,6 +72,9 @@ export function normalizeRichIn<P extends { content?: { type: string; props: Rec
  * address prop and the new-tab prop beside it. Null for an element that is not one of those links. */
 export function ownLinkSource(type: string, key: string): { kind: "prop"; href: string; newTab: string } | null {
   if (type === "ProofCard" && key === "linkLabel") return { kind: "prop", href: "linkHref", newTab: "linkNewTab" };
+  // Plan 3: our buttons and the header's.
+  if ((type === "FeatureSplit" || type === "CtaBand") && key === "button") return { kind: "prop", href: "buttonHref", newTab: "buttonNewTab" };
+  if (type === "SiteHeader" && key === "cta") return { kind: "prop", href: "ctaHref", newTab: "ctaNewTab" };
   const nav = type === "SiteHeader" ? /^nav\.(\d+)$/.exec(key) : null;
   if (nav) return { kind: "prop", href: `nav.${nav[1]}.href`, newTab: `nav.${nav[1]}.newTab` };
   if (type === "SiteFooter" && (key === "privacy" || key === "terms")) return { kind: "prop", href: `${key}Href`, newTab: `${key}NewTab` };

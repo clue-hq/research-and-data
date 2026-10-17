@@ -1,23 +1,27 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
-import { RICH_PROPS, cloneLinkAt, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
+import { RICH_PROPS, cloneButtonAt, cloneLinkAt, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
 import { richFromDom } from "@clue/site-kit/editor";
 import { normalizeRich } from "@clue/site-kit/rich";
-import type { ElementSelection, LinkSource, RichSource } from "@clue/site-kit/editor-protocol";
+import type { ElementSelection, LabelSource, LinkSource, RichSource } from "@clue/site-kit/editor-protocol";
 import { acceptAppMessage, frameToApp } from "@clue/site-kit/editor-protocol";
 import { canonicalJson, pageFor } from "@clue/site-kit/editor-site";
 import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
 import type { BootContext } from "./boot";
 import { buildPageConfig, shellFieldDescriptions } from "./config";
 import {
+  buttonAround,
+  buttonLabelOf,
   clickIntent,
+  computedBox,
   computedTypography,
   cssColorToHex,
   elementKeyAt,
   elementSelection,
   elementSummary,
   findKeyedElement,
-  keyedElementsIn,
+  inspectableElementsIn,
+  isButtonElement,
   rangeAt,
   rectOf,
   selectionOffsets,
@@ -107,6 +111,66 @@ function describeElement(controller: FrameController, target: string, componentI
   return { ...described, link: link ? { source: link, ...(shown ? { href: shown.slice(0, 2048) } : {}) } : null, rich, words: wordsIn(element) };
 }
 
+const AGENT_BUTTON = "The agent's section sets this button's words and link; ask the agent to change them.";
+const CLONE_BUTTON_WORDS = "This button's words are copied from the seller's page and have no slot.";
+
+/** The chosen button as the `selected` message carries it (plan 3): its words (key, look, where they
+ * are stored as rich text), its box as drawn, where its words and its link are written, and the words
+ * highlighted in its label. */
+function describeButton(controller: FrameController, target: string, componentId: string, button: Element): ElementSelection {
+  const described = elementSelection(button, window, toHex);
+  const label = buttonLabelOf(button) ?? button;
+  const labelKey = label.getAttribute("data-clue-el") ?? described.key;
+  const state = controller.getState();
+  const key = described.key;
+  let rich: RichSource | null = null;
+  let labelSource: LabelSource | null = null;
+  let link: LinkSource | null = null;
+  if (target === SHELL_TARGET) {
+    if (componentId === "header" && key === "cta") {
+      rich = { prop: "ctaLabel" };
+      labelSource = { kind: "prop", prop: "ctaLabel" };
+      link = ownLinkSource("SiteHeader", key);
+    }
+  } else if (state.site && state.brand) {
+    const item = pageFor(state.site, target)?.content.find((entry) => entry.props.id === componentId);
+    const props = (item?.props ?? {}) as Record<string, unknown>;
+    if (item?.type === "ClonedSection") {
+      const clone = state.brand.clones[String(props.fragmentId ?? "")];
+      const found = clone ? cloneButtonAt(clone, key) : null;
+      if (found?.labelSlot) {
+        const stored = (props.slots as Record<string, unknown> | undefined)?.[found.labelSlot];
+        rich = typeof stored === "string" ? { prop: `slots.${found.labelSlot}` } : { fallback: normalizeRich(richFromDom(label), { links: false }), prop: `slots.${found.labelSlot}` };
+        labelSource = { kind: "slot", slot: found.labelSlot };
+      } else {
+        labelSource = found?.labelText ? { find: found.labelText, kind: "replacement" } : { kind: "fixed", reason: CLONE_BUTTON_WORDS };
+      }
+      if (found?.hrefSlot) link = { kind: "slot", slot: found.hrefSlot };
+      else if (found?.href) link = { find: found.href, kind: "replacement", shared: found.shared };
+    } else if (item && item.type in RICH_PROPS) {
+      if (key === "button") {
+        rich = { prop: "buttonLabel" };
+        labelSource = { kind: "prop", prop: "buttonLabel" };
+      }
+      link = ownLinkSource(item.type, key);
+    } else if (item) {
+      labelSource = { kind: "fixed", reason: AGENT_BUTTON };
+      link = { kind: "fixed", reason: AGENT_BUTTON };
+    }
+  }
+  const shown = button.getAttribute("href") ?? undefined;
+  return {
+    ...described,
+    box: computedBox(button, window, toHex),
+    kind: "button",
+    labelElement: { computed: computedTypography(label, window, toHex), key: labelKey, rich },
+    labelSource,
+    link: link ? { source: link, ...(shown ? { href: shown.slice(0, 2048) } : {}) } : null,
+    rich: null,
+    words: wordsIn(label),
+  };
+}
+
 /** The words highlighted inside the element now, or null. */
 function wordsIn(element: Element): ElementSelection["words"] {
   const selection = document.getSelection();
@@ -124,7 +188,8 @@ function highlightKeptWords(controller: FrameController): void {
   const selection = controller.getState().selection;
   if (!kept || !selection || selection.elementKey !== kept.key || selection.componentId !== kept.componentId) return;
   const scope = selectionScope(selection.target, selection.componentId);
-  const element = scope ? findKeyedElement(scope, kept.key) : null;
+  const found = scope ? findKeyedElement(scope, kept.key) : null;
+  const element = found && isButtonElement(found, window) ? buttonLabelOf(found) : found;
   const current = document.getSelection();
   if (!element || !current) return;
   if (current.rangeCount && !current.isCollapsed && selectionOffsets(element, current.getRangeAt(0))) return;
@@ -157,8 +222,8 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (!scope) return { element: null, elements: [] };
       const found = key ? findKeyedElement(scope, key) : null;
       return {
-        element: found ? describeElement(controller, target, componentId, found) : null,
-        elements: keyedElementsIn(scope).map(elementSummary),
+        element: found ? (isButtonElement(found, window) ? describeButton(controller, target, componentId, found) : describeElement(controller, target, componentId, found)) : null,
+        elements: inspectableElementsIn(scope, window).map(({ element, kind }) => elementSummary(element, kind)),
       };
     });
     return () => controller.attachDescriber(null);
@@ -175,7 +240,9 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         controller.selectionChanged(null);
         return;
       }
-      const element = textElementAround(selection.getRangeAt(0).commonAncestorContainer);
+      const node = selection.getRangeAt(0).commonAncestorContainer;
+      // Words highlighted in a button's label select the button (plan 3).
+      const element = buttonAround(node, window) ?? textElementAround(node);
       const place = element ? placeOf(element) : null;
       const key = element?.getAttribute("data-clue-el");
       const target = place?.target === SHELL_TARGET ? SHELL_TARGET : controller.getState().route;
@@ -222,12 +289,12 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const point = { x: event.clientX, y: event.clientY };
       if (action.kind === "shell") {
         event.stopPropagation();
-        controller.elementClicked(SHELL_TARGET, action.part, elementKeyAt(action.element, event.target, point));
+        controller.elementClicked(SHELL_TARGET, action.part, elementKeyAt(action.element, event.target, point, window));
         controller.shellSelected(action.part);
         controller.annotate(SHELL_TARGET, action.part, rectOf(action.element, scroll));
       }
       if (action.kind === "component" && action.componentId) {
-        controller.elementClicked(controller.getState().route, action.componentId, elementKeyAt(action.element, event.target, point));
+        controller.elementClicked(controller.getState().route, action.componentId, elementKeyAt(action.element, event.target, point, window));
         controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
       }
     };

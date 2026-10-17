@@ -29,6 +29,8 @@ test("our sections' and the shell's own links are written in a prop beside a new
   assert.deepEqual(ownLinkSource("SiteFooter", "privacy"), { kind: "prop", href: "privacyHref", newTab: "privacyNewTab" });
   assert.deepEqual(ownLinkSource("SiteFooter", "terms"), { kind: "prop", href: "termsHref", newTab: "termsNewTab" });
   assert.equal(ownLinkSource("ProofCard", "heading"), null);
+  assert.deepEqual(ownLinkSource("CtaBand", "button"), { kind: "prop", href: "buttonHref", newTab: "buttonNewTab" });
+  assert.deepEqual(ownLinkSource("SiteHeader", "cta"), { kind: "prop", href: "ctaHref", newTab: "ctaNewTab" });
 });
 
 const agentSchema = z.toJSONSchema(z.object({ id: z.string(), surface: z.string(), title: z.string().meta({ edit: "inline" }), cards: z.array(z.object({ body: z.string().meta({ edit: "inline" }) })) }));

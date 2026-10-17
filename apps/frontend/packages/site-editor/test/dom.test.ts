@@ -138,3 +138,61 @@ test("words are counted as a reader counts them", () => {
   assert.equal(wordCount("provi"), 1);
   assert.equal(wordCount("   "), 0);
 });
+
+// Plan 3: buttons. A keyed link or button with inline-only content that the browser draws as a box.
+import { buttonAround, buttonLabelOf, computedBox, inspectableElementsIn, isButtonElement } from "../src/client/dom";
+
+const buttonDom = new JSDOM(`
+  <div data-puck-component="hero">
+    <h2 id="t" data-clue-el="heading">Title</h2>
+    <a id="brand" class="brand-btn" data-clue-el="button" style="background-color: rgb(15, 89, 176); border: 2px solid rgb(0, 0, 0); border-radius: 9999px; padding: 12px 22px"><span id="brandLabel" data-clue-el="button.label">Go</span></a>
+    <a id="clone" data-clue-el="0.1" href="/demo" style="display: inline-block"><svg></svg><span id="cloneLabel" data-clue-el="0.1.1">Book</span></a>
+    <a id="plain" data-clue-el="0.2" href="/x">Plain link</a>
+    <a id="card" data-clue-el="0.3" href="/c" style="display: block"><div><h3 id="cardTitle" data-clue-el="0.3.0.0">Card</h3></div></a>
+    <button id="own" data-clue-el="0.4">Send</button>
+  </div>`);
+const bwin = buttonDom.window as unknown as Window;
+const bel = (id: string) => buttonDom.window.document.getElementById(id)!;
+const hero = buttonDom.window.document.querySelector("[data-puck-component]")!;
+const buttonBoxes: Record<string, { left: number; top: number; right: number; bottom: number }> = {
+  t: { left: 0, top: 0, right: 400, bottom: 40 },
+  brand: { left: 0, top: 50, right: 120, bottom: 90 },
+  brandLabel: { left: 20, top: 60, right: 100, bottom: 80 },
+  clone: { left: 140, top: 50, right: 260, bottom: 90 },
+  cloneLabel: { left: 160, top: 60, right: 240, bottom: 80 },
+};
+for (const element of hero.querySelectorAll("*")) {
+  const box = buttonBoxes[element.id] ?? { left: -1, top: -1, right: -1, bottom: -1 };
+  (element as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ ...box, width: box.right - box.left, height: box.bottom - box.top, x: box.left, y: box.top });
+}
+
+test("a button is a keyed link or button with inline-only content drawn as a box; a text link and a card link are not", () => {
+  assert.equal(isButtonElement(bel("brand"), bwin), true);
+  assert.equal(isButtonElement(bel("clone"), bwin), true, "display inline-block");
+  assert.equal(isButtonElement(bel("own"), bwin), true, "a <button>");
+  assert.equal(isButtonElement(bel("plain"), bwin), false, "an inline text link");
+  assert.equal(isButtonElement(bel("card"), bwin), false, "a link holding a block is a card");
+});
+
+test("Layers' elements: text and buttons; a button's words are part of it; a card's heading is text", () => {
+  assert.deepEqual(
+    inspectableElementsIn(hero, bwin).map(({ element, kind }) => `${element.id}:${kind}`),
+    ["t:text", "brand:button", "clone:button", "plain:text", "cardTitle:text", "own:button"],
+  );
+});
+
+test("a click on a button's words selects the button; its label is its words' element", () => {
+  const { elementKeyAt: keyAt } = { elementKeyAt };
+  assert.equal(keyAt(hero, bel("brandLabel"), { x: 30, y: 70 }, bwin), "button");
+  assert.equal(keyAt(hero, hero, { x: 200, y: 70 }, bwin), "0.1");
+  assert.equal(buttonAround(bel("cloneLabel").firstChild, bwin)?.id, "clone");
+  assert.equal(buttonLabelOf(bel("brand"))?.id, "brandLabel");
+  assert.equal(buttonLabelOf(bel("clone"))?.id, "cloneLabel");
+  assert.equal(buttonLabelOf(bel("own"))?.id, "own", "words of its own");
+});
+
+test("a button's box as drawn", () => {
+  assert.deepEqual(computedBox(bel("brand"), bwin, cssColorToHex), {
+    fill: "#0F59B0", borderColor: "#000000", borderWidth: 2, radius: [9999, 9999, 9999, 9999], paddingY: 12, paddingX: 22, width: 120,
+  });
+});

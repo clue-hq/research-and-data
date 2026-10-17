@@ -102,7 +102,8 @@ export type ComputedTypography = z.infer<typeof ComputedTypographySchema>;
 /** One element of the selected section the inspector can select (plan 1: text only). */
 export const ElementSummarySchema = z.object({
   key: ElementKeySchema,
-  kind: z.literal("text"),
+  /** plan 1: text; plan 3: button (a box with its words inside). */
+  kind: z.enum(["text", "button"]),
   label: z.string().max(80),
 });
 export type ElementSummary = z.infer<typeof ElementSummarySchema>;
@@ -129,6 +130,27 @@ export const LinkSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(16_384), shared: z.boolean() }),
   z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
 ]);
+/** Plan 3: a button's look as the browser draws it (the panel shows it where `_edits` sets nothing).
+ * Colours are #RRGGBB or "" for none, so they can never carry anything but a colour. */
+export const ComputedBoxSchema = z.object({
+  fill: z.string().regex(/^(#[0-9A-F]{6})?$/),
+  borderColor: z.string().regex(/^(#[0-9A-F]{6})?$/),
+  borderWidth: z.number().nonnegative().max(10_000),
+  radius: z.array(z.number().nonnegative().max(100_000)).length(4),
+  paddingY: z.number().nonnegative().max(10_000),
+  paddingX: z.number().nonnegative().max(10_000),
+  width: z.number().nonnegative().max(100_000),
+});
+/** Plan 3: where a button's words are written: a prop, a clone text slot, a clone text replacement
+ * (by the captured words), or nowhere the marketer can change (`fixed`, with why). */
+export const LabelSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("prop"), prop: PropPathSchema }),
+  z.object({ kind: z.literal("slot"), slot: z.string().min(1).max(200) }),
+  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(10_000) }),
+  z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
+]);
+export type ComputedBox = z.infer<typeof ComputedBoxSchema>;
+export type LabelSource = z.infer<typeof LabelSourceSchema>;
 export type RichSource = z.infer<typeof RichSourceSchema>;
 export type Words = z.infer<typeof WordsSchema>;
 export type LinkSource = z.infer<typeof LinkSourceSchema>;
@@ -138,6 +160,11 @@ export const ElementSelectionSchema = ElementSummarySchema.extend({
   words: WordsSchema.nullable().optional(),
   /** The element's own link: where it is written, and the address it goes to on the canvas now. */
   link: z.object({ source: LinkSourceSchema, href: z.string().max(2048).optional() }).nullable().optional(),
+  /** Plan 3, a button: its words (their key, how they are drawn, where they are stored as rich text),
+   * its box as drawn, and where its words are written. */
+  labelElement: z.object({ key: ElementKeySchema, computed: ComputedTypographySchema, rich: RichSourceSchema.nullable().optional() }).nullable().optional(),
+  box: ComputedBoxSchema.nullable().optional(),
+  labelSource: LabelSourceSchema.nullable().optional(),
 });
 export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
 

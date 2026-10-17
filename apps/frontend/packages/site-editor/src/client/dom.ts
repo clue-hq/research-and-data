@@ -1,5 +1,5 @@
 import { ELEMENT_KEY_ATTR, ElementKeySchema } from "@clue/site-kit/edits";
-import type { ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
+import type { ComputedBox, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
 
 export type ClickAction =
   | { kind: "navigate"; href: string }
@@ -105,17 +105,28 @@ export function keyedElementsIn(scope: Element): Element[] {
   });
 }
 
-/** The text element with this key inside the scope, or null. */
+/** The text element (or, plan 3, button) with this key inside the scope, or null: the first element
+ * carrying a valid key, as a section's `_edits` rule would style it. */
 export function findKeyedElement(scope: Element, key: string): Element | null {
-  return keyedElementsIn(scope).find((element) => validKey(element) === key) ?? null;
+  const selectable = (element: Element) =>
+    isTextElement(element) || ["a", "button"].includes(element.tagName.toLowerCase()) || element.classList.contains("brand-btn");
+  return [...scope.querySelectorAll(KEYED)].find((element) => validKey(element) === key && selectable(element)) ?? null;
 }
 
-/** The key of the text element a click meant: the target's own text element when the click reached
- * it (an in-place field takes pointer events), else the smallest text element whose box contains the
- * point (Puck turns pointer events off inside sections, so the target is the section itself). */
-export function elementKeyAt(scope: Element, target: EventTarget | null, point: { x: number; y: number }): string | null {
-  const texts = keyedElementsIn(scope);
+/** The key of the element a click meant: the target's own text element or button when the click
+ * reached it (an in-place field takes pointer events), else the smallest one whose box contains the
+ * point (Puck turns pointer events off inside sections, so the target is the section itself). With a
+ * `view`, buttons count too (plan 3), and a click on a button's words means the button. */
+export function elementKeyAt(
+  scope: Element,
+  target: EventTarget | null,
+  point: { x: number; y: number },
+  view?: Pick<Window, "getComputedStyle">,
+): string | null {
+  const texts = view ? inspectableElementsIn(scope, view).map(({ element }) => element) : keyedElementsIn(scope);
   const hit = asElement(target);
+  const button = view && hit ? buttonAround(hit, view) : null;
+  if (button && texts.includes(button)) return validKey(button);
   const direct = hit ? texts.find((element) => element.contains(hit)) : undefined;
   if (direct) return validKey(direct);
   let best: { element: Element; area: number } | null = null;
@@ -129,11 +140,11 @@ export function elementKeyAt(scope: Element, target: EventTarget | null, point: 
 }
 
 /** What Layers shows for an element: its words, whitespace collapsed, cut at 60 characters. */
-export function elementSummary(element: Element): ElementSummary {
+export function elementSummary(element: Element, kind: ElementSummary["kind"] = "text"): ElementSummary {
   const key = validKey(element) ?? "";
   const words = (element.textContent ?? "").replace(/\s+/g, " ").trim();
   const label = words.length > 60 ? `${words.slice(0, 59)}…` : words;
-  return { key, kind: "text", label: label || key };
+  return { key, kind, label: label || key };
 }
 
 /** "rgb(15, 89, 176)", "rgba(…)" or "#abc"/"#aabbcc" as #RRGGBB; null for anything else (an oklch
@@ -228,4 +239,86 @@ export function textElementAround(node: Node | null): Element | null {
     if (isTextElement(element)) return element;
   }
   return null;
+}
+
+// Plan 3: buttons. A keyed link or button whose content is inline only (words, icons; no blocks) and
+// that the browser draws as a box: not inline, or with a background or a border. Our own buttons
+// (brand-btn) always are. A text link inside a sentence stays text; a link holding a block is a card.
+
+const BLOCK_TAGS = "div,p,h1,h2,h3,h4,h5,h6,ul,ol,li,section,article,header,footer,figure,blockquote,table,form,nav,aside,main";
+
+const transparent = (color: string) => color === "" || color === "transparent" || /rgba\([^)]*,\s*0\s*\)$/.test(color);
+
+export function isButtonElement(element: Element, view: Pick<Window, "getComputedStyle">): boolean {
+  if (validKey(element) === null) return false;
+  const tag = element.tagName.toLowerCase();
+  if (tag !== "a" && tag !== "button" && !element.classList.contains("brand-btn")) return false;
+  if (element.querySelector(BLOCK_TAGS)) return false;
+  if (tag === "button" || element.classList.contains("brand-btn")) return true;
+  const style = view.getComputedStyle(element);
+  return style.display !== "inline" || !transparent(style.backgroundColor) || Number.parseFloat(style.borderTopWidth) > 0;
+}
+
+/** The button a node sits in (or is), or null. */
+export function buttonAround(node: Node | null, view: Pick<Window, "getComputedStyle">): Element | null {
+  for (let element = asElement(node as EventTarget | null); element; element = element.parentElement) {
+    if (isButtonElement(element, view)) return element;
+  }
+  return null;
+}
+
+/** A button's words: our `<key>.label`, else the first keyed text inside it, else the button itself. */
+export function buttonLabelOf(button: Element): Element | null {
+  const key = validKey(button);
+  const named = key ? [...button.querySelectorAll(KEYED)].find((element) => validKey(element) === `${key}.label`) : undefined;
+  if (named) return named;
+  return [...button.querySelectorAll(KEYED)].find((element) => isTextElement(element)) ?? button;
+}
+
+/** The scope's elements the inspector selects, in document order: buttons, and text that is not a
+ * button's words; a repeated key is skipped (the first owns it). */
+export function inspectableElementsIn(scope: Element, view: Pick<Window, "getComputedStyle">): { element: Element; kind: "text" | "button" }[] {
+  const seen = new Set<string>();
+  const found: { element: Element; kind: "text" | "button" }[] = [];
+  const buttons: Element[] = [];
+  for (const element of scope.querySelectorAll(KEYED)) {
+    const key = validKey(element);
+    if (key === null || seen.has(key)) continue;
+    if (buttons.some((button) => button.contains(element))) continue;
+    if (isButtonElement(element, view)) {
+      seen.add(key);
+      buttons.push(element);
+      found.push({ element, kind: "button" });
+    } else if (isTextElement(element)) {
+      seen.add(key);
+      found.push({ element, kind: "text" });
+    }
+  }
+  return found;
+}
+
+/** The four corner radii; from the shorthand when the browser gives no longhands. */
+function cornersOf(style: CSSStyleDeclaration): string[] {
+  const longhands = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius];
+  const zero = (value: string) => !value || Number.parseFloat(value) === 0;
+  if (!longhands.every(zero) || zero(style.borderRadius)) return longhands;
+  const values = (style.borderRadius || "0").split("/")[0].trim().split(/\s+/);
+  const [a, b = a, c = a, d = b] = values;
+  return [a, b, c, d];
+}
+
+/** A button's box as the browser draws it. */
+export function computedBox(element: Element, view: Pick<Window, "getComputedStyle">, toHex: (color: string) => string | null): ComputedBox {
+  const style = view.getComputedStyle(element);
+  const px = (value: string) => Math.max(0, Number.parseFloat(value) || 0);
+  const colour = (value: string) => (transparent(value) ? "" : (toHex(value) ?? ""));
+  return {
+    fill: colour(style.backgroundColor),
+    borderColor: px(style.borderTopWidth) > 0 ? colour(style.borderTopColor) : "",
+    borderWidth: px(style.borderTopWidth),
+    radius: cornersOf(style).map(px),
+    paddingY: px(style.paddingTop),
+    paddingX: px(style.paddingLeft),
+    width: Math.round(element.getBoundingClientRect().width * 10) / 10,
+  };
 }

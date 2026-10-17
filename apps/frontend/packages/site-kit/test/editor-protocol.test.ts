@@ -224,3 +224,20 @@ test("a clone slot's name may have dashes or start with a digit (review finding 
     assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "ClonedSection", fields: [], props: {}, element: { ...ELEMENT, rich: { prop: bad } } }, ctx)), null, bad);
   }
 });
+
+// Plan 3: a selected button carries its words, its look as drawn, and where its words are written.
+test("a selected button carries its label, its computed box and its label source", () => {
+  const element = {
+    key: "button", kind: "button" as const, label: "Request the analysis", computed: ELEMENT.computed,
+    labelElement: { key: "button.label", computed: ELEMENT.computed, rich: { prop: "buttonLabel" } },
+    box: { fill: "#0F59B0", borderColor: "", borderWidth: 0, radius: [9999, 9999, 9999, 9999], paddingY: 12, paddingX: 22, width: 214 },
+    labelSource: { kind: "prop" as const, prop: "buttonLabel" },
+  };
+  const parsed = parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element, elements: [{ key: "button", kind: "button", label: "Request the analysis" }] }, ctx));
+  assert.deepEqual(parsed?.type === "selected" ? parsed.payload.element : null, element);
+  const bad = { ...element, box: { ...element.box, fill: "red;}" } };
+  assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: bad } as never, ctx)), null);
+  for (const source of [{ kind: "slot", slot: "cta-label" }, { kind: "replacement", find: "Book a demo" }, { kind: "fixed", reason: "ask the agent" }]) {
+    assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: { ...element, labelSource: source } } as never, ctx))?.type, "selected");
+  }
+});
