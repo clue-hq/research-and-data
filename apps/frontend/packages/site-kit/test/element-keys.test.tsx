@@ -125,3 +125,18 @@ test("a button's words never draw a link inside the button, even from an agent's
   assert.equal((html.match(/<a\b/g) ?? []).length, 1, html);
   assert.match(html, /Book now <strong>today<\/strong>/);
 });
+
+import { StoredProps } from "../src/sections";
+
+test("in the editor a button whose stored words are empty is not drawn, as on the published page", () => {
+  const widget = <em>in-place editor</em>;
+  const inEditor = (stored: Record<string, unknown>, node: ReactNode) => draw(<StoredProps.Provider value={stored}>{node}</StoredProps.Provider>);
+  const kit = makeKit((value) => value, garner());
+  const ours = sections.CtaBand.render({ id: "c", surface: "brand", heading: "H", body: "", buttonLabel: widget, buttonHref: "/", buttonLook: "" } as never);
+  assert.doesNotMatch(inEditor({ id: "c", buttonLabel: "" }, ours), /brand-btn/, "our section's empty button");
+  assert.match(inEditor({ id: "c", buttonLabel: "Book" }, ours), /brand-btn/);
+  assert.doesNotMatch(inEditor({ id: "a", cta: "" }, kit.Button({ label: widget, href: "/", surface: "page", el: "cta" })), /brand-btn/, "an agent button named after its empty prop");
+  assert.match(inEditor({ id: "a", ctaText: "Book" }, kit.Button({ label: widget, href: "/", surface: "page", el: "cta" })), /brand-btn/, "an agent button named apart from its words' prop stays");
+  assert.doesNotMatch(inEditor({ id: "c" }, ours), /brand-btn/, "our section with no button words at all");
+  assert.match(draw(kit.Button({ label: "Book", href: "/", surface: "page", el: "cta" })), /brand-btn/, "a published page draws from its props");
+});

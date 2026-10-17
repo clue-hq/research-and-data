@@ -59,7 +59,8 @@ export function makeKit(href: Href, brand: BrandData): Kit {
   return {
     Shell,
     Button: ({ label, href: target, surface, look, disabled, el }) => (
-      <BrandButton brand={brand} label={label} href={href(target)} surface={surface} look={look} disabled={disabled} el={elementKey(el)} />
+      // Words stored in the prop the button is named after (R6), so the editor hides it when they are empty.
+      <BrandButton brand={brand} label={label} href={href(target)} surface={surface} look={look} disabled={disabled} el={elementKey(el)} words={elementKey(el)} />
     ),
     Card: ({ look, href: target, children }) => {
       const chosen = lookNamed(brand, "card", look);

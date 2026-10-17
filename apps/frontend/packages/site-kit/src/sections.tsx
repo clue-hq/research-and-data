@@ -5,9 +5,10 @@
 // Every text element carries the inspector's key attribute (edits.ts ELEMENT_KEY_ATTR), named by the prop it draws,
 // so the site inspector can select it and a section's `_edits` can style it.
 import type { ComponentConfig } from "@puckeditor/core";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { BrandData } from "./brand";
 import { buttonLookOptions, lookIcon, lookNamed } from "./looks";
+import { richText } from "./rich";
 import { newTabAttrs, rich, withoutLinks } from "./rich-node";
 import { HEADING_ROLES } from "./schemas";
 import { surfaceChoices } from "./surfaces";
@@ -56,12 +57,29 @@ export const Shell = ({ surface, children }: { surface: AnySurface; children: Re
 export const Eyebrow = ({ children, el }: { children: Text; el?: string }) =>
   children ? <p className="font-eyebrow text-eyebrow brand-ink-eyebrow" data-clue-el={el}>{children}</p> : null;
 
+/** In the editor, the section's props as stored (the drawn ones hold Puck's in-place widgets, which
+ * are never empty); null on a published page, whose drawn props are the stored ones. */
+export const StoredProps = createContext<Record<string, unknown> | null>(null);
+
+/** Whether the stored words have nothing to show. A prop the section does not have counts as empty
+ * only where it is known to hold the words (`missingIsEmpty`: our own sections); an agent's button
+ * may be named differently from the prop holding its words, so there a missing prop decides nothing. */
+const noWords = (stored: Record<string, unknown>, prop: string, missingIsEmpty: boolean) => {
+  if (!Object.hasOwn(stored, prop)) return missingIsEmpty;
+  const value = stored[prop];
+  return typeof value !== "string" || richText(value).trim() === "";
+};
+
 /** The kit's standard button, or one of the brand's looks by name, with that look's own icon. `el`
- * names it for the site inspector (plan 3): the box carries `el`, its words `<el>.label`. */
-export function Button({ brand, label, href, surface, look, disabled, el, newTab }: {
+ * names it for the site inspector (plan 3): the box carries `el`, its words `<el>.label`. `words`:
+ * the prop its words are stored in, so the editor draws no button where the published page draws
+ * none (its words are empty). */
+export function Button({ brand, label, href, surface, look, disabled, el, newTab, words, missingIsEmpty = false }: {
   brand: BrandData; label: Text; href: string; surface: AnySurface; look?: string; disabled?: boolean; el?: string; newTab?: boolean;
+  words?: string; missingIsEmpty?: boolean;
 }) {
-  if (!label) return null;
+  const stored = useContext(StoredProps);
+  if (!label || (stored && words && noWords(stored, words, missingIsEmpty))) return null;
   const chosen = lookNamed(brand, "button", look);
   const icon = lookIcon(brand, chosen);
   const mark = icon
@@ -192,7 +210,7 @@ export function makeSections(
             <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`} data-clue-el="heading">{rich(heading, href)}</h2>
             <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p>
             <div className="mt-stack-loose">
-              <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} />
+              <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} words="buttonLabel" missingIsEmpty />
             </div>
           </div>
         </div>
@@ -252,7 +270,7 @@ export function makeSections(
           <h2 className="font-headline text-headline brand-ink-headline" data-clue-el="heading">{rich(heading, href)}</h2>
           {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p> : null}
           <div className="mt-stack-loose">
-            <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} />
+            <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} words="buttonLabel" missingIsEmpty />
           </div>
         </div>
       </Shell>

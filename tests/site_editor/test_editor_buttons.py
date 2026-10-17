@@ -205,3 +205,12 @@ def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: 
     frame.locator('[data-puck-component="agentbtn"] [data-clue-el="loose"]').first.click(force=True)
     loose = wait_selected(page, mark, "loose", "agentbtn")["element"]
     assert loose["labelSource"]["kind"] == "fixed" and not loose["labelElement"].get("rich"), loose
+
+
+def test_a_button_with_no_words_is_not_drawn_in_the_editor(app: Any, browser_page: Any, editor_origin: str) -> None:
+    """As on the published page: the analysis page's second feature split stores no button words, so
+    the editor draws no button for it (its in-place editor would otherwise show an empty pill)."""
+    page, frame = open_analysis(app, browser_page, editor_origin, analysis_init())
+    frame.locator('[data-puck-component="after"]').first.wait_for(timeout=20000)
+    assert frame.locator('[data-puck-component="after"] .brand-btn').count() == 0
+    assert frame.locator(f'{WHAT} .brand-btn').count() == 1, "a button with words is drawn"

@@ -19,7 +19,7 @@ import { hasMarkup, mapRichLinks } from "./rich";
 import { rich } from "./rich-node";
 import { editsCss, editsOf, withoutEdits } from "./edits";
 import { themeCss } from "./theme";
-import { makeSections } from "./sections";
+import { makeSections, StoredProps } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
 import { buttonLookOptions } from "./looks";
 import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
@@ -375,7 +375,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     return (
       <div data-clue-section={id} className="clue-section">
         {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
-        {children}
+        <StoredProps.Provider value={stored ?? null}>{children}</StoredProps.Provider>
       </div>
     );
   };
