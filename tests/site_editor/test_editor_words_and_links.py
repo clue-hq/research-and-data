@@ -135,5 +135,5 @@ def test_links_say_where_they_are_written(app: Any, browser_page: Any, editor_or
         timeout=10000,
     )
     element = [m for m in received(page)[mark:] if m["type"] == "selected"][-1]["payload"]["element"]
-    assert element["link"] == {"source": {"kind": "prop", "href": "nav.0.href", "newTab": "nav.0.newTab"}}, element
+    assert element["link"] == {"source": {"kind": "prop", "href": "nav.0.href", "newTab": "nav.0.newTab"}, "href": "/analysis"}, element
     assert element["rich"] is None
