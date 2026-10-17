@@ -282,7 +282,7 @@ footer.
 
 | Plan | What the marketer gets | Status | Plan file |
 |---|---|---|---|
-| 1 | Click any text and style the whole text box | In progress since 2026-10-17 | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
+| 1 | Click any text and style the whole text box | Finished 2026-10-17; live-checked on Garner (Carmel Clay) and Conduit (Oliver Hotels) 2026-10-17; Clue has no microsite in the lane yet | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
 | 2 | Style and link highlighted words; more fonts | Not written | — |
 | 3 | Click a button and edit everything about it | Not written | — |
 | 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
@@ -419,6 +419,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 
 - 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
 - 2026-10-17: plan 6 (a structurally different, agent-written header) proposed; founder deferred it. Plan 1 started.
+- 2026-10-17: plan 1 finished. Live checks found and fixed: re-picking the shown font made a no-op save; Bold on a font with no 700 weight never showed as pressed (Bold now follows the font's own boldest weight, and is disabled with a note when there is none); the Theme tab listed palette ramps (hidden, ruling F3).
 - 2026-10-17: founder, during plan 1's live check: every word in the header and footer must be changeable, and the header must not be hard-coded — standard headers become templates the agent and the marketer change like any section. Briefly added to plan 1, then moved to **plan 6** (founder: "we do it as a part of plan 6"). Plan 1 keeps what it built: the header's account name and nav links, and the footer's text, are selectable and styleable.
 
 ## 8. Left to the builder
