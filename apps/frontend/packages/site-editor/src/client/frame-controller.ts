@@ -51,6 +51,11 @@ export type ElementDescriber = (
 
 const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
 
+/** Which elements a description shows (keys and labels), without their computed look. */
+function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
+  return JSON.stringify([element?.key ?? null, elements.map((item) => [item.key, item.label])]);
+}
+
 export interface FrameState {
   brand: BrandData | null;
   documentId: string;
@@ -271,20 +276,21 @@ export class FrameController {
   ): void {
     const { element, elements } = this.describe(target, componentId, key);
     this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
-    this.described = { askedKey: key, componentType, fields, shown: JSON.stringify([element, elements]) };
+    this.described = { askedKey: key, componentType, fields, shown: shownElements(element, elements) };
     this.post("selected", { componentId, componentType, element, elements, fields, props, route: target });
   }
 
   /** Describe the selection again once the canvas has settled (editor-app calls it a frame after a
    * selection or a redraw): Puck reports a click's selection while it is still redrawing the section,
-   * when its text may not be on the page yet. Posts `selected` again only when what the canvas shows
-   * changed — the element asked for found now, its look after a style change, elements added or gone. */
+   * when its text may not be on the page yet. Posts `selected` again only when WHICH elements the
+   * canvas shows changed — the element asked for found now, elements added or gone — never for a look
+   * that keeps changing (an animated colour would otherwise post on every frame). */
   refreshSelection(): void {
     const selection = this.state.selection;
     const described = this.described;
     if (this.state.mode !== "edit" || !selection || !described || !this.state.site) return;
     const { element, elements } = this.describe(selection.target, selection.componentId, described.askedKey);
-    if (JSON.stringify([element, elements]) === described.shown) return;
+    if (shownElements(element, elements) === described.shown) return;
     const props = componentProps(this.state.site, selection.target, selection.componentId) ?? {};
     this.postSelected(selection.target, selection.componentId, described.componentType, described.fields, props, described.askedKey);
   }

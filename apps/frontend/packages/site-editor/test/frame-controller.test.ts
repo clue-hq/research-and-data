@@ -498,3 +498,18 @@ test("a click on text in a section Puck did not select (a clone's editable text)
   h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
   assert.equal(h.selectedPayloads().at(-1)?.element?.key, "heading");
 });
+
+test("an element whose look keeps changing (an animated colour) is not posted again on every frame", async () => {
+  const h = harness();
+  let shade = 0;
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key ? { key, kind: "text", label: key, computed: { ...TYPO, color: `#0000${(shade++ % 100).toString().padStart(2, "0")}` } } : null,
+    elements: [{ key: "heading", kind: "text", label: "heading" }],
+  }));
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const count = h.posts.filter((post) => post.type === "selected").length;
+  for (let i = 0; i < 5; i += 1) h.controller.refreshSelection();
+  assert.equal(h.posts.filter((post) => post.type === "selected").length, count);
+});
