@@ -39,6 +39,8 @@ export const ColorValueSchema = z.union(
   { error: 'a colour is {"token": "<one of the brand\'s colour tokens>"} or {"hex": "#RRGGBB", "opacity": <0 to 100>}' },
 );
 
+const corner = z.number().min(0).max(200);
+
 /** One element's manual styling. Every property is optional; bold is fontWeight 700. */
 export const StyleOverrideSchema = z
   .object({
@@ -49,6 +51,16 @@ export const StyleOverrideSchema = z
     italic: z.boolean().optional(),
     underline: z.boolean().optional(),
     textAlign: z.enum(["left", "center", "right", "justify"]).optional(),
+    // Plan 3 (buttons; plan 4 extends them to boxes): the box itself.
+    fill: ColorValueSchema.optional(),
+    borderColor: ColorValueSchema.optional(),
+    borderWidth: z.number().min(0).max(200).optional(),
+    /** px; "pill" (fully round ends); or four corners [topLeft, topRight, bottomRight, bottomLeft]. */
+    radius: z.union([z.number().min(0).max(200), z.literal("pill"), z.array(corner).length(4)]).optional(),
+    /** px all round, or vertical and horizontal. */
+    padding: z.union([z.number().min(0).max(200), z.object({ y: z.number().min(0).max(200), x: z.number().min(0).max(200) }).strict()]).optional(),
+    /** "fit" (as wide as its content), "fill" (its container's width) or px. */
+    width: z.union([z.literal("fit"), z.literal("fill"), z.number().min(1).max(2000)]).optional(),
   })
   .strict();
 
@@ -119,11 +131,12 @@ export function editsProblems(edits: Edits, brand: BrandData): string[] {
   const families = [...own, ...libraryFontFamilies(brand)];
   const problems: string[] = [];
   for (const [key, override] of Object.entries(edits)) {
-    const color = override.color;
-    if (color && "token" in color && !tokens.includes(color.token)) {
-      problems.push(
-        `${key}: colour token "${color.token}" is not one of this brand's colours; use one of its colour tokens (${tokens.join(", ")}), or a hex colour with an opacity`,
-      );
+    for (const [value, word] of [[override.color, "colour"], [override.fill, "fill"], [override.borderColor, "stroke colour"]] as const) {
+      if (value && "token" in value && !tokens.includes(value.token)) {
+        problems.push(
+          `${key}: ${word} token "${value.token}" is not one of this brand's colours; use one of its colour tokens (${tokens.join(", ")}), or a hex colour with an opacity`,
+        );
+      }
     }
     if (override.fontFamily === undefined) continue;
     const family = families.find((f) => f.family === override.fontFamily);
@@ -176,6 +189,12 @@ function colorCss(brand: BrandData, color: ColorValue): string | undefined {
   return isComponentToken(color.token) ? value : `var(--brand-${colorVar(color.token)})`;
 }
 
+function radiusCss(radius: StyleOverride["radius"]): string | undefined {
+  if (radius === undefined) return undefined;
+  if (radius === "pill") return "9999px";
+  return typeof radius === "number" ? `${radius}px` : radius.map((value) => `${value}px`).join(" ");
+}
+
 /** One element's override as CSS declarations, in the schema's order. */
 function declarations(brand: BrandData, override: StyleOverride): string[] {
   const out: [string, string | undefined][] = [
@@ -187,6 +206,15 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
     ["font-style", override.italic === undefined ? undefined : override.italic ? "italic" : "normal"],
     ["text-decoration-line", override.underline === undefined ? undefined : override.underline ? "underline" : "none"],
     ["text-align", override.textAlign],
+    ["background-color", override.fill && colorCss(brand, override.fill)],
+    // A fill replaces the box's own colour entirely: a gradient button turns flat.
+    ["background-image", override.fill && colorCss(brand, override.fill) ? "none" : undefined],
+    ["border-color", override.borderColor && colorCss(brand, override.borderColor)],
+    ["border-width", override.borderWidth !== undefined ? `${override.borderWidth}px` : undefined],
+    ["border-style", override.borderWidth !== undefined ? "solid" : undefined],
+    ["border-radius", radiusCss(override.radius)],
+    ["padding", override.padding === undefined ? undefined : typeof override.padding === "number" ? `${override.padding}px` : `${override.padding.y}px ${override.padding.x}px`],
+    ["width", override.width === undefined ? undefined : override.width === "fit" ? "fit-content" : override.width === "fill" ? "100%" : `${override.width}px`],
   ];
   return out.flatMap(([property, value]) => (value ? [`${property}:${value} !important`] : []));
 }

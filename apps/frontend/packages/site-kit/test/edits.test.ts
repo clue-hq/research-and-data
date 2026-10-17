@@ -259,3 +259,36 @@ test("a section that uses a library family carries that family's faces; one that
   assert.ok(css.includes('font-family:"Lora", serif !important'));
   assert.ok(!editsCss("hero", { heading: { fontFamily: "Open Sans" } }, libraryBrand).includes("@font-face"), "the brand's own family is loaded by the theme");
 });
+
+// Site element inspector, plan 3 (buttons): the box properties.
+test("box properties parse within their ranges and shapes, and refuse anything else", () => {
+  const ok = [
+    { fill: { token: "text.primary" } }, { fill: { hex: "#0F59B0", opacity: 50 } }, { borderColor: { hex: "#000000", opacity: 100 } },
+    { borderWidth: 0 }, { borderWidth: 200 }, { radius: 12 }, { radius: "pill" }, { radius: [0, 4, 8, 200] },
+    { padding: 16 }, { padding: { y: 12, x: 22 } }, { width: "fit" }, { width: "fill" }, { width: 320 },
+  ];
+  for (const value of ok) assert.ok(StyleOverrideSchema.safeParse(value).success, JSON.stringify(value));
+  const bad = [
+    { borderWidth: -1 }, { borderWidth: 201 }, { radius: 300 }, { radius: "round" }, { radius: [1, 2, 3] }, { radius: [1, 2, 3, 400] },
+    { padding: 201 }, { padding: { y: 1 } }, { padding: { y: 1, x: 2, z: 3 } }, { width: 0 }, { width: 2001 }, { width: "half" },
+    { fill: "red" }, { background: { token: "x" } },
+  ];
+  for (const value of bad) assert.equal(StyleOverrideSchema.safeParse(value).success, false, JSON.stringify(value));
+});
+
+test("box properties are drawn as important CSS; a fill clears a gradient; a border width is solid", () => {
+  assert.equal(
+    editsCss("cta", { button: { fill: { hex: "#0F59B0", opacity: 100 }, borderColor: { hex: "#000000", opacity: 50 }, borderWidth: 2, radius: "pill", padding: { y: 12, x: 22 }, width: "fill" } }, brand),
+    '[data-clue-section="cta"] [data-clue-el="button"]{background-color:#0F59B0FF !important;background-image:none !important;border-color:#00000080 !important;border-width:2px !important;border-style:solid !important;border-radius:9999px !important;padding:12px 22px !important;width:100% !important}',
+  );
+  assert.match(editsCss("cta", { button: { radius: [0, 4, 8, 16], padding: 10, width: "fit" } }, brand), /border-radius:0px 4px 8px 16px !important;padding:10px !important;width:fit-content !important/);
+  assert.match(editsCss("cta", { button: { radius: 6, width: 240 } }, brand), /border-radius:6px !important;width:240px !important/);
+  assert.match(editsCss("cta", { button: { fill: { token: "text.primary" } } }, brand), /background-color:var\(--brand-ink-primary\) !important/);
+});
+
+test("an unknown fill or stroke token is reported at its key", () => {
+  const problems = editsProblems({ button: { fill: { token: "no.fill" }, borderColor: { token: "no.border" } } }, brand);
+  assert.equal(problems.length, 2, problems.join("\n"));
+  assert.match(problems[0], /^button: fill token "no\.fill" is not one of this brand's colours/);
+  assert.match(problems[1], /^button: stroke colour token "no\.border" is not one of this brand's colours/);
+});

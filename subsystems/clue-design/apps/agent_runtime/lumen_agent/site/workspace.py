@@ -493,6 +493,34 @@ def _styled_by_hand(edits: object) -> list[str]:
             words.append("underlined" if override["underline"] else "not underlined")
         if override.get("textAlign"):
             words.append(_ALIGN_WORDS.get(override["textAlign"], str(override["textAlign"])))
+        # Plan 3 (buttons): the box itself.
+        for prop, label in (("fill", "fill"), ("borderColor", "stroke colour")):
+            value = override.get(prop)
+            if isinstance(value, Mapping) and value.get("token"):
+                words.append(f"{label} {value['token']}")
+            elif isinstance(value, Mapping) and value.get("hex"):
+                words.append(f"{label} {value['hex']} {value.get('opacity', 100)}%")
+        if override.get("borderWidth") is not None:
+            words.append(f"stroke {override['borderWidth']:g} px")
+        radius = override.get("radius")
+        if radius == "pill":
+            words.append("corners pill")
+        elif isinstance(radius, (int, float)):
+            words.append(f"corners {radius:g} px")
+        elif isinstance(radius, list):
+            words.append("corners " + " / ".join(f"{corner:g}" for corner in radius) + " px")
+        padding = override.get("padding")
+        if isinstance(padding, (int, float)):
+            words.append(f"padding {padding:g} px")
+        elif isinstance(padding, Mapping):
+            words.append(f"padding {padding.get('y', 0):g} × {padding.get('x', 0):g} px")
+        width = override.get("width")
+        if width == "fill":
+            words.append("full width")
+        elif width == "fit":
+            words.append("as wide as its words")
+        elif isinstance(width, (int, float)):
+            words.append(f"{width:g} px wide")
         if words:
             out.append(f"{key} — {', '.join(words)}")
     return out

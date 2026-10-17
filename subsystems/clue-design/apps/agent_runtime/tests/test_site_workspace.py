@@ -299,3 +299,22 @@ def test_the_site_summary_reads_rich_text_and_links_in_plain_words(tmp_path: Pat
     assert '   - link "Read" → /analysis, new tab' in text
     assert "   - styled by hand: heading~1 — Bold" in text
     assert "- Nav links: Analysis → /analysis (new tab)" in text
+
+
+def test_the_site_summary_reads_a_buttons_hand_set_look(tmp_path: Path) -> None:
+    """Site element inspector (plan 3): fill, stroke, corners, padding and width in plain words."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
+        "id": "styled_cta", "surface": "brand", "heading": "H", "buttonLabel": "Go", "buttonHref": "/",
+        "_edits": {
+            "button": {"fill": {"token": "text.inverse"}, "borderColor": {"hex": "#0F59B0", "opacity": 100},
+                       "borderWidth": 2, "radius": "pill", "padding": {"y": 12, "x": 22}, "width": "fill"},
+            "button.label": {"radius": [0, 4, 8, 16], "padding": 10, "width": 240},
+        }}})
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert ("   - styled by hand: button — fill text.inverse, stroke colour #0F59B0 100%, stroke 2 px, "
+            "corners pill, padding 12 × 22 px, full width") in text
+    assert "   - styled by hand: button.label — corners 0 / 4 / 8 / 16 px, padding 10 px, 240 px wide" in text
