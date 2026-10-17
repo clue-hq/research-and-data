@@ -14,11 +14,18 @@ export type HeaderProps = {
   /** A button style of the brand's (brand.md, Buttons); empty is the standard button. */
   ctaLook?: string;
   /** Links to the site's other pages; shown on wider screens beside the button. */
-  nav?: { label: string; href: string }[];
+  nav?: { label: string; href: string; newTab?: boolean }[];
   /** Manual styling of the header's elements (edits.ts). */
   _edits?: Edits;
 };
-export type FooterProps = { legal: string; privacyHref: string; termsHref: string; _edits?: Edits };
+export type FooterProps = {
+  legal: string;
+  privacyHref: string;
+  privacyNewTab?: boolean;
+  termsHref: string;
+  termsNewTab?: boolean;
+  _edits?: Edits;
+};
 export type ShellData = { header: HeaderProps; footer: FooterProps };
 
 type Logos = Record<string, { variants: { name: string; asset_id: string }[] }>;

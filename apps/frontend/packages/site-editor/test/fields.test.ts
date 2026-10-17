@@ -57,11 +57,14 @@ test("the header and footer describe their own fields", () => {
   assert.deepEqual(header.nav.item?.map((item) => [item.name, item.kind]), [
     ["label", "text"],
     ["href", "link"],
+    ["newTab", "boolean"],
   ]);
   assert.deepEqual(shell.footer.map((field) => [field.name, field.kind]), [
     ["legal", "text"],
     ["privacyHref", "link"],
+    ["privacyNewTab", "boolean"],
     ["termsHref", "link"],
+    ["termsNewTab", "boolean"],
   ]);
 });
 

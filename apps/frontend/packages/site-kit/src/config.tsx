@@ -19,6 +19,8 @@ type ClonedSectionProps = {
   slots: SlotValues;
   replacements: TextReplacement[];
   links: LinkReplacement[];
+  /** Element keys of the links that open in a new tab. */
+  newTab?: string[];
 };
 
 const SLOT_FIELD = {
@@ -132,7 +134,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             nav: {
               type: "array",
               label: "Navigation links",
-              arrayFields: { label: { type: "text" }, href: { type: "text", label: "Link (/page or URL)" } },
+              arrayFields: {
+                label: { type: "text" },
+                href: { type: "text", label: "Link (/page or URL)" },
+                newTab: { type: "radio", label: "Open in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
+              },
               getItemSummary: (item: { label?: string }) => item.label || "Link",
             },
           } as never,
@@ -143,7 +149,9 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           fields: {
             legal: { type: "text", label: "Legal line" },
             privacyHref: { type: "text", label: "Privacy link" },
+            privacyNewTab: { type: "radio", label: "Open the privacy link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
             termsHref: { type: "text", label: "Terms link" },
+            termsNewTab: { type: "radio", label: "Open the terms link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
           },
           render: (props) => <SiteFooter brand={brand} footer={props} href={href} />,
         },
@@ -227,7 +235,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       ...(agentSections as unknown as Record<string, never>),
       ClonedSection: {
         label: "Cloned section",
-        defaultProps: { fragmentId: "", slots: {}, replacements: [], links: [] },
+        defaultProps: { fragmentId: "", slots: {}, replacements: [], links: [], newTab: [] },
         fields: {
           fragmentId: { type: "select", label: "Section", options: cloneOptions },
           slots: { type: "object", label: "Slots", objectFields: {} },
@@ -243,6 +251,8 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             arrayFields: { find: { type: "text" }, replace: { type: "text" } },
             getItemSummary: (item) => item.find || "New link",
           },
+          // Set from the link panel (site element inspector, plan 2), never typed in a field.
+          newTab: { type: "custom", label: "Links opening in a new tab", render: () => <span /> },
         },
         resolveFields: (data, { fields }) => {
           const clone = brand.clones[data.props.fragmentId];

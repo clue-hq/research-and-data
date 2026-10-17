@@ -192,6 +192,7 @@ export function makeSections(
       surface: surfaceField, kicker: text("Kicker (whose result)"), metric: text("Metric"),
       metricLabel: text("Metric label"), heading: text("Heading"), body: area("Body"),
       source: text("Source line"), linkLabel: text("Link label"), linkHref: { type: "text", label: "Link" },
+      linkNewTab: { type: "radio", label: "Open the link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
     } as never,
     defaultProps: {
       surface: "card", kicker: "Customer or study", metric: "13%", metricLabel: "what changed",

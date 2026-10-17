@@ -15,7 +15,9 @@ import type { BrandData } from "./brand";
 import { replaceableTexts, type Clone } from "./clone";
 import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
-import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
+import { richPropPaths, richValuesAt } from "./agent-props";
+import { richLinks, richProblems } from "./rich";
+import { RICH_PROPS, ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
 import { surfaceChoices } from "./surfaces";
 
 type Item = { type: string; props: Record<string, unknown> };
@@ -26,7 +28,14 @@ type Shell = { header?: Record<string, unknown>; footer?: Record<string, unknown
 export type SiteFiles = { pages: Record<string, unknown>; shell: unknown | null };
 /** A site's agent-written sections, as the validator needs them: only the schema (E5). The design
  * API builds each one from the section's STORED props JSON Schema (bin/validate-site.ts). */
-export type AgentSectionSchemas = Record<string, { schema: { safeParse: (value: unknown) => { success: boolean } } }>;
+export type AgentSectionSchemas = Record<
+  string,
+  {
+    schema: { safeParse: (value: unknown) => { success: boolean } };
+    /** The section's stored props JSON Schema: the props it marked for editing in place are rich text. */
+    propsSchema?: unknown;
+  }
+>;
 /** Images a site may use besides the brand's assets: the ones generated for it, and the account's
  * own logos (the header's accountLogo only). Every one is /asset-store/<sha256> (Contract 1). */
 export type SiteImages = { siteImages: string[]; accountLogos: string[] };
@@ -134,6 +143,14 @@ export function validateSite(
     destinations.set(href, [...(destinations.get(href) ?? []), where]);
   };
 
+  // Rich text (plan 2): the grammar, and each of its links to a real page like any other link.
+  const checkRich = (value: unknown, where: string) => {
+    if (typeof value !== "string" || value === "") return;
+    const problems = richProblems(value);
+    for (const problem of problems) errors.push(`${where}: ${problem}`);
+    if (!problems.length) for (const href of richLinks(value)) addWritten(href, where);
+  };
+
   for (const { where: file, page } of pages) {
     // Name sections by position and id everywhere, e.g. content.3(proof), so every error reads alike.
     const withIds = (line: string) =>
@@ -153,6 +170,7 @@ export function validateSite(
         if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
         const look = item.props.buttonLook;
         if (typeof look === "string" && look && !lookNames.includes(look)) errors.push(lookError(`${at}.buttonLook`, look));
+        for (const prop of (RICH_PROPS as Record<string, readonly string[]>)[item.type] ?? []) checkRich(item.props[prop], `${at}.${prop}`);
       }
       if (item.type === "ClonedSection") {
         const id = String(item.props.fragmentId ?? "");
@@ -169,6 +187,7 @@ export function validateSite(
             continue;
           }
           if (slot.kind === "text" && typeof value !== "string") errors.push(`${at}.slots.${key}: a text slot takes a string`);
+          if (slot.kind === "text") checkRich(value, `${at}.slots.${key}`);
           if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !LINK.test(value)))) {
             errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
           }
@@ -233,6 +252,8 @@ export function validateSite(
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
         };
         walk(withoutEdits(item.props), at, "");
+        const paths = richPropPaths((agentSections[item.type].propsSchema ?? {}) as Parameters<typeof richPropPaths>[0]);
+        for (const { path, value } of richValuesAt(item.props, paths)) checkRich(value, `${at}.${path}`);
       }
     });
   }

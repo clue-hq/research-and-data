@@ -22,7 +22,7 @@ import type { FieldDescription, FieldKind, FieldOption } from "@clue/site-kit/ed
  */
 const LONG_TEXT = /(body|intro|statement|description|quote|summary)$/i;
 const SLOT_KINDS: Record<string, FieldKind> = { href: "link", image: "image", text: "textarea", visibility: "boolean" };
-const HIDDEN: Record<string, readonly string[]> = { ClonedSection: ["fragmentId", "slots", "replacements", "links"] };
+const HIDDEN: Record<string, readonly string[]> = { ClonedSection: ["fragmentId", "slots", "replacements", "links", "newTab"] };
 
 type JsonSchema = {
   type?: string | string[];

@@ -17,7 +17,7 @@ import {
   buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, measuredComponents, motionEntries, motionNotes,
   partsFromSlots, standardLook, type Drawn, type Look, type Part,
 } from "./looks";
-import { COMPONENT_SCHEMAS } from "./schemas";
+import { COMPONENT_SCHEMAS, RICH_PROPS } from "./schemas";
 import { colorVar, inkRole, surfaceChoices } from "./surfaces";
 import { SPACING_ROLES, TYPE_ROLES, typeVar } from "./theme";
 
@@ -132,7 +132,8 @@ function sectionsFile(brand: BrandData): string {
               : spec.default !== undefined
                 ? `default ${JSON.stringify(spec.default)}`
                 : "";
-      const kind = spec.type === "array" ? "list" : spec.type ?? "text";
+      const rich = (RICH_PROPS as Record<string, readonly string[]>)[type]?.includes(field);
+      const kind = rich ? "rich text" : spec.type === "array" ? "list" : spec.type ?? "text";
       parts.push(`| \`${field}\` | ${kind} | ${required} | ${choices} |`);
     }
     parts.push("");

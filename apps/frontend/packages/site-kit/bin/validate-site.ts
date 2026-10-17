@@ -26,7 +26,7 @@ const agentSections: AgentSectionSchemas = {};
 const schemaErrors: string[] = [];
 for (const [name, jsonSchema] of Object.entries(input.agentSectionSchemas ?? {})) {
   try {
-    agentSections[name] = { schema: z.fromJSONSchema(jsonSchema as Parameters<typeof z.fromJSONSchema>[0]) };
+    agentSections[name] = { schema: z.fromJSONSchema(jsonSchema as Parameters<typeof z.fromJSONSchema>[0]), propsSchema: jsonSchema };
   } catch (error) {
     schemaErrors.push(`agent_sections.${name}: its stored props schema could not be read (${(error as Error).message})`);
   }

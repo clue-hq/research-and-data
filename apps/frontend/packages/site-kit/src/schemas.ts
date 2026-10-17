@@ -7,7 +7,7 @@
 // brand tokens and bounded values (edits.ts). Text has no length limits (founder ruling 2026-10-04:
 // code checks correctness, not prose length).
 import { z } from "zod";
-import { EDITS_PROP, EditsSchema, withoutEdits } from "./edits";
+import { EDITS_PROP, EditsSchema, ElementKeySchema, withoutEdits } from "./edits";
 import { ComponentIdSchema } from "./site-document";
 
 export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
@@ -83,6 +83,7 @@ export const ProofCardSchema = z
     source: optionalText,
     linkLabel: optionalText,
     linkHref: optionalLink,
+    linkNewTab: z.boolean().optional(),
   })
   .strict();
 
@@ -107,8 +108,20 @@ export const ClonedSectionSchema = z
     slots: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
     replacements: z.array(z.object({ find: text.min(1), replace: text }).strict()).default([]),
     links: z.array(z.object({ find: text.min(1), replace: link }).strict()).default([]),
+    /** The section's links that open in a new tab, by their element key (data-clue-el). */
+    newTab: z.array(ElementKeySchema).default([]),
   })
   .strict();
+
+/** The text our sections draw as RICH text (plan 2, spec §4.4; ruling R4): every field edited in
+ * place except link and button labels (a link label is the link itself; buttons are plan 3). The
+ * save check checks these against the grammar (rich.ts); the editor makes them rich text fields. */
+export const RICH_PROPS = {
+  StatsBand: ["eyebrow", "heading", "intro", "source"],
+  FeatureSplit: ["eyebrow", "heading", "body"],
+  ProofCard: ["kicker", "metric", "metricLabel", "heading", "body", "source"],
+  CtaBand: ["heading", "body"],
+} as const satisfies Record<string, readonly string[]>;
 
 /** Every component a page may use. Anything else is refused. */
 export const COMPONENT_SCHEMAS = {
@@ -202,7 +215,7 @@ export const ShellSchema = z
         ctaLabel: text.min(1),
         ctaHref: link,
         ctaLook: buttonLook,
-        nav: z.array(z.object({ label: text.min(1), href: link }).strict()).max(6).default([]),
+        nav: z.array(z.object({ label: text.min(1), href: link, newTab: z.boolean().optional() }).strict()).max(6).default([]),
         _edits: EditsSchema.optional(),
       })
       .strict(),
@@ -211,7 +224,9 @@ export const ShellSchema = z
         id: z.string().optional(),
         legal: text.min(1),
         privacyHref: optionalLink,
+        privacyNewTab: z.boolean().optional(),
         termsHref: optionalLink,
+        termsNewTab: z.boolean().optional(),
         _edits: EditsSchema.optional(),
       })
       .strict(),

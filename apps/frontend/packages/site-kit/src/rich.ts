@@ -319,6 +319,11 @@ export function richHtml(html: string, href: (value: string) => string): string 
   );
 }
 
+/** The addresses of the links in the text, in order (the save check sends each one to its page check). */
+export function richLinks(html: string): string[] {
+  return runsOf(html).flatMap((run, i, runs) => (run.link && runs[i - 1]?.link?.href !== run.link.href ? [run.link.href] : []));
+}
+
 /** Whether a string holds markup or a character reference (and so must be drawn as rich text). */
 export const hasMarkup = (value: string) => /[<&]/.test(value);
 

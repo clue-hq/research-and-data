@@ -52,3 +52,34 @@ export function inlineMarkerErrors(schema: PropsJsonSchema, prefix = ""): string
     return errors;
   });
 }
+
+/** The props an agent section marked for editing in place (and that may be): its RICH text (plan 2,
+ * spec §4.4). Nested props are paths with "*" for an array's items (`cards.*.title`). */
+export function richPropPaths(schema: PropsJsonSchema, prefix = ""): string[] {
+  return Object.entries(schema.properties ?? {}).flatMap(([name, property]) => {
+    const path = `${prefix}${name}`;
+    if (property.edit === EDIT_INLINE && property.type === "string" && notInlineReason(name) === null) return [path];
+    if (property.items?.properties) return richPropPaths(property.items, `${path}.*.`);
+    if (property.properties) return richPropPaths(property, `${path}.`);
+    return [];
+  });
+}
+
+/** The string values at those paths in a section's props, each with its real path (`cards.1.title`). */
+export function richValuesAt(props: Record<string, unknown>, paths: readonly string[]): { path: string; value: string }[] {
+  const found: { path: string; value: string }[] = [];
+  const visit = (value: unknown, parts: string[], at: string) => {
+    if (!parts.length) {
+      if (typeof value === "string") found.push({ path: at, value });
+      return;
+    }
+    const [head, ...rest] = parts;
+    if (head === "*") {
+      if (Array.isArray(value)) value.forEach((item, i) => visit(item, rest, `${at}.${i}`));
+    } else if (value && typeof value === "object") {
+      visit((value as Record<string, unknown>)[head], rest, at ? `${at}.${head}` : head);
+    }
+  };
+  for (const path of paths) visit(props, path.split("."), "");
+  return found;
+}
