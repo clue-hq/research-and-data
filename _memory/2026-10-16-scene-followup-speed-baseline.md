@@ -25,3 +25,19 @@ waited 9 m 22 s; run 7 m 22 s agent wall; change landed 7 m 15 s after send; 27 
 edit_applied. Over the founder's 7-minute stop rule, so follow-up 2 was not sent.
 Earlier follow-up (2026-10-05, run_30bd348…, different ad): 5 m 15 s, 24 calls, opening 167k, $3.22.
 Report: `scripts/design_followup_timings.py --document <doc>`.
+
+## 2026-10-16/17 — fix landed and measured (solo; commits 059cb55da, 30bcf5beb, 7567c2bd7)
+- Founder: design agents ALWAYS solo (now in CLAUDE.md/AGENTS.md, env files, code defaults). Target: a small
+  targeted edit ≤ 4 min send-to-done; revamps may take longer. Token clearing explicitly deferred (separate card).
+- Change: solo prompt "Follow-up turns" section (read only what the user's message needs; inspect touched nodes;
+  apply_structured_edit; preflight/render/view once; fix once; finalize edit_applied; no critique/round files;
+  revamp → full routine; unsure → ask) + apply_structured_edit given to the solo agent + setup-step timing logs.
+- Live run (2026-10-17, same ad, "Change the headline to "Let Conduit take the night desk."", run_aa561140b4d8…):
+  **2 m 27 s** send-to-done (was 9 m 22 s); 8 model calls (27); 465k input tokens (3.1M); $0.53 ($2.06).
+  Agent followed the routine: structured_edit_applied → preflight → render → one view → edit_applied. Headline correct.
+- Remaining costs in that run: first model call 57 s (128k uncached opening context → the deferred clearing work);
+  ~12 s routing + dispatch; setup steps ~10 s (auto_ad_references 5.4 s incl. the style-group call, brand kit 1 s,
+  asset library 1 s, session manifest 0.8 s); ~9 s harness start; ~20 s after finalize.
+- The silent 59 s minute did NOT recur. It ended at the style-group call inside resolve_auto_ad_references last
+  time, so it was most likely reference resolution on a cold cache (first turn after dushanbe moved to R2 storage);
+  unproven — design_turn.setup_step will show it if it comes back.
