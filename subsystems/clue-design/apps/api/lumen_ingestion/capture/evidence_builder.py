@@ -130,6 +130,9 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             size_px=t.size_px,
             line_height=t.line_height,
             letter_spacing=t.letter_spacing,
+            color=t.color,
+            background=t.background,
+            area=t.area,
             pointer=_pointer(t.locator),
         )
         for t in parsed.type_samples

@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from ..colorspace import relative_luminance
 from ..evidence import BrandEvidence, FontEvidence, TypeSample
 
 _DEFAULT_BODY = 16.0
@@ -270,10 +271,39 @@ def type_unit_diagnostic(role: str, field: str, value: float, locator: str) -> d
     }
 
 
+#: A heading sits on a light background when what is behind it has a relative luminance above this.
+HEADING_INK_LIGHT_LUMINANCE = 0.35
+
+
+def heading_ink(samples: list[TypeSample]) -> TypeSample | None:
+    """The heading sample whose colour is the brand's heading ink, or None.
+
+    The ink is the colour of the h1/h2/h3 headings that sit on a light background, weighted by each
+    heading's area; the most-weighted colour wins, and its largest heading is returned (for its
+    pointer). Headings on a dark background (a white h1 on a hero) or over an image are ignored.
+    """
+    weights: dict[str, float] = {}
+    largest: dict[str, TypeSample] = {}
+    for sample in samples:
+        if sample.label not in _HEADING_LABELS or not sample.color or not sample.background:
+            continue
+        if relative_luminance(sample.background[:7]) <= HEADING_INK_LIGHT_LUMINANCE:
+            continue
+        area = sample.area or 0.0
+        weights[sample.color] = weights.get(sample.color, 0.0) + area
+        if sample.color not in largest or area > (largest[sample.color].area or 0.0):
+            largest[sample.color] = sample
+    if not weights:
+        return None
+    winner = max(weights, key=lambda color: (weights[color], color))
+    return largest[winner]
+
+
 def build_type_styles(
     anchors: TypeAnchors,
     cta_color: str = "text.inverse",
     custodied: dict[str, list[int]] | None = None,
+    heading_color: str = "text.primary",
 ) -> tuple[dict[str, dict], list[dict]]:
     """Return {role: {font_family, font_size, font_weight, line_height,
     letter_spacing, color, font_asset}} for the 12 required roles, plus any
@@ -300,9 +330,9 @@ def build_type_styles(
     spec: list[tuple[str, float, int, float, str, float]] = [
         # Display and stat are computed, not measured: they carry the headline's own weight. The
         # old floor of 700 made every ad headline bold on light-type brands (Stripe's 300).
-        ("display", H * 1.6, hw, 1.05, "text.primary", -0.02),
-        ("headline", H, hw, 1.1, "text.primary", -0.01),
-        ("title", H * 0.72, hw, 1.15, "text.primary", 0.0),
+        ("display", H * 1.6, hw, 1.05, heading_color, -0.02),
+        ("headline", H, hw, 1.1, heading_color, -0.01),
+        ("title", H * 0.72, hw, 1.15, heading_color, 0.0),
         ("subtitle", B * 1.25, bw, 1.3, "text.secondary", 0.0),
         ("body", B, bw, 1.45, "text.primary", 0.0),
         ("body.small", B * 0.875, bw, 1.4, "text.primary", 0.0),

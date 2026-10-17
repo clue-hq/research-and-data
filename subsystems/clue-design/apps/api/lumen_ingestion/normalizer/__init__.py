@@ -36,6 +36,7 @@ from .typography import (
     anchor_for_role,
     build_type_styles,
     custodied_weights,
+    heading_ink,
     measured_style_fields,
     resolve_anchors,
 )
@@ -174,6 +175,23 @@ def normalize_evidence(
             "message": f"{skipped_bands} more section background colour(s) were not minted (the cap of 12 band surfaces)",
         })
 
+    # The heading ink (2026-10-17): the colour of headings on light backgrounds, measured from the
+    # rendered headings. Minted after the bands so it never becomes a band's text token. In the dark
+    # theme headings keep text.primary's dark value.
+    ink_sample = heading_ink(evidence.type_samples)
+    if ink_sample is not None:
+        builder.add_color(
+            "text.heading",
+            RoleAssignment(
+                ink_sample.color,
+                "measured",
+                f"{ink_sample.pointer.source}:{ink_sample.pointer.locator} (heading ink on light backgrounds)",
+            ),
+            dark.values.get("text.primary"),
+            confidence=MEASURED_CONFIDENCE,
+            description="the colour of the site's headings on light backgrounds",
+        )
+
     # accent alias (spec §4).
     builder.add_alias("accent.primary", "surface.accent", "ingestion alias")
 
@@ -185,7 +203,10 @@ def normalize_evidence(
         anchors.body_family = assist_result.body_family
     cta_color = _cta_color_token(semantic_light, brand_hex)
     styles, type_diags = build_type_styles(
-        anchors, cta_color=cta_color, custodied=custodied_weights(evidence)
+        anchors,
+        cta_color=cta_color,
+        custodied=custodied_weights(evidence),
+        heading_color="text.heading" if ink_sample is not None else "text.primary",
     )
     diagnostics.extend(type_diags)
     for path, style in styles.items():

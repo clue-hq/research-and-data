@@ -71,7 +71,17 @@ class TypeSample(BaseModel):
     size_px: float | None = None
     line_height: float | None = None
     letter_spacing: float | None = None
+    #: A rendered heading's own text colour, the colour behind it (composited up to the first
+    #: opaque background; None over an image) and its box area. The heading ink comes from these.
+    color: str | None = None
+    background: str | None = None
+    area: float | None = None
     pointer: EvidencePointer
+
+    @field_validator("color", "background")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
 
 
 class FontFaceEvidence(BaseModel):

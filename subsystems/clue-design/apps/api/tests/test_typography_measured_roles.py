@@ -167,3 +167,36 @@ def test_capture_samples_many_visible_headings_and_skips_nav_and_footer():
     h2 = [s["fontSize"] for s in result["samples"] if s["selectorish"] == "h2"]
     assert "12px" not in h2 and "13px" not in h2
     assert h2.count("56px") >= 8
+
+
+# --- 2026-10-17: the heading ink needs each heading's colour and what is behind it ----------
+
+_INK_PAGE = """
+<style>body{font-family:Arial;margin:0;background:#FFFFFF}</style>
+<section style="background:#014036;height:600px"><h1 style="color:#FFFFFF">Hero</h1></section>
+<section style="background:#F9FAF8;margin-top:1200px"><h2 style="color:#014036">Below the fold</h2></section>
+"""
+
+
+def test_capture_reads_what_is_behind_each_heading_and_its_whole_box():
+    from lumen_ingestion.capture.parse import parse_site
+    from lumen_ingestion.capture.snapshot import SiteSnapshot
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.set_content(_INK_PAGE)
+        result = page.evaluate(_EVALUATE_JS)
+        browser.close()
+    h2 = next(s for s in result["samples"] if s["selectorish"] == "h2")
+    assert h2["behind"] == "#F9FAF8"
+    assert h2["area"] == 0 and h2["boxArea"] > 0  # out of the first viewport, still measured
+    snapshot = SiteSnapshot(
+        requested_url="https://ink.example", final_url="https://ink.example",
+        fetched_at="2026-10-17", tier="rendered", html="<html></html>",
+        computed_samples=result["samples"],
+    )
+    samples = {t.label: t for t in parse_site(snapshot).type_samples if t.label in {"h1", "h2"}}
+    assert (samples["h2"].color, samples["h2"].background) == ("#014036", "#F9FAF8")
+    assert samples["h2"].area == h2["boxArea"]
+    assert (samples["h1"].color, samples["h1"].background) == ("#FFFFFF", "#014036")

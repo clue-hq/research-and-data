@@ -50,6 +50,9 @@ class ParsedType:
     line_height: float | None
     letter_spacing: float | None
     locator: str
+    color: str | None = None
+    background: str | None = None
+    area: float | None = None
 
 
 @dataclass
@@ -1274,6 +1277,15 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
         family = sample.get("fontFamily")
         if label and family:
             size_px = _px_from_length(str(sample.get("fontSize") or ""))
+            # A heading keeps its own ink, what sits behind it and its whole box: the heading ink
+            # is read from these (normalizer.typography.heading_ink).
+            ink = backdrop = box = None
+            if label in ("h1", "h2", "h3"):
+                if color:
+                    ink = parse_color_value(str(color), parsed.custom_props)
+                if sample.get("behind"):
+                    backdrop = parse_color_value(str(sample["behind"]), parsed.custom_props)
+                box = float(sample.get("boxArea") or sample.get("area") or 0.0)
             parsed.type_samples.append(
                 ParsedType(
                     label="body" if label == "html" else label,
@@ -1283,6 +1295,9 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
                     line_height=_line_height(str(sample.get("lineHeight") or ""), size_px),
                     letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or ""), size_px),
                     locator=locator,
+                    color=ink,
+                    background=backdrop,
+                    area=box,
                 )
             )
 

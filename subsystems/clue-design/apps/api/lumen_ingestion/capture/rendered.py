@@ -15,7 +15,7 @@ import time
 
 from selectolax.parser import HTMLParser
 
-from .geometry import GEOMETRY_JS
+from .geometry import COLOR_FN, GEOMETRY_JS
 from .states import REVEAL_BEFORE_JS, probe_states
 from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
@@ -25,6 +25,7 @@ from .stylesheets import collect_ordered_stylesheets
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
 () => {
+""" + COLOR_FN + r"""
   const clip = (r) => ({
     w: Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)),
     h: Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)),
@@ -42,6 +43,9 @@ _EVALUATE_JS = r"""
       fontFamily: cs.fontFamily, fontSize: cs.fontSize, fontWeight: cs.fontWeight,
       lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing,
       borderRadius: cs.borderRadius, area: c.w * c.h,
+      // The colour behind the element and its whole box (not only the part in the first
+      // viewport): the heading ink is read from headings on light backgrounds anywhere on the page.
+      behind: behindOf(el), boxArea: r.width * r.height,
     };
   };
   // Only what a visitor can see is evidence of the brand's type: a heading inside a closed

@@ -241,3 +241,22 @@ test("walk defect 4: the document canvas is the page colour with a matching colo
   assert.match(dark, /background-color:#0B0B0B/);
   assert.match(dark, /color-scheme:dark/);
 });
+
+test("a measured heading ink (text.heading) colours the heading roles on light surfaces only, and brand.md says so", () => {
+  // What ingestion writes since 2026-10-17: a measured text.heading, and the heading roles bound to it.
+  const brand = structuredClone(kitBrand("garner"));
+  const tokens = (brand.kit as { tokens: { colors: Record<string, unknown>; typography: Record<string, { value: { default: { color: string } } }> } }).tokens;
+  tokens.colors["text.heading"] = {
+    description: "the colour of the site's headings on light backgrounds", role: "text",
+    provenance: { confidence: 0.8, source: "website:rendered :: h2 (heading ink on light backgrounds)" },
+    value: { default: { kind: "hex", value: "#014036" }, modes: {} },
+  };
+  for (const role of ["display", "headline", "title"]) tokens.typography[`type.${role}`].value.default.color = "text.heading";
+  const css = themeCss(brand);
+  assert.match(css, /--brand-ink-heading:#014036/);
+  assert.match(ruleOf(css, ".bg-surface-page"), /--brand-ink-role-headline:var\(--brand-ink-heading\)/);
+  assert.match(ruleOf(css, ".bg-surface-inverse"), /--brand-ink-role-headline:initial/);
+  const md = buildCatalog(brand, "Garner Health")["brand/brand.md"];
+  const headline = md.split("\n").find((line) => line.startsWith("| headline |")) ?? "";
+  assert.ok(headline.includes("| #014036 (text.heading) |"), headline);
+});
