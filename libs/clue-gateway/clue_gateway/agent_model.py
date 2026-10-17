@@ -1021,6 +1021,55 @@ class GovernedAgentChatModel(BaseChatModel):
         return usage, served, Decimal(0), "unpriced"
 
 
+#: The model requests whose refusals are logged (not the catalog or the cost meter).
+_MODEL_REQUEST_PATHS = ("/chat/completions", "/responses")
+
+
+def _refusal_fields(response: httpx.Response) -> dict[str, Any]:
+    text = response.text if response.content else ""
+    return {
+        "status": response.status_code,
+        "path": response.request.url.path,
+        "should_retry": response.headers.get("x-should-retry"),
+        "error": " ".join(text.split())[:1500],
+    }
+
+
+def _is_refused_model_request(response: httpx.Response) -> bool:
+    return response.status_code >= 400 and response.request.url.path.endswith(_MODEL_REQUEST_PATHS)
+
+
+def _log_provider_refusal(response: httpx.Response) -> None:
+    if _is_refused_model_request(response):
+        response.read()
+        log.warning("gateway.provider_refused", **_refusal_fields(response))
+
+
+async def _alog_provider_refusal(response: httpx.Response) -> None:
+    if _is_refused_model_request(response):
+        await response.aread()
+        log.warning("gateway.provider_refused", **_refusal_fields(response))
+
+
+def _with_refusal_log(client: Any | None, *, asynchronous: bool) -> Any:
+    """The client a provider's models use, with the refusal log hooked in. An injected client keeps
+    its own transport and settings. With none, the sync side gets the OpenAI SDK's own default
+    client (thread-safe; the design agents call through it); the async side stays the SDK's own,
+    unhooked, because one async client shared across event loops breaks."""
+    hook = _alog_provider_refusal if asynchronous else _log_provider_refusal
+    if client is None:
+        if asynchronous:
+            return None
+        from openai import DefaultHttpxClient
+
+        return DefaultHttpxClient(event_hooks={"response": [hook]})
+    hooks = client.event_hooks
+    if hook not in hooks.get("response", []):
+        hooks["response"] = [*hooks.get("response", []), hook]
+        client.event_hooks = hooks
+    return client
+
+
 class OpenRouterAgentModelProvider:
     """Build governed LangChain tool-calling models through the OpenRouter policy boundary."""
 
@@ -1034,8 +1083,11 @@ class OpenRouterAgentModelProvider:
     ) -> None:
         self._config = config
         self._api_key = api_key
-        self._http_client = http_client
-        self._http_async_client = http_async_client
+        # Every model request goes through clients that log a refusal in the provider's own words
+        # (_log_provider_refusal): the OpenAI client retries a refusal the provider marks retryable
+        # and never surfaces it, so without this a slow turn's 400s had no reason anywhere.
+        self._http_client = _with_refusal_log(http_client, asynchronous=False)
+        self._http_async_client = _with_refusal_log(http_async_client, asynchronous=True)
         self._model_capabilities: dict[str, bool] | None = None
         # One store per provider: its Responses models keep each reply's usage block in it, and
         # the cost lookup of every model it builds reads from it first.
