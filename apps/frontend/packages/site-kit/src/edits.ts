@@ -19,10 +19,16 @@ export const SECTION_SCOPE_ATTR = "data-clue-section";
 /** The scope names of the shell's header and footer. */
 export const SHELL_SCOPE = { header: "shell-header", footer: "shell-footer" } as const;
 
-/** An element key: letters, digits, "_", "." and "-", starting with a letter or digit. Nothing that
+/** An element key: letters, digits, "_", "." and "-", starting with a letter or digit; a styled span
+ * of highlighted words (rich.ts) is its element's key plus "~<number>" ("heading~1"). Nothing that
  * could end an attribute selector or start a new rule. */
-export const ElementKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
-const KEY_RULE = 'an element key uses letters, digits, "_", "." and "-", starts with a letter or digit, and has up to 100 characters';
+export const ElementKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}(~[0-9]{1,4})?$/);
+const KEY_RULE = 'an element key uses letters, digits, "_", "." and "-", starts with a letter or digit, and has up to 100 characters (a styled span\'s key adds "~<number>")';
+
+/** The attribute on a styled span of highlighted words, naming its `_edits` entry (rich.ts). */
+export const SPAN_KEY_ATTR = "data-s";
+/** Whether a key names a styled span of highlighted words rather than an element. */
+export const isSpanKey = (key: string) => key.includes("~");
 
 /** A colour: one of the brand's colour tokens, or a hex colour with an opacity from 0 to 100. */
 export const ColorValueSchema = z.union(
@@ -183,7 +189,8 @@ export function editsCss(scope: string, edits: Edits, brand: BrandData): string 
       const override = StyleOverrideSchema.safeParse(value);
       if (!ElementKeySchema.safeParse(key).success || !override.success) return [];
       const css = declarations(brand, override.data);
-      return css.length ? [`[${SECTION_SCOPE_ATTR}="${scope}"] [${ELEMENT_KEY_ATTR}="${key}"]{${css.join(";")}}`] : [];
+      const attr = isSpanKey(key) ? SPAN_KEY_ATTR : ELEMENT_KEY_ATTR;
+      return css.length ? [`[${SECTION_SCOPE_ATTR}="${scope}"] [${attr}="${key}"]{${css.join(";")}}`] : [];
     })
     .join("");
 }

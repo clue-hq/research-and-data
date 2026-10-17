@@ -50,6 +50,15 @@ test("element keys refuse anything that could break out of a selector", () => {
   for (const good of ["heading", "stats.2.value", "0.2.1", "nav.0", "my_title-2"]) assert.ok(ElementKeySchema.safeParse(good).success, good);
 });
 
+test("a styled span of highlighted words is its element's key plus ~<number>, and is drawn by data-s", () => {
+  for (const good of ["heading~1", "0.2.1~12"]) assert.ok(ElementKeySchema.safeParse(good).success, good);
+  for (const bad of ["heading~", "~1", "heading~x", "heading~1~2", "heading~12345"]) assert.equal(ElementKeySchema.safeParse(bad).success, false, bad);
+  assert.equal(
+    editsCss("hero", { "heading~1": { fontWeight: 700 } }, brand),
+    '[data-clue-section="hero"] [data-s="heading~1"]{font-weight:700 !important}',
+  );
+});
+
 test("editsOf reads a valid _edits and gives {} for none or an invalid one; withoutEdits drops it", () => {
   assert.deepEqual(editsOf({ heading: "Hi", _edits: { heading: { italic: true } } }), { heading: { italic: true } });
   assert.deepEqual(editsOf({ heading: "Hi" }), {});
