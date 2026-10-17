@@ -13,6 +13,7 @@
 import { parse } from "node-html-parser";
 import type { BrandData } from "./brand";
 import type { Clone } from "./clone";
+import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
 import { surfaceChoices } from "./surfaces";
@@ -117,6 +118,11 @@ export function validateSite(
       ? `${where}: "${value}" is not one of this brand's button styles; its styles are ${lookNames.join(", ")}, or leave it empty for the standard button (brand/brand.md, Buttons)`
       : `${where}: this brand's kit records no button styles; leave it empty for the standard button (brand/brand.md, Buttons)`;
   const OURS = new Set(["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"]);
+  // Manual styling (`_edits`) names the brand's colour tokens and font families: a contract, like
+  // surfaces. Its shape is the schema's; a malformed `_edits` is reported there, not again here.
+  const addEditsProblems = (props: Record<string, unknown> | undefined, where: string) => {
+    for (const line of editsProblems(editsOf(props ?? {}), brand)) errors.push(`${where}._edits.${line}`);
+  };
 
   // Links the page writes (not the clones' own captured links, which keep pointing at the seller).
   const written: { where: string; href: string }[] = [];
@@ -143,6 +149,7 @@ export function validateSite(
     // Clones: real ids, real slots, matching replacements and links.
     (page.content ?? []).forEach((item, index) => {
       const at = `${file}.content.${index}(${String(item.props?.id ?? "?")})`;
+      addEditsProblems(item.props, at);
       if (OURS.has(item.type)) {
         const surface = item.props.surface;
         if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
@@ -226,11 +233,13 @@ export function validateSite(
           } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`, key));
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
         };
-        walk(item.props, at, "");
+        walk(withoutEdits(item.props), at, "");
       }
     });
   }
 
+  addEditsProblems(shell.header, "shell.header");
+  addEditsProblems(shell.footer, "shell.footer");
   const accountLogo = shell.header?.accountLogo;
   if (accountLogo && !imageAllowed(accountLogo) && !accountLogos.has(String(accountLogo))) {
     errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);

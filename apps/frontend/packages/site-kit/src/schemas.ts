@@ -2,9 +2,12 @@
 // the validator the agent calls, and the catalog the agent reads all come from these.
 //
 // Brand theming is enforced here, by structure: style props are token choices only, and every
-// object is strict, so a className, style or colour prop cannot be written at all. Text has no
-// length limits (founder ruling 2026-10-04: code checks correctness, not prose length).
+// object is strict, so a className, style or colour prop cannot be written at all. The one place
+// for manual styling is each section's (and the shell's) `_edits` prop, itself a closed schema of
+// brand tokens and bounded values (edits.ts). Text has no length limits (founder ruling 2026-10-04:
+// code checks correctness, not prose length).
 import { z } from "zod";
+import { EDITS_PROP, EditsSchema, withoutEdits } from "./edits";
 import { ComponentIdSchema } from "./site-document";
 
 export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
@@ -162,10 +165,20 @@ export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
         });
         return;
       }
-      const result = schema.safeParse(entry.props);
+      // `_edits` is every section's, whatever its own schema (an agent section's is usually
+      // strict): the section's schema checks the props without it, and the edits schema checks it.
+      const result = schema.safeParse(withoutEdits(entry.props));
       if (!result.success) {
         for (const issue of result.error.issues) {
           ctx.addIssue({ ...issue, path: ["content", index, "props", ...issue.path] } as never);
+        }
+      }
+      if (entry.props[EDITS_PROP] !== undefined) {
+        const edits = EditsSchema.safeParse(entry.props[EDITS_PROP]);
+        if (!edits.success) {
+          for (const issue of edits.error.issues) {
+            ctx.addIssue({ ...issue, path: ["content", index, "props", EDITS_PROP, ...issue.path] } as never);
+          }
         }
       }
     });
@@ -190,6 +203,7 @@ export const ShellSchema = z
         ctaHref: link,
         ctaLook: buttonLook,
         nav: z.array(z.object({ label: text.min(1), href: link }).strict()).max(6).default([]),
+        _edits: EditsSchema.optional(),
       })
       .strict(),
     footer: z
@@ -198,6 +212,7 @@ export const ShellSchema = z
         legal: text.min(1),
         privacyHref: optionalLink,
         termsHref: optionalLink,
+        _edits: EditsSchema.optional(),
       })
       .strict(),
   })
