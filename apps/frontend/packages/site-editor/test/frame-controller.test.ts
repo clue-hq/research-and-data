@@ -92,6 +92,13 @@ test("a user edit is posted once, after the debounce, with the whole site", asyn
   assert.equal(sent.pages["/analysis"].root.props.title, "Analysis", "the other pages ride along unchanged");
 });
 
+test("a page reported back with the same rich text spelled differently (& for &amp;, the editor's <p>) posts nothing", async () => {
+  const h = harness();
+  await h.controller.receive(init({ site: { ...site, pages: { ...site.pages, "/": page("Tom & Jerry") } } }));
+  h.controller.pageEdited("/", page("<p>Tom &amp; Jerry</p>"));
+  assert.equal(h.timers.length, 0, "no save of the same words");
+});
+
 test("rich text the editor or a paste wrote is saved in the grammar's form; its echo posts nothing", async () => {
   const h = harness();
   await h.controller.receive(init());

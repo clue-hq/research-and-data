@@ -3,7 +3,7 @@
 // check (validate.ts) and for the frame, which saves rich text in the grammar's canonical form.
 import { richPropPaths, richValuesAt } from "./agent-props";
 import type { BrandData } from "./brand";
-import { setAtPath } from "./editor-site";
+import { getAtPath, setAtPath } from "./editor-site";
 import { normalizeRich } from "./rich";
 import { RICH_PROPS } from "./schemas";
 
@@ -31,19 +31,26 @@ export function richValuesOfItem(
 }
 
 /** The page with every rich value in the grammar's canonical form (what the editor's TipTap or a
- * paste wrote, cleaned: a pasted alignment, a stray attribute, paragraphs as line breaks). The same
- * page object when nothing changes. */
+ * paste wrote, cleaned: a pasted alignment, a stray attribute, paragraphs as line breaks). A value
+ * that says the same as the one `previous` stores at that place (the editor's own <p> around it, `&`
+ * written as `&amp;`) is kept exactly as stored, so a page reported back unchanged is not a change.
+ * The same page object when nothing changes. */
 export function normalizeRichIn<P extends { content?: { type: string; props: Record<string, unknown> }[] }>(
   page: P,
   brand: BrandData,
   propsSchemaOf: PropsSchemaOf,
+  previous?: P | null,
 ): P {
+  const before = new Map((previous?.content ?? []).map((item) => [String(item.props?.id ?? ""), item.props]));
   let changed = false;
   const content = (page.content ?? []).map((item) => {
     let props = item.props;
+    const stored = before.get(String(item.props?.id ?? ""));
     for (const { path, value } of richValuesOfItem(item, brand, propsSchemaOf)) {
       const clean = normalizeRich(value);
-      if (clean !== value) props = setAtPath(props, path, clean);
+      const was = stored ? getAtPath(stored, path) : undefined;
+      const next = typeof was === "string" && normalizeRich(was) === clean ? was : clean;
+      if (next !== value) props = setAtPath(props, path, next);
     }
     if (props === item.props) return item;
     changed = true;

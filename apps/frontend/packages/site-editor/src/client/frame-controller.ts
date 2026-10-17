@@ -430,7 +430,7 @@ export class FrameController {
     if (!site || this.state.mode !== "edit" || route !== this.state.route) return;
     const brand = this.state.brand;
     const page = brand
-      ? normalizeRichIn(edited, brand, (type) => this.state.sections.find((section) => section.name === type)?.propsSchema)
+      ? normalizeRichIn(edited, brand, (type) => this.state.sections.find((section) => section.name === type)?.propsSchema, pageFor(site, route))
       : edited;
     const current = pageFor(site, route);
     if (current && canonicalJson(withoutEmptyZones(current)) === canonicalJson(withoutEmptyZones(page))) return;
