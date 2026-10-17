@@ -108,8 +108,11 @@ class ModelCallCollector(BaseCallbackHandler):
         self, serialized: Any, messages: Any, *, run_id: UUID, **kwargs: Any
     ) -> None:
         params = kwargs.get("invocation_params") or {}
+        # The governed model names its id ``requested_model`` (its identifying params); a plain
+        # LangChain chat model names it ``model``.
         model = str(
-            params.get("model")
+            params.get("requested_model")
+            or params.get("model")
             or (kwargs.get("metadata") or {}).get("ls_model_name")
             or "unknown"
         )
