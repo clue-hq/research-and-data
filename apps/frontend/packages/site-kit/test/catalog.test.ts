@@ -87,3 +87,11 @@ test("a section the page already uses but the catalog no longer offers is kept o
   assert.ok(!pinnedFiles["catalog/index.md"].includes(`\`${first.id}\``));
   assert.equal(pinnedFiles[`catalog/clones/${first.id}.md`], undefined);
 });
+
+test("brand.md lists the font library's families with their weights, after the brand's own fonts", () => {
+  const brand = { ...garner(), libraryFonts: [{ family: "Lora", category: "serif", faces: [{ weight: 400, style: "normal", file: "/asset-store/aa" }, { weight: 700, style: "normal", file: "/asset-store/bb" }] }] };
+  const md = buildCatalog(brand, "Garner Health")["brand/brand.md"];
+  assert.ok(md.includes("## Other fonts"), md);
+  assert.ok(md.includes("- Lora (serif): 400, 700"));
+  assert.ok(!buildCatalog(garner(), "Garner Health")["brand/brand.md"].includes("## Other fonts"), "no library, no section");
+});

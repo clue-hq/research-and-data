@@ -17,6 +17,7 @@ import {
   buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, measuredComponents, motionEntries, motionNotes,
   partsFromSlots, standardLook, type Drawn, type Look, type Part,
 } from "./looks";
+import { libraryFontFamilies } from "./edits";
 import { COMPONENT_SCHEMAS, RICH_PROPS } from "./schemas";
 import { colorVar, inkRole, surfaceChoices } from "./surfaces";
 import { SPACING_ROLES, TYPE_ROLES, typeVar } from "./theme";
@@ -241,6 +242,19 @@ function typeSection(brand: BrandData): string[] {
   ];
 }
 
+/** The font library's families (plan 2): usable in `_edits` (styling by hand), after the brand's own. */
+function otherFontsSection(brand: BrandData): string[] {
+  const families = libraryFontFamilies(brand);
+  if (!families.length) return [];
+  const kind = new Map((brand.libraryFonts ?? []).map((font) => [font.family, font.category ?? ""]));
+  return [
+    "## Other fonts",
+    "Fonts from the font library that `_edits` may name as `fontFamily` (styling by hand), with the weights each has.",
+    ...families.map((font) => `- ${font.family}${kind.get(font.family) ? ` (${kind.get(font.family)})` : ""}: ${font.weights.join(", ")}`),
+    "",
+  ];
+}
+
 function spacingSection(brand: BrandData): string[] {
   const items = SPACING_ROLES.flatMap((role) => {
     const px = pxOf(brand, `space.${role}`);
@@ -403,6 +417,7 @@ function brandFile(brand: BrandData, seller?: string): string {
     "",
     ...surfacesSection(brand),
     ...typeSection(brand),
+    ...otherFontsSection(brand),
     ...spacingSection(brand),
     ...buttonsSection(brand),
     ...cardsSection(brand),
