@@ -146,7 +146,7 @@ const buttonDom = new JSDOM(`
   <div data-puck-component="hero">
     <h2 id="t" data-clue-el="heading">Title</h2>
     <a id="brand" class="brand-btn" data-clue-el="button" style="background-color: rgb(15, 89, 176); border: 2px solid rgb(0, 0, 0); border-radius: 9999px; padding: 12px 22px"><span id="brandLabel" data-clue-el="button.label">Go</span></a>
-    <a id="clone" data-clue-el="0.1" href="/demo" style="display: inline-block"><svg></svg><span id="cloneLabel" data-clue-el="0.1.1">Book</span></a>
+    <a id="clone" data-clue-el="0.1" href="/demo" style="display: inline-block; background-color: rgb(15, 89, 176)"><svg></svg><span id="cloneLabel" data-clue-el="0.1.1">Book</span></a>
     <a id="plain" data-clue-el="0.2" href="/x">Plain link</a>
     <a id="card" data-clue-el="0.3" href="/c" style="display: block"><div><h3 id="cardTitle" data-clue-el="0.3.0.0">Card</h3></div></a>
     <button id="own" data-clue-el="0.4">Send</button>
@@ -168,7 +168,7 @@ for (const element of hero.querySelectorAll("*")) {
 
 test("a button is a keyed link or button with inline-only content drawn as a box; a text link and a card link are not", () => {
   assert.equal(isButtonElement(bel("brand"), bwin), true);
-  assert.equal(isButtonElement(bel("clone"), bwin), true, "display inline-block");
+  assert.equal(isButtonElement(bel("clone"), bwin), true, "a link with a fill");
   assert.equal(isButtonElement(bel("own"), bwin), true, "a <button>");
   assert.equal(isButtonElement(bel("plain"), bwin), false, "an inline text link");
   assert.equal(isButtonElement(bel("card"), bwin), false, "a link holding a block is a card");
@@ -206,4 +206,12 @@ test("a button whose words are being edited in place is still a button (Puck's e
   assert.equal(isButtonElement(button, view), true);
   assert.equal(buttonAround(editing.window.document.getElementById("p"), view)?.id, "b");
   assert.equal(buttonLabelOf(button)?.id, "l");
+});
+
+test("a link laid out as a block but with no fill and no stroke reads as a link, not a button (a menu link)", () => {
+  const menu = new JSDOM(`<nav><a id="nav" class="brand-navlink" data-clue-el="nav.0" href="/analysis" style="display: flex; padding: 8px">Analysis</a>
+    <a id="outline" data-clue-el="0.1" href="/x" style="display: inline-flex; border: 1px solid rgb(0, 0, 0)">Outline</a></nav>`);
+  const view = menu.window as unknown as Window;
+  assert.equal(isButtonElement(menu.window.document.getElementById("nav")!, view), false);
+  assert.equal(isButtonElement(menu.window.document.getElementById("outline")!, view), true, "a stroke is a box");
 });

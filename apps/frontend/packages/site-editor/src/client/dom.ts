@@ -242,7 +242,7 @@ export function textElementAround(node: Node | null): Element | null {
 }
 
 // Plan 3: buttons. A keyed link or button whose content is inline only (words, icons; no blocks) and
-// that the browser draws as a box: not inline, or with a background or a border. Our own buttons
+// that the browser draws as a visible box: a background or a border. Our own buttons
 // (brand-btn) always are. A text link inside a sentence stays text; a link holding a block is a card.
 
 const PUCK_EDITOR = "[data-puck-overlay-portal]";
@@ -258,7 +258,9 @@ export function isButtonElement(element: Element, view: Pick<Window, "getCompute
   if ([...element.querySelectorAll(BLOCK_TAGS)].some((block) => !block.closest(PUCK_EDITOR))) return false;
   if (tag === "button" || element.classList.contains("brand-btn")) return true;
   const style = view.getComputedStyle(element);
-  return style.display !== "inline" || !transparent(style.backgroundColor) || Number.parseFloat(style.borderTopWidth) > 0;
+  // A box the visitor can see: a fill or a stroke. A link only laid out as a block (a menu link)
+  // still reads as a link.
+  return !transparent(style.backgroundColor) || Number.parseFloat(style.borderTopWidth) > 0;
 }
 
 /** The button a node sits in (or is), or null. */
