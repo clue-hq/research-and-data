@@ -73,6 +73,9 @@ class SiteSnapshot(BaseModel):
     # back-compat reason as ``geometry``; ``None`` on the static tier. Consumed
     # by ``lumen_ingestion.census`` together with the screenshot download.
     render_probe: dict | None = None
+    # Responsive brand type: the type samples re-read at narrower widths (capture/type_widths.py).
+    # Optional for the same back-compat reason; ``None`` on the static tier.
+    type_widths: dict | None = None
     downloads: list[Download] = []
     meta: dict = {}
     diagnostics: list[dict] = []

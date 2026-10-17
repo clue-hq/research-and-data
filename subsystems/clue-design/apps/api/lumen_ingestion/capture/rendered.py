@@ -21,6 +21,7 @@ from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
 from .static import _collect_assets, _extract_meta
 from .stylesheets import collect_ordered_stylesheets
+from .type_widths import measure_type_widths
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
@@ -30,7 +31,11 @@ _EVALUATE_JS = r"""
     w: Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)),
     h: Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)),
   });
+  // The sampled elements, in sample order, kept on the page (never as attributes: the captured HTML
+  // must not change) so the width pass can read the same elements again (type_widths.py).
+  const sampled = [];
   const sample = (el, selectorish) => {
+    sampled.push(el);
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
     const c = clip(r);
@@ -93,6 +98,7 @@ _EVALUATE_JS = r"""
       sheets.push({href: null, text, ...context});
     } catch (e) { /* cross-origin without href — skip */ }
   }
+  window.__lumenTypeSamples = sampled;
   return {samples, props, sheets, base_url: document.baseURI};
 }
 """
@@ -402,6 +408,20 @@ async def _harvest_page(page, diagnostics: list[dict], *, measure_states: bool =
         harvest["geometry"]["states"] = await probe_states(
             page, harvest["geometry"], reveal_before=reveal_before, diagnostics=diagnostics
         )
+    # Responsive type, LAST of all: it narrows the window, which nothing above may see.
+    harvest["type_widths"] = None
+    try:
+        harvest["type_widths"] = await measure_type_widths(
+            page, (harvest["data"] or {}).get("sheets") or [], diagnostics
+        )
+    except Exception as error:  # noqa: BLE001 — measurement is fail-soft
+        diagnostics.append(
+            {
+                "code": "LUMI0547",
+                "severity": "warning",
+                "message": f"type width measurement failed; the kit keeps one size per role: {error}",
+            }
+        )
     return harvest
 
 
@@ -608,6 +628,7 @@ async def _snapshot_from_harvest(
         computed_samples=data.get("samples") or [],
         geometry=geometry if isinstance(geometry, dict) else None,
         render_probe=render_probe if isinstance(render_probe, dict) else None,
+        type_widths=harvest.get("type_widths") if isinstance(harvest.get("type_widths"), dict) else None,
         downloads=downloads,
         meta=meta,
         diagnostics=diagnostics,
