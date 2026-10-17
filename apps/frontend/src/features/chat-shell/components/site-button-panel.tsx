@@ -29,6 +29,23 @@ const WIDTH_MODES: { label: string; value: WidthMode }[] = [
   { label: "Fixed", value: "fixed" },
 ];
 
+type PanelSection = "fill" | "stroke" | "layout";
+
+/** The section a change belongs to. */
+function sectionOf(change: ButtonPanelChange): PanelSection {
+  if (change.kind.startsWith("fill")) return "fill";
+  if (change.kind.startsWith("padding") || change.kind.startsWith("width")) return "layout";
+  return "stroke";
+}
+
+function Note({ note, section }: { note: { section: PanelSection; text: string } | null; section: PanelSection }) {
+  return note?.section === section ? (
+    <p className={styles.inspectorStatusNote} role="status">
+      {note.text}
+    </p>
+  ) : null;
+}
+
 /** Why an input was not taken, said under the section (the field keeps showing the current value). */
 function refusalNote(change: ButtonPanelChange): string {
   switch (change.kind) {
@@ -58,7 +75,8 @@ export function SiteButtonPanel({ binding }: { binding: SiteInspectorBinding }) 
   const [fillOpen, setFillOpen] = useState(true);
   const [strokeOpen, setStrokeOpen] = useState(true);
   const [layoutOpen, setLayoutOpen] = useState(true);
-  const [note, setNote] = useState<string | null>(null);
+  // A refusal is said under the section whose control refused it.
+  const [note, setNote] = useState<{ section: PanelSection; text: string } | null>(null);
   const values = buttonPanelValues(binding.elementOverride, box, binding.palette);
   const latest = useRef(binding.elementOverride);
   useEffect(() => {
@@ -70,7 +88,7 @@ export function SiteButtonPanel({ binding }: { binding: SiteInspectorBinding }) 
     if (binding.disabled) return;
     const next = buttonPanelPatch(latest.current, change, box);
     if (!next) {
-      setNote(refusalNote(change));
+      setNote({ section: sectionOf(change), text: refusalNote(change) });
       return;
     }
     setNote(null);
@@ -118,6 +136,7 @@ export function SiteButtonPanel({ binding }: { binding: SiteInspectorBinding }) 
         <p className={styles.inspectorStatusNote} role="status">
           A fill or stroke set here also holds when the button is hovered or focused.
         </p>
+        <Note note={note} section="fill" />
       </InspectorSection>
       <InspectorSection label="Stroke" onOpenChange={setStrokeOpen} open={strokeOpen}>
         <InspectorField label="Color">
@@ -173,6 +192,7 @@ export function SiteButtonPanel({ binding }: { binding: SiteInspectorBinding }) 
             values={radiusValues}
           />
         ) : null}
+        <Note note={note} section="stroke" />
       </InspectorSection>
       <InspectorSection label="Layout" onOpenChange={setLayoutOpen} open={layoutOpen}>
         <div className={styles.fieldGrid}>
@@ -215,11 +235,7 @@ export function SiteButtonPanel({ binding }: { binding: SiteInspectorBinding }) 
             />
           </InspectorField>
         ) : null}
-        {note ? (
-          <p className={styles.inspectorStatusNote} role="status">
-            {note}
-          </p>
-        ) : null}
+        <Note note={note} section="layout" />
       </InspectorSection>
     </fieldset>
   );

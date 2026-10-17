@@ -46,18 +46,22 @@ const round = (value: number) => String(Math.round(value * 10) / 10);
 const within = (value: string, range: { min: number; max: number }) => Math.min(range.max, Math.max(range.min, Number(value)));
 type Color = NonNullable<StyleOverride["fill"]>;
 
-function colourValues(color: Color | undefined, drawn: string, palette: readonly PaletteChoice[]) {
+function colourValues(color: Color | undefined, drawn: string, palette: readonly PaletteChoice[], drawnOpacity = 100) {
   const tokenValue = color && "token" in color ? palette.find((choice) => choice.label === color.token)?.value : undefined;
   return {
     hex: color ? ("hex" in color ? color.hex : (tokenValue ?? drawn)) : drawn,
     token: color && "token" in color ? color.token : null,
-    opacity: `${color && "hex" in color ? color.opacity : 100}%`,
+    opacity: `${color ? ("hex" in color ? color.opacity : 100) : drawnOpacity}%`,
   };
 }
 
+/** A box drawn as a pill: every corner at least half its height. */
+const drawnPill = (box: ComputedBox) => Boolean(box.height) && Math.min(...box.radius) >= box.height! / 2;
+
 /** What the rows show: the override where it sets something, else the button as drawn. */
 export function buttonPanelValues(override: StyleOverride | null, box: ComputedBox, palette: readonly PaletteChoice[]): ButtonPanelValues {
-  const fill = colourValues(override?.fill, box.fill || "#FFFFFF", palette);
+  // A clear fill reads as 0% (raising it gives the button a fill); a half-clear one at its opacity.
+  const fill = colourValues(override?.fill, box.fill || "#FFFFFF", palette, box.fill ? (box.fillOpacity ?? 100) : 0);
   const stroke = colourValues(override?.borderColor, box.borderColor || "#000000", palette);
   const strokeWidth = override?.borderWidth ?? box.borderWidth;
   const radius = override?.radius;
@@ -74,7 +78,7 @@ export function buttonPanelValues(override: StyleOverride | null, box: ComputedB
     strokeOpacity: stroke.opacity,
     strokeNone: strokeWidth === 0,
     strokeWidth: round(strokeWidth),
-    radiusMode: radius === "pill" ? "pill" : Array.isArray(radius) ? "custom" : "number",
+    radiusMode: radius === "pill" || (radius === undefined && drawnPill(box)) ? "pill" : Array.isArray(radius) ? "custom" : "number",
     radius: corners[0],
     corners,
     paddingY: round(padding === undefined ? box.paddingY : typeof padding === "number" ? padding : padding.y),

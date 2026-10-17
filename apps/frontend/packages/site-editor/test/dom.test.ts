@@ -141,6 +141,7 @@ test("words are counted as a reader counts them", () => {
 
 // Plan 3: buttons. A keyed link or button with inline-only content that the browser draws as a box.
 import { buttonAround, buttonLabelOf, computedBox, inspectableElementsIn, isButtonElement } from "../src/client/dom";
+import { ComputedBoxSchema } from "@clue/site-kit/editor-protocol";
 
 const buttonDom = new JSDOM(`
   <div data-puck-component="hero">
@@ -195,7 +196,7 @@ test("a click on a button's words selects the button; its label is its words' el
 
 test("a button's box as drawn", () => {
   assert.deepEqual(computedBox(bel("brand"), bwin, cssColorToHex), {
-    fill: "#0F59B0", borderColor: "#000000", borderWidth: 2, radius: [9999, 9999, 9999, 9999], paddingY: 12, paddingX: 22, width: 120,
+    fill: "#0F59B0", fillOpacity: 100, borderColor: "#000000", borderWidth: 2, radius: [9999, 9999, 9999, 9999], paddingY: 12, paddingX: 22, width: 120, height: 40,
   });
 });
 
@@ -244,4 +245,17 @@ test("in a copied section a link holding an image or two texts is no button (rev
   const view = copied.window as unknown as Window;
   assert.equal(isButtonElement(copied.window.document.getElementById("card")!, view), false);
   assert.equal(isButtonElement(copied.window.document.getElementById("two")!, view), false);
+});
+
+test("a drawn box stays within what the message carries: huge and percentage corners, a half-clear fill (review 6, 7)", () => {
+  const odd = new JSDOM(`<a id="b" class="brand-btn" data-clue-el="b" style="background-color: rgba(15, 89, 176, 0.5); border-radius: 50%; padding: 99999px 4px"></a>
+    <a id="c" class="brand-btn" data-clue-el="c" style="border-radius: 9999999px"></a>`);
+  const view = odd.window as unknown as Window;
+  const b = odd.window.document.getElementById("b")!;
+  const c = odd.window.document.getElementById("c")!;
+  for (const element of [b, c]) (element as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40, x: 0, y: 0 });
+  const box = computedBox(b, view, cssColorToHex);
+  assert.deepEqual([box.fill, box.fillOpacity, box.radius, box.paddingY], ["#0F59B0", 50, [20, 20, 20, 20], 10000], "50% of the shorter side; padding held at the message's limit");
+  assert.deepEqual(computedBox(c, view, cssColorToHex).radius, [100000, 100000, 100000, 100000]);
+  assert.ok(ComputedBoxSchema.safeParse(computedBox(c, view, cssColorToHex)).success);
 });

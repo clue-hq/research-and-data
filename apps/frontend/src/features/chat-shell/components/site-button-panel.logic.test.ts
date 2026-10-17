@@ -67,3 +67,13 @@ test("switching mode starts from what is drawn, within what can be written", () 
   assert.deepEqual(buttonPanelPatch(null, { kind: "paddingY", value: "10" }, pill), { padding: { y: 10, x: 200 } });
   assert.deepEqual(buttonPanelPatch({ radius: 8 }, { kind: "radiusNumber" }, box), { radius: 8 }, "already a number: nothing changes");
 });
+
+test("the drawn look reads honestly: a brand pill is Pill, a clear fill 0%, a half-clear fill 50% (review 7)", () => {
+  const pill = { ...box, radius: [9999, 9999, 9999, 9999], height: 44 };
+  assert.equal(buttonPanelValues(null, pill, palette).radiusMode, "pill");
+  assert.equal(buttonPanelValues(null, { ...box, radius: [10, 10, 10, 10], height: 44 }, palette).radiusMode, "number");
+  const clear = buttonPanelValues(null, { ...box, fill: "", fillOpacity: 0 }, palette);
+  assert.deepEqual([clear.fillOpacity, clear.fillNone], ["0%", true]);
+  assert.equal(buttonPanelValues(null, { ...box, fillOpacity: 50 }, palette).fillOpacity, "50%");
+  assert.deepEqual(buttonPanelPatch(null, { kind: "fillOpacity", value: "0" }, box), { fill: { hex: "#0F59B0", opacity: 0 } }, "opacity 0 is no fill");
+});

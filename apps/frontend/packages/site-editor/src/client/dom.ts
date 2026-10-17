@@ -326,15 +326,34 @@ function cornersOf(style: CSSStyleDeclaration): string[] {
 /** A button's box as the browser draws it. */
 export function computedBox(element: Element, view: Pick<Window, "getComputedStyle">, toHex: (color: string) => string | null): ComputedBox {
   const style = view.getComputedStyle(element);
-  const px = (value: string) => Math.max(0, Number.parseFloat(value) || 0);
+  const rect = element.getBoundingClientRect();
+  const round = (value: number) => Math.round(value * 10) / 10;
+  // Every number held within the message's limits, so a seller's odd value (9999em corners) never
+  // makes the whole selection invalid (review finding 6).
+  const px = (value: string, max = 10_000) => Math.min(max, Math.max(0, Number.parseFloat(value) || 0));
+  // A percentage corner is a share of the box (of its shorter side, which is what draws a pill).
+  const corner = (value: string) =>
+    value.trim().endsWith("%") ? round((Math.min(rect.width, rect.height) * px(value, 100)) / 100) : px(value, 100_000);
   const colour = (value: string) => (transparent(value) ? "" : (toHex(value) ?? ""));
   return {
     fill: colour(style.backgroundColor),
+    fillOpacity: transparent(style.backgroundColor) ? 0 : Math.round(alphaOf(style.backgroundColor) * 100),
     borderColor: px(style.borderTopWidth) > 0 ? colour(style.borderTopColor) : "",
     borderWidth: px(style.borderTopWidth),
-    radius: cornersOf(style).map(px),
+    radius: cornersOf(style).map(corner),
     paddingY: px(style.paddingTop),
     paddingX: px(style.paddingLeft),
-    width: Math.round(element.getBoundingClientRect().width * 10) / 10,
+    width: Math.min(100_000, round(rect.width)),
+    height: Math.min(100_000, round(rect.height)),
   };
+}
+
+/** A CSS colour's alpha, 0 to 1 ("rgba(…, 0.5)", "rgb(… / 50%)"); 1 when it has none. */
+function alphaOf(color: string): number {
+  const match = /^rgba?\((.*)\)$/.exec(color.trim());
+  if (!match) return 1;
+  const parts = match[1].split(/[\s,/]+/).filter(Boolean);
+  if (parts.length < 4) return 1;
+  const alpha = parts[3].endsWith("%") ? Number.parseFloat(parts[3]) / 100 : Number.parseFloat(parts[3]);
+  return Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
 }

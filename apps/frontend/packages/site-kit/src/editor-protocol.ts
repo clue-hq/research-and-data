@@ -134,12 +134,16 @@ export const LinkSourceSchema = z.discriminatedUnion("kind", [
  * Colours are #RRGGBB or "" for none, so they can never carry anything but a colour. */
 export const ComputedBoxSchema = z.object({
   fill: z.string().regex(/^(#[0-9A-F]{6})?$/),
+  /** The fill's own opacity, 0 to 100 (a half-clear fill draws at 50). */
+  fillOpacity: z.number().int().min(0).max(100).optional(),
   borderColor: z.string().regex(/^(#[0-9A-F]{6})?$/),
   borderWidth: z.number().nonnegative().max(10_000),
   radius: z.array(z.number().nonnegative().max(100_000)).length(4),
   paddingY: z.number().nonnegative().max(10_000),
   paddingX: z.number().nonnegative().max(10_000),
   width: z.number().nonnegative().max(100_000),
+  /** The box's drawn height: corners of at least half of it read as a pill. */
+  height: z.number().nonnegative().max(100_000).optional(),
 });
 /** Plan 3: where a button's words are written: a prop, a clone text slot, a clone text replacement
  * (by the captured words), or nowhere the marketer can change (`fixed`, with why). */
