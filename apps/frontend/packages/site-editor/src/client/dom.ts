@@ -293,7 +293,8 @@ export function inspectableElementsIn(scope: Element, view: Pick<Window, "getCom
       seen.add(key);
       buttons.push(element);
       found.push({ element, kind: "button" });
-    } else if (isTextElement(element)) {
+    } else if (isTextElement(element) && (element.children.length > 0 || (element.textContent ?? "").trim() !== "")) {
+      // An empty element (a copied button's overlay link) has nothing to show or style.
       seen.add(key);
       found.push({ element, kind: "text" });
     }

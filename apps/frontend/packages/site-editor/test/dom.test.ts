@@ -215,3 +215,12 @@ test("a link laid out as a block but with no fill and no stroke reads as a link,
   assert.equal(isButtonElement(menu.window.document.getElementById("nav")!, view), false);
   assert.equal(isButtonElement(menu.window.document.getElementById("outline")!, view), true, "a stroke is a box");
 });
+
+test("an empty keyed element (a copied button's overlay link) is not listed: it has nothing to show or style", () => {
+  const webflow = new JSDOM(`<div data-puck-component="hero">
+    <button data-clue-el="0.2"><div data-clue-el="0.2.0">Request a demo</div><a id="overlay" data-clue-el="0.2.1" href="/book"></a></button>
+  </div>`);
+  const view = webflow.window as unknown as Window;
+  const scope = webflow.window.document.querySelector("[data-puck-component]")!;
+  assert.deepEqual(inspectableElementsIn(scope, view).map(({ element }) => element.getAttribute("data-clue-el")), ["0.2.0"]);
+});
