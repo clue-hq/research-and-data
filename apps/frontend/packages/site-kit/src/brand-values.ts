@@ -1,3 +1,4 @@
+import { z } from "zod";
 // The brand kit's values, resolved. Every style value site-kit draws comes from here: a token of the
 // kit (measured on the seller's site, or derived by the kit) or, only where the kit has none, one of
 // FALLBACKS — each named where the agent can see it (brand.md). Components carry no style value of
@@ -140,6 +141,34 @@ export function typographyOf(brand: BrandData, name: string | null | undefined):
     color: typeof value.color === "string" ? value.color : null,
     asset: typeof value.font_asset === "string" ? value.font_asset : null,
   };
+}
+
+/** One width step of a role's size, measured on the seller's site (responsive brand type). */
+export type TypeStep = { maxWidth: number; size: number; lineHeight?: number };
+
+const TypeStepSchema = z.object({
+  max_width: z.number().int().positive().max(10_000),
+  font_size: z.number().positive().max(1_000),
+  line_height: z.number().positive().max(10).optional(),
+});
+const ResponsiveTypeSchema = z.object({ roles: z.record(z.string(), z.array(TypeStepSchema)) });
+
+/** The kit's measured type steps by role name (`headline`, `body.small`; widest first), or null when
+ * the kit was not measured, or its section cannot be read (it is then drawn as an unmeasured kit,
+ * never half-drawn). A role in the map is measured: its steps, none when it never changes; a role
+ * not in the map was not measured. */
+export function typeSteps(brand: BrandData): Map<string, TypeStep[]> | null {
+  const parsed = ResponsiveTypeSchema.safeParse(brand.kit.responsive_type);
+  if (!parsed.success) return null;
+  const roles = Object.entries(parsed.data.roles).filter(([name]) => name.startsWith("type."));
+  return new Map(
+    roles.map(([name, steps]) => [
+      name.slice("type.".length),
+      [...steps]
+        .sort((a, b) => b.max_width - a.max_width)
+        .map((step) => ({ maxWidth: step.max_width, size: step.font_size, ...(step.line_height === undefined ? {} : { lineHeight: step.line_height }) })),
+    ]),
+  );
 }
 
 /** A font family as the text of a CSS string: no quote, backslash, angle bracket, semicolon, brace

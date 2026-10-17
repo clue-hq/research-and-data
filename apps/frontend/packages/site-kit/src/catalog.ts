@@ -11,7 +11,7 @@
 import { parse, type HTMLElement } from "node-html-parser";
 import { z } from "zod";
 import type { BrandData } from "./brand";
-import { colorOf, isMeasured, pxOf, tokenEntry, typographyOf } from "./brand-values";
+import { colorOf, isMeasured, pxOf, tokenEntry, typeSteps, typographyOf } from "./brand-values";
 import { replaceableTexts, type Clone } from "./clone";
 import {
   buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, measuredComponents, motionEntries, motionNotes,
@@ -216,6 +216,21 @@ function surfacesSection(brand: BrandData): string[] {
   ];
 }
 
+/** Responsive brand type: how the measured roles change with the window, in one line (none for a kit
+ * that was not measured). The theme draws it; the agent only needs to know not to fight it. */
+function typeStepsLine(brand: BrandData): string[] {
+  const steps = typeSteps(brand);
+  if (!steps) return [];
+  const changing = TYPE_ROLES.flatMap((role) => {
+    const list = steps.get(role);
+    const size = typographyOf(brand, `type.${role}`)?.size;
+    if (!list?.length || size === undefined) return [];
+    return [`${role} ${size}px; ${list.map((step) => `${step.size}px at ${step.maxWidth}px and narrower`).join("; ")}`];
+  });
+  if (!changing.length) return ["Type sizes do not change with the window on this site.", ""];
+  return [`Sizes change with the window, as on the seller's own site (drawn for you by the classes): ${changing.join(". ")}.`, ""];
+}
+
 function typeSection(brand: BrandData): string[] {
   const rows = TYPE_ROLES.map((role) => {
     const classes = `\`font-${typeVar(role)} text-${typeVar(role)}\``;
@@ -237,6 +252,7 @@ function typeSection(brand: BrandData): string[] {
     "|---|---|---|---|---|---|---|---|",
     ...rows,
     "",
+    ...typeStepsLine(brand),
     "Our sections' headings choose from display, headline and title (`headingRole`).",
     "",
   ];

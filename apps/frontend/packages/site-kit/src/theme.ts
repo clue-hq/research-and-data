@@ -8,7 +8,7 @@
 import type { BrandData } from "./brand";
 import {
   FALLBACKS, alphaOf, colorOf, contrast, cssString, fluid, fontStack, hexOf, isComponentToken, isMeasured,
-  luminance, numberOf, pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
+  luminance, numberOf, pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf, typeSteps,
 } from "./brand-values";
 import {
   STATES, buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, isClearFill, motionEntries,
@@ -149,12 +149,23 @@ export function themeCss(brand: BrandData): string {
     const value = isComponentToken(role) ? undefined : colorOf(brand, role);
     if (value) root[`--brand-${colorVar(role)}`] = value;
   }
+  // Responsive brand type: a measured role is its desktop size plus the seller's own width steps
+  // (written after the root rule below); a role the kit did not measure keeps the guessed shrink.
+  const steps = typeSteps(brand);
+  const stepRules = new Map<number, string[]>();
   for (const role of TYPE_ROLES) {
     const style = typographyOf(brand, `type.${role}`);
     if (!style) continue;
     const name = typeVar(role);
     root[`--brand-font-${name}`] = fontStack(brand, style);
-    root[`--brand-text-${name}`] = fluid(style.size);
+    const measured = steps?.get(role);
+    root[`--brand-text-${name}`] = measured ? `${trim(style.size)}px` : fluid(style.size);
+    for (const step of measured ?? []) {
+      const declarations = stepRules.get(step.maxWidth) ?? [];
+      declarations.push(`--brand-text-${name}:${trim(step.size)}px`);
+      if (step.lineHeight !== undefined) declarations.push(`--brand-text-${name}-lh:${trim(step.lineHeight)}`);
+      stepRules.set(step.maxWidth, declarations);
+    }
     if (style.lineHeight !== null) root[`--brand-text-${name}-lh`] = trim(style.lineHeight);
     root[`--brand-text-${name}-weight`] = String(style.weight);
     if (style.letterSpacing !== null) root[`--brand-text-${name}-tracking`] = `${trim(style.letterSpacing)}em`;
@@ -225,6 +236,10 @@ export function themeCss(brand: BrandData): string {
     color: paintsPage ? inkOn("surface.page") : undefined,
     isolation: "isolate",
   }));
+  // Widest first, so a narrower width's rule (later in the sheet) wins where both apply.
+  for (const width of [...stepRules.keys()].sort((a, b) => b - a)) {
+    lines.push(`@media (max-width:${width}px){.brand-root{${stepRules.get(width)!.join(";")}}}`);
+  }
   for (const surface of surfaces) lines.push(rule(`.bg-${colorVar(surface)}`, local.get(surface)!));
   for (const role of TYPE_ROLES) lines.push(`.brand-ink-${typeVar(role)}{color:var(--brand-ink-role-${typeVar(role)},currentColor)}`);
   lines.push(
