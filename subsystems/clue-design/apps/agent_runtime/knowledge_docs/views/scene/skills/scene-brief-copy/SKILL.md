@@ -13,9 +13,9 @@ references; view their pixels before choosing copy or treatment. Start with a
 small useful set and broaden to resolve a named gap. Distinguish what the examples
 actually show from metadata and assumptions. Derive the
 audience, single useful message, medium and appropriate action from this context.
-For “make an ad,” choose a 1080 square awareness creative unless supplied context
-implies another placement. Record that assumption; `knowledge/scene/placement.md`
-governs adaptation. Do not ask the user to become the copywriter.
+For “make an ad” with no size or placement in the person's message or the Head of
+ABM's brief, ask as clarify-design-brief says, with a 1080 square awareness
+creative as the default. `knowledge/scene/placement.md` governs adaptation. Do not ask the user to become the copywriter.
 
 When addressing a named target company or adapting approved creative for an
 account, read [account-adaptation](/.deepagent/skills/account-adaptation/SKILL.md)
@@ -62,8 +62,8 @@ user asks for new imagery or variants, carry that requirement into generated
 layers and inspect the actual outputs; reusing an old image or substituting a
 native flat field does not satisfy a new-artwork request.
 If its evidence or assets are unavailable, pick a supportable direction and note
-the limitation; ask only for a missing decision that makes the requested result
-impossible. Preserve exact copy when the user supplies it; don't rewrite control
+the limitation; ask only as clarify-design-brief says.
+Preserve exact copy when the user supplies it; don't rewrite control
 inputs to make the composition easier.
 
 Write `/run_<id>/workspace/creative-direction.json` using

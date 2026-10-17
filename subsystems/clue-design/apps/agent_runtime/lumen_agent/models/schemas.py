@@ -111,17 +111,30 @@ class SceneVisualCritique(VisualCritique):
 
 
 class ClarificationQuestion(BaseModel):
-    """One brief-clarification question the orchestrator asks the user before
-    spending any authoring effort. Every question MUST carry a `default` — the
-    "if you don't care, I'll do X" fallback — so an unanswered question never
-    blocks the design (see the clarify-design-brief skill)."""
+    """One clarifying question for the person, asked before you start designing.
+    Every question carries a default, so an unanswered question never blocks the
+    design (see the clarify-design-brief skill)."""
 
-    id: str
-    question: str
-    why_it_matters: str
-    options: List[str] = Field(default_factory=list)
-    default: str
-    allow_freeform: bool = True
+    # Harness alignment I6 (founder ruling 2026-10-17): this model is also the tool's parameter
+    # schema, so each field carries the description the agent reads before it calls the tool.
+    id: str = Field(description='Short stable key, e.g. "format".')
+    question: str = Field(description="One decision, in plain language.")
+    why_it_matters: str = Field(
+        description="One line on how the answer changes the design."
+    )
+    options: List[str] = Field(
+        default_factory=list,
+        description="Suggested answers shown as chips (optional).",
+    )
+    default: str = Field(
+        description=(
+            "What you'll do if the person doesn't answer: "
+            "'if you don't care, I'll do X'."
+        )
+    )
+    allow_freeform: bool = Field(
+        default=True, description="Whether a typed answer is accepted."
+    )
 
     @field_validator("id", "question", "why_it_matters", "default")
     @classmethod
@@ -136,11 +149,16 @@ class ClarificationQuestion(BaseModel):
 
 
 class ClarificationRequest(BaseModel):
-    """The `request_clarification` tool payload. At most FOUR questions, at least
-    one, each with a non-empty default — the design note's ratified cap
-    (one round per turn, max 4 questions, defaults not interrogation)."""
+    """The `request_clarification` payload: one to six questions, each with a
+    non-empty default. One round per turn; ask only as many as you need."""
 
-    questions: List[ClarificationQuestion] = Field(min_length=1, max_length=4)
+    # Cap raised 4 → 6 by founder ruling 2026-10-17 (harness alignment I6): any number from one
+    # to six, never padded; one round per turn is unchanged.
+    questions: List[ClarificationQuestion] = Field(
+        min_length=1,
+        max_length=6,
+        description="1 to 6 questions; ask only as many as you need.",
+    )
 
 
 class KnowledgeSnippet(BaseModel):

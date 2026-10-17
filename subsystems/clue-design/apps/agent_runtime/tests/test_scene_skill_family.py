@@ -47,7 +47,12 @@ def test_scene_view_discovers_only_scene_family_and_hides_legacy_policy(tmp_path
         "attributed-proof",
         "workflow-contrast",
     } <= discovered
-    assert not {"create-website", "conversion-copywriting", "clarify-design-brief"} & discovered
+    assert not {"create-website", "conversion-copywriting"} & discovered
+    # Harness alignment I6 (founder ruling 2026-10-17): the scene agent gets its own copy of
+    # clarify-design-brief, the one home of its ask policy (the clarification tool points there).
+    assert "clarify-design-brief" in discovered
+    clarify = (config.workspace_root / ".deepagent/skills/clarify-design-brief/SKILL.md").read_text()
+    assert "up to 6 well-formed questions" in clarify and "orchestrator" not in clarify
     assert not (
         config.workspace_root / "knowledge_docs/knowledge/design/blocks/patterns.md"
     ).exists()

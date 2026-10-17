@@ -38,7 +38,7 @@ from .cancellation import (
 from .checkpoint import RUN_ID_KEY, invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
-from .models.schemas import SceneVisualCritique, VisualCritique
+from .models.schemas import ClarificationRequest, SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .platform_reads import make_platform_read_tools
 from .prompts import (
@@ -67,6 +67,17 @@ def _make_candidate_fetch_logo_tool(tools: LumenDesignTools) -> StructuredTool:
     end = description.index("\n\n", start)
     description = description[:start] + SCENE_LOGO_SELECTION_GUIDANCE + description[end:]
     return StructuredTool.from_function(tools.fetch_logo, description=description)
+
+
+def _make_request_clarification_tool(tools: LumenDesignTools) -> StructuredTool:
+    """The clarification tool with a typed parameter schema (harness alignment I6, 2026-10-17).
+
+    The method's own signature is a loose `List[Dict]`, which reaches the model as "a list of any
+    objects"; the fields and the 1-6 limit then lived only in prose. Binding `ClarificationRequest`
+    as the args schema hands the model every field, its description and the limit before it calls.
+    The method still validates (and answers a bad payload with a readable error) as the backstop.
+    """
+    return StructuredTool.from_function(tools.request_clarification, args_schema=ClarificationRequest)
 
 
 class _CandidateFinalizeInput(BaseModel):
@@ -769,8 +780,8 @@ def create_design_deepagent(
     ]
     if scene_candidate:
         orchestrator_tools.insert(-1, tools.validate_creative_direction)
-    # Brief clarification (opening-move only): the orchestrator may ask the user
-    # up to 4 questions on a genuinely under-specified brief. Two structural
+    # Brief clarification (opening-move only): the agent may ask the person
+    # up to 6 questions on a genuinely under-specified brief. Two structural
     # suppressors keep it honest and bounded, both decided BEFORE any LLM call:
     #   1. auto_defaults (LUMEN_AGENT_AUTO_DEFAULTS=1) — headless/eval mode: apply
     #      the skill's defaults + record_gap per assumption, never ask.
@@ -781,7 +792,7 @@ def create_design_deepagent(
     # derive-first protocol and zero-question rules.
     if not runtime_config.auto_defaults and not clarification_already_requested:
         # Insert before finalize_run so the honest exits sit together at the tail.
-        orchestrator_tools.insert(len(orchestrator_tools) - 1, tools.request_clarification)
+        orchestrator_tools.insert(len(orchestrator_tools) - 1, _make_request_clarification_tool(tools))
 
     # Both paths: the reads sit before finalize_run, the way request_clarification does, so the
     # tail of the list stays the honest exits.

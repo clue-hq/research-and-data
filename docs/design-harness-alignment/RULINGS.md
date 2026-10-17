@@ -328,3 +328,9 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   (founder: a cap must not force a false "fixed"): no hard one-fix cap — "Keep fixing only while you can
   see a concrete change that should fix it. When you can't, stop and say plainly in your summary what is
   still wrong. Never report something as fixed when it isn't." The run's overall budget still applies.
+- **T4 founder addition:** the clarification tool gets a typed parameter schema (from
+  `ClarificationQuestion`/`ClarificationRequest`, every field described, 1–6 items) instead of
+  "a list of any objects"; its prose description keeps only when/why to ask.
+- **NEW TOPIC T11 (founder, 2026-10-17): review every scene tool's parameter schema** the same way —
+  e.g. `apply_structured_edit` (one `edit_json` string whose format lives only in a prose example) and
+  `asset` (~20 parameters described only in prose). Runs after T10.

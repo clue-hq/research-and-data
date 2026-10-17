@@ -5230,24 +5230,16 @@ class LumenDesignTools:
 
     @_tool_span
     def request_clarification(self, questions: List[Dict[str, Any]]) -> str:
-        """Ask the user up to FOUR clarifying questions, then STOP — calling this
-        ENDS THE TURN. Use it only as an OPENING MOVE on a genuinely
-        under-specified brief, before any authoring, rendering, or finalize
-        cost — never mid-design. Ask ONLY for decision-critical facts you cannot
-        derive from the prompt, conversation, document, or brand kit (asking
-        about something derivable is a failure). Read the clarify-design-brief
-        skill for the spec table and the derive-first protocol.
+        """Ask the person up to SIX clarifying questions, then STOP — calling this
+        ENDS THE TURN. Use it only as an OPENING MOVE, before any authoring,
+        rendering or finalize, and never mid-design. Ask only for choices that
+        shape the whole design and that you cannot find in the person's message,
+        the Head of ABM's brief, the conversation, the ad, the brand kit, the
+        seller's files or the research (asking about something you could find is
+        a failure). Ask as many questions as you need, from one to six; never pad
+        the list. Read the clarify-design-brief skill for what is worth asking.
 
-        `questions` is a list of at most 4 objects, each:
-          - id: short stable key (e.g. "format", "message_focus")
-          - question: the question, in plain language
-          - why_it_matters: one line on why the answer changes the design
-          - options: optional list of suggested answers (chips)
-          - default: REQUIRED — the "if you don't care, I'll do X" fallback so
-            an unanswered question never blocks the design
-          - allow_freeform: whether a typed answer is accepted (default true)
-
-        After calling this, do NOT author, render, or finalize — the user's next
+        After calling this, do NOT author, render, or finalize — the person's next
         message answers the questions and that turn continues the design. Never
         re-ask a question a previous turn already answered.
         """
@@ -5258,7 +5250,7 @@ class LumenDesignTools:
             # read and retry, never a raised exception that kills the turn.
             return self._tool_error(
                 "clarification.invalid_payload",
-                "request_clarification payload is invalid. Provide 1-4 questions, "
+                "request_clarification payload is invalid. Provide 1-6 questions, "
                 "each with a non-empty `default` ('if you don't care, I'll do X').",
                 errors=[
                     {

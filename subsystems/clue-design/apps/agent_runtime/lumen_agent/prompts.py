@@ -1370,6 +1370,8 @@ when present, and
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the
 user provide a headline, asset IDs or a detailed image-generation prompt.
+Design from what you have. Ask only as the clarify-design-brief skill says:
+before you start, in one round of at most six questions, each with a default.
 2. Inspect useful source pixels before choosing treatment. The run's
 source_assets.json lists other available sources when the initial references
 do not answer the request. Broaden to resolve a specific gap; metadata is not
