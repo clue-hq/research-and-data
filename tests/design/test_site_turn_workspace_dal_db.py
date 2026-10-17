@@ -221,7 +221,7 @@ def test_a_restamp_moves_the_checkpoint_and_turn_state_on_and_keeps_the_files() 
 
 
 @pytest.mark.usefixtures("require_design_db")
-def test_every_terminal_write_prunes_the_copy_and_the_runs_checkpoints() -> None:
+def test_every_terminal_write_prunes_the_copy_and_keeps_the_conversation() -> None:
     async def body(conn: AsyncConnection) -> None:
         ws = await _seed_ws(conn)
         result = {"schema_version": 1, "status": "failed"}
@@ -232,7 +232,9 @@ def test_every_terminal_write_prunes_the_copy_and_the_runs_checkpoints() -> None
             await _checkpoint(conn, run_id)
             return run_id
 
-        empty = {"copy": 0, "checkpoints": 0, "checkpoint_blobs": 0, "checkpoint_writes": 0}
+        # The working copy goes at once; the conversation is kept (deleted 96 h later by
+        # prune_expired_site_turn_checkpoints, founder 2026-10-17: kept for debugging).
+        empty = {"copy": 0, "checkpoints": 1, "checkpoint_blobs": 1, "checkpoint_writes": 1}
 
         fenced_complete = await prepared()
         await design_runs.set_run_result(
@@ -265,6 +267,54 @@ def test_every_terminal_write_prunes_the_copy_and_the_runs_checkpoints() -> None
 
         # Idempotent: pruning a pruned run is a no-op that still answers "terminal".
         assert await copies.prune_site_turn_state(conn, run_id=dispatched)
+
+    _in_rolled_back_txn(body)
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_a_finished_site_turns_conversation_is_deleted_only_after_its_retention() -> None:
+    """Founder 2026-10-17: a finished site turn's conversation is kept for 96 hours (so a slow or
+    odd turn can be traced from its own messages), then deleted. A running run, a run finished
+    less than the retention ago, and a web turn's session thread are never touched."""
+
+    async def body(conn: AsyncConnection) -> None:
+        ws = await _seed_ws(conn)
+
+        async def finished(age_s: float, kind: DesignRunKind = DesignRunKind.SITE_TURN) -> str:
+            thread = None if kind == DesignRunKind.SITE_TURN else f"design-session-{uuid4().hex}"
+            run_id = await _site_run(conn, ws, kind=kind, thread=thread)
+            await _checkpoint(conn, thread or run_id)
+            await design_runs.set_run_result(
+                conn, workspace_id=ws, run_id=run_id, status="succeeded", result={},
+                expected_generation=1,
+            )
+            await conn.execute(
+                text("UPDATE design_agent_run SET updated_at = now() - make_interval(secs => :a)"
+                     " WHERE run_id = :r"),
+                {"a": age_s, "r": run_id},
+            )
+            return run_id
+
+        old = await finished(100 * 3600)
+        young = await finished(10 * 3600)
+        old_web = await finished(100 * 3600, kind=DesignRunKind.WEB_TURN)
+        running = await _site_run(conn, ws)
+        await _checkpoint(conn, running)
+
+        deleted = await copies.prune_expired_site_turn_checkpoints(conn, retain_s=96 * 3600)
+        assert deleted == 1
+        assert (await _counts(conn, old, old))["checkpoints"] == 0
+        assert (await _counts(conn, young, young))["checkpoints"] == 1
+        assert (await _counts(conn, running, running))["checkpoints"] == 1
+        web_thread = (
+            await conn.execute(
+                text("SELECT checkpoint_thread_id FROM design_agent_run WHERE run_id = :r"),
+                {"r": old_web},
+            )
+        ).scalar_one()
+        assert (await _counts(conn, old_web, web_thread))["checkpoints"] == 1
+        # A second pass finds nothing left to delete.
+        assert await copies.prune_expired_site_turn_checkpoints(conn, retain_s=96 * 3600) == 0
 
     _in_rolled_back_txn(body)
 

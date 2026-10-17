@@ -858,7 +858,8 @@ def test_p1_a_chat_message_becomes_a_saved_website_version_across_the_boundary(
                         {"r": run_id},
                     )
                 ).scalar_one()
-            assert int(checkpoints) == 0 and int(copies) == 0
+            # The working copy goes at the terminal write; the conversation is kept 96 h.
+            assert int(checkpoints) > 0 and int(copies) == 0
             # The design run's model calls, as receipts on the platform's own turn.
             async with transaction() as conn:
                 receipts = (

@@ -220,7 +220,7 @@ def test_k_b_a_turn_still_running_at_the_bound_stops_at_a_step_and_the_next_work
     assert stored["current_version"] == 1 and stored["scene"] == both
     finished = run_columns(envelope.run_id)
     assert finished["status"] == "succeeded" and finished["lease_generation"] > generation_a
-    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) > 0  # kept 96 h
 
 
 def test_k_c_a_drained_attempt_writes_no_history_and_never_moves_the_session_copy(

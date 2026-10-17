@@ -73,6 +73,7 @@ from uuid import UUID
 from clue_core import ProjectRunId
 from clue_design import ingestion as design_ingestion
 from clue_design import runs as design_runs
+from clue_design.site_turn_workspace import prune_expired_site_turn_checkpoints
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import WorkId, get_work_lease
 from clue_fleet.queue import enqueue_task
@@ -588,8 +589,12 @@ async def reaper_loop(
     stranded_after_s: float = DEFAULT_STRANDED_AFTER_S,
     conn_factory: Optional[Callable[[], Any]] = None,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+    conversation_retention_s: Optional[float] = None,
 ) -> None:
     """Sweep every ``interval_s`` seconds until cancelled. Copies ``_orphan_sweep_loop`` (B2).
+
+    Each pass also deletes the conversations of site turns that finished more than
+    ``conversation_retention_s`` ago (``LUMEN_SITE_TURN_CONVERSATION_RETENTION_S``, 96 h).
 
     Every pass is fully isolated: a fault is logged and the loop continues. A reaper that could
     sink its host worker would trade "some rows are stranded" for "no work is drained at all".
@@ -598,6 +603,10 @@ async def reaper_loop(
         from clue_db import transaction
 
         conn_factory = transaction
+    if conversation_retention_s is None:
+        from py_lumen_config import settings
+
+        conversation_retention_s = settings.lumen_site_turn_conversation_retention_s
     while True:
         await sleep(interval_s)
         try:
@@ -613,6 +622,18 @@ async def reaper_loop(
             raise
         except Exception:  # noqa: BLE001 — a reaper fault must never sink its host
             logger.warning("design_reaper.error", exc_info=True)
+        try:
+            # Its own transaction, so a fault here never undoes the sweeps above.
+            async with conn_factory() as conn:
+                deleted = await prune_expired_site_turn_checkpoints(
+                    conn, retain_s=conversation_retention_s
+                )
+            if deleted:
+                logger.info("design_reaper.conversations_deleted", runs=deleted)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — a reaper fault must never sink its host
+            logger.warning("design_reaper.conversation_prune_error", exc_info=True)
 
 
 def start_reaper(

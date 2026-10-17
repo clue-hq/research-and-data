@@ -1832,7 +1832,7 @@ def test_j_a_dies_right_before_the_save_and_the_takeover_saves_what_it_built(
     assert saves(turn) == [("site_document_saved", {"document_id": document_id, "version": 1})]
 
     finish(store, turn, generation_b)
-    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) > 0  # kept 96 h
 
 
 def test_j_b_dies_mid_turn_and_the_takeover_does_not_rebuild_its_pages(
@@ -1872,7 +1872,7 @@ def test_j_b_dies_mid_turn_and_the_takeover_does_not_rebuild_its_pages(
     assert copy_b["attempt_generation"] == generation_b
 
     finish(store, turn, generation_b)
-    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) > 0  # kept 96 h
 
 
 def test_j_b2_read_only_rounds_are_not_redone_after_a_takeover(
@@ -1910,7 +1910,7 @@ def test_j_b2_read_only_rounds_are_not_redone_after_a_takeover(
     assert store.get_site_turn_workspace(envelope.run_id)["turn_state"]["rounds"] == 6
 
     finish(store, turn, generation_b)
-    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) > 0  # kept 96 h
 
 
 def test_j_c_a_crash_between_a_checkpoint_and_its_copy_redoes_at_most_one_round(
@@ -2076,7 +2076,7 @@ def test_j_f_a_failed_turn_leaves_no_copy_and_no_checkpoints(
     assert turn.status == "failed" and turn.response["stop_reason"] == "cancelled_by_request"
     assert store.get_site_turn_workspace(envelope.run_id) is not None and checkpoint_rows(envelope.run_id) > 0
     finish(store, turn, generation)
-    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) == 0
+    assert store.get_site_turn_workspace(envelope.run_id) is None and checkpoint_rows(envelope.run_id) > 0  # kept 96 h
 
 
 def test_j_g_a_zombie_and_its_takeover_never_share_a_folder(
