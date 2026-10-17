@@ -30,17 +30,19 @@ export type BrandData = {
 };
 
 /** Photos and graphics captured with the seller's own sections, offered beside the kit's assets.
- * Clone HTML names its bytes as /asset-store/<sha256> (the fragment sanitizer rewrites them). */
-function cloneImages(clones: Clone[]): Record<string, BrandAsset> {
+ * Clone HTML names its bytes as /asset-store/<sha256> (the fragment sanitizer rewrites them). Each is
+ * described by the description stored for its digest, else its alt text, else its section. The alt
+ * pattern is lumen_api/site_brand.py's (the optional group holds the gap, so it is tried). */
+function cloneImages(clones: Clone[], descriptions: Record<string, string> = {}): Record<string, BrandAsset> {
   const found: Record<string, BrandAsset> = {};
   for (const clone of clones) {
-    for (const match of clone.html.matchAll(/<img[^>]*?src="(\/asset-store\/[0-9a-f]{64})"[^>]*?(?:alt="([^"]*)")?/g)) {
+    for (const match of clone.html.matchAll(/<img[^>]*?src="(\/asset-store\/([0-9a-f]{64}))"(?:[^>]*?alt="([^"]*)")?/g)) {
       const file = match[1];
       if (found[file]) continue;
       found[file] = {
         kind: "captured_image",
         label: clone.label,
-        description: match[2] || `From the seller's section "${clone.label}"`,
+        description: descriptions[match[2]] || match[3] || `From the seller's section "${clone.label}"`,
         mime: null,
         file,
         logo: null,
@@ -56,12 +58,14 @@ export function brandData(input: {
   fonts: FontFace[];
   kitAssets: Record<string, BrandAsset>;
   clones: Clone[];
+  /** `{digest: text}`: what the capture's describe step said each captured image shows. */
+  capturedImageDescriptions?: Record<string, string>;
 }): BrandData {
   return {
     slug: input.slug,
     kit: input.kit,
     fonts: input.fonts,
-    assets: { ...input.kitAssets, ...cloneImages(input.clones) },
+    assets: { ...input.kitAssets, ...cloneImages(input.clones, input.capturedImageDescriptions) },
     clones: Object.fromEntries(input.clones.map((clone) => [clone.id, clone])),
   };
 }

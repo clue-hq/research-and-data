@@ -24,7 +24,9 @@ from sqlalchemy import text
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .database import NotFoundError
 from .fragments import FragmentRefused, read_web_fragment
-from .site_brand import _record_digest, asset_store_file, clone_from_fragment, site_brand_data
+from .site_brand import (
+    _record_digest, asset_store_file, captured_image_descriptions, clone_from_fragment, site_brand_data,
+)
 from .site_kit_cli import build_site_catalog
 
 logger = get_logger("lumen_api.site_workspace_view")
@@ -256,6 +258,7 @@ def site_brand_for(
         font_faces=list((font_spec or {}).get("faces") or []),
         clones=listed + pinned,
         library_assets=dict(library_assets),
+        captured_image_descriptions=captured_image_descriptions(listed + pinned, workspace_id=blobs.workspace_id),
     )
 
 

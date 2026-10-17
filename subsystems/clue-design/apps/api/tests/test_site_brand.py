@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from lumen_api.site_brand import asset_store_file, clone_from_fragment, site_brand_data
+from lumen_api.site_brand import asset_store_file, captured_asset_id, clone_from_fragment, site_brand_data
 
 D1, D2, D3, D4 = "1" * 64, "2" * 64, "3" * 64, "4" * 64
 
@@ -55,3 +55,21 @@ def test_a_registry_row_and_its_payload_become_a_site_kit_clone() -> None:
         "slots": {"headline": {"kind": "text", "fallback": "Hi"}},
         "degraded_note": "this clone is marked broken, with no reason recorded.",
     }
+
+
+def test_a_captured_image_is_described_by_its_digest_first_then_alt_then_the_fallback() -> None:
+    clone = {"id": "frag_a", "label": "Hero", "css": "", "slots": {}, "role": "hero",
+             "html": f'<img src="/asset-store/{D1}" alt="A team"><img src="/asset-store/{D2}" alt="Doctors">'
+                     f'<img src="/asset-store/{D3}">'}
+    brand = site_brand_data(
+        slug="kit_1", kit={}, kit_assets={}, font_faces=[], clones=[clone], library_assets={},
+        captured_image_descriptions={D1: "Three nurses laughing at a station."},
+    )
+    assert brand["assets"][asset_store_file(D1)]["description"] == "Three nurses laughing at a station."
+    assert brand["assets"][asset_store_file(D2)]["description"] == "Doctors"
+    assert brand["assets"][asset_store_file(D3)]["description"] == 'From the seller\'s section "Hero"'
+
+
+def test_a_captured_image_is_the_asset_the_capture_ingested_from_the_same_bytes() -> None:
+    # evidence_builder._ingest_one: every captured byte string is ingested as asset_ing_<sha256[:16]>.
+    assert captured_asset_id("ab" * 32) == "asset_ing_" + "ab" * 8

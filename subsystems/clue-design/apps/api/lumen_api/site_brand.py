@@ -15,7 +15,10 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-__all__ = ["asset_store_file", "brand_asset", "clone_from_fragment", "clone_images", "site_brand_data"]
+__all__ = [
+    "asset_store_file", "brand_asset", "captured_asset_id", "captured_image_descriptions",
+    "clone_from_fragment", "clone_images", "site_brand_data",
+]
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 #: A captured section's own image, already rehosted to the asset store at capture, and the alt
@@ -48,8 +51,41 @@ def brand_asset(record: Mapping[str, Any], *, description: str | None) -> dict |
     }
 
 
-def clone_images(clones: list[Mapping[str, Any]]) -> dict[str, dict]:
-    """Photos and graphics captured with the seller's own sections (site-kit's `cloneImages`)."""
+def captured_asset_id(digest: str) -> str:
+    """The asset the capture ingested from a captured byte string: every captured image is ingested
+    as ``asset_ing_<sha256[:16]>`` (``capture/evidence_builder._ingest_one``) and described there."""
+
+    return f"asset_ing_{digest[:16]}"
+
+
+def captured_image_descriptions(clones: list[Mapping[str, Any]], *, workspace_id: str) -> dict[str, str]:
+    """``{digest: description}`` for the clones' images, read from the description cache the capture
+    filled (the same cache kit assets use, keyed by the asset ingested from those bytes)."""
+
+    digests = {
+        match.group(1).rsplit("/", 1)[1]
+        for clone in clones
+        for match in _CLONE_IMAGE.finditer(str(clone.get("html") or ""))
+    }
+    if not digests:
+        return {}
+    from lumen_ingestion.describe import DescriptionStore
+
+    rows = DescriptionStore(workspace_id=workspace_id).get_many([captured_asset_id(d) for d in sorted(digests)])
+    found: dict[str, str] = {}
+    for digest in digests:
+        row = rows.get(captured_asset_id(digest)) or {}
+        text = row.get("description") or row.get("title")
+        if text:
+            found[digest] = str(text)
+    return found
+
+
+def clone_images(
+    clones: list[Mapping[str, Any]], descriptions: Mapping[str, str] | None = None
+) -> dict[str, dict]:
+    """Photos and graphics captured with the seller's own sections (site-kit's `cloneImages`): each
+    described by its digest's stored description, else its alt text, else the section it came from."""
 
     found: dict[str, dict] = {}
     for clone in clones:
@@ -60,7 +96,8 @@ def clone_images(clones: list[Mapping[str, Any]]) -> dict[str, dict]:
             label = clone.get("label")
             found[file] = {
                 "kind": "captured_image", "label": label,
-                "description": match.group(2) or f'From the seller\'s section "{label}"',
+                "description": (descriptions or {}).get(file.rsplit("/", 1)[1])
+                or match.group(2) or f'From the seller\'s section "{label}"',
                 "mime": None, "file": file, "logo": None,
             }
     return found
@@ -74,9 +111,11 @@ def site_brand_data(
     font_faces: list[Mapping[str, Any]],
     clones: list[Mapping[str, Any]],
     library_assets: Mapping[str, Mapping[str, Any]],
+    captured_image_descriptions: Mapping[str, str] | None = None,
 ) -> dict:
     """BrandData: the kit, its assets and fonts, the released clones and their images, and the
-    workspace library assets the site already uses (a generated image is described by its prompt)."""
+    workspace library assets the site already uses (a generated image is described by its prompt).
+    ``captured_image_descriptions`` (``{digest: text}``) describes the clones' images."""
 
     assets: dict[str, dict] = {}
     for asset_id, entry in kit_assets.items():
@@ -96,7 +135,7 @@ def site_brand_data(
             if generated:
                 built["kind"] = "generated_image"
             assets[asset_id] = built
-    for file, asset in clone_images(clones).items():
+    for file, asset in clone_images(clones, captured_image_descriptions).items():
         assets.setdefault(file, asset)
     fonts = [
         {"family": face["family"], "weight": face.get("weight"), "style": face.get("style") or "normal",

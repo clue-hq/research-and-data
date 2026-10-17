@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 SITE_KIT = REPO_ROOT / "apps" / "frontend" / "packages" / "site-kit"
 FIXTURES = SITE_KIT / "test" / "fixtures"
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
-_CLONE_IMG = re.compile(r'<img[^>]*?src="(/asset-store/[0-9a-f]{64})"[^>]*?(?:alt="([^"]*)")?')
+_CLONE_IMG = re.compile(r'<img[^>]*?src="(/asset-store/[0-9a-f]{64})"(?:[^>]*?alt="([^"]*)")?')
 
 
 def _read(name: str) -> Any:
