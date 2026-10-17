@@ -6,7 +6,7 @@
 // published page draws rich text with rich.ts and never loads TipTap.
 import { Extension, Mark, mergeAttributes } from "@tiptap/core";
 import { ElementKeySchema, SPAN_KEY_ATTR } from "../edits";
-import { RICH_LINK } from "../rich";
+import { isRichLink } from "../rich";
 
 /** Enter makes a line break: the grammar is inline only (plan 2 ruling R1). Text pasted as several
  * paragraphs keeps every word: its paragraphs become line breaks when it is saved (normalizeRich). */
@@ -41,7 +41,7 @@ export const ClueLink = Mark.create({
     return [
       {
         tag: "a[href]",
-        getAttrs: (element: HTMLElement) => (RICH_LINK.test(element.getAttribute("href") ?? "") ? null : false),
+        getAttrs: (element: HTMLElement) => (isRichLink(element.getAttribute("href") ?? "") ? null : false),
       },
     ];
   },
@@ -125,7 +125,7 @@ export function richFromDom(element: Element): string {
     const inner = [...el.childNodes].map((child) => walk(child, false)).join("");
     if (top) return inner;
     if (MARKS[tag]) return `<${MARKS[tag]}>${inner}</${MARKS[tag]}>`;
-    if (tag === "a" && RICH_LINK.test(el.getAttribute("href") ?? "")) {
+    if (tag === "a" && isRichLink(el.getAttribute("href") ?? "")) {
       return `<a href="${attr(el.getAttribute("href") ?? "")}"${el.hasAttribute("data-new-tab") ? ' data-new-tab=""' : ""}>${inner}</a>`;
     }
     const key = tag === "span" ? el.getAttribute(SPAN_KEY_ATTR) : null;

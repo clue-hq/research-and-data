@@ -148,3 +148,26 @@ test("linking words adds a link; a range inside a link edits that whole link; nu
   assert.equal(linkAt(linked, 0, 3), null);
   assert.equal(linkAt(linked, 0, 10), null, "a range only partly in the link");
 });
+
+// End-of-plan review findings 3, 6 and 7.
+import { isRichLink } from "../src/rich";
+
+test("a named character reference the grammar does not know is refused, not drawn literally", () => {
+  assert.deepEqual(richProblems("Fast &mdash; simple"), ['write the character itself instead of "&mdash;"']);
+  assert.deepEqual(richProblems("Fast &#8212; simple &amp; &nbsp;"), []);
+  assert.equal(richText("Tom &mdash"), "Tom &mdash", "a bare & that names nothing is text");
+});
+
+test("one link rule: no protocol-relative address and no spaces", () => {
+  for (const ok of ["/", "/analysis", "#top", "https://x.com/a?b=1", "http://x.com", "mailto:a@b.com"]) assert.ok(isRichLink(ok), ok);
+  for (const bad of ["//evil.example", "/ evil", "javascript:x", "example.com", "https://x.com/a b"]) assert.equal(isRichLink(bad), false, bad);
+  assert.match(richProblems('<a href="//evil.example">x</a>')[0], /a link must be/);
+});
+
+test("reading long malformed text takes linear time", () => {
+  const hostile = "<a b".repeat(50_000);
+  const started = Date.now();
+  normalizeRich(hostile);
+  richProblems(hostile);
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
+});

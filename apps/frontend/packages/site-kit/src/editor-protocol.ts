@@ -42,11 +42,12 @@ export type EditorMode = z.infer<typeof EditorModeSchema>;
 export const PreviewDeviceSchema = z.enum(["Desktop", "Tablet", "Mobile"]);
 export type PreviewDevice = z.infer<typeof PreviewDeviceSchema>;
 
-/** A dotted prop path: "heading", "slots.headline", "stats.0.value". */
+/** A dotted prop path: "heading", "slots.headline", "stats.0.value". A segment after the first may
+ * also be a clone slot's name, which can hold dashes and start with a digit ("slots.cta-label"). */
 export const PropPathSchema = z
   .string()
   .max(300)
-  .regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\d+))*$/);
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_][A-Za-z0-9_-]*)*$/);
 /** Contract 1: every image in a site is a blob of this workspace's asset store. */
 export const AssetStoreUrlSchema = z.string().regex(/^\/asset-store\/[0-9a-f]{64}$/);
 
@@ -125,7 +126,7 @@ export const WordsSchema = z
 export const LinkSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("prop"), href: PropPathSchema, newTab: PropPathSchema }),
   z.object({ kind: z.literal("slot"), slot: z.string().min(1).max(200) }),
-  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(2048), shared: z.boolean() }),
+  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(16_384), shared: z.boolean() }),
   z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
 ]);
 export type RichSource = z.infer<typeof RichSourceSchema>;

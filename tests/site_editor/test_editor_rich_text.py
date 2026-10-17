@@ -64,10 +64,15 @@ def focus_heading(frame: Any) -> Any:
     editor.wait_for(timeout=10000)
     # Playwright counts an element inside Puck's component (aria-disabled for dragging) as disabled.
     editor.click(force=True)
+    # TipTap takes the keyboard only once it has focus (it mounts a moment after Puck draws it).
+    frame.wait_for_function(
+        "(sel) => document.activeElement && document.activeElement.matches(sel)", arg=HEADING, timeout=10000
+    )
     return editor
 
 
 def select_word(frame: Any, selector: str, word: str) -> None:
+    """Highlight the word as a person would leave it, then give the editor a moment to read it."""
     frame.locator(selector).first.evaluate(
         """(root, word) => {
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -86,6 +91,7 @@ def select_word(frame: Any, selector: str, word: str) -> None:
         }""",
         word,
     )
+    frame.page.wait_for_timeout(300)
 
 
 def test_bold_and_italic_typed_in_a_heading_are_saved_as_rich_text(app: Any, browser_page: Any, editor_origin: str) -> None:

@@ -50,7 +50,7 @@ test("words in rich text: no link yet offers to make one; a link in them is edit
   const made = linkPatch(site, plain, { href: "/analysis", newTab: false });
   assert.ok(made && "props" in made);
   assert.equal(made.props.heading, 'See <a href="/analysis">the analysis</a> now');
-  const inLink = sel("proof", { key: "body", rich: { prop: "body" }, words: words(7, 10, "stu") });
+  const inLink = sel("proof", { key: "body", rich: { prop: "body" }, words: words(9, 12, "stu") });
   assert.deepEqual(linkRowState(site, inLink), { kind: "link", href: "/analysis", newTab: false, removable: true, shared: false });
   const removed = linkPatch(site, inLink, null);
   assert.ok(removed && "props" in removed);
@@ -100,4 +100,27 @@ test("where no link can be made the row says why", () => {
     kind: "none",
     reason: "The agent's section sets this link; ask the agent to change it.",
   });
+});
+
+// End-of-plan review findings 1 and 2.
+test("words whose text no longer matches are refused, never linked in the wrong place", () => {
+  const stale = sel("proof", { rich: { prop: "heading" }, words: words(4, 16, "something el") });
+  assert.deepEqual(linkPatch(site, stale, { href: "/analysis", newTab: false }), { refused: "The text changed. Highlight the words again." });
+  assert.deepEqual(linkRowState(site, stale), { kind: "none", reason: "The text changed. Highlight the words again." });
+});
+
+test("words highlighted in text that is already a link change that link, never nest another inside it", () => {
+  const slot = sel("hero", { key: "0.2", rich: { prop: "slots.cta_label", fallback: "Start now" }, words: words(0, 5, "Start"), link: { source: { kind: "slot", slot: "cta" }, href: "/start" } }, "/", "ClonedSection");
+  assert.deepEqual(linkRowState(site, slot), { kind: "link", href: "/start", newTab: false, removable: false, shared: false });
+  const edit = linkPatch(site, slot, { href: "/analysis", newTab: false });
+  assert.ok(edit && "props" in edit);
+  assert.deepEqual(edit.props.slots, { cta: "/analysis" }, "the outer link is changed; the words stay unlinked");
+  const agent = sel("proof", { key: "cta", rich: { prop: "cta" }, words: words(0, 3, "Rea"), link: { source: { kind: "fixed", reason: "The agent's section sets this link; ask the agent to change it." } } }, "/", "Probe");
+  assert.deepEqual(linkRowState(site, agent), { kind: "none", reason: "The agent's section sets this link; ask the agent to change it." });
+  assert.equal(linkPatch(site, agent, { href: "/analysis", newTab: false }), null);
+});
+
+test("the Link row and the save check share one address rule", () => {
+  const selection = sel("proof", { key: "linkLabel", link: { source: { kind: "prop", href: "linkHref", newTab: "linkNewTab" } } });
+  assert.deepEqual(linkPatch(site, selection, { href: "//evil.example", newTab: false }), { refused: "Use a page of this site (like /analysis), a web address starting with https://, a #section or a mailto: address." });
 });

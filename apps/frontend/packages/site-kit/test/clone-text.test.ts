@@ -78,3 +78,9 @@ test("a replacement's words are written as text, never as markup", () => {
   const out = fillClone(clone, {}, [{ find: "work", replace: "<b>x</b> & y" }]);
   assert.ok(out.includes("&lt;b&gt;x&lt;/b&gt; &amp; y"), out);
 });
+
+// End-of-plan review finding 8: a replacement never reaches into a text slot or a script/style.
+test("a replacement does not overwrite words inside a text slot", () => {
+  const out = fillClone(clone, { lead: "Slot words" }, [{ find: "Slot words", replace: "NEW" }]);
+  assert.ok(out.includes(">Slot words</p>"), out);
+});

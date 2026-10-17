@@ -6,7 +6,8 @@
 import { EDITS_PROP } from "@clue/site-kit/edits";
 import type { ElementSelection } from "@clue/site-kit/editor-protocol";
 import { canonicalJson, componentProps, getAtPath, setAtPath, withComponentProps } from "@clue/site-kit/editor-site";
-import { RICH_LINK, linkAt, linkWords, richText } from "@clue/site-kit/rich";
+import { isRichLink, linkAt, linkWords, richText } from "@clue/site-kit/rich";
+import { STALE_WORDS } from "@/features/site-editor/model/site-selection";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 
 export type LinkSelection = { componentId: string; componentType: string; target: string; element: ElementSelection | null };
@@ -24,13 +25,15 @@ export function sitePages(site: SiteDocument): { route: string; title: string }[
   return routes.map((route) => ({ route, title: String(site.pages[route]?.root.props.title || "") || route }));
 }
 
-/** The element's stored rich text and the range a link acts on: the highlighted words, else all of it. */
-function richRange(props: Record<string, unknown>, element: ElementSelection): { html: string; start: number; end: number } | null {
+/** The element's stored rich text and the range a link acts on: the highlighted words, else all of it;
+ * `stale` when the stored text no longer holds the highlighted words there. */
+function richRange(props: Record<string, unknown>, element: ElementSelection): { html: string; start: number; end: number; stale: boolean } | null {
   if (!element.rich) return null;
   const stored = getAtPath(props, element.rich.prop);
   const html = typeof stored === "string" ? stored : (element.rich.fallback ?? "");
   const words = element.words;
-  return words ? { end: words.end, html, start: words.start } : { end: richText(html).length, html, start: 0 };
+  if (!words) return { end: richText(html).length, html, stale: false, start: 0 };
+  return { end: words.end, html, stale: richText(html).slice(words.start, words.end) !== words.text, start: words.start };
 }
 
 const keyList = (value: unknown): string[] => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []);
@@ -40,9 +43,11 @@ export function linkRowState(site: SiteDocument | null, selection: LinkSelection
   const element = selection?.element;
   const props = site && selection && element ? componentProps(site, selection.target, selection.componentId) : null;
   if (!selection || !element || !props) return { kind: "none", reason: "Select a piece of text." };
+  // Text that is itself a link (or sits in one) changes that link: a link is never nested in another.
   const source = element.link?.source;
-  const range = richRange(props, element);
-  if (range && (element.words || !source)) {
+  const range = source ? null : richRange(props, element);
+  if (range?.stale) return { kind: "none", reason: STALE_WORDS };
+  if (range) {
     const current = linkAt(range.html, range.start, range.end);
     return current
       ? { href: current.href, kind: "link", newTab: current.newTab, removable: true, shared: false }
@@ -70,7 +75,7 @@ export function linkRowState(site: SiteDocument | null, selection: LinkSelection
 
 /** Why an address cannot be a link here, or null when it can. */
 export function addressProblem(site: SiteDocument, href: string): string | null {
-  if (!RICH_LINK.test(href) || /\s/.test(href) || href.startsWith("//")) return ADDRESS_RULE;
+  if (!isRichLink(href)) return ADDRESS_RULE;
   if (!href.startsWith("/")) return null;
   const route = href.split(/[?#]/)[0].replace(/(.)\/$/, "$1") || "/";
   const routes = sitePages(site).map((page) => page.route);
@@ -109,9 +114,10 @@ export function linkPatch(site: SiteDocument, selection: LinkSelection, change: 
     if (problem) return { refused: problem };
   }
   const source = element.link?.source;
-  const range = richRange(props, element);
+  const range = source ? null : richRange(props, element);
   let next: Record<string, unknown> | null = null;
-  if (range && (element.words || !source)) {
+  if (range) {
+    if (range.stale) return { refused: STALE_WORDS };
     if (range.end <= range.start) return null;
     next = setAtPath(props, element.rich!.prop, linkWords(range.html, range.start, range.end, link));
   } else if (!link) {

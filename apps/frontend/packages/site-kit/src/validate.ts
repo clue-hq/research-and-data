@@ -15,7 +15,7 @@ import type { BrandData } from "./brand";
 import { replaceableTexts } from "./clone";
 import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
-import { richLinks, richProblems } from "./rich";
+import { isRichLink, richLinks, richProblems } from "./rich";
 import { richValuesOfItem } from "./rich-props";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
 import { surfaceChoices } from "./surfaces";
@@ -44,7 +44,6 @@ const NO_IMAGES: SiteImages = { siteImages: [], accountLogos: [] };
  * old prefixes, which are never in the allowed set and so are refused. */
 const IMAGE_PATH = /^\/(asset-store|brands|generated|accounts)\//;
 
-const LINK = /^(https?:\/\/|\/|#|mailto:)/;
 const PAGE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 /** A file given as text is parsed (an empty file reads as {}); a parsed value is used as is. */
 const fromFile = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value || "{}") : value);
@@ -187,7 +186,7 @@ export function validateSite(
             continue;
           }
           if (slot.kind === "text" && typeof value !== "string") errors.push(`${at}.slots.${key}: a text slot takes a string`);
-          if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !LINK.test(value)))) {
+          if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !isRichLink(value)))) {
             errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
           }
           if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);

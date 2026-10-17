@@ -8,6 +8,7 @@
 // code checks correctness, not prose length).
 import { z } from "zod";
 import { EDITS_PROP, EditsSchema, ElementKeySchema, withoutEdits } from "./edits";
+import { isRichLink } from "./rich";
 import { ComponentIdSchema } from "./site-document";
 
 export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
@@ -35,7 +36,7 @@ const text = z.string();
 const optionalText = z.string().default("");
 const link = z
   .string()
-  .refine((value) => value === "" || /^(https?:\/\/|\/|#|mailto:)/.test(value), {
+  .refine((value) => value === "" || isRichLink(value), {
     message: "must be empty, an https:// URL, a /route on this site, or a #anchor",
   });
 const optionalLink = link.default("");

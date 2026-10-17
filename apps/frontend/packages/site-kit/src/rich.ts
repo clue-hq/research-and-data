@@ -29,8 +29,10 @@ export type Run = {
   style?: string;
 };
 
-/** A link's address: https://, a /page of this site, a #anchor or mailto: (validate.ts's LINK). */
-export const RICH_LINK = /^(https?:\/\/|\/|#|mailto:)/;
+/** A link's address: http(s)://, a /page of this site (never a protocol-relative "//host"), a #anchor
+ * or mailto:, with no spaces. The one rule for rich text, the editor and the inspector's Link row. */
+export const RICH_LINK = /^(https?:\/\/|\/(?!\/)|#|mailto:)/;
+export const isRichLink = (href: string) => RICH_LINK.test(href) && !/\s/.test(href);
 const LINK_RULE = "a link must be an https:// address, a /page of this site, a #anchor or mailto:";
 
 type Mark = "strong" | "em" | "u" | "s";
@@ -41,7 +43,7 @@ const MARK_ORDER: Mark[] = ["strong", "em", "u", "s"];
 // Reading
 
 type Token =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; raw: string }
   | { kind: "open" | "close" | "void"; tag: string; attrs: [string, string | null][]; raw: string }
   | { kind: "stray"; raw: string };
 
@@ -58,7 +60,8 @@ export function decodeEntities(text: string): string {
   });
 }
 
-const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*(\/?)>/y;
+// No "<" inside an attribute name, so a "<" that starts no tag fails at the next "<" (linear time).
+const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:\s+[^\s=>/"'<]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*(\/?)>/y;
 const ATTR = /([^\s=>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 const DROP_WHOLE = new Set(["script", "style", "template", "noscript", "svg", "iframe", "object", "textarea", "title"]);
 
@@ -68,7 +71,7 @@ function tokenize(html: string): Token[] {
   const tokens: Token[] = [];
   let text = "";
   const flush = () => {
-    if (text) tokens.push({ kind: "text", text: decodeEntities(text) });
+    if (text) tokens.push({ kind: "text", raw: text, text: decodeEntities(text) });
     text = "";
   };
   let i = 0;
@@ -140,6 +143,10 @@ function read(html: string, strict: boolean): { runs: Run[] } | { error: string 
       continue;
     }
     if (token.kind === "text") {
+      // A named reference the grammar does not decode would show literally on the page but decoded
+      // in the editor and to the agent; the writer writes the character itself.
+      const unknown = strict ? /&([a-z][a-z0-9]{1,30});/i.exec(token.raw) : null;
+      if (unknown && !(unknown[1].toLowerCase() in NAMED)) return fail(`write the character itself instead of "&${unknown[1]};"`);
       if (token.text) runs.push({ ...marksNow(), text: token.text });
       continue;
     }
@@ -186,7 +193,7 @@ function read(html: string, strict: boolean): { runs: Run[] } | { error: string 
           }
         }
         if (strict && stack.some((frame) => frame.link)) return fail("a link may not hold another link");
-        if (href === null || !RICH_LINK.test(href) || /^\s*javascript:/i.test(href)) {
+        if (href === null || !isRichLink(href)) {
           if (strict) return fail(href === null ? "<a> needs an href" : LINK_RULE);
           stack.push({ tag });
           continue;

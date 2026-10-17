@@ -151,6 +151,7 @@ export function wordsOverride(site: SiteDocument | null, selection: WordsSelecti
   const props = componentProps(site, selection.target, selection.componentId);
   const html = props ? storedRich(props, element) : null;
   if (!props || html === null) return null;
+  if (richText(html).slice(element.words.start, element.words.end) !== element.words.text) return null;
   const key = styleAt(html, element.words.start, element.words.end);
   return key ? (editsOf(props)[key] ?? null) : null;
 }

@@ -215,3 +215,12 @@ test("highlighted words must be a real range, and a rich text source a real prop
   assert.equal(send({ ...ELEMENT, rich: { prop: "a b" } }), null);
   assert.equal(send({ ...ELEMENT, link: { source: { kind: "prop", href: "x;y", newTab: "z" } } }), null);
 });
+
+test("a clone slot's name may have dashes or start with a digit (review finding 4), and a long captured address fits", () => {
+  const element = { ...ELEMENT, rich: { prop: "slots.cta-label" }, link: { source: { kind: "replacement" as const, find: `/x?${"a".repeat(5000)}`, shared: false } } };
+  const parsed = parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "ClonedSection", fields: [{ kind: "richtext", label: "2col", name: "slots.2col" }], props: {}, element }, ctx));
+  assert.equal(parsed?.type, "selected");
+  for (const bad of ["slots.a b", "slots.-x", "slots..x", "a.b;c"]) {
+    assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "ClonedSection", fields: [], props: {}, element: { ...ELEMENT, rich: { prop: bad } } }, ctx)), null, bad);
+  }
+});

@@ -850,6 +850,8 @@ def test_a_library_family_the_styling_uses_ships_as_woff2_and_no_other_does(blob
     assert blobs.read_blob(digest)[1][:4] == b"wOF2"
     assert 'font-family:"Lora", serif !important' in page_html(package, "/")
     assert not any(family == "Unused Sans" for family, _src in font_faces(page_html(package, "/")))
+    assert "Lora" in package.manifest["font_families_included"], "the licence record names the library family it shipped"
+    assert "Unused Sans" not in package.manifest["font_families_included"]
 
 
 def test_styling_that_names_a_brand_font_held_back_by_its_licence_still_publishes(blobs: DesignBlobStore) -> None:

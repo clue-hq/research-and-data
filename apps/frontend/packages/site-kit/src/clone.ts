@@ -90,7 +90,7 @@ export function fillClone(
   }
 
   const wanted = replacements.filter((r) => r.find && r.find !== r.replace);
-  if (wanted.length) replaceText(root, wanted);
+  if (wanted.length) replaceText(root, wanted, clone.slots);
 
   // Links with no href slot (for example audience cards that point at the seller's own pages):
   // an exact href match is pointed somewhere else; "*" re-points every link in the section.
@@ -178,7 +178,7 @@ const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 /** Exact text replacements: a text node whose words (decoded, collapsed) equal `find` (collapsed) gets
  * `replace` as text, keeping the node's own leading and trailing whitespace. Review finding S1-3: this
  * reading is `replaceableTexts`', so whatever the catalog lists and the check accepts is applied. */
-function replaceText(root: HTMLElement, replacements: TextReplacement[]): void {
+function replaceText(root: HTMLElement, replacements: TextReplacement[], slots: Record<string, CloneSlot>): void {
   const walk = (node: HTMLElement) => {
     for (const child of node.childNodes) {
       if (child instanceof TextNode) {
@@ -191,7 +191,12 @@ function replaceText(root: HTMLElement, replacements: TextReplacement[]): void {
           child.rawText = `${lead}${escapeText(match.replace)}${trail}`;
         }
       } else {
-        walk(child as HTMLElement);
+        // Only the text replaceableTexts offers: never inside a text slot, a script, a style or an svg.
+        const element = child as HTMLElement;
+        if (!element.tagName || NOT_TEXT.has(element.tagName.toLowerCase())) continue;
+        const slot = element.getAttribute("data-lumen-slot");
+        if (slot && slots[slot]?.kind === "text") continue;
+        walk(element);
       }
     }
   };

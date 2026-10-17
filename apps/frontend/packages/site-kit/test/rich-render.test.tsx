@@ -135,3 +135,14 @@ test("the browser takes a live page with rich text over with no mismatch", async
     console.error = original;
   }
 });
+
+// End-of-plan review finding 5: a slot set to exactly its original words keeps the captured markup,
+// even when they hold "&".
+test("a slot set to its original words keeps the captured markup through the section render", () => {
+  const amp: Clone = { ...heroClone, id: "frag_00000000000000ce", html: '<h1 data-lumen-slot="headline">Sales &amp; <span class="grad">Marketing</span><br>teams</h1>', slots: { headline: { kind: "text", fallback: "Sales & Marketing teams" } } };
+  const brand = garner();
+  brand.clones = { ...brand.clones, [amp.id]: amp };
+  const site = { title: "T", pages: { "/": { root: { props: {} }, content: [{ type: "ClonedSection", props: { id: "h", fragmentId: amp.id, slots: { headline: "Sales & Marketing teams" }, replacements: [], links: [] } }] } }, shell: stored.shell };
+  const html = renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
+  assert.ok(html.includes('<span class="grad">Marketing</span><br>teams'), html.slice(html.indexOf("Sales"), html.indexOf("Sales") + 200));
+});

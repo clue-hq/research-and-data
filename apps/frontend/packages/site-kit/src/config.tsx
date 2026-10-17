@@ -114,6 +114,10 @@ export class SectionBoundary extends Component<
 
 const noRawProps = () => () => undefined;
 
+/** Whether a clone slot's text holds a link (only then are its links resolved under the base path;
+ * any other value reaches the filler as written, so one equal to the captured words keeps them). */
+const hasRichLink = (value: string) => /<a\b/i.test(value);
+
 /** An agent section's rich prop paths, read from its zod schema; none when it cannot be read. */
 function richPathsOf(module: AgentSectionModule): string[] {
   try {
@@ -331,7 +335,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
               key,
               clone.slots[key]?.kind === "href" && typeof value === "string"
                 ? href(value)
-                : clone.slots[key]?.kind === "text" && typeof value === "string" && hasMarkup(value)
+                : clone.slots[key]?.kind === "text" && typeof value === "string" && hasRichLink(value)
                   ? mapRichLinks(value, href)
                   : value,
             ]),
@@ -342,7 +346,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {
             const htmlFor = (key: string, value: string) =>
-              fill(clone, { ...resolvedSlots, [key]: hasMarkup(value) ? mapRichLinks(value, href) : value }, replacements, resolvedLinks, extras);
+              fill(clone, { ...resolvedSlots, [key]: hasRichLink(value) ? mapRichLinks(value, href) : value }, replacements, resolvedLinks, extras);
             return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
           }
           return <CloneMarkup clone={clone} html={html} inlineCss={options.cloneCss !== "page"} />;

@@ -141,6 +141,14 @@ def gated_brand(brand: JsonObject, repo: Any, blobs: Any, site: JsonObject | Non
     return {**brand, "fonts": fonts, "libraryFonts": library}, gate
 
 
+def _with_library_families(entries: JsonObject, brand: JsonObject) -> JsonObject:
+    """The manifest's font block with the library families that shipped (openly licensed, OFL)."""
+    shipped = [family["family"] for family in brand.get("libraryFonts") or [] if family.get("faces")]
+    if not shipped:
+        return entries
+    return {**entries, "font_families_included": sorted({*entries["font_families_included"], *shipped})}
+
+
 def _library_families_used(site: JsonObject, brand: JsonObject) -> set[str]:
     """The families the site's `_edits` name that are not the kit's own (pages and header/footer)."""
     own = {str(face.get("family")) for face in brand.get("fonts") or [] if isinstance(face, dict)}
@@ -188,7 +196,7 @@ def _ship_library_fonts(brand: JsonObject, site: JsonObject, blobs: Any) -> tupl
                 warnings.append(note)
             if digest == match.group(1):
                 # Shipped as stored (not re-encoded): this workspace must hold the bytes itself.
-                blobs.register(data, media_type="font/ttf", source_key=SOURCE_KEY_ASSET)
+                blobs.register(data, media_type=f"font/{web_export._font_ext(data)}", source_key=SOURCE_KEY_ASSET)
             faces.append({"weight": face.get("weight"), "style": face.get("style") or "normal", "file": f"/asset-store/{digest}"})
         # Kept with no faces when none could ship: its category still names the fallback font.
         shipped.append({"family": family["family"], "category": family.get("category"), "faces": faces})
@@ -329,7 +337,7 @@ def build_site_publish_package(
         "agent_sections": dict(site.get("agent_sections") or {}),
         "asset_digests": sorted(files),
         "warnings": warnings,
-        **web_export._font_manifest_entries(gate),
+        **_with_library_families(web_export._font_manifest_entries(gate), brand),
         "slug": slug,
         "canonical_url": site_address.page_url("/"),
         **({"robots": "noindex"} if noindex else {}),

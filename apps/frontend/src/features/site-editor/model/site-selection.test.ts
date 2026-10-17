@@ -139,3 +139,9 @@ test("words highlighted where they cannot be styled on their own say why", async
   assert.equal(wordsUnavailableReason({ target: "/", componentType: "ClonedSection", element: { ...element, words: null } }), null, "nothing highlighted");
   assert.equal(wordsUnavailableReason({ target: "/", componentType: "StatsBand", element: { ...element, rich: { prop: "heading" } } }), null);
 });
+
+test("the words' own look is not read from stale offsets (review finding 1)", () => {
+  const styled = commitWordStyle(wordsSite, headingWords(4, 13, "providers"), (old) => ({ ...old, fontWeight: 700 }));
+  assert.ok(styled && "props" in styled);
+  assert.equal(wordsOverride(styled.site, headingWords(4, 13, "somethingx")), null);
+});
