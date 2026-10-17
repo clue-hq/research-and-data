@@ -41,3 +41,10 @@ Report: `scripts/design_followup_timings.py --document <doc>`.
 - The silent 59 s minute did NOT recur. It ended at the style-group call inside resolve_auto_ad_references last
   time, so it was most likely reference resolution on a cold cache (first turn after dushanbe moved to R2 storage);
   unproven — design_turn.setup_step will show it if it comes back.
+- Revamp check (2026-10-17, same ad, "Make the whole ad feel more premium.", run_a250cece3ac7…): agent said
+  "This is a full revamp, not a one-node edit" and ran the full routine (gather → creative direction validated →
+  construction with a generated image → repair → critique ACCEPTED). 13 m 06 s send-to-done, 28 calls, $2.53.
+  Opening context 55.6k (the saved conversation had been compacted). Two external costs: call 11 (a trivial
+  validate_creative_direction tool call, 106 output tokens, fully cached) took 171 s — OpenRouter returned 200
+  headers at 4 s and the stream then stalled ~167 s (the 120 s first-token timeout cannot catch a stall after
+  headers); calls 10 and 13 missed the cache (128 of ~120–133k cached; provider routing with PROVIDER_SORT=latency).
