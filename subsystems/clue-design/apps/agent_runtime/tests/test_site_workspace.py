@@ -318,3 +318,20 @@ def test_the_site_summary_reads_a_buttons_hand_set_look(tmp_path: Path) -> None:
     assert ("   - styled by hand: button — fill text.inverse, stroke colour #0F59B0 100%, stroke 2 px, "
             "corners pill, padding 12 × 22 px, full width") in text
     assert "   - styled by hand: button.label — corners 0 / 4 / 8 / 16 px, padding 10 px, 240 px wide" in text
+
+
+def test_the_site_summary_reads_a_buttons_words_and_new_tab(tmp_path: Path) -> None:
+    """Site element inspector (plan 3): a button's words as rich text, and whether it opens a new tab."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
+        "id": "tab_cta", "surface": "brand", "heading": "H", "buttonLabel": 'Book <strong>a demo</strong>',
+        "buttonHref": "https://garnerhealth.com/demo", "buttonNewTab": True}})
+    site["shell"]["header"]["ctaLabel"] = 'Request <span data-s="cta.label~1">the analysis</span>'
+    site["shell"]["header"]["ctaNewTab"] = True
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert '   - button "Book a demo" (bold "a demo") → https://garnerhealth.com/demo, new tab' in text
+    assert ('button "Request the analysis" ("the analysis" styled by hand as cta.label~1) → '
+            'https://garnerhealth.com/provider-impact-analysis, new tab') in text

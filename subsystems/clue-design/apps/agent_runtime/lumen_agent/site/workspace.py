@@ -551,7 +551,8 @@ def site_summary(
             f"{n.get('label')} → {n.get('href')}" + (" (new tab)" if n.get("newTab") else "") for n in header.get("nav") or []
         ) or "none"
         out += ["## Header and footer",
-                f"- Prepared for: {header.get('preparedFor')}; button \"{header.get('ctaLabel')}\" → {header.get('ctaHref')}",
+                f"- Prepared for: {header.get('preparedFor')}; button {_rich_words(header.get('ctaLabel') or '')} → {header.get('ctaHref')}"
+                + (", new tab" if header.get("ctaNewTab") else ""),
                 f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}"]
         for part in ("header", "footer"):
             styled = _styled_by_hand(shell.get(part, {}).get("_edits"))
@@ -592,7 +593,8 @@ def site_summary(
                 if props.get("image"):
                     out.append(f"   - image: {image(props['image'])}")
                 if props.get("buttonLabel"):
-                    out.append(f"   - button \"{props['buttonLabel']}\" → {props.get('buttonHref')}")
+                    tab = ", new tab" if props.get("buttonNewTab") else ""
+                    out.append(f"   - button {_rich_words(props['buttonLabel'])} → {props.get('buttonHref')}{tab}")
                 if props.get("linkLabel"):
                     tab = ", new tab" if props.get("linkNewTab") else ""
                     out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}{tab}")
