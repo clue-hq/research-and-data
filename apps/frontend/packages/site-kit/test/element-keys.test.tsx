@@ -111,3 +111,8 @@ test("a clone's button is keyed by its place, and its words keep their own key",
   const html = fillClone(clone('<div><a class="btn" href="/demo"><svg><path d="M0"/></svg><span>Book</span></a><p>Text</p><a href="/x">Plain words</a><a class="card" href="/c"><div><h3>Card</h3></div></a></div>'));
   assert.deepEqual(keys(html), ["0.0", "0.0.1", "0.1", "0.2", "0.3.0.0"], "the card link is no button; its heading is text");
 });
+
+test("a link holding an image, or more than one text, is no button: its texts keep their own keys (review 5)", () => {
+  const html = fillClone(clone('<div><a class="card" href="/c"><img src="/x.png"><span>Card title</span><span>Desc</span></a><a class="btn" href="/d"><span>Book</span><span>now</span></a></div>'));
+  assert.deepEqual(keys(html), ["0.0.1", "0.0.2", "0.1.0", "0.1.1"], "neither link is keyed as a box");
+});

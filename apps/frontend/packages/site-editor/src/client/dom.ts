@@ -241,11 +241,14 @@ export function textElementAround(node: Node | null): Element | null {
   return null;
 }
 
-// Plan 3: buttons. A keyed link or button whose content is inline only (words, icons; no blocks) and
-// that the browser draws as a visible box: a background or a border. Our own buttons
-// (brand-btn) always are. A text link inside a sentence stays text; a link holding a block is a card.
+// Plan 3: buttons. Our own buttons (brand-btn) always are. In a copied section, a keyed link or
+// button whose content is inline only (words and icons; no blocks, no images, at most one text) and,
+// for a link, that the browser draws as a visible box: a background or a border. A text link inside
+// a sentence stays text; a link holding a block is a card.
 
 const PUCK_EDITOR = "[data-puck-overlay-portal]";
+const COPIED_SECTION = "[data-lumen-fragment]";
+const MEDIA_TAGS = "img,picture,video";
 const BLOCK_TAGS = "div,p,h1,h2,h3,h4,h5,h6,ul,ol,li,section,article,header,footer,figure,blockquote,table,form,nav,aside,main";
 
 const transparent = (color: string) => color === "" || color === "transparent" || /rgba\([^)]*,\s*0\s*\)$/.test(color);
@@ -255,8 +258,16 @@ export function isButtonElement(element: Element, view: Pick<Window, "getCompute
   const tag = element.tagName.toLowerCase();
   if (tag !== "a" && tag !== "button" && !element.classList.contains("brand-btn")) return false;
   // Puck's in-place editor (its overlay portal) sits inside words being edited; it is not the page's.
-  if ([...element.querySelectorAll(BLOCK_TAGS)].some((block) => !block.closest(PUCK_EDITOR))) return false;
-  if (tag === "button" || element.classList.contains("brand-btn")) return true;
+  const own = (found: Element[]) => found.filter((inner) => !inner.closest(PUCK_EDITOR));
+  if (own([...element.querySelectorAll(BLOCK_TAGS)]).length) return false;
+  if (element.classList.contains("brand-btn")) return true;
+  // Outside a copied section only our own buttons (brand-btn) are buttons: a menu, footer or card
+  // link keeps its Link and Text rows whatever it looks like (review finding 2).
+  if (!element.closest(COPIED_SECTION)) return false;
+  // A copied link holding an image is a card; one holding two texts is two texts (ruling R2).
+  if (own([...element.querySelectorAll(MEDIA_TAGS)]).length) return false;
+  if (own([...element.querySelectorAll(KEYED)]).filter((inner) => isTextElement(inner)).length > 1) return false;
+  if (tag === "button") return true;
   const style = view.getComputedStyle(element);
   // A box the visitor can see: a fill or a stroke. A link only laid out as a block (a menu link)
   // still reads as a link.

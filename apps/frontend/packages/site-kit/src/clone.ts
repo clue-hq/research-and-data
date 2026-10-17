@@ -137,12 +137,27 @@ const BLOCKS = new Set([
   "footer", "figure", "blockquote", "table", "form", "nav", "aside", "main",
 ]);
 
-/** A link or button whose content is inline only (words, icons, no blocks): a button candidate (plan 3;
- * the frame calls it a button when the browser draws it as a box). */
-function isInlineControl(element: HTMLElement): boolean {
+/** Whether an element is a text element: a text slot, or an element with words of its own. */
+const textTest = (slots: Record<string, CloneSlot>) => (element: HTMLElement) => {
+  const slot = element.getAttribute("data-lumen-slot");
+  if (slot && slots[slot]?.kind === "text") return true;
+  return element.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
+};
+
+/** Media that make a link a card, not a button (ruling R2). */
+const MEDIA = new Set(["img", "picture", "video"]);
+
+/** A link or button whose content is inline only (words and icons: no blocks, no images) with at most
+ * one text inside: a button candidate (plan 3; the frame calls it a button when the browser draws it
+ * as a box). A control with two texts is not one button: each text stays its own element. */
+function isInlineControl(element: HTMLElement, isText: (element: HTMLElement) => boolean): boolean {
   const tag = element.tagName.toLowerCase();
   if (tag !== "a" && tag !== "button") return false;
-  return !element.querySelectorAll("*").some((child) => BLOCKS.has(child.tagName.toLowerCase()));
+  const inside = element.querySelectorAll("*");
+  if (inside.some((child) => BLOCKS.has(child.tagName.toLowerCase()) || MEDIA.has(child.tagName.toLowerCase()))) return false;
+  const texts = inside.filter((child) => isText(child) && !child.closest("svg"));
+  // Count only the outermost texts: a text's inline children are part of it.
+  return texts.filter((text) => !texts.some((other) => other !== text && other.querySelectorAll("*").includes(text))).length <= 1;
 }
 
 /** Key every text element by its child-index path from the fragment root ("0.2.1", element children
@@ -152,11 +167,7 @@ function isInlineControl(element: HTMLElement): boolean {
  * inline-only content is keyed too (plan 3: a button's box), and its words inside it keep their own
  * key. */
 function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): void {
-  const isText = (element: HTMLElement) => {
-    const slot = element.getAttribute("data-lumen-slot");
-    if (slot && slots[slot]?.kind === "text") return true;
-    return element.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
-  };
+  const isText = textTest(slots);
   const walk = (node: HTMLElement, path: string) => {
     let index = 0;
     for (const child of node.childNodes) {
@@ -169,7 +180,7 @@ function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): v
         element.setAttribute(ELEMENT_KEY_ATTR, place);
         continue;
       }
-      if (isInlineControl(element)) element.setAttribute(ELEMENT_KEY_ATTR, place);
+      if (isInlineControl(element, isText)) element.setAttribute(ELEMENT_KEY_ATTR, place);
       walk(element, place);
     }
   };
@@ -311,7 +322,7 @@ export function cloneButtonAt(
   keyTextElements(root, clone.slots);
   const keyed = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`);
   const button = keyed.find((element) => element.getAttribute(ELEMENT_KEY_ATTR) === key);
-  if (!button || !isInlineControl(button)) return null;
+  if (!button || !isInlineControl(button, textTest(clone.slots))) return null;
   const ownWords = button.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
   const label = ownWords ? button : (button.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`)[0] ?? button);
   const slotOf = (element: HTMLElement) => {

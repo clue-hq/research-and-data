@@ -146,10 +146,12 @@ const buttonDom = new JSDOM(`
   <div data-puck-component="hero">
     <h2 id="t" data-clue-el="heading">Title</h2>
     <a id="brand" class="brand-btn" data-clue-el="button" style="background-color: rgb(15, 89, 176); border: 2px solid rgb(0, 0, 0); border-radius: 9999px; padding: 12px 22px"><span id="brandLabel" data-clue-el="button.label">Go</span></a>
+    <div data-lumen-fragment="true">
     <a id="clone" data-clue-el="0.1" href="/demo" style="display: inline-block; background-color: rgb(15, 89, 176)"><svg></svg><span id="cloneLabel" data-clue-el="0.1.1">Book</span></a>
     <a id="plain" data-clue-el="0.2" href="/x">Plain link</a>
     <a id="card" data-clue-el="0.3" href="/c" style="display: block"><div><h3 id="cardTitle" data-clue-el="0.3.0.0">Card</h3></div></a>
     <button id="own" data-clue-el="0.4">Send</button>
+    </div>
   </div>`);
 const bwin = buttonDom.window as unknown as Window;
 const bel = (id: string) => buttonDom.window.document.getElementById(id)!;
@@ -209,7 +211,7 @@ test("a button whose words are being edited in place is still a button (Puck's e
 });
 
 test("a link laid out as a block but with no fill and no stroke reads as a link, not a button (a menu link)", () => {
-  const menu = new JSDOM(`<nav><a id="nav" class="brand-navlink" data-clue-el="nav.0" href="/analysis" style="display: flex; padding: 8px">Analysis</a>
+  const menu = new JSDOM(`<nav data-lumen-fragment="true"><a id="nav" class="brand-navlink" data-clue-el="nav.0" href="/analysis" style="display: flex; padding: 8px">Analysis</a>
     <a id="outline" data-clue-el="0.1" href="/x" style="display: inline-flex; border: 1px solid rgb(0, 0, 0)">Outline</a></nav>`);
   const view = menu.window as unknown as Window;
   assert.equal(isButtonElement(menu.window.document.getElementById("nav")!, view), false);
@@ -217,10 +219,29 @@ test("a link laid out as a block but with no fill and no stroke reads as a link,
 });
 
 test("an empty keyed element (a copied button's overlay link) is not listed: it has nothing to show or style", () => {
-  const webflow = new JSDOM(`<div data-puck-component="hero">
+  const webflow = new JSDOM(`<div data-puck-component="hero" data-lumen-fragment="true">
     <button data-clue-el="0.2"><div data-clue-el="0.2.0">Request a demo</div><a id="overlay" data-clue-el="0.2.1" href="/book"></a></button>
   </div>`);
   const view = webflow.window as unknown as Window;
   const scope = webflow.window.document.querySelector("[data-puck-component]")!;
   assert.deepEqual(inspectableElementsIn(scope, view).map(({ element }) => element.getAttribute("data-clue-el")), ["0.2.0"]);
+});
+
+test("outside a copied section only our own buttons are buttons: a boxed menu or card link stays a link (review 2)", () => {
+  const ours = new JSDOM(`<header><a id="nav" class="brand-navlink" data-clue-el="nav.0" href="/a" style="background-color: rgb(1, 2, 3)">Analysis</a>
+    <a id="proof" class="brand-link" data-clue-el="linkLabel" href="/b" style="border: 1px solid rgb(0, 0, 0)">Read</a>
+    <a id="cta" class="brand-btn" data-clue-el="cta"><span data-clue-el="cta.label">Book</span></a></header>`);
+  const view = ours.window as unknown as Window;
+  const byId = (id: string) => ours.window.document.getElementById(id)!;
+  assert.deepEqual(["nav", "proof", "cta"].map((id) => isButtonElement(byId(id), view)), [false, false, true]);
+});
+
+test("in a copied section a link holding an image or two texts is no button (review 5)", () => {
+  const copied = new JSDOM(`<div data-lumen-fragment="true">
+    <a id="card" data-clue-el="0.0" href="/c" style="background-color: rgb(1, 2, 3)"><img src="/x.png"><span data-clue-el="0.0.1">Title</span></a>
+    <a id="two" data-clue-el="0.1" href="/d" style="background-color: rgb(1, 2, 3)"><span data-clue-el="0.1.0">Book</span><span data-clue-el="0.1.1">now</span></a>
+  </div>`);
+  const view = copied.window as unknown as Window;
+  assert.equal(isButtonElement(copied.window.document.getElementById("card")!, view), false);
+  assert.equal(isButtonElement(copied.window.document.getElementById("two")!, view), false);
 });
