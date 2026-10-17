@@ -1,4 +1,5 @@
-import type { EditorMode, SiteGeometry } from "@clue/site-kit/editor-protocol";
+import { ELEMENT_KEY_ATTR, ElementKeySchema } from "@clue/site-kit/edits";
+import type { ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
 
 export type ClickAction =
   | { kind: "navigate"; href: string }
@@ -70,4 +71,113 @@ export function rectOf(element: Element, scroll: { x: number; y: number }): Site
     },
     viewport,
   };
+}
+
+// Site element inspector (plan 1). A styleable element carries data-clue-el (stamped by site-kit, or
+// written by the agent in its own sections). Plan 1 selects TEXT elements: a keyed element that is not
+// an image, video or button and holds no other keyed element. A key the schema refuses (it could not
+// be addressed safely) is never selectable.
+
+const KEYED = `[${ELEMENT_KEY_ATTR}]`;
+const NOT_TEXT_TAGS = new Set(["img", "video", "picture", "svg", "button", "input", "select", "textarea"]);
+
+function validKey(element: Element): string | null {
+  const key = element.getAttribute(ELEMENT_KEY_ATTR);
+  return key !== null && ElementKeySchema.safeParse(key).success ? key : null;
+}
+
+function isTextElement(element: Element): boolean {
+  if (validKey(element) === null) return false;
+  if (NOT_TEXT_TAGS.has(element.tagName.toLowerCase()) || element.classList.contains("brand-btn")) return false;
+  return element.querySelector(KEYED) === null;
+}
+
+/** The scope's text elements in document order; a key repeated later in the scope is skipped (the
+ * first element with a key owns it, as a section's `_edits` rule would style both). */
+export function keyedElementsIn(scope: Element): Element[] {
+  const seen = new Set<string>();
+  return [...scope.querySelectorAll(KEYED)].filter((element) => {
+    if (!isTextElement(element)) return false;
+    const key = validKey(element)!;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** The text element with this key inside the scope, or null. */
+export function findKeyedElement(scope: Element, key: string): Element | null {
+  return keyedElementsIn(scope).find((element) => validKey(element) === key) ?? null;
+}
+
+/** The key of the text element a click meant: the target's own text element when the click reached
+ * it (an in-place field takes pointer events), else the smallest text element whose box contains the
+ * point (Puck turns pointer events off inside sections, so the target is the section itself). */
+export function elementKeyAt(scope: Element, target: EventTarget | null, point: { x: number; y: number }): string | null {
+  const texts = keyedElementsIn(scope);
+  const hit = asElement(target);
+  const direct = hit ? texts.find((element) => element.contains(hit)) : undefined;
+  if (direct) return validKey(direct);
+  let best: { element: Element; area: number } | null = null;
+  for (const element of texts) {
+    const box = element.getBoundingClientRect();
+    if (point.x < box.left || point.x > box.right || point.y < box.top || point.y > box.bottom) continue;
+    const area = (box.right - box.left) * (box.bottom - box.top);
+    if (!best || area < best.area) best = { area, element };
+  }
+  return best ? validKey(best.element) : null;
+}
+
+/** What Layers shows for an element: its words, whitespace collapsed, cut at 60 characters. */
+export function elementSummary(element: Element): ElementSummary {
+  const key = validKey(element) ?? "";
+  const words = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+  const label = words.length > 60 ? `${words.slice(0, 59)}…` : words;
+  return { key, kind: "text", label: label || key };
+}
+
+/** "rgb(15, 89, 176)", "rgba(…)" or "#abc"/"#aabbcc" as #RRGGBB; null for anything else (an oklch
+ * colour: the frame converts those through a canvas, see editor-app). */
+export function cssColorToHex(value: string): string | null {
+  const text = value.trim();
+  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)/i.exec(text);
+  const channel = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  if (rgb) return `#${channel(Number(rgb[1]))}${channel(Number(rgb[2]))}${channel(Number(rgb[3]))}`.toUpperCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text);
+  if (!hex) return null;
+  const digits = hex[1].length === 3 ? [...hex[1]].map((d) => d + d).join("") : hex[1];
+  return `#${digits}`.toUpperCase();
+}
+
+const ALIGN: Record<string, ComputedTypography["textAlign"]> = {
+  left: "left", start: "left", center: "center", "-webkit-center": "center", right: "right", end: "right", justify: "justify",
+};
+
+/** How the browser draws the element now. `toHex` turns any computed colour into #RRGGBB. */
+export function computedTypography(
+  element: Element,
+  view: Pick<Window, "getComputedStyle">,
+  toHex: (color: string) => string | null,
+): ComputedTypography {
+  const style = view.getComputedStyle(element);
+  // Cut to the message's limit, so an odd family name can never get the whole selection dropped.
+  const family = (style.fontFamily.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "").slice(0, 200);
+  return {
+    color: toHex(style.color) ?? "#000000",
+    fontFamily: family,
+    fontSize: Number.parseFloat(style.fontSize) || 0,
+    fontWeight: Math.min(1000, Math.max(1, Number.parseInt(style.fontWeight, 10) || 400)),
+    italic: style.fontStyle === "italic" || style.fontStyle.startsWith("oblique"),
+    underline: style.textDecorationLine.includes("underline"),
+    textAlign: ALIGN[style.textAlign] ?? "left",
+  };
+}
+
+/** The element as the `selected` message carries it. */
+export function elementSelection(
+  element: Element,
+  view: Pick<Window, "getComputedStyle">,
+  toHex: (color: string) => string | null,
+): ElementSelection {
+  return { ...elementSummary(element), computed: computedTypography(element, view, toHex) };
 }

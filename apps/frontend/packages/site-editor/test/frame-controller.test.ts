@@ -139,6 +139,8 @@ test("the header is selected through the shell target with its own fields", asyn
   assert.deepEqual(h.posts.at(-1)?.payload, {
     componentId: "header",
     componentType: "SiteHeader",
+    element: null,
+    elements: [],
     fields: [{ kind: "text", label: "Prepared for", name: "preparedFor" }],
     props: { id: "header", preparedFor: "SCSD" },
     route: "shell",
@@ -233,7 +235,7 @@ test("review S2a-4: an outside copy keeps the selection on the same section id a
   await h.controller.receive(appToFrame("replace_site", { site: withHeading("World"), rev: 2 }, ctx));
   await h.controller.receive(appToFrame("set_props", { componentId: "cta", props: { heading: "Dock", id: "cta" }, route: "/", rev: 3 }, ctx));
   assert.deepEqual(shown, ["cta", "cta"]);
-  assert.deepEqual(h.controller.getState().selection, { componentId: "cta", target: "/" });
+  assert.deepEqual(h.controller.getState().selection, { componentId: "cta", elementKey: null, target: "/" });
 });
 
 test("an outside copy without the selected section clears the selection and tells Puck nothing is selected", async () => {
@@ -381,3 +383,87 @@ test("a link to another website asks the app to open it; a page of this site sti
   assert.equal(h.posts.length, before, "nothing else is opened");
 });
 
+
+
+// Site element inspector (plan 1): a selection may name one text element of the section.
+const TYPO = { color: "#014036", fontFamily: "Garner Serif", fontSize: 48, fontWeight: 600, italic: false, underline: false, textAlign: "left" as const };
+function elementHarness(known: string[] = ["heading", "body"]) {
+  const h = harness();
+  const asked: string[] = [];
+  h.controller.attachDescriber((target, componentId, key) => {
+    asked.push(`${target}#${componentId}:${key}`);
+    const elements = known.map((k) => ({ key: k, kind: "text" as const, label: k }));
+    const element = key && known.includes(key) ? { key, kind: "text" as const, label: key, computed: TYPO } : null;
+    return { element, elements };
+  });
+  const selectedPayloads = () =>
+    h.posts.filter((post) => post.type === "selected").map((post) => post.payload as { componentId: string; element: { key: string } | null; elements: unknown[] });
+  return { ...h, asked, selectedPayloads };
+}
+
+test("a click on a text element of a new section selects the section with that element", async () => {
+  const h = elementHarness();
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  assert.equal(h.selectedPayloads().length, 0, "nothing is posted until Puck selects the section");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "heading");
+  assert.equal(h.selectedPayloads().at(-1)?.elements.length, 2);
+  assert.deepEqual(h.controller.getState().selection, { componentId: "cta", elementKey: "heading", target: "/" });
+});
+
+test("another text element of the selected section is posted at once; the same one again posts nothing", async () => {
+  const h = elementHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  h.controller.elementClicked("/", "cta", "heading");
+  h.controller.elementClicked("/", "cta", "body");
+  h.controller.elementClicked("/", "cta", "body");
+  assert.deepEqual(h.selectedPayloads().map((p) => p.element?.key ?? null), [null, "heading", "body"]);
+  h.controller.elementClicked("/", "cta", null);
+  assert.equal(h.selectedPayloads().at(-1)?.element, null, "a click on no text selects the whole section again");
+});
+
+test("an element the section no longer has selects the whole section", async () => {
+  const h = elementHarness(["body"]);
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  assert.equal(h.selectedPayloads().at(-1)?.element, null);
+  assert.equal(h.controller.getState().selection?.elementKey, null);
+});
+
+test("the app's select may name an element: in the selected section at once, in another after Puck selects it", async () => {
+  const h = elementHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  await h.controller.receive(appToFrame("select", { componentId: "cta", elementKey: "body", route: "/" }, ctx));
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "body");
+  h.controller.componentDeselected();
+  await h.controller.receive(appToFrame("select", { componentId: "cta", elementKey: "heading", route: "/" }, ctx));
+  assert.ok(h.puckCalls.includes("select:cta"));
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "heading");
+});
+
+test("a header element is selected through the shell target", async () => {
+  const h = elementHarness(["preparedFor"]);
+  await h.controller.receive(init());
+  h.controller.elementClicked("shell", "header", "preparedFor");
+  h.controller.shellSelected("header");
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "preparedFor");
+  assert.deepEqual(h.controller.getState().selection, { componentId: "header", elementKey: "preparedFor", target: "shell" });
+  const count = h.selectedPayloads().length;
+  h.controller.elementClicked("shell", "header", "preparedFor");
+  h.controller.shellSelected("header");
+  assert.equal(h.selectedPayloads().length, count, "the same element again posts nothing");
+});
+
+test("re-describing after an outside copy keeps the selected element when the section still has it", async () => {
+  const h = elementHarness();
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "body");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  h.controller.reselected("cta", "CtaBand", [], { heading: "World" });
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "body");
+});

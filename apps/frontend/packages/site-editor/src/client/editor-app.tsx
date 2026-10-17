@@ -6,7 +6,7 @@ import { canonicalJson, pageFor } from "@clue/site-kit/editor-site";
 import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
 import type { BootContext } from "./boot";
 import { buildPageConfig, shellFieldDescriptions } from "./config";
-import { clickIntent, rectOf } from "./dom";
+import { clickIntent, cssColorToHex, elementKeyAt, elementSelection, elementSummary, findKeyedElement, keyedElementsIn, rectOf } from "./dom";
 import { fieldsForComponent } from "./fields";
 import { FrameController } from "./frame-controller";
 import { frameKeyAction } from "./keys";
@@ -17,6 +17,31 @@ const usePuck = createUsePuck();
 const PERMISSIONS: Partial<Permissions> = { delete: false, drag: false, duplicate: false, edit: true, insert: false };
 const VIEWPORTS: Viewports = [{ height: "auto", label: "Page", width: "100%" }];
 const SHELL_SELECTED = "data-site-shell-selected";
+const ELEMENT_SELECTED = "data-clue-el-selected";
+
+/** Where a selection's elements live on the canvas: the header/footer, or a page section. */
+function selectionScope(target: string, componentId: string): Element | null {
+  if (target === SHELL_TARGET) {
+    return componentId === "header" || componentId === "footer" ? document.querySelector(`.brand-root > ${componentId}`) : null;
+  }
+  return document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`);
+}
+
+/** Any computed colour as #RRGGBB: rgb() directly, anything else (oklch, color()) through a canvas,
+ * which always reads back sRGB pixels. */
+let colorCanvas: CanvasRenderingContext2D | null = null;
+function toHex(color: string): string | null {
+  const direct = cssColorToHex(color);
+  if (direct) return direct;
+  colorCanvas ??= document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  if (!colorCanvas) return null;
+  colorCanvas.clearRect(0, 0, 1, 1);
+  colorCanvas.fillStyle = "#000";
+  colorCanvas.fillStyle = color;
+  colorCanvas.fillRect(0, 0, 1, 1);
+  const [r, g, b] = colorCanvas.getImageData(0, 0, 1, 1).data;
+  return cssColorToHex(`rgb(${r}, ${g}, ${b})`);
+}
 
 export function EditorApp({ boot }: { boot: BootContext }) {
   const controller = useMemo(
@@ -31,6 +56,21 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     [boot],
   );
   const state = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+
+  // The canvas half of element selection: the section's text elements and the chosen one, read
+  // from the page as drawn now.
+  useEffect(() => {
+    controller.attachDescriber((target, componentId, key) => {
+      const scope = selectionScope(target, componentId);
+      if (!scope) return { element: null, elements: [] };
+      const found = key ? findKeyedElement(scope, key) : null;
+      return {
+        element: found ? elementSelection(found, window, toHex) : null,
+        elements: keyedElementsIn(scope).map(elementSummary),
+      };
+    });
+    return () => controller.attachDescriber(null);
+  }, [controller]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -53,12 +93,17 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const scroller = document.getElementById("root");
       const scroll = { x: scroller?.scrollLeft ?? 0, y: scroller?.scrollTop ?? 0 };
       if (action.kind === "navigate") controller.linkClicked(action.href);
+      // The text element the click meant (null: the section itself), named before the section's
+      // selection is reported, which then carries it.
+      const point = { x: event.clientX, y: event.clientY };
       if (action.kind === "shell") {
         event.stopPropagation();
+        controller.elementClicked(SHELL_TARGET, action.part, elementKeyAt(action.element, event.target, point));
         controller.shellSelected(action.part);
         controller.annotate(SHELL_TARGET, action.part, rectOf(action.element, scroll));
       }
       if (action.kind === "component" && action.componentId) {
+        controller.elementClicked(controller.getState().route, action.componentId, elementKeyAt(action.element, event.target, point));
         controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
       }
     };
@@ -109,6 +154,22 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       document.querySelector(`.brand-root > ${selection.componentId}`)?.setAttribute(SHELL_SELECTED, "true");
     }
   }, [state.selection, state.mountKey]);
+
+  // The selected text element's outline: an attribute, re-applied after every redraw of the page
+  // (Puck draws an outside copy a frame later, and may replace the element).
+  useEffect(() => {
+    const apply = () => {
+      for (const element of document.querySelectorAll(`[${ELEMENT_SELECTED}]`)) element.removeAttribute(ELEMENT_SELECTED);
+      const selection = state.selection;
+      if (!selection?.elementKey) return;
+      const scope = selectionScope(selection.target, selection.componentId);
+      const element = scope ? findKeyedElement(scope, selection.elementKey) : null;
+      element?.setAttribute(ELEMENT_SELECTED, "true");
+    };
+    apply();
+    const frame = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(frame);
+  }, [state.selection, state.mountKey, state.site]);
 
   const shellJson = state.site?.shell ? canonicalJson(state.site.shell) : "";
   const shell = useMemo<SiteShell | null>(() => (shellJson ? (JSON.parse(shellJson) as SiteShell) : null), [shellJson]);

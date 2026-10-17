@@ -168,3 +168,30 @@ test("`open_link` carries only an http(s) address", () => {
   }
   assert.equal(parseFrameToApp({ ...good, payload: { href: `https://example.com/${"a".repeat(2100)}` } }), null);
 });
+
+// Site element inspector (plan 1): a selection may name one text element inside the section.
+const ELEMENT = {
+  key: "heading",
+  kind: "text" as const,
+  label: "Request a Provider Impact Analysis.",
+  computed: { color: "#014036", fontFamily: "Garner Serif", fontSize: 48, fontWeight: 600, italic: false, underline: false, textAlign: "center" as const },
+};
+
+test("selected carries the chosen element and the section's text elements; select may name an element", () => {
+  const selected = frameToApp(
+    "selected",
+    { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: ELEMENT, elements: [{ key: "heading", kind: "text", label: "Request…" }, { key: "body", kind: "text", label: "A free analysis" }] },
+    ctx,
+  );
+  const parsed = parseFrameToApp(selected);
+  assert.equal(parsed?.type, "selected");
+  assert.deepEqual(parsed?.type === "selected" ? parsed.payload.element : null, ELEMENT);
+  assert.equal(parseAppToFrame(appToFrame("select", { route: "/", componentId: "cta", elementKey: "heading" }, ctx))?.type, "select");
+  assert.equal(parseAppToFrame(appToFrame("select", { route: "/", componentId: "cta", elementKey: null }, ctx))?.type, "select");
+});
+
+test("an element key or a computed colour that could break out of its place is dropped", () => {
+  assert.equal(parseAppToFrame(appToFrame("select", { route: "/", componentId: "cta", elementKey: '"]{}' } as never, ctx)), null);
+  const badColor = { ...ELEMENT, computed: { ...ELEMENT.computed, color: "red;}" } };
+  assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: badColor } as never, ctx)), null);
+});

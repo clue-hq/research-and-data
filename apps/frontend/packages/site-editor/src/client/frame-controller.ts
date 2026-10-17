@@ -4,6 +4,8 @@ import type {
   AppToFrameMessage,
   AppToFramePayloads,
   EditorMode,
+  ElementSelection,
+  ElementSummary,
   FieldDescription,
   FrameToAppPayloads,
   FrameToAppType,
@@ -33,8 +35,21 @@ export type FrameStatus = "booting" | "loading" | "ready" | "failed";
 
 export interface FrameSelection {
   componentId: string;
+  /** One text element of the section (site element inspector), or null for the whole section. */
+  elementKey: string | null;
   target: SiteTarget;
 }
+
+/** Reads the canvas (editor-app wires it): the section's text elements, and the one with this key as
+ * the `selected` message carries it (null when the section has no such element any more). The
+ * controller itself never touches the DOM, so it is tested in Node. */
+export type ElementDescriber = (
+  target: SiteTarget,
+  componentId: string,
+  elementKey: string | null,
+) => { element: ElementSelection | null; elements: ElementSummary[] };
+
+const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
 
 export interface FrameState {
   brand: BrandData | null;
@@ -92,6 +107,11 @@ export class FrameController {
   private state: FrameState = INITIAL;
   private readonly listeners = new Set<() => void>();
   private puck: PuckHandle | null = null;
+  private describe: ElementDescriber = NO_ELEMENTS;
+  /** A text element a click (or the app's select) named before Puck selected its section. */
+  private pendingElement: { target: SiteTarget; componentId: string; key: string | null } | null = null;
+  /** The selected section's type and fields as last described, to re-post them for another element. */
+  private described: { componentType: string; fields: FieldDescription[] } | null = null;
   private shellFields: ShellFields | null = null;
   private timer: unknown = null;
   private changePending = false;
@@ -150,7 +170,7 @@ export class FrameController {
         }
         return this.navigate(message.payload.route);
       case "select":
-        return this.select(message.payload.route, message.payload.componentId);
+        return this.select(message.payload.route, message.payload.componentId, message.payload.elementKey ?? null);
       case "set_props": {
         const { componentId, props, route, rev } = message.payload;
         if (this.loading) {
@@ -172,13 +192,18 @@ export class FrameController {
     }
   }
 
+  attachDescriber(describe: ElementDescriber | null): void {
+    this.describe = describe ?? NO_ELEMENTS;
+  }
+
   /** Puck reports a page section as selected (a click on the canvas, or the app's `select`). */
   componentSelected(componentId: string, componentType: string, fields: FieldDescription[], props: Record<string, unknown>): void {
     if (this.state.mode !== "edit") return;
+    const target = this.state.route;
+    const key = this.takePendingElement(target, componentId);
     const current = this.state.selection;
-    if (current && current.target === this.state.route && current.componentId === componentId) return;
-    this.set({ selection: { componentId, target: this.state.route } });
-    this.post("selected", { componentId, componentType, fields, props, route: this.state.route });
+    if (current && current.target === target && current.componentId === componentId && current.elementKey === key) return;
+    this.postSelected(target, componentId, componentType, fields, props, key);
   }
 
   /** Puck reports nothing selected. The shell's selection is not Puck's to clear. */
@@ -186,29 +211,68 @@ export class FrameController {
     const current = this.state.selection;
     if (!current || current.target === SHELL_TARGET) return;
     this.set({ selection: null });
+    this.described = null;
     this.post("deselected", {});
   }
 
   /** After an outside page, the bridge re-describes the selected section: same id, but its type,
-   * fields and values may be new, so `selected` is posted again even though the id did not move. */
+   * fields and values may be new, so `selected` is posted again even though the id did not move.
+   * The selected text element stays selected when the section still has it. */
   reselected(componentId: string, componentType: string, fields: FieldDescription[], props: Record<string, unknown>): void {
     if (this.state.mode !== "edit") return;
-    this.set({ selection: { componentId, target: this.state.route } });
-    this.post("selected", { componentId, componentType, fields, props, route: this.state.route });
+    const current = this.state.selection;
+    const key = current && current.target === this.state.route && current.componentId === componentId ? current.elementKey : null;
+    this.postSelected(this.state.route, componentId, componentType, fields, props, key);
   }
 
   shellSelected(part: "header" | "footer"): void {
     const site = this.state.site;
     if (this.state.mode !== "edit" || !site?.shell || !this.shellFields) return;
+    const current = this.state.selection;
+    const samePart = current?.target === SHELL_TARGET && current.componentId === part;
+    const pending = this.pendingElement;
+    const key = pending ? this.takePendingElement(SHELL_TARGET, part) : samePart ? current!.elementKey : null;
+    if (samePart && current!.elementKey === key) return;
     this.puck?.select(null);
-    this.set({ selection: { componentId: part, target: SHELL_TARGET } });
-    this.post("selected", {
-      componentId: part,
-      componentType: part === "header" ? "SiteHeader" : "SiteFooter",
-      fields: this.shellFields[part],
-      props: site.shell[part],
-      route: SHELL_TARGET,
-    });
+    this.postSelected(SHELL_TARGET, part, part === "header" ? "SiteHeader" : "SiteFooter", this.shellFields[part], site.shell[part], key);
+  }
+
+  /** A click on the canvas named this text element (or none) of this section or shell part. In the
+   * section already selected it is posted at once; otherwise it waits for Puck (or the shell click)
+   * to select the section, which then carries it. */
+  elementClicked(target: SiteTarget, componentId: string, key: string | null): void {
+    if (this.state.mode !== "edit") return;
+    const current = this.state.selection;
+    if (current && current.target === target && current.componentId === componentId && this.described) {
+      this.pendingElement = null;
+      if (current.elementKey === key) return;
+      const props = this.state.site ? (componentProps(this.state.site, target, componentId) ?? {}) : {};
+      this.postSelected(target, componentId, this.described.componentType, this.described.fields, props, key);
+      return;
+    }
+    this.pendingElement = { componentId, key, target };
+  }
+
+  /** One `selected`, with the element as the canvas has it now: a key the section no longer has is
+   * the whole section. */
+  private postSelected(
+    target: SiteTarget,
+    componentId: string,
+    componentType: string,
+    fields: FieldDescription[],
+    props: Record<string, unknown>,
+    key: string | null,
+  ): void {
+    const { element, elements } = this.describe(target, componentId, key);
+    this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
+    this.described = { componentType, fields };
+    this.post("selected", { componentId, componentType, element, elements, fields, props, route: target });
+  }
+
+  private takePendingElement(target: SiteTarget, componentId: string): string | null {
+    const pending = this.pendingElement;
+    this.pendingElement = null;
+    return pending && pending.target === target && pending.componentId === componentId ? pending.key : null;
   }
 
   annotate(target: SiteTarget, componentId: string, geometry: SiteGeometry): void {
@@ -353,16 +417,21 @@ export class FrameController {
     if (hadSelection) this.post("deselected", {});
   }
 
-  private select(target: SiteTarget, componentId: string | null): void {
+  private select(target: SiteTarget, componentId: string | null, elementKey: string | null): void {
     if (this.state.mode !== "edit" || !this.state.site) return;
     if (componentId === null) {
       this.puck?.select(null);
+      this.pendingElement = null;
       if (this.state.selection) {
         this.set({ selection: null });
+        this.described = null;
         this.post("deselected", {});
       }
       return;
     }
+    // The element rides the click path: in the section already selected it is posted at once,
+    // otherwise the section's selection (Puck's, or the shell's) carries it.
+    this.elementClicked(target, componentId, elementKey);
     if (target === SHELL_TARGET) {
       if (componentId === "header" || componentId === "footer") this.shellSelected(componentId);
       return;

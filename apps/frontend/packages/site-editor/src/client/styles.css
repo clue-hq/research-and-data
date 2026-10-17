@@ -17,3 +17,7 @@ html, body, #root { height: 100%; margin: 0; }
 /* DESIGN REVIEW (DR5): the selected header or footer. The shell is drawn by the page root, not
    by a Puck component, so Puck draws no outline for it. */
 [data-site-shell-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: -2px; }
+
+/* Site element inspector: the selected text element inside its section. Drawn by the frame (an
+   attribute set on the element), never by re-rendering Puck, which would rebuild clone markup. */
+[data-clue-el-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: 2px; }

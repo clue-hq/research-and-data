@@ -18,7 +18,13 @@
 //
 // `open_link` (2026-10-14, founder): a link to another website clicked in the preview. The frame may
 // not open tabs (no popups in its sandbox) and never navigates itself; the app opens it in a new tab.
+//
+// Element selection (site element inspector, 2026-10-17): `selected` may name one text element inside
+// the section (`element`, with its computed typography) and lists the section's text elements
+// (`elements`, for Layers); the app's `select` may name an `elementKey`. Additive: absent means the
+// whole section, as before.
 import { z } from "zod";
+import { ElementKeySchema } from "./edits";
 import {
   BrandDataSchema,
   ComponentIdSchema,
@@ -79,6 +85,28 @@ export const FieldDescriptionSchema: z.ZodType<FieldDescription> = z.lazy(() =>
   }),
 );
 
+/** What a text element looks like now, as the browser draws it (the panel shows it where `_edits`
+ * sets nothing). The colour is always #RRGGBB, so it can never carry anything but a colour. */
+export const ComputedTypographySchema = z.object({
+  color: z.string().regex(/^#[0-9A-F]{6}$/),
+  fontFamily: z.string().max(200),
+  fontSize: z.number().nonnegative(),
+  fontWeight: z.number().int().min(1).max(1000),
+  italic: z.boolean(),
+  underline: z.boolean(),
+  textAlign: z.enum(["left", "center", "right", "justify"]),
+});
+export type ComputedTypography = z.infer<typeof ComputedTypographySchema>;
+/** One element of the selected section the inspector can select (plan 1: text only). */
+export const ElementSummarySchema = z.object({
+  key: ElementKeySchema,
+  kind: z.literal("text"),
+  label: z.string().max(80),
+});
+export type ElementSummary = z.infer<typeof ElementSummarySchema>;
+export const ElementSelectionSchema = ElementSummarySchema.extend({ computed: ComputedTypographySchema });
+export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
+
 const envelope = {
   channel: z.literal(EDITOR_CHANNEL),
   v: z.literal(EDITOR_PROTOCOL_VERSION),
@@ -120,7 +148,11 @@ export const AppToFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({
     ...envelope,
     type: z.literal("select"),
-    payload: z.object({ route: SiteTargetSchema, componentId: ComponentIdSchema.nullable() }),
+    payload: z.object({
+      route: SiteTargetSchema,
+      componentId: ComponentIdSchema.nullable(),
+      elementKey: ElementKeySchema.nullable().optional(),
+    }),
   }),
   z.object({
     ...envelope,
@@ -147,6 +179,8 @@ export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
       componentType: z.string().min(1).max(200),
       fields: z.array(FieldDescriptionSchema),
       props: Props,
+      element: ElementSelectionSchema.nullable().optional(),
+      elements: z.array(ElementSummarySchema).max(500).optional(),
     }),
   }),
   z.object({ ...envelope, type: z.literal("deselected"), payload: z.object({}).strict() }),
