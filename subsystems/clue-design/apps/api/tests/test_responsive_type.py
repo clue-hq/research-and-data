@@ -112,3 +112,40 @@ def test_the_new_version_differs_only_in_the_section() -> None:
     updated = kit_with_section(kit, section)
     assert {key for key in updated if updated[key] != kit.get(key)} == {"responsive_type"}
     assert kit_with_section(kit, None) == kit
+
+
+def test_a_role_whose_source_was_never_read_narrower_is_left_out() -> None:
+    """Review finding 2: Framer-style sites hide the desktop copy at narrower widths. A role whose
+    element was never read there is unmeasured (left out, drawn as today), not 'never changes'."""
+    body_only = _evidence([None, None], [18, 16])
+    section = _section(body_only)
+    assert section["roles"]["type.body"] == [{"max_width": 767, "font_size": 16.0}]
+    assert "type.headline" not in section["roles"] and "type.title" not in section["roles"], "derived from an unread headline"
+    assert _section(_evidence([None, None], [None, None])) is None, "nothing read at any narrower width: no section"
+
+
+def test_the_kits_desktop_typography_is_byte_for_byte_unchanged() -> None:
+    """Review finding 13: the normalizer's whole kit typography, with and without the widths."""
+    import json
+    from pathlib import Path
+    from lumen_ingestion.normalizer import normalize_evidence
+
+    raw = json.loads((Path(__file__).resolve().parent / "fixtures" / "ingestion" / "evidence_website_insight.json").read_text())
+    evidence = BrandEvidence.model_validate(raw)
+    indexed = [sample.model_copy(update={"sample_index": i}) for i, sample in enumerate(evidence.type_samples)]
+    narrower = [sample.model_copy(update={"size_px": (sample.size_px or 16) * 0.7}) for sample in indexed]
+    measured_evidence = evidence.model_copy(update={
+        "type_samples": indexed,
+        "type_widths": TypeWidths(capture_width=1440, widths=[TypeWidth(width=767, type_samples=narrower)]),
+    })
+    kwargs = {"brand_kit_id": "brand_kit_ing_x", "name": "X", "created_at": "2026-10-18T00:00:00Z"}
+    plain = normalize_evidence(evidence, **kwargs)
+    measured = normalize_evidence(measured_evidence, **kwargs)
+    assert measured.brand_kit["tokens"]["typography"] == plain.brand_kit["tokens"]["typography"]
+    assert measured.responsive_type is not None and plain.responsive_type is None
+
+
+def test_a_remeasure_that_keeps_no_role_says_so() -> None:
+    """Review finding 11: every role far from the stored kit → nothing to publish."""
+    section, skipped = _remeasure(_kit(20, 40), _fresh([60, 43, 36], [18, 18, 18]))
+    assert section is None and {"type.headline", "type.body"} <= set(skipped)

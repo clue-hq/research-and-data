@@ -107,8 +107,9 @@ def main() -> int:
     evidence = asyncio.run(capture_type(url))
     section, skipped = remeasured_section(kit, evidence, resolve_anchors, lambda anchors: build_type_styles(anchors)[0])
     if section is None:
-        print(f"SKIP {args.kit} v{version}: no narrower width could be measured on {url}")
-        return 0
+        reason = f"no role matches the kit's stored sizes (left out: {', '.join(skipped)})" if skipped else "no narrower width could be measured"
+        print(f"SKIP {args.kit} v{version}: {reason} on {url}; nothing published", file=sys.stderr)
+        return 1
     print(json.dumps(section, indent=2))
     if skipped:
         print(f"LEFT OUT (drawn as unmeasured): {', '.join(skipped)}")

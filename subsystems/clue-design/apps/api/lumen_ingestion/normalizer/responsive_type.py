@@ -12,7 +12,10 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from ..evidence import BrandEvidence, TypeSample
-from .typography import TypeAnchors
+from .typography import TypeAnchors, anchor_for_role
+
+#: The roles worked out from the headline's size; every other role comes from the body's.
+_HEADLINE_ROLES = {"display", "headline", "title", "stat"}
 
 SECTION_VERSION = 1
 #: A size is a step when it moves at least this much from the next wider width (sizes are kept to
@@ -40,6 +43,15 @@ def _anchors_at(anchors: TypeAnchors, current: dict[int, TypeSample]) -> TypeAnc
     )
 
 
+def _source_index(role: str, anchors: TypeAnchors) -> int | None:
+    """The rendered sample a role's size comes from: its own measured element, else the headline's
+    or the body's."""
+    anchor = anchor_for_role(role, anchors)
+    if anchor is not None and anchor.sample_index is not None:
+        return anchor.sample_index
+    return anchors.headline_index if role in _HEADLINE_ROLES else anchors.body_index
+
+
 def responsive_type_section(
     anchors: TypeAnchors,
     evidence: BrandEvidence,
@@ -59,6 +71,12 @@ def responsive_type_section(
         sample.sample_index: sample for sample in evidence.type_samples if sample.sample_index is not None
     }
     widths = sorted(measured.widths, key=lambda entry: entry.width, reverse=True)
+    # A role is measured only if the element it comes from was read at a narrower width at all;
+    # sites that draw a separate copy of the page per break point hide the desktop copy, and a
+    # role whose element was never read there must stay unmeasured, not "never changes".
+    read = {sample.sample_index for entry in widths for sample in entry.type_samples if sample.sample_index is not None}
+    if anchors.headline_index not in read and anchors.body_index not in read:
+        return None
     for entry in widths:
         current.update({sample.sample_index: sample for sample in entry.type_samples if sample.sample_index is not None})
         for role, style in build(_anchors_at(anchors, current)).items():
@@ -73,6 +91,9 @@ def responsive_type_section(
                 step["line_height"] = line_height
             roles[role].append(step)
             previous[role] = (size, line_height)
+    for role in list(roles):
+        if _source_index(role.removeprefix("type."), anchors) not in read:
+            del roles[role]
     source = evidence.source or {}
     return {
         "version": SECTION_VERSION,
@@ -134,6 +155,9 @@ def remeasured_section(
             scaled.append({**step, "font_size": size})
             previous = size
         kept[role] = scaled
+    if not kept:
+        # Nothing on today's page matches the kit: there is nothing to publish.
+        return None, skipped
     return {**section, "roles": kept, "scaled_to_stored_desktop": True}, skipped
 
 
