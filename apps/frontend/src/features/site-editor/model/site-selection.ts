@@ -80,6 +80,17 @@ export function commitStyleEdit(
   return nextProps ? { props: nextProps, site: edited } : null;
 }
 
+/** The colour picker's Theme tab: the brand's colours by token, without the technical `palette.*`
+ * ramps (founder ruling F3, 2026-08-18, as in the web editor). The validator still accepts them. */
+export function sitePalette<B>(
+  brand: B,
+  choices: (brand: B) => { token: string; value: string }[],
+): { label: string; value: string }[] {
+  return choices(brand)
+    .filter((choice) => !choice.token.toLowerCase().startsWith("palette."))
+    .map((choice) => ({ label: choice.token, value: choice.value }));
+}
+
 /** The selected element's manual styling in the site as it is now, or null. */
 export function elementOverrideOf(
   site: SiteDocument | null,

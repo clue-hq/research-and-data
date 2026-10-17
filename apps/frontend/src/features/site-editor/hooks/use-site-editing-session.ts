@@ -33,6 +33,7 @@ import {
   commitFieldEdit,
   commitStyleEdit,
   elementOverrideOf,
+  sitePalette,
   siteInspectorTitle,
   type SiteInspectorBinding,
   type SiteSelection,
@@ -370,7 +371,7 @@ export function useSiteEditingSession({
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
   const palette = useMemo(
-    () => (load.brand ? brandColorChoices(load.brand).map((choice) => ({ label: choice.token, value: choice.value })) : []),
+    () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
   );
   const fonts = useMemo(() => (load.brand ? brandFontFamilies(load.brand) : []), [load.brand]);

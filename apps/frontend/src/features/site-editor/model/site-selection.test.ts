@@ -74,3 +74,10 @@ test("a style commit that changes nothing, or for a section that is gone, return
   assert.equal(commitStyleEdit(styled, { componentId: "proof", target: "/" }, "heading", { italic: true }), null);
   assert.equal(commitStyleEdit(site, { componentId: "gone", target: "/" }, "heading", { italic: true }), null);
 });
+
+test("the colour picker offers the brand's role colours, not its technical palette ramps (ruling F3)", async () => {
+  const { sitePalette } = await import("./site-selection");
+  const brand = { kit: { tokens: { colors: { "text.brand": { value: "#006070" }, "palette.neutral.50": { value: "#F6F8FF" } } } } } as never;
+  const options = sitePalette(brand, (b) => [{ token: "text.brand", value: "#006070" }, { token: "palette.neutral.50", value: "#F6F8FF" }]);
+  assert.deepEqual(options, [{ label: "text.brand", value: "#006070" }]);
+});
