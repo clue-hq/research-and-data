@@ -154,7 +154,11 @@ function describeButton(controller: FrameController, target: string, componentId
       }
       link = ownLinkSource(item.type, key);
     } else if (item) {
-      labelSource = { kind: "fixed", reason: AGENT_BUTTON };
+      // An agent's button named after the marked prop holding its words (el="cta", label={props.cta})
+      // has them written there (ruling R6); otherwise its words are the agent's to change.
+      const propsSchemaOf = (type: string) => state.sections.find((section) => section.name === type)?.propsSchema;
+      rich = richSourceOf({ props, type: item.type }, key, state.brand, propsSchemaOf);
+      labelSource = rich ? { kind: "prop", prop: rich.prop } : { kind: "fixed", reason: AGENT_BUTTON };
       link = { kind: "fixed", reason: AGENT_BUTTON };
     }
   }

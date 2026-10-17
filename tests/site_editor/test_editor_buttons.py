@@ -14,11 +14,13 @@ are drawn too.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from .conftest import BROWSER_OPT_IN, editor_frame, garner_init, received
+from .conftest import BROWSER_OPT_IN, TOKEN, editor_frame, garner_init, received
+from .test_editor_agent_sections import compile_section, recorded_schema
 from .test_editor_element_styling import computed, wait_selected
 
 pytestmark = BROWSER_OPT_IN
@@ -98,7 +100,7 @@ def test_a_copied_button_with_an_icon_and_the_headers_button_are_buttons(app: An
     element = [m["payload"]["element"] for m in received(page)[mark:] if m["type"] == "selected" and m["payload"]["componentId"] == "close"][-1]
     assert element["label"] == "Book a demo", element
     assert element["box"]["fill"] == "#0F59B0" and element["box"]["paddingX"] == 20, element["box"]
-    assert element["labelSource"] == {"kind": "replacement", "find": "Book a demo"}, element["labelSource"]
+    assert element["labelSource"] == {"kind": "replacement", "find": "Book a demo", "shared": False}, element["labelSource"]
     assert element["link"]["source"]["kind"] == "slot", element["link"]
 
     mark = len(received(page))
@@ -151,3 +153,55 @@ def test_the_boxs_edits_redraw_the_button_and_a_hand_set_fill_holds_on_hover(app
     page.wait_for_timeout(400)
     assert frame.locator(button).first.evaluate("(el) => el.matches(':hover')"), "the pointer rests on the button"
     assert computed(frame, button, "backgroundColor") == "rgb(255, 0, 0)", "the hand-set fill holds on hover"
+
+
+AGENT_BUTTON = """import { z } from "zod";
+import type { Kit } from "@/puck/agent-kit";
+
+export const schema = z.object({
+  id: z.string(),
+  surface: z.string(),
+  cta: z.string().meta({ edit: "inline" }),
+  other: z.string().meta({ edit: "inline" }),
+}).strict();
+
+export function render(props: z.infer<typeof schema>, kit: Kit) {
+  return (
+    <kit.Shell surface={props.surface}>
+      <kit.Button el="cta" label={props.cta} href="/" surface={props.surface} />
+      <div className="mt-6"><kit.Button el="loose" label={props.other} href="/" surface={props.surface} /></div>
+    </kit.Shell>
+  );
+}
+"""
+
+
+def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: Any, browser_page: Any, editor_origin: str, design_api: Any) -> None:
+    """Review finding 8 (ruling R6): an agent button named after the marked prop holding its words
+    gets that prop as its words' source (so highlighted words can be styled and the Text row writes
+    it); one named otherwise keeps "ask the agent"."""
+    brand = garner_init()["brand"]
+    module = compile_section("AgentButton", AGENT_BUTTON, brand)
+    code = module.encode()
+    digest = hashlib.sha256(code).hexdigest()
+    design_api.modules[digest] = code
+    init = analysis_init()
+    init["site"]["agent_sections"] = {"AgentButton": digest}
+    init["site"]["pages"]["/analysis"]["content"].append(
+        {"type": "AgentButton", "props": {"id": "agentbtn", "surface": "page", "cta": "Talk to us", "other": "Other words"}}
+    )
+    init["sections"] = [{"name": "AgentButton", "digest": digest, "token": TOKEN, "propsSchema": recorded_schema(module)}]
+    page, frame = open_analysis(app, browser_page, editor_origin, init)
+    named = frame.locator('[data-puck-component="agentbtn"] [data-clue-el="cta"]').first
+    named.wait_for(timeout=20000)
+
+    mark = len(received(page))
+    named.click(force=True)
+    element = wait_selected(page, mark, "cta", "agentbtn")["element"]
+    assert element["kind"] == "button" and element["labelElement"]["rich"] == {"prop": "cta"}, element
+    assert element["labelSource"] == {"kind": "prop", "prop": "cta"}
+
+    mark = len(received(page))
+    frame.locator('[data-puck-component="agentbtn"] [data-clue-el="loose"]').first.click(force=True)
+    loose = wait_selected(page, mark, "loose", "agentbtn")["element"]
+    assert loose["labelSource"]["kind"] == "fixed" and not loose["labelElement"].get("rich"), loose
