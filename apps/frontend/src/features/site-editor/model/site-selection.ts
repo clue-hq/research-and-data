@@ -1,7 +1,7 @@
 import { EDITS_PROP, editsOf, withStyleOverride, type StyleOverride } from "@clue/site-kit/edits";
 import type { ElementSelection, ElementSummary, FieldDescription } from "@clue/site-kit/editor-protocol";
 import { canonicalJson, componentProps, getAtPath, pageFor, setAtPath, withComponentProps } from "@clue/site-kit/editor-site";
-import { richText, styleAt, styleWords } from "@clue/site-kit/rich";
+import { retypeRich, richText, styleAt, styleWords } from "@clue/site-kit/rich";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import type { LinkChange, LinkRowState } from "@/features/chat-shell/components/site-link-row.logic";
 import type { SiteLayerRow } from "./site-layers";
@@ -51,6 +51,12 @@ export interface SiteInspectorBinding {
   /** Why highlighted words cannot be styled on their own here (the panel then styles the whole
    * text), or null. */
   wordsUnavailable: string | null;
+  /** Plan 3, a button: its label's own look, the look of the words highlighted in it, its words
+   * retyped (one save), and a style change on the highlighted words (one save; a note when refused). */
+  labelOverride: StyleOverride | null;
+  labelWordsOverride: StyleOverride | null;
+  onLabelTextCommit: (text: string) => void;
+  onLabelWordStyleCommit: (apply: (old: StyleOverride) => StyleOverride) => string | null;
   /** Plan 2: the Link row for the selected text, its site's pages, and one link change (one save);
    * returns a note when the change cannot be made. */
   linkState: LinkRowState;
@@ -91,6 +97,56 @@ export function commitStyleEdit(
   if (canonicalJson(next) === canonicalJson(props)) return null;
   const edited = withComponentProps(site, selection.target, selection.componentId, next);
   if (edited === site) return null;
+  const nextProps = componentProps(edited, selection.target, selection.componentId);
+  return nextProps ? { props: nextProps, site: edited } : null;
+}
+
+/** A button's words as a selection of their own (plan 3): the label element, with the words
+ * highlighted in it, so word styling and the label's look reuse the text paths. Null for no button. */
+export function labelSelectionOf<T extends WordsSelection>(selection: T | null): T | null {
+  const element = selection?.element;
+  if (!selection || !element || element.kind !== "button" || !element.labelElement) return null;
+  const label = element.labelElement;
+  return {
+    ...selection,
+    element: { computed: label.computed, key: label.key, kind: "text", label: element.label, rich: label.rich ?? null, words: element.words ?? null },
+  };
+}
+
+/** A button's label's own look in the site now (its `_edits` entry), or null. */
+export function labelOverrideOf(site: SiteDocument | null, selection: WordsSelection | null): StyleOverride | null {
+  return elementOverrideOf(site, labelSelectionOf(selection));
+}
+
+/** A button's words retyped in the Text row → the edited site and the section's whole new props,
+ * written where the words live: a prop or a clone slot (the words that stayed keep their look), or a
+ * clone text replacement (plain words). Null when nothing changes or the words cannot be written. */
+export function commitLabelText(
+  site: SiteDocument,
+  selection: WordsSelection,
+  text: string,
+): { props: Record<string, unknown>; site: SiteDocument } | null {
+  const element = selection.element;
+  const source = element?.labelSource;
+  const props = componentProps(site, selection.target, selection.componentId);
+  if (!element || !source || source.kind === "fixed" || !props) return null;
+  const words = text.replace(/\s+/g, " ").trim();
+  let next: Record<string, unknown>;
+  if (source.kind === "replacement") {
+    const replacements = ((props.replacements as { find: string; replace: string }[] | undefined) ?? []).filter((entry) => entry.find !== source.find);
+    next = { ...props, replacements: words === source.find ? replacements : [...replacements, { find: source.find, replace: words }] };
+  } else {
+    const path = source.kind === "prop" ? source.prop : `slots.${source.slot}`;
+    const stored = getAtPath(props, path);
+    const html = typeof stored === "string" ? stored : (element.labelElement?.rich?.fallback ?? "");
+    const retyped = retypeRich(html, words, editsOf(props), element.labelElement?.key ?? element.key);
+    if (retyped.html === html) return null;
+    next = setAtPath(props, path, retyped.html);
+    if (Object.keys(retyped.edits).length) next[EDITS_PROP] = retyped.edits;
+    else delete next[EDITS_PROP];
+  }
+  if (canonicalJson(next) === canonicalJson(props)) return null;
+  const edited = withComponentProps(site, selection.target, selection.componentId, next);
   const nextProps = componentProps(edited, selection.target, selection.componentId);
   return nextProps ? { props: nextProps, site: edited } : null;
 }

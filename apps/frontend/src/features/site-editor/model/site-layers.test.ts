@@ -86,3 +86,12 @@ test("with no element selected the section row is active and its elements still 
   assert.deepEqual(rows.filter((row) => row.active).map((row) => row.label), ["Stats band"]);
   assert.equal(rows.filter((row) => row.depth === 1).length, 1);
 });
+
+test("a button is listed with its section's elements, drawn as a box (plan 3)", () => {
+  const rows = siteLayerRows({
+    cloneLabels, route: "/", site,
+    selection: { componentId: "proof", target: "/", elementKey: "button", elements: [{ key: "heading", kind: "text", label: "7.4%" }, { key: "button", kind: "button", label: "Request the analysis" }] },
+  });
+  const button = rows.find((row) => row.elementKey === "button");
+  assert.deepEqual([button?.icon, button?.active, button?.depth], ["rectangle", true, 1]);
+});

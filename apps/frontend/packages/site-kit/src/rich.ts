@@ -467,3 +467,42 @@ export function linkWords(html: string, start: number, end: number, link: RichLi
   });
   return serializeRich(runs);
 }
+
+/** The text with its words changed to `text` as typed in a box (plan 3: a button's Text row): the
+ * words before and after the change keep their marks and styled spans, the changed words are plain
+ * text; this element's span entries whose words are gone are dropped from `edits`. */
+export function retypeRich(html: string, text: string, edits: Edits, elementKey: string): { html: string; edits: Edits } {
+  const old = richText(html);
+  if (old === text) return { html, edits };
+  let start = 0;
+  while (start < old.length && start < text.length && old[start] === text[start]) start += 1;
+  let tail = 0;
+  while (tail < old.length - start && tail < text.length - start && old[old.length - 1 - tail] === text[text.length - 1 - tail]) tail += 1;
+  const { runs, inside } = splitAt(runsOf(html), start, old.length - tail);
+  const kept: Run[] = [];
+  let placed = false;
+  const typed = text.slice(start, text.length - tail);
+  runs.forEach((run, i) => {
+    if (inside[i]) {
+      if (!placed && typed) kept.push({ text: typed });
+      placed = true;
+      return;
+    }
+    if (!placed && typed && sumBefore(runs, i) >= start) {
+      kept.push({ text: typed });
+      placed = true;
+    }
+    kept.push(run);
+  });
+  if (!placed && typed) kept.push({ text: typed });
+  const next = serializeRich(kept);
+  const pattern = SPAN_KEY(elementKey);
+  const used = new Set(runsOf(next).map((run) => run.style).filter(Boolean));
+  const nextEdits: Edits = { ...edits };
+  for (const key of Object.keys(nextEdits)) if (pattern.test(key) && !used.has(key)) delete nextEdits[key];
+  return { html: next, edits: nextEdits };
+}
+
+function sumBefore(runs: Run[], index: number): number {
+  return runs.slice(0, index).reduce((total, run) => total + run.text.length, 0);
+}

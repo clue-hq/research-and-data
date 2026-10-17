@@ -178,3 +178,18 @@ test("rich text without links refuses and drops a link, keeping its words", () =
   assert.deepEqual(richProblems("Book <strong>now</strong>", { links: false }), []);
   assert.equal(normalizeRich('Book <a href="/x"><em>now</em></a>', { links: false }), "Book <em>now</em>");
 });
+
+// Plan 3: retyping a button's words in the Text box keeps the look of the words that did not change.
+import { retypeRich } from "../src/rich";
+
+test("retyping replaces only what changed; styled words that survive keep their span; the rest are plain", () => {
+  const html = 'Request <span data-s="button.label~1">the analysis</span> now';
+  assert.deepEqual(retypeRich(html, "Request the analysis today", {}, "button.label"), {
+    html: 'Request <span data-s="button.label~1">the analysis</span> today',
+    edits: {},
+  });
+  const edits = { "button.label~1": { fontWeight: 700 }, other: { italic: true } };
+  assert.deepEqual(retypeRich(html, "Book a demo", edits, "button.label"), { html: "Book a demo", edits: { other: { italic: true } } }, "a span whose words are gone is dropped with its entry");
+  assert.deepEqual(retypeRich("A & B", "A & C", {}, "x"), { html: "A &amp; C", edits: {} }, "typed words are text, escaped");
+  assert.equal(retypeRich(html, "Request the analysis now", edits, "button.label").html, html, "the same words change nothing");
+});

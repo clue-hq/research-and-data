@@ -145,3 +145,58 @@ test("the words' own look is not read from stale offsets (review finding 1)", ()
   assert.ok(styled && "props" in styled);
   assert.equal(wordsOverride(styled.site, headingWords(4, 13, "somethingx")), null);
 });
+
+// Plan 3: a selected button — its words' selection, its label's look, and its words.
+import { commitLabelText, labelOverrideOf, labelSelectionOf } from "./site-selection";
+
+const buttonSite = SiteDocumentSchema.parse({
+  ...site,
+  pages: {
+    ...site.pages,
+    "/": { root: { props: {} }, content: [
+      { type: "CtaBand", props: { id: "cta", heading: "H", buttonLabel: 'Request <span data-s="button.label~1">the analysis</span> now', buttonHref: "/", _edits: { "button.label~1": { fontWeight: 700 }, "button.label": { italic: true } } } },
+      { type: "ClonedSection", props: { id: "hero", fragmentId: "frag_0000000000000001", slots: {}, replacements: [], links: [] } },
+    ] },
+  },
+});
+const buttonSelection = (source: object, extra: object = {}) => ({
+  componentId: "cta",
+  componentType: "CtaBand",
+  target: "/",
+  element: {
+    key: "button", kind: "button" as const, label: "Request the analysis now", computed: TYPO,
+    labelElement: { key: "button.label", computed: TYPO, rich: { prop: "buttonLabel" } },
+    labelSource: source, words: null, ...extra,
+  },
+});
+
+test("a button's words are selected as its label: highlighted words style the label's span", () => {
+  const selection = buttonSelection({ kind: "prop", prop: "buttonLabel" }, { words: { start: 0, end: 7, count: 1, text: "Request", computed: TYPO } });
+  const label = labelSelectionOf(selection)!;
+  assert.equal(label.element?.key, "button.label");
+  const edit = commitWordStyle(buttonSite, label, (old) => ({ ...old, italic: false }));
+  assert.ok(edit && "props" in edit);
+  assert.equal(edit.props.buttonLabel, '<span data-s="button.label~2">Request</span> <span data-s="button.label~1">the analysis</span> now');
+  assert.deepEqual(labelOverrideOf(buttonSite, selection), { italic: true });
+});
+
+test("retyping a button's words keeps the look of the words that stayed; the source decides where they go", () => {
+  const edit = commitLabelText(buttonSite, buttonSelection({ kind: "prop", prop: "buttonLabel" }), "Request the analysis today");
+  assert.ok(edit && "props" in edit);
+  assert.equal(edit.props.buttonLabel, 'Request <span data-s="button.label~1">the analysis</span> today');
+  const gone = commitLabelText(buttonSite, buttonSelection({ kind: "prop", prop: "buttonLabel" }), "Book a demo");
+  assert.ok(gone && "props" in gone);
+  assert.deepEqual(gone.props._edits, { "button.label": { italic: true } }, "the gone span's entry goes too");
+  const slot = { ...buttonSelection({ kind: "slot", slot: "cta_label" }), componentId: "hero", componentType: "ClonedSection" };
+  slot.element.labelElement = { key: "0.1", computed: TYPO, rich: { prop: "slots.cta_label", fallback: "Book a demo" } } as never;
+  const viaSlot = commitLabelText(buttonSite, slot, "Talk to us");
+  assert.ok(viaSlot && "props" in viaSlot);
+  assert.deepEqual(viaSlot.props.slots, { cta_label: "Talk to us" });
+  const replaced = { ...buttonSelection({ kind: "replacement", find: "Book a demo" }), componentId: "hero", componentType: "ClonedSection" };
+  replaced.element.labelElement = { key: "0.1", computed: TYPO, rich: null } as never;
+  const viaReplacement = commitLabelText(buttonSite, replaced, "Talk to us");
+  assert.ok(viaReplacement && "props" in viaReplacement);
+  assert.deepEqual(viaReplacement.props.replacements, [{ find: "Book a demo", replace: "Talk to us" }]);
+  assert.equal(commitLabelText(buttonSite, buttonSelection({ kind: "fixed", reason: "ask the agent" }), "x"), null);
+  assert.equal(commitLabelText(buttonSite, buttonSelection({ kind: "prop", prop: "buttonLabel" }), "Request the analysis now"), null, "the same words");
+});

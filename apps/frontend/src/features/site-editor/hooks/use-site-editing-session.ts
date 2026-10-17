@@ -33,7 +33,10 @@ import {
 import {
   commitFieldEdit,
   commitStyleEdit,
+  commitLabelText,
   commitWordStyle,
+  labelOverrideOf,
+  labelSelectionOf,
   wordsOverride,
   wordsUnavailableReason,
   elementOverrideOf,
@@ -392,6 +395,39 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // Plan 3: a button's words retyped in its Text row, and words highlighted in its label styled: the
+  // same path (one set_props, one save).
+  const commitLabel = useCallback(
+    (text: string) => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitLabelText(current.site, activeSelection, text);
+      if (!edit) return;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: button words in ${activeSelection.element?.key ?? "button"}`);
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
+  const commitLabelWords = useCallback(
+    (apply: (old: StyleOverride) => StyleOverride): string | null => {
+      const current = copy.get();
+      const label = labelSelectionOf(activeSelection);
+      if (!label || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return null;
+      const edit = commitWordStyle(current.site, label, apply);
+      if (!edit) return null;
+      if ("refused" in edit) return edit.refused;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return null;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: label.componentId, props: edit.props, rev, route: label.target }, current.documentId);
+      save(edit.site, `inspector: style words in ${label.element?.key ?? "button"}`);
+      return null;
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
   // Plan 2: one link change, the same path: the section's new props, one set_props, one save.
   const commitLink = useCallback(
     (change: LinkChange): string | null => {
@@ -606,6 +642,10 @@ export function useSiteEditingSession({
     wordsOverride: wordsOverride(currentSite?.site ?? null, activeSelection),
     onWordStyleCommit: commitWords,
     wordsUnavailable: wordsUnavailableReason(activeSelection),
+    labelOverride: labelOverrideOf(currentSite?.site ?? null, activeSelection),
+    labelWordsOverride: wordsOverride(currentSite?.site ?? null, labelSelectionOf(activeSelection)),
+    onLabelTextCommit: commitLabel,
+    onLabelWordStyleCommit: commitLabelWords,
     linkState: linkRowState(currentSite?.site ?? null, activeSelection),
     pages: currentSite ? sitePages(currentSite.site) : [],
     onLinkCommit: commitLink,

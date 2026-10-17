@@ -11,7 +11,7 @@ export interface SiteLayerRow {
   /** Depth-1 rows only: the text element this row selects. */
   elementKey?: string;
   depth?: 0 | 1;
-  icon: "div" | "layout-template" | "type";
+  icon: "div" | "layout-template" | "type" | "rectangle";
   key: string;
   label: string;
   target: string;
@@ -59,7 +59,7 @@ export function siteLayerRows({
   // The section row is active while the section itself is selected; with an element selected, the
   // element's row is.
   const isActive = (target: string, componentId: string) => isSelected(target, componentId) && selectedElement === null;
-  /** The selected section's text elements, right under its row. */
+  /** The selected section's text elements and buttons, right under its row. */
   const elementRows = (target: string, componentId: string): SiteLayerRow[] =>
     isSelected(target, componentId)
       ? (selection?.elements ?? []).map((element) => ({
@@ -67,7 +67,8 @@ export function siteLayerRows({
           componentId,
           depth: 1 as const,
           elementKey: element.key,
-          icon: "type" as const,
+          // A button (plan 3) shows as a box, as in the web inspector's layers.
+          icon: element.kind === "button" ? ("rectangle" as const) : ("type" as const),
           key: `${target}#${componentId}~${element.key}`,
           label: element.label,
           target,
