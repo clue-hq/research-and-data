@@ -8,6 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import { useGetPuck } from "@puckeditor/core";
 import type { Clone } from "../clone";
 import { CloneMarkup } from "../clone-markup";
+import { normalizeRich, richText } from "../rich";
+import { richFromDom } from "./rich-text";
 
 /** The pause after the last keystroke in a cloned text slot before its wording is written. Without
  * it, typing reached the page only when the slot lost focus, and a reload while still typing lost it
@@ -62,9 +64,10 @@ export function CloneEditor({
         // marked as overlay portals (how its own inline fields work), so slots opt in the same way.
         element.setAttribute("data-puck-overlay-portal", "true");
         // The text as it stood when the marketer clicked in, then as last written: leaving or pausing
-        // without a change writes nothing (review finding S1-2 — the browser's innerText never equals
-        // the captured wording when the markup has a <br> or a non-breaking space, so a click-away
-        // used to flatten and save it).
+        // without a change writes nothing (review finding S1-2 — a click-away used to flatten and save
+        // it). The slot is rich text (plan 2): what is written is the slot's words with their bold,
+        // italic, underline, links and styled spans, in the grammar's form (the browser's own ⌘B makes
+        // <b>, which is read as bold).
         let unchangedText: string | null = null;
         let pause: number | null = null;
         const cancelPause = () => {
@@ -74,10 +77,11 @@ export function CloneEditor({
         /** Write the slot's wording if it changed. Returns the value written, or null. */
         const write = (): string | null => {
           cancelPause();
-          const text = element.innerText;
+          const text = normalizeRich(richFromDom(element));
           if (unchangedText !== null && text === unchangedText) return null;
           unchangedText = text;
-          const value = text.replace(/\s+/g, " ").trim();
+          // No words left (the browser leaves a <br> in an emptied slot) is an empty slot.
+          const value = richText(text).trim() === "" ? "" : text.replace(/\s+/g, " ").trim();
           const { dispatch } = getPuck();
           dispatch({
             type: "setData",
@@ -95,7 +99,7 @@ export function CloneEditor({
           return value;
         };
         const onFocus = () => {
-          unchangedText = element.innerText;
+          unchangedText = normalizeRich(richFromDom(element));
           setHeld((previous) => previous ?? shown);
         };
         const onInput = () => {

@@ -24,3 +24,4 @@ export { EDIT_INLINE, IMAGE_PROP, LINK_PROP, brandChoice, notInlineReason, type 
 export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";
+export { normalizeRichIn, richValuesOfItem, type PropsSchemaOf } from "./rich-props";

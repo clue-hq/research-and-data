@@ -60,6 +60,8 @@ export type EditorParts = {
   /** A hook, called while an agent section draws in the editor: reads a section's props as stored
    * (plain strings, before Puck puts its in-place widgets in), by its id (S2a-2 §2.5). */
   useRawProps?: () => (id: string) => Record<string, unknown> | undefined;
+  /** The rich text field (site-kit/editor's richTextField): our rich props edit as rich text (plan 2). */
+  richField?: (label: string) => object;
 };
 
 export type ConfigOptions = {
@@ -205,7 +207,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       value: clone.id,
     })),
   ];
-  const sections = makeSections(brand, href, options.editor?.AssetPicker);
+  const sections = makeSections(brand, href, options.editor?.AssetPicker, options.editor?.richField);
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit
   // fields (the editor gives them fields from their props schema).
   const kit = makeKit(href, brand);
@@ -234,9 +236,13 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const raw = rawProps(String(props.id ?? ""));
           return raw ? <Drawn props={{ ...raw, puck: props.puck }} /> : null;
         };
+        // Outside Edit mode the editor draws the section from its props as stored, as the published
+        // page does: Puck turns a rich text prop into its own read-only widget even in preview, and a
+        // section may treat its text as a string (plan 2).
+        const stored = !editing && options.editor?.useRawProps ? rawProps(String(props.id ?? "")) : undefined;
         return (
           <SectionBoundary key={editing ? "edit" : "view"} name={name} retry={editing && options.editor?.useRawProps ? retry : undefined}>
-            <Drawn props={props} />
+            <Drawn props={stored ? { ...stored, puck: props.puck } : props} />
           </SectionBoundary>
         );
       };
@@ -351,16 +357,14 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   // sides of a live page draw the same tree. The box is display:contents (themeCss), so it takes no
   // part in the page's layout. The shell's header and footer scope themselves (shell.tsx).
   //
-  // In the editor `_edits` is read from the section AS STORED (useRawProps): Puck's in-place text
-  // transform matches props by key name at any depth, so a section with an in-place `heading` field
-  // receives `_edits.heading` as Puck's inline-edit element, not the override. Elsewhere the drawn
-  // props are the stored ones.
+  // In the editor `_edits` is read from the section AS STORED (useRawProps): Puck's text transforms
+  // match props by key name at any depth, so a section with a rich `heading` field receives
+  // `_edits.heading` as Puck's widget, not the override. Elsewhere the drawn props are the stored ones.
   const SectionScope = ({ id, drawn, children }: { id: string; drawn: Record<string, unknown>; children: ReactNode }) => {
-    // Only in Edit mode: that is when Puck puts its widgets in the drawn props (and the raw props are
-    // the editor's to read; a preview or a published page never reads them).
+    // Anywhere in the editor: Puck puts its widgets in the drawn props in Edit mode, and its read-only
+    // rich text widget in preview too (plan 2). A published page has no raw props to read.
     const rawProps = useRawProps();
-    const editing = Boolean((drawn.puck as { isEditing?: boolean } | undefined)?.isEditing);
-    const stored = editing ? rawProps(id) : undefined;
+    const stored = rawProps(id);
     const css = editsCss(id, editsOf(stored ?? drawn), brand);
     return (
       <div data-clue-section={id} className="clue-section">

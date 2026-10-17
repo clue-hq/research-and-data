@@ -21,3 +21,11 @@ html, body, #root { height: 100%; margin: 0; }
 /* Site element inspector: the selected text element inside its section. Drawn by the frame (an
    attribute set on the element), never by re-rendering Puck, which would rebuild clone markup. */
 [data-clue-el-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: 2px; }
+
+/* Rich text fields (site element inspector, plan 2) draw like the published text: the one paragraph
+   TipTap keeps around the words adds no margin of its own. */
+[data-clue-el] .rich-text p { margin: 0; }
+/* Highlighted words stay visible while the marketer works in the panel: Puck hides the selection of
+   an editor that has lost focus, and the panel is outside this frame. */
+[data-clue-el] .ProseMirror ::selection,
+[data-clue-el] .ProseMirror::selection { background-color: color-mix(in srgb, var(--puck-color-azure-07) 55%, transparent) !important; }

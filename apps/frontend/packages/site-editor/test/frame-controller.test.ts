@@ -92,6 +92,18 @@ test("a user edit is posted once, after the debounce, with the whole site", asyn
   assert.equal(sent.pages["/analysis"].root.props.title, "Analysis", "the other pages ride along unchanged");
 });
 
+test("rich text the editor or a paste wrote is saved in the grammar's form; its echo posts nothing", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.pageEdited("/", page('<p style="text-align: center;">Hello <b>there</b></p><p>again</p>'));
+  h.timers.at(-1)?.();
+  const sent = (h.posts.filter((post) => post.type === "changed")[0].payload as { site: typeof site }).site;
+  assert.equal(sent.pages["/"].content[0].props.heading, "Hello <strong>there</strong><br>again");
+  const before = h.timers.length;
+  h.controller.pageEdited("/", page("<p>Hello <strong>there</strong><br>again</p>"));
+  assert.equal(h.timers.length, before, "the editor's own wrapper around the saved text is the same text");
+});
+
 test("an echo of the page as it already is posts nothing; preview mode never posts edits", async () => {
   const h = harness();
   await h.controller.receive(init());
@@ -512,4 +524,18 @@ test("an element whose look keeps changing (an animated colour) is not posted ag
   const count = h.posts.filter((post) => post.type === "selected").length;
   for (let i = 0; i < 5; i += 1) h.controller.refreshSelection();
   assert.equal(h.posts.filter((post) => post.type === "selected").length, count);
+});
+
+test("leaving a piece of text sends what was typed once the rich text editor has reported it", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  h.controller.pageEdited("/", page("F"));
+  h.controller.leftText();
+  assert.equal(h.types().includes("changed"), false, "nothing is sent at the moment of leaving");
+  h.controller.pageEdited("/", page("Fewer surprises."));
+  const leave = h.timers.find((_, i) => i === h.timers.length - 2);
+  leave?.();
+  const changed = h.posts.filter((post) => post.type === "changed");
+  assert.equal(changed.length, 1);
+  assert.equal((changed[0].payload as { site: typeof site }).site.pages["/"].content[0].props.heading, "Fewer surprises.");
 });

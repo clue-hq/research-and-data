@@ -15,9 +15,9 @@ import type { BrandData } from "./brand";
 import { replaceableTexts, type Clone } from "./clone";
 import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
-import { richPropPaths, richValuesAt } from "./agent-props";
 import { richLinks, richProblems } from "./rich";
-import { RICH_PROPS, ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
+import { richValuesOfItem } from "./rich-props";
+import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
 import { surfaceChoices } from "./surfaces";
 
 type Item = { type: string; props: Record<string, unknown> };
@@ -165,12 +165,12 @@ export function validateSite(
     (page.content ?? []).forEach((item, index) => {
       const at = `${file}.content.${index}(${String(item.props?.id ?? "?")})`;
       addEditsProblems(item.props, at);
+      for (const { path, value } of richValuesOfItem(item, brand, (type) => agentSections[type]?.propsSchema)) checkRich(value, `${at}.${path}`);
       if (OURS.has(item.type)) {
         const surface = item.props.surface;
         if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
         const look = item.props.buttonLook;
         if (typeof look === "string" && look && !lookNames.includes(look)) errors.push(lookError(`${at}.buttonLook`, look));
-        for (const prop of (RICH_PROPS as Record<string, readonly string[]>)[item.type] ?? []) checkRich(item.props[prop], `${at}.${prop}`);
       }
       if (item.type === "ClonedSection") {
         const id = String(item.props.fragmentId ?? "");
@@ -187,7 +187,6 @@ export function validateSite(
             continue;
           }
           if (slot.kind === "text" && typeof value !== "string") errors.push(`${at}.slots.${key}: a text slot takes a string`);
-          if (slot.kind === "text") checkRich(value, `${at}.slots.${key}`);
           if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !LINK.test(value)))) {
             errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
           }
@@ -252,8 +251,6 @@ export function validateSite(
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
         };
         walk(withoutEdits(item.props), at, "");
-        const paths = richPropPaths((agentSections[item.type].propsSchema ?? {}) as Parameters<typeof richPropPaths>[0]);
-        for (const { path, value } of richValuesAt(item.props, paths)) checkRich(value, `${at}.${path}`);
       }
     });
   }

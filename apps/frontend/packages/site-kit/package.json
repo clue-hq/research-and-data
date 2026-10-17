@@ -15,10 +15,11 @@
     "./editor-site": "./src/editor-site.ts",
     "./editor-origin": "./src/editor-origin.ts",
     "./section-host": "./src/section-host.ts",
-    "./edits": "./src/edits.ts"
+    "./edits": "./src/edits.ts",
+    "./rich": "./src/rich.ts"
   },
   "scripts": { "test": "tsx --test test/*.test.ts test/*.test.tsx", "typecheck": "tsc --noEmit", "build": "node bin/build-bundles.mjs" },
-  "dependencies": { "@puckeditor/core": "0.23.0", "node-html-parser": "^7.1.0", "zod": "^4.4.3" },
+  "dependencies": { "@puckeditor/core": "0.23.0", "@tiptap/core": "3.31.4", "node-html-parser": "^7.1.0", "zod": "^4.4.3" },
   "peerDependencies": { "react": "19.2.4", "react-dom": "19.2.4" },
   "devDependencies": { "tsx": "^4.23.15", "typescript": "^5", "esbuild": "^0.28.2" }
 }

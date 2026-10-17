@@ -1,4 +1,4 @@
-import type { BrandData } from "@clue/site-kit";
+import { normalizeRichIn, type BrandData } from "@clue/site-kit";
 import { ExternalHrefSchema } from "@clue/site-kit/editor-protocol";
 import type {
   AppToFrameMessage,
@@ -26,6 +26,10 @@ import type { LoadedSection } from "./sections";
 /** The pause after the last keystroke before an edit is sent (blur, a mode change, a page switch
  * and a shortcut send it at once). Each send is one save, and one save is one undo step. */
 export const CHANGE_DEBOUNCE_MS = 600;
+
+/** How long leaving a piece of text waits before sending what was typed: Puck's rich text editor
+ * reports its text up to 200 ms after the last keystroke (plan 2), and what is sent must include it. */
+export const LEAVE_SETTLE_MS = 250;
 
 /** How long after the last keystroke typing counts as possibly not yet written into the page (a
  * cloned text slot writes after its own short pause; see site-kit's CloneEditor). */
@@ -345,14 +349,27 @@ export class FrameController {
     this.tellPending();
   }
 
-  /** Puck's onChange: the user edited the page shown. An echo of the page as stored is ignored. */
-  pageEdited(route: string, page: SitePage): void {
+  /** Puck's onChange: the user edited the page shown. Its rich text is taken in the grammar's form
+   * (what TipTap or a paste wrote, cleaned: plan 2), so the save never fails on it. An echo of the page
+   * as stored is ignored. */
+  pageEdited(route: string, edited: SitePage): void {
     const site = this.state.site;
     if (!site || this.state.mode !== "edit" || route !== this.state.route) return;
+    const brand = this.state.brand;
+    const page = brand
+      ? normalizeRichIn(edited, brand, (type) => this.state.sections.find((section) => section.name === type)?.propsSchema)
+      : edited;
     const current = pageFor(site, route);
     if (current && canonicalJson(withoutEmptyZones(current)) === canonicalJson(withoutEmptyZones(page))) return;
     this.set({ site: withPage(site, route, page) });
     this.scheduleChange();
+  }
+
+  /** The marketer left a piece of text (focusout): what they typed is sent once the editor has
+   * reported it (LEAVE_SETTLE_MS), or at once by anything that flushes sooner. */
+  leftText(): void {
+    const schedule = this.deps.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
+    schedule(() => this.flushChange(), LEAVE_SETTLE_MS);
   }
 
   flushChange(): void {

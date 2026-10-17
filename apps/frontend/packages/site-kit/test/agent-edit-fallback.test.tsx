@@ -87,14 +87,14 @@ test("S2a-2: a section that also fails with plain text keeps the failed marker",
   assert.deepEqual([...new Set(calls)], ["broken"]);
 });
 
-test("S2a-2: outside Edit mode and on the published page the raw props are never read", async () => {
+test("plan 2: outside Edit mode the editor draws from the raw props (Puck puts its read-only rich text widget in preview); the published page never reads them", async () => {
   const calls: string[] = [];
   const editor = editorParts({ quote: { id: "quote", surface: "brand", headline: "Fewer surprises" } }, calls);
   const preview = await draw(editor, "Shouting", { id: "quote", surface: "brand", headline: inlineWidget, puck: { isEditing: false } });
-  assert.equal(preview.html, scoped("quote", '<div data-agent-section="Shouting"><div data-agent-section-failed="Shouting"></div></div>'));
+  assert.equal(preview.html, scoped("quote", '<div data-agent-section="Shouting"><h2>FEWER SURPRISES</h2></div>'));
+  assert.ok(calls.includes("quote"));
   const published = await draw(undefined, "Shouting", { id: "quote", surface: "brand", headline: inlineWidget });
   assert.equal(published.html, scoped("quote", '<div data-agent-section="Shouting"><div data-agent-section-failed="Shouting"></div></div>'));
-  assert.deepEqual(calls, []);
   assert.deepEqual([...preview.warnings, ...published.warnings], []);
 });
 

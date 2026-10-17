@@ -47,7 +47,7 @@ def test_the_editor_renders_a_site_and_reports_selections(
     assert selected["payload"]["componentId"] == "proof"
     assert selected["payload"]["componentType"] == "StatsBand"
     assert any(
-        f["name"] == "heading" and f["kind"] == "text" for f in selected["payload"]["fields"]
+        f["name"] == "heading" and f["kind"] == "richtext" for f in selected["payload"]["fields"]
     )
     assert any(
         m["type"] == "annotate" and m["payload"]["componentId"] == "proof" for m in received(page)

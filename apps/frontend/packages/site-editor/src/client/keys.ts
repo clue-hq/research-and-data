@@ -15,12 +15,21 @@ export interface FrameKeyAction {
   preventDefault: boolean;
   /** Ask the app for a server history step. */
   send: "undo" | "redo" | null;
+  /** Let the key reach the rich text editor it was typed in (TipTap: its own undo, redo and italic),
+   * then stop it on its way up, before Puck's listener on `document` (editor-app's body listener). */
+  shield: boolean;
 }
 
-const PASS: FrameKeyAction = { stop: false, preventDefault: false, send: null };
+const PASS: FrameKeyAction = { stop: false, preventDefault: false, send: null, shield: false };
 
 /** Puck's modifier hotkeys, by physical key. */
 const PUCK_KEYS = new Set(["KeyZ", "KeyY", "KeyI"]);
+
+/** A rich text field (plan 2): TipTap's editor, which handles its own history and marks. */
+function inRichText(target: unknown): boolean {
+  const element = target as { closest?: (selector: string) => unknown } | null;
+  return Boolean(element && typeof element.closest === "function" && element.closest(".ProseMirror"));
+}
 
 function editable(target: unknown): boolean {
   const element = target as { isContentEditable?: boolean; tagName?: string } | null;
@@ -51,10 +60,13 @@ export function frameKeyAction(event: {
   // From here Puck never sees the key. With Alt (⌥⌘Z, Ctrl+Alt+Z, AltGr), or on a layout where this
   // physical key types another character (Dvorak's ⌘C on the I key), nothing of ours runs either and
   // the browser keeps its default.
-  if (event.altKey || !ours) return { stop: true, preventDefault: false, send: null };
-  // Puck's own preview toggle belongs to the app's Edit button.
-  if (character === "i") return { stop: true, preventDefault: true, send: null };
-  // In editable text the browser's own text undo runs.
-  if (editable(event.composedPath?.()[0] ?? event.target)) return { stop: true, preventDefault: false, send: null };
-  return { stop: true, preventDefault: true, send: character === "y" || event.shiftKey ? "redo" : "undo" };
+  if (event.altKey || !ours) return { stop: true, preventDefault: false, send: null, shield: false };
+  const target = event.composedPath?.()[0] ?? event.target;
+  // In rich text the editor's own undo, redo and italic run; Puck still never sees the key.
+  if (inRichText(target)) return { stop: false, preventDefault: false, send: null, shield: true };
+  // In other editable text the browser's own text undo and italic run. Outside text, Puck's preview
+  // toggle (⌘I) belongs to the app's Edit button.
+  if (editable(target)) return { stop: true, preventDefault: false, send: null, shield: false };
+  if (character === "i") return { stop: true, preventDefault: true, send: null, shield: false };
+  return { stop: true, preventDefault: true, send: character === "y" || event.shiftKey ? "redo" : "undo", shield: false };
 }

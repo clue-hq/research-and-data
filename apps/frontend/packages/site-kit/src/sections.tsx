@@ -84,11 +84,19 @@ export function Button({ brand, label, href, surface, look, disabled }: {
 
 export type Href = (value: string) => string;
 
+/** The rich text field of the editor (richTextField in site-kit/editor), injected so published pages
+ * never load TipTap. Without it a rich prop keeps its plain in-place field. */
+export type RichField = (label: string) => object;
+
 export function makeSections(
   brand: BrandData,
   href: Href,
   AssetPicker?: (props: { assets: BrandData["assets"]; value: string; onChange: (v: string) => void }) => ReactNode,
+  richField?: RichField,
 ) {
+  // Our rich props (schemas.ts RICH_PROPS) edit as rich text in the editor (plan 2).
+  const richText = (label: string) => richField?.(label) ?? text(label);
+  const richArea = (label: string) => richField?.(label) ?? area(label);
   const imageField = {
     type: "custom" as const,
     label: "Image (brand assets)",
@@ -112,13 +120,13 @@ export function makeSections(
     fields: {
       surface: surfaceField,
       align: { type: "radio", label: "Alignment", options: [{ label: "Left", value: "left" }, { label: "Centre", value: "center" }] },
-      eyebrow: text("Eyebrow"), heading: text("Heading"), intro: area("Intro"),
+      eyebrow: richText("Eyebrow"), heading: richText("Heading"), intro: richArea("Intro"),
       stats: {
         type: "array", label: "Stats", max: 4,
         arrayFields: { value: { type: "text" }, label: { type: "textarea" } },
         getItemSummary: (item: { value?: string }) => item.value || "Stat",
       },
-      source: text("Source line"),
+      source: richText("Source line"),
     } as never,
     defaultProps: {
       surface: "brandSubtle", align: "left", eyebrow: "", heading: "A headline about the result", intro: "",
@@ -155,8 +163,8 @@ export function makeSections(
   }> = {
     label: "Feature split",
     fields: {
-      surface: surfaceField, eyebrow: text("Eyebrow"), heading: text("Heading"),
-      headingRole: headingRoleField, body: area("Body"), image: imageField,
+      surface: surfaceField, eyebrow: richText("Eyebrow"), heading: richText("Heading"),
+      headingRole: headingRoleField, body: richArea("Body"), image: imageField,
       imageSide: { type: "radio", label: "Image side", options: [{ label: "Left", value: "left" }, { label: "Right", value: "right" }] },
       buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
     } as never,
@@ -191,9 +199,9 @@ export function makeSections(
   }> = {
     label: "Proof card",
     fields: {
-      surface: surfaceField, kicker: text("Kicker (whose result)"), metric: text("Metric"),
-      metricLabel: text("Metric label"), heading: text("Heading"), body: area("Body"),
-      source: text("Source line"), linkLabel: text("Link label"), linkHref: { type: "text", label: "Link" },
+      surface: surfaceField, kicker: richText("Kicker (whose result)"), metric: richText("Metric"),
+      metricLabel: richText("Metric label"), heading: richText("Heading"), body: richArea("Body"),
+      source: richText("Source line"), linkLabel: text("Link label"), linkHref: { type: "text", label: "Link" },
       linkNewTab: { type: "radio", label: "Open the link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
     } as never,
     defaultProps: {
@@ -226,7 +234,7 @@ export function makeSections(
   }> = {
     label: "Call to action band",
     fields: {
-      surface: surfaceField, heading: text("Heading"), body: area("Body"),
+      surface: surfaceField, heading: richText("Heading"), body: richArea("Body"),
       buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
     } as never,
     defaultProps: { surface: "brand", heading: "The one next step", body: "", buttonLabel: "Get started", buttonHref: "", buttonLook: "" },

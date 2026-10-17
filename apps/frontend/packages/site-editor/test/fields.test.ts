@@ -17,8 +17,10 @@ test("labels read like words", () => {
 
 test("a built-in section describes its fields with the dock's kinds", () => {
   const fields = byName(fieldsForComponent(config, brand, "FeatureSplit", { id: "what" }));
-  assert.equal(fields.heading.kind, "text");
-  assert.equal(fields.body.kind, "textarea");
+  // Rich text is edited on the canvas; the dock shows it read-only (plan 2, ruling R6).
+  assert.equal(fields.heading.kind, "richtext");
+  assert.equal(fields.body.kind, "richtext");
+  assert.equal(fields.buttonLabel.kind, "text", "a button label stays plain text (plan 3)");
   assert.equal(fields.image.kind, "image");
   assert.equal(fields.buttonHref.kind, "link");
   assert.equal(fields.buttonHref.label, "Button link");
@@ -42,7 +44,7 @@ test("a cloned section shows its slots by name and kind, never the clone machine
   assert.ok(fields.length > 0);
   assert.ok(fields.every((field) => field.name.startsWith("slots.")));
   const slots = byName(fields);
-  assert.deepEqual([slots["slots.headline"].kind, slots["slots.headline"].label], ["textarea", "Headline"]);
+  assert.deepEqual([slots["slots.headline"].kind, slots["slots.headline"].label], ["richtext", "Headline"]);
   assert.equal(slots["slots.cta_href"].kind, "link");
   assert.equal(slots["slots.visible"].kind, "boolean");
   assert.deepEqual(fieldsForComponent(config, brand, "ClonedSection", { fragmentId: "frag_missing", id: "x" }), []);
@@ -153,7 +155,7 @@ test("the page config gives an agent section its fields with this brand's choice
   const fields = byName(fieldsForComponent(withSection, brand, "QuoteBlock", { id: "q" }));
   assert.equal(fields.surface.kind, "select");
   assert.deepEqual(fields.surface.options, surfaceChoices(brand).map((choice) => ({ label: choice.label, value: choice.value })));
-  assert.equal(fields.quote.kind, "textarea");
+  assert.equal(fields.quote.kind, "richtext", "a prop marked for editing in place is rich text");
 });
 
 test("the button style and surface choices come from this brand", () => {

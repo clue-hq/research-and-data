@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import { getAtPath } from "@clue/site-kit/editor-site";
+import { richText } from "@clue/site-kit/rich";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
 import {
   InspectorField,
@@ -129,6 +130,15 @@ function SiteFieldControl({
       return (
         <InspectorField label={field.label}>
           <InspectorTextArea ariaLabel={field.label} disabled={disabled} onCommitValue={(next) => onCommit(path, next)} value={textOf(value)} />
+        </InspectorField>
+      );
+    case "richtext":
+      // Rich text (plan 2, ruling R6): edited on the page, where its bold, links and styled words
+      // are; a plain box here would lose them. Shown as its words.
+      return (
+        <InspectorField label={field.label}>
+          <InspectorInput ariaLabel={field.label} readOnly value={richText(textOf(value))} />
+          <p className={styles.inspectorFieldLabel}>Edit these words on the page.</p>
         </InspectorField>
       );
     case "number":

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useGetPuck, type Config, type Fields } from "@puckeditor/core";
 import { SURFACES, fillClone, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
-import { AssetPicker, CloneEditor } from "@clue/site-kit/editor";
+import { AssetPicker, CloneEditor, richTextField } from "@clue/site-kit/editor";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import type { SiteShell } from "@clue/site-kit/site-document";
 import { describeFields, puckFieldsFromJsonSchema } from "./fields";
@@ -53,7 +53,7 @@ function useRawProps(): (id: string) => Record<string, unknown> | undefined {
 export function buildPageConfig(brand: BrandData, shell: SiteShell | null, sections: readonly LoadedSection[]): Config {
   const config = makeConfig(brand, {
     agentSections: Object.fromEntries(sections.map((section) => [section.name, section.module])),
-    editor: { AssetPicker, CloneEditor, useRawProps },
+    editor: { AssetPicker, CloneEditor, richField: richTextField, useRawProps },
     cloneHtml: fillClone,
     mode: "page",
     shell: (shell ?? undefined) as ShellData | undefined,
@@ -73,7 +73,7 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
   for (const section of sections) {
     const component = config.components[section.name];
     if (!component) continue;
-    component.fields = puckFieldsFromJsonSchema(section.propsSchema, brand);
+    component.fields = puckFieldsFromJsonSchema(section.propsSchema, brand, richTextField);
   }
   return config;
 }

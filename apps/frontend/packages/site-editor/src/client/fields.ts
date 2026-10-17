@@ -21,7 +21,7 @@ import type { FieldDescription, FieldKind, FieldOption } from "@clue/site-kit/ed
  * `trials/puck-spike/app/edit-runtime/[site]/client.tsx:41-69`).
  */
 const LONG_TEXT = /(body|intro|statement|description|quote|summary)$/i;
-const SLOT_KINDS: Record<string, FieldKind> = { href: "link", image: "image", text: "textarea", visibility: "boolean" };
+const SLOT_KINDS: Record<string, FieldKind> = { href: "link", image: "image", text: "richtext", visibility: "boolean" };
 const HIDDEN: Record<string, readonly string[]> = { ClonedSection: ["fragmentId", "slots", "replacements", "links", "newTab"] };
 
 type JsonSchema = {
@@ -51,6 +51,8 @@ function describeField(name: string, field: Field): FieldDescription[] {
       return [{ kind: IMAGE_NAME.test(name) ? "image" : LINK_NAME.test(name) ? "link" : "text", label, name }];
     case "textarea":
       return [{ kind: "textarea", label, name }];
+    case "richtext":
+      return [{ kind: "richtext", label, name }];
     case "number":
       return [{ kind: "number", label, name }];
     case "select":
@@ -106,7 +108,11 @@ function choiceOptions(choice: BrandChoice, brand: BrandData): { label: string; 
  * `.meta({ edit: "inline" })` edits in place on the canvas; any other text is edited in the side
  * panel and reaches the section as a plain string. Surfaces and styles are pick-lists from this
  * brand; links, images and `alt` are never edited in place, marked or not. */
-export function puckFieldsFromJsonSchema(schema: Record<string, unknown>, brand: BrandData): Fields {
+export function puckFieldsFromJsonSchema(
+  schema: Record<string, unknown>,
+  brand: BrandData,
+  richField?: (label: string) => object,
+): Fields {
   const fields: Record<string, Field> = {};
   const properties = (schema as JsonSchema).properties ?? {};
   for (const [key, property] of Object.entries(properties)) {
@@ -124,20 +130,19 @@ export function puckFieldsFromJsonSchema(schema: Record<string, unknown>, brand:
       fields[key] = { label, options: choiceOptions(choice, brand), type: "select" };
     } else if (type === "string" && IMAGE_NAME.test(key)) {
       fields[key] = { label, render: () => null, type: "custom" } as unknown as Field;
+    } else if (type === "string" && property.edit === EDIT_INLINE && notInlineReason(key) === null) {
+      // Marked prose is rich text, edited in place (plan 2).
+      fields[key] = (richField?.(label) as Field | undefined) ?? { contentEditable: true, label, type: LONG_TEXT.test(key) ? "textarea" : "text" };
     } else if (type === "string") {
-      fields[key] = {
-        contentEditable: property.edit === EDIT_INLINE && notInlineReason(key) === null,
-        label,
-        type: LONG_TEXT.test(key) ? "textarea" : "text",
-      };
+      fields[key] = { contentEditable: false, label, type: LONG_TEXT.test(key) ? "textarea" : "text" };
     } else if (type === "boolean") {
       fields[key] = { label, options: [{ label: "Yes", value: true }, { label: "No", value: false }], type: "radio" };
     } else if (type === "number" || type === "integer") {
       fields[key] = { label, type: "number" };
     } else if (type === "array" && property.items?.type === "object") {
-      fields[key] = { arrayFields: puckFieldsFromJsonSchema(property.items as Record<string, unknown>, brand), label, type: "array" } as Field;
+      fields[key] = { arrayFields: puckFieldsFromJsonSchema(property.items as Record<string, unknown>, brand, richField), label, type: "array" } as Field;
     } else if (type === "object") {
-      fields[key] = { label, objectFields: puckFieldsFromJsonSchema(property as Record<string, unknown>, brand), type: "object" } as Field;
+      fields[key] = { label, objectFields: puckFieldsFromJsonSchema(property as Record<string, unknown>, brand, richField), type: "object" } as Field;
     }
   }
   return fields as Fields;

@@ -332,8 +332,9 @@ def test_agent_sections_in_edit_mode_draw_as_in_preview_and_save_what_the_market
     fields = selected_fields(page, frame, '[data-probe="types"]', "choice")
     assert fields["surface"]["kind"] == "select" and fields["ctaLook"]["kind"] == "select", fields
     assert fields["ctaLook"]["options"][0] == {"label": "Standard", "value": ""}
+    # Marked prose is rich text, edited on the canvas and shown read-only in the dock (plan 2).
     assert [fields["headline"]["kind"], fields["alt"]["kind"], fields["ctaHref"]["kind"]] == [
-        "text",
+        "richtext",
         "text",
         "link",
     ]

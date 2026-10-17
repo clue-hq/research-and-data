@@ -107,15 +107,22 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
       }
     };
+    // Keys a rich text editor handles itself (keys.ts `shield`): stopped on the body on their way up,
+    // after the editor and before Puck's listener on `document`.
+    const shielded = new WeakSet<Event>();
     const onKeyDown = (event: KeyboardEvent) => {
       // Puck's own history and preview toggle never run: undo is the server's stack (ruling). See
       // keys.ts for why this listener, on window in the capture phase, runs before Puck's.
       const action = frameKeyAction(event);
       if (action.preventDefault) event.preventDefault();
       if (action.stop) event.stopImmediatePropagation();
+      if (action.shield) shielded.add(event);
       if (action.send) controller.shortcut(action.send);
     };
-    const onFocusOut = () => controller.flushChange();
+    const onKeyDownBubbling = (event: KeyboardEvent) => {
+      if (shielded.has(event)) event.stopPropagation();
+    };
+    const onFocusOut = () => controller.leftText();
     // Any typing on the canvas (a cloned text slot, a Puck inline field) is unsent work until it
     // reaches the page and the app: the app asks before a reload throws it away.
     const onInput = () => controller.noteTyping();
@@ -134,12 +141,14 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     };
     document.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKeyDown, true);
+    document.body.addEventListener("keydown", onKeyDownBubbling);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("input", onInput, true);
     document.addEventListener("dblclick", onDoubleClick, true);
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("keydown", onKeyDown, true);
+      document.body.removeEventListener("keydown", onKeyDownBubbling);
       document.removeEventListener("focusout", onFocusOut, true);
       document.removeEventListener("input", onInput, true);
       document.removeEventListener("dblclick", onDoubleClick, true);

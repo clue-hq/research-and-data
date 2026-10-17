@@ -64,7 +64,8 @@ const RectSchema = z.object({
 export const GeometrySchema = z.object({ viewport: RectSchema, document: RectSchema });
 export type SiteGeometry = z.infer<typeof GeometrySchema>;
 
-export type FieldKind = "text" | "textarea" | "select" | "image" | "link" | "number" | "boolean" | "list";
+/** "richtext": words edited on the canvas only (plan 2); the dock shows them read-only. */
+export type FieldKind = "text" | "textarea" | "richtext" | "select" | "image" | "link" | "number" | "boolean" | "list";
 export type FieldOption = { label: string; value: string | number | boolean };
 export type FieldDescription = {
   name: string;
@@ -77,7 +78,7 @@ export const FieldDescriptionSchema: z.ZodType<FieldDescription> = z.lazy(() =>
   z.object({
     name: PropPathSchema,
     label: z.string().max(200),
-    kind: z.enum(["text", "textarea", "select", "image", "link", "number", "boolean", "list"]),
+    kind: z.enum(["text", "textarea", "richtext", "select", "image", "link", "number", "boolean", "list"]),
     options: z
       .array(z.object({ label: z.string().max(200), value: z.union([z.string(), z.number(), z.boolean()]) }))
       .optional(),
