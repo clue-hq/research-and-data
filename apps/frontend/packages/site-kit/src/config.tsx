@@ -1,12 +1,22 @@
 import { Component, type ReactNode } from "react";
+import { z } from "zod";
 import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "./brand";
 import type { Clone, LinkReplacement, SlotValues, TextReplacement } from "./clone";
 
 /** A cloned section's markup from its clone and props. `fillClone` (./clone) is one; a live page
  * passes its own (live-page's liveConfig). `id` is the section's component id. */
-export type CloneHtml = (clone: Clone, values: SlotValues, replacements: TextReplacement[], links: LinkReplacement[], id: string) => string;
+export type CloneHtml = (
+  clone: Clone,
+  values: SlotValues,
+  replacements: TextReplacement[],
+  links: LinkReplacement[],
+  extras: { id: string; newTab: readonly string[] },
+) => string;
 import { CloneMarkup } from "./clone-markup";
+import { richPropPaths, richValuesAt } from "./agent-props";
+import { hasMarkup, mapRichLinks } from "./rich";
+import { rich } from "./rich-node";
 import { editsCss, editsOf, withoutEdits } from "./edits";
 import { themeCss } from "./theme";
 import { makeSections } from "./sections";
@@ -102,6 +112,34 @@ export class SectionBoundary extends Component<
 
 const noRawProps = () => () => undefined;
 
+/** An agent section's rich prop paths, read from its zod schema; none when it cannot be read. */
+function richPathsOf(module: AgentSectionModule): string[] {
+  try {
+    return richPropPaths(z.toJSONSchema(module.schema as z.ZodType) as Parameters<typeof richPropPaths>[0]);
+  } catch {
+    return [];
+  }
+}
+
+/** The props with each rich string that holds markup replaced by its drawn element (copies only what
+ * changes). */
+function withRichProps<T extends Record<string, unknown>>(props: T, paths: readonly string[], href: (value: string) => string): T {
+  let out: Record<string, unknown> = props;
+  for (const { path, value } of richValuesAt(props, paths)) {
+    if (!hasMarkup(value)) continue;
+    out = setPath(out, path.split("."), rich(value, href));
+  }
+  return out as T;
+}
+
+function setPath(target: unknown, parts: string[], value: unknown): Record<string, unknown> {
+  const [head, ...rest] = parts;
+  const copy: Record<string, unknown> | unknown[] = Array.isArray(target) ? [...target] : { ...(target as Record<string, unknown>) };
+  const current = (copy as Record<string, unknown>)[head];
+  (copy as Record<string, unknown>)[head] = rest.length ? setPath(current, rest, value) : value;
+  return copy as Record<string, unknown>;
+}
+
 // One config per brand and site. Fields and renders close over the brand's clone library and
 // assets; the editor (client) and the published route (server) both call this.
 export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
@@ -181,8 +219,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       // shows its first state and starts nothing.
       // `_edits` is the page's styling of the section, never one of its props: it is dropped here
       // too because the editor's second try below draws from the props as stored.
+      // Its rich props (the ones it marked for editing in place, plan 2): a stored string with markup
+      // reaches it as an element, drawn as the published page draws rich text; plain text stays a string.
+      const richPaths = richPathsOf(module);
       const Drawn = ({ props }: { props: SectionProps }) =>
-        module.render(withoutEdits(props) as never, { ...kit, editing: Boolean(props.puck?.isEditing) });
+        module.render(withRichProps(withoutEdits(props), richPaths, href) as never, { ...kit, editing: Boolean(props.puck?.isEditing) });
       // In Edit mode, a section that throws with Puck's in-place widgets in its props is drawn once
       // more with its stored props (S2a-2 §2.5): edited in the side panel, never an empty box. The
       // boundary is keyed by the mode, so leaving Edit mode draws the section afresh.
@@ -269,7 +310,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         // a rule that pre-filled the slots when the clone changed reset the agent's copy to the seller's wording on
         // a page switch, and the frame saved it. Nothing swaps a clone through this path: the agent
         // writes its slots itself, and the dock never changes `fragmentId`.
-        render: ({ id, fragmentId, slots, replacements, links, puck }) => {
+        render: ({ id, fragmentId, slots, replacements, links, newTab, puck }) => {
           const clone = brand.clones[fragmentId];
           if (!clone) {
             return (
@@ -282,15 +323,20 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const resolvedSlots = Object.fromEntries(
             Object.entries(slots ?? {}).map(([key, value]) => [
               key,
-              clone.slots[key]?.kind === "href" && typeof value === "string" ? href(value) : value,
+              clone.slots[key]?.kind === "href" && typeof value === "string"
+                ? href(value)
+                : clone.slots[key]?.kind === "text" && typeof value === "string" && hasMarkup(value)
+                  ? mapRichLinks(value, href)
+                  : value,
             ]),
           );
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
-          const html = fill(clone, resolvedSlots, replacements, resolvedLinks, id);
+          const extras = { id, newTab: newTab ?? [] };
+          const html = fill(clone, resolvedSlots, replacements, resolvedLinks, extras);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {
             const htmlFor = (key: string, value: string) =>
-              fill(clone, { ...resolvedSlots, [key]: value }, replacements, resolvedLinks, id);
+              fill(clone, { ...resolvedSlots, [key]: hasMarkup(value) ? mapRichLinks(value, href) : value }, replacements, resolvedLinks, extras);
             return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
           }
           return <CloneMarkup clone={clone} html={html} inlineCss={options.cloneCss !== "page"} />;

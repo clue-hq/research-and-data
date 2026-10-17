@@ -86,8 +86,8 @@ export function renderSitePages(input: {
       // Each clone is filled from the whole brand (the page data's clones carry no markup) and what
       // was drawn is recorded for the browser to draw again.
       const drawn = pageData.cloneHtml;
-      const fillAndRecord: CloneHtml = (clone, values, replacements, links, id) =>
-        (drawn[id] = fillClone(input.brand.clones[clone.id] ?? clone, values, replacements, links));
+      const fillAndRecord: CloneHtml = (clone, values, replacements, links, extras) =>
+        (drawn[extras.id] = fillClone(input.brand.clones[clone.id] ?? clone, values, replacements, links, extras));
       const pageConfig = liveConfig(pageData, input.agentSections, fillAndRecord);
       const tree = renderToString(createElement(SiteRoot, { config: pageConfig, data }));
       body = `${cloneStylesheet(input.brand, data)}<div id="clue-site">${tree}</div>`;

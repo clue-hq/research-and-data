@@ -68,7 +68,7 @@ export function liveConfig(data: LivePageData, agentSections: Record<string, Age
 
 /** The browser's clone markup: what the server drew for that section. */
 export function drawnCloneHtml(data: LivePageData): CloneHtml {
-  return (_clone, _values, _replacements, _links, id) => data.cloneHtml[id] ?? "";
+  return (_clone, _values, _replacements, _links, { id }) => data.cloneHtml[id] ?? "";
 }
 
 /** Takes the server's HTML in `container` over. `ready` resolves after the first commit (or once the

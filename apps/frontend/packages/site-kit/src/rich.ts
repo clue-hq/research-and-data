@@ -319,6 +319,12 @@ export function richHtml(html: string, href: (value: string) => string): string 
   );
 }
 
+/** The text with each link's address passed through `href` (a clone slot's links resolved under the
+ * site's base path before the clone filler draws them), still in the grammar. */
+export function mapRichLinks(html: string, href: (value: string) => string): string {
+  return serializeRich(runsOf(html).map((run) => (run.link ? { ...run, link: { ...run.link, href: href(run.link.href) } } : run)));
+}
+
 /** The addresses of the links in the text, in order (the save check sends each one to its page check). */
 export function richLinks(html: string): string[] {
   return runsOf(html).flatMap((run, i, runs) => (run.link && runs[i - 1]?.link?.href !== run.link.href ? [run.link.href] : []));

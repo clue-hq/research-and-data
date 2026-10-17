@@ -4,6 +4,7 @@
 // size a header shows them at).
 import type { BrandData } from "./brand";
 import { SHELL_SCOPE, editsCss, editsOf, type Edits } from "./edits";
+import { newTabAttrs } from "./rich-node";
 import { Button } from "./sections";
 
 export type HeaderProps = {
@@ -85,7 +86,7 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
           {header.nav?.length ? (
             <nav className="hidden items-center gap-stack-default md:flex">
               {header.nav.map((item, index) => (
-                <a key={item.href + item.label} href={href(item.href)} className="brand-navlink" data-clue-el={`nav.${index}`}>
+                <a key={item.href + item.label} href={href(item.href)} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={`nav.${index}`}>
                   {item.label}
                 </a>
               ))}
@@ -111,8 +112,8 @@ export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: 
         {logo ? <img src={logo} alt="" className="brand-logo-footer w-auto self-start" /> : null}
         <p className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>
         <div className="flex gap-stack-default font-caption text-caption">
-          {footer.privacyHref ? <a href={href(footer.privacyHref)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null}
-          {footer.termsHref ? <a href={href(footer.termsHref)} className="brand-link" data-clue-el="terms">Terms</a> : null}
+          {footer.privacyHref ? <a href={href(footer.privacyHref)} {...newTabAttrs(footer.privacyNewTab)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null}
+          {footer.termsHref ? <a href={href(footer.termsHref)} {...newTabAttrs(footer.termsNewTab)} className="brand-link" data-clue-el="terms">Terms</a> : null}
         </div>
       </div>
     </footer>

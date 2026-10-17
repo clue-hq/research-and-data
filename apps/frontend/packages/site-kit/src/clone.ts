@@ -13,6 +13,7 @@
 // another element's key and a section's `_edits` keep pointing at the same text.
 import { parse, TextNode, type HTMLElement } from "node-html-parser";
 import { ELEMENT_KEY_ATTR } from "./edits";
+import { richHtml } from "./rich";
 
 export type SlotKind = "text" | "href" | "image" | "visibility";
 export type CloneSlot = { kind: SlotKind; fallback: unknown };
@@ -42,11 +43,16 @@ export type SlotValues = Record<string, string | boolean | undefined>;
 export type TextReplacement = { find: string; replace: string };
 export type LinkReplacement = { find: string; replace: string };
 
+/** What a section adds beside its slots and replacements: the links that open in a new tab, by element
+ * key (plan 2). `id` is the section's (CloneHtml passes it; the filler itself does not need it). */
+export type CloneExtras = { id?: string; newTab?: readonly string[] };
+
 export function fillClone(
   clone: Clone,
   values: SlotValues = {},
   replacements: TextReplacement[] = [],
   links: LinkReplacement[] = [],
+  extras: CloneExtras = {},
 ): string {
   const root = parse(clone.html, { comment: false });
   keyTextElements(root, clone.slots);
@@ -63,6 +69,8 @@ export function fillClone(
     for (const element of elements) {
       applySlot(element, slot.kind, value);
       if (slot.kind === "href") linksWeSet.add(element);
+      // Links written in a text slot's rich text are this site's links, not the seller's.
+      if (slot.kind === "text") for (const anchor of element.querySelectorAll("a[href]")) linksWeSet.add(anchor);
     }
   }
 
@@ -93,6 +101,15 @@ export function fillClone(
         linksWeSet.add(anchor);
       }
     }
+  }
+
+  // Links that open in a new tab, named by element key: the key is on the link, or on the text inside it.
+  for (const key of extras.newTab ?? []) {
+    const element = root.querySelector(`[${ELEMENT_KEY_ATTR}="${key.replace(/["\\]/g, "")}"]`);
+    const anchor = element?.tagName === "A" ? element : (element?.closest("a") as HTMLElement | null);
+    if (!anchor) continue;
+    anchor.setAttribute("target", "_blank");
+    anchor.setAttribute("rel", "noopener");
   }
 
   // Every other link keeps going where it went on the seller's site: a captured "/book-a-demo"
@@ -141,7 +158,9 @@ function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): v
 
 function applySlot(element: HTMLElement, kind: SlotKind, value: string | boolean): void {
   if (kind === "text") {
-    element.set_content(new TextNode(escapeText(String(value)), element));
+    // Rich text (plan 2): the grammar's markup, drawn as the published page draws it. A slot's links
+    // were resolved under the site's base path by the caller (config's mapRichLinks).
+    element.set_content(richHtml(String(value), (href) => href));
   } else if (kind === "href") {
     element.setAttribute("href", String(value));
   } else if (kind === "image") {
