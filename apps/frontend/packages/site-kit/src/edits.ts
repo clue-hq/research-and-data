@@ -209,6 +209,27 @@ export function fontSizeCss(brand: BrandData, px: number): string {
   return `calc(var(--brand-text-${role}) * ${px} / ${size})`;
 }
 
+/** How far the brand's headline and body sizes are scaled where an element is drawn now, given the
+ * drawn values of their variables (`read`), with the desktop title size that decides which one a
+ * hand-set size follows (fontSizeCss); null on desktop and for a kit that did not measure its
+ * steps. The editor's frame reports it so the panel shows and takes sizes as drawn in a narrowed
+ * preview (responsive brand type, review finding 3). */
+export function sizeScaleFrom(
+  brand: BrandData,
+  read: (role: "headline" | "body") => number,
+): { headline: number; body: number; title: number } | null {
+  const title = typographyOf(brand, "type.title")?.size;
+  if (!typeSteps(brand) || !title) return null;
+  const ratio = (role: "headline" | "body") => {
+    const desktop = typographyOf(brand, `type.${role}`)?.size;
+    const now = read(role);
+    return desktop && now > 0 ? Math.round((now / desktop) * 10_000) / 10_000 : 1;
+  };
+  const headline = ratio("headline");
+  const body = ratio("body");
+  return headline === 1 && body === 1 ? null : { body, headline, title };
+}
+
 /** One element's override as CSS declarations, in the schema's order. */
 function declarations(brand: BrandData, override: StyleOverride): string[] {
   const out: [string, string | undefined][] = [

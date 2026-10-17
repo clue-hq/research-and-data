@@ -259,3 +259,19 @@ test("a drawn box stays within what the message carries: huge and percentage cor
   assert.deepEqual(computedBox(c, view, cssColorToHex).radius, [100000, 100000, 100000, 100000]);
   assert.ok(ComputedBoxSchema.safeParse(computedBox(c, view, cssColorToHex)).success);
 });
+
+// Responsive brand type review 3: the frame reports how far the brand's headline and body sizes are
+// scaled where the selected element is drawn now.
+import { sizeScaleAt } from "../src/client/dom";
+import { garner } from "../../site-kit/test/fixtures/garner";
+
+test("the size scale is read from the brand's variables at the element; none on desktop or unmeasured kits", () => {
+  const brand = garner(); // headline 87, title 56, body 16
+  const roles = Object.fromEntries(["display", "headline", "title", "subtitle", "body", "body.small", "caption", "eyebrow", "label", "cta", "stat", "legal"].map((r) => [`type.${r}`, []]));
+  const measuredKit = { ...brand, kit: { ...brand.kit, responsive_type: { roles } } };
+  const view = (headline: string, body: string) => ({ getComputedStyle: () => ({ getPropertyValue: (name: string) => (name === "--brand-text-headline" ? headline : name === "--brand-text-body" ? body : "") }) }) as unknown as Window;
+  const el = new JSDOM("<p></p>").window.document.querySelector("p")!;
+  assert.deepEqual(sizeScaleAt(el, measuredKit, view("43.5px", "14.4px")), { headline: 0.5, body: 0.9, title: 56 });
+  assert.equal(sizeScaleAt(el, measuredKit, view("87px", "16px")), null, "desktop");
+  assert.equal(sizeScaleAt(el, brand, view("43.5px", "14.4px")), null, "a kit that did not measure its steps");
+});

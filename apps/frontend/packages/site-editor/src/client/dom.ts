@@ -1,5 +1,6 @@
-import { ELEMENT_KEY_ATTR, ElementKeySchema } from "@clue/site-kit/edits";
+import { ELEMENT_KEY_ATTR, ElementKeySchema, sizeScaleFrom } from "@clue/site-kit/edits";
 import type { ComputedBox, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
+import type { BrandData } from "@clue/site-kit";
 
 export type ClickAction =
   | { kind: "navigate"; href: string }
@@ -356,4 +357,11 @@ function alphaOf(color: string): number {
   if (parts.length < 4) return 1;
   const alpha = parts[3].endsWith("%") ? Number.parseFloat(parts[3]) / 100 : Number.parseFloat(parts[3]);
   return Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
+}
+
+/** Responsive brand type (review finding 3): the brand's size scale where `element` is drawn now,
+ * read from its inherited `--brand-text-*` (site-kit's sizeScaleFrom decides the rest). */
+export function sizeScaleAt(element: Element, brand: BrandData, view: Pick<Window, "getComputedStyle">): ComputedTypography["sizeScale"] | null {
+  const style = view.getComputedStyle(element);
+  return sizeScaleFrom(brand, (role) => Number.parseFloat(style.getPropertyValue(`--brand-text-${role}`)));
 }

@@ -26,7 +26,7 @@ import {
   rectOf,
   selectionOffsets,
   textElementAround,
-  wordCount,
+  wordCount, sizeScaleAt,
 } from "./dom";
 import { fieldsForComponent } from "./fields";
 import { FrameController } from "./frame-controller";
@@ -175,6 +175,20 @@ function describeButton(controller: FrameController, target: string, componentId
   };
 }
 
+/** Responsive brand type (review finding 3): every typography in the selection carries the brand's
+ * size scale where the element is drawn now, so the panel shows and takes sizes as drawn in a
+ * narrowed preview. Nothing is added on desktop or for a kit that did not measure its steps. */
+function withSizeScale(selection: ElementSelection, element: Element, brand: BrandData | null): ElementSelection {
+  const sizeScale = brand ? sizeScaleAt(element, brand, window) : null;
+  if (!sizeScale) return selection;
+  return {
+    ...selection,
+    computed: { ...selection.computed, sizeScale },
+    ...(selection.words ? { words: { ...selection.words, computed: { ...selection.words.computed, sizeScale } } } : {}),
+    ...(selection.labelElement ? { labelElement: { ...selection.labelElement, computed: { ...selection.labelElement.computed, sizeScale } } } : {}),
+  };
+}
+
 /** The words highlighted inside the element now, or null. */
 function wordsIn(element: Element): ElementSelection["words"] {
   const selection = document.getSelection();
@@ -226,7 +240,13 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (!scope) return { element: null, elements: [] };
       const found = key ? findKeyedElement(scope, key) : null;
       return {
-        element: found ? (isButtonElement(found, window) ? describeButton(controller, target, componentId, found) : describeElement(controller, target, componentId, found)) : null,
+        element: found
+          ? withSizeScale(
+              isButtonElement(found, window) ? describeButton(controller, target, componentId, found) : describeElement(controller, target, componentId, found),
+              found,
+              controller.getState().brand,
+            )
+          : null,
         elements: inspectableElementsIn(scope, window).map(({ element, kind }) => elementSummary(element, kind)),
       };
     });

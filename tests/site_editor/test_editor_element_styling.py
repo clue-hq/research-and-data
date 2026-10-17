@@ -223,7 +223,13 @@ def test_a_hand_set_size_shrinks_on_a_phone_with_the_brand(app: Any, browser_pag
     heading = '[data-puck-component="proof"] [data-clue-el="heading"]'
     size = lambda: float(computed(frame, heading, "fontSize").removesuffix("px"))  # noqa: E731
     assert frame.evaluate("() => innerWidth") > 991
-    assert abs(size() - 60) < 0.5, size()
+    assert abs(size() - 60) < 0.05, size()
     page.evaluate("() => { document.querySelector('iframe').style.width = '390px'; }")
     frame.wait_for_function("() => innerWidth <= 767", timeout=10000)
-    assert abs(size() - 60 * 44 / 87) < 0.5, size()
+    assert abs(size() - 60 * 44 / 87) < 0.05, size()
+    # Review finding 3: selected here, the heading reports the brand's scale at this width, so the
+    # panel shows "30.3" (not the stored 60) and a typed size converts back to desktop.
+    mark = len(received(page))
+    page.evaluate("() => window.__send('select', { route: '/', componentId: 'proof', elementKey: 'heading' })")
+    scale = wait_selected(page, mark, "heading", "proof")["element"]["computed"]["sizeScale"]
+    assert abs(scale["headline"] - 44 / 87) < 0.001 and scale["body"] == 1 and scale["title"] == 56, scale

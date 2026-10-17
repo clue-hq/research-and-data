@@ -85,7 +85,7 @@ export function textPanelValues(
     colorToken: color && "token" in color ? color.token : null,
     opacity: `${color && "hex" in color ? color.opacity : 100}%`,
     fontFamily: override?.fontFamily ?? computed.fontFamily,
-    fontSize: String(override?.fontSize ?? Math.round(computed.fontSize * 10) / 10),
+    fontSize: String(override?.fontSize !== undefined ? drawnSize(override.fontSize, computed) : Math.round(computed.fontSize * 10) / 10),
     fontWeight: weightLabel(fontWeight),
     bold: fontWeight >= 700 || (boldWeight > 400 && fontWeight >= boldWeight),
     italic: override?.italic ?? computed.italic,
@@ -97,6 +97,26 @@ export function textPanelValues(
 /** The element's whole new override after one change, or null when the input cannot be a value
  * (a size outside 8–200 or not a number, a malformed hex, a weight the family lacks): refused, never
  * clamped or guessed. */
+const tenth = (value: number) => Math.round(value * 10) / 10;
+
+/** A stored (desktop) size as drawn at the canvas's width now: in a kit that measured its type steps,
+ * the size follows the headline's steps at or above the title size, else the body's (site-kit's
+ * fontSizeCss). On desktop, or in an unmeasured kit, the stored size itself. */
+function drawnSize(stored: number, computed: ComputedTypography): number {
+  const scale = computed.sizeScale;
+  if (!scale) return stored;
+  return tenth(stored * (stored >= scale.title ? scale.headline : scale.body));
+}
+
+/** A size typed in a narrowed preview, as the desktop size that draws it here (review finding 3:
+ * typing a bigger number must make the text bigger in the view the marketer is looking at). */
+function desktopSize(typed: number, computed: ComputedTypography): number {
+  const scale = computed.sizeScale;
+  if (!scale) return typed;
+  const asHeadline = typed / scale.headline;
+  return tenth(asHeadline >= scale.title ? asHeadline : typed / scale.body);
+}
+
 export function textPanelPatch(
   override: StyleOverride | null,
   change: TextPanelChange,
@@ -107,7 +127,7 @@ export function textPanelPatch(
   const family = base.fontFamily ?? computed.fontFamily;
   // Choosing what the text already shows changes nothing: the override comes back as it was, so no
   // save and no undo step is made for a click that changes nothing on the page.
-  const shownSize = base.fontSize ?? Math.round(computed.fontSize * 10) / 10;
+  const shownSize = base.fontSize !== undefined ? drawnSize(base.fontSize, computed) : Math.round(computed.fontSize * 10) / 10;
   const unchanged =
     (change.kind === "fontFamily" && change.value === family) ||
     (change.kind === "fontWeight" && Number.parseInt(change.value, 10) === (base.fontWeight ?? computed.fontWeight)) ||
@@ -139,7 +159,9 @@ export function textPanelPatch(
     case "fontSize": {
       const text = change.value.trim().replace(/px$/i, "").trim();
       if (!/^\d+(\.\d+)?$/.test(text)) return null;
-      const size = Number(text);
+      const typed = Number(text);
+      if (typed < FONT_SIZE_RANGE.min || typed > FONT_SIZE_RANGE.max) return null;
+      const size = desktopSize(typed, computed);
       if (size < FONT_SIZE_RANGE.min || size > FONT_SIZE_RANGE.max) return null;
       return { ...base, fontSize: size };
     }

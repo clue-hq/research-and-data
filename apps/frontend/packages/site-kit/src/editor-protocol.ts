@@ -97,6 +97,10 @@ export const ComputedTypographySchema = z.object({
   italic: z.boolean(),
   underline: z.boolean(),
   textAlign: z.enum(["left", "center", "right", "justify"]),
+  /** Responsive brand type: in a kit that measured its type steps, how far the headline's and the
+   * body's sizes are scaled at the width the canvas is drawn at (1 on desktop; absent there), and
+   * the desktop title size that decides which of the two a hand-set size follows. */
+  sizeScale: z.object({ headline: z.number().positive().max(10), body: z.number().positive().max(10), title: z.number().positive().max(1_000) }).optional(),
 });
 export type ComputedTypography = z.infer<typeof ComputedTypographySchema>;
 /** One element of the selected section the inspector can select (plan 1: text only). */

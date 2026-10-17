@@ -86,3 +86,14 @@ test("bold is the font's boldest weight when it has no 700: B shows pressed at i
   assert.equal(boldAvailable(capped, "Flat"), false);
   assert.equal(boldAvailable(capped, "Unknown family"), true, "a family we do not know offers every weight");
 });
+
+// Responsive brand type review 3: in a narrowed preview, sizes are shown and typed as drawn in that
+// view and stored as their desktop size (the steps then draw them back at this width).
+test("in a narrowed preview a hand-set size is shown as drawn and a typed size is stored for desktop", () => {
+  const narrow = { ...computed, fontSize: 30, sizeScale: { headline: 0.5, body: 0.9, title: 56 } };
+  assert.equal(textPanelValues({ fontSize: 60 }, narrow, []).fontSize, "30", "60 on desktop draws 30 here");
+  assert.deepEqual(textPanelPatch({ fontSize: 60 }, { kind: "fontSize", value: "35" }, narrow, []), { fontSize: 70 }, "35 here is 70 on desktop");
+  assert.deepEqual(textPanelPatch({ fontSize: 60 }, { kind: "fontSize", value: "30" }, narrow, []), { fontSize: 60 }, "the size shown changes nothing");
+  assert.deepEqual(textPanelPatch(null, { kind: "fontSize", value: "18" }, { ...narrow, fontSize: 14.4 }, []), { fontSize: 20 }, "body sizes scale by the body's step");
+  assert.deepEqual(textPanelPatch(null, { kind: "fontSize", value: "48" }, { ...computed }, []), { fontSize: 48 }, "on desktop nothing converts");
+});
