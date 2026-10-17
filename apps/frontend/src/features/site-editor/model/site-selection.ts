@@ -55,6 +55,7 @@ export interface SiteInspectorBinding {
    * retyped (one save), and a style change on the highlighted words (one save; a note when refused). */
   labelOverride: StyleOverride | null;
   labelWordsOverride: StyleOverride | null;
+  labelText: string | null;
   onLabelTextCommit: (text: string) => void;
   onLabelWordStyleCommit: (apply: (old: StyleOverride) => StyleOverride) => string | null;
   /** Plan 2: the Link row for the selected text, its site's pages, and one link change (one save);
@@ -116,6 +117,21 @@ export function labelSelectionOf<T extends WordsSelection>(selection: T | null):
 /** A button's label's own look in the site now (its `_edits` entry), or null. */
 export function labelOverrideOf(site: SiteDocument | null, selection: WordsSelection | null): StyleOverride | null {
   return elementOverrideOf(site, labelSelectionOf(selection));
+}
+
+/** A button's words as the Text row shows them, read from where they are written; null when the
+ * marketer cannot change them (the row then says why). */
+export function labelTextOf(site: SiteDocument | null, selection: WordsSelection | null): string | null {
+  const element = selection?.element;
+  const source = element?.labelSource;
+  const props = site && selection && element ? componentProps(site, selection.target, selection.componentId) : null;
+  if (!element || !source || source.kind === "fixed" || !props) return null;
+  if (source.kind === "replacement") {
+    const entry = ((props.replacements as { find?: string; replace?: string }[] | undefined) ?? []).find((candidate) => candidate.find === source.find);
+    return entry?.replace ?? source.find;
+  }
+  const stored = getAtPath(props, source.kind === "prop" ? source.prop : `slots.${source.slot}`);
+  return richText(typeof stored === "string" ? stored : (element.labelElement?.rich?.fallback ?? ""));
 }
 
 /** A button's words retyped in the Text row → the edited site and the section's whole new props,

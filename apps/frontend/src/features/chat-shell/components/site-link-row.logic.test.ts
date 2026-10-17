@@ -22,7 +22,7 @@ const site = SiteDocumentSchema.parse({
   shell: { header: { id: "header", preparedFor: "SCSD", nav: [{ label: "Analysis", href: "/analysis" }] }, footer: { id: "footer", legal: "©" } },
   agent_sections: {},
 });
-type Sel = Parameters<typeof linkRowState>[1];
+type Sel = NonNullable<Parameters<typeof linkRowState>[1]>;
 const el = (over: object) => ({ key: "heading", kind: "text" as const, label: "x", computed: TYPO, rich: null, words: null, link: null, ...over });
 const words = (start: number, end: number, text: string) => ({ start, end, count: 1, text, computed: TYPO });
 const sel = (componentId: string, element: object, target = "/", componentType = "ProofCard"): Sel => ({ componentId, componentType, target, element: el(element) });

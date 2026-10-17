@@ -57,6 +57,7 @@ import {
   InspectorSelect,
   InspectorTokenControl,
   RadiusControls,
+  SegmentedControl,
   TextAlignment,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
@@ -448,33 +449,6 @@ function Section({
   return <InspectorSection compact={id === "link"} label={label} onOpenChange={() => toggle(id)} open={state.openSections[id]}>{children}</InspectorSection>;
 }
 
-function SegmentedControl<Value extends string>({
-  ariaLabel,
-  onChange,
-  options,
-  value,
-}: {
-  ariaLabel: string;
-  onChange: (value: Value) => void;
-  options: readonly { label: ReactNode; value: Value }[];
-  value: Value;
-}) {
-  return (
-    <div aria-label={ariaLabel} className={styles.inspectorSegmentedControl} role="group">
-      {options.map((option) => (
-        <button
-          aria-pressed={option.value === value}
-          className={option.value === value ? styles.inspectorSegmentActive : ""}
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          type="button"
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function LinkSection({
   ariaLabel,

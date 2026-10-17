@@ -46,18 +46,23 @@ function refusalNote(change: TextPanelChange): string {
 /**
  * The site element inspector's text panel (plan 1, spec §2 mockup 1): the selected text element's
  * Typography — colour (brand or custom), font, size, weight, bold / italic / underline, alignment —
- * applied to the whole text box, or (plan 2) to the words highlighted in it. Every change is the element's whole new override, written by the
+ * applied to the whole text box, or (plan 2) to the words highlighted in it; for a button (plan 3) the
+ * same rows style its words, under a Text row that retypes them. Every change is the element's whole new override, written by the
  * session as one save. While the agent-run lock holds, everything is disabled.
  */
 export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
   const element = binding.element!;
   const [open, setOpen] = useState(true);
   const [note, setNote] = useState<string | null>(null);
+  // Plan 3: a selected button's typography is its label's (the words inside the box); its Text row
+  // retypes those words.
+  const label = element.kind === "button" ? (element.labelElement ?? null) : null;
   // Plan 2: with words highlighted in rich text, every row but Alignment acts on those words (their
   // styled span); otherwise on the whole text box.
-  const words = element.words && element.rich ? element.words : null;
-  const override = words ? binding.wordsOverride : binding.elementOverride;
-  const computed = words ? words.computed : element.computed;
+  const words = element.words && (label ? label.rich : element.rich) ? element.words : null;
+  const override = label ? (words ? binding.labelWordsOverride : binding.labelOverride) : words ? binding.wordsOverride : binding.elementOverride;
+  const computed = words ? words.computed : (label?.computed ?? element.computed);
+  const styleWords = label ? binding.onLabelWordStyleCommit : binding.onWordStyleCommit;
   const values = textPanelValues(override, computed, binding.palette, binding.fonts);
   const canBold = boldAvailable(binding.fonts, values.fontFamily);
   // The latest override as this panel last wrote it: a drag's later moves build on its earlier ones.
@@ -78,13 +83,13 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
     if (JSON.stringify(next) === JSON.stringify(latest.current ?? {})) return;
     if (words) {
       // Each stretch of the words keeps its own look and takes this one change.
-      const refused = binding.onWordStyleCommit((old) => textPanelPatch(old, change, computed, binding.fonts) ?? old);
+      const refused = styleWords((old) => textPanelPatch(old, change, computed, binding.fonts) ?? old);
       if (refused) setNote(refused);
       else latest.current = next;
       return;
     }
     latest.current = next;
-    binding.onStyleCommit(element.key, next);
+    binding.onStyleCommit(label?.key ?? element.key, next);
   };
   const flushColor = () => {
     const pending = pendingColor.current;
@@ -116,6 +121,25 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
           <p className={styles.inspectorStatusNote} role="status">
             {binding.wordsUnavailable}
           </p>
+        ) : null}
+        {label ? (
+          <InspectorField label="Text">
+            {binding.labelText === null ? (
+              <p className={styles.inspectorStatusNote} role="status">
+                {element.labelSource?.kind === "fixed" ? element.labelSource.reason : "These words cannot be changed here."}
+              </p>
+            ) : (
+              <InspectorInput
+                ariaLabel="Button text"
+                disabled={binding.disabled}
+                onCommitValue={(value) => {
+                  if (value.trim()) binding.onLabelTextCommit(value);
+                  else setNote("A button needs words.");
+                }}
+                value={binding.labelText}
+              />
+            )}
+          </InspectorField>
         ) : null}
         <InspectorField label="Color">
           <ColorControl
@@ -168,15 +192,17 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
             underline={values.underline}
           />
         </InspectorField>
-        <InspectorField label="Alignment">
-          <TextAlignment
-            disabled={binding.disabled || words !== null}
-            horizontal={values.textAlign}
-            onHorizontalChange={(value) => commit({ kind: "textAlign", value })}
-            options="four"
-          />
-        </InspectorField>
-        {words ? (
+        {label ? null : (
+          <InspectorField label="Alignment">
+            <TextAlignment
+              disabled={binding.disabled || words !== null}
+              horizontal={values.textAlign}
+              onHorizontalChange={(value) => commit({ kind: "textAlign", value })}
+              options="four"
+            />
+          </InspectorField>
+        )}
+        {words && !label ? (
           <p className={styles.inspectorStatusNote} role="status">
             Alignment applies to the whole text box.
           </p>

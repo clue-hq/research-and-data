@@ -1951,3 +1951,35 @@ export function TextStyleToggles({
     </div>
   );
 }
+
+/** A row of choices, one pressed (shared by the web inspector and the site inspector). */
+export function SegmentedControl<Value extends string>({
+  ariaLabel,
+  disabled = false,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  disabled?: boolean;
+  onChange: (value: Value) => void;
+  options: readonly { label: ReactNode; value: Value }[];
+  value: Value;
+}) {
+  return (
+    <div aria-label={ariaLabel} className={styles.inspectorSegmentedControl} role="group">
+      {options.map((option) => (
+        <button
+          aria-pressed={option.value === value}
+          className={option.value === value ? styles.inspectorSegmentActive : ""}
+          disabled={disabled}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}

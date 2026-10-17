@@ -147,6 +147,7 @@ test("the words' own look is not read from stale offsets (review finding 1)", ()
 });
 
 // Plan 3: a selected button — its words' selection, its label's look, and its words.
+import type { LabelSource } from "@clue/site-kit/editor-protocol";
 import { commitLabelText, labelOverrideOf, labelSelectionOf } from "./site-selection";
 
 const buttonSite = SiteDocumentSchema.parse({
@@ -159,7 +160,7 @@ const buttonSite = SiteDocumentSchema.parse({
     ] },
   },
 });
-const buttonSelection = (source: object, extra: object = {}) => ({
+const buttonSelection = (source: LabelSource, extra: object = {}) => ({
   componentId: "cta",
   componentType: "CtaBand",
   target: "/",
@@ -199,4 +200,27 @@ test("retyping a button's words keeps the look of the words that stayed; the sou
   assert.deepEqual(viaReplacement.props.replacements, [{ find: "Book a demo", replace: "Talk to us" }]);
   assert.equal(commitLabelText(buttonSite, buttonSelection({ kind: "fixed", reason: "ask the agent" }), "x"), null);
   assert.equal(commitLabelText(buttonSite, buttonSelection({ kind: "prop", prop: "buttonLabel" }), "Request the analysis now"), null, "the same words");
+});
+
+import { labelTextOf } from "./site-selection";
+
+test("the Text row shows a button's words as stored, wherever they live", () => {
+  assert.equal(labelTextOf(buttonSite, buttonSelection({ kind: "prop", prop: "buttonLabel" })), "Request the analysis now");
+  const slot = { ...buttonSelection({ kind: "slot", slot: "cta_label" }), componentId: "hero", componentType: "ClonedSection" };
+  slot.element.labelElement = { key: "0.1", computed: TYPO, rich: { prop: "slots.cta_label", fallback: "Book <strong>a demo</strong>" } } as never;
+  assert.equal(labelTextOf(buttonSite, slot), "Book a demo", "a slot never set shows its captured words");
+  const replaced = { ...buttonSelection({ kind: "replacement", find: "Book a demo" }), componentId: "hero", componentType: "ClonedSection" };
+  assert.equal(labelTextOf(buttonSite, replaced), "Book a demo", "no replacement yet: the captured words");
+  assert.equal(labelTextOf(buttonSite, buttonSelection({ kind: "fixed", reason: "ask the agent" })), null);
+  assert.equal(labelTextOf(buttonSite, null), null);
+});
+
+import { wordsUnavailableReason } from "./site-selection";
+
+test("words highlighted in a button are judged by its label's rich text, not the box's", () => {
+  const words = { words: { start: 0, end: 7, count: 1, text: "Request", computed: TYPO } };
+  const header = { ...buttonSelection({ kind: "prop", prop: "header.ctaLabel" }, words), target: "shell", componentType: "SiteHeader" };
+  header.element.labelElement = { key: "cta.label", computed: TYPO, rich: { prop: "header.ctaLabel" } } as never;
+  assert.notEqual(wordsUnavailableReason(header), null, "the box itself holds no rich text");
+  assert.equal(wordsUnavailableReason(labelSelectionOf(header) ?? header), null);
 });

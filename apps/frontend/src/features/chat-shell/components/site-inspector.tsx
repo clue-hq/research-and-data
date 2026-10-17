@@ -14,6 +14,7 @@ import {
   InspectorSelect,
   InspectorTextArea,
 } from "./inspector-primitives";
+import { SiteButtonPanel } from "./site-button-panel";
 import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
 import styles from "./chat-shell.module.css";
@@ -55,8 +56,12 @@ export function SiteInspector({
           // Site element inspector: a selected text element is styled here; the section's content
           // fields come back when the section itself is selected. Keyed by the selection, so each
           // element starts with fresh drafts.
+          // A button (plan 3) adds its box's Fill, Stroke and Layout between its words and its link.
           <>
             <SiteTextPanel binding={binding} key={binding.selectionKey} />
+            {binding.element.kind === "button" && binding.element.box ? (
+              <SiteButtonPanel binding={binding} key={`box:${binding.selectionKey}`} />
+            ) : null}
             <SiteLinkRow binding={binding} key={`link:${binding.selectionKey}`} />
           </>
         ) : binding.fields ? (
