@@ -8,7 +8,7 @@ import type { ComponentConfig } from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { BrandData } from "./brand";
 import { buttonLookOptions, lookIcon, lookNamed } from "./looks";
-import { newTabAttrs, rich } from "./rich-node";
+import { newTabAttrs, rich, withoutLinks } from "./rich-node";
 import { HEADING_ROLES } from "./schemas";
 import { surfaceChoices } from "./surfaces";
 
@@ -79,7 +79,7 @@ export function Button({ brand, label, href, surface, look, disabled, el, newTab
       data-clue-el={el}
     >
       {icon?.position === "start" ? mark : null}
-      <span data-clue-el={el ? `${el}.label` : undefined}>{label}</span>
+      <span data-clue-el={el ? `${el}.label` : undefined}>{withoutLinks(label)}</span>
       {icon?.position === "end" ? mark : null}
     </a>
   );

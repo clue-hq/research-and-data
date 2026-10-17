@@ -116,3 +116,12 @@ test("a link holding an image, or more than one text, is no button: its texts ke
   const html = fillClone(clone('<div><a class="card" href="/c"><img src="/x.png"><span>Card title</span><span>Desc</span></a><a class="btn" href="/d"><span>Book</span><span>now</span></a></div>'));
   assert.deepEqual(keys(html), ["0.0.1", "0.0.2", "0.1.0", "0.1.1"], "neither link is keyed as a box");
 });
+
+import { rich } from "../src/rich-node";
+
+test("a button's words never draw a link inside the button, even from an agent's rich prop (review 1)", () => {
+  const kit = makeKit((value) => value, garner());
+  const html = draw(kit.Button({ label: rich('Book <a href="/analysis">now</a> <strong>today</strong>', (value) => value), href: "/book", surface: "page", el: "cta" }));
+  assert.equal((html.match(/<a\b/g) ?? []).length, 1, html);
+  assert.match(html, /Book now <strong>today<\/strong>/);
+});

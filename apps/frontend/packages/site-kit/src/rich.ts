@@ -330,8 +330,10 @@ export function serializeRich(runs: Run[]): string {
 /** The text as the published page draws it: the outer paragraph dropped, a new-tab link opening in a
  * new tab, this site's own pages through `href` (its base path). Whatever is outside the grammar is
  * dropped with its words kept, so raw markup never reaches the page. */
-export function richHtml(html: string, href: (value: string) => string): string {
-  return write(runsOf(html), (link) =>
+export function richHtml(html: string, href: (value: string) => string, options: RichOptions = {}): string {
+  // A button's words (links: false) never draw a link, whatever the stored text holds.
+  const runs = options.links === false ? runsOf(html).map((run) => ({ ...run, link: undefined })) : runsOf(html);
+  return write(runs, (link) =>
     `<a href="${escapeAttr(href(link.href))}"${link.newTab ? ' target="_blank" rel="noopener"' : ""}>`,
   );
 }
