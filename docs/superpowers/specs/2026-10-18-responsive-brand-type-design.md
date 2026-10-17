@@ -1,6 +1,6 @@
 # Responsive brand type — design
 
-Status: written 2026-10-18; the founder decided §3.4. Work happens in the trenton session, branch
+Status: written 2026-10-18; the founder decided §3.4. Built 2026-10-18 (plan `docs/superpowers/plans/2026-10-18-responsive-brand-type.md`), end-of-plan review fixed; live check on Garner and Conduit awaiting the founder's yes; Clue has no kit in the lane. Work happens in the trenton session, branch
 `site/publish-durability` (founder: no new worktree).
 
 ## 1. Why
