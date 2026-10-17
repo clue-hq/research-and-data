@@ -135,7 +135,8 @@ export const ElementSelectionSchema = ElementSummarySchema.extend({
   computed: ComputedTypographySchema,
   rich: RichSourceSchema.nullable().optional(),
   words: WordsSchema.nullable().optional(),
-  link: z.object({ source: LinkSourceSchema }).nullable().optional(),
+  /** The element's own link: where it is written, and the address it goes to on the canvas now. */
+  link: z.object({ source: LinkSourceSchema, href: z.string().max(2048).optional() }).nullable().optional(),
 });
 export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
 

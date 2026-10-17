@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { brandColorChoices, brandFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
+import { linkPatch, linkRowState, sitePages, type LinkChange } from "@/features/chat-shell/components/site-link-row.logic";
 import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
@@ -391,6 +392,23 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // Plan 2: one link change, the same path: the section's new props, one set_props, one save.
+  const commitLink = useCallback(
+    (change: LinkChange): string | null => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return null;
+      const edit = linkPatch(current.site, activeSelection, change);
+      if (!edit) return null;
+      if ("refused" in edit) return edit.refused;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return null;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: link ${activeSelection.element?.key ?? "text"}`);
+      return null;
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
   const palette = useMemo(
     () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
@@ -587,6 +605,9 @@ export function useSiteEditingSession({
     wordsOverride: wordsOverride(currentSite?.site ?? null, activeSelection),
     onWordStyleCommit: commitWords,
     wordsUnavailable: wordsUnavailableReason(activeSelection),
+    linkState: linkRowState(currentSite?.site ?? null, activeSelection),
+    pages: currentSite ? sitePages(currentSite.site) : [],
+    onLinkCommit: commitLink,
   };
 
   // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.

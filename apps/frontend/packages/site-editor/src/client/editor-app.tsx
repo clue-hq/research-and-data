@@ -102,7 +102,9 @@ function describeElement(controller: FrameController, target: string, componentI
       }
     }
   }
-  return { ...described, link: link ? { source: link } : null, rich, words: wordsIn(element) };
+  const anchor = element.tagName === "A" ? element : element.closest("a");
+  const shown = anchor?.getAttribute("href") ?? undefined;
+  return { ...described, link: link ? { source: link, ...(shown ? { href: shown.slice(0, 2048) } : {}) } : null, rich, words: wordsIn(element) };
 }
 
 /** The words highlighted inside the element now, or null. */

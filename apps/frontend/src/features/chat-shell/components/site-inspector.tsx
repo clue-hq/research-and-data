@@ -14,6 +14,7 @@ import {
   InspectorSelect,
   InspectorTextArea,
 } from "./inspector-primitives";
+import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
 import styles from "./chat-shell.module.css";
 
@@ -54,7 +55,10 @@ export function SiteInspector({
           // Site element inspector: a selected text element is styled here; the section's content
           // fields come back when the section itself is selected. Keyed by the selection, so each
           // element starts with fresh drafts.
-          <SiteTextPanel binding={binding} key={binding.selectionKey} />
+          <>
+            <SiteTextPanel binding={binding} key={binding.selectionKey} />
+            <SiteLinkRow binding={binding} key={`link:${binding.selectionKey}`} />
+          </>
         ) : binding.fields ? (
           // DESIGN REVIEW (DR4): the section label for a selected site section.
           <InspectorSection label="Content" onOpenChange={setContentOpen} open={contentOpen}>

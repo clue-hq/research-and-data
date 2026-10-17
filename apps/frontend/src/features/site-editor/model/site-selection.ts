@@ -3,6 +3,7 @@ import type { ElementSelection, ElementSummary, FieldDescription } from "@clue/s
 import { canonicalJson, componentProps, getAtPath, pageFor, setAtPath, withComponentProps } from "@clue/site-kit/editor-site";
 import { richText, styleAt, styleWords } from "@clue/site-kit/rich";
 import type { SiteDocument } from "@clue/site-kit/site-document";
+import type { LinkChange, LinkRowState } from "@/features/chat-shell/components/site-link-row.logic";
 import type { SiteLayerRow } from "./site-layers";
 
 /** What the frame said is selected (Contract 6 `selected`), stamped with its document. The values
@@ -50,6 +51,11 @@ export interface SiteInspectorBinding {
   /** Why highlighted words cannot be styled on their own here (the panel then styles the whole
    * text), or null. */
   wordsUnavailable: string | null;
+  /** Plan 2: the Link row for the selected text, its site's pages, and one link change (one save);
+   * returns a note when the change cannot be made. */
+  linkState: LinkRowState;
+  pages: readonly { route: string; title: string }[];
+  onLinkCommit: (change: LinkChange) => string | null;
 }
 
 /** One committed field value → the edited site and the component's whole new props. */
