@@ -15,6 +15,7 @@ import type {
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import {
   commitInspectorNumber,
+  type HorizontalAlignment,
   type InspectorBackgroundFill,
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
@@ -1848,5 +1849,102 @@ export function InspectorLayerRow({
         {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
       </span>
     </button>
+  );
+}
+
+/**
+ * Text alignment toggles, shared by the ad, web and site panels (it was two private copies). The ad
+ * panel offers four horizontal options and the vertical group; the web panel three, with its vertical
+ * group hidden; the site panel four and no vertical group (a web text box hugs its text). `vertical`
+ * absent means no vertical group.
+ */
+export function TextAlignment({
+  disabled = false,
+  horizontal,
+  onHorizontalChange,
+  onVerticalChange,
+  options,
+  vertical,
+}: {
+  /** G-H (AD4.R-10): these toggles write an alignment, so they go dark with the rest of the panel. */
+  disabled?: boolean;
+  horizontal: HorizontalAlignment;
+  onHorizontalChange: (value: HorizontalAlignment) => void;
+  onVerticalChange?: (value: "bottom" | "middle" | "top") => void;
+  options: "three" | "four";
+  vertical?: "bottom" | "middle" | "top";
+}) {
+  const horizontalOptions = (
+    [
+      ["left", "align-left"],
+      ["center", "align-center"],
+      ["right", "align-right"],
+      ["justify", "align-justify"],
+    ] as const
+  ).slice(0, options === "four" ? 4 : 3);
+  const verticalOptions = [
+    ["top", "align-top"],
+    ["middle", "align-middle"],
+    ["bottom", "align-bottom"],
+  ] as const;
+  const groupClass = (...names: (string | false)[]) =>
+    [...names, disabled && styles.inspectorControlDisabled].filter(Boolean).join(" ");
+
+  return (
+    <div className={styles.alignmentGroups}>
+      <div aria-label="Horizontal alignment" className={groupClass(styles.alignmentControl, options === "four" && styles.alignmentControlQuad)} role="group">
+        {horizontalOptions.map(([value, icon]) => (
+          <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onHorizontalChange(value)} type="button">
+            <InspectorIcon name={icon} size={12} />
+          </button>
+        ))}
+      </div>
+      {vertical === undefined ? null : (
+        <div aria-label="Vertical alignment" className={groupClass(styles.alignmentControl, styles.verticalAlignment)} role="group">
+          {verticalOptions.map(([value, icon]) => (
+            <button aria-label={`Align ${value}`} aria-pressed={vertical === value} className={vertical === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onVerticalChange?.(value)} type="button">
+              <InspectorIcon name={icon} size={12} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bold, italic and underline as three toggles in the alignment control's segmented style (the site
+ * element inspector's Style row). Each shows its letter in its own style and says whether it is on.
+ */
+export function TextStyleToggles({
+  bold,
+  disabled = false,
+  italic,
+  onBoldChange,
+  onItalicChange,
+  onUnderlineChange,
+  underline,
+}: {
+  bold: boolean;
+  disabled?: boolean;
+  italic: boolean;
+  onBoldChange: (on: boolean) => void;
+  onItalicChange: (on: boolean) => void;
+  onUnderlineChange: (on: boolean) => void;
+  underline: boolean;
+}) {
+  const toggles = [
+    { label: "Bold", on: bold, change: onBoldChange, glyph: <b>B</b> },
+    { label: "Italic", on: italic, change: onItalicChange, glyph: <i>I</i> },
+    { label: "Underline", on: underline, change: onUnderlineChange, glyph: <u>U</u> },
+  ];
+  return (
+    <div aria-label="Text style" className={[styles.alignmentControl, disabled && styles.inspectorControlDisabled].filter(Boolean).join(" ")} role="group">
+      {toggles.map((toggle) => (
+        <button aria-label={toggle.label} aria-pressed={toggle.on} className={toggle.on ? styles.alignmentActive : ""} disabled={disabled} key={toggle.label} onClick={() => toggle.change(!toggle.on)} type="button">
+          {toggle.glyph}
+        </button>
+      ))}
+    </div>
   );
 }
