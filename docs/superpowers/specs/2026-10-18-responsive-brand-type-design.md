@@ -1,6 +1,6 @@
 # Responsive brand type — design
 
-Status: draft for the founder's review, 2026-10-18. Work happens in the trenton session, branch
+Status: written 2026-10-18; the founder decided §3.4. Work happens in the trenton session, branch
 `site/publish-durability` (founder: no new worktree).
 
 ## 1. Why
@@ -124,19 +124,20 @@ Mobile preview; the published page responds to the visitor's window.
 `brand.md` (what the agent reads about the brand) shows, for a role with steps, its sizes at each
 width in one short line, so the agent knows the type is responsive and does not fight it.
 
-### 3.4 Sizes set by hand in the inspector — founder to decide
+### 3.4 Sizes set by hand in the inspector (founder, 2026-10-18)
 
-Today a size set in the site inspector is a fixed `font-size: Npx` at every width; the site element
-inspector design lists responsive styling as a non-goal for its first version
-(`2026-10-17-site-element-inspector-design.md` §3). Two choices:
-- **Follow the kit's steps (recommended):** a hand-set size follows the steps of the nearest kind of
-  text — at or above the kit's title size, the headline's; smaller, the body's — written as a share of
-  that role's variable, e.g. `calc(var(--brand-text-headline) * N / H)`. Desktop is exactly N; on a
-  phone it shrinks the way the seller's headings do. The same rule applies on copied sections. With no
-  `responsive_type` section in the kit it behaves as today. This changes `edits.ts` and needs the
-  inspector design's §3 and §7 updated.
-- **Stay fixed:** hand-set sizes keep one size at every width; this work stays in extraction, kit and
-  theme.
+A size set in the site inspector follows the steps of the nearest kind of text — at or above the kit's
+title size, the headline's; smaller, the body's — written as a share of that role's variable, e.g.
+`calc(var(--brand-text-headline) * N / H)`. On desktop it is exactly N; on a phone it shrinks the way
+the seller's headings (or body) do. The same rule applies on copied sections. With no
+`responsive_type` section in the kit it behaves as today (one size at every width).
+
+Why (the founder): marketers editing the page will not think about phones and will not check the
+mobile view; we do not rely on them to. The brand's site must stay consistent across device types
+whatever they set by hand.
+
+This replaces the site element inspector design's non-goal "responsive styling — one value at every
+width" for font size only (`2026-10-17-site-element-inspector-design.md` §3; recorded in its §7).
 
 ### 3.5 Bringing existing kits up to date
 
