@@ -12,7 +12,7 @@
 // Returns {valid, errors: ["where: message", ...]}.
 import { parse } from "node-html-parser";
 import type { BrandData } from "./brand";
-import type { Clone } from "./clone";
+import { replaceableTexts, type Clone } from "./clone";
 import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
@@ -37,8 +37,6 @@ const IMAGE_PATH = /^\/(asset-store|brands|generated|accounts)\//;
 
 const LINK = /^(https?:\/\/|\/|#|mailto:)/;
 const PAGE_NAME = /^[a-z0-9][a-z0-9-]*$/;
-const visibleText = (clone: Clone) =>
-  parse(clone.html.replace(/<br\s*\/?>/gi, " ")).structuredText.replace(/\s+/g, " ").trim();
 /** A file given as text is parsed (an empty file reads as {}); a parsed value is used as is. */
 const fromFile = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value || "{}") : value);
 
@@ -181,10 +179,11 @@ export function validateSite(
           }
           if (slot.kind === "visibility" && typeof value !== "boolean") errors.push(`${at}.slots.${key}: a visibility slot takes true or false`);
         }
-        const text = visibleText(clone);
+        // Only whole text nodes, as the renderer replaces them (review finding S1-3).
+        const replaceable = replaceableTexts(clone);
         ((item.props.replacements as { find?: string }[]) ?? []).forEach((r, i) => {
           const find = (r?.find ?? "").replace(/\s+/g, " ").trim();
-          if (find && !text.includes(find)) {
+          if (find && !replaceable.includes(find)) {
             errors.push(`${at}.replacements.${i}: "${find}" is not text in ${id}; use exact text from "Other visible text" in ${card}`);
           }
         });

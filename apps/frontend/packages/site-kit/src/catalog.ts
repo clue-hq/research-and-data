@@ -8,11 +8,11 @@
 //   brand/brand.md            the brand's token choices in words, the button, and the asset list
 //
 // Pure: buildCatalog returns the files as {relative path: markdown}; the caller writes them.
-import { parse, TextNode, type HTMLElement } from "node-html-parser";
+import { parse, type HTMLElement } from "node-html-parser";
 import { z } from "zod";
 import type { BrandData } from "./brand";
 import { colorOf, isMeasured, pxOf, tokenEntry, typographyOf } from "./brand-values";
-import type { Clone } from "./clone";
+import { replaceableTexts, type Clone } from "./clone";
 import {
   buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, measuredComponents, motionEntries, motionNotes,
   partsFromSlots, standardLook, type Drawn, type Look, type Part,
@@ -29,36 +29,9 @@ const PURPOSE: Record<string, string> = {
   ClonedSection: "One of the seller's own sections, exactly as captured, with its words changed.",
 };
 
-const SKIP_TEXT = /^\{\{wf/;
-
 function cloneFile(clone: Clone): string {
   const root = parse(clone.html, { comment: false });
-  const consumed = new Set<HTMLElement>();
-  for (const [key, slot] of Object.entries(clone.slots)) {
-    if (slot.kind !== "text") continue;
-    for (const element of root.querySelectorAll(`[data-lumen-slot="${key}"]`)) consumed.add(element);
-  }
-  const insideTextSlot = (node: HTMLElement | null): boolean => {
-    for (let current = node; current; current = current.parentNode as HTMLElement | null) {
-      if (consumed.has(current)) return true;
-    }
-    return false;
-  };
-
-  const otherText: string[] = [];
-  const walk = (node: HTMLElement) => {
-    for (const child of node.childNodes) {
-      if (child instanceof TextNode) {
-        const value = child.rawText.replace(/\s+/g, " ").trim();
-        if (value && !SKIP_TEXT.test(value) && !insideTextSlot(node) && !otherText.includes(value)) {
-          otherText.push(value);
-        }
-      } else if ((child as HTMLElement).tagName && !["SCRIPT", "STYLE"].includes((child as HTMLElement).tagName)) {
-        walk(child as HTMLElement);
-      }
-    }
-  };
-  walk(root);
+  const otherText = replaceableTexts(clone);
 
   const links = root
     .querySelectorAll("a[href]")

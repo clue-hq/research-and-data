@@ -152,20 +152,60 @@ function applySlot(element: HTMLElement, kind: SlotKind, value: string | boolean
   }
 }
 
+/** A text node's words as a visitor reads them: entities decoded, whitespace collapsed, trimmed. */
+const shownText = (node: TextNode) => node.text.replace(/\s+/g, " ").trim();
+const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** Exact text replacements: a text node whose words (decoded, collapsed) equal `find` (collapsed) gets
+ * `replace` as text, keeping the node's own leading and trailing whitespace. Review finding S1-3: this
+ * reading is `replaceableTexts`', so whatever the catalog lists and the check accepts is applied. */
 function replaceText(root: HTMLElement, replacements: TextReplacement[]): void {
   const walk = (node: HTMLElement) => {
     for (const child of node.childNodes) {
       if (child instanceof TextNode) {
-        const original = child.rawText;
-        const trimmed = original.trim();
-        const match = replacements.find((r) => r.find.trim() === trimmed);
-        if (match) child.rawText = original.replace(trimmed, escapeText(match.replace));
+        const words = shownText(child);
+        const match = words ? replacements.find((r) => collapse(r.find) === words) : undefined;
+        if (match) {
+          const raw = child.rawText;
+          const lead = /^\s*/.exec(raw)?.[0] ?? "";
+          const trail = /\s*$/.exec(raw)?.[0] ?? "";
+          child.rawText = `${lead}${escapeText(match.replace)}${trail}`;
+        }
       } else {
         walk(child as HTMLElement);
       }
     }
   };
   walk(root);
+}
+
+/** Webflow's unrendered "{{wf …}}" placeholders are not words a visitor sees. */
+const SKIP_TEXT = /^\{\{wf/;
+
+/** The clone's text a `replacements` entry can change: each text node outside a text slot (a slot is
+ * changed through `slots`) and outside script, style and svg, as a visitor reads it (decoded,
+ * collapsed), once each, in document order. The one reading the catalog lists, the check accepts and
+ * the renderer applies (review finding S1-3): a phrase that wraps a line break, spans bold text or is
+ * part of a sentence is not one text node, so it is not offered and not accepted. */
+export function replaceableTexts(clone: Clone): string[] {
+  const root = parse(clone.html, { comment: false });
+  const found: string[] = [];
+  const walk = (node: HTMLElement) => {
+    for (const child of node.childNodes) {
+      if (child instanceof TextNode) {
+        const words = shownText(child);
+        if (words && !SKIP_TEXT.test(words) && !found.includes(words)) found.push(words);
+        continue;
+      }
+      const element = child as HTMLElement;
+      if (!element.tagName || NOT_TEXT.has(element.tagName.toLowerCase())) continue;
+      const slot = element.getAttribute("data-lumen-slot");
+      if (slot && clone.slots[slot]?.kind === "text") continue;
+      walk(element);
+    }
+  };
+  walk(root);
+  return found;
 }
 
 function escapeText(text: string): string {
