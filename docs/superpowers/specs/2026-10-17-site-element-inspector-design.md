@@ -44,6 +44,11 @@ controls, each doing the web version of its ad counterpart.
   and it refused: the shell's layout is fixed in code (`site-kit/src/shell.tsx`; `ShellSchema`,
   `schemas.ts:182`, allows only the words, logo, nav links and one button). "Ideally that should not be
   the case."
+- **Every word in the header and footer is editable in place, and styleable** (founder, live check
+  2026-10-17: "i should be able change Prepared for text as well... change the wordings or anything
+  there actually"). The fixed words ("Prepared for", "Privacy policy", "Terms") become values; the
+  marketer types any header or footer text on the canvas, as in a section, and every piece of it
+  can be selected and styled. Added to plan 1.
 - **Adding a link to plain text is in** (founder: "yes this should also be allowed"): highlighted words,
   or a whole text box, can become a link.
 - **Reordering inside copied seller sections is in** (founder: "yes it should be there"), as well as in
@@ -296,6 +301,10 @@ footer.
 - Layers: the selected section's text elements, listed under it.
 - `edits` properties added: `color`, `fontFamily`, `fontSize`, `fontWeight`, `italic`, `underline`,
   `textAlign`.
+- The header and footer: every piece of text named and styleable (the "Prepared for" label, the
+  account name, nav links, the button's words, the legal line, the footer links); the fixed words
+  become values (`preparedForLabel`, `privacyLabel`, `termsLabel`); all of their words are typed in
+  place on the canvas (founder, 2026-10-17, during plan 1's live check).
 - The agent: may write `edits` (including the header's and footer's); sees manual styling in `site.md`;
   skill text on naming text elements and on `edits` (founder review first). The prompt stops implying the
   header is off-limits.
@@ -351,6 +360,7 @@ footer.
 | ... for buttons / containers / images | 3 / 4 / 5 |
 | `edits` storage, validation and stylesheet (§4.3, §4.5) | 1 (later plans add properties) |
 | Whole-box text typography, brand fonts | 1 |
+| Header and footer: every text named and styleable, fixed words made values, words typed in place | 1 |
 | Site colour palette, shared alignment control, B / I / U toggles (§4.7) | 1 |
 | Agent may write `edits`; `site.md` shows manual styling; header not off-limits (§4.3, §4.9) | 1 (later plans extend `site.md` and the skills for their element) |
 | S1-3 clone text fix (§5) | 2 |
@@ -403,6 +413,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 
 - 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
 - 2026-10-17: plan 6 (a structurally different, agent-written header) proposed; founder deferred it. Plan 1 started.
+- 2026-10-17: founder, during plan 1's live check: every word in the header and footer editable in place and styleable — added to plan 1 (the header's button words are styled as text in plan 1; the button itself is still plan 3).
 
 ## 8. Left to the builder
 
