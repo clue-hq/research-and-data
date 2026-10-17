@@ -275,7 +275,7 @@ footer.
 
 | Plan | What the marketer gets | Status | Plan file |
 |---|---|---|---|
-| 1 | Click any text and style the whole text box | Plan written 2026-10-17; not started | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
+| 1 | Click any text and style the whole text box | In progress since 2026-10-17 | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
 | 2 | Style and link highlighted words; more fonts | Not written | — |
 | 3 | Click a button and edit everything about it | Not written | — |
 | 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
@@ -370,7 +370,9 @@ footer.
 ### 7.4 Not in any of the five plans
 
 - A header or footer with a structurally different composition: new elements, a two-row header, a header
-  the agent writes itself (§4.9). A separate follow-up.
+  the agent writes itself (§4.9). Proposed as a **plan 6** (after plan 4: the header would hold an
+  agent-written section, so every element panel works in it); the founder deferred the decision on
+  2026-10-17 ("we will come to plan 6 things later on").
 - Moving, inserting, deleting or duplicating whole sections (item E8, waiting on the founder's designs, C13).
 - Styling that differs by screen width; animations; free CSS (§3 non-goals).
 - Trimming unused font files from published pages (the existing page-weight item P2).
@@ -400,6 +402,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 ### 7.7 Change log
 
 - 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
+- 2026-10-17: plan 6 (a structurally different, agent-written header) proposed; founder deferred it. Plan 1 started.
 
 ## 8. Left to the builder
 
