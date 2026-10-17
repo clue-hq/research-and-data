@@ -1,0 +1,2 @@
+{"id": "F4-01", "src": "knowledge_docs/knowledge/lumen-dsl/colors.md", "loc": "summary", "topic": "SYNTAX", "applies": "always", "strength": "fact", "text": "Color forms (token, hex, #AARRGGBB, rgba alias), translucency, gradients; a color is never a bare number (LUMD0219).", "note": ""}
+{"id": "F4-02", "src": "knowledge_docs/knowledge/lumen-dsl/colors.md", "loc": "color-forms", "topic": "BRAND", "applies": "brand-kit", "strength": "prefer", "text": "Prefer $tokens in branded designs, then 6-digit hex, then #AARRGGBB/rgba.", "note": ""}
