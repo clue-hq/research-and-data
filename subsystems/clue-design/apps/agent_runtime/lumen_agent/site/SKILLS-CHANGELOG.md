@@ -108,3 +108,8 @@ fails without it).
   element inspector (plan 1) gives the marketer per-element styling, which only reaches agent
   sections whose text is named, and the agent must keep, change or drop the marketer's `_edits`
   knowingly.
+- 2026-10-17 · writing-a-section and building-with-puck (founder-approved, site element inspector
+  plan 2): marked props hold rich text and are put into the page as they are; a marked prop's
+  element is named after the prop; a Rich text section (the grammar, links, `data-new-tab`, styled
+  spans `<name>~<n>`); new-tab link props; library fonts ("Other fonts") in `_edits`. Written before
+  a run: rich text, links on text and library fonts are new in the editor (plan 2).

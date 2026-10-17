@@ -52,7 +52,8 @@ header and footer are not sections; they live in `shell.json`.
 Open the clone's file in `catalog/clones/` first.
 
 - **`slots`:** set only what you change. Leaving a slot out keeps the original exactly.
-  - A text slot takes plain text. Keep about the original's length and number of lines.
+  - A text slot takes text, which may be rich text (below). Keep about the original's length and
+    number of lines.
   - A link slot takes a URL or a `/route`.
   - An image slot takes a file from `brand/brand.md` or an image you generated.
   - `visible: false` hides the whole section.
@@ -68,7 +69,8 @@ Fields and choices are in `catalog/sections.md`.
 
 - Choose `surface` and `headingRole` by name.
 - Images come only from `brand/brand.md` or from `generate_image` (see `images-and-logos`).
-- Text fields take plain text.
+- Text fields take plain text, except the ones `catalog/sections.md` marks as rich text, which
+  take rich text (below).
 
 ## Rhythm
 
@@ -106,11 +108,14 @@ number path like `0.2.1`) to its styling:
 
 The properties are:
 - `color`: a brand colour by name, or `{ "hex": "#0F59B0", "opacity": 80 }`;
-- `fontFamily`: a brand font;
+- `fontFamily`: a brand font, or one of brand/brand.md's "Other fonts", with a weight that font has;
 - `fontSize`: 8 to 200;
 - `fontWeight`: 100 to 900, a weight the font has;
 - `italic` and `underline`: true or false;
 - `textAlign`: left, center, right or justify.
+
+Words styled inside rich text have their own name, the text's name plus `~` and a number
+(`heading~1`).
 
 Three rules go with it:
 - When you rewrite a section, keep its `_edits` unless the request asks for a different look; you
@@ -118,6 +123,22 @@ Three rules go with it:
 - When you add styling yourself, use the brand's colours and fonts by name first.
 - `validate_page` checks the names and values; an entry for text no longer in the section does
   nothing.
+
+## Rich text
+
+Some text holds a little HTML, so single words can be bold, linked or styled: our sections' fields
+that `catalog/sections.md` marks as rich text, your sections' marked props, and a cloned section's
+text slots. Only these tags:
+- `<strong>`, `<em>`, `<u>` and `<s>` for bold, italic, underlined and struck words;
+- `<br>` for a new line (one paragraph only, no lists);
+- `<a href="…">` for a link to a page of this site (`/analysis`), an `https://` address, a
+  `#section` or `mailto:`. Add `data-new-tab` for a link that opens in a new tab;
+- `<span data-s="heading~1">` for words styled by hand. The name is the text's own name plus `~`
+  and a number, and its look is that name's entry in `_edits`.
+
+No other tag or attribute, and no `style`. Write `&amp;`, `&lt;` and `&gt;` for &, < and >.
+`site.md` shows rich text as its words, with what is bold, linked or styled named in brackets.
+When you rewrite text, keep its links and styled words unless the request changes them.
 
 ## More than one page
 
@@ -130,6 +151,9 @@ letters, digits and dashes.
 - Add a page to the header's `nav` when visitors should reach it from every page:
   `"nav": [{ "label": "The analysis", "href": "/analysis" }]`.
 - The header, the footer and the one destination for the offer are shared by every page.
+- For a link that opens in a new tab, set `linkNewTab: true` on a proof card, `"newTab": true` on a
+  nav link, or `privacyNewTab` / `termsNewTab` in the footer. In a cloned section, list the link's
+  text name in `newTab`, for example `"newTab": ["0.2"]`.
 - Render each page you changed: `render_page("/analysis")`.
 
 ## When validate_page says INVALID

@@ -65,7 +65,9 @@ The kit gives you these pieces, with exactly these props:
   words, a card's title) with `.meta({ edit: "inline" })`. The marketer can then click those words
   and type. While they do, such a prop is not text but an editable piece of the page: put it into
   the page exactly as it is (`{props.quote}`), and never change it in code (no capitals, splitting,
-  cutting or joining). For capitals, use the `uppercase` class. For separate lines, use a list of
+  cutting or joining). A marked prop may also hold a few words in bold or italic, a link, or words
+  the marketer styled. Put it into the page as it is: never inside an attribute (`alt`, `title`,
+  `aria-label`) and never through a text method (`.toUpperCase()`, `.split()`, `.length`). For capitals, use the `uppercase` class. For separate lines, use a list of
   items. Do not mark choices (surface, look, cardLook), links, images or `alt`: the editor offers
   those from lists and fields. write_section refuses a section that breaks these rules and says why.
 - Name every heading, paragraph and label: add `data-clue-el="<name>"` to its element, for example
@@ -74,5 +76,9 @@ The kit gives you these pieces, with exactly these props:
   pass `el="<name>"` instead. The marketer can then click that text in the editor and change its
   colour, font, size, weight and alignment. Text without a name can still be edited as words, but
   not restyled.
+  When the text is a prop you marked for editing in place, give its element the prop's own name:
+  `<h2 data-clue-el="headline">{props.headline}</h2>`, and for a list item
+  ``data-clue-el={`cards.${index}.title`}``. The marketer can then also style single words in it
+  and make them links.
 - Make it look like the seller's sections around it. Render and compare.
 - Place it in page.json by its name, like any other section.
