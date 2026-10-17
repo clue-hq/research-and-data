@@ -290,7 +290,7 @@ footer.
 |---|---|---|---|
 | 1 | Click any text and style the whole text box | Finished 2026-10-17; live-checked on Garner (Carmel Clay) and Conduit (Oliver Hotels) 2026-10-17; Clue has no microsite in the lane yet | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
 | 2 | Style and link highlighted words; more fonts | Finished 2026-10-17: built, reviewed, live-checked on Conduit (Oliver Hotels) and Garner (Carmel Clay); skill text approved and written; Clue has no microsite in the lane yet | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-2-words-links-fonts.md` |
-| 3 | Click a button and edit everything about it | Not written | — |
+| 3 | Click a button and edit everything about it | Plan written 2026-10-17; not started (awaiting founder review of its rulings) | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-3-buttons.md` |
 | 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
 | 5 | Click an image and set its fit, alt text and corners | Not written | — |
 | 6 | Headers and footers as editable templates, changed by the marketer and the agent like any section | Not written (founder 2026-10-17: build it as plan 6) | — |
@@ -336,6 +336,10 @@ footer.
 - `edits` properties added: `fill`, `borderColor`, `borderWidth`, `radius`, `padding`, `width` (as they
   apply to buttons). The "new tab" boolean for button links.
 - Layers gains buttons. The agent: `site.md` and skill text for buttons (founder review first).
+- Added when plan 3 was written (2026-10-17): button labels are rich text without links (the approved
+  mockup styles highlighted words in a label); the one-primary-destination rule becomes one shared
+  function, and the Link section offers "Use for every button"; the Link section takes the mockup's
+  layout (Goes to · Open in) for every link, text links included.
 
 **Plan 4: containers and Arrange.**
 - Clicking any box selects it: a section, a card, a row, a column, a list item, a div, the header or footer
@@ -429,6 +433,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 - 2026-10-17: plan 2 written and started. Its rulings change §4.4: rich text is **inline only** (`strong em u s br`, `a`, `span[data-s]`; no lists or second paragraph inside one text box, Enter makes a line break), because block markup inside a heading or paragraph breaks the published HTML; the panel styles highlighted words through `span[data-s]` + `_edits` (⌘B/⌘I/⌘U in the text still make `<strong>`/`<em>`/`<u>`); alignment stays whole-box; an agent's text takes word-level edits when its `data-clue-el` is the prop's own name; header and footer words stay whole-box until plan 6; the dock shows rich fields read-only; a clone link's new tab is stored as element keys (`newTab`). Full list in the plan's Rulings.
 - 2026-10-17: plan 2 built. Found and fixed while building: ProseMirror drops a second paragraph when the document allows one (so the editor keeps Puck's document and paragraphs become line breaks on save); Puck draws a rich text field as its own widget in preview too (agent sections and `_edits` are now read from stored props anywhere in the editor); publishing checked the site against the licence-gated fonts, so styling that named a held-back brand font or an unprovisioned library font refused the whole publish (now checked against the fonts as offered, drawn with what can ship). Live check found and fixed a stray save: the frame re-spelled an agent's plain `&` as `&amp;` when Puck reported the page back.
 - 2026-10-17: plan 2's end-of-plan review: fixed — the Link row and the words' look now refuse highlighted words the stored text no longer holds; words highlighted in text that is already a link change that link instead of nesting another; a named HTML entity other than amp/lt/gt/quot/apos/nbsp is refused ("write the character itself"); clone slot names with dashes or a leading digit are valid prop paths; a clone slot set to its original words keeps its captured markup; the rich text reader runs in linear time; one link rule (no protocol-relative `//host`, no spaces) for the save check, the editor and the Link row; text replacements never reach into a text slot; library faces stored with their real font type and named in the publish manifest. Kept as a residual: styling words in a never-edited clone slot stores its words in the grammar, so the seller's own inline styling there (a coloured span) is dropped.
+- 2026-10-17: plan 3 written (buttons). Its rulings R1–R9 await the founder's check: a button is a box key and a label key; which clone links count as buttons; labels are rich text without links; hand-set fill holds on hover; the one-destination rule stays, with "Use for every button"; agent buttons' words and links stay the agent's; clone button words via slot, replacement or a note; the Link section's mockup layout for every link; the shapes of the new `_edits` properties.
 - 2026-10-17: plan 2 finished: the founder approved its skill text, written into writing-a-section and building-with-puck.
 - 2026-10-17: founder, during plan 1's live check: every word in the header and footer must be changeable, and the header must not be hard-coded — standard headers become templates the agent and the marketer change like any section. Briefly added to plan 1, then moved to **plan 6** (founder: "we do it as a part of plan 6"). Plan 1 keeps what it built: the header's account name and nav links, and the footer's text, are selectable and styleable.
 
