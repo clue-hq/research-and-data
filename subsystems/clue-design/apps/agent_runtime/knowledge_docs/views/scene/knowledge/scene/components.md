@@ -188,6 +188,6 @@ background. For deliberate ordering, use `before`, `after` or indexed `parent`
 from `knowledge/lumen-dsl/directives.md`, then check the result. Managed siblings
 paint in stored order; pinned absolute nodes use a separate page pass above
 managed content and escape ancestor clipping (the page still clips them).
-Use measured geometry for repairs and keep unrelated existing content intact.
+Use measured geometry for repairs.
 After changes: preflight, render, view the actual composite and repair the
 specific failure. Components that compile still need visual judgment.

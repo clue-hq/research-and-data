@@ -1358,7 +1358,7 @@ def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     assert editor_target_node_ids(neither) == []
 
 
-def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
+def test_editor_prompt_names_targets_as_facts_without_scope_rules() -> None:
     from lumen_api.main import editor_agent_prompt
     from lumen_api.models import AgentTurnPreviewRequest
 
@@ -1368,27 +1368,26 @@ def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
         target_node_ids=["node_contact_name"],
     )
     prompt = editor_agent_prompt(payload)
-    # The chipped target is named in the context and the instruction scopes to
-    # it (untouched nodes byte-identical) with the §1.6 compensating contract.
+    # Harness alignment I1: the chipped target is named as a fact; how much the turn may change is
+    # decided by the scene agent's system prompt, so no fence or compensating contract rides along.
     assert '"target_node_ids"' in prompt
     assert "node_contact_name" in prompt
-    assert "byte-identical" in prompt
-    assert "re-fit and verify" in prompt
-    assert "what you preserved" in prompt
+    assert "editor_instruction" not in prompt
+    assert "byte-identical" not in prompt
+    assert "surrounding layout must be preserved" not in prompt
 
 
-def test_editor_prompt_without_targets_uses_soft_targeting() -> None:
+def test_editor_prompt_without_targets_carries_no_scope_rules() -> None:
     from lumen_api.main import editor_agent_prompt
     from lumen_api.models import AgentTurnPreviewRequest
 
     prompt = editor_agent_prompt(
-        AgentTurnPreviewRequest(prompt="Fix overflow", scene=minimal_scene())
+        AgentTurnPreviewRequest(prompt="Make the whole ad feel more premium", scene=minimal_scene())
     )
-    # No chips: no hard byte-identical scoping, but the compensating contract
-    # still applies to every turn.
-    assert "byte-identical" not in prompt
-    assert "Prefer targeted repairs" in prompt
-    assert "what you preserved" in prompt
+    # A revamp request must not arrive with "touch as little as possible" attached.
+    assert "editor_instruction" not in prompt
+    assert "Prefer targeted repairs" not in prompt
+    assert "touch as little else as possible" not in prompt
 
 
 def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) -> None:

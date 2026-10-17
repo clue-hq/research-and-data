@@ -313,3 +313,12 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
 
 ---
 # Step 3 complete (2026-10-17). Step 4 — rewrite, topic by topic — next.
+
+## Step 4 decisions
+
+- **R1.6 adjusted (founder, T1 review):** repair-design's "Change the smallest coherent part that fully
+  fixes the failure" (D5-02) and "Preserve successful unrelated content" (D5-03) STAY — after R5.3 the
+  skill only governs repairs of a failed self-check inside the full routine, where they are right; a
+  repair round must not undo the rest of a revamp.
+- **T1 founder addition:** a targeted edit also covers slight formatting changes and slight layout
+  changes that are not a rework of the whole ad.

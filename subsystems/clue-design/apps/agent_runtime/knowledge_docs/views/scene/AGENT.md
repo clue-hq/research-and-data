@@ -8,8 +8,7 @@ For a new creative, read `skills/scene-brief-copy/SKILL.md`, inspect relevant
 advertiser/product references, then select from the discovered metadata or the
 derived `knowledge/scene/catalog.md`. Load the relevant playbook bodies. A short request is a
 normal entry point: infer sensible creative choices and write original copy.
-For an edit, preserve the request's subject and adjust the smallest coherent
-composition. Recompose across aspect ratios; no fixed skeleton is compulsory.
+Recompose across aspect ratios; no fixed skeleton is compulsory.
 Skills and shared resources stay accessible during composition, review and later
 revisions. Re-read a relevant body when the decision changes or its details leave
 context; discovery is not limited to the opening move. Avoid loading the entire

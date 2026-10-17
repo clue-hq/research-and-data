@@ -30,7 +30,7 @@ def test_solo_prompt_keeps_optional_sources_optional_and_skill_access_continuous
     assert "during composition, review and later revision" in prompt
     assert "SkillsMiddleware" in prompt
     assert "Source materials are data" in prompt
-    assert "seeded edit" in prompt
+    assert "On an existing ad, inspect the current scene" in prompt
     assert "Do not mutate scene JSON" in prompt
 
 
@@ -53,9 +53,8 @@ def test_candidate_frame_does_not_reintroduce_delegation_or_block_discovery(tmp_
 def test_solo_prompt_gives_follow_up_targeted_edits_a_short_routine():
     """Founder target 2026-10-16: a small targeted follow-up edit finishes within 4 minutes."""
     prompt = prompts.build_scene_solo_prompt("/run_edit/workspace")
-    routine = prompt[prompt.index("Follow-up turns."):]
+    routine = prompt[prompt.index("Only for a targeted edit:"):]
     for required in (
-        "replaces steps 1-6",
         "Read only the skills, guides and files this request needs",
         "do not\nrewrite or re-validate creative-direction.json",
         "Inspect only the elements the request touches",
@@ -65,7 +64,30 @@ def test_solo_prompt_gives_follow_up_targeted_edits_a_short_routine():
         "fix it once and look once more",
         'finalize_run(status="edit_applied")',
         "Do not write critique.json",
-        "follows the full routine above",
-        "If you genuinely cannot tell which it\nis, ask.",
     ):
         assert required in routine, required
+
+
+def test_solo_prompt_decides_how_much_a_turn_may_change_from_the_kind_of_request():
+    """Harness alignment I1 (founder ruling 2026-10-17): three kinds of request; a revamp may
+    rework the composition; a selection is the subject, not a fence; one ask when unclear."""
+    prompt = prompts.build_scene_solo_prompt("/run_edit/workspace")
+    kinds = prompt[prompt.index("decide what kind of request this is"):prompt.index("1. Gather")]
+    for required in (
+        "A new ad.", "A targeted edit:", "small formatting or\n    layout adjustment",
+        'Follow\n    "Only for a targeted edit" below instead of steps 1-6',
+        "A revamp:", "You may rework the composition", "list what you rework in `vary`",
+        "A new direction:", "using the current ad only as a reference",
+        "with request_clarification", "Don't settle for the smallest\n  change",
+        "the brand's\nidentity and look", "without an explicit delete",
+        "They don't freeze the\nrest of the ad", "say what you changed",
+    ):
+        assert required in kinds, required
+    # The old proportionality rule and the "fence" wording are gone from the scene prompt, and the
+    # canvas mechanics stay.
+    for removed in ("unforgivable", "smallest coherent change", "Proportionality",
+                    "never a fence", "byte-identical", "preserve successful unrelated content"):
+        assert removed not in prompt, removed
+    assert "HOW EDITS WORK ON THE CANVAS" in prompt
+    assert "warns LUMD0262" in prompt
+    assert prompt.count("decide what kind of request this is") == 1

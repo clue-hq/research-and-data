@@ -12521,13 +12521,16 @@ def editor_target_node_ids(payload: AgentTurnPreviewRequest) -> List[str]:
 
 def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
     targets = editor_target_node_ids(payload)
+    # Harness alignment I1 (founder ruling 2026-10-17): the editor context carries facts only. How
+    # much a turn may change is decided once, in the scene agent's system prompt, from the kind of
+    # request; the old `editor_instruction` (touch as little as possible, preserve the layout) rode
+    # every message, revamps included, and is gone.
     context = {
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
         "target_node_ids": targets,
         "scene_summary": scene_context_summary(payload.scene),
         "current_diagnostics": payload.diagnostics[:20],
-        "editor_instruction": editor_instruction(targets),
     }
     instructions = (payload.agent_instructions or "").strip()
     if instructions:
@@ -12542,35 +12545,6 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
         "Editor context JSON:\n"
         f"{json.dumps(context, indent=2)}"
     )
-
-
-def editor_instruction(targets: List[str]) -> str:
-    """2c compensating-edit contract (Moda §1.6): scope the change to the
-    chipped target(s), then re-fit and verify — and report both what changed
-    and what was preserved. When targets are named, everything else must stay
-    byte-identical."""
-    base = (
-        "Return changes that can be applied to the current canonical Scene. "
-        "Do not mutate scene JSON outside canonical operations. "
-    )
-    if targets:
-        scope = (
-            "Scope every change to these target node id(s): "
-            f"{', '.join(targets)}. Do not touch any other node — every "
-            "untouched node must stay byte-identical. "
-        )
-    else:
-        scope = (
-            "Prefer targeted repairs when a selected node or diagnostic target "
-            "is present, and touch as little else as possible. "
-        )
-    contract = (
-        "Make a compensating edit: apply the requested change, then re-fit and "
-        "verify the result — text must still fit its box (no overflow), nodes "
-        "must not newly overlap, and the surrounding layout must be preserved. "
-        "In your summary, state both what you changed and what you preserved."
-    )
-    return base + scope + contract
 
 
 def scene_context_summary(scene: JsonObject) -> JsonObject:

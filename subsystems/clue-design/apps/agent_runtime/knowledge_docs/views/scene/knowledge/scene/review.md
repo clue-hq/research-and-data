@@ -145,8 +145,8 @@ selected treatment and explicit user corrections. Use actual supplied preference
 context; do not infer that all later runs have learned a saved canvas edit.
 
 Record failures in the existing critique issues and affected direction checks,
-with the observed symptom and coherent repair. Preserve successful user-edited
-groups and source treatments. A visual repair may require replacing the chosen
+with the observed symptom and coherent repair. Preserve source
+treatments. A visual repair may require replacing the chosen
 concept or removing an optional element; adding decoration does not resolve a
 missing visual argument.
 
