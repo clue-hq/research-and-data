@@ -127,12 +127,15 @@ def site_brand_data(
     library_assets: Mapping[str, Mapping[str, Any]],
     captured_image_descriptions: Mapping[str, str] | None = None,
     video_renditions: Mapping[str, Mapping[str, Any]] | None = None,
+    library_fonts: list[Mapping[str, Any]] | None = None,
 ) -> dict:
     """BrandData: the kit, its assets and fonts, the released clones and their images, and the
     workspace library assets the site already uses (a generated image is described by its prompt).
     ``captured_image_descriptions`` (``{digest: text}``) describes the clones' images;
     ``video_renditions`` (``{video digest: {poster, rendition}}``) rides on each clone as ``videos``
-    (its own videos only), for site-kit's ``fillClone``."""
+    (its own videos only), for site-kit's ``fillClone``. ``library_fonts`` is the font library as
+    ``font_library.site_library_fonts`` gives it (``libraryFonts``: offered after the kit's fonts for
+    manual styling, site element inspector plan 2)."""
 
     assets: dict[str, dict] = {}
     for asset_id, entry in kit_assets.items():
@@ -166,6 +169,7 @@ def site_brand_data(
         "fonts": fonts,
         "assets": assets,
         "clones": {str(clone["id"]): _with_videos(clone, video_renditions or {}) for clone in clones},
+        "libraryFonts": [dict(family) for family in library_fonts or []],
     }
 
 

@@ -41,7 +41,7 @@ export interface SiteInspectorBinding {
   onStyleCommit: (key: string, override: StyleOverride) => void;
   /** The brand's colours for the colour picker's Theme tab: label = token, value = its CSS colour. */
   palette: readonly { label: string; value: string }[];
-  /** The brand's font families with their weights. */
+  /** The brand's font families with their weights, then the font library's (plan 2). */
   fonts: readonly { family: string; weights: number[] }[];
   /** Plan 2: the highlighted words' own look (their styled span's `_edits` entry), or null. */
   wordsOverride: StyleOverride | null;

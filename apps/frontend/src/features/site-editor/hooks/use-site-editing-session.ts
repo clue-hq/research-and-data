@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { brandColorChoices, brandFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
+import { brandColorChoices, brandFontFamilies, libraryFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
 import { linkPatch, linkRowState, sitePages, type LinkChange } from "@/features/chat-shell/components/site-link-row.logic";
 import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
@@ -413,7 +413,8 @@ export function useSiteEditingSession({
     () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
   );
-  const fonts = useMemo(() => (load.brand ? brandFontFamilies(load.brand) : []), [load.brand]);
+  // The brand's fonts first, then the font library's (plan 2, spec §4.6).
+  const fonts = useMemo(() => (load.brand ? [...brandFontFamilies(load.brand), ...libraryFontFamilies(load.brand)] : []), [load.brand]);
   const selectLayer = useCallback(
     (row: SiteLayerRow) => {
       if (!activeDocumentId || !editing) return;

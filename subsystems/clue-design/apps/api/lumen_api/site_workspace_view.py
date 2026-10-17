@@ -24,6 +24,7 @@ from sqlalchemy import text
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .database import NotFoundError
 from .fragments import FragmentRefused, read_web_fragment
+from .font_library import site_library_fonts
 from .site_brand import (
     _record_digest, asset_store_file, captured_image_descriptions, clone_from_fragment, clone_video_renditions,
     site_brand_data,
@@ -262,6 +263,7 @@ def site_brand_for(
         library_assets=dict(library_assets),
         captured_image_descriptions=captured_image_descriptions(clones, workspace_id=blobs.workspace_id),
         video_renditions=clone_video_renditions(clones, workspace_id=blobs.workspace_id),
+        library_fonts=site_library_fonts(),
     )
 
 

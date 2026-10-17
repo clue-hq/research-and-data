@@ -101,12 +101,22 @@ export function brandFontFamilies(brand: BrandData): { family: string; weights: 
   return [...families].map(([family, weights]) => ({ family, weights: [...weights].sort((a, b) => a - b) }));
 }
 
+/** The font library's families the brand does not already have, in the library's order, each with its
+ * weights ascending (plan 2). */
+export function libraryFontFamilies(brand: BrandData): { family: string; weights: number[] }[] {
+  const own = new Set(brandFontFamilies(brand).map((font) => font.family));
+  return (brand.libraryFonts ?? [])
+    .filter((font) => !own.has(font.family))
+    .map((font) => ({ family: font.family, weights: [...new Set(font.faces.map((face) => face.weight))].sort((a, b) => a - b) }));
+}
+
 /** What the brand refuses in these edits, one "<key>: <message>" line each, each saying how to fix
  * it: a colour token the kit does not have, a font family that is not the brand's, and a weight that
  * family does not have (checked only when the override names its family). */
 export function editsProblems(edits: Edits, brand: BrandData): string[] {
   const tokens = brandColorChoices(brand).map((choice) => choice.token);
-  const families = brandFontFamilies(brand);
+  const own = brandFontFamilies(brand);
+  const families = [...own, ...libraryFontFamilies(brand)];
   const problems: string[] = [];
   for (const [key, override] of Object.entries(edits)) {
     const color = override.color;
@@ -120,7 +130,7 @@ export function editsProblems(edits: Edits, brand: BrandData): string[] {
     if (!family) {
       problems.push(
         families.length
-          ? `${key}: "${override.fontFamily}" is not one of this brand's font families; use one of ${families.map((f) => f.family).join(", ")}, or leave fontFamily out`
+          ? `${key}: "${override.fontFamily}" is not one of this brand's font families or the font library's; use one of ${families.map((f) => f.family).join(", ")}, or leave fontFamily out`
           : `${key}: this brand's kit has no font files, so "${override.fontFamily}" cannot be used; leave fontFamily out`,
       );
       continue;
@@ -140,9 +150,14 @@ const GENERIC_FAMILIES = new Set([
   "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "math", "emoji", "fangsong",
 ]);
 
-/** The generic family the kit's own fallback stack gives this family; sans-serif when it gives none
- * (or the family is not the kit's). */
+/** The CSS fallback for each font library category. */
+const LIBRARY_GENERIC: Record<string, string> = { sans: "sans-serif", serif: "serif", slab: "serif", mono: "monospace", display: "sans-serif" };
+
+/** The generic family the kit's own fallback stack gives this family (or, for a library family, its
+ * category's); sans-serif when there is none. */
 function genericFamily(brand: BrandData, family: string): string {
+  const library = brand.libraryFonts?.find((font) => font.family === family);
+  if (library && !brandFontFamilies(brand).some((font) => font.family === family)) return LIBRARY_GENERIC[library.category ?? ""] ?? "sans-serif";
   const fonts = (brand.kit as { assets?: { fonts?: Record<string, { family?: string; fallback_stack?: string[] }> } }).assets?.fonts ?? {};
   const stack = Object.values(fonts).find((font) => font.family === family)?.fallback_stack ?? [];
   return stack.map((name) => String(name).trim().toLowerCase()).find((name) => GENERIC_FAMILIES.has(name)) ?? "sans-serif";
@@ -184,13 +199,39 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
  * resolve each emit nothing; "" when nothing is left. */
 export function editsCss(scope: string, edits: Edits, brand: BrandData): string {
   if (!ComponentIdSchema.safeParse(scope).success) return "";
-  return Object.entries(edits)
+  return libraryFaces(edits, brand) + Object.entries(edits)
     .flatMap(([key, value]) => {
       const override = StyleOverrideSchema.safeParse(value);
       if (!ElementKeySchema.safeParse(key).success || !override.success) return [];
       const css = declarations(brand, override.data);
       const attr = isSpanKey(key) ? SPAN_KEY_ATTR : ELEMENT_KEY_ATTR;
       return css.length ? [`[${SECTION_SCOPE_ATTR}="${scope}"] [${attr}="${key}"]{${css.join(";")}}`] : [];
+    })
+    .join("");
+}
+
+const FACE_FILE = /^[A-Za-z0-9._~/-]+$/;
+const FACE_STYLES = new Set(["normal", "italic", "oblique"]);
+
+/** The `@font-face` rules of the library families these edits use (the brand's own are the theme's):
+ * each family once, every face of it (the browser fetches only the faces it draws). A face whose file,
+ * style or weight is not plainly one is skipped, as the theme skips one. */
+function libraryFaces(edits: Edits, brand: BrandData): string {
+  const own = new Set(brandFontFamilies(brand).map((font) => font.family));
+  const used = new Set(
+    Object.values(edits).flatMap((value) => {
+      const family = StyleOverrideSchema.safeParse(value).data?.fontFamily;
+      return family && !own.has(family) ? [family] : [];
+    }),
+  );
+  return (brand.libraryFonts ?? [])
+    .filter((font) => used.has(font.family))
+    .flatMap((font) => {
+      const family = cssString(font.family);
+      if (!family) return [];
+      return font.faces
+        .filter((face) => FACE_FILE.test(face.file) && FACE_STYLES.has(face.style) && Number.isInteger(face.weight) && face.weight >= 1 && face.weight <= 1000)
+        .map((face) => `@font-face{font-family:"${family}";src:url("${face.file}");font-weight:${face.weight};font-style:${face.style};font-display:swap}`);
     })
     .join("");
 }

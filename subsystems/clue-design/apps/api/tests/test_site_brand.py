@@ -85,3 +85,10 @@ def test_a_clone_carries_the_renditions_of_its_own_videos() -> None:
     )
     assert brand["clones"]["frag_v"]["videos"] == {D1: {"poster": D2, "rendition": D3}}
     assert "videos" not in brand["clones"]["frag_p"]
+
+
+def test_the_font_library_rides_beside_the_kit_fonts() -> None:
+    library = [{"family": "Lora", "category": "serif", "faces": [{"weight": 400, "style": "normal", "file": asset_store_file(D1), "asset_id": "asset_font_lib_lora_w400"}]}]
+    brand = site_brand_data(slug="k", kit={}, kit_assets={}, font_faces=[], clones=[], library_assets={}, library_fonts=library)
+    assert brand["libraryFonts"] == library
+    assert site_brand_data(slug="k", kit={}, kit_assets={}, font_faces=[], clones=[], library_assets={})["libraryFonts"] == []

@@ -14,6 +14,8 @@ from typing import Any
 
 from clue_design.publishes import PUBLISH_ASSET_MEDIA_TYPES, SITE_LIVE_DELIVERY, delivery_csp
 
+from clue_design.storage import SOURCE_KEY_ASSET
+
 from . import web_export
 from .design_store import CustodyState
 from .public_address import PublicSiteAddress
@@ -126,13 +128,71 @@ def check_clone_pins(site: JsonObject, brand: JsonObject, fragment_status: Calla
             raise SitePublishRefused("site_publish.clone_not_approved", _section_not_approved(label))
 
 
-def gated_brand(brand: JsonObject, repo: Any, blobs: Any) -> tuple[JsonObject, Any]:
+def gated_brand(brand: JsonObject, repo: Any, blobs: Any, site: JsonObject | None = None) -> tuple[JsonObject, Any]:
     """The brand with its fonts replaced by the licence gate's faces (``web_export._gather_fonts``,
     the gate every WebDoc publish uses): a family whose licence does not allow embedding is not
-    shipped, and each shipped face is the WOFF2 the gate registered."""
+    shipped, and each shipped face is the WOFF2 the gate registered. The font library's families the
+    site's manual styling uses (site element inspector, plan 2) ship the same way — re-encoded to WOFF2
+    into this workspace's store — and no other library family rides along."""
     gate = web_export._gather_fonts(brand.get("kit"), repo, blobs)
     fonts = [{"family": face.family, "weight": face.weight, "style": face.style, "file": f"/asset-store/{face.digest}"} for face in gate.faces]
-    return {**brand, "fonts": fonts}, gate
+    library, warnings = _ship_library_fonts(brand, site or {}, blobs)
+    gate.warnings.extend(warnings)
+    return {**brand, "fonts": fonts, "libraryFonts": library}, gate
+
+
+def _library_families_used(site: JsonObject, brand: JsonObject) -> set[str]:
+    """The families the site's `_edits` name that are not the kit's own (pages and header/footer)."""
+    own = {str(face.get("family")) for face in brand.get("fonts") or [] if isinstance(face, dict)}
+    used: set[str] = set()
+
+    def scan(props: Any) -> None:
+        for override in ((props or {}).get("_edits") or {}).values() if isinstance(props, dict) else []:
+            family = override.get("fontFamily") if isinstance(override, dict) else None
+            if isinstance(family, str) and family not in own:
+                used.add(family)
+
+    for page in (site.get("pages") or {}).values():
+        for item in (page or {}).get("content") or []:
+            scan(item.get("props") if isinstance(item, dict) else None)
+    shell = site.get("shell") or {}
+    scan(shell.get("header"))
+    scan(shell.get("footer"))
+    return used
+
+
+def _library_face_bytes(face: JsonObject, storage: Any) -> bytes | None:
+    """A library face's bytes from the shared library (manifest-listed and digest-verified), or None."""
+    from .font_library import shared_library_font_bytes
+
+    found = shared_library_font_bytes(str(face.get("asset_id") or ""), storage)
+    return found[1] if found else None
+
+
+def _ship_library_fonts(brand: JsonObject, site: JsonObject, blobs: Any) -> tuple[list[JsonObject], list[str]]:
+    used = _library_families_used(site, brand)
+    shipped: list[JsonObject] = []
+    warnings: list[str] = []
+    for family in brand.get("libraryFonts") or []:
+        if not isinstance(family, dict) or family.get("family") not in used:
+            continue
+        faces = []
+        for face in family.get("faces") or []:
+            match = _ASSET_REF.fullmatch(str(face.get("file") or ""))
+            data = _library_face_bytes(face, blobs.storage) if match else None
+            if match is None or data is None:
+                warnings.append(f"font library face {family['family']} {face.get('weight')} is not readable: the page uses the family's fallback font")
+                continue
+            data, _ext, digest, note = web_export._web_face_bytes(blobs, match.group(1), data)
+            if note is not None:
+                warnings.append(note)
+            if digest == match.group(1):
+                # Shipped as stored (not re-encoded): this workspace must hold the bytes itself.
+                blobs.register(data, media_type="font/ttf", source_key=SOURCE_KEY_ASSET)
+            faces.append({"weight": face.get("weight"), "style": face.get("style") or "normal", "file": f"/asset-store/{digest}"})
+        if faces:
+            shipped.append({"family": family["family"], "category": family.get("category"), "faces": faces})
+    return shipped, warnings
 
 
 def site_delivery_csp(*, meta: bool) -> str:
@@ -202,7 +262,7 @@ def build_site_publish_package(
     modules = pinned_modules(site, sections)
     status = fragment_status or (lambda fragment_id: (repo.find_web_fragment(fragment_id) or {}).get("status"))
     check_clone_pins(site, brand, status)
-    brand, gate = gated_brand(brand, repo, blobs)
+    brand, gate = gated_brand(brand, repo, blobs, site)
     errors = check_site_document(site, document_id=str(document["id"]), brand=brand, sections=sections, blobs=blobs, node_bin=node_bin)
     if errors:
         raise SiteDocumentInvalid(errors)

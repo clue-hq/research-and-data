@@ -37,7 +37,7 @@ function refusalNote(change: TextPanelChange): string {
     case "fontWeight":
       return "That weight is not one this font has.";
     case "fontFamily":
-      return "Choose one of the brand's fonts.";
+      return "Choose one of the listed fonts.";
     default:
       return "That change could not be made.";
   }

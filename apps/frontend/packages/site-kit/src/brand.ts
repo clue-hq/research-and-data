@@ -21,12 +21,21 @@ export type BrandAsset = {
   file: string;
   logo: unknown;
 };
+/** One family of the font library (the ad editor's; plan 2): offered after the brand's own fonts for
+ * manual styling, and loaded only by a section whose `_edits` use it. `file` follows FontFace's rules. */
+export type LibraryFontFamily = {
+  family: string;
+  /** The library's category: sans, serif, slab, mono or display (the CSS fallback follows it). */
+  category?: string;
+  faces: { weight: number; style: string; file: string }[];
+};
 export type BrandData = {
   slug: string;
   kit: Record<string, unknown>;
   fonts: FontFace[];
   assets: Record<string, BrandAsset>;
   clones: Record<string, Clone>;
+  libraryFonts?: LibraryFontFamily[];
 };
 
 /** Photos and graphics captured with the seller's own sections, offered beside the kit's assets.

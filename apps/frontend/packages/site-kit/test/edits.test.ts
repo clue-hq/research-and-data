@@ -221,3 +221,41 @@ test("editsCss: turning italic or underline off overrides text that has it by de
   assert.match(css, /font-style:normal !important/);
   assert.match(css, /text-decoration-line:none !important/);
 });
+
+// Plan 2: the font library (the ad editor's ~27 families) after the brand's own fonts.
+import { libraryFontFamilies } from "../src/edits";
+
+const libraryBrand = {
+  ...brand,
+  libraryFonts: [
+    { family: "Inter", category: "sans", faces: [{ weight: 400, style: "normal", file: "/asset-store/aa" }, { weight: 700, style: "normal", file: "/asset-store/bb" }] },
+    { family: "Lora", category: "serif", faces: [{ weight: 400, style: "normal", file: "/asset-store/cc" }] },
+    { family: "Open Sans", category: "sans", faces: [{ weight: 400, style: "normal", file: "/asset-store/dd" }] },
+  ],
+};
+
+test("library families follow the brand's, each with its own weights; a family the brand has is the brand's", () => {
+  assert.deepEqual(libraryFontFamilies(libraryBrand), [
+    { family: "Inter", weights: [400, 700] },
+    { family: "Lora", weights: [400] },
+  ]);
+  assert.deepEqual(libraryFontFamilies(brand), []);
+});
+
+test("a library family is accepted with its own weights; anything else is refused naming both lists", () => {
+  const problems = editsProblems(
+    { a: { fontFamily: "Inter", fontWeight: 700 }, b: { fontFamily: "Lora", fontWeight: 700 }, c: { fontFamily: "Comic Sans" } },
+    libraryBrand,
+  );
+  assert.equal(problems.length, 2, problems.join("\n"));
+  assert.match(problems[0], /^b: Lora has no weight 700; use one of its weights \(400\)/);
+  assert.match(problems[1], /^c: "Comic Sans" is not one of this brand's font families or the font library's/);
+});
+
+test("a section that uses a library family carries that family's faces; one that does not carries none", () => {
+  const css = editsCss("hero", { heading: { fontFamily: "Lora" }, lead: { fontFamily: "Lora", fontWeight: 400 } }, libraryBrand);
+  assert.ok(css.startsWith('@font-face{font-family:"Lora";src:url("/asset-store/cc");font-weight:400;font-style:normal;font-display:swap}['), css);
+  assert.equal(css.split("@font-face").length - 1, 1, "each family's faces once");
+  assert.ok(css.includes('font-family:"Lora", serif !important'));
+  assert.ok(!editsCss("hero", { heading: { fontFamily: "Open Sans" } }, libraryBrand).includes("@font-face"), "the brand's own family is loaded by the theme");
+});

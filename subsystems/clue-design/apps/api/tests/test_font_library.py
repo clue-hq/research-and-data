@@ -4,6 +4,7 @@ the CoreClient library-spec injection, and the GET /font-library endpoint."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -712,3 +713,16 @@ def test_build_web_font_face_css_ignores_out_of_range_weight_style() -> None:
     assert css is not None
     assert "font-weight:400" in css
     assert "font-style:normal" in css
+
+
+def test_the_site_offers_every_library_family_with_its_faces_as_asset_store_files() -> None:
+    """Site element inspector, plan 2: the checked-in manifest as the site's `libraryFonts`."""
+    from lumen_api.font_library import site_library_fonts
+
+    families = site_library_fonts()
+    assert families, "the checked-in manifest has families"
+    for family in families:
+        assert family["category"] in {"sans", "serif", "slab", "mono", "display"}, family
+        for face in family["faces"]:
+            assert re.fullmatch(r"/asset-store/[0-9a-f]{64}", face["file"]) and face["style"] in {"normal", "italic"}, face
+            assert face["asset_id"].startswith("asset_font_lib_"), face

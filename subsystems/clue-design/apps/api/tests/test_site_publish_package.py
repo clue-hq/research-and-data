@@ -822,3 +822,31 @@ def assert_digests_are_of_what_they_name_live(package) -> None:
     for page in package.pages:
         assert page.html_digest == web_export._sha256(page.html)
         assert recorded[page.route] == web_export._sha256(page.html.replace(back_reference, "", 1))
+
+
+# Site element inspector, plan 2: the font library's families the site's manual styling uses ship as
+# WOFF2 from this workspace's store; no other library family rides along.
+def test_a_library_family_the_styling_uses_ships_as_woff2_and_no_other_does(blobs: DesignBlobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    lora, unused = "1" * 64, "2" * 64
+    brand = garner_brand()
+    brand["libraryFonts"] = [
+        {"family": "Lora", "category": "serif", "faces": [{"weight": 400, "style": "normal", "file": f"/asset-store/{lora}", "asset_id": "asset_font_lib_lora_w400"}]},
+        {"family": "Unused Sans", "category": "sans", "faces": [{"weight": 400, "style": "normal", "file": f"/asset-store/{unused}", "asset_id": "asset_font_lib_unused"}]},
+    ]
+    asked: list[str] = []
+    monkeypatch.setattr(site_publish, "_library_face_bytes", lambda face, _storage: asked.append(face["asset_id"]) or INTER_TTF.read_bytes())
+    site = garner_site_without_clones("pub_library")
+    proof = next(item for item in site["pages"]["/"]["content"] if item["props"]["id"] == "proof")
+    proof["props"]["_edits"] = {"heading": {"fontFamily": "Lora"}}
+    site, brand = hold_site_images(site, brand, blobs)
+    package = build("pub_library", site, brand, [], blobs=blobs)
+
+    assert asked == ["asset_font_lib_lora_w400"], "only the family the styling uses is read"
+    lora_faces = [src for family, src in font_faces(page_html(package, "/")) if family == "Lora"]
+    assert len(lora_faces) == 1, font_faces(page_html(package, "/"))
+    digest = _ASSET_REF.fullmatch(lora_faces[0]).group(1)
+    assert digest != lora, "the face is the WOFF2 re-encode, held by this workspace"
+    assert blobs.custody_states([digest])[digest] is CustodyState.READABLE
+    assert blobs.read_blob(digest)[1][:4] == b"wOF2"
+    assert 'font-family:"Lora", serif !important' in page_html(package, "/")
+    assert not any(family == "Unused Sans" for family, _src in font_faces(page_html(package, "/")))
