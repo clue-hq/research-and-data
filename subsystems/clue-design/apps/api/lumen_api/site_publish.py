@@ -190,8 +190,8 @@ def _ship_library_fonts(brand: JsonObject, site: JsonObject, blobs: Any) -> tupl
                 # Shipped as stored (not re-encoded): this workspace must hold the bytes itself.
                 blobs.register(data, media_type="font/ttf", source_key=SOURCE_KEY_ASSET)
             faces.append({"weight": face.get("weight"), "style": face.get("style") or "normal", "file": f"/asset-store/{digest}"})
-        if faces:
-            shipped.append({"family": family["family"], "category": family.get("category"), "faces": faces})
+        # Kept with no faces when none could ship: its category still names the fallback font.
+        shipped.append({"family": family["family"], "category": family.get("category"), "faces": faces})
     return shipped, warnings
 
 
@@ -262,8 +262,12 @@ def build_site_publish_package(
     modules = pinned_modules(site, sections)
     status = fragment_status or (lambda fragment_id: (repo.find_web_fragment(fragment_id) or {}).get("status"))
     check_clone_pins(site, brand, status)
+    # The contract is checked against the fonts as offered (a family the editor and the agent may
+    # name); the page is drawn with the faces that can ship, and a face held back by its licence or
+    # missing from storage falls back to its family's generic font, with a warning.
+    offered = brand
     brand, gate = gated_brand(brand, repo, blobs, site)
-    errors = check_site_document(site, document_id=str(document["id"]), brand=brand, sections=sections, blobs=blobs, node_bin=node_bin)
+    errors = check_site_document(site, document_id=str(document["id"]), brand=offered, sections=sections, blobs=blobs, node_bin=node_bin)
     if errors:
         raise SiteDocumentInvalid(errors)
     files: dict[str, bytes] = {}

@@ -850,3 +850,24 @@ def test_a_library_family_the_styling_uses_ships_as_woff2_and_no_other_does(blob
     assert blobs.read_blob(digest)[1][:4] == b"wOF2"
     assert 'font-family:"Lora", serif !important' in page_html(package, "/")
     assert not any(family == "Unused Sans" for family, _src in font_faces(page_html(package, "/")))
+
+
+def test_styling_that_names_a_brand_font_held_back_by_its_licence_still_publishes(blobs: DesignBlobStore) -> None:
+    """The contract is checked against the fonts as offered; the held-back face is simply not shipped
+    (found while building plan 2: the gated brand used to refuse the whole publish)."""
+    seed_font_face(blobs, "asset_site_font_locked", b"wOF2" + b"\x33" * 96, "font/woff2")
+    brand = garner_brand()
+    fonts = brand["kit"]["assets"]["fonts"]
+    stix = fonts["brand"]["family"]
+    fonts["brand"] = {
+        **fonts["brand"],
+        "license": {"name": "Commercial", "embeddable": False, "subsettable": False, "source_url": None, "restrictions": []},
+        "faces": [{"weight": 400, "style": "normal", "asset_id": "asset_site_font_locked", "source_url": None}],
+    }
+    site = garner_site_without_clones("pub_locked_style")
+    proof = next(item for item in site["pages"]["/"]["content"] if item["props"]["id"] == "proof")
+    proof["props"]["_edits"] = {"heading": {"fontFamily": stix}}
+    site, brand = hold_site_images(site, brand, blobs)
+    package = build("pub_locked_style", site, brand, [], blobs=blobs)
+    assert f'font-family:"{stix}"' in page_html(package, "/")
+    assert not any(family == stix for family, _src in font_faces(page_html(package, "/")))
