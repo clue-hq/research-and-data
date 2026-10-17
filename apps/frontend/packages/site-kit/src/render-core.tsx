@@ -8,6 +8,7 @@ import type { Config, Data } from "@puckeditor/core";
 import { z } from "zod";
 import type { AgentSectionModule } from "./agent-kit";
 import { inlineMarkerErrors } from "./agent-props";
+import { EDITS_PROP } from "./edits";
 import type { BrandData } from "./brand";
 import { fillClone } from "./clone";
 import { makeConfig, type CloneHtml } from "./config";
@@ -127,7 +128,8 @@ export function sectionPropsSchema(module: { schema?: unknown; render?: unknown 
     errors.push("`schema` must be a zod object (z.object({...}).strict())");
   } else {
     const keys = Object.keys(module.schema.shape);
-    for (const key of ["className", "style"]) if (keys.includes(key)) errors.push(`the props may not include "${key}"`);
+    // `_edits` is reserved for manual styling (edits.ts): every section has it, beside its own props.
+    for (const key of ["className", "style", EDITS_PROP]) if (keys.includes(key)) errors.push(`the props may not include "${key}"`);
     for (const key of ["id", "surface"]) if (!keys.includes(key)) errors.push(`the props need "${key}" (every section has an id and a surface)`);
     // Review finding K1-2: the editor opens a site only when every section's id is text. Read as
     // the INPUT a stored page holds, so an optional id or one filled by a default is refused too.

@@ -22,7 +22,9 @@ test("the editor's clone view is handed the markup a slot write would produce", 
   const CloneEditor = () => null;
   const config = makeConfig(garner(), { cloneHtml: fillClone, editor: { AssetPicker: () => null, CloneEditor }, mode: "page", shell: stored.shell }) as Config;
   const hero = stored.pages["/"].content.find((item: { props: { id: string } }) => item.props.id === "hero")!;
-  const render = config.components.ClonedSection.render as (props: Record<string, unknown>) => ReactElement;
+  const scoped = config.components.ClonedSection.render as (props: Record<string, unknown>) => ReactElement;
+  // Every section draws inside the box that scopes its manual styling; the section is its last child.
+  const render = (props: Record<string, unknown>) => (scoped(props).props as { children: ReactElement[] }).children[1];
   const element = render({ ...hero.props, puck: { isEditing: true } });
   assert.equal(element.type, CloneEditor);
   const { html, htmlFor } = element.props as { html: string; htmlFor: (key: string, value: string) => string };

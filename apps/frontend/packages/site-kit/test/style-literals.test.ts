@@ -20,6 +20,7 @@ const STRUCTURE = [
   /^(relative|absolute|inset-0|overflow-hidden)$/, /^object-(cover|contain)$/,
   /^\[&>\*\]:mx-auto$/, /^\[&_dd\]:mx-auto$/,
   /^lumen-fragment$/, // a clone's wrapper: its own captured CSS styles it
+  /^clue-section$/, // the box that scopes a section's manual styling: display:contents, no box of its own
 ];
 /** The brand's: theme.ts classes and the Tailwind names mapped to kit values. */
 const BRAND = [

@@ -3,6 +3,7 @@
 // kit's (theme.ts); the logo heights are site-kit's named fallbacks (the kit records logos, not the
 // size a header shows them at).
 import type { BrandData } from "./brand";
+import { SHELL_SCOPE, editsCss, editsOf, type Edits } from "./edits";
 import { Button } from "./sections";
 
 export type HeaderProps = {
@@ -14,8 +15,10 @@ export type HeaderProps = {
   ctaLook?: string;
   /** Links to the site's other pages; shown on wider screens beside the button. */
   nav?: { label: string; href: string }[];
+  /** Manual styling of the header's elements (edits.ts). */
+  _edits?: Edits;
 };
-export type FooterProps = { legal: string; privacyHref: string; termsHref: string };
+export type FooterProps = { legal: string; privacyHref: string; termsHref: string; _edits?: Edits };
 export type ShellData = { header: HeaderProps; footer: FooterProps };
 
 type Logos = Record<string, { variants: { name: string; asset_id: string }[] }>;
@@ -43,10 +46,18 @@ export function logoFiles(brand: BrandData): Set<string> {
   return files;
 }
 
+/** The shell's manual styling, drawn as the first child of its header or footer: they are not page
+ * sections, so they scope their own edits (and stay the brand root's direct children). */
+function ShellEdits({ brand, scope, props }: { brand: BrandData; scope: string; props: Record<string, unknown> }) {
+  const css = editsCss(scope, editsOf(props), brand);
+  return css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null;
+}
+
 export function SiteHeader({ brand, header, href }: { brand: BrandData; header: HeaderProps; href: (v: string) => string }) {
   const logo = sellerLogo(brand);
   return (
-    <header className="brand-rule-b bg-surface-page text-on-surface-page">
+    <header data-clue-section={SHELL_SCOPE.header} className="brand-rule-b bg-surface-page text-on-surface-page">
+      <ShellEdits brand={brand} scope={SHELL_SCOPE.header} props={header} />
       <div className="brand-content flex items-center justify-between gap-stack-default px-page-margin py-stack-tight">
         <div className="flex min-w-0 items-center gap-stack-tight">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -84,7 +95,8 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
 export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: FooterProps; href: (v: string) => string }) {
   const logo = sellerLogo(brand);
   return (
-    <footer className="brand-rule-t bg-surface-page text-on-surface-page">
+    <footer data-clue-section={SHELL_SCOPE.footer} className="brand-rule-t bg-surface-page text-on-surface-page">
+      <ShellEdits brand={brand} scope={SHELL_SCOPE.footer} props={footer} />
       <div className="brand-content flex flex-col gap-stack-default px-page-margin py-stack-loose md:flex-row md:items-center md:justify-between">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {logo ? <img src={logo} alt="" className="brand-logo-footer w-auto self-start" /> : null}

@@ -140,3 +140,68 @@ test("S2a-2: marked prose passes and the stored props schema carries the marker,
   assert.equal(properties.caption.edit, undefined);
   assert.equal(properties.steps.items?.properties.title.edit, "inline");
 });
+
+// Manual styling (site element inspector, spec §4.5): a section's `_edits` is drawn as a scoped
+// stylesheet beside it — the same in the static render, the live render and the editor — and never
+// reaches the section's own render.
+const styleOf = (html: string, scope: string) =>
+  html.match(new RegExp(`<div data-clue-section="${scope}" class="clue-section"><style data-clue-edits="">([^<]*)</style>`))?.[1];
+
+test("a static render carries the section's edits next to it and never passes _edits to an agent section", () => {
+  const analysis = structuredClone(stored.pages["/analysis"]);
+  const cta = analysis.content.find((item: { type: string }) => item.type === "CtaBand");
+  cta.props._edits = { heading: { italic: true } };
+  analysis.content.push({ type: "Picky", props: { id: "picky", surface: "page", quote: "Hi", attribution: "A buyer", _edits: { quote: { fontSize: 40 } } } });
+  const Picky = {
+    schema: quoteSchema,
+    render: ((props: Record<string, unknown>, kit: never) => {
+      if ("_edits" in props) throw new Error("the section was given _edits");
+      return quoteRender(props as never, kit);
+    }) as never,
+  };
+  const html = renderSitePages({ site: { ...site, pages: { "/analysis": analysis } }, brand, basePath: "", agentSections: { Picky }, maxOutputBytes: 10_000_000 }).pages[0].html;
+  assert.equal(styleOf(html, "cta"), '[data-clue-section="cta"] [data-clue-el="heading"]{font-style:italic !important}');
+  assert.equal(styleOf(html, "picky"), '[data-clue-section="picky"] [data-clue-el="quote"]{font-size:40px !important}');
+  assert.ok(html.includes('<div data-clue-section="picky" class="clue-section"><style data-clue-edits="">'), html);
+  assert.ok(html.includes('</style><div data-agent-section="Picky">'), "the agent section's own wrapper follows the stylesheet");
+});
+
+test("a live render carries the same stylesheet the browser will draw", () => {
+  const analysis = structuredClone(stored.pages["/analysis"]);
+  analysis.content.find((item: { type: string }) => item.type === "CtaBand").props._edits = { heading: { color: { hex: "#0F59B0", opacity: 80 } } };
+  const render = (live: boolean) =>
+    renderSitePages({ site: { ...site, pages: { "/analysis": analysis } }, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000, live }).pages[0];
+  const staticCss = styleOf(render(false).html, "cta");
+  const livePage = render(true);
+  assert.ok(staticCss, "the static render has the stylesheet");
+  assert.equal(styleOf(livePage.html, "cta"), staticCss);
+  assert.deepEqual(
+    (livePage.data!.page.content as { props: Record<string, unknown> }[]).find((item) => item.props.id === "cta")!.props._edits,
+    { heading: { color: { hex: "#0F59B0", opacity: 80 } } },
+    "the browser builds the same stylesheet from the page data",
+  );
+});
+
+test("the header's edits are scoped to the header", () => {
+  const shell = structuredClone(stored.shell);
+  shell.header._edits = { preparedFor: { fontWeight: 700 } };
+  shell.footer._edits = { legal: { underline: true } };
+  const html = renderSitePages({ site: { ...site, shell }, brand, basePath: "", routes: ["/"], agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
+  assert.match(html, /<header data-clue-section="shell-header" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-header"\] \[data-clue-el="preparedFor"\]\{font-weight:700 !important\}<\/style>/);
+  assert.match(html, /<footer data-clue-section="shell-footer" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-footer"\] \[data-clue-el="legal"\]\{text-decoration-line:underline !important\}<\/style>/);
+});
+
+test("a section with no _edits has no style element", () => {
+  for (const live of [false, true]) {
+    const html = renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000, live }).pages[0].html;
+    assert.ok(!html.includes("data-clue-edits"), "no stylesheet without edits");
+    assert.ok(html.includes('<div data-clue-section="hero" class="clue-section">'), "every section still has its scope");
+    assert.ok(html.includes('<header data-clue-section="shell-header"'), "the header still has its scope");
+  }
+});
+
+test("an agent section's props may not be named _edits (it is reserved for manual styling)", () => {
+  assert.deepEqual(sectionPropsSchema({ schema: z.object({ id: z.string(), surface: z.string(), _edits: z.string() }).strict(), render: quoteRender }), {
+    errors: ['the props may not include "_edits"'],
+  });
+});

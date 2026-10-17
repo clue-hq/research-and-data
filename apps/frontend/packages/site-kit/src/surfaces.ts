@@ -2,7 +2,7 @@
 // section backgrounds minted from the seller's site included), the text colour on each, and the
 // names the agent and the marketer choose them by (Wave 2 A9; founder Q4 = (b)).
 import type { BrandData } from "./brand";
-import { chroma, colorOf, contrast, hexOf, luminance, tokenGroups } from "./brand-values";
+import { chroma, colorOf, colorVar, contrast, hexOf, luminance, tokenGroups } from "./brand-values";
 import { SURFACES as CHOICES, SURFACE_LABELS } from "./schemas";
 
 export const COLOR_ROLES = [
@@ -24,10 +24,9 @@ export const CHOICE_ROLE: Record<(typeof CHOICES)[number], string> = {
   brandSubtle: "surface.brand.subtle", brand: "surface.brand", inverse: "surface.inverse",
 };
 
-/** `text.primary` -> `ink-primary`, `surface.brand.subtle` -> `surface-brand-subtle`. */
-export function colorVar(role: string): string {
-  return role.replace(/^text\./, "ink.").replace(/^border\./, "line.").replace(/^focus\.ring$/, "focus").replace(/\./g, "-");
-}
+// colorVar lives with the token readers (brand-values), so edits.ts can name a colour's variable
+// without importing this module (which imports schemas, which imports edits).
+export { colorVar };
 
 /** Every surface the kit has beyond its nine roles (band surfaces and any other `surface.<x>`). */
 export function extraSurfaceRoles(brand: BrandData): string[] {

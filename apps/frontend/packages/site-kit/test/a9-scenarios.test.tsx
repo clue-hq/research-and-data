@@ -134,6 +134,7 @@ const STRUCTURE = [
   /^(relative|absolute|inset-0|overflow-hidden)$/, /^object-(cover|contain)$/,
   /^\[&>\*\]:mx-auto$/, /^\[&_dd\]:mx-auto$/,
   /^lumen-fragment$/,
+  /^clue-section$/,
 ];
 const RESPONSIVE = /^(sm|md|lg|xl|2xl):/;
 

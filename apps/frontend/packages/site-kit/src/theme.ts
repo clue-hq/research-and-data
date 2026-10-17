@@ -233,6 +233,8 @@ export function themeCss(brand: BrandData): string {
     ".brand-rule-b{border-bottom:var(--brand-rule-width) solid var(--brand-rule-color)}",
     ".brand-rule-v{align-self:stretch;width:var(--brand-rule-width);background-color:var(--brand-rule-color)}",
     ".brand-content{max-width:var(--brand-content-width);margin-inline:auto}",
+    // The box around each page section that scopes its manual styling (config.tsx): no box of its own.
+    ".clue-section{display:contents}",
     `.brand-logo-header{height:${FALLBACKS.headerLogoHeight}}`,
     `.brand-logo-footer{height:${FALLBACKS.footerLogoHeight}}`,
   );

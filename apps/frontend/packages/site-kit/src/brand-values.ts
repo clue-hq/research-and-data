@@ -79,6 +79,12 @@ function resolved(brand: BrandData, group: string, name: string | null | undefin
   return value;
 }
 
+/** A colour token's name in the theme's variables: `text.primary` -> `ink-primary` (the theme writes
+ * `--brand-ink-primary`), `surface.brand.subtle` -> `surface-brand-subtle`. */
+export function colorVar(role: string): string {
+  return role.replace(/^text\./, "ink.").replace(/^border\./, "line.").replace(/^focus\.ring$/, "focus").replace(/\./g, "-");
+}
+
 /** A colour token as CSS: hex, or oklch(). */
 export function colorOf(brand: BrandData, name: string | null | undefined): string | undefined {
   const value = resolved(brand, "colors", name);

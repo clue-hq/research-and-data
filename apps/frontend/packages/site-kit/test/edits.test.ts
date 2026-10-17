@@ -12,6 +12,7 @@ import {
   StyleOverrideSchema,
   brandColorChoices,
   brandFontFamilies,
+  editsCss,
   editsOf,
   editsProblems,
   withStyleOverride,
@@ -158,4 +159,51 @@ test("validateSite reports a malformed _edits once, at its place", () => {
   const result = validateSite({ pages: { "/": home, "/analysis": s.pages["/analysis"] }, shell: s.shell }, brand, {});
   assert.equal(result.errors.length, 1, result.errors.join("\n"));
   assert.ok(result.errors[0].startsWith(`page.content.0(${id})._edits.heading.fontSize: `), result.errors[0]);
+});
+
+// Applying the edits (spec §4.5): one scoped stylesheet per section, beside it. Every declaration is
+// !important because the clones' own CSS is unlayered and would beat a layered rule.
+// The brief's "text.heading" is not a token of the Garner fixture kit; text.primary is, and has a
+// root variable (--brand-ink-primary), which is what this test is about.
+test("editsCss: tokens through the theme's variables, hex with opacity, important declarations", () => {
+  const css = editsCss("hero", { heading: { color: { token: "text.primary" }, fontSize: 48, fontWeight: 600, italic: true, textAlign: "center" }, lead: { color: { hex: "#0F59B0", opacity: 80 } } }, brand);
+  assert.match(css, /\[data-clue-section="hero"\] \[data-clue-el="heading"\]\{[^}]*color:var\(--brand-[^)]+\) !important/);
+  assert.match(css, /font-size:48px !important/);
+  assert.match(css, /\[data-clue-el="lead"\]\{color:#0F59B0CC !important\}/);
+  assert.equal(
+    css,
+    '[data-clue-section="hero"] [data-clue-el="heading"]{color:var(--brand-ink-primary) !important;font-size:48px !important;font-weight:600 !important;font-style:italic !important;text-align:center !important}' +
+      '[data-clue-section="hero"] [data-clue-el="lead"]{color:#0F59B0CC !important}',
+  );
+});
+
+test("editsCss skips an unknown token and every invalid key or value, and returns '' for nothing", () => {
+  assert.equal(editsCss("s", { heading: { color: { token: "gone" } } }, brand), "");
+  assert.equal(editsCss("s", { '"]{}body{': { italic: true } } as never, brand), "");
+  assert.equal(editsCss("s", {}, brand), "");
+  assert.equal(editsCss("s", { heading: { fontSize: 1 } } as never, brand), "");
+  assert.equal(editsCss("s", { heading: { color: { hex: "red", opacity: 50 } } } as never, brand), "");
+  // A scope that is not a section id (or a shell scope) styles nothing either.
+  assert.equal(editsCss('x"]{}body{', { heading: { italic: true } }, brand), "");
+  assert.equal(editsCss("", { heading: { italic: true } }, brand), "");
+});
+
+test("editsCss: a component colour has no root variable, so it is written as the kit's colour", () => {
+  const measured = kitBrand("garner.v3");
+  assert.equal(editsCss("s", { label: { color: { token: "button.ghost-2d62ff.label" } } }, measured), '[data-clue-section="s"] [data-clue-el="label"]{color:#2D62FF !important}');
+});
+
+test("editsCss: a font family is quoted, with the kit's generic fallback or sans-serif; underline; opacity 0 and 100", () => {
+  const css = editsCss("s", { a: { fontFamily: "Stix Two Text", underline: true }, b: { fontFamily: 'Odd"; } body {' } }, brand);
+  assert.equal(
+    css,
+    '[data-clue-section="s"] [data-clue-el="a"]{font-family:"Stix Two Text", sans-serif !important;text-decoration-line:underline !important}' +
+      '[data-clue-section="s"] [data-clue-el="b"]{font-family:"Odd body", sans-serif !important}',
+  );
+  const serifKit = structuredClone(brand);
+  const fonts = (serifKit.kit as { assets: { fonts: Record<string, { fallback_stack?: string[] }> } }).assets.fonts;
+  fonts.brand.fallback_stack = ["Georgia", "serif"];
+  assert.match(editsCss("s", { a: { fontFamily: "Stix Two Text" } }, serifKit), /font-family:"Stix Two Text", serif !important/);
+  assert.match(editsCss("s", { a: { color: { hex: "#0f59b0", opacity: 0 } }, b: { color: { hex: "#0F59B0", opacity: 100 } } }, brand), /color:#0F59B000 !important.*color:#0F59B0FF !important/);
+  assert.equal(editsCss("s", { a: { underline: false, italic: false } }, brand), "");
 });

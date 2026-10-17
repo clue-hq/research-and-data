@@ -7,6 +7,7 @@ import type { Clone, LinkReplacement, SlotValues, TextReplacement } from "./clon
  * passes its own (live-page's liveConfig). `id` is the section's component id. */
 export type CloneHtml = (clone: Clone, values: SlotValues, replacements: TextReplacement[], links: LinkReplacement[], id: string) => string;
 import { CloneMarkup } from "./clone-markup";
+import { editsCss, editsOf, withoutEdits } from "./edits";
 import { themeCss } from "./theme";
 import { makeSections } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
@@ -170,8 +171,10 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       // the one place module.render is called. Props travel whole (not spread), so none is dropped.
       // kit.editing: true while the marketer edits the page (Puck's puck.isEditing), so the section
       // shows its first state and starts nothing.
+      // `_edits` is the page's styling of the section, never one of its props: it is dropped here
+      // too because the editor's second try below draws from the props as stored.
       const Drawn = ({ props }: { props: SectionProps }) =>
-        module.render(props as never, { ...kit, editing: Boolean(props.puck?.isEditing) });
+        module.render(withoutEdits(props) as never, { ...kit, editing: Boolean(props.puck?.isEditing) });
       // In Edit mode, a section that throws with Puck's in-place widgets in its props is drawn once
       // more with its stored props (S2a-2 §2.5): edited in the side panel, never an empty box. The
       // boundary is keyed by the mode, so leaving Edit mode draws the section afresh.
@@ -285,6 +288,30 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       },
     },
   };
+
+  // Every page section — ours, the clones and the agent's — draws inside the box that scopes its
+  // manual styling (site element inspector, spec §4.5): its `_edits` as a stylesheet first, then the
+  // section, which never sees `_edits`. Done once, here, so the editor, the static render and both
+  // sides of a live page draw the same tree. The box is display:contents (themeCss), so it takes no
+  // part in the page's layout. The shell's header and footer scope themselves (shell.tsx).
+  type Render = (props: Record<string, unknown>) => ReactNode;
+  const components = config.components as unknown as Record<string, { render: Render }>;
+  for (const [type, component] of Object.entries(components)) {
+    const render = component.render;
+    components[type] = {
+      ...component,
+      render: (props) => {
+        const id = String(props.id ?? "");
+        const css = editsCss(id, editsOf(props), brand);
+        return (
+          <div data-clue-section={id} className="clue-section">
+            {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
+            {render(withoutEdits(props))}
+          </div>
+        );
+      },
+    };
+  }
 
   // Pages are loaded from storage as untyped Data, so callers take the config untyped.
   return config as unknown as Config;

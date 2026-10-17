@@ -7,7 +7,8 @@
 // entry then styles nothing.
 import { z } from "zod";
 import type { BrandData } from "./brand";
-import { colorOf, tokenGroups } from "./brand-values";
+import { colorOf, colorVar, cssString, isComponentToken, tokenGroups } from "./brand-values";
+import { ComponentIdSchema } from "./site-document";
 
 /** The reserved prop on a section (and on the shell's header and footer) that holds its edits. */
 export const EDITS_PROP = "_edits";
@@ -125,4 +126,63 @@ export function editsProblems(edits: Edits, brand: BrandData): string[] {
     }
   }
   return problems;
+}
+
+/** The CSS generic families a kit's fallback stack may end in. */
+const GENERIC_FAMILIES = new Set([
+  "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui",
+  "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "math", "emoji", "fangsong",
+]);
+
+/** The generic family the kit's own fallback stack gives this family; sans-serif when it gives none
+ * (or the family is not the kit's). */
+function genericFamily(brand: BrandData, family: string): string {
+  const fonts = (brand.kit as { assets?: { fonts?: Record<string, { family?: string; fallback_stack?: string[] }> } }).assets?.fonts ?? {};
+  const stack = Object.values(fonts).find((font) => font.family === family)?.fallback_stack ?? [];
+  return stack.map((name) => String(name).trim().toLowerCase()).find((name) => GENERIC_FAMILIES.has(name)) ?? "sans-serif";
+}
+
+/** A colour as CSS: a token through the theme's root variable, or the kit's colour itself for a
+ * component token (the theme draws those inline, so they have no variable); a hex with its opacity
+ * as #RRGGBBAA. A token the kit does not have gives nothing. */
+function colorCss(brand: BrandData, color: ColorValue): string | undefined {
+  if ("hex" in color) {
+    const alpha = Math.round((color.opacity * 255) / 100).toString(16).padStart(2, "0");
+    return `${color.hex}${alpha}`.toUpperCase();
+  }
+  const value = colorOf(brand, color.token);
+  if (!value) return undefined;
+  return isComponentToken(color.token) ? value : `var(--brand-${colorVar(color.token)})`;
+}
+
+/** One element's override as CSS declarations, in the schema's order. */
+function declarations(brand: BrandData, override: StyleOverride): string[] {
+  const out: [string, string | undefined][] = [
+    ["color", override.color && colorCss(brand, override.color)],
+    ["font-family", override.fontFamily && cssString(override.fontFamily) ? `"${cssString(override.fontFamily)}", ${genericFamily(brand, override.fontFamily)}` : undefined],
+    ["font-size", override.fontSize !== undefined ? `${override.fontSize}px` : undefined],
+    ["font-weight", override.fontWeight !== undefined ? String(override.fontWeight) : undefined],
+    ["font-style", override.italic ? "italic" : undefined],
+    ["text-decoration-line", override.underline ? "underline" : undefined],
+    ["text-align", override.textAlign],
+  ];
+  return out.flatMap(([property, value]) => (value ? [`${property}:${value} !important`] : []));
+}
+
+/** A section's edits as its scoped stylesheet (spec §4.5): one rule per element,
+ * `[data-clue-section="<scope>"] [data-clue-el="<key>"]{…}`, drawn beside the section in the editor
+ * and on the published page alike. Every declaration is !important: the clones' own CSS is not in a
+ * layer, so only an important rule beats it (and the theme and Tailwind's utilities with it). A scope
+ * that is not a section id, a key or an override the schema refuses, and a value the brand cannot
+ * resolve each emit nothing; "" when nothing is left. */
+export function editsCss(scope: string, edits: Edits, brand: BrandData): string {
+  if (!ComponentIdSchema.safeParse(scope).success) return "";
+  return Object.entries(edits)
+    .flatMap(([key, value]) => {
+      const override = StyleOverrideSchema.safeParse(value);
+      if (!ElementKeySchema.safeParse(key).success || !override.success) return [];
+      const css = declarations(brand, override.data);
+      return css.length ? [`[${SECTION_SCOPE_ATTR}="${scope}"] [${ELEMENT_KEY_ATTR}="${key}"]{${css.join(";")}}`] : [];
+    })
+    .join("");
 }
