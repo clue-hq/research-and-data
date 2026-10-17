@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, React 19, Puck 0.23.0 (pinned), Zod 4, node:test via tsx, Python 3 + pytest + Playwright (browser and API scenario tests).
 
-**Spec:** `docs/superpowers/specs/2026-10-17-site-element-inspector-design.md` (approved by the founder 2026-10-17). This plan delivers spec §7 step 0 (foundations, text elements only) and step 1's first part (whole-box typography). Later plans: 2 = rich text, highlighted words, links on text, library fonts, S1-3; 3 = buttons; 4 = containers and Arrange; 5 = images.
+**Spec:** `docs/superpowers/specs/2026-10-17-site-element-inspector-design.md` (approved by the founder 2026-10-17). This is **plan 1 of 5**; the spec's §7 is the source of truth for what each plan covers (§7.2), where every requirement lives (§7.3) and each plan's status (§7.1). Read §7 before starting, and update §7.1 when this plan starts and when it finishes (§7.6).
 
 ## Global Constraints
 
@@ -293,3 +293,4 @@ test("a section with no _edits has no style element", () => { /* no data-clue-ed
 - [ ] **Step 1:** Rebuild bundles (`npm run build -w @clue/site-kit`, `-w @clue/site-editor`, and the design API's site bundles per `docs` / `DEV_STACK.md`); with the lane stack down, run the frontend gate `npm run design-system:build && npm run lint && npm run build` in `apps/frontend` → all pass.
 - [ ] **Step 2:** Start the trenton lane (`nohup ./scripts/dev_stack_trenton.sh up …`), then in the in-app browser, on Garner (the Carmel Clay site), Conduit and Clue sites: click a heading in a brand section, in a cloned section, and "Prepared for" in the header; change colour (theme and custom), font, size, weight, B / I / U and alignment; confirm each shows on the canvas, survives a reload, undoes in one step, and appears on a published page. Screenshot each workspace.
 - [ ] **Step 3:** Record the result, anything owed, and the costs in `_memory/` (a new session note) and the plan's ledger.
+- [ ] **Step 4:** Update the spec's §7.1 status row for plan 1 to "Finished <date>; live-checked on Garner, Conduit and Clue <date>", add a §7.7 change-log line, and fix §7.2 / §7.3 if anything moved between plans while building. Commit the spec with that message.

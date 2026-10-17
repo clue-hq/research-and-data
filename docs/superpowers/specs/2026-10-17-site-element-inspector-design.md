@@ -2,7 +2,7 @@
 
 Date 2026-10-17. Founder conversation in the trenton session (brainstorming, mockups in
 `.superpowers/brainstorm/95737-1792238115/content/`, git-ignored: `site-inspector-panels.html`,
-`site-inspector-button.html`). Status: DRAFT for founder review.
+`site-inspector-button.html`). Status: APPROVED by the founder 2026-10-17. Plan status and scope: §7.
 
 ## 1. Intent
 
@@ -263,22 +263,143 @@ renderer can replace).
 - Skill or prompt text changes (the agent's `writing-a-section`, `building-with-puck`) are shown to the
   founder before they are written.
 
-## 7. Order of delivery
+## 7. The five plans
 
-0. Foundations: element keys (§4.1, header and footer included), selection (§4.2), the `edits` schema and
-   its stylesheet (§4.3, §4.5), the site palette, the extracted `TextAlignment`, S1-3.
-1. **Text:** whole-box typography, then rich text and highlighted words (§4.4), then links on text, then
-   fonts (§4.6).
-2. **Buttons:** label, typography, fill, stroke and radius, padding and width, Link.
-3. **Containers:** fill, stroke and radius, padding, gap, width, Arrange (prop arrays, clones, header and
-   footer).
-4. **Images** (my guess at the founder's order; images already swap today): fit, alt text, stroke and radius.
+The work ships as **five plans, built one at a time in this order**. A plan starts only when the one before
+it is finished: built, reviewed, proven by its scenario tests, and checked live in the in-app browser on
+Garner, Conduit and Clue. Each plan delivers one kind of element **everywhere it appears**: in our brand
+sections, in copied seller sections (clones), in the agent's own sections, and in the shared header and
+footer.
 
-Each step ships on its own and is complete when: every control it adds works on every section kind it
-names (or is shown disabled with a note where §4 says so); the change shows identically in the editor and
-on a published page; it survives a reload and is one undo step; a business-logic scenario test proves it
-through the real write route, the stored document and the published render; and it is checked live in the
-in-app browser on Garner, Conduit and Clue. No step leaves a control that looks live but does nothing.
+### 7.1 Status (keep this table current)
+
+| Plan | What the marketer gets | Status | Plan file |
+|---|---|---|---|
+| 1 | Click any text and style the whole text box | Plan written 2026-10-17; not started | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
+| 2 | Style and link highlighted words; more fonts | Not written | — |
+| 3 | Click a button and edit everything about it | Not written | — |
+| 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
+| 5 | Click an image and set its fit, alt text and corners | Not written | — |
+
+### 7.2 What each plan covers
+
+**Plan 1: foundations and whole-box text styling.**
+- Foundations every later plan builds on:
+  - element names (`data-clue-el`) on text elements: brand sections, clones, the header and footer, and
+    the agent's own sections where the agent names them (§4.1);
+  - clicking selects the text under the pointer (§4.2);
+  - the `edits` storage layer with its validation and the stylesheet that draws it, in the editor and on
+    the published page (§4.3, §4.5);
+  - the site colour palette; the shared alignment control and the B / I / U toggles (§4.7).
+- The text panel: colour (brand or custom), font (the brand's fonts only), size, weight, bold, italic,
+  underline, alignment, applied to the **whole** text box.
+- Layers: the selected section's text elements, listed under it.
+- `edits` properties added: `color`, `fontFamily`, `fontSize`, `fontWeight`, `italic`, `underline`,
+  `textAlign`.
+- The agent: may write `edits` (including the header's and footer's); sees manual styling in `site.md`;
+  skill text on naming text elements and on `edits` (founder review first). The prompt stops implying the
+  header is off-limits.
+
+**Plan 2: highlighted words, links on text, more fonts.**
+- Fix S1-3 first (§5).
+- Rich text (§4.4): highlight words and style just those words (colour, font, size, weight, bold, italic,
+  underline); the panel says "N words selected".
+- Links on text: edit an existing text link (ProofCard's link, nav links, footer links, a clone's text
+  link through its `href` slot or `links` replacement), and turn highlighted words or a whole text box into
+  a new link; web address or page on this site; same tab or new tab (the "new tab" boolean for text links).
+- Clone text slots accept rich text; clone text that is not a slot shows its word-level and new-link
+  controls disabled with a note.
+- Fonts: the ad editor's library fonts after the brand's, loaded in the editor and on the published page
+  (§4.6), with their own weights.
+- The agent: `site.md` shows rich text and links in plain words; skill text on rich text and links
+  (founder review first).
+
+**Plan 3: buttons.**
+- Clicking a button selects the button (keys on buttons; `kit.Button` takes `el`).
+- The button panel: label text; label typography; fill; stroke (colour, width, corner radius: pill, a
+  number, custom); padding and width; Link (web address or page on this site; same tab or new tab).
+- Everywhere: brand-section buttons, clone buttons, the header's call-to-action button, agent buttons.
+- `edits` properties added: `fill`, `borderColor`, `borderWidth`, `radius`, `padding`, `width` (as they
+  apply to buttons). The "new tab" boolean for button links.
+- Layers gains buttons. The agent: `site.md` and skill text for buttons (founder review first).
+
+**Plan 4: containers and Arrange.**
+- Clicking any box selects it: a section, a card, a row, a column, a list item, a div, the header or footer
+  box (keys on containers; `kit.Card` takes `el`). The panel's title names what was clicked.
+- The container panel: fill; stroke (colour, width, corner radius); padding; gap between children; width
+  (fill, fit, fixed); content alignment.
+- Arrange (§4.8): move an element up or down among its siblings — in prop arrays (brand and agent
+  sections), in clones and in the header and footer (`order`).
+- Hiding a header or footer element (`hidden`), so the logo or a link can be dropped.
+- `edits` properties added: `gap`, `order`, `hidden`; the plan-3 box properties extended to containers.
+- Layers becomes the full nested tree of the section. The agent: `site.md` and skill text for containers,
+  ordering and hiding (founder review first).
+
+**Plan 5: images.**
+- Clicking an image selects it, including the header and footer logos (keys on images; `kit.Image` takes
+  `el`).
+- The image panel: Replace (the existing asset picker), fit (fill or fit), alt text, stroke with corner
+  radius.
+- `edits` property added: `imageFit`; stroke and radius extended to images.
+- Layers gains images. The agent: `site.md` and skill text for images (founder review first).
+
+### 7.3 Where every requirement lives (nothing in two plans, nothing in none)
+
+| Requirement (section of this doc) | Plan |
+|---|---|
+| Element names and selection, for text (§4.1, §4.2) | 1 |
+| ... for buttons / containers / images | 3 / 4 / 5 |
+| `edits` storage, validation and stylesheet (§4.3, §4.5) | 1 (later plans add properties) |
+| Whole-box text typography, brand fonts | 1 |
+| Site colour palette, shared alignment control, B / I / U toggles (§4.7) | 1 |
+| Agent may write `edits`; `site.md` shows manual styling; header not off-limits (§4.3, §4.9) | 1 (later plans extend `site.md` and the skills for their element) |
+| S1-3 clone text fix (§5) | 2 |
+| Highlighted words, "N words selected", rich text in brand, agent and clone slots (§4.2, §4.4) | 2 |
+| Links on text: editing existing text links, creating new ones, new tab (§2, §4.3, §4.4) | 2 |
+| Library fonts and their loading (§4.6) | 2 |
+| Button label, typography, fill, stroke, radius, padding, width, Link, new tab (§2) | 3 |
+| Header call-to-action button | 3 |
+| Container fill, stroke, radius, padding, gap, width, content alignment, panel title (§2) | 4 |
+| Arrange in prop arrays, clones, header and footer; `order` (§4.8) | 4 |
+| Hiding header and footer elements; `hidden` (§4.3, §4.9) | 4 |
+| Layers as the full nested tree (§2) | 4 (plans 1, 3 and 5 add their element rows) |
+| Image replace, fit, alt text, stroke and radius; logos (§2) | 5 |
+| Disabled-with-a-note controls; number boxes commit on blur; one save per change (§4.7) | every plan, for its own controls |
+| Scenario tests and the live check on Garner, Conduit and Clue (§6) | every plan |
+
+### 7.4 Not in any of the five plans
+
+- A header or footer with a structurally different composition: new elements, a two-row header, a header
+  the agent writes itself (§4.9). A separate follow-up.
+- Moving, inserting, deleting or duplicating whole sections (item E8, waiting on the founder's designs, C13).
+- Styling that differs by screen width; animations; free CSS (§3 non-goals).
+- Trimming unused font files from published pages (the existing page-weight item P2).
+- The ad panel's Stroke on text, Layout X / Y, Rotation, Arrange front / back, and vertical alignment (§2).
+
+### 7.5 When a plan is done
+
+A plan is done when: every control it adds works on every section kind it names (or is shown disabled with
+a note where §4 says so); each change shows identically in the editor and on a published page; it survives
+a reload and is one undo step; a business-logic scenario test proves it through the real write route, the
+stored document and the published render; and it is checked live in the in-app browser on Garner, Conduit
+and Clue. No plan leaves a control that looks live but does nothing.
+
+### 7.6 Keeping this document current (every agent working on this)
+
+This document is the source of truth for the five plans. Read §7 before writing or executing any of them,
+and update it whenever any of these happens:
+
+- a plan is written: fill in its plan file and set its status to "Plan written <date>; not started";
+- a plan starts or finishes: update its status (finished means §7.5 is met, with the live-check date);
+- the founder changes what a plan covers, or something moves between plans: update §7.2 and §7.3 in the
+  same commit, so no requirement ends up in two plans or in none;
+- a decision changes §2 or §4: edit that section and add a line to the change log below.
+
+Never leave a plan's scope only in a plan file or a chat; it belongs here.
+
+### 7.7 Change log
+
+- 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
 
 ## 8. Left to the builder
 
