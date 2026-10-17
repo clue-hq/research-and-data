@@ -56,7 +56,7 @@ export function linkRowState(site: SiteDocument | null, selection: LinkSelection
   if (source?.kind === "prop") {
     return { href: String(getAtPath(props, source.href) ?? ""), kind: "link", newTab: getAtPath(props, source.newTab) === true, removable: false, shared: false };
   }
-  const newTab = keyList(props.newTab).includes(element.key);
+  const newTab = keyList(props.newTab).some((key) => sameLink(element, key));
   if (source?.kind === "slot") {
     const value = (props.slots as Record<string, unknown> | undefined)?.[source.slot];
     return { href: typeof value === "string" && value ? value : (element.link?.href ?? ""), kind: "link", newTab, removable: false, shared: false };
@@ -95,9 +95,15 @@ function withoutAtPath(value: Record<string, unknown>, path: string): Record<str
   return copy as Record<string, unknown>;
 }
 
-function withNewTabKey(props: Record<string, unknown>, key: string, on: boolean): Record<string, unknown> {
-  const keys = keyList(props.newTab).filter((entry) => entry !== key);
-  const next = on ? [...keys, key] : keys;
+/** Whether a `newTab` key names this element's link: its own key, or (a button) a key on the words
+ * inside it — the page opens the link in a new tab for either (review finding 3). */
+function sameLink(element: ElementSelection, key: string): boolean {
+  return key === element.key || (element.kind === "button" && key.startsWith(`${element.key}.`));
+}
+
+function withNewTabKey(props: Record<string, unknown>, element: ElementSelection, on: boolean): Record<string, unknown> {
+  const keys = keyList(props.newTab).filter((entry) => !sameLink(element, entry));
+  const next = on ? [...keys, element.key] : keys;
   if (next.length) return { ...props, newTab: next };
   return withoutAtPath(props, "newTab");
 }
@@ -126,10 +132,10 @@ export function linkPatch(site: SiteDocument, selection: LinkSelection, change: 
     next = setAtPath(props, source.href, link.href);
     next = link.newTab ? setAtPath(next, source.newTab, true) : withoutAtPath(next, source.newTab);
   } else if (source?.kind === "slot") {
-    next = withNewTabKey({ ...props, slots: { ...((props.slots as Record<string, unknown> | undefined) ?? {}), [source.slot]: link.href } }, element.key, link.newTab);
+    next = withNewTabKey({ ...props, slots: { ...((props.slots as Record<string, unknown> | undefined) ?? {}), [source.slot]: link.href } }, element, link.newTab);
   } else if (source?.kind === "replacement") {
     const links = ((props.links as { find: string; replace: string }[] | undefined) ?? []).filter((entry) => entry.find !== source.find);
-    next = withNewTabKey({ ...props, links: [...links, { find: source.find, replace: link.href }] }, element.key, link.newTab);
+    next = withNewTabKey({ ...props, links: [...links, { find: source.find, replace: link.href }] }, element, link.newTab);
   }
   if (!next || canonicalJson(next) === canonicalJson(props)) return null;
   // A link never touches the section's styling.

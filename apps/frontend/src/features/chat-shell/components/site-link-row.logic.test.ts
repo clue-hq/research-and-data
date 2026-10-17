@@ -124,3 +124,14 @@ test("the Link row and the save check share one address rule", () => {
   const selection = sel("proof", { key: "linkLabel", link: { source: { kind: "prop", href: "linkHref", newTab: "linkNewTab" } } });
   assert.deepEqual(linkPatch(site, selection, { href: "//evil.example", newTab: false }), { refused: "Use a page of this site (like /analysis), a web address starting with https://, a #section or a mailto: address." });
 });
+
+test("a copied button's new tab counts a key on its words too, and Same tab clears both (review 3)", () => {
+  const withWordsKey = linkPatch(site, sel("hero", { key: "0.2.1", link: { source: { kind: "slot", slot: "cta" }, href: "/start" } }, "/", "ClonedSection"), { href: "/analysis", newTab: true });
+  assert.ok(withWordsKey && "props" in withWordsKey);
+  assert.deepEqual(withWordsKey.props.newTab, ["0.2.1"], "set while the words were selected as text");
+  const button = sel("hero", { key: "0.2", kind: "button", link: { source: { kind: "slot", slot: "cta" }, href: "/start" } }, "/", "ClonedSection");
+  assert.deepEqual(linkRowState(withWordsKey.site, button), { kind: "link", href: "/analysis", newTab: true, removable: false, shared: false }, "the button shows New tab");
+  const same = linkPatch(withWordsKey.site, button, { href: "/analysis", newTab: false });
+  assert.ok(same && "props" in same);
+  assert.equal(same.props.newTab, undefined, "Same tab removes the words' key as well");
+});
