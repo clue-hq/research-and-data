@@ -205,5 +205,10 @@ test("editsCss: a font family is quoted, with the kit's generic fallback or sans
   fonts.brand.fallback_stack = ["Georgia", "serif"];
   assert.match(editsCss("s", { a: { fontFamily: "Stix Two Text" } }, serifKit), /font-family:"Stix Two Text", serif !important/);
   assert.match(editsCss("s", { a: { color: { hex: "#0f59b0", opacity: 0 } }, b: { color: { hex: "#0F59B0", opacity: 100 } } }, brand), /color:#0F59B000 !important.*color:#0F59B0FF !important/);
-  assert.equal(editsCss("s", { a: { underline: false, italic: false } }, brand), "");
+});
+
+test("editsCss: turning italic or underline off overrides text that has it by default", () => {
+  const css = editsCss("hero", { quote: { italic: false, underline: false } }, brand);
+  assert.match(css, /font-style:normal !important/);
+  assert.match(css, /text-decoration-line:none !important/);
 });

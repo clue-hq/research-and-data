@@ -162,8 +162,9 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
     ["font-family", override.fontFamily && cssString(override.fontFamily) ? `"${cssString(override.fontFamily)}", ${genericFamily(brand, override.fontFamily)}` : undefined],
     ["font-size", override.fontSize !== undefined ? `${override.fontSize}px` : undefined],
     ["font-weight", override.fontWeight !== undefined ? String(override.fontWeight) : undefined],
-    ["font-style", override.italic ? "italic" : undefined],
-    ["text-decoration-line", override.underline ? "underline" : undefined],
+    // Off is a value too: it undoes italic or underline the element has by default (an <em>, a link).
+    ["font-style", override.italic === undefined ? undefined : override.italic ? "italic" : "normal"],
+    ["text-decoration-line", override.underline === undefined ? undefined : override.underline ? "underline" : "none"],
     ["text-align", override.textAlign],
   ];
   return out.flatMap(([property, value]) => (value ? [`${property}:${value} !important`] : []));
