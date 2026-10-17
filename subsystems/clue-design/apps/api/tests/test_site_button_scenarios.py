@@ -159,7 +159,9 @@ def test_buttons_may_go_to_different_outside_addresses(client: TestClient) -> No
     site = stored(client, garner_site_without_clones("site_buttons_two"))
     assert save(client, "site_buttons_two", site).status_code == 200
     two = copy.deepcopy(site)
-    cta = next(item for item in two["pages"]["/analysis"]["content"] if item["type"] == "CtaBand")
-    cta["props"]["buttonHref"] = "https://garnerhealth.com/contact"
+    content = two["pages"]["/analysis"]["content"]
+    next(item for item in content if item["type"] == "FeatureSplit")["props"]["buttonHref"] = "https://garnerhealth.com/demo"
+    next(item for item in content if item["type"] == "CtaBand")["props"]["buttonHref"] = "https://garnerhealth.com/contact"
+    two["shell"]["header"]["ctaHref"] = "https://garnerhealth.com/pricing"
     response = save(client, "site_buttons_two", two)
     assert response.status_code == 200, response.text
