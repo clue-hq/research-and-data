@@ -44,11 +44,14 @@ controls, each doing the web version of its ad counterpart.
   and it refused: the shell's layout is fixed in code (`site-kit/src/shell.tsx`; `ShellSchema`,
   `schemas.ts:182`, allows only the words, logo, nav links and one button). "Ideally that should not be
   the case."
-- **Every word in the header and footer is editable in place, and styleable** (founder, live check
-  2026-10-17: "i should be able change Prepared for text as well... change the wordings or anything
-  there actually"). The fixed words ("Prepared for", "Privacy policy", "Terms") become values; the
-  marketer types any header or footer text on the canvas, as in a section, and every piece of it
-  can be selected and styled. Added to plan 1.
+- **No hard-coded header or footer** (founder, plan 1 live check, 2026-10-17): "i should be able
+  change Prepared for text as well... change the wordings or anything there actually", then "i dont
+  want a hardcoded header version… standardised headers could be made and kept but should also be
+  acceptable of change from human and agent both here, just like the rest of the site". Standard
+  headers and footers exist as templates; the agent picks one and changes or rewrites it; the
+  marketer edits words and styling in place like any section. Agent-written header code can still
+  use placeholders for the seller's logo, the account's logo and name ("and that header code, should
+  allow template placeholders for logo and account name and all even still okay"). This is **plan 6**.
 - **Adding a link to plain text is in** (founder: "yes this should also be allowed"): highlighted words,
   or a whole text box, can become a link.
 - **Reordering inside copied seller sections is in** (founder: "yes it should be there"), as well as in
@@ -239,9 +242,8 @@ like inspector edits today. Number boxes commit on blur / Enter, never per keyst
 **Header and footer.** The agent writes the shell's `edits` as it does a section's, so it can restyle and
 rearrange the header and footer: spacing, alignment, colours and fonts, the order of its parts, hiding the
 logo or a link. The prompt and `building-with-puck` stop implying the header is off-limits (skill text,
-founder review first). *My call (check this):* a header with a structurally different composition (new
-elements, a two-row header, an agent-written header) is a follow-up, not this design — it needs the shell to
-accept an agent-written section, which changes publishing and the editor's shell handling.
+founder review first). A header with a structurally different composition (new elements, a two-row header, an
+agent-written header) — and no hard-coded header at all — is **plan 6** (founder, 2026-10-17).
 
 The agent's view of the page (`site.md`, the section cards) shows each section's `edits` in plain words
 ("headline: colour #0F59B0, Semi Bold"). When it rewrites a section it may keep, change or drop them.
@@ -268,9 +270,9 @@ renderer can replace).
 - Skill or prompt text changes (the agent's `writing-a-section`, `building-with-puck`) are shown to the
   founder before they are written.
 
-## 7. The five plans
+## 7. The plans
 
-The work ships as **five plans, built one at a time in this order**. A plan starts only when the one before
+The work ships as **six plans, built one at a time in this order** (plan 6 added 2026-10-17). A plan starts only when the one before
 it is finished: built, reviewed, proven by its scenario tests, and checked live in the in-app browser on
 Garner, Conduit and Clue. Each plan delivers one kind of element **everywhere it appears**: in our brand
 sections, in copied seller sections (clones), in the agent's own sections, and in the shared header and
@@ -285,6 +287,7 @@ footer.
 | 3 | Click a button and edit everything about it | Not written | — |
 | 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
 | 5 | Click an image and set its fit, alt text and corners | Not written | — |
+| 6 | Headers and footers as editable templates, changed by the marketer and the agent like any section | Not written (founder 2026-10-17: build it as plan 6) | — |
 
 ### 7.2 What each plan covers
 
@@ -301,10 +304,6 @@ footer.
 - Layers: the selected section's text elements, listed under it.
 - `edits` properties added: `color`, `fontFamily`, `fontSize`, `fontWeight`, `italic`, `underline`,
   `textAlign`.
-- The header and footer: every piece of text named and styleable (the "Prepared for" label, the
-  account name, nav links, the button's words, the legal line, the footer links); the fixed words
-  become values (`preparedForLabel`, `privacyLabel`, `termsLabel`); all of their words are typed in
-  place on the canvas (founder, 2026-10-17, during plan 1's live check).
 - The agent: may write `edits` (including the header's and footer's); sees manual styling in `site.md`;
   skill text on naming text elements and on `edits` (founder review first). The prompt stops implying the
   header is off-limits.
@@ -352,6 +351,17 @@ footer.
 - `edits` property added: `imageFit`; stroke and radius extended to images.
 - Layers gains images. The agent: `site.md` and skill text for images (founder review first).
 
+**Plan 6: headers and footers as editable templates.** (Its own design first: it changes how the
+site document, the editor and publishing treat the header and footer.)
+- No hard-coded header or footer. Standard headers and footers exist as templates (today's header is
+  the first; the seller's own captured header can be another); the agent picks one and changes or
+  rewrites it, including writing its own header code; the marketer changes any word and any styling
+  in place, like any section; saved, undoable and published the same way.
+- Agent-written header code can use placeholders for the seller's logo, the account's logo and the
+  account's name, filled the same way templates fill them.
+- Everything plans 1–5 built (selecting, styling, typing in place, links, buttons, boxes, images)
+  works in the header and footer because they are sections.
+
 ### 7.3 Where every requirement lives (nothing in two plans, nothing in none)
 
 | Requirement (section of this doc) | Plan |
@@ -360,7 +370,7 @@ footer.
 | ... for buttons / containers / images | 3 / 4 / 5 |
 | `edits` storage, validation and stylesheet (§4.3, §4.5) | 1 (later plans add properties) |
 | Whole-box text typography, brand fonts | 1 |
-| Header and footer: every text named and styleable, fixed words made values, words typed in place | 1 |
+| Header and footer as editable templates (any words, any styling, agent-rewritable, placeholders for logo and account name) | 6 |
 | Site colour palette, shared alignment control, B / I / U toggles (§4.7) | 1 |
 | Agent may write `edits`; `site.md` shows manual styling; header not off-limits (§4.3, §4.9) | 1 (later plans extend `site.md` and the skills for their element) |
 | S1-3 clone text fix (§5) | 2 |
@@ -379,10 +389,6 @@ footer.
 
 ### 7.4 Not in any of the five plans
 
-- A header or footer with a structurally different composition: new elements, a two-row header, a header
-  the agent writes itself (§4.9). Proposed as a **plan 6** (after plan 4: the header would hold an
-  agent-written section, so every element panel works in it); the founder deferred the decision on
-  2026-10-17 ("we will come to plan 6 things later on").
 - Moving, inserting, deleting or duplicating whole sections (item E8, waiting on the founder's designs, C13).
 - Styling that differs by screen width; animations; free CSS (§3 non-goals).
 - Trimming unused font files from published pages (the existing page-weight item P2).
@@ -413,7 +419,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 
 - 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
 - 2026-10-17: plan 6 (a structurally different, agent-written header) proposed; founder deferred it. Plan 1 started.
-- 2026-10-17: founder, during plan 1's live check: every word in the header and footer editable in place and styleable — added to plan 1 (the header's button words are styled as text in plan 1; the button itself is still plan 3).
+- 2026-10-17: founder, during plan 1's live check: every word in the header and footer must be changeable, and the header must not be hard-coded — standard headers become templates the agent and the marketer change like any section. Briefly added to plan 1, then moved to **plan 6** (founder: "we do it as a part of plan 6"). Plan 1 keeps what it built: the header's account name and nav links, and the footer's text, are selectable and styleable.
 
 ## 8. Left to the builder
 
