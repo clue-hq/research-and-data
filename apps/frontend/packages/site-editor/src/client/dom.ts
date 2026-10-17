@@ -245,6 +245,7 @@ export function textElementAround(node: Node | null): Element | null {
 // that the browser draws as a box: not inline, or with a background or a border. Our own buttons
 // (brand-btn) always are. A text link inside a sentence stays text; a link holding a block is a card.
 
+const PUCK_EDITOR = "[data-puck-overlay-portal]";
 const BLOCK_TAGS = "div,p,h1,h2,h3,h4,h5,h6,ul,ol,li,section,article,header,footer,figure,blockquote,table,form,nav,aside,main";
 
 const transparent = (color: string) => color === "" || color === "transparent" || /rgba\([^)]*,\s*0\s*\)$/.test(color);
@@ -253,7 +254,8 @@ export function isButtonElement(element: Element, view: Pick<Window, "getCompute
   if (validKey(element) === null) return false;
   const tag = element.tagName.toLowerCase();
   if (tag !== "a" && tag !== "button" && !element.classList.contains("brand-btn")) return false;
-  if (element.querySelector(BLOCK_TAGS)) return false;
+  // Puck's in-place editor (its overlay portal) sits inside words being edited; it is not the page's.
+  if ([...element.querySelectorAll(BLOCK_TAGS)].some((block) => !block.closest(PUCK_EDITOR))) return false;
   if (tag === "button" || element.classList.contains("brand-btn")) return true;
   const style = view.getComputedStyle(element);
   return style.display !== "inline" || !transparent(style.backgroundColor) || Number.parseFloat(style.borderTopWidth) > 0;

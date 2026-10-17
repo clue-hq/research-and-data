@@ -196,3 +196,14 @@ test("a button's box as drawn", () => {
     fill: "#0F59B0", borderColor: "#000000", borderWidth: 2, radius: [9999, 9999, 9999, 9999], paddingY: 12, paddingX: 22, width: 120,
   });
 });
+
+test("a button whose words are being edited in place is still a button (Puck's editor sits inside them)", () => {
+  const editing = new JSDOM(`<div data-puck-component="what">
+    <a id="b" class="brand-btn" data-clue-el="button"><span id="l" data-clue-el="button.label"><div data-puck-overlay-portal="true"><div class="rich-text"><div contenteditable="true"><p id="p">Request</p></div></div></div></span></a>
+  </div>`);
+  const view = editing.window as unknown as Window;
+  const button = editing.window.document.getElementById("b")!;
+  assert.equal(isButtonElement(button, view), true);
+  assert.equal(buttonAround(editing.window.document.getElementById("p"), view)?.id, "b");
+  assert.equal(buttonLabelOf(button)?.id, "l");
+});
