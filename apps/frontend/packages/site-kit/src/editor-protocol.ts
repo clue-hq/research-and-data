@@ -105,7 +105,38 @@ export const ElementSummarySchema = z.object({
   label: z.string().max(80),
 });
 export type ElementSummary = z.infer<typeof ElementSummarySchema>;
-export const ElementSelectionSchema = ElementSummarySchema.extend({ computed: ComputedTypographySchema });
+/** Plan 2. Where the element's words are stored when they are rich text (a prop path: `heading`,
+ * `slots.headline`); for a clone slot never set, `fallback` is its captured words as rich text. */
+export const RichSourceSchema = z.object({ prop: PropPathSchema, fallback: z.string().max(100_000).optional() });
+/** Highlighted words inside the element: character offsets as the browser's textContent counts them,
+ * the words themselves (the app checks them against its own copy), and how the first of them is drawn. */
+export const WordsSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+    count: z.number().int().nonnegative(),
+    text: z.string().max(100_000),
+    computed: ComputedTypographySchema,
+  })
+  .refine((words) => words.end > words.start, { message: "highlighted words are a range" });
+/** Where the element's own link is written: a prop and its new-tab prop (our sections, the shell), a
+ * clone's href slot, a clone's link replacement (by the captured address; `shared` when other links in
+ * the section have it too), or nowhere the marketer can change (`fixed`, with why). */
+export const LinkSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("prop"), href: PropPathSchema, newTab: PropPathSchema }),
+  z.object({ kind: z.literal("slot"), slot: z.string().min(1).max(200) }),
+  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(2048), shared: z.boolean() }),
+  z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
+]);
+export type RichSource = z.infer<typeof RichSourceSchema>;
+export type Words = z.infer<typeof WordsSchema>;
+export type LinkSource = z.infer<typeof LinkSourceSchema>;
+export const ElementSelectionSchema = ElementSummarySchema.extend({
+  computed: ComputedTypographySchema,
+  rich: RichSourceSchema.nullable().optional(),
+  words: WordsSchema.nullable().optional(),
+  link: z.object({ source: LinkSourceSchema }).nullable().optional(),
+});
 export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
 
 const envelope = {

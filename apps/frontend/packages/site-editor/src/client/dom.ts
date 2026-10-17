@@ -181,3 +181,51 @@ export function elementSelection(
 ): ElementSelection {
   return { ...elementSummary(element), computed: computedTypography(element, view, toHex) };
 }
+
+// Plan 2: highlighted words. Offsets count characters as the browser's textContent does (a line break
+// is none), which is how site-kit's rich.ts counts the stored text, so the app can find the same words.
+
+/** The range's offsets and words inside the element, or null when the range is not inside it. */
+export function selectionOffsets(element: Element, range: Range): { start: number; end: number; text: string } | null {
+  if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return null;
+  const doc = element.ownerDocument;
+  const before = doc.createRange();
+  before.selectNodeContents(element);
+  before.setEnd(range.startContainer, range.startOffset);
+  const start = before.toString().length;
+  const text = range.toString();
+  return { start, end: start + text.length, text };
+}
+
+/** A range over the element's characters [start, end), or null when they are not all there. */
+export function rangeAt(element: Element, start: number, end: number): Range | null {
+  const doc = element.ownerDocument;
+  const walker = doc.createTreeWalker(element, 4 /* NodeFilter.SHOW_TEXT */);
+  const range = doc.createRange();
+  let at = 0;
+  let started = false;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const length = node.nodeValue?.length ?? 0;
+    if (!started && start <= at + length) {
+      range.setStart(node, start - at);
+      started = true;
+    }
+    if (started && end <= at + length) {
+      range.setEnd(node, end - at);
+      return range;
+    }
+    at += length;
+  }
+  return null;
+}
+
+/** How many words a reader sees in the text. */
+export const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+/** The text element (data-clue-el, as keyedElementsIn counts them) a node sits in, or null. */
+export function textElementAround(node: Node | null): Element | null {
+  for (let element = asElement(node as EventTarget | null); element; element = element.parentElement) {
+    if (isTextElement(element)) return element;
+  }
+  return null;
+}

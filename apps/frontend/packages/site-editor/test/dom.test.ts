@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
-import { clickIntent, rectOf } from "../src/client/dom";
+import { clickIntent, rangeAt, rectOf, selectionOffsets, wordCount } from "../src/client/dom";
 
 const dom = new JSDOM(`
   <div class="brand-root">
@@ -112,4 +112,29 @@ test("computed colours become #RRGGBB; typography maps start/end alignment and w
   const style = { color: "rgb(1, 64, 54)", fontFamily: '"Garner Serif", Georgia, serif', fontSize: "48px", fontWeight: "600", fontStyle: "italic", textDecorationLine: "underline", textAlign: "start" };
   const typography = computedTypography(sectionEl("h"), { getComputedStyle: () => style as unknown as CSSStyleDeclaration }, cssColorToHex);
   assert.deepEqual(typography, { color: "#014036", fontFamily: "Garner Serif", fontSize: 48, fontWeight: 600, italic: true, underline: true, textAlign: "left" });
+});
+
+// Plan 2: highlighted words as character offsets inside the selected text element, counted as the
+// browser's textContent counts them (a line break is no character), and back.
+test("a highlighted range is its offsets inside the element, across marks and line breaks", () => {
+  const page = new JSDOM('<h2 id="h">Top <strong>providers</strong><br>win <a href="/x">big</a><br class="ProseMirror-trailingBreak"></h2>');
+  const h = page.window.document.getElementById("h")!;
+  const range = page.window.document.createRange();
+  const strong = h.querySelector("strong")!.firstChild!;
+  const link = h.querySelector("a")!.firstChild!;
+  range.setStart(strong, 3);
+  range.setEnd(link, 2);
+  assert.deepEqual(selectionOffsets(h, range), { start: 7, end: 19, text: "viderswin bi" });
+  const back = rangeAt(h, 7, 19)!;
+  assert.equal(back.toString(), "viderswin bi");
+  const outside = page.window.document.createRange();
+  outside.selectNodeContents(page.window.document.body);
+  assert.equal(selectionOffsets(h, outside), null, "a range not inside the element");
+  assert.equal(rangeAt(h, 3, 99), null, "offsets past the text");
+});
+
+test("words are counted as a reader counts them", () => {
+  assert.equal(wordCount(" Top  providers win "), 3);
+  assert.equal(wordCount("provi"), 1);
+  assert.equal(wordCount("   "), 0);
 });

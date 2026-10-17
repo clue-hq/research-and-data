@@ -51,3 +51,34 @@ export function normalizeRichIn<P extends { content?: { type: string; props: Rec
   });
   return changed ? { ...page, content } : page;
 }
+
+/** Where our section's or the shell's own link for an element is written (plan 2, ruling R5): the
+ * address prop and the new-tab prop beside it. Null for an element that is not one of those links. */
+export function ownLinkSource(type: string, key: string): { kind: "prop"; href: string; newTab: string } | null {
+  if (type === "ProofCard" && key === "linkLabel") return { kind: "prop", href: "linkHref", newTab: "linkNewTab" };
+  const nav = type === "SiteHeader" ? /^nav\.(\d+)$/.exec(key) : null;
+  if (nav) return { kind: "prop", href: `nav.${nav[1]}.href`, newTab: `nav.${nav[1]}.newTab` };
+  if (type === "SiteFooter" && (key === "privacy" || key === "terms")) return { kind: "prop", href: `${key}Href`, newTab: `${key}NewTab` };
+  return null;
+}
+
+/** Where an element's words are stored when they are rich text (ruling R4): our section's rich prop
+ * the element draws (its key is the prop's name), or an agent's inline prop the element is named after
+ * (`cards.*.body` names `cards.1.body`). A clone's slot is read from the canvas (its slot attribute);
+ * the header's and footer's words are not rich until plan 6. */
+export function richSourceOf(
+  item: { type: string; props: Record<string, unknown> },
+  key: string,
+  _brand: BrandData,
+  propsSchemaOf: PropsSchemaOf,
+): { prop: string } | null {
+  const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
+  if (ours) return ours.includes(key) ? { prop: key } : null;
+  if (item.type === "ClonedSection") return null;
+  const schema = propsSchemaOf(item.type);
+  if (!schema) return null;
+  const matches = richPropPaths(schema as Parameters<typeof richPropPaths>[0]).some((path) =>
+    new RegExp(`^${path.replace(/\./g, "\\.").replace(/\*/g, "\\d+")}$`).test(key),
+  );
+  return matches ? { prop: key } : null;
+}

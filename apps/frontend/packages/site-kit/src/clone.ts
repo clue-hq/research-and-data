@@ -240,3 +240,22 @@ export function slotDefaults(clone: Clone): SlotValues {
     ]),
   );
 }
+
+/** The link a clone's element is or sits in, found by its element key in the captured markup: its
+ * captured address, its href slot (if it has one), and whether another link in the section has the
+ * same address (a link replacement then changes both). Null when the element is no link (plan 2). */
+export function cloneLinkAt(clone: Clone, key: string): { href: string; slot: string | null; shared: boolean } | null {
+  const root = parse(clone.html, { comment: false });
+  keyTextElements(root, clone.slots);
+  const element = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`).find((candidate) => candidate.getAttribute(ELEMENT_KEY_ATTR) === key);
+  if (!element) return null;
+  const anchor = element.tagName === "A" ? element : (element.closest("a") as HTMLElement | null);
+  const href = anchor?.getAttribute("href");
+  if (!anchor || !href) return null;
+  const slot = anchor.getAttribute("data-lumen-slot");
+  return {
+    href,
+    slot: slot && clone.slots[slot]?.kind === "href" ? slot : null,
+    shared: root.querySelectorAll("a[href]").filter((other) => other.getAttribute("href") === href).length > 1,
+  };
+}

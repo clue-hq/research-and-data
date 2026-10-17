@@ -195,3 +195,23 @@ test("an element key or a computed colour that could break out of its place is d
   const badColor = { ...ELEMENT, computed: { ...ELEMENT.computed, color: "red;}" } };
   assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: badColor } as never, ctx)), null);
 });
+
+// Plan 2: the selected element may carry where its rich text lives, the highlighted words, and where
+// its link is written.
+test("selected may carry the element's rich text source, its highlighted words and its link source", () => {
+  const words = { start: 5, end: 13, count: 1, text: "Provider", computed: ELEMENT.computed };
+  const element = { ...ELEMENT, rich: { prop: "heading" }, words, link: { source: { kind: "replacement" as const, find: "/demo", shared: true } } };
+  const parsed = parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element }, ctx));
+  assert.deepEqual(parsed?.type === "selected" ? parsed.payload.element : null, element);
+  for (const source of [{ kind: "prop", href: "linkHref", newTab: "linkNewTab" }, { kind: "slot", slot: "cta_href" }, { kind: "fixed", reason: "set by the agent's section" }]) {
+    const ok = { ...ELEMENT, link: { source } };
+    assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: ok } as never, ctx))?.type, "selected", JSON.stringify(source));
+  }
+});
+
+test("highlighted words must be a real range, and a rich text source a real prop path", () => {
+  const send = (element: object) => parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element } as never, ctx));
+  assert.equal(send({ ...ELEMENT, words: { start: 5, end: 5, count: 0, text: "", computed: ELEMENT.computed } }), null);
+  assert.equal(send({ ...ELEMENT, rich: { prop: "a b" } }), null);
+  assert.equal(send({ ...ELEMENT, link: { source: { kind: "prop", href: "x;y", newTab: "z" } } }), null);
+});

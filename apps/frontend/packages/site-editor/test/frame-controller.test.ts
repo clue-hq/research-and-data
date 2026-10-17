@@ -539,3 +539,67 @@ test("leaving a piece of text sends what was typed once the rich text editor has
   assert.equal(changed.length, 1);
   assert.equal((changed[0].payload as { site: typeof site }).site.pages["/"].content[0].props.heading, "Fewer surprises.");
 });
+
+// Plan 2: highlighted words. The describer reads the canvas's text selection; the controller decides
+// when a change of it is worth a `selected`, and keeps the words through a redraw.
+function wordsHarness() {
+  const h = harness();
+  let words: { start: number; end: number; count: number; text: string; computed: typeof TYPO } | null = null;
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key ? { key, kind: "text" as const, label: key, computed: TYPO, words } : null,
+    elements: [{ key: "heading", kind: "text" as const, label: "heading" }, { key: "body", kind: "text" as const, label: "body" }],
+  }));
+  const setWords = (start: number | null, end = 0) => {
+    words = start === null ? null : { start, end, count: 1, text: "x".repeat(end - start), computed: TYPO };
+  };
+  const lastWords = () => {
+    const last = h.posts.filter((post) => post.type === "selected").at(-1)?.payload as { element: { words?: { start: number } | null } | null } | undefined;
+    return last?.element?.words ?? null;
+  };
+  const selectedCount = () => h.posts.filter((post) => post.type === "selected").length;
+  return { ...h, lastWords, selectedCount, setWords };
+}
+
+test("highlighting words in the selected element posts them; the same range again posts nothing", async () => {
+  const h = wordsHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], {});
+  h.controller.elementClicked("/", "cta", "heading");
+  h.setWords(4, 9);
+  h.controller.selectionChanged({ target: "/", componentId: "cta", key: "heading" });
+  assert.equal(h.lastWords()?.start, 4);
+  const count = h.selectedCount();
+  h.controller.selectionChanged({ target: "/", componentId: "cta", key: "heading" });
+  assert.equal(h.selectedCount(), count);
+});
+
+test("highlighting words in another element of the section selects that element with its words", async () => {
+  const h = wordsHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], {});
+  h.controller.elementClicked("/", "cta", "heading");
+  h.setWords(0, 3);
+  h.controller.selectionChanged({ target: "/", componentId: "cta", key: "body" });
+  assert.deepEqual(h.controller.getState().selection, { componentId: "cta", elementKey: "body", target: "/" });
+  assert.equal(h.lastWords()?.start, 0);
+});
+
+test("a redraw that drops the highlight keeps the words; the marketer's own click or key clears them", async () => {
+  const h = wordsHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], {});
+  h.controller.elementClicked("/", "cta", "heading");
+  h.setWords(4, 9);
+  h.controller.selectionChanged({ target: "/", componentId: "cta", key: "heading" });
+  h.setWords(null);
+  const count = h.selectedCount();
+  h.controller.selectionChanged(null);
+  assert.equal(h.selectedCount(), count, "a collapse nobody asked for posts nothing");
+  h.controller.reselected("cta", "CtaBand", [], {});
+  assert.equal(h.lastWords()?.start, 4, "a re-description after a redraw keeps the words");
+  assert.deepEqual(h.controller.keptWords(), { componentId: "cta", key: "heading", target: "/", words: { start: 4, end: 9, count: 1, text: "xxxxx", computed: TYPO } });
+  h.controller.userActed();
+  h.controller.selectionChanged(null);
+  assert.equal(h.lastWords(), null, "after a click or a key, a collapse clears the words");
+  assert.equal(h.controller.keptWords(), null);
+});

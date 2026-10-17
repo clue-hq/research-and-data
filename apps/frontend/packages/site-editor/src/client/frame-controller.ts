@@ -10,6 +10,7 @@ import type {
   FrameToAppPayloads,
   FrameToAppType,
   SiteGeometry,
+  Words,
 } from "@clue/site-kit/editor-protocol";
 import {
   canonicalJson,
@@ -54,6 +55,9 @@ export type ElementDescriber = (
 ) => { element: ElementSelection | null; elements: ElementSummary[] };
 
 const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
+
+/** Highlighted words the controller keeps through a redraw (plan 2). */
+export type KeptWords = { target: SiteTarget; componentId: string; key: string; words: Words };
 
 /** Which elements a description shows (keys and labels), without their computed look. */
 function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
@@ -122,7 +126,20 @@ export class FrameController {
   private pendingElement: { target: SiteTarget; componentId: string; key: string | null } | null = null;
   /** The selected section as last described: its type and fields (to re-post them for another
    * element), the element key that was asked for, and what the canvas showed (to re-describe it). */
-  private described: { componentType: string; fields: FieldDescription[]; askedKey: string | null; shown: string } | null = null;
+  private described: {
+    componentType: string;
+    fields: FieldDescription[];
+    askedKey: string | null;
+    shown: string;
+    /** The words last posted, as JSON ("null" for none). */
+    words: string;
+  } | null = null;
+  /** The highlighted words last seen on the canvas (plan 2), kept until the marketer clicks or types:
+   * a redraw (an outside edit, a save) drops the browser's selection, but the panel goes on acting on
+   * those words. */
+  private kept: KeptWords | null = null;
+  /** A pointer or key press in the frame since the words were last seen. */
+  private acted = false;
   private shellFields: ShellFields | null = null;
   private timer: unknown = null;
   private changePending = false;
@@ -278,10 +295,66 @@ export class FrameController {
     props: Record<string, unknown>,
     key: string | null,
   ): void {
-    const { element, elements } = this.describe(target, componentId, key);
+    const described = this.describe(target, componentId, key);
+    const element = described.element ? this.withKeptWords(target, componentId, described.element) : null;
+    const { elements } = described;
     this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
-    this.described = { askedKey: key, componentType, fields, shown: shownElements(element, elements) };
+    this.described = { askedKey: key, componentType, fields, shown: shownElements(element, elements), words: JSON.stringify(element?.words ?? null) };
     this.post("selected", { componentId, componentType, element, elements, fields, props, route: target });
+  }
+
+  /** The element with the words to show: the ones on the canvas now (kept from here on), else the ones
+   * kept for this element when the canvas lost them without the marketer doing anything. */
+  private withKeptWords(target: SiteTarget, componentId: string, element: ElementSelection): ElementSelection {
+    if (element.words) {
+      this.kept = { componentId, key: element.key, target, words: element.words };
+      this.acted = false;
+      return element;
+    }
+    const kept = this.kept;
+    if (kept && !this.acted && kept.target === target && kept.componentId === componentId && kept.key === element.key) {
+      return { ...element, words: kept.words };
+    }
+    this.kept = null;
+    return element;
+  }
+
+  /** The words kept for the selected element (editor-app highlights them again after a redraw). */
+  keptWords(): KeptWords | null {
+    return this.kept;
+  }
+
+  /** A pointer or key press in the frame: the next time the highlight goes, it is the marketer's doing. */
+  userActed(): void {
+    this.acted = true;
+  }
+
+  /** The canvas's text selection changed (plan 2): `at` is the text element holding highlighted words,
+   * or null for none. Words in the selected element are posted when they change; words in another
+   * element select it; losing the highlight clears the words only after the marketer's own click or
+   * key (a redraw drops the browser's selection too). */
+  selectionChanged(at: { target: SiteTarget; componentId: string; key: string } | null): void {
+    if (this.state.mode !== "edit" || !this.state.site) return;
+    const current = this.state.selection;
+    const described = this.described;
+    if (!at) {
+      if (!this.acted || !current || !described || described.words === "null") return;
+      this.kept = null;
+      this.repost(current, described);
+      return;
+    }
+    if (current && described && current.target === at.target && current.componentId === at.componentId && current.elementKey === at.key) {
+      const { element } = this.describe(at.target, at.componentId, at.key);
+      if (!element?.words || JSON.stringify(element.words) === described.words) return;
+      this.repost(current, described);
+      return;
+    }
+    this.elementClicked(at.target, at.componentId, at.key);
+  }
+
+  private repost(selection: FrameSelection, described: NonNullable<FrameController["described"]>): void {
+    const props = this.state.site ? (componentProps(this.state.site, selection.target, selection.componentId) ?? {}) : {};
+    this.postSelected(selection.target, selection.componentId, described.componentType, described.fields, props, selection.elementKey);
   }
 
   /** Describe the selection again once the canvas has settled (editor-app calls it a frame after a

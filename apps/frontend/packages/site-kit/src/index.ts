@@ -4,6 +4,7 @@
 // (@clue/site-kit/validate, /catalog, /check-section); the editor-only parts are @clue/site-kit/editor.
 export { brandData, type BrandAsset, type BrandData, type FontFace } from "./brand";
 export {
+  cloneLinkAt,
   fillClone,
   slotDefaults,
   type Clone,
@@ -24,4 +25,4 @@ export { EDIT_INLINE, IMAGE_PROP, LINK_PROP, brandChoice, notInlineReason, type 
 export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";
-export { normalizeRichIn, richValuesOfItem, type PropsSchemaOf } from "./rich-props";
+export { normalizeRichIn, ownLinkSource, richSourceOf, richValuesOfItem, type PropsSchemaOf } from "./rich-props";

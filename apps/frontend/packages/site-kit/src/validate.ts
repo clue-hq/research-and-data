@@ -12,7 +12,7 @@
 // Returns {valid, errors: ["where: message", ...]}.
 import { parse } from "node-html-parser";
 import type { BrandData } from "./brand";
-import { replaceableTexts, type Clone } from "./clone";
+import { replaceableTexts } from "./clone";
 import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
 import { richLinks, richProblems } from "./rich";

@@ -1,12 +1,29 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
-import type { BrandData } from "@clue/site-kit";
+import { RICH_PROPS, cloneLinkAt, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
+import { richFromDom } from "@clue/site-kit/editor";
+import { normalizeRich } from "@clue/site-kit/rich";
+import type { ElementSelection, LinkSource, RichSource } from "@clue/site-kit/editor-protocol";
 import { acceptAppMessage, frameToApp } from "@clue/site-kit/editor-protocol";
 import { canonicalJson, pageFor } from "@clue/site-kit/editor-site";
 import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
 import type { BootContext } from "./boot";
 import { buildPageConfig, shellFieldDescriptions } from "./config";
-import { clickIntent, cssColorToHex, elementKeyAt, elementSelection, elementSummary, findKeyedElement, keyedElementsIn, rectOf } from "./dom";
+import {
+  clickIntent,
+  computedTypography,
+  cssColorToHex,
+  elementKeyAt,
+  elementSelection,
+  elementSummary,
+  findKeyedElement,
+  keyedElementsIn,
+  rangeAt,
+  rectOf,
+  selectionOffsets,
+  textElementAround,
+  wordCount,
+} from "./dom";
 import { fieldsForComponent } from "./fields";
 import { FrameController } from "./frame-controller";
 import { frameKeyAction } from "./keys";
@@ -43,6 +60,78 @@ function toHex(color: string): string | null {
   return cssColorToHex(`rgb(${r}, ${g}, ${b})`);
 }
 
+/** Which section or shell part an element on the canvas belongs to. */
+function placeOf(element: Element): { target: string; componentId: string } | null {
+  const shell = element.closest(".brand-root > header, .brand-root > footer");
+  if (shell) return { componentId: shell.tagName.toLowerCase(), target: SHELL_TARGET };
+  const component = element.closest("[data-puck-component]")?.getAttribute("data-puck-component");
+  return component ? { componentId: component, target: "page" } : null;
+}
+
+const AGENT_LINK = "The agent's section sets this link; ask the agent to change it.";
+
+/** The chosen element as the `selected` message carries it (plan 1's look, plus plan 2's facts). */
+function describeElement(controller: FrameController, target: string, componentId: string, element: Element): ElementSelection {
+  const described = elementSelection(element, window, toHex);
+  const state = controller.getState();
+  const key = described.key;
+  let rich: RichSource | null = null;
+  let link: LinkSource | null = null;
+  const anchored = element.tagName === "A" || element.closest("a") !== null;
+  if (target === SHELL_TARGET) {
+    link = ownLinkSource(componentId === "header" ? "SiteHeader" : "SiteFooter", key);
+  } else if (state.site && state.brand) {
+    const item = pageFor(state.site, target)?.content.find((entry) => entry.props.id === componentId);
+    if (item) {
+      const props = item.props as Record<string, unknown>;
+      if (item.type === "ClonedSection") {
+        const clone = state.brand.clones[String(props.fragmentId ?? "")];
+        const slot = element.getAttribute("data-lumen-slot");
+        if (clone && slot && clone.slots[slot]?.kind === "text") {
+          const stored = (props.slots as Record<string, unknown> | undefined)?.[slot];
+          rich = typeof stored === "string" ? { prop: `slots.${slot}` } : { fallback: normalizeRich(richFromDom(element)), prop: `slots.${slot}` };
+        }
+        const found = clone ? cloneLinkAt(clone, key) : null;
+        if (found) link = found.slot ? { kind: "slot", slot: found.slot } : { find: found.href, kind: "replacement", shared: found.shared };
+      } else {
+        const propsSchemaOf = (type: string) => state.sections.find((section) => section.name === type)?.propsSchema;
+        rich = richSourceOf({ props, type: item.type }, key, state.brand, propsSchemaOf);
+        // An agent's link is a prop of its own the editor cannot name from the element.
+        const agent = !(item.type in RICH_PROPS);
+        link = ownLinkSource(item.type, key) ?? (anchored && agent ? { kind: "fixed", reason: AGENT_LINK } : null);
+      }
+    }
+  }
+  return { ...described, link: link ? { source: link } : null, rich, words: wordsIn(element) };
+}
+
+/** The words highlighted inside the element now, or null. */
+function wordsIn(element: Element): ElementSelection["words"] {
+  const selection = document.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  const offsets = selectionOffsets(element, range);
+  if (!offsets || !offsets.text.trim()) return null;
+  const first = range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement;
+  return { ...offsets, computed: computedTypography(first ?? element, window, toHex), count: wordCount(offsets.text) };
+}
+
+/** After a redraw the browser's highlight is gone: put the kept words back, if their text is still there. */
+function highlightKeptWords(controller: FrameController): void {
+  const kept = controller.keptWords();
+  const selection = controller.getState().selection;
+  if (!kept || !selection || selection.elementKey !== kept.key || selection.componentId !== kept.componentId) return;
+  const scope = selectionScope(selection.target, selection.componentId);
+  const element = scope ? findKeyedElement(scope, kept.key) : null;
+  const current = document.getSelection();
+  if (!element || !current) return;
+  if (current.rangeCount && !current.isCollapsed && selectionOffsets(element, current.getRangeAt(0))) return;
+  const range = rangeAt(element, kept.words.start, kept.words.end);
+  if (!range || range.toString() !== kept.words.text) return;
+  current.removeAllRanges();
+  current.addRange(range);
+}
+
 export function EditorApp({ boot }: { boot: BootContext }) {
   const controller = useMemo(
     () =>
@@ -58,18 +147,51 @@ export function EditorApp({ boot }: { boot: BootContext }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 
   // The canvas half of element selection: the section's text elements and the chosen one, read
-  // from the page as drawn now.
+  // from the page as drawn now — with, for the chosen one (plan 2), where its rich words and its link
+  // are written and the words highlighted in it.
   useEffect(() => {
     controller.attachDescriber((target, componentId, key) => {
       const scope = selectionScope(target, componentId);
       if (!scope) return { element: null, elements: [] };
       const found = key ? findKeyedElement(scope, key) : null;
       return {
-        element: found ? elementSelection(found, window, toHex) : null,
+        element: found ? describeElement(controller, target, componentId, found) : null,
         elements: keyedElementsIn(scope).map(elementSummary),
       };
     });
     return () => controller.attachDescriber(null);
+  }, [controller]);
+
+  // Plan 2: the text the marketer highlights. Read a frame after the browser reports it (it reports
+  // every step of a drag), and handed to the controller, which decides what to post.
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const selection = document.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        controller.selectionChanged(null);
+        return;
+      }
+      const element = textElementAround(selection.getRangeAt(0).commonAncestorContainer);
+      const place = element ? placeOf(element) : null;
+      const key = element?.getAttribute("data-clue-el");
+      const target = place?.target === SHELL_TARGET ? SHELL_TARGET : controller.getState().route;
+      controller.selectionChanged(place && key ? { componentId: place.componentId, key, target } : null);
+    };
+    const onSelectionChange = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    const onAct = () => controller.userActed();
+    document.addEventListener("selectionchange", onSelectionChange);
+    document.addEventListener("pointerdown", onAct, true);
+    document.addEventListener("keydown", onAct, true);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener("selectionchange", onSelectionChange);
+      document.removeEventListener("pointerdown", onAct, true);
+      document.removeEventListener("keydown", onAct, true);
+    };
   }, [controller]);
 
   useEffect(() => {
@@ -171,6 +293,7 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     const settle = () => {
       controller.refreshSelection();
       apply();
+      highlightKeptWords(controller);
     };
     const apply = () => {
       for (const element of document.querySelectorAll(`[${ELEMENT_SELECTED}]`)) element.removeAttribute(ELEMENT_SELECTED);
