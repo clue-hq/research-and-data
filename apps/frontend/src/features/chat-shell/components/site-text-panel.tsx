@@ -139,6 +139,11 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
                 value={binding.labelText}
               />
             )}
+            {element.labelSource?.kind === "replacement" && element.labelSource.shared ? (
+              <p className={styles.inspectorStatusNote} role="status">
+                Other text in this section reads the same, so changing it changes that text too.
+              </p>
+            ) : null}
           </InspectorField>
         ) : null}
         <InspectorField label="Color">

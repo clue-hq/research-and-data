@@ -242,6 +242,22 @@ const SKIP_TEXT = /^\{\{wf/;
  * collapsed), once each, in document order. The one reading the catalog lists, the check accepts and
  * the renderer applies (review finding S1-3): a phrase that wraps a line break, spans bold text or is
  * part of a sentence is not one text node, so it is not offered and not accepted. */
+/** How many texts in the markup read exactly `words`. */
+function textsReading(root: HTMLElement, words: string): number {
+  let count = 0;
+  const walk = (node: HTMLElement) => {
+    for (const child of node.childNodes) {
+      if (child instanceof TextNode) {
+        if (shownText(child) === words) count += 1;
+      } else if ((child as HTMLElement).tagName && !NOT_TEXT.has((child as HTMLElement).tagName.toLowerCase())) {
+        walk(child as HTMLElement);
+      }
+    }
+  };
+  walk(root);
+  return count;
+}
+
 export function replaceableTexts(clone: Clone): string[] {
   const root = parse(clone.html, { comment: false });
   const found: string[] = [];
@@ -317,7 +333,7 @@ export function slotsInsideLinks(clone: Clone): Set<string> {
 export function cloneButtonAt(
   clone: Clone,
   key: string,
-): { labelKey: string; labelSlot: string | null; labelText: string | null; href: string | null; hrefSlot: string | null; shared: boolean } | null {
+): { labelKey: string; labelSlot: string | null; labelText: string | null; labelShared: boolean; href: string | null; hrefSlot: string | null; shared: boolean } | null {
   const root = parse(clone.html, { comment: false });
   keyTextElements(root, clone.slots);
   const keyed = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`);
@@ -338,6 +354,8 @@ export function cloneButtonAt(
     labelKey: label.getAttribute(ELEMENT_KEY_ATTR) ?? key,
     labelSlot: slotOf(label) ?? slotOf(button),
     labelText: words && replaceableTexts(clone).includes(words) ? words : null,
+    // Replacing the words changes every text that reads the same in the section (review finding 9).
+    labelShared: words !== null && textsReading(root, words) > 1,
     href,
     hrefSlot: hrefSlot && clone.slots[hrefSlot]?.kind === "href" ? hrefSlot : null,
     shared: href !== null && root.querySelectorAll("a[href]").filter((other) => other.getAttribute("href") === href).length > 1,

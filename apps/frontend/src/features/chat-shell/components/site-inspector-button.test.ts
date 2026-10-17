@@ -72,3 +72,10 @@ test("words that cannot be changed here say why instead of a Text box", () => {
   assert.doesNotMatch(html, /aria-label="Button text"/);
   assert.match(html, /Ask the agent to change these words\./);
 });
+
+test("words copied from the seller that also appear elsewhere in the section say so (review 9)", () => {
+  const html = renderedModule.exports.render(buttonBinding({
+    element: { ...(buttonBinding().element as object), labelSource: { kind: "replacement", find: "Book a demo", shared: true } },
+  }));
+  assert.match(html, /Other text in this section reads the same, so changing it changes that text too\./);
+});

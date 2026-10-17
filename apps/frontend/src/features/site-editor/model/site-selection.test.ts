@@ -224,3 +224,10 @@ test("words highlighted in a button are judged by its label's rich text, not the
   assert.notEqual(wordsUnavailableReason(header), null, "the box itself holds no rich text");
   assert.equal(wordsUnavailableReason(labelSelectionOf(header) ?? header), null);
 });
+
+test("a line break in a button's words shows as a space in the Text row (review 9)", () => {
+  const broken = SiteDocumentSchema.parse({ ...buttonSite, pages: { ...buttonSite.pages, "/": { root: { props: {} }, content: [
+    { type: "CtaBand", props: { id: "cta", heading: "H", buttonLabel: "Book<br>now", buttonHref: "/" } },
+  ] } } });
+  assert.equal(labelTextOf(broken, buttonSelection({ kind: "prop", prop: "buttonLabel" })), "Book now");
+});

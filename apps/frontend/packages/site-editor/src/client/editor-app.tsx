@@ -143,7 +143,7 @@ function describeButton(controller: FrameController, target: string, componentId
         rich = typeof stored === "string" ? { prop: `slots.${found.labelSlot}` } : { fallback: normalizeRich(richFromDom(label), { links: false }), prop: `slots.${found.labelSlot}` };
         labelSource = { kind: "slot", slot: found.labelSlot };
       } else {
-        labelSource = found?.labelText ? { find: found.labelText, kind: "replacement" } : { kind: "fixed", reason: CLONE_BUTTON_WORDS };
+        labelSource = found?.labelText ? { find: found.labelText, kind: "replacement", shared: found.labelShared } : { kind: "fixed", reason: CLONE_BUTTON_WORDS };
       }
       if (found?.hrefSlot) link = { kind: "slot", slot: found.hrefSlot };
       else if (found?.href) link = { find: found.href, kind: "replacement", shared: found.shared };

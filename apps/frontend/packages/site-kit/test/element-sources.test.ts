@@ -54,8 +54,13 @@ test("a clone's button names its words' key and where its words and link are wri
     html: '<div><a class="b" href="/demo"><svg></svg><span data-lumen-slot="cta_label">Book a demo</span></a><a class="b" href="/demo">Talk to us</a><button>Go <b>now</b></button></div>',
     slots: { cta_label: { kind: "text", fallback: "Book a demo" } },
   };
-  assert.deepEqual(cloneButtonAt(buttons, "0.0"), { labelKey: "0.0.1", labelSlot: "cta_label", labelText: null, href: "/demo", hrefSlot: null, shared: true });
-  assert.deepEqual(cloneButtonAt(buttons, "0.1"), { labelKey: "0.1", labelSlot: null, labelText: "Talk to us", href: "/demo", hrefSlot: null, shared: true });
-  assert.deepEqual(cloneButtonAt(buttons, "0.2"), { labelKey: "0.2", labelSlot: null, labelText: null, href: null, hrefSlot: null, shared: false }, "words across bold are not one replaceable text");
+  assert.deepEqual(cloneButtonAt(buttons, "0.0"), { labelKey: "0.0.1", labelSlot: "cta_label", labelText: null, labelShared: false, href: "/demo", hrefSlot: null, shared: true });
+  assert.deepEqual(cloneButtonAt(buttons, "0.1"), { labelKey: "0.1", labelSlot: null, labelText: "Talk to us", labelShared: false, href: "/demo", hrefSlot: null, shared: true });
+  assert.deepEqual(cloneButtonAt(buttons, "0.2"), { labelKey: "0.2", labelSlot: null, labelText: null, labelShared: false, href: null, hrefSlot: null, shared: false }, "words across bold are not one replaceable text");
   assert.equal(cloneButtonAt(buttons, "0.0.1"), null, "the words are not the button");
+});
+
+test("a copied button's words that also appear elsewhere in the section are marked shared (review 9)", () => {
+  const twice: Clone = { ...clone, id: "frag_00000000000000e0", html: '<div><a class="b" href="/demo">Book a demo</a><p>Book a demo</p></div>', slots: {} };
+  assert.equal(cloneButtonAt(twice, "0.0")?.labelShared, true);
 });

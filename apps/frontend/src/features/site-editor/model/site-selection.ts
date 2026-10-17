@@ -131,7 +131,9 @@ export function labelTextOf(site: SiteDocument | null, selection: WordsSelection
     return entry?.replace ?? source.find;
   }
   const stored = getAtPath(props, source.kind === "prop" ? source.prop : `slots.${source.slot}`);
-  return richText(typeof stored === "string" ? stored : (element.labelElement?.rich?.fallback ?? ""));
+  const html = typeof stored === "string" ? stored : (element.labelElement?.rich?.fallback ?? "");
+  // A line break shows as a space, so the words never run together in the box.
+  return richText(html.replace(/<br\s*\/?>/gi, " ")).replace(/\s+/g, " ").trim();
 }
 
 /** A button's words retyped in the Text row → the edited site and the section's whole new props,

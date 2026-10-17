@@ -150,7 +150,7 @@ export const ComputedBoxSchema = z.object({
 export const LabelSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("prop"), prop: PropPathSchema }),
   z.object({ kind: z.literal("slot"), slot: z.string().min(1).max(200) }),
-  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(10_000) }),
+  z.object({ kind: z.literal("replacement"), find: z.string().min(1).max(10_000), shared: z.boolean().optional() }),
   z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
 ]);
 export type ComputedBox = z.infer<typeof ComputedBoxSchema>;
