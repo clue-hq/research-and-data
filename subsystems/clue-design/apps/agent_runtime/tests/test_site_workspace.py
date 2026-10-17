@@ -255,3 +255,25 @@ def test_a_dotted_section_id_on_the_site_is_one_id_and_its_field_splits_at_the_l
                            {"object_id": "site:/#hero.v2.title", "note": "Shorter"}], site=site)
     assert '- Page /, the section with id "hero.v2". (No note.)' in block
     assert '- Page /, the section with id "hero.v2", its "title" field. Their note: "Shorter"' in block
+
+
+def test_the_site_summary_says_what_was_styled_by_hand(tmp_path: Path) -> None:
+    """Site element inspector (plan 1): the agent sees a section's and the header's `_edits` in plain
+    words, so it can keep, change or drop them when it rewrites the page."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
+        "id": "styled", "surface": "brand", "heading": "H", "buttonLabel": "Go", "buttonHref": "/",
+        "_edits": {
+            "heading": {"color": {"token": "text.heading"}, "fontFamily": "Garner Serif", "fontSize": 48,
+                        "fontWeight": 600, "italic": True, "textAlign": "center"},
+            "body": {"color": {"hex": "#0F59B0", "opacity": 80}, "underline": False},
+        }}})
+    site["shell"]["header"]["_edits"] = {"preparedFor": {"fontWeight": 700}}
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert ("   - styled by hand: heading — colour text.heading, Garner Serif, 48 px, Semi Bold, italic, "
+            "centred") in text
+    assert "   - styled by hand: body — colour #0F59B0 80%, not underlined" in text
+    assert "- Header styled by hand: preparedFor — Bold" in text

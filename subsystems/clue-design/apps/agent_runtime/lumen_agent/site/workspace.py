@@ -405,6 +405,45 @@ def _when(value: object) -> str:
         return str(value or "")
 
 
+_WEIGHT_NAMES = {100: "Thin", 200: "Extra Light", 300: "Light", 400: "Regular", 500: "Medium",
+                 600: "Semi Bold", 700: "Bold", 800: "Extra Bold", 900: "Black"}
+_ALIGN_WORDS = {"left": "left-aligned", "center": "centred", "right": "right-aligned",
+                "justify": "justified"}
+
+
+def _styled_by_hand(edits: object) -> list[str]:
+    """A section's (or the shell part's) `_edits` in plain words, one entry per element: what the
+    person styled by hand in the editor's inspector (site element inspector, plan 1)."""
+    if not isinstance(edits, Mapping):
+        return []
+    out = []
+    for key, override in edits.items():
+        if not isinstance(override, Mapping):
+            continue
+        words = []
+        color = override.get("color")
+        if isinstance(color, Mapping) and color.get("token"):
+            words.append(f"colour {color['token']}")
+        elif isinstance(color, Mapping) and color.get("hex"):
+            words.append(f"colour {color['hex']} {color.get('opacity', 100)}%")
+        if override.get("fontFamily"):
+            words.append(str(override["fontFamily"]))
+        if override.get("fontSize") is not None:
+            words.append(f"{override['fontSize']:g} px")
+        if override.get("fontWeight") is not None:
+            weight = override["fontWeight"]
+            words.append(_WEIGHT_NAMES.get(weight, f"weight {weight}"))
+        if override.get("italic") is not None:
+            words.append("italic" if override["italic"] else "not italic")
+        if override.get("underline") is not None:
+            words.append("underlined" if override["underline"] else "not underlined")
+        if override.get("textAlign"):
+            words.append(_ALIGN_WORDS.get(override["textAlign"], str(override["textAlign"])))
+        if words:
+            out.append(f"{key} — {', '.join(words)}")
+    return out
+
+
 def site_summary(
     workspace: Path, brand: Mapping[str, Any], versions: Sequence[Mapping[str, Any]] | None = None
 ) -> str:
@@ -429,7 +468,11 @@ def site_summary(
         nav = ", ".join(f"{n.get('label')} → {n.get('href')}" for n in header.get("nav") or []) or "none"
         out += ["## Header and footer",
                 f"- Prepared for: {header.get('preparedFor')}; button \"{header.get('ctaLabel')}\" → {header.get('ctaHref')}",
-                f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}", ""]
+                f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}"]
+        for part in ("header", "footer"):
+            styled = _styled_by_hand(shell.get(part, {}).get("_edits"))
+            out += [f"- {part.capitalize()} styled by hand: {line}" for line in styled]
+        out.append("")
     for route, page in site_pages(workspace).items():
         file = "page.json" if route == "/" else f"pages/{route[1:]}.json"
         out += [f"## {route} ({file})"]
@@ -466,6 +509,7 @@ def site_summary(
                     out.append(f"   - button \"{props['buttonLabel']}\" → {props.get('buttonHref')}")
                 if props.get("linkLabel"):
                     out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}")
+            out += [f"   - styled by hand: {line}" for line in _styled_by_hand(props.get("_edits"))]
         out.append("")
     if versions:
         out += ["## Saved versions",
