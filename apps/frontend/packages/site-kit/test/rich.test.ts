@@ -171,3 +171,10 @@ test("reading long malformed text takes linear time", () => {
   richProblems(hostile);
   assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
 });
+
+// Plan 3: a button's words are rich text without links.
+test("rich text without links refuses and drops a link, keeping its words", () => {
+  assert.deepEqual(richProblems('Book <a href="/x">now</a>', { links: false }), ["a button's words may not hold a link"]);
+  assert.deepEqual(richProblems("Book <strong>now</strong>", { links: false }), []);
+  assert.equal(normalizeRich('Book <a href="/x"><em>now</em></a>', { links: false }), "Book <em>now</em>");
+});

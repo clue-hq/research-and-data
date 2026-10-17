@@ -29,7 +29,7 @@ test("brand sections name each text element by the prop it draws", () => {
   );
   assert.deepEqual(
     keys(draw(sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "E", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["eyebrow", "heading", "body"],
+    ["eyebrow", "heading", "body", "button", "button.label"],
   );
   assert.deepEqual(
     keys(draw(sections.ProofCard.render({ id: "p", surface: "card", kicker: "K", metric: "13%", metricLabel: "L", heading: "H", body: "B", source: "S", linkLabel: "Read", linkHref: "/x" } as never))),
@@ -37,20 +37,20 @@ test("brand sections name each text element by the prop it draws", () => {
   );
   assert.deepEqual(
     keys(draw(sections.CtaBand.render({ id: "c", surface: "brand", heading: "H", body: "B", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["heading", "body"],
+    ["heading", "body", "button", "button.label"],
   );
 });
 
 test("an empty optional text draws no element and so no key", () => {
   assert.deepEqual(
     keys(draw(sections.CtaBand.render({ id: "c", surface: "brand", heading: "H", body: "", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["heading"],
+    ["heading", "button", "button.label"],
   );
 });
 
 test("the header and footer name their text", () => {
   const header = { preparedFor: "Carmel Clay Schools", accountLogo: "", ctaLabel: "Go", ctaHref: "/", nav: [{ label: "Analysis", href: "/analysis" }] };
-  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["preparedFor", "nav.0"]);
+  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["preparedFor", "nav.0", "cta", "cta.label"]);
   const footer = { legal: "© 2026", privacyHref: "/privacy", termsHref: "/terms" };
   assert.deepEqual(keys(draw(<SiteFooter brand={brand} footer={footer} href={href} />)), ["legal", "privacy", "terms"]);
 });
@@ -91,4 +91,23 @@ test("a text slot keeps its key when its words are replaced, even when they sat 
 
 test("script, style and svg text is never keyed", () => {
   assert.deepEqual(keys(fillClone(clone("<div><style>p{}</style><svg><text>x</text></svg><p>Shown</p></div>"))), ["0.2"]);
+});
+
+// Plan 3: every button is a box key and a label key.
+test("our sections' buttons and the header's are keyed as a box and a label", () => {
+  const feature = draw(sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never));
+  assert.deepEqual(keys(feature), ["heading", "body", "button", "button.label"]);
+  const header = { preparedFor: "Carmel", accountLogo: "", ctaLabel: "Book", ctaHref: "/", nav: [] };
+  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["preparedFor", "cta", "cta.label"]);
+});
+
+test("kit.Button takes the agent's name for its box and label, and only a valid one", () => {
+  const kit = makeKit(href, brand);
+  assert.deepEqual(keys(draw(kit.Button({ label: "Go", href: "/", surface: "page", el: "cta" } as never))), ["cta", "cta.label"]);
+  assert.deepEqual(keys(draw(kit.Button({ label: "Go", href: "/", surface: "page", el: '"]{x' } as never))), []);
+});
+
+test("a clone's button is keyed by its place, and its words keep their own key", () => {
+  const html = fillClone(clone('<div><a class="btn" href="/demo"><svg><path d="M0"/></svg><span>Book</span></a><p>Text</p><a href="/x">Plain words</a><a class="card" href="/c"><div><h3>Card</h3></div></a></div>'));
+  assert.deepEqual(keys(html), ["0.0", "0.0.1", "0.1", "0.2", "0.3.0.0"], "the card link is no button; its heading is text");
 });

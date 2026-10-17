@@ -131,10 +131,26 @@ export function fillClone(
 /** Elements whose text is never the page's words. */
 const NOT_TEXT = new Set(["script", "style", "svg", "noscript", "template"]);
 
+/** Tags that make an element a block (a link holding one is a card, not a button). */
+const BLOCKS = new Set([
+  "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "section", "article", "header",
+  "footer", "figure", "blockquote", "table", "form", "nav", "aside", "main",
+]);
+
+/** A link or button whose content is inline only (words, icons, no blocks): a button candidate (plan 3;
+ * the frame calls it a button when the browser draws it as a box). */
+function isInlineControl(element: HTMLElement): boolean {
+  const tag = element.tagName.toLowerCase();
+  if (tag !== "a" && tag !== "button") return false;
+  return !element.querySelectorAll("*").some((child) => BLOCKS.has(child.tagName.toLowerCase()));
+}
+
 /** Key every text element by its child-index path from the fragment root ("0.2.1", element children
  * only). A text element holds words of its own (a non-blank text child), or is a text slot (whose
  * words may sit in inline tags, and which the slot's fill replaces whole). Inside a text element
- * nothing more is keyed: its inline children are part of its one text box. */
+ * nothing more is keyed: its inline children are part of its one text box. A link or button with
+ * inline-only content is keyed too (plan 3: a button's box), and its words inside it keep their own
+ * key. */
 function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): void {
   const isText = (element: HTMLElement) => {
     const slot = element.getAttribute("data-lumen-slot");
@@ -149,8 +165,12 @@ function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): v
       const place = path ? `${path}.${index}` : String(index);
       index += 1;
       if (NOT_TEXT.has(element.tagName.toLowerCase())) continue;
-      if (isText(element)) element.setAttribute(ELEMENT_KEY_ATTR, place);
-      else walk(element, place);
+      if (isText(element)) {
+        element.setAttribute(ELEMENT_KEY_ATTR, place);
+        continue;
+      }
+      if (isInlineControl(element)) element.setAttribute(ELEMENT_KEY_ATTR, place);
+      walk(element, place);
     }
   };
   walk(root, "");
@@ -262,5 +282,53 @@ export function cloneLinkAt(clone: Clone, key: string): { href: string; slot: st
     href,
     slot: slot && clone.slots[slot]?.kind === "href" ? slot : null,
     shared: root.querySelectorAll("a[href]").filter((other) => other.getAttribute("href") === href).length > 1,
+  };
+}
+
+/** The clone's text slots whose words sit inside a link or button (or are one): their rich text may
+ * not hold a link (plan 3). */
+export function slotsInsideLinks(clone: Clone): Set<string> {
+  const root = parse(clone.html, { comment: false });
+  const inside = new Set<string>();
+  for (const element of root.querySelectorAll("[data-lumen-slot]")) {
+    const slot = element.getAttribute("data-lumen-slot") ?? "";
+    if (clone.slots[slot]?.kind !== "text") continue;
+    const tag = element.tagName.toLowerCase();
+    if (tag === "a" || tag === "button" || element.closest("a, button")) inside.add(slot);
+  }
+  return inside;
+}
+
+/** A clone's button, found by its element key in the captured markup (plan 3): the key of its words
+ * (the button itself when the words are its own), the text slot that holds them, the words as one
+ * replaceable text (null when they are not one text node), and its link as cloneLinkAt reads it.
+ * Null when the key is not a link or button with inline-only content. */
+export function cloneButtonAt(
+  clone: Clone,
+  key: string,
+): { labelKey: string; labelSlot: string | null; labelText: string | null; href: string | null; hrefSlot: string | null; shared: boolean } | null {
+  const root = parse(clone.html, { comment: false });
+  keyTextElements(root, clone.slots);
+  const keyed = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`);
+  const button = keyed.find((element) => element.getAttribute(ELEMENT_KEY_ATTR) === key);
+  if (!button || !isInlineControl(button)) return null;
+  const ownWords = button.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
+  const label = ownWords ? button : (button.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`)[0] ?? button);
+  const slotOf = (element: HTMLElement) => {
+    const slot = element.getAttribute("data-lumen-slot");
+    return slot && clone.slots[slot]?.kind === "text" ? slot : null;
+  };
+  const textNodes = label.childNodes.filter((child): child is TextNode => child instanceof TextNode && child.rawText.trim() !== "");
+  const onlyText = textNodes.length === 1 && label.childNodes.every((child) => child instanceof TextNode);
+  const words = onlyText ? textNodes[0].text.replace(/\s+/g, " ").trim() : null;
+  const href = button.tagName === "A" ? (button.getAttribute("href") ?? null) : null;
+  const hrefSlot = button.getAttribute("data-lumen-slot");
+  return {
+    labelKey: label.getAttribute(ELEMENT_KEY_ATTR) ?? key,
+    labelSlot: slotOf(label) ?? slotOf(button),
+    labelText: words && replaceableTexts(clone).includes(words) ? words : null,
+    href,
+    hrefSlot: hrefSlot && clone.slots[hrefSlot]?.kind === "href" ? hrefSlot : null,
+    shared: href !== null && root.querySelectorAll("a[href]").filter((other) => other.getAttribute("href") === href).length > 1,
   };
 }

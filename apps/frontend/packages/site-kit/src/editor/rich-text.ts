@@ -95,13 +95,14 @@ export const RICH_TEXT_EXTENSIONS = [ClueEnter, ClueLink, ClueStyle];
 
 /** One rich text field, edited in place on the canvas. Puck draws no menu of its own for it: the
  * styling controls are the inspector's (they act on the stored text, not through TipTap). */
-export function richTextField(label: string) {
+export function richTextField(label: string, options: { links?: boolean } = {}) {
   return {
     type: "richtext" as const,
     label,
     contentEditable: true,
     options: RICH_TEXT_OPTIONS,
-    tiptap: { extensions: RICH_TEXT_EXTENSIONS },
+    // A button's words (plan 3) have no link mark: a pasted link keeps its words, never its link.
+    tiptap: { extensions: options.links === false ? RICH_TEXT_EXTENSIONS.filter((extension) => extension !== ClueLink) : RICH_TEXT_EXTENSIONS },
     renderInlineMenu: () => null,
   };
 }

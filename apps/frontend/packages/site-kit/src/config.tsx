@@ -61,7 +61,7 @@ export type EditorParts = {
    * (plain strings, before Puck puts its in-place widgets in), by its id (S2a-2 §2.5). */
   useRawProps?: () => (id: string) => Record<string, unknown> | undefined;
   /** The rich text field (site-kit/editor's richTextField): our rich props edit as rich text (plan 2). */
-  richField?: (label: string) => object;
+  richField?: (label: string, options?: { links?: boolean }) => object;
 };
 
 export type ConfigOptions = {
@@ -174,6 +174,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             accountLogo: { type: "text", label: "Account logo URL (optional)" },
             ctaLabel: { type: "text", label: "Button label" },
             ctaHref: { type: "text", label: "Button link" },
+            ctaNewTab: { type: "radio", label: "Open the button's link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
             ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select", label: "Button style", options: buttonLookOptions(brand) } } : {}),
             nav: {
               type: "array",

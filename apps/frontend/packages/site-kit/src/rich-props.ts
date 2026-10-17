@@ -5,29 +5,38 @@ import { richPropPaths, richValuesAt } from "./agent-props";
 import type { BrandData } from "./brand";
 import { getAtPath, setAtPath } from "./editor-site";
 import { normalizeRich } from "./rich";
-import { RICH_PROPS } from "./schemas";
+import { RICH_PROPS, RICH_PROPS_NO_LINKS } from "./schemas";
+import { slotsInsideLinks } from "./clone";
 
 /** An agent section's stored props JSON Schema, by section name (undefined when unknown). */
 export type PropsSchemaOf = (type: string) => unknown;
 
-/** The section's rich values, each with its prop path (`heading`, `cards.1.title`, `slots.headline`). */
+/** The section's rich values, each with its prop path (`heading`, `cards.1.title`, `slots.headline`)
+ * and whether it may hold links (a button's words may not: plan 3). */
 export function richValuesOfItem(
   item: { type: string; props: Record<string, unknown> },
   brand: BrandData,
   propsSchemaOf: PropsSchemaOf,
-): { path: string; value: string }[] {
+): { path: string; value: string; links: boolean }[] {
   const props = item.props ?? {};
   const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
-  if (ours) return richValuesAt(props, ours);
+  if (ours) {
+    const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type] ?? [];
+    return [
+      ...richValuesAt(props, ours).map((entry) => ({ ...entry, links: true })),
+      ...richValuesAt(props, noLinks).map((entry) => ({ ...entry, links: false })),
+    ];
+  }
   if (item.type === "ClonedSection") {
     const clone = brand.clones[String(props.fragmentId ?? "")];
+    const inLinks = clone ? slotsInsideLinks(clone) : new Set<string>();
     const slots = (props.slots as Record<string, unknown> | undefined) ?? {};
     return Object.entries(slots).flatMap(([key, value]) =>
-      clone?.slots[key]?.kind === "text" && typeof value === "string" ? [{ path: `slots.${key}`, value }] : [],
+      clone?.slots[key]?.kind === "text" && typeof value === "string" ? [{ path: `slots.${key}`, value, links: !inLinks.has(key) }] : [],
     );
   }
   const schema = propsSchemaOf(item.type);
-  return schema ? richValuesAt(props, richPropPaths(schema as Parameters<typeof richPropPaths>[0])) : [];
+  return schema ? richValuesAt(props, richPropPaths(schema as Parameters<typeof richPropPaths>[0])).map((entry) => ({ ...entry, links: true })) : [];
 }
 
 /** The page with every rich value in the grammar's canonical form (what the editor's TipTap or a
@@ -46,10 +55,10 @@ export function normalizeRichIn<P extends { content?: { type: string; props: Rec
   const content = (page.content ?? []).map((item) => {
     let props = item.props;
     const stored = before.get(String(item.props?.id ?? ""));
-    for (const { path, value } of richValuesOfItem(item, brand, propsSchemaOf)) {
-      const clean = normalizeRich(value);
+    for (const { path, value, links } of richValuesOfItem(item, brand, propsSchemaOf)) {
+      const clean = normalizeRich(value, { links });
       const was = stored ? getAtPath(stored, path) : undefined;
-      const next = typeof was === "string" && normalizeRich(was) === clean ? was : clean;
+      const next = typeof was === "string" && normalizeRich(was, { links }) === clean ? was : clean;
       if (next !== value) props = setAtPath(props, path, next);
     }
     if (props === item.props) return item;

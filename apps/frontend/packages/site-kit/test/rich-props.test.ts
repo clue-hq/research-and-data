@@ -111,3 +111,20 @@ test("the catalog names rich fields as rich text", () => {
   assert.match(sections, /\| `linkLabel` \| string \| no \|/);
   assert.match(sections, /\| `linkNewTab` \| boolean \| no \|/);
 });
+
+// Plan 3: button labels are rich without links; a clone text slot inside a captured link is too.
+import { RICH_PROPS_NO_LINKS } from "../src/schemas";
+
+test("button labels take rich text without links, in our sections, the header and a clone's link", () => {
+  assert.deepEqual(RICH_PROPS_NO_LINKS, { FeatureSplit: ["buttonLabel"], CtaBand: ["buttonLabel"] });
+  const cta = (props: object) => ({ type: "CtaBand", props: { id: "cta", surface: "brand", heading: "H", buttonLabel: "Go", buttonHref: "/", ...props } });
+  assert.deepEqual(errorsOf({ "/": page([cta({ buttonLabel: "Book <strong>now</strong>", buttonNewTab: true })]) }), []);
+  assert.deepEqual(errorsOf({ "/": page([cta({ buttonLabel: 'Book <a href="/">now</a>' })]) }), ["page.content.0(cta).buttonLabel: a button's words may not hold a link"]);
+  assert.deepEqual(errorsOf({ "/": page([]) }, {}, { header: { ctaLabel: 'Go <a href="/">x</a>' } }), ["shell.header.ctaLabel: a button's words may not hold a link"]);
+  assert.deepEqual(errorsOf({ "/": page([]) }, {}, { header: { ctaLabel: "Go <em>now</em>", ctaNewTab: true } }), []);
+  const brand = garner();
+  const inLink: Clone = { ...clone, id: "frag_00000000000000be", html: '<div><a href="/demo"><span data-lumen-slot="label">Book</span></a></div>', slots: { label: { kind: "text", fallback: "Book" } } };
+  brand.clones = { [inLink.id]: inLink };
+  const cloned = { type: "ClonedSection", props: { id: "c", fragmentId: inLink.id, slots: { label: 'Book <a href="/">now</a>' }, replacements: [], links: [] } };
+  assert.deepEqual(errorsOf({ "/": page([cloned]) }, {}, undefined, brand), ["page.content.0(c).slots.label: a button's words may not hold a link"]);
+});

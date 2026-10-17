@@ -115,7 +115,12 @@ type Frame = { tag: string; mark?: Mark; link?: RichLink; style?: string };
 /** Read tokens into runs. `strict`: the first thing outside the grammar is the result's error.
  * Otherwise every unknown tag is dropped with its text kept (script and style with their text), bad
  * attributes are dropped, and paragraph breaks become line breaks. */
-function read(html: string, strict: boolean): { runs: Run[] } | { error: string } {
+/** What a text may hold beyond the base marks: `links: false` for a button's words (a link may not
+ * hold a link; plan 3). */
+export type RichOptions = { links?: boolean };
+
+function read(html: string, strict: boolean, options: RichOptions = {}): { runs: Run[] } | { error: string } {
+  const links = options.links !== false;
   const tokens = tokenize(html);
   const runs: Run[] = [];
   const stack: Frame[] = [];
@@ -180,6 +185,11 @@ function read(html: string, strict: boolean): { runs: Run[] } | { error: string 
         stack.push({ tag, mark });
         continue;
       }
+      if (tag === "a" && !links) {
+        if (strict) return fail("a button's words may not hold a link");
+        stack.push({ tag });
+        continue;
+      }
       if (tag === "a") {
         let href: string | null = null;
         let newTab = false;
@@ -238,16 +248,16 @@ export function parseRich(html: string): Run[] | { error: string } {
 }
 
 /** Every reason the text is not in the grammar (none, or the first one), each saying what to write. */
-export function richProblems(html: string): string[] {
-  const result = read(html, true);
+export function richProblems(html: string, options: RichOptions = {}): string[] {
+  const result = read(html, true, options);
   return "error" in result ? [result.error] : [];
 }
 
 /** Any text as the grammar's canonical markup: tags outside it dropped (their words kept; script and
  * style with their words), attributes outside it dropped, paragraphs joined by line breaks. Canonical
  * text comes back unchanged; normalizing twice changes nothing more. */
-export function normalizeRich(html: string): string {
-  const result = read(html, false);
+export function normalizeRich(html: string, options: RichOptions = {}): string {
+  const result = read(html, false, options);
   return "runs" in result ? serializeRich(result.runs) : "";
 }
 

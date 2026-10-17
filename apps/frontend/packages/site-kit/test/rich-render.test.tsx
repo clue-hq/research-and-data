@@ -146,3 +146,16 @@ test("a slot set to its original words keeps the captured markup through the sec
   const html = renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
   assert.ok(html.includes('<span class="grad">Marketing</span><br>teams'), html.slice(html.indexOf("Sales"), html.indexOf("Sales") + 200));
 });
+
+// Plan 3: buttons that open in a new tab, and a button's styled words.
+test("our buttons and the header's open in a new tab when set, and draw their styled words", () => {
+  const site = {
+    title: "T",
+    pages: { "/": { root: { props: {} }, content: [{ type: "CtaBand", props: { id: "cta", surface: "brand", heading: "H", buttonLabel: 'Book <span data-s="button.label~1">now</span>', buttonHref: "https://garner.example/book", buttonNewTab: true } }] } },
+    shell: { ...stored.shell, header: { ...stored.shell.header, ctaNewTab: true } },
+  };
+  const html = renderSitePages({ site, brand: garner(), basePath: "", agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
+  assert.match(html, /<a href="https:\/\/garner\.example\/book" target="_blank" rel="noopener" class="brand-btn[^"]*" data-surface="brand" data-clue-el="button">/);
+  assert.ok(html.includes('<span data-clue-el="button.label"><span data-clue-rich="">Book <span data-s="button.label~1">now</span></span></span>'), html);
+  assert.match(html, /target="_blank" rel="noopener" class="brand-btn[^"]*" data-surface="page" data-clue-el="cta">/);
+});

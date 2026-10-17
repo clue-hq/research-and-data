@@ -19,7 +19,9 @@ export type Kit = {
   /** surface: any surface brand.md lists (page, canvas, band-014036). */
   Shell: (props: { surface: AnySurface; children: ReactNode }) => ReactNode;
   /** look: a button style brand.md lists (Buttons); none is the kit's standard button. */
-  Button: (props: { label: ReactNode; href: string; surface: AnySurface; look?: string; disabled?: boolean }) => ReactNode;
+  /** el: a name for this button in the site inspector (as for Eyebrow): its box takes `el`, its words
+   * `<el>.label`. */
+  Button: (props: { label: ReactNode; href: string; surface: AnySurface; look?: string; disabled?: boolean; el?: string }) => ReactNode;
   /** look: a card style brand.md lists (Cards); href makes the whole card a link. */
   Card: (props: { look?: string; href?: string; children: ReactNode }) => ReactNode;
   /** el: a name for this text in the site inspector (letters and digits, with dots, underscores or
@@ -56,8 +58,8 @@ export function makeKit(href: Href, brand: BrandData): Kit {
   const logos = logoFiles(brand);
   return {
     Shell,
-    Button: ({ label, href: target, surface, look, disabled }) => (
-      <BrandButton brand={brand} label={label} href={href(target)} surface={surface} look={look} disabled={disabled} />
+    Button: ({ label, href: target, surface, look, disabled, el }) => (
+      <BrandButton brand={brand} label={label} href={href(target)} surface={surface} look={look} disabled={disabled} el={elementKey(el)} />
     ),
     Card: ({ look, href: target, children }) => {
       const chosen = lookNamed(brand, "card", look);

@@ -42,3 +42,18 @@ test("an element's words are rich where our section draws a rich prop, or the ag
   assert.equal(richSourceOf({ type: "Probe", props: {} }, "kicker", brand, () => agentSchema), null, "a name that is not an inline prop");
   assert.equal(richSourceOf({ type: "ClonedSection", props: {} }, "0.1", brand, () => undefined), null, "a clone's slots are read on the canvas");
 });
+
+// Plan 3: a clone's button — its words and its link.
+import { cloneButtonAt } from "../src/clone";
+
+test("a clone's button names its words' key and where its words and link are written", () => {
+  const buttons: Clone = {
+    ...clone, id: "frag_00000000000000df",
+    html: '<div><a class="b" href="/demo"><svg></svg><span data-lumen-slot="cta_label">Book a demo</span></a><a class="b" href="/demo">Talk to us</a><button>Go <b>now</b></button></div>',
+    slots: { cta_label: { kind: "text", fallback: "Book a demo" } },
+  };
+  assert.deepEqual(cloneButtonAt(buttons, "0.0"), { labelKey: "0.0.1", labelSlot: "cta_label", labelText: null, href: "/demo", hrefSlot: null, shared: true });
+  assert.deepEqual(cloneButtonAt(buttons, "0.1"), { labelKey: "0.1", labelSlot: null, labelText: "Talk to us", href: "/demo", hrefSlot: null, shared: true });
+  assert.deepEqual(cloneButtonAt(buttons, "0.2"), { labelKey: "0.2", labelSlot: null, labelText: null, href: null, hrefSlot: null, shared: false }, "words across bold are not one replaceable text");
+  assert.equal(cloneButtonAt(buttons, "0.0.1"), null, "the words are not the button");
+});

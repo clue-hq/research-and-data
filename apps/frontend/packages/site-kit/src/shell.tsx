@@ -4,7 +4,7 @@
 // size a header shows them at).
 import type { BrandData } from "./brand";
 import { SHELL_SCOPE, editsCss, editsOf, type Edits } from "./edits";
-import { newTabAttrs } from "./rich-node";
+import { newTabAttrs, rich } from "./rich-node";
 import { Button } from "./sections";
 
 export type HeaderProps = {
@@ -12,6 +12,7 @@ export type HeaderProps = {
   accountLogo: string;
   ctaLabel: string;
   ctaHref: string;
+  ctaNewTab?: boolean;
   /** A button style of the brand's (brand.md, Buttons); empty is the standard button. */
   ctaLook?: string;
   /** Links to the site's other pages; shown on wider screens beside the button. */
@@ -94,7 +95,7 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
           ) : null}
           {/* On phones the hero carries the same action, so the account name gets the room. */}
           <span className="hidden shrink-0 sm:inline-flex">
-            <Button brand={brand} label={header.ctaLabel} href={href(header.ctaHref)} surface="page" look={header.ctaLook} />
+            <Button brand={brand} label={rich(header.ctaLabel, href)} href={href(header.ctaHref)} surface="page" look={header.ctaLook} el="cta" newTab={header.ctaNewTab} />
           </span>
         </div>
       </div>

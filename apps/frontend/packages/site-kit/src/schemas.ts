@@ -69,6 +69,7 @@ export const FeatureSplitSchema = z
     buttonLabel: optionalText,
     buttonHref: optionalLink,
     buttonLook,
+    buttonNewTab: z.boolean().optional(),
   })
   .strict();
 
@@ -97,6 +98,7 @@ export const CtaBandSchema = z
     buttonLabel: text.min(1),
     buttonHref: link,
     buttonLook,
+    buttonNewTab: z.boolean().optional(),
   })
   .strict();
 
@@ -122,6 +124,13 @@ export const RICH_PROPS = {
   FeatureSplit: ["eyebrow", "heading", "body"],
   ProofCard: ["kicker", "metric", "metricLabel", "heading", "body", "source"],
   CtaBand: ["heading", "body"],
+} as const satisfies Record<string, readonly string[]>;
+
+/** Our sections' button words (plan 3, ruling R3): rich text without links, since the button is the
+ * link. The header's `ctaLabel` is the same. */
+export const RICH_PROPS_NO_LINKS = {
+  FeatureSplit: ["buttonLabel"],
+  CtaBand: ["buttonLabel"],
 } as const satisfies Record<string, readonly string[]>;
 
 /** Every component a page may use. Anything else is refused. */
@@ -215,6 +224,7 @@ export const ShellSchema = z
         accountLogo: optionalText,
         ctaLabel: text.min(1),
         ctaHref: link,
+        ctaNewTab: z.boolean().optional(),
         ctaLook: buttonLook,
         nav: z.array(z.object({ label: text.min(1), href: link, newTab: z.boolean().optional() }).strict()).max(6).default([]),
         _edits: EditsSchema.optional(),

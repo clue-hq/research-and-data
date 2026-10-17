@@ -56,9 +56,10 @@ export const Shell = ({ surface, children }: { surface: AnySurface; children: Re
 export const Eyebrow = ({ children, el }: { children: Text; el?: string }) =>
   children ? <p className="font-eyebrow text-eyebrow brand-ink-eyebrow" data-clue-el={el}>{children}</p> : null;
 
-/** The kit's standard button, or one of the brand's looks by name, with that look's own icon. */
-export function Button({ brand, label, href, surface, look, disabled }: {
-  brand: BrandData; label: Text; href: string; surface: AnySurface; look?: string; disabled?: boolean;
+/** The kit's standard button, or one of the brand's looks by name, with that look's own icon. `el`
+ * names it for the site inspector (plan 3): the box carries `el`, its words `<el>.label`. */
+export function Button({ brand, label, href, surface, look, disabled, el, newTab }: {
+  brand: BrandData; label: Text; href: string; surface: AnySurface; look?: string; disabled?: boolean; el?: string; newTab?: boolean;
 }) {
   if (!label) return null;
   const chosen = lookNamed(brand, "button", look);
@@ -71,12 +72,14 @@ export function Button({ brand, label, href, surface, look, disabled }: {
   return (
     <a
       href={disabled ? undefined : href || "#"}
+      {...newTabAttrs(newTab)}
       aria-disabled={disabled || undefined}
       className={chosen ? `brand-btn brand-look-${chosen.index}` : "brand-btn"}
       data-surface={surface}
+      data-clue-el={el}
     >
       {icon?.position === "start" ? mark : null}
-      <span>{label}</span>
+      <span data-clue-el={el ? `${el}.label` : undefined}>{label}</span>
       {icon?.position === "end" ? mark : null}
     </a>
   );
@@ -86,7 +89,7 @@ export type Href = (value: string) => string;
 
 /** The rich text field of the editor (richTextField in site-kit/editor), injected so published pages
  * never load TipTap. Without it a rich prop keeps its plain in-place field. */
-export type RichField = (label: string) => object;
+export type RichField = (label: string, options?: { links?: boolean }) => object;
 
 export function makeSections(
   brand: BrandData,
@@ -97,6 +100,9 @@ export function makeSections(
   // Our rich props (schemas.ts RICH_PROPS) edit as rich text in the editor (plan 2).
   const richText = (label: string) => richField?.(label) ?? text(label);
   const richArea = (label: string) => richField?.(label) ?? area(label);
+  // A button's words: rich text without links (plan 3).
+  const buttonText = (label: string) => richField?.(label, { links: false }) ?? text(label);
+  const newTabField = (label: string) => ({ type: "radio" as const, label, options: [{ label: "Yes", value: true }, { label: "No", value: false }] });
   const imageField = {
     type: "custom" as const,
     label: "Image (brand assets)",
@@ -159,20 +165,21 @@ export function makeSections(
 
   const FeatureSplit: ComponentConfig<{
     surface: AnySurface; eyebrow: Text; heading: Text; headingRole: HeadingRole; body: Text;
-    image: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string; buttonLook: string;
+    image: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string; buttonLook: string; buttonNewTab?: boolean;
   }> = {
     label: "Feature split",
     fields: {
       surface: surfaceField, eyebrow: richText("Eyebrow"), heading: richText("Heading"),
       headingRole: headingRoleField, body: richArea("Body"), image: imageField,
       imageSide: { type: "radio", label: "Image side", options: [{ label: "Left", value: "left" }, { label: "Right", value: "right" }] },
-      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
+      buttonLabel: buttonText("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
+      buttonNewTab: newTabField("Open the button's link in a new tab"),
     } as never,
     defaultProps: {
       surface: "page", eyebrow: "", heading: "What this does for them", headingRole: "title",
       body: "One or two plain sentences.", image: "", imageSide: "left", buttonLabel: "", buttonHref: "", buttonLook: "",
     },
-    render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref, buttonLook }) => (
+    render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
       <Shell surface={surface}>
         {/* No image: one text column, not an empty frame beside the words. */}
         <div className={image ? "grid items-center gap-stack-loose md:grid-cols-2" : "max-w-[60ch]"}>
@@ -185,7 +192,7 @@ export function makeSections(
             <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`} data-clue-el="heading">{rich(heading, href)}</h2>
             <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p>
             <div className="mt-stack-loose">
-              <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
+              <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} />
             </div>
           </div>
         </div>
@@ -230,21 +237,22 @@ export function makeSections(
   };
 
   const CtaBand: ComponentConfig<{
-    surface: AnySurface; heading: Text; body: Text; buttonLabel: Text; buttonHref: string; buttonLook: string;
+    surface: AnySurface; heading: Text; body: Text; buttonLabel: Text; buttonHref: string; buttonLook: string; buttonNewTab?: boolean;
   }> = {
     label: "Call to action band",
     fields: {
       surface: surfaceField, heading: richText("Heading"), body: richArea("Body"),
-      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
+      buttonLabel: buttonText("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
+      buttonNewTab: newTabField("Open the button's link in a new tab"),
     } as never,
     defaultProps: { surface: "brand", heading: "The one next step", body: "", buttonLabel: "Get started", buttonHref: "", buttonLook: "" },
-    render: ({ surface, heading, body, buttonLabel, buttonHref, buttonLook }) => (
+    render: ({ surface, heading, body, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
       <Shell surface={surface}>
         <div className="mx-auto max-w-[60ch] text-center">
           <h2 className="font-headline text-headline brand-ink-headline" data-clue-el="heading">{rich(heading, href)}</h2>
           {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p> : null}
           <div className="mt-stack-loose">
-            <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
+            <Button brand={brand} label={rich(buttonLabel, href)} href={href(buttonHref)} surface={surface} look={buttonLook} el="button" newTab={buttonNewTab} />
           </div>
         </div>
       </Shell>

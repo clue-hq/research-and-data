@@ -20,7 +20,7 @@ test("a built-in section describes its fields with the dock's kinds", () => {
   // Rich text is edited on the canvas; the dock shows it read-only (plan 2, ruling R6).
   assert.equal(fields.heading.kind, "richtext");
   assert.equal(fields.body.kind, "richtext");
-  assert.equal(fields.buttonLabel.kind, "text", "a button label stays plain text (plan 3)");
+  assert.equal(fields.buttonLabel.kind, "richtext", "a button's words are rich text without links (plan 3)");
   assert.equal(fields.image.kind, "image");
   assert.equal(fields.buttonHref.kind, "link");
   assert.equal(fields.buttonHref.label, "Button link");

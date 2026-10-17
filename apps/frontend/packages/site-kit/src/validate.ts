@@ -138,9 +138,9 @@ export function validateSite(
   };
 
   // Rich text (plan 2): the grammar, and each of its links to a real page like any other link.
-  const checkRich = (value: unknown, where: string) => {
+  const checkRich = (value: unknown, where: string, links = true) => {
     if (typeof value !== "string" || value === "") return;
-    const problems = richProblems(value);
+    const problems = richProblems(value, { links });
     for (const problem of problems) errors.push(`${where}: ${problem}`);
     if (!problems.length) for (const href of richLinks(value)) addWritten(href, where);
   };
@@ -159,7 +159,7 @@ export function validateSite(
     (page.content ?? []).forEach((item, index) => {
       const at = `${file}.content.${index}(${String(item.props?.id ?? "?")})`;
       addEditsProblems(item.props, at);
-      for (const { path, value } of richValuesOfItem(item, brand, (type) => agentSections[type]?.propsSchema)) checkRich(value, `${at}.${path}`);
+      for (const { path, value, links } of richValuesOfItem(item, brand, (type) => agentSections[type]?.propsSchema)) checkRich(value, `${at}.${path}`, links);
       if (OURS.has(item.type)) {
         const surface = item.props.surface;
         if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
@@ -254,6 +254,7 @@ export function validateSite(
   const ctaLook = shell.header?.ctaLook;
   if (typeof ctaLook === "string" && ctaLook && !lookNames.includes(ctaLook)) errors.push(lookError("shell.header.ctaLook", ctaLook));
   addWritten(shell.header?.ctaHref, "shell.header.ctaHref");
+  checkRich(shell.header?.ctaLabel, "shell.header.ctaLabel", false);
   ((shell.header?.nav as { href?: string }[] | undefined) ?? []).forEach((item, i) => addWritten(item?.href, `shell.header.nav.${i}.href`));
   addWritten(shell.footer?.privacyHref, "shell.footer.privacyHref");
   addWritten(shell.footer?.termsHref, "shell.footer.termsHref");
