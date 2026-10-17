@@ -40,6 +40,7 @@ from .typography import (
     measured_style_fields,
     resolve_anchors,
 )
+from .responsive_type import responsive_type_section
 
 _CONTRAST_MIN = 4.5
 
@@ -50,6 +51,8 @@ class NormalizeResult:
     ingestion_report: dict
     diagnostics: list[dict]
     measured_components: dict | None = None
+    #: Responsive brand type: the roles' sizes at narrower widths (kept outside the engine).
+    responsive_type: dict | None = None
 
 
 def normalize_evidence(
@@ -202,13 +205,15 @@ def normalize_evidence(
     if assist_result and assist_result.body_family and _family_in_evidence(evidence, assist_result.body_family):
         anchors.body_family = assist_result.body_family
     cta_color = _cta_color_token(semantic_light, brand_hex)
-    styles, type_diags = build_type_styles(
-        anchors,
-        cta_color=cta_color,
-        custodied=custodied_weights(evidence),
-        heading_color="text.heading" if ink_sample is not None else "text.primary",
-    )
+    custodied = custodied_weights(evidence)
+    heading_color = "text.heading" if ink_sample is not None else "text.primary"
+    styles, type_diags = build_type_styles(anchors, cta_color=cta_color, custodied=custodied, heading_color=heading_color)
     diagnostics.extend(type_diags)
+    responsive_type = responsive_type_section(
+        anchors,
+        evidence,
+        lambda at: build_type_styles(at, cta_color=cta_color, custodied=custodied, heading_color=heading_color)[0],
+    )
     for path, style in styles.items():
         anchor = anchor_for_role(path.removeprefix("type."), anchors)
         measured = measured_style_fields(anchors, path, style)
@@ -301,6 +306,7 @@ def normalize_evidence(
         ingestion_report=ingestion_report,
         diagnostics=diagnostics,
         measured_components=mint.section,
+        responsive_type=responsive_type,
     )
 
 

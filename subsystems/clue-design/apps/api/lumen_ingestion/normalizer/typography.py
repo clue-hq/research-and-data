@@ -48,6 +48,10 @@ class TypeAnchors:
     heading_weight: int
     body_weight: int
     samples: dict[str, TypeSample]
+    #: The rendered samples the headline and body sizes came from (responsive brand type reads the
+    #: same elements at narrower widths).
+    headline_index: int | None = None
+    body_index: int | None = None
 
 
 def _family_from(samples: list[TypeSample], labels: set[str], fonts: list[FontEvidence], role: str) -> str | None:
@@ -187,6 +191,8 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
         heading_weight=int(heading_weight),
         body_weight=int(body_weight),
         samples=by_label,
+        headline_index=headline_sample.sample_index if headline_sample else None,
+        body_index=body_sample.sample_index if body_sample else None,
     )
 
 

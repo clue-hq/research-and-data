@@ -108,7 +108,7 @@ def test_kit_sections_outside_the_engine_are_carried_onto_the_validated_kit() ->
     carried = carry_kit_sections(stored, validated)
     assert carried == {"id": "k", "tokens": {"colors": {}}, "brief": {"schema_version": 1},
                        "grammar_audit": {"schema_version": 1}, "measured_components": {"schema_version": 1}}
-    assert KIT_SECTIONS_OUTSIDE_ENGINE == ("brief", "grammar_audit", "measured_components")
+    assert KIT_SECTIONS_OUTSIDE_ENGINE == ("brief", "grammar_audit", "measured_components", "responsive_type")
     assert validated == {"id": "k", "tokens": {"colors": {}}}, "the engine's result is not mutated"
 
 

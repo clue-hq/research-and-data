@@ -604,6 +604,12 @@ def _maybe_extract_grammar_audit(
         return None
 
 
+def _attach_responsive_type(validated_kit: dict, section: dict | None) -> dict:
+    """Responsive brand type rides the validated kit for the same reason as the brief: the engine's
+    BrandKit has no field for it, so it would not survive `validate_brand_kit`."""
+    return {**validated_kit, "responsive_type": section} if section is not None else validated_kit
+
+
 def _attach_measured_components(
     validated_kit: JsonObject, measured: "JsonObject | None", diagnostics: list
 ) -> JsonObject:
@@ -1136,6 +1142,7 @@ def _ingest(
     validated_kit = _attach_measured_components(
         validated_kit, result.measured_components, measured_diagnostics
     )
+    validated_kit = _attach_responsive_type(validated_kit, result.responsive_type)
 
     diagnostics = (
         result.diagnostics

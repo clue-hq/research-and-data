@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-KIT_SECTIONS_OUTSIDE_ENGINE = ("brief", "grammar_audit", "measured_components")
+KIT_SECTIONS_OUTSIDE_ENGINE = ("brief", "grammar_audit", "measured_components", "responsive_type")
 
 
 def carry_kit_sections(stored: Mapping[str, Any], validated: Mapping[str, Any]) -> dict:
