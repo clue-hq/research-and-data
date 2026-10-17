@@ -68,6 +68,7 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
       return;
     }
     setNote(null);
+    if (JSON.stringify(next) === JSON.stringify(latest.current ?? {})) return;
     latest.current = next;
     binding.onStyleCommit(element.key, next);
   };

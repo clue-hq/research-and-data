@@ -65,3 +65,13 @@ test("the weight list is the family's own, labelled like the ad editor's", () =>
   assert.deepEqual(weightOptions(fonts, "Inter"), ["300 Light", "400 Regular", "700 Bold", "900 Black"]);
   assert.equal(weightOptions(fonts, "Unknown").length, 9);
 });
+
+test("choosing the font, weight, size or alignment the text already shows changes nothing (no save, no undo step)", () => {
+  // The override comes back as it was (not null, which means "refused" and shows a note).
+  assert.deepEqual(textPanelPatch(null, { kind: "fontFamily", value: "Stix Two Text" }, computed, fonts), {});
+  assert.deepEqual(textPanelPatch(null, { kind: "fontWeight", value: "400 Regular" }, computed, fonts), {});
+  assert.deepEqual(textPanelPatch(null, { kind: "textAlign", value: "left" }, computed, fonts), {});
+  assert.deepEqual(textPanelPatch({ fontSize: 48 }, { kind: "fontSize", value: "48" }, computed, fonts), { fontSize: 48 });
+  assert.deepEqual(textPanelPatch(null, { kind: "fontSize", value: "47.6" }, computed, fonts), {}, "the size as shown, rounded");
+  assert.deepEqual(textPanelPatch(null, { kind: "fontFamily", value: "Inter" }, computed, fonts), { fontFamily: "Inter" });
+});

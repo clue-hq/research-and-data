@@ -90,6 +90,15 @@ export function textPanelPatch(
 ): StyleOverride | null {
   const base: StyleOverride = override ?? {};
   const family = base.fontFamily ?? computed.fontFamily;
+  // Choosing what the text already shows changes nothing: the override comes back as it was, so no
+  // save and no undo step is made for a click that changes nothing on the page.
+  const shownSize = base.fontSize ?? Math.round(computed.fontSize * 10) / 10;
+  const unchanged =
+    (change.kind === "fontFamily" && change.value === family) ||
+    (change.kind === "fontWeight" && Number.parseInt(change.value, 10) === (base.fontWeight ?? computed.fontWeight)) ||
+    (change.kind === "fontSize" && Number(change.value.trim().replace(/px$/i, "").trim()) === shownSize) ||
+    (change.kind === "textAlign" && change.value === (base.textAlign ?? computed.textAlign));
+  if (unchanged) return base;
   switch (change.kind) {
     case "colorToken":
       return change.token ? { ...base, color: { token: change.token } } : null;
