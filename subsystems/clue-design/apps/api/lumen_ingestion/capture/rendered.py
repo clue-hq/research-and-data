@@ -21,7 +21,7 @@ from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
 from .static import _collect_assets, _extract_meta
 from .stylesheets import collect_ordered_stylesheets
-from .type_widths import measure_type_widths
+from .type_widths import measure_type_widths_safely
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
@@ -408,19 +408,12 @@ async def _harvest_page(page, diagnostics: list[dict], *, measure_states: bool =
         harvest["geometry"]["states"] = await probe_states(
             page, harvest["geometry"], reveal_before=reveal_before, diagnostics=diagnostics
         )
-    # Responsive type, LAST of all: it narrows the window, which nothing above may see.
+    # Responsive type, LAST of all: it narrows the window, which nothing above may see. The entry
+    # page only (like the state pass): only its readings reach the kit.
     harvest["type_widths"] = None
-    try:
-        harvest["type_widths"] = await measure_type_widths(
+    if measure_states:
+        harvest["type_widths"] = await measure_type_widths_safely(
             page, (harvest["data"] or {}).get("sheets") or [], diagnostics
-        )
-    except Exception as error:  # noqa: BLE001 — measurement is fail-soft
-        diagnostics.append(
-            {
-                "code": "LUMI0547",
-                "severity": "warning",
-                "message": f"type width measurement failed; the kit keeps one size per role: {error}",
-            }
         )
     return harvest
 

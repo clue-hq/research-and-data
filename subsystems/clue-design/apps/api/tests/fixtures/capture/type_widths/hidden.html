@@ -1,6 +1,6 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;font-family:Arial,sans-serif;font-size:16px}
 h2{font-size:48px}
-@media (max-width: 767px){.desktop-only{display:none}}
-</style></head><body><main><h2 class="desktop-only">Desktop only</h2><h2 id="gone">Removed when narrow</h2><p>Body.</p></main>
+@media (max-width: 767px){.desktop-only{display:none} .label{font-size:0}}
+</style></head><body><main><h2 class="desktop-only">Desktop only</h2><h2 id="gone">Removed when narrow</h2><p>Body.</p><button class="label">Book a demo</button></main>
 <script>addEventListener('resize', () => { if (innerWidth < 500) { const g = document.getElementById('gone'); if (g) g.remove(); } });</script></body></html>

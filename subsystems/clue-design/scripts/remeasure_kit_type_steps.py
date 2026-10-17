@@ -58,7 +58,8 @@ async def capture_type(url: str) -> BrandEvidence:
     """Today's type on the page, read exactly as an ingestion reads it (the same capture and parse)."""
     fetched_at = datetime.now(timezone.utc).isoformat()
     async with httpx.AsyncClient(timeout=15.0) as client:
-        snapshot = await fetch_rendered(url, BoundedFetcher(client), lambda *_: None, fetched_at=fetched_at)
+        # measure_states: the entry-page passes, the type widths among them.
+        snapshot = await fetch_rendered(url, BoundedFetcher(client), lambda *_: None, fetched_at=fetched_at, measure_states=True)
     samples, widths = type_evidence(parse_site(snapshot))
     return BrandEvidence(source={"kind": "website", "url": url, "captured_at": fetched_at}, type_samples=samples, type_widths=widths)
 
