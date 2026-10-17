@@ -73,3 +73,15 @@ def test_a_captured_image_is_described_by_its_digest_first_then_alt_then_the_fal
 def test_a_captured_image_is_the_asset_the_capture_ingested_from_the_same_bytes() -> None:
     # evidence_builder._ingest_one: every captured byte string is ingested as asset_ing_<sha256[:16]>.
     assert captured_asset_id("ab" * 32) == "asset_ing_" + "ab" * 8
+
+
+def test_a_clone_carries_the_renditions_of_its_own_videos() -> None:
+    video = f'<video autoplay muted loop><source src="/asset-store/{D1}" type="video/mp4"></video>'
+    with_video = {"id": "frag_v", "label": "Hero", "html": video, "css": "", "slots": {}}
+    plain = {"id": "frag_p", "label": "Plain", "html": "<p>Hi</p>", "css": "", "slots": {}}
+    brand = site_brand_data(
+        slug="kit_1", kit={}, kit_assets={}, font_faces=[], clones=[with_video, plain], library_assets={},
+        video_renditions={D1: {"poster": D2, "rendition": D3}, D4: {"poster": D4, "rendition": None}},
+    )
+    assert brand["clones"]["frag_v"]["videos"] == {D1: {"poster": D2, "rendition": D3}}
+    assert "videos" not in brand["clones"]["frag_p"]

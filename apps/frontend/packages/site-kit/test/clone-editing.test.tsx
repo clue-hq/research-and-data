@@ -35,3 +35,23 @@ test("the editor's clone view is handed the markup a slot write would produce", 
   const unsetProps = unset.props as { html: string; htmlFor: (key: string, value: string) => string };
   assert.equal(unsetProps.htmlFor("headline", ""), unsetProps.html);
 });
+
+test("a captured video loads its metadata only, shows its poster and plays the smaller rendition", () => {
+  const [video, poster, rendition, own] = ["1", "2", "3", "4"].map((c) => c.repeat(64));
+  const base = { id: "frag_v", role: "hero", label: "Hero", page_url: "https://x.example/", section_index: 0,
+    wrapper_class: "lumen-frag-v", css: "", slots: {}, videos: { [video]: { poster, rendition } } };
+  const filled = fillClone({ ...base, html: `<video autoplay muted loop playsinline><source src="/asset-store/${video}" type="video/mp4"></video>` });
+  assert.match(filled, /<video[^>]*preload="metadata"/);
+  assert.match(filled, new RegExp(`<video[^>]*poster="/asset-store/${poster}"`));
+  assert.match(filled, new RegExp(`<source src="/asset-store/${rendition}"`));
+  // A video with its own src attribute is pointed at the rendition the same way.
+  assert.match(fillClone({ ...base, html: `<video src="/asset-store/${video}"></video>` }), new RegExp(`src="/asset-store/${rendition}"`));
+  // The seller's own poster: only preload changes.
+  const kept = fillClone({ ...base, html: `<video poster="/asset-store/${own}"><source src="/asset-store/${video}"></video>` });
+  assert.match(kept, new RegExp(`poster="/asset-store/${own}"`));
+  assert.match(kept, new RegExp(`<source src="/asset-store/${video}"`));
+  assert.match(kept, /preload="metadata"/);
+  // Nothing known about a video: preload only.
+  const bare = fillClone({ ...base, videos: undefined, html: `<video><source src="/asset-store/${video}"></video>` });
+  assert.match(bare, /<video preload="metadata"><source src="\/asset-store\/1{64}"><\/video>/);
+});

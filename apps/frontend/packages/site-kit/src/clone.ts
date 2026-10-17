@@ -26,7 +26,12 @@ export type Clone = {
   /** false: a section the page already uses that the catalog no longer offers (superseded by a
    * repair, or retired). It still draws, validates and publishes; the agent is not offered it anew. */
   in_catalog?: boolean;
+  /** What the capture made for this section's videos, by the video's digest: a poster (JPEG) and a
+   * smaller rendition (MP4), each a digest; either may be null. Kept beside the fragment. */
+  videos?: Record<string, { poster?: string | null; rendition?: string | null }>;
 };
+
+const STORE_FILE = /^\/asset-store\/([0-9a-f]{64})$/;
 
 export type SlotValues = Record<string, string | boolean | undefined>;
 export type TextReplacement = { find: string; replace: string };
@@ -52,6 +57,21 @@ export function fillClone(
     for (const element of elements) {
       applySlot(element, slot.kind, value);
       if (slot.kind === "href") linksWeSet.add(element);
+    }
+  }
+
+  // Videos load only their metadata until they play. A video without its own poster shows the one
+  // the capture made, and plays the smaller rendition when there is one (the original stays stored).
+  for (const video of root.querySelectorAll("video")) {
+    video.setAttribute("preload", "metadata");
+    if (video.getAttribute("poster")) continue;
+    const named = video.getAttribute("src") ? video : video.querySelector("source[src]");
+    const digest = STORE_FILE.exec(named?.getAttribute("src") ?? "")?.[1];
+    const made = digest ? clone.videos?.[digest] : undefined;
+    if (made?.poster) video.setAttribute("poster", `/asset-store/${made.poster}`);
+    if (named && made?.rendition) {
+      named.setAttribute("src", `/asset-store/${made.rendition}`);
+      if (named !== video && named.getAttribute("type")) named.setAttribute("type", "video/mp4");
     }
   }
 

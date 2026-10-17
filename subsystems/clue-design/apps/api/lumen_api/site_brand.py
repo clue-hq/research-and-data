@@ -17,13 +17,15 @@ from typing import Any
 
 __all__ = [
     "asset_store_file", "brand_asset", "captured_asset_id", "captured_image_descriptions",
-    "clone_from_fragment", "clone_images", "site_brand_data",
+    "clone_from_fragment", "clone_images", "clone_video_renditions", "site_brand_data",
 ]
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 #: A captured section's own image, already rehosted to the asset store at capture, and the alt
 #: text that follows its src in the same tag (the optional group holds the gap, so it is tried).
 _CLONE_IMAGE = re.compile(r'<img[^>]*?src="(/asset-store/[0-9a-f]{64})"(?:[^>]*?alt="([^"]*)")?')
+#: A captured section's video, named on the <video> itself or on one of its <source>s.
+_CLONE_VIDEO = re.compile(r'<(?:video|source)\b[^>]*?src="/asset-store/([0-9a-f]{64})"')
 
 
 def asset_store_file(digest: str) -> str:
@@ -81,6 +83,18 @@ def captured_image_descriptions(clones: list[Mapping[str, Any]], *, workspace_id
     return found
 
 
+def clone_video_renditions(clones: list[Mapping[str, Any]], *, workspace_id: str) -> dict[str, dict]:
+    """``{video digest: {"poster", "rendition"}}`` for the clones' videos: what the capture made for
+    them (``lumen_ingestion.capture.video_renditions``), kept beside the fragments."""
+
+    digests = {digest for clone in clones for digest in _CLONE_VIDEO.findall(str(clone.get("html") or ""))}
+    if not digests:
+        return {}
+    from lumen_ingestion.capture.video_renditions import video_renditions_for
+
+    return video_renditions_for(digests, workspace_id=workspace_id)
+
+
 def clone_images(
     clones: list[Mapping[str, Any]], descriptions: Mapping[str, str] | None = None
 ) -> dict[str, dict]:
@@ -112,10 +126,13 @@ def site_brand_data(
     clones: list[Mapping[str, Any]],
     library_assets: Mapping[str, Mapping[str, Any]],
     captured_image_descriptions: Mapping[str, str] | None = None,
+    video_renditions: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict:
     """BrandData: the kit, its assets and fonts, the released clones and their images, and the
     workspace library assets the site already uses (a generated image is described by its prompt).
-    ``captured_image_descriptions`` (``{digest: text}``) describes the clones' images."""
+    ``captured_image_descriptions`` (``{digest: text}``) describes the clones' images;
+    ``video_renditions`` (``{video digest: {poster, rendition}}``) rides on each clone as ``videos``
+    (its own videos only), for site-kit's ``fillClone``."""
 
     assets: dict[str, dict] = {}
     for asset_id, entry in kit_assets.items():
@@ -148,8 +165,17 @@ def site_brand_data(
         "kit": dict(kit),
         "fonts": fonts,
         "assets": assets,
-        "clones": {str(clone["id"]): dict(clone) for clone in clones},
+        "clones": {str(clone["id"]): _with_videos(clone, video_renditions or {}) for clone in clones},
     }
+
+
+def _with_videos(clone: Mapping[str, Any], renditions: Mapping[str, Mapping[str, Any]]) -> dict:
+    videos = {
+        digest: dict(renditions[digest])
+        for digest in _CLONE_VIDEO.findall(str(clone.get("html") or ""))
+        if digest in renditions
+    }
+    return {**clone, "videos": videos} if videos else dict(clone)
 
 
 def clone_from_fragment(section: Mapping[str, Any], loaded: Any) -> dict:

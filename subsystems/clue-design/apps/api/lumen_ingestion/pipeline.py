@@ -1333,6 +1333,18 @@ def _mint_page_fragments(
                 "visible_budget": visible[index],
                 "dormant_budget": dormant[index],
             }
+    # A poster and a smaller rendition for every captured video, kept beside the fragments by the
+    # video's digest (brand facts plan 2026-10-17, Task 4); one already made is skipped.
+    from .capture.video_renditions import captured_videos, ensure_video_renditions
+
+    try:
+        diagnostics.extend(ensure_video_renditions(
+            captured_videos(snapshots), workspace_id=repo.workspace_id, register=rehost,
+        ))
+    except Exception as error:  # noqa: BLE001 — a video's poster never fails the capture
+        logger.warning("video renditions failed", exc_info=True)
+        diagnostics.append({"code": "LUMI0546", "severity": "warning",
+                            "message": f"captured video posters and renditions failed: {type(error).__name__}: {error}"})
     return refs, diagnostics
 
 

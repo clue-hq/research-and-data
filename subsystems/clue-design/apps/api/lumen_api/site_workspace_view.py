@@ -25,7 +25,8 @@ from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .database import NotFoundError
 from .fragments import FragmentRefused, read_web_fragment
 from .site_brand import (
-    _record_digest, asset_store_file, captured_image_descriptions, clone_from_fragment, site_brand_data,
+    _record_digest, asset_store_file, captured_image_descriptions, clone_from_fragment, clone_video_renditions,
+    site_brand_data,
 )
 from .site_kit_cli import build_site_catalog
 
@@ -251,14 +252,16 @@ def site_brand_for(
     kit_ref = (site.get("theme") or {}).get("brand_kit")
     listed = list_site_clones(blobs, cache_dir)
     pinned = pinned_site_clones(site, blobs, listed={str(clone["id"]) for clone in listed})
+    clones = listed + pinned
     return site_brand_data(
         slug=str((kit_ref or {}).get("id") or blobs.workspace_id),
         kit=dict(brand_kit or {}),
         kit_assets=dict(kit_assets or {}),
         font_faces=list((font_spec or {}).get("faces") or []),
-        clones=listed + pinned,
+        clones=clones,
         library_assets=dict(library_assets),
-        captured_image_descriptions=captured_image_descriptions(listed + pinned, workspace_id=blobs.workspace_id),
+        captured_image_descriptions=captured_image_descriptions(clones, workspace_id=blobs.workspace_id),
+        video_renditions=clone_video_renditions(clones, workspace_id=blobs.workspace_id),
     )
 
 
