@@ -44,9 +44,9 @@ test("Conduit's demo button reads warm dark once measured, and says what is draw
   assert.ok(md("altcarbon").includes('kit.Button look="solid.1"'));
 });
 
-test("Buttons says a filled button's light version is the page or the inverse colour, whichever stands out", () => {
+test("Buttons says a filled button's light version is the seller's light style, else the page or the inverse colour", () => {
   const text = md("conduit").replace(/\n/g, " ");
-  assert.ok(text.includes("take their light version (the kit's page or inverse colour, whichever stands out more on that surface, with its text colour). Every other button"), text);
+  assert.ok(text.includes("take their light version (the seller's own light filled style when the kit measured one, else the kit's page or inverse colour, whichever stands out more on that surface, with its text colour). Every other button"), text);
 });
 
 test("Cards says a text-only or outline card's text takes the surface's text colour where its own would not stand out", () => {

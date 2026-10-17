@@ -7,8 +7,8 @@
 // kit's (brand-values.ts) or one of FALLBACKS; clones keep their own captured CSS.
 import type { BrandData } from "./brand";
 import {
-  FALLBACKS, colorOf, contrast, cssString, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
-  pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
+  FALLBACKS, alphaOf, colorOf, contrast, cssString, fluid, fontStack, hexOf, isComponentToken, isMeasured,
+  luminance, numberOf, pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
 } from "./brand-values";
 import {
   STATES, buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, isClearFill, motionEntries,
@@ -85,12 +85,23 @@ function textSwaps(brand: BrandData, color: string | undefined, surfaces: string
   return swaps;
 }
 
-/** A filled button's light version on a dark surface: of the kit's page and inverse surfaces, the one
- * that stands out more from this surface (a dark-themed seller's page is itself dark). */
-function lightVersion(brand: BrandData, bg: string): string | undefined {
-  return ["surface.page", "surface.inverse"]
-    .filter((role) => hexOf(brand, role) && colorOf(brand, inkRole(brand, role)))
+/** A filled button's light version on a dark surface: the seller's own most used light filled style
+ * when the kit measured one (fill luminance above 0.5, its label reading on it at 4.5:1); otherwise,
+ * of the kit's page and inverse surfaces, the one that stands out more from this surface (a
+ * dark-themed seller's page is itself dark). */
+function lightVersion(brand: BrandData, bg: string): Swap | undefined {
+  for (const look of buttonLooks(brand)) {
+    if (look.kind !== "solid" || !look.measured) continue;
+    const { fill, label, border } = partsFromSlots(brand, look.measured.rest).parts;
+    if (!fill?.startsWith("#") || !label?.startsWith("#") || alphaOf(fill) < 1) continue;
+    if (luminance(fill.slice(0, 7)) > 0.5 && contrast(fill.slice(0, 7), label.slice(0, 7)) >= 4.5) {
+      return { fill, label, border: border ?? fill };
+    }
+  }
+  const role = ["surface.page", "surface.inverse"]
+    .filter((r) => hexOf(brand, r) && colorOf(brand, inkRole(brand, r)))
     .sort((a, b) => contrast(hexOf(brand, b)!, bg) - contrast(hexOf(brand, a)!, bg))[0];
+  return role ? { fill: `var(--brand-${colorVar(role)})`, label: inkOn(role), border: `var(--brand-${colorVar(role)})` } : undefined;
 }
 
 /** Where a button or a card would not stand out on a surface (text 4.5:1, WCAG 1.4.3; a filled shape
@@ -113,7 +124,7 @@ function lookSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: str
       swap = { label: on, ...(border === label ? { border: on } : {}) };
     } else if (!clear && filled && dark.includes(surface) && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
       const light = lightVersion(brand, bg);
-      if (light) swap = { fill: `var(--brand-${colorVar(light)})`, label: inkOn(light), ...(border ? { border: `var(--brand-${colorVar(light)})` } : {}) };
+      if (light) swap = { fill: light.fill, label: light.label, ...(border ? { border: light.border } : {}) };
     }
     if (!swap) continue;
     swaps.bySurface.set(surface, swap);

@@ -260,3 +260,29 @@ test("a measured heading ink (text.heading) colours the heading roles on light s
   const headline = md.split("\n").find((line) => line.startsWith("| headline |")) ?? "";
   assert.ok(headline.includes("| #014036 (text.heading) |"), headline);
 });
+
+test("with measured button styles, the standard button is the brand's most used filled style (Garner kit v3)", () => {
+  const brand = kitBrand("garner.v3");
+  const css = themeCss(brand);
+  const std = ruleOf(css, ".brand-btn");
+  assert.match(std, /background-color:(var\(--bs-std-fill,)?#017660/, std);
+  assert.ok(std.includes("border-radius:9999px 9999px 9999px 9999px"), std);
+  assert.ok(std.includes("padding:8px 24px 8px 24px"), std);
+  assert.ok(std.includes("min-height:37.59px"), std);
+  assert.match(std, /color:(var\(--bs-std-label,)?#FFFFFF/, std);
+  // On the dark brand surface its light version is the seller's own white pill, not the page colour.
+  const band = ruleOf(css, ".bg-surface-brand");
+  assert.match(band, /--bs-std-fill:#FFFFFF/, band);
+  assert.match(band, /--bs-std-label:#0D2B25/, band);
+  const md = buildCatalog(brand, "Garner Health")["brand/brand.md"];
+  const row = md.split("\n").find((line) => line.startsWith("| (none) |")) ?? "";
+  assert.ok(row.includes("solid.017660.c5e6"), row);
+  assert.ok(row.includes("#017660") && row.includes("9999px (radius.full)"), row);
+});
+
+test("without measured button styles the standard button is unchanged (Garner kit v2)", () => {
+  const std = ruleOf(themeCss(kitBrand("garner")), ".brand-btn");
+  assert.match(std, /background-color:(var\(--bs-std-fill,)?#047464/, std);
+  assert.ok(std.includes("border-radius:16px 16px 16px 16px"), std);
+  assert.ok(!std.includes("min-height"), std);
+});

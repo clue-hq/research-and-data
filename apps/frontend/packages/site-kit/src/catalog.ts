@@ -15,7 +15,7 @@ import { colorOf, isMeasured, pxOf, tokenEntry, typographyOf } from "./brand-val
 import type { Clone } from "./clone";
 import {
   buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, measuredComponents, motionEntries, motionNotes,
-  partsFromSlots, type Drawn, type Look, type Part,
+  partsFromSlots, standardLook, type Drawn, type Look, type Part,
 } from "./looks";
 import { COMPONENT_SCHEMAS } from "./schemas";
 import { colorVar, inkRole, surfaceChoices } from "./surfaces";
@@ -280,14 +280,17 @@ function spacingSection(brand: BrandData): string[] {
 function buttonsSection(brand: BrandData): string[] {
   const looks = buttonLooks(brand);
   const std = drawnButton(brand, null);
+  const stdLook = standardLook(brand);
+  const stdName = stdLook ? `the kit's standard button: the seller's most used filled style, ${stdLook.name}` : "the kit's standard button";
   const fill = partCell(brand, std, "fill", "button's fill");
   const label = partCell(brand, std, "label", "button's label");
   const corners = partCell(brand, std, "radius", "button's corners");
   const dark = [
     "A button whose text or fill would not stand out from its surface changes: outline, text-only and see-through",
     "styles take the surface's text colour on any surface, and on a dark surface filled styles and the",
-    "standard button take their light version (the kit's page or inverse colour, whichever stands out",
-    "more on that surface, with its text colour). Every other button is drawn as the seller's site draws it.",
+    "standard button take their light version (the seller's own light filled style when the kit measured",
+    "one, else the kit's page or inverse colour, whichever stands out more on that surface, with its text",
+    "colour). Every other button is drawn as the seller's site draws it.",
   ];
   if (!looks.length) {
     return ["## Buttons", `This brand's kit records no button styles, so every button is the kit's standard button: ${fill}, ${label}, ${corners}.`, "", ...dark, ""];
@@ -306,7 +309,7 @@ function buttonsSection(brand: BrandData): string[] {
     "a FeatureSplit or a CtaBand. A button with no look is the standard button.",
     "| look | kind | fill | label | border | corners | confidence | notes from the brand kit |",
     "|---|---|---|---|---|---|---|---|",
-    `| (none) | the kit's standard button | ${fill} | ${label} | none | ${corners} | — | Used when you name no look. |`,
+    `| (none) | ${stdName} | ${fill} | ${label} | none | ${corners} | — | Used when you name no look. |`,
     ...rows,
     ...(measuredStates ? ["Each style's hover, pressed and focus looks, and the motion between them, come from the seller's", "site; `kit.Button` draws them."] : []),
     ...(measuredComponents(brand) ? [] : ["This kit was made before button styles were measured: their values come from the kit's tokens, and", "a part the kit has no value for is drawn as the standard button's part."]),

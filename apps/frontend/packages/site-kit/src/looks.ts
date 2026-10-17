@@ -243,8 +243,22 @@ function putType(drawn: Drawn, brand: BrandData, role: string, source: Source) {
   if (style.letterSpacing !== null) put(drawn, "tracking", `${trim(style.letterSpacing)}em`, role, source);
 }
 
+/** The filled style the seller's site uses most, when the kit measured its button styles (looks()
+ * orders each kind by use): the standard button is drawn from it. */
+export function standardLook(brand: BrandData): Look | null {
+  return buttonLooks(brand).find((look) => look.kind === "solid" && look.measured !== null) ?? null;
+}
+
+/** The parts the standard button takes from the most used filled style. */
+const STANDARD_PARTS: readonly Part[] = [
+  "fill", "label", "border", "borderWidth", "borderStyle", "radius", "padding", "height", "gap",
+  "fontFamily", "fontSize", "fontWeight", "lineHeight", "tracking",
+];
+
 /** The kit's standard button: its brand surface with its pair, its button corners, its cta type;
- * the padding is site-kit's one fallback (no kit token holds it). */
+ * the padding is site-kit's one fallback (no kit token holds it). When the kit measured the seller's
+ * button styles, the most used filled one (standardLook) gives its fill, label, border, corners,
+ * padding, height, font and icon gap instead. */
 export function standardButton(brand: BrandData): Drawn {
   const drawn: Drawn = { parts: {}, tokens: {}, source: {} };
   const ink = inkRole(brand, "surface.brand");
@@ -256,6 +270,12 @@ export function standardButton(brand: BrandData): Drawn {
   put(drawn, "padding", `${block} ${inline} ${block} ${inline}`, undefined, "fallback");
   put(drawn, "decoration", FALLBACKS.controlDecoration, undefined, "fallback");
   putType(drawn, brand, "type.cta", "kit");
+  const look = standardLook(brand);
+  if (look) {
+    const measured = partsFromSlots(brand, look.measured?.rest);
+    const skip = (Object.keys(measured.parts) as Part[]).filter((part) => !STANDARD_PARTS.includes(part));
+    apply(drawn, measured, "measured", skip);
+  }
   const disabled = ratioOf(brand, "opacity.disabled");
   if (disabled) drawn.tokens.opacity = "opacity.disabled";
   return drawn;
