@@ -1,0 +1,287 @@
+# Site editor: an element inspector like the scene ad editor's — design
+
+Date 2026-10-17. Founder conversation in the trenton session (brainstorming, mockups in
+`.superpowers/brainstorm/95737-1792238115/content/`, git-ignored: `site-inspector-panels.html`,
+`site-inspector-button.html`). Status: DRAFT for founder review.
+
+## 1. Intent
+
+A marketer editing a microsite in the Puck site editor clicks any element on the canvas — a piece of
+text, a button, an image, or a box (a section, a card, a row, a div) — and a panel on the right lets them
+style that element directly, the way the scene ad editor's panel does for ad elements. Today they can
+only select a whole section and edit its content fields; anything visual means asking the agent, which
+costs minutes and money per change.
+
+The founder's words: copy the scene ad editor's inspector "for their counterpart element types in the
+site doc … site would have more of a web (html/specific formatting)". Same look, same sections, same
+controls, each doing the web version of its ad counterpart.
+
+## 2. What the founder decided
+
+- **Look and structure:** the scene ad editor's inspector (`apps/frontend/src/features/chat-shell/components/image-inspector.tsx`,
+  `AdTextInspector`), reused, not redrawn. The mockups were approved ("looks perfect").
+- **Element types and their panels** (mockups 1–4):
+  - **Text** (heading, paragraph, link text): Typography — Color, Font, Size, Weight, **Bold / Italic /
+    Underline**, Alignment (left, centre, right, justify); a Link row; Layers.
+  - **Button:** Typography for its label (a Text box plus the same typography rows); Fill; Stroke (colour,
+    width, **corner radius**: pill, a number, custom); Layout (padding, width); **Link** (a web address or
+    a page on this site; same tab or new tab); Layers.
+  - **Container** — any box element, not only cards ("any type of element"): Fill; Stroke (colour, width,
+    corner radius); Layout (padding, gap between children, width: fill / fit / fixed); Arrange (move up or
+    down among its neighbours; content alignment); Layers. The panel's title names what was clicked
+    ("Section", "Card", "Row").
+  - **Image:** Replace (the existing asset picker), Fit (fill / fit), Alt text, Stroke with corner radius,
+    Layers.
+  - **Layers:** a tree of everything inside the section, like the ad's, instead of today's list of sections.
+- **Whole box or highlighted words:** if the whole text box is selected, a change applies to the whole box;
+  if some words are highlighted, only to those words.
+- **Colours:** the brand's colours first (the Theme tab), and the person can pick a custom colour (the
+  Custom tab: picker, hex, recent swatches) — exactly the scene ad editor's colour control.
+- **Fonts:** the brand's fonts and other fonts.
+- **Scope:** sections we draw (brand sections), copied seller sections (clones), the agent's own
+  sections, **and the shared header and footer** (founder: "it should work in the header as well").
+- **The agent works on the header and footer too.** The founder asked the agent for a header layout change
+  and it refused: the shell's layout is fixed in code (`site-kit/src/shell.tsx`; `ShellSchema`,
+  `schemas.ts:182`, allows only the words, logo, nav links and one button). "Ideally that should not be
+  the case."
+- **Adding a link to plain text is in** (founder: "yes this should also be allowed"): highlighted words,
+  or a whole text box, can become a link.
+- **Reordering inside copied seller sections is in** (founder: "yes it should be there"), as well as in
+  the sections we draw.
+- **Quality bar (founder):** every step finished and correct, nothing left half-built, no silent errors;
+  small steps are fine.
+- **The agent is free to redo it:** if the agent later rewrites a section, it may replace or drop the
+  person's manual styling. Manual styling is not protected from the agent.
+- **Order of work:** text first, then buttons, then containers (images last — see §7).
+- Out of scope for now: the ad panel's Stroke on text, Layout X / Y and Rotation, Arrange front / back
+  (they have no web meaning in a flowing page), and vertical alignment (a web text box hugs its text).
+
+## 3. Goals, non-goals, anti-goals
+
+**Goals.** Every change a marketer makes in the panel shows instantly on the canvas, survives a reload,
+is one undo step, and looks identical on the published page. The panel works on all three kinds of
+section. The agent sees the page as it is, styling included.
+
+**Non-goals.** Reordering, inserting, deleting or duplicating whole sections (item E8, waiting on the
+founder's designs, C13). Free CSS editing. Animations. Responsive (per-breakpoint) styling — one value
+applies at every width in this version.
+
+**Anti-goals (what would make it a failure even if it works).** A style that shows in the editor but not
+on the published page, or the reverse. A style change that silently breaks the section (a crash, a lost
+inline edit, a clone's DOM rebuilt and its images reloaded). A panel control that looks live but does
+nothing. Arbitrary CSS reaching the published page (the sanitizer is not an allow-list; values must be
+validated where they are written).
+
+## 4. How it works (the parts decided; my calls are marked)
+
+### 4.1 Element addresses
+
+Today a click resolves only to a section (`site-editor/src/client/dom.ts:38`) and the frame↔app protocol
+carries only `componentId` (`site-kit/src/editor-protocol.ts:120-151`). An element needs an address
+inside its section that is stable across reloads and is the same in the editor and in the published HTML.
+
+*My call:* every styleable element carries `data-clue-el="<key>"`, with the key unique inside its section:
+
+- **Brand sections** (`site-kit/src/sections.tsx`): our code stamps the key on each heading, body,
+  button, card, row, image and the section box, derived from the prop path it draws (`headline`,
+  `cards.2`, `cards.2.title`, `button`, `root`).
+- **Agent sections:** the agent names what it wants editable. The kit pieces (`kit.Button`, `kit.Card`,
+  `kit.Image`, `kit.Link`) take an optional `el` prop that becomes `data-clue-el`, and a plain element the
+  agent writes itself carries `data-clue-el="name"`. A kit piece receives values, not prop paths, and an
+  inline-edit prop is a plain string on the published page, so keys cannot be derived automatically
+  (builder check, 2026-10-17). Elements the agent did not name are not selectable (clicking selects the
+  nearest named ancestor, finally the section). The `writing-a-section` skill says how; that skill text is
+  shown to the founder before it is written, and it is on the critical path for agent sections only.
+- **Clones:** the key is the element's structural path inside the captured fragment (child indices from
+  the fragment root, e.g. `0.2.1`), computed from the captured fragment markup (not the filled DOM, so a hidden slot never shifts its
+  siblings' keys). Fragment ids are content-addressed, so the markup behind an id cannot change and the
+  path is stable.
+
+- **Header and footer:** `kit/shell.tsx` stamps keys on the header box, the "Prepared for" line, the
+  logo, each nav link (`nav.0` …), the button, the footer box, the legal line and each footer link.
+
+An element with no key cannot be selected; clicking it selects its nearest keyed ancestor, finally the
+section (today's behaviour).
+
+### 4.2 Selection
+
+Selection becomes `(componentId, elementKey | null)`. The frame resolves a click to the nearest
+`[data-clue-el]` inside the section (`dom.ts clickIntent`), keeps Puck's own section selection as it is,
+and posts an extended `selected` message carrying `elementKey`, the element's kind (text, button,
+container, image) and its current computed and stored styles. The app's `select` message gains an
+optional `elementKey` so the Layers tree can select an element. The selected element is outlined by hand,
+as the shell already is (`data-site-shell-selected`, `editor-app.tsx:104-111`). The `<Puck>` tree must not
+re-render on selection (`editor-app.tsx:123-126`), so the outline is a DOM attribute, not React state.
+
+Text highlighting inside an inline-edit or rich-text field reports "N words selected" and switches the
+panel's typography rows to act on the highlighted range (§4.4).
+
+### 4.3 Where styles are stored: one validated "edits" layer per section
+
+Today no section has a style prop, by design: every schema is strict and `className` / `style` props are
+refused (`site-kit/src/schemas.ts:4-6`, `render-core.tsx:130`), so the agent cannot drift off-brand
+through raw CSS.
+
+*My call:* each section in the site document — and the shell's `header` and `footer` — gains one
+reserved, optional field, `edits`, a map from
+element key to a **style override** with a strict, closed schema in site-kit (no free CSS):
+
+| Property | Values |
+|---|---|
+| `color`, `fill`, `borderColor` | a brand token name, or a hex colour with an opacity 0–100 |
+| `fontFamily` | a brand font family, or a family from the font library (§4.6) |
+| `fontSize` | px, 8–200 |
+| `fontWeight` | 100–900 in steps of 100 (only weights the family has) |
+| `italic`, `underline` | true / false (bold is `fontWeight` 700) |
+| `textAlign` | left, center, right, justify |
+| `borderWidth`, `radius`, `gap` | px, 0–200; `radius` also `pill` |
+| `padding` | px, one value or vertical + horizontal |
+| `width` | fill, fit, or a px value |
+| `imageFit` | fill, fit |
+| `order` | on a container: the order of its children, as a list of their keys (§4.8) |
+| `hidden` | on a header or footer element: true hides it (so the agent can drop the logo or a link) |
+
+Text content and links are **not** in `edits`: a button's label and a heading's words stay in the
+section's prop or the clone's slot, and a Link edit writes the link that already exists — `buttonHref` /
+`linkHref` on brand sections, the link prop on agent sections, the `href` slot or `links` replacement on
+clones. One source of truth each, and no attribute is changed after React renders (live pages hydrate, so
+a post-render attribute change would break hydration). The Link section's "Open in a new tab" is a new
+boolean beside each existing link prop (brand sections) or slot (clones); an agent section offers it only
+if it declares one.
+
+The structural brand rule stays for props (still no `className` / `style` props); `edits` is the one
+sanctioned place for manual styling, and it is validated where it is written (`site_doc_validate.py` runs
+the site-kit validator, which runs the schema). The agent may also write `edits` — the founder ruled it free to redo the person's styling — so `edits`
+joins the agent's page-writing contract and its catalog; the agent's skills steer it to brand tokens, and
+the validator checks shape, not taste (founder ruling 2026-10-08: judgement belongs to the agent).
+
+### 4.4 Words: rich text
+
+Styling highlighted words needs rich text, which the site layer does not have (item E7). The trial's spike
+(`trials/puck-spike/RICHTEXT-R5.md`) proved Puck 0.23's `richtext` field works on our canvas with five
+changes on our side, and lists the eight places adoption touches (its "Details 5"). Adopt it as R5
+recommends, with one addition: the stored HTML allow-list is `p strong em u s ul ol li br`, **plus `a`** with an `href` in the existing
+`link` grammar (`schemas.ts:33-37`; an internal `/route` must be a real page, as `validate.ts:126-131`
+already checks) and an optional `data-new-tab` that the render turns into `target="_blank" rel="noopener"`,
+**plus `span`
+carrying a `data-s` attribute** whose value is a key into the section's `edits` (e.g. `headline~1`), so
+highlighted-word colour, font and size go through the same validated override schema and never as inline
+`style`. The R5 notes on the menu apply, except that our controls live in the right-hand panel, not in
+Puck's inline menu (we still need `renderInlineMenu`'s `editor` handle to apply marks to the range, and
+the `data-puck-rte-menu` marker on our panel so a click does not blur the editor — *builder: the panel
+lives in the app, outside the frame; prove the range survives a click across the frame boundary, or keep a
+minimal in-frame bar for B / I / U and colour*).
+
+Which text is rich: every brand-section text field that is edited in place today, and every agent prop
+marked for inline editing. Clone text slots of kind `text` accept the same allow-listed HTML (the clone
+filler sets it as sanitized HTML instead of text). Clone text that is not a slot can be styled as a whole
+box but not word by word, and cannot become a new link (its Link row shows disabled with a note); an
+existing clone link is edited through its `href` slot or `links` replacement.
+
+**Adding a link to text** wraps the highlighted words (or, with the whole box selected, all its words) in
+an allow-listed `<a>`. Puck's richtext turns its own link extension off in R5; enabling it, restricted to
+the grammar above, is part of this step. Pasted links are filtered to the same grammar.
+
+### 4.5 Applying the styles (editor and published page alike)
+
+One site-kit function turns a section's `edits` into a scoped stylesheet —
+`[data-component-id="<id>"] [data-clue-el="<key>"] { … }` and `[data-s="<key>"] { … }` — emitted next to
+the section in both the editor frame and the published render (`render-core.tsx`). The rules must win over
+the theme, Tailwind utilities and the clones' own CSS; the clones' CSS is unlayered, so a CSS layer would
+lose to it. *Builder's choice* of mechanism (for example unlayered rules with higher specificity), proven
+on a Tailwind-built clone (Conduit). Applying by stylesheet (not by React props) works the same for brand, agent and clone
+sections, never rebuilds a clone's DOM, and needs no change inside agent-written code.
+
+### 4.6 Fonts
+
+The Font list shows the brand's families first, then the font library the ad editor uses (the API's
+`/font-library` manifest, ~27 families; `design-editor/engine/scene/libraryFonts.ts`). Today none of the
+library reaches the site frame. *My call:* the site theme emits `@font-face` rules for every library family
+an `edits` entry uses (WOFF2, from the manifest), in the editor and on the published page; publishing keeps
+only faces the page uses (the existing page-weight item P2 covers trimming).
+
+### 4.7 The panel
+
+`site-inspector.tsx` grows one panel per element kind, built from the ad editor's exported primitives
+(`ColorControl`, `InspectorSelect`, `RadiusControls`, `BackgroundFillControl` in
+`inspector-primitives.tsx`). `TextAlignment` is private today (copies in `image-inspector.tsx:177` and
+`web-inspector.tsx:182`); extract it once and use it in all three. The colour Theme tab needs a site
+palette built from the brand's tokens (the ad's comes from `ScenePaletteContext`, scene-only). A control the
+selected element cannot take (an agent section's element that is not keyed, a clone element that has no
+text slot for its words) shows disabled with a one-line note — never a live control that does nothing.
+
+Each committed change is one site write (`PUT /documents/{id}/site`) and therefore one server undo step,
+like inspector edits today. Number boxes commit on blur / Enter, never per keystroke.
+
+### 4.8 Arrange
+
+"Move up / down among neighbours" reorders an element among its siblings:
+
+- **Brand and agent sections:** where the siblings come from a prop array (a row of cards), the move
+  reorders the array; the stamped keys follow the items.
+- **Clones and the header / footer:** the move writes `order` on the parent's `edits` entry. The clone
+  filler (and `kit/shell.tsx`) rearranges the children in that order before the markup is produced, in
+  the editor and on the published page alike. Because clone keys are computed from the captured markup,
+  not from the rearranged DOM, a moved element keeps its key, so its styles move with it and no remapping
+  is needed.
+- A container whose children are neither a prop array nor clone / shell markup (an agent section's plain
+  layout) offers move only if the agent made the children a prop array.
+
+*My call:* moving whole sections stays with item E8 and its designs.
+
+### 4.9 The agent
+
+**Header and footer.** The agent writes the shell's `edits` as it does a section's, so it can restyle and
+rearrange the header and footer: spacing, alignment, colours and fonts, the order of its parts, hiding the
+logo or a link. The prompt and `building-with-puck` stop implying the header is off-limits (skill text,
+founder review first). *My call (check this):* a header with a structurally different composition (new
+elements, a two-row header, an agent-written header) is a follow-up, not this design — it needs the shell to
+accept an agent-written section, which changes publishing and the editor's shell handling.
+
+The agent's view of the page (`site.md`, the section cards) shows each section's `edits` in plain words
+("headline: colour #0F59B0, Semi Bold"). When it rewrites a section it may keep, change or drop them.
+An `edits` entry whose key no longer exists after a rewrite simply matches nothing; it is kept, never
+an error (the save check does not run agent-section code, so it cannot know the keys). The agent may clear
+such entries.
+
+## 5. Prerequisite
+
+**S1-3** (open review finding, `docs/superpowers/verification/2026-10-14-wave2-area-review-findings.md:172-187`):
+clone text replacements the check accepts are never applied, because three places read clone text three
+ways. Fix it before clone text editing grows (one shared "visible text" function; accept only what the
+renderer can replace).
+
+## 6. Constraints
+
+- Puck stays pinned at `@puckeditor/core` 0.23.0.
+- Every new runtime flag goes in `.env.example` with its default (repo parity rule). *My call:* no flag; the
+  panel ships on.
+- Published sites ship JavaScript (founder 2026-10-15), so a live page may use the same render path.
+- Nothing outside `subsystems/clue-design/` imports design internals (seam rule).
+- Verification is business-logic scenarios through the real routes, DB and published render, plus a live
+  check on Garner, Conduit and Clue in the in-app browser (founder rulings 2026-10-04 and 2026-10-13).
+- Skill or prompt text changes (the agent's `writing-a-section`, `building-with-puck`) are shown to the
+  founder before they are written.
+
+## 7. Order of delivery
+
+0. Foundations: element keys (§4.1, header and footer included), selection (§4.2), the `edits` schema and
+   its stylesheet (§4.3, §4.5), the site palette, the extracted `TextAlignment`, S1-3.
+1. **Text:** whole-box typography, then rich text and highlighted words (§4.4), then links on text, then
+   fonts (§4.6).
+2. **Buttons:** label, typography, fill, stroke and radius, padding and width, Link.
+3. **Containers:** fill, stroke and radius, padding, gap, width, Arrange (prop arrays, clones, header and
+   footer).
+4. **Images** (my guess at the founder's order; images already swap today): fit, alt text, stroke and radius.
+
+Each step ships on its own and is complete when: every control it adds works on every section kind it
+names (or is shown disabled with a note where §4 says so); the change shows identically in the editor and
+on a published page; it survives a reload and is one undo step; a business-logic scenario test proves it
+through the real write route, the stored document and the published render; and it is checked live in the
+in-app browser on Garner, Conduit and Clue. No step leaves a control that looks live but does nothing.
+
+## 8. Left to the builder
+
+Exact key derivation per section, the message field names, the CSS layer name, the panel's internal
+structure, how the Layers tree is built from the frame's DOM, test layout, and the font-face loading
+mechanics — within the rules above.
