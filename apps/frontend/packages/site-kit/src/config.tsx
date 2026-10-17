@@ -294,22 +294,36 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   // section, which never sees `_edits`. Done once, here, so the editor, the static render and both
   // sides of a live page draw the same tree. The box is display:contents (themeCss), so it takes no
   // part in the page's layout. The shell's header and footer scope themselves (shell.tsx).
+  //
+  // In the editor `_edits` is read from the section AS STORED (useRawProps): Puck's in-place text
+  // transform matches props by key name at any depth, so a section with an in-place `heading` field
+  // receives `_edits.heading` as Puck's inline-edit element, not the override. Elsewhere the drawn
+  // props are the stored ones.
+  const SectionScope = ({ id, drawn, children }: { id: string; drawn: Record<string, unknown>; children: ReactNode }) => {
+    // Only in Edit mode: that is when Puck puts its widgets in the drawn props (and the raw props are
+    // the editor's to read; a preview or a published page never reads them).
+    const rawProps = useRawProps();
+    const editing = Boolean((drawn.puck as { isEditing?: boolean } | undefined)?.isEditing);
+    const stored = editing ? rawProps(id) : undefined;
+    const css = editsCss(id, editsOf(stored ?? drawn), brand);
+    return (
+      <div data-clue-section={id} className="clue-section">
+        {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
+        {children}
+      </div>
+    );
+  };
   type Render = (props: Record<string, unknown>) => ReactNode;
   const components = config.components as unknown as Record<string, { render: Render }>;
   for (const [type, component] of Object.entries(components)) {
     const render = component.render;
     components[type] = {
       ...component,
-      render: (props) => {
-        const id = String(props.id ?? "");
-        const css = editsCss(id, editsOf(props), brand);
-        return (
-          <div data-clue-section={id} className="clue-section">
-            {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
-            {render(withoutEdits(props))}
-          </div>
-        );
-      },
+      render: (props) => (
+        <SectionScope drawn={props} id={String(props.id ?? "")}>
+          {render(withoutEdits(props))}
+        </SectionScope>
+      ),
     };
   }
 

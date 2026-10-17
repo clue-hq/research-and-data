@@ -205,3 +205,21 @@ test("an agent section's props may not be named _edits (it is reserved for manua
     errors: ['the props may not include "_edits"'],
   });
 });
+
+// Puck's in-place text transform matches props by key name at any depth, so in the editor a
+// section's `_edits.heading` reaches its render as Puck's inline-edit element, not the override.
+// The scoping box reads `_edits` from the section as stored (the editor's useRawProps) instead.
+test("in the editor the section's styling comes from its stored props, whatever Puck put in the drawn ones", async () => {
+  const { makeConfig: make } = await import("../src/config");
+  const { fillClone: fill } = await import("../src/clone");
+  const { garner: brandOf } = await import("./fixtures/garner");
+  const { renderToStaticMarkup: draw } = await import("react-dom/server");
+  const stored = { id: "cta", surface: "brand", heading: "H", body: "", buttonLabel: "Go", buttonHref: "/", buttonLook: "", _edits: { heading: { fontSize: 48 } } };
+  const config = make(brandOf(), {
+    cloneHtml: fill,
+    editor: { AssetPicker: () => null, CloneEditor: () => null, useRawProps: () => (id: string) => (id === "cta" ? stored : undefined) },
+  }) as unknown as { components: { CtaBand: { render: (props: Record<string, unknown>) => React.ReactNode } } };
+  const drawn = { ...stored, puck: { isEditing: true }, _edits: { heading: { type: "span", props: { propPath: "_edits.heading", value: { fontSize: 48 } } } } };
+  const html = draw(<>{config.components.CtaBand.render(drawn)}</>);
+  assert.match(html, /\[data-clue-el="heading"\]\{font-size:48px !important\}/);
+});

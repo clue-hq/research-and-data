@@ -68,7 +68,8 @@ export interface FrameState {
 
 /** What the controller may ask of the mounted Puck (wired by editor-app.tsx's PuckBridge). */
 export interface PuckHandle {
-  select(componentId: string | null): void;
+  /** `scroll: false` for a click: the section is already where the marketer is looking. */
+  select(componentId: string | null, options?: { scroll?: boolean }): void;
   setMode(mode: EditorMode): void;
   /** Show a page that came from outside Puck (the app's copy). `selectedId` is the page section the
    * marketer has selected, which Puck must point at by id: Puck keeps a selection by position, so a
@@ -110,8 +111,9 @@ export class FrameController {
   private describe: ElementDescriber = NO_ELEMENTS;
   /** A text element a click (or the app's select) named before Puck selected its section. */
   private pendingElement: { target: SiteTarget; componentId: string; key: string | null } | null = null;
-  /** The selected section's type and fields as last described, to re-post them for another element. */
-  private described: { componentType: string; fields: FieldDescription[] } | null = null;
+  /** The selected section as last described: its type and fields (to re-post them for another
+   * element), the element key that was asked for, and what the canvas showed (to re-describe it). */
+  private described: { componentType: string; fields: FieldDescription[]; askedKey: string | null; shown: string } | null = null;
   private shellFields: ShellFields | null = null;
   private timer: unknown = null;
   private changePending = false;
@@ -251,6 +253,10 @@ export class FrameController {
       return;
     }
     this.pendingElement = { componentId, key, target };
+    // Puck does not select a section for a click on its own editable text (a clone's text slot takes
+    // its pointer events), so the section is selected here; on an ordinary click this repeats what
+    // Puck does anyway. The shell's selection is the click handler's (shellSelected).
+    if (target === this.state.route) this.puck?.select(componentId, { scroll: false });
   }
 
   /** One `selected`, with the element as the canvas has it now: a key the section no longer has is
@@ -265,8 +271,22 @@ export class FrameController {
   ): void {
     const { element, elements } = this.describe(target, componentId, key);
     this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
-    this.described = { componentType, fields };
+    this.described = { askedKey: key, componentType, fields, shown: JSON.stringify([element, elements]) };
     this.post("selected", { componentId, componentType, element, elements, fields, props, route: target });
+  }
+
+  /** Describe the selection again once the canvas has settled (editor-app calls it a frame after a
+   * selection or a redraw): Puck reports a click's selection while it is still redrawing the section,
+   * when its text may not be on the page yet. Posts `selected` again only when what the canvas shows
+   * changed — the element asked for found now, its look after a style change, elements added or gone. */
+  refreshSelection(): void {
+    const selection = this.state.selection;
+    const described = this.described;
+    if (this.state.mode !== "edit" || !selection || !described || !this.state.site) return;
+    const { element, elements } = this.describe(selection.target, selection.componentId, described.askedKey);
+    if (JSON.stringify([element, elements]) === described.shown) return;
+    const props = componentProps(this.state.site, selection.target, selection.componentId) ?? {};
+    this.postSelected(selection.target, selection.componentId, described.componentType, described.fields, props, described.askedKey);
   }
 
   private takePendingElement(target: SiteTarget, componentId: string): string | null {

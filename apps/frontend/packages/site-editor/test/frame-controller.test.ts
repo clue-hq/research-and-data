@@ -42,7 +42,7 @@ function harness(loadSections: () => Promise<LoadedSection[]> = async () => []) 
     },
   });
   const puck: PuckHandle = {
-    select: (id) => puckCalls.push(`select:${id}`),
+    select: (id, options) => puckCalls.push(options?.scroll === false ? `select-quiet:${id}` : `select:${id}`),
     setMode: (mode) => puckCalls.push(`mode:${mode}`),
     showPage: (shown) => puckCalls.push(`show:${String(shown.content[0]?.props.heading ?? "")}`),
   };
@@ -466,4 +466,35 @@ test("re-describing after an outside copy keeps the selected element when the se
   h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
   h.controller.reselected("cta", "CtaBand", [], { heading: "World" });
   assert.equal(h.selectedPayloads().at(-1)?.element?.key, "body");
+});
+
+test("a selection described while the canvas was still redrawing is re-described once it has settled", async () => {
+  const h = harness();
+  let settled = false;
+  h.controller.attachDescriber((_target, _componentId, key) =>
+    settled
+      ? { element: key === "heading" ? { key, kind: "text", label: key, computed: TYPO } : null, elements: [{ key: "heading", kind: "text", label: "heading" }] }
+      : { element: null, elements: [] },
+  );
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const selected = () => h.posts.filter((post) => post.type === "selected").map((post) => post.payload as { element: { key: string } | null });
+  assert.equal(selected().at(-1)?.element, null);
+  settled = true;
+  h.controller.refreshSelection();
+  assert.equal(selected().at(-1)?.element?.key, "heading", "the element asked for is found once the canvas settles");
+  assert.equal(h.controller.getState().selection?.elementKey, "heading");
+  const count = selected().length;
+  h.controller.refreshSelection();
+  assert.equal(selected().length, count, "nothing changed: nothing is posted again");
+});
+
+test("a click on text in a section Puck did not select (a clone's editable text) selects the section, without scrolling", async () => {
+  const h = elementHarness();
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  assert.ok(h.puckCalls.includes("select-quiet:cta"), h.puckCalls.join(","));
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "heading");
 });

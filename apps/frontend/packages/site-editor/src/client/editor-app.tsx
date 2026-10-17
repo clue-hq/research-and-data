@@ -156,8 +156,13 @@ export function EditorApp({ boot }: { boot: BootContext }) {
   }, [state.selection, state.mountKey]);
 
   // The selected text element's outline: an attribute, re-applied after every redraw of the page
-  // (Puck draws an outside copy a frame later, and may replace the element).
+  // (Puck draws an outside copy a frame later, and may replace the element). A frame later the
+  // selection is also described again: Puck reports a click's selection mid-redraw.
   useEffect(() => {
+    const settle = () => {
+      controller.refreshSelection();
+      apply();
+    };
     const apply = () => {
       for (const element of document.querySelectorAll(`[${ELEMENT_SELECTED}]`)) element.removeAttribute(ELEMENT_SELECTED);
       const selection = state.selection;
@@ -167,9 +172,9 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       element?.setAttribute(ELEMENT_SELECTED, "true");
     };
     apply();
-    const frame = requestAnimationFrame(apply);
+    const frame = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(frame);
-  }, [state.selection, state.mountKey, state.site]);
+  }, [controller, state.selection, state.mountKey, state.site]);
 
   const shellJson = state.site?.shell ? canonicalJson(state.site.shell) : "";
   const shell = useMemo<SiteShell | null>(() => (shellJson ? (JSON.parse(shellJson) as SiteShell) : null), [shellJson]);
@@ -221,11 +226,11 @@ function PuckBridge({ brand, config, controller }: { brand: BrandData; config: C
 
   useEffect(() => {
     controller.attachPuck({
-      select(componentId) {
+      select(componentId, options) {
         const puck = getPuck();
         const itemSelector = componentId ? (puck.getSelectorForId(componentId) ?? null) : null;
         puck.dispatch({ type: "setUi", ui: { itemSelector } });
-        if (componentId) {
+        if (componentId && options?.scroll !== false) {
           document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`)?.scrollIntoView({ block: "nearest" });
         }
       },
