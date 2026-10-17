@@ -108,7 +108,7 @@ test("brand colours and font families, in kit order, weights ascending", () => {
   const colors = brandColorChoices(brand);
   assert.ok(colors.length > 0);
   assert.equal(colors[0].token, "focus.ring");
-  assert.ok(colors.some((c) => c.token === "text.primary" && c.hex === "#0E1110"));
+  assert.ok(colors.some((c) => c.token === "text.primary" && c.value === "#0E1110"));
   const measured = brandColorChoices(kitBrand("garner.v3")).map((c) => c.token);
   assert.equal(measured.length, new Set(measured).size);
   assert.ok(measured.includes("surface.band.014036"));

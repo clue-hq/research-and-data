@@ -46,3 +46,31 @@ test("the dock's title: the selected layer's label, else the page title, else th
   assert.equal(siteInspectorTitle(site, "/", undefined), "Garner for SCSD");
   assert.equal(siteInspectorTitle(site, "/analysis", undefined), "/analysis");
 });
+
+// Site element inspector (plan 1): a style commit writes the section's (or the shell part's) _edits.
+import { commitStyleEdit } from "./site-selection";
+
+test("a style commit writes the element's override into the section's _edits and keeps its other props", () => {
+  const edit = commitStyleEdit(site, { componentId: "proof", target: "/" }, "heading", { fontSize: 48, italic: true });
+  assert.deepEqual(edit?.props._edits, { heading: { fontSize: 48, italic: true } });
+  assert.equal(edit?.props.heading, "7.4%");
+  const again = commitStyleEdit(edit!.site, { componentId: "proof", target: "/" }, "stats.0.value", { fontWeight: 700 });
+  assert.deepEqual(componentProps(again!.site, "/", "proof")?._edits, { heading: { fontSize: 48, italic: true }, "stats.0.value": { fontWeight: 700 } });
+});
+
+test("clearing the last property removes the element's entry, and an empty _edits goes too", () => {
+  const styled = commitStyleEdit(site, { componentId: "proof", target: "/" }, "heading", { italic: true })!.site;
+  const cleared = commitStyleEdit(styled, { componentId: "proof", target: "/" }, "heading", {});
+  assert.equal("_edits" in (cleared?.props ?? {}), false);
+});
+
+test("a header style commits through the shell target", () => {
+  const edit = commitStyleEdit(site, { componentId: "header", target: "shell" }, "preparedFor", { color: { token: "text.primary" } });
+  assert.deepEqual(componentProps(edit!.site, "shell", "header")?._edits, { preparedFor: { color: { token: "text.primary" } } });
+});
+
+test("a style commit that changes nothing, or for a section that is gone, returns null", () => {
+  const styled = commitStyleEdit(site, { componentId: "proof", target: "/" }, "heading", { italic: true })!.site;
+  assert.equal(commitStyleEdit(styled, { componentId: "proof", target: "/" }, "heading", { italic: true }), null);
+  assert.equal(commitStyleEdit(site, { componentId: "gone", target: "/" }, "heading", { italic: true }), null);
+});

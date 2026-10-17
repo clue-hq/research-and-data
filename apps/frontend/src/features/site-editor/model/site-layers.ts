@@ -1,12 +1,17 @@
 import type { BrandData } from "@clue/site-kit";
 import { pageFor } from "@clue/site-kit/editor-site";
+import type { ElementSummary } from "@clue/site-kit/editor-protocol";
 import { SHELL_TARGET, type SiteDocument } from "@clue/site-kit/site-document";
 
-/** One Layers row: the header, a page section, or the footer. */
+/** One Layers row: the header, a page section, or the footer — or (depth 1) one text element of the
+ * selected one. */
 export interface SiteLayerRow {
   active: boolean;
   componentId: string;
-  icon: "div" | "layout-template";
+  /** Depth-1 rows only: the text element this row selects. */
+  elementKey?: string;
+  depth?: 0 | 1;
+  icon: "div" | "layout-template" | "type";
   key: string;
   label: string;
   target: string;
@@ -43,13 +48,31 @@ export function siteLayerRows({
 }: {
   cloneLabels: Readonly<Record<string, string>>;
   route: string;
-  selection: { componentId: string; target: string } | null;
+  selection: { componentId: string; target: string; elementKey?: string | null; elements?: readonly ElementSummary[] } | null;
   site: SiteDocument | null;
 }): SiteLayerRow[] {
   const page = site ? pageFor(site, route) : null;
   if (!site || !page) return [];
-  const isActive = (target: string, componentId: string) =>
+  const selectedElement = selection?.elementKey ?? null;
+  const isSelected = (target: string, componentId: string) =>
     selection?.target === target && selection.componentId === componentId;
+  // The section row is active while the section itself is selected; with an element selected, the
+  // element's row is.
+  const isActive = (target: string, componentId: string) => isSelected(target, componentId) && selectedElement === null;
+  /** The selected section's text elements, right under its row. */
+  const elementRows = (target: string, componentId: string): SiteLayerRow[] =>
+    isSelected(target, componentId)
+      ? (selection?.elements ?? []).map((element) => ({
+          active: element.key === selectedElement,
+          componentId,
+          depth: 1 as const,
+          elementKey: element.key,
+          icon: "type" as const,
+          key: `${target}#${componentId}~${element.key}`,
+          label: element.label,
+          target,
+        }))
+      : [];
   const shellRow = (part: "header" | "footer"): SiteLayerRow => ({
     active: isActive(SHELL_TARGET, part),
     componentId: part,
@@ -59,15 +82,18 @@ export function siteLayerRows({
     target: SHELL_TARGET,
   });
   return [
-    ...(site.shell ? [shellRow("header")] : []),
-    ...page.content.map((item) => ({
-      active: isActive(route, item.props.id),
-      componentId: item.props.id,
-      icon: "layout-template" as const,
-      key: `${route}#${item.props.id}`,
-      label: componentLabel(item.type, item.props, cloneLabels),
-      target: route,
-    })),
-    ...(site.shell ? [shellRow("footer")] : []),
+    ...(site.shell ? [shellRow("header"), ...elementRows(SHELL_TARGET, "header")] : []),
+    ...page.content.flatMap((item) => [
+      {
+        active: isActive(route, item.props.id),
+        componentId: item.props.id,
+        icon: "layout-template" as const,
+        key: `${route}#${item.props.id}`,
+        label: componentLabel(item.type, item.props, cloneLabels),
+        target: route,
+      },
+      ...elementRows(route, item.props.id),
+    ]),
+    ...(site.shell ? [shellRow("footer"), ...elementRows(SHELL_TARGET, "footer")] : []),
   ];
 }

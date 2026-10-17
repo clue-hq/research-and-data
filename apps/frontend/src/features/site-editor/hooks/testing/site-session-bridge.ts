@@ -238,7 +238,17 @@ function repositoryFor(servers: Record<string, FakeServer>): SiteRepository {
 
 export async function mountSiteSession(
   server: FakeServer,
-  { strict = false, otherDocument }: { strict?: boolean; /** The server behind "doc-2", when a test opens it. */ otherDocument?: FakeServer } = {},
+  {
+    strict = false,
+    otherDocument,
+    locked = false,
+  }: {
+    strict?: boolean;
+    /** The server behind "doc-2", when a test opens it. */
+    otherDocument?: FakeServer;
+    /** The agent-run lock (an agent turn in flight): edits from the dock must send nothing. */
+    locked?: boolean;
+  } = {},
 ): Promise<MountedSession> {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost:3029/" });
   for (const [key, value] of Object.entries({
@@ -285,7 +295,7 @@ export async function mountSiteSession(
       documentIds,
       editing,
       enabled: artifact !== null,
-      locked: false,
+      locked,
       onScreen,
       repository,
       warm: true,

@@ -490,3 +490,47 @@ test("review S2b-8: a reload that brings no new clone does not read the brand ag
   assert.equal(server.brandReads, reads);
   await mounted.unmount();
 });
+
+// Site element inspector (plan 1): selecting a text element and styling it.
+const TYPO = { color: "#014036", fontFamily: "Inter", fontSize: 32, fontWeight: 400, italic: false, underline: false, textAlign: "left" as const };
+function describeHeading(mounted: Awaited<ReturnType<typeof mountSiteSession>>) {
+  mounted.frame.attachDescriber((_target, _componentId, key) => ({
+    element: key === "heading" ? { key, kind: "text", label: "Talk to us", computed: TYPO } : null,
+    elements: [{ key: "heading", kind: "text", label: "Talk to us" }],
+  }));
+}
+
+test("a selected text element reaches the inspector, and a style commit is one save with the section's _edits", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server);
+  describeHeading(mounted);
+  mounted.frame.elementClicked("/", "cta", "heading");
+  await selectCta(mounted);
+  const inspector = mounted.latest().inspector;
+  assert.equal(inspector.element?.key, "heading");
+  assert.equal(inspector.elementOverride, null);
+  assert.ok(inspector.layers.some((row) => row.elementKey === "heading" && row.active));
+  const accepted = () => server.log.filter((entry) => entry.startsWith("PUT") && entry.includes("->")).length;
+  const saves = accepted();
+  inspector.onStyleCommit("heading", { italic: true, fontSize: 48 });
+  await mounted.settle(12);
+  const cta = server.site.pages["/"].content.find((item) => item.props.id === "cta")!;
+  assert.deepEqual(cta.props._edits, { heading: { italic: true, fontSize: 48 } });
+  assert.equal(accepted(), saves + 1, server.log.join("\n"));
+  assert.deepEqual(mounted.latest().inspector.elementOverride, { italic: true, fontSize: 48 });
+  await mounted.unmount();
+});
+
+test("while the agent-run lock holds, a style commit sends and saves nothing", async () => {
+  const server = fakeServer();
+  const mounted = await mountSiteSession(server, { locked: true });
+  describeHeading(mounted);
+  mounted.frame.elementClicked("/", "cta", "heading");
+  await selectCta(mounted);
+  const before = structuredClone(server.site);
+  mounted.latest().inspector.onStyleCommit("heading", { italic: true });
+  await mounted.settle(12);
+  assert.deepEqual(server.site, before);
+  assert.equal(mounted.latest().inspector.disabled, true);
+  await mounted.unmount();
+});

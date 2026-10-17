@@ -76,10 +76,10 @@ export function withStyleOverride(edits: Edits, key: string, override: StyleOver
 
 /** Every colour token of the kit that resolves to a colour, in the kit's order, with its value as
  * the theme writes it (colorOf: upper-case hex, or oklch() for a kit that stores oklch). */
-export function brandColorChoices(brand: BrandData): { token: string; hex: string }[] {
+export function brandColorChoices(brand: BrandData): { token: string; value: string }[] {
   return Object.keys(tokenGroups(brand).colors ?? {}).flatMap((token) => {
-    const hex = colorOf(brand, token);
-    return hex ? [{ token, hex }] : [];
+    const value = colorOf(brand, token);
+    return value ? [{ token, value }] : [];
   });
 }
 

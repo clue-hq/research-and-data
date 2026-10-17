@@ -55,3 +55,34 @@ test("clone labels come from the brand", () => {
   assert.deepEqual(cloneLabelsOf(brand), { frag_x: "Hero — X" });
   assert.deepEqual(cloneLabelsOf(null), {});
 });
+
+test("the selected section's text elements are listed under it, the selected one active", () => {
+  const rows = siteLayerRows({
+    cloneLabels,
+    route: "/",
+    selection: { componentId: "proof", target: "/", elementKey: "stats.0.value", elements: [{ key: "heading", kind: "text", label: "7.4%" }, { key: "stats.0.value", kind: "text", label: "1" }] },
+    site,
+  });
+  assert.deepEqual(
+    rows.map((row) => [row.label, row.depth ?? 0, row.elementKey ?? null, row.active]),
+    [
+      ["Header", 0, null, false],
+      ["Hero — Top Providers. Bottom line results.", 0, null, false],
+      ["Stats band", 0, null, false],
+      ["7.4%", 1, "heading", false],
+      ["1", 1, "stats.0.value", true],
+      ["Analysis steps", 0, null, false],
+      ["Footer", 0, null, false],
+    ],
+  );
+  assert.equal(rows[4].icon, "type");
+});
+
+test("with no element selected the section row is active and its elements still show", () => {
+  const rows = siteLayerRows({
+    cloneLabels, route: "/", site,
+    selection: { componentId: "proof", target: "/", elementKey: null, elements: [{ key: "heading", kind: "text", label: "7.4%" }] },
+  });
+  assert.deepEqual(rows.filter((row) => row.active).map((row) => row.label), ["Stats band"]);
+  assert.equal(rows.filter((row) => row.depth === 1).length, 1);
+});

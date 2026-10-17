@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { brandColorChoices, brandFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
 import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
@@ -30,6 +31,8 @@ import {
 } from "../model/site-pages";
 import {
   commitFieldEdit,
+  commitStyleEdit,
+  elementOverrideOf,
   siteInspectorTitle,
   type SiteInspectorBinding,
   type SiteSelection,
@@ -203,6 +206,8 @@ export function useSiteEditingSession({
           componentId: message.payload.componentId,
           componentType: message.payload.componentType,
           documentId: message.documentId,
+          element: message.payload.element ?? null,
+          elements: message.payload.elements ?? [],
           fields: message.payload.fields,
           target: message.payload.route,
         });
@@ -324,7 +329,12 @@ export function useSiteEditingSession({
   // The dock (C5): the selected section's fields over the app's own copy of the site, and Layers.
   const activeSelection = editing && selection && selection.documentId === activeDocumentId ? selection : null;
   const cloneLabels = useMemo(() => cloneLabelsOf(load.brand), [load.brand]);
-  const layers = siteLayerRows({ cloneLabels, route, selection: activeSelection, site: currentSite?.site ?? null });
+  const layers = siteLayerRows({
+    cloneLabels,
+    route,
+    selection: activeSelection && { ...activeSelection, elementKey: activeSelection.element?.key ?? null },
+    site: currentSite?.site ?? null,
+  });
   const values =
     activeSelection && currentSite ? componentProps(currentSite.site, activeSelection.target, activeSelection.componentId) : null;
   const save = saves.save;
@@ -343,10 +353,31 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // A style change on the selected text element: the same path as a field commit (the current copy,
+  // the lock, one set_props, one save, so one undo step), writing the section's `_edits`.
+  const commitStyle = useCallback(
+    (key: string, override: StyleOverride) => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitStyleEdit(current.site, activeSelection, key, override);
+      if (!edit) return;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: style ${key}`);
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
+  const palette = useMemo(
+    () => (load.brand ? brandColorChoices(load.brand).map((choice) => ({ label: choice.token, value: choice.value })) : []),
+    [load.brand],
+  );
+  const fonts = useMemo(() => (load.brand ? brandFontFamilies(load.brand) : []), [load.brand]);
   const selectLayer = useCallback(
     (row: SiteLayerRow) => {
       if (!activeDocumentId || !editing) return;
-      post("select", { componentId: row.componentId, route: row.target }, activeDocumentId);
+      post("select", { componentId: row.componentId, elementKey: row.elementKey ?? null, route: row.target }, activeDocumentId);
     },
     [activeDocumentId, editing, post],
   );
@@ -520,9 +551,17 @@ export function useSiteEditingSession({
     note: saves.note ?? (locked ? AGENT_RUN_LOCK_NOTE : null),
     onCommit: commitField,
     onSelectLayer: selectLayer,
-    selectionKey: activeSelection ? `${activeSelection.target}#${activeSelection.componentId}` : `page:${route}`,
+    // Each element is its own selection: fresh drafts when another element (or the section) is chosen.
+    selectionKey: activeSelection
+      ? `${activeSelection.target}#${activeSelection.componentId}${activeSelection.element ? `~${activeSelection.element.key}` : ""}`
+      : `page:${route}`,
     title: siteInspectorTitle(currentSite?.site ?? null, route, layers.find((row) => row.active)),
     values,
+    element: activeSelection?.element ?? null,
+    elementOverride: elementOverrideOf(currentSite?.site ?? null, activeSelection),
+    onStyleCommit: commitStyle,
+    palette,
+    fonts,
   };
 
   // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.
