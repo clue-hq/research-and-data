@@ -277,3 +277,25 @@ def test_the_site_summary_says_what_was_styled_by_hand(tmp_path: Path) -> None:
             "centred") in text
     assert "   - styled by hand: body — colour #0F59B0 80%, not underlined" in text
     assert "- Header styled by hand: preparedFor — Bold" in text
+
+
+def test_the_site_summary_reads_rich_text_and_links_in_plain_words(tmp_path: Path) -> None:
+    """Site element inspector (plan 2): rich text shows its words with its bold, links and styled
+    words named, and links that open in a new tab say so."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "ProofCard", "props": {
+        "id": "rich", "surface": "card", "kicker": "K", "metric": "13%", "metricLabel": "less",
+        "heading": 'Top <strong>results</strong> <span data-s="heading~1">here</span>',
+        "body": 'See <a href="/analysis" data-new-tab="">the analysis</a> &amp; more',
+        "linkLabel": "Read", "linkHref": "/analysis", "linkNewTab": True,
+        "_edits": {"heading~1": {"fontWeight": 700}}}})
+    site["shell"]["header"]["nav"] = [{"label": "Analysis", "href": "/analysis", "newTab": True}]
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert '   - heading: "Top results here" (bold "results"; "here" styled by hand as heading~1)' in text
+    assert '   - body: "See the analysis & more" (link "the analysis" → /analysis, new tab)' in text
+    assert '   - link "Read" → /analysis, new tab' in text
+    assert "   - styled by hand: heading~1 — Bold" in text
+    assert "- Nav links: Analysis → /analysis (new tab)" in text

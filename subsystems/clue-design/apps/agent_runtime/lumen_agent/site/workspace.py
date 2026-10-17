@@ -25,6 +25,7 @@ import re
 import shutil
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -411,6 +412,59 @@ _ALIGN_WORDS = {"left": "left-aligned", "center": "centred", "right": "right-ali
                 "justify": "justified"}
 
 
+class _RichReader(HTMLParser):
+    """Rich text (site element inspector, plan 2) as its words, with each bold / italic / underlined
+    / struck run, link and styled span noted once, in reading order."""
+
+    _MARKS = {"strong": "bold", "b": "bold", "em": "italic", "i": "italic", "u": "underlined", "s": "struck"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.words: list[str] = []
+        self.open: list[tuple[str, str, int]] = []  # (tag, note template, start in words)
+        self.notes: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "br":
+            self.words.append(" ")
+            return
+        if tag == "a":
+            tab = ", new tab" if "data-new-tab" in values else ""
+            self.open.append((tag, f'link "{{}}" → {values.get("href") or ""}{tab}', len(self.words)))
+        elif tag == "span" and values.get("data-s"):
+            self.open.append((tag, f'"{{}}" styled by hand as {values["data-s"]}', len(self.words)))
+        elif tag in self._MARKS:
+            self.open.append((tag, f'{self._MARKS[tag]} "{{}}"', len(self.words)))
+        else:
+            self.open.append((tag, "", len(self.words)))
+
+    def handle_endtag(self, tag: str) -> None:
+        for at in range(len(self.open) - 1, -1, -1):
+            if self.open[at][0] == tag:
+                _tag, note, start = self.open.pop(at)
+                text = re.sub(r"\s+", " ", "".join(self.words[start:])).strip()
+                if note and text:
+                    self.notes.append(note.format(_short(text, 60)))
+                return
+
+    def handle_data(self, data: str) -> None:
+        self.words.append(data)
+
+
+def _rich_words(value: object) -> str:
+    """A text value as site.md shows it: its words in quotes, and for rich text what is bold, linked
+    or styled by hand, in brackets."""
+    text = str(value)
+    if not re.search(r"[<&]", text):
+        return f'"{_short(text)}"'
+    reader = _RichReader()
+    reader.feed(text)
+    reader.close()
+    words = re.sub(r"\s+", " ", "".join(reader.words)).strip()
+    return f'"{_short(words)}"' + (f" ({'; '.join(reader.notes)})" if reader.notes else "")
+
+
 def _styled_by_hand(edits: object) -> list[str]:
     """A section's (or the shell part's) `_edits` in plain words, one entry per element: what the
     person styled by hand in the editor's inspector (site element inspector, plan 1)."""
@@ -465,7 +519,9 @@ def site_summary(
     if (workspace / "shell.json").exists():
         shell = json.loads((workspace / "shell.json").read_text())
         header = shell.get("header", {})
-        nav = ", ".join(f"{n.get('label')} → {n.get('href')}" for n in header.get("nav") or []) or "none"
+        nav = ", ".join(
+            f"{n.get('label')} → {n.get('href')}" + (" (new tab)" if n.get("newTab") else "") for n in header.get("nav") or []
+        ) or "none"
         out += ["## Header and footer",
                 f"- Prepared for: {header.get('preparedFor')}; button \"{header.get('ctaLabel')}\" → {header.get('ctaHref')}",
                 f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}"]
@@ -485,7 +541,7 @@ def site_summary(
                 for key, slot in (clone.get("slots") or {}).items():
                     value = slots.get(key)
                     if slot.get("kind") == "text" and value not in (None, "", slot.get("fallback")):
-                        out.append(f"   - {key}: \"{_short(value)}\"")
+                        out.append(f"   - {key}: {_rich_words(value)}")
                     elif slot.get("kind") == "image" and value:
                         out.append(f"   - {key}: {image(value)}")
                     elif slot.get("kind") == "href" and value:
@@ -496,11 +552,13 @@ def site_summary(
                     out.append(f"   - \"{_short(r.get('find'), 60)}\" now reads \"{_short(r.get('replace'), 80)}\"")
                 for link in props.get("links") or []:
                     out.append(f"   - link {link.get('find')} → {link.get('replace')}")
+                if props.get("newTab"):
+                    out.append(f"   - links opening in a new tab: {', '.join(str(key) for key in props['newTab'])}")
             else:
                 out.append(f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface")
                 for key in ("eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source"):
                     if props.get(key):
-                        out.append(f"   - {key}: \"{_short(props[key])}\"")
+                        out.append(f"   - {key}: {_rich_words(props[key])}")
                 for stat in props.get("stats") or []:
                     out.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
                 if props.get("image"):
@@ -508,7 +566,8 @@ def site_summary(
                 if props.get("buttonLabel"):
                     out.append(f"   - button \"{props['buttonLabel']}\" → {props.get('buttonHref')}")
                 if props.get("linkLabel"):
-                    out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}")
+                    tab = ", new tab" if props.get("linkNewTab") else ""
+                    out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}{tab}")
             out += [f"   - styled by hand: {line}" for line in _styled_by_hand(props.get("_edits"))]
         out.append("")
     if versions:
