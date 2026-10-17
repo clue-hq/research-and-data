@@ -2,6 +2,8 @@
 // heading role, a button style — and every value is the kit's: the theme (theme.ts) draws buttons,
 // links, type colours, spacing and rules from its measured tokens. No style value lives in this file
 // (test/style-literals.test.ts). Text fields are `contentEditable`, so they edit in place on the canvas.
+// Every text element carries the inspector's key attribute (edits.ts ELEMENT_KEY_ATTR), named by the prop it draws,
+// so the site inspector can select it and a section's `_edits` can style it.
 import type { ComponentConfig } from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { BrandData } from "./brand";
@@ -49,8 +51,9 @@ export const Shell = ({ surface, children }: { surface: AnySurface; children: Re
   </section>
 );
 
-export const Eyebrow = ({ children }: { children: Text }) =>
-  children ? <p className="font-eyebrow text-eyebrow brand-ink-eyebrow">{children}</p> : null;
+/** `el`: the element's key for the site inspector (edits.ts ELEMENT_KEY_ATTR). */
+export const Eyebrow = ({ children, el }: { children: Text; el?: string }) =>
+  children ? <p className="font-eyebrow text-eyebrow brand-ink-eyebrow" data-clue-el={el}>{children}</p> : null;
 
 /** The kit's standard button, or one of the brand's looks by name, with that look's own icon. */
 export function Button({ brand, label, href, surface, look, disabled }: {
@@ -126,19 +129,19 @@ export function makeSections(
       return (
         <Shell surface={surface}>
           <div className={centered ? "mx-auto text-center [&>*]:mx-auto" : ""}>
-            <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className="mt-stack-tight max-w-[24ch] font-title text-title brand-ink-title">{heading}</h2>
-            {intro ? <p className="mt-stack-default max-w-[60ch] font-body text-body brand-ink-body">{intro}</p> : null}
+            <Eyebrow el="eyebrow">{eyebrow}</Eyebrow>
+            <h2 className="mt-stack-tight max-w-[24ch] font-title text-title brand-ink-title" data-clue-el="heading">{heading}</h2>
+            {intro ? <p className="mt-stack-default max-w-[60ch] font-body text-body brand-ink-body" data-clue-el="intro">{intro}</p> : null}
           </div>
           <dl className={`mt-stack-loose grid gap-stack-loose ${columns} ${centered ? "text-center [&_dd]:mx-auto" : ""}`}>
             {stats.map((stat, index) => (
               <div key={index} className="brand-rule-t pt-stack-default">
-                <dt className="font-headline text-headline brand-ink-headline">{stat.value}</dt>
-                <dd className="mt-stack-tight max-w-[32ch] font-body text-body brand-ink-body">{stat.label}</dd>
+                <dt className="font-headline text-headline brand-ink-headline" data-clue-el={`stats.${index}.value`}>{stat.value}</dt>
+                <dd className="mt-stack-tight max-w-[32ch] font-body text-body brand-ink-body" data-clue-el={`stats.${index}.label`}>{stat.label}</dd>
               </div>
             ))}
           </dl>
-          {source ? <p className={`mt-stack-loose font-caption text-caption brand-ink-caption ${centered ? "text-center" : ""}`}>{source}</p> : null}
+          {source ? <p className={`mt-stack-loose font-caption text-caption brand-ink-caption ${centered ? "text-center" : ""}`} data-clue-el="source">{source}</p> : null}
         </Shell>
       );
     },
@@ -168,9 +171,9 @@ export function makeSections(
             <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} />
           ) : null}
           <div>
-            <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`}>{heading}</h2>
-            <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body">{body}</p>
+            <Eyebrow el="eyebrow">{eyebrow}</Eyebrow>
+            <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`} data-clue-el="heading">{heading}</h2>
+            <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body" data-clue-el="body">{body}</p>
             <div className="mt-stack-loose">
               <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
             </div>
@@ -198,16 +201,16 @@ export function makeSections(
       <Shell surface="page">
         <div className={`grid gap-stack-loose rounded-card p-card-padding md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${surfaceClass(surface)}`}>
           <div>
-            <Eyebrow>{kicker}</Eyebrow>
-            <p className="mt-stack-default font-display text-display brand-ink-display">{metric}</p>
-            <p className="mt-stack-tight font-body text-body brand-ink-body">{metricLabel}</p>
+            <Eyebrow el="kicker">{kicker}</Eyebrow>
+            <p className="mt-stack-default font-display text-display brand-ink-display" data-clue-el="metric">{metric}</p>
+            <p className="mt-stack-tight font-body text-body brand-ink-body" data-clue-el="metricLabel">{metricLabel}</p>
           </div>
           <div className="self-end">
-            <h3 className="font-title text-title brand-ink-title">{heading}</h3>
-            {body ? <p className="mt-stack-default font-body text-body brand-ink-body">{body}</p> : null}
-            {source ? <p className="mt-stack-default font-caption text-caption brand-ink-caption">{source}</p> : null}
+            <h3 className="font-title text-title brand-ink-title" data-clue-el="heading">{heading}</h3>
+            {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{body}</p> : null}
+            {source ? <p className="mt-stack-default font-caption text-caption brand-ink-caption" data-clue-el="source">{source}</p> : null}
             {linkLabel ? (
-              <a href={href(linkHref) || "#"} className="brand-link mt-stack-default inline-block font-cta text-cta">{linkLabel}</a>
+              <a href={href(linkHref) || "#"} className="brand-link mt-stack-default inline-block font-cta text-cta" data-clue-el="linkLabel">{linkLabel}</a>
             ) : null}
           </div>
         </div>
@@ -227,8 +230,8 @@ export function makeSections(
     render: ({ surface, heading, body, buttonLabel, buttonHref, buttonLook }) => (
       <Shell surface={surface}>
         <div className="mx-auto max-w-[60ch] text-center">
-          <h2 className="font-headline text-headline brand-ink-headline">{heading}</h2>
-          {body ? <p className="mt-stack-default font-body text-body brand-ink-body">{body}</p> : null}
+          <h2 className="font-headline text-headline brand-ink-headline" data-clue-el="heading">{heading}</h2>
+          {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{body}</p> : null}
           <div className="mt-stack-loose">
             <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
           </div>

@@ -7,7 +7,12 @@
 // the page does not change are made absolute against the clone's source page.
 // Runs on the server (published pages) and in the browser (editor), so it uses an isomorphic
 // parser rather than the DOM.
+//
+// Every text element is keyed for the site inspector (data-clue-el, edits.ts ELEMENT_KEY_ATTR) by its
+// place in the CAPTURED markup, before any slot is applied, so hiding or filling a slot never moves
+// another element's key and a section's `_edits` keep pointing at the same text.
 import { parse, TextNode, type HTMLElement } from "node-html-parser";
+import { ELEMENT_KEY_ATTR } from "./edits";
 
 export type SlotKind = "text" | "href" | "image" | "visibility";
 export type CloneSlot = { kind: SlotKind; fallback: unknown };
@@ -44,6 +49,7 @@ export function fillClone(
   links: LinkReplacement[] = [],
 ): string {
   const root = parse(clone.html, { comment: false });
+  keyTextElements(root, clone.slots);
   const linksWeSet = new Set<HTMLElement>();
 
   for (const [key, slot] of Object.entries(clone.slots)) {
@@ -103,6 +109,34 @@ export function fillClone(
   }
 
   return root.toString();
+}
+
+/** Elements whose text is never the page's words. */
+const NOT_TEXT = new Set(["script", "style", "svg", "noscript", "template"]);
+
+/** Key every text element by its child-index path from the fragment root ("0.2.1", element children
+ * only). A text element holds words of its own (a non-blank text child), or is a text slot (whose
+ * words may sit in inline tags, and which the slot's fill replaces whole). Inside a text element
+ * nothing more is keyed: its inline children are part of its one text box. */
+function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): void {
+  const isText = (element: HTMLElement) => {
+    const slot = element.getAttribute("data-lumen-slot");
+    if (slot && slots[slot]?.kind === "text") return true;
+    return element.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
+  };
+  const walk = (node: HTMLElement, path: string) => {
+    let index = 0;
+    for (const child of node.childNodes) {
+      if (child instanceof TextNode || !(child as HTMLElement).tagName) continue;
+      const element = child as HTMLElement;
+      const place = path ? `${path}.${index}` : String(index);
+      index += 1;
+      if (NOT_TEXT.has(element.tagName.toLowerCase())) continue;
+      if (isText(element)) element.setAttribute(ELEMENT_KEY_ATTR, place);
+      else walk(element, place);
+    }
+  };
+  walk(root, "");
 }
 
 function applySlot(element: HTMLElement, kind: SlotKind, value: string | boolean): void {

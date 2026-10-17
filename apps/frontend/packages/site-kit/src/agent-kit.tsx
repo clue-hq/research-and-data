@@ -6,6 +6,7 @@
 import type { ReactElement, ReactNode } from "react";
 import type { BrandData } from "./brand";
 import { lookNamed } from "./looks";
+import { ElementKeySchema } from "./edits";
 import { Button as BrandButton, Eyebrow, Shell, type AnySurface, type Href } from "./sections";
 import { logoFiles } from "./shell";
 
@@ -21,9 +22,13 @@ export type Kit = {
   Button: (props: { label: ReactNode; href: string; surface: AnySurface; look?: string; disabled?: boolean }) => ReactNode;
   /** look: a card style brand.md lists (Cards); href makes the whole card a link. */
   Card: (props: { look?: string; href?: string; children: ReactNode }) => ReactNode;
-  Eyebrow: (props: { children: ReactNode }) => ReactNode;
-  /** A text link (an https:// URL, a /route of this site or a #anchor), drawn like the seller's links. */
-  Link: (props: { href: string; children: ReactNode }) => ReactNode;
+  /** el: a name for this text in the site inspector (letters and digits, with dots, underscores or
+   * dashes between them; unique in the section), so the marketer can select and style it. Without
+   * one it is not selectable. */
+  Eyebrow: (props: { children: ReactNode; el?: string }) => ReactNode;
+  /** A text link (an https:// URL, a /route of this site or a #anchor), drawn like the seller's links.
+   * el: as for Eyebrow. */
+  Link: (props: { href: string; children: ReactNode; el?: string }) => ReactNode;
   /** fit="fill": covers its positioned parent (a background photo). fit="contain": the whole image
    * inside its box, never cropped or rounded (a logo). Neither: full width with the brand's corners.
    * A logo from the brand kit is always shown whole. */
@@ -44,6 +49,9 @@ const IMAGE_CLASS = {
   standard: "w-full rounded-card object-cover",
 } as const;
 
+/** The agent's name for an element, when it is one the inspector can address; otherwise none. */
+const elementKey = (el: string | undefined) => (el !== undefined && ElementKeySchema.safeParse(el).success ? el : undefined);
+
 export function makeKit(href: Href, brand: BrandData): Kit {
   const logos = logoFiles(brand);
   return {
@@ -56,8 +64,10 @@ export function makeKit(href: Href, brand: BrandData): Kit {
       const className = chosen ? `brand-card brand-card-look-${chosen.index}` : "brand-card";
       return target ? <a href={href(target) || "#"} className={className}>{children}</a> : <div className={className}>{children}</div>;
     },
-    Eyebrow,
-    Link: ({ href: target, children }) => <a href={href(target) || "#"} className="brand-link">{children}</a>,
+    Eyebrow: ({ children, el }) => <Eyebrow el={elementKey(el)}>{children}</Eyebrow>,
+    Link: ({ href: target, children, el }) => (
+      <a href={href(target) || "#"} className="brand-link" data-clue-el={elementKey(el)}>{children}</a>
+    ),
     // eslint-disable-next-line @next/next/no-img-element
     Image: ({ src, alt, fit }) =>
       src ? <img src={src} alt={alt ?? ""} className={IMAGE_CLASS[fit ?? (logos.has(src) ? "contain" : "standard")]} /> : null,

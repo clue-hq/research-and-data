@@ -69,14 +69,16 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
           ) : null}
           <span className="min-w-0 truncate font-body text-body text-ink-secondary">
             <span className="hidden sm:inline">Prepared for </span>
-            <span className="text-ink-primary">{header.preparedFor}</span>
+            {/* The account's name is the styleable text: it carries its own colour, so a style set on
+                the line around it would not reach it. */}
+            <span className="text-ink-primary" data-clue-el="preparedFor">{header.preparedFor}</span>
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-stack-default">
           {header.nav?.length ? (
             <nav className="hidden items-center gap-stack-default md:flex">
-              {header.nav.map((item) => (
-                <a key={item.href + item.label} href={href(item.href)} className="brand-navlink">
+              {header.nav.map((item, index) => (
+                <a key={item.href + item.label} href={href(item.href)} className="brand-navlink" data-clue-el={`nav.${index}`}>
                   {item.label}
                 </a>
               ))}
@@ -100,10 +102,10 @@ export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: 
       <div className="brand-content flex flex-col gap-stack-default px-page-margin py-stack-loose md:flex-row md:items-center md:justify-between">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {logo ? <img src={logo} alt="" className="brand-logo-footer w-auto self-start" /> : null}
-        <p className="font-caption text-caption text-ink-muted">{footer.legal}</p>
+        <p className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>
         <div className="flex gap-stack-default font-caption text-caption">
-          {footer.privacyHref ? <a href={href(footer.privacyHref)} className="brand-link">Privacy policy</a> : null}
-          {footer.termsHref ? <a href={href(footer.termsHref)} className="brand-link">Terms</a> : null}
+          {footer.privacyHref ? <a href={href(footer.privacyHref)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null}
+          {footer.termsHref ? <a href={href(footer.termsHref)} className="brand-link" data-clue-el="terms">Terms</a> : null}
         </div>
       </div>
     </footer>
