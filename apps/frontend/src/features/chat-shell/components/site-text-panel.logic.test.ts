@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { textPanelPatch, textPanelValues, weightOptions } from "./site-text-panel.logic";
+import { boldAvailable, textPanelPatch, textPanelValues, weightOptions } from "./site-text-panel.logic";
 
 const computed = { color: "#0E1110", fontFamily: "Stix Two Text", fontSize: 47.63, fontWeight: 400, italic: false, underline: false, textAlign: "left" as const };
 const palette = [{ label: "text.heading", value: "#014036" }, { label: "text.primary", value: "#0E1110" }];
@@ -74,4 +74,15 @@ test("choosing the font, weight, size or alignment the text already shows change
   assert.deepEqual(textPanelPatch({ fontSize: 48 }, { kind: "fontSize", value: "48" }, computed, fonts), { fontSize: 48 });
   assert.deepEqual(textPanelPatch(null, { kind: "fontSize", value: "47.6" }, computed, fonts), {}, "the size as shown, rounded");
   assert.deepEqual(textPanelPatch(null, { kind: "fontFamily", value: "Inter" }, computed, fonts), { fontFamily: "Inter" });
+});
+
+test("bold is the font's boldest weight when it has no 700: B shows pressed at it, and is unavailable for a font with nothing heavier than regular", () => {
+  const capped = [{ family: "seasonFont", weights: [400, 500] }, { family: "Flat", weights: [400] }];
+  const season = { ...computed, fontFamily: "seasonFont", fontWeight: 400 };
+  const on = textPanelPatch(null, { kind: "bold", on: true }, season, capped);
+  assert.deepEqual(on, { fontWeight: 500 });
+  assert.equal(textPanelValues(on, season, palette, capped).bold, true, "at the font's boldest weight, B is pressed");
+  assert.equal(boldAvailable(capped, "seasonFont"), true);
+  assert.equal(boldAvailable(capped, "Flat"), false);
+  assert.equal(boldAvailable(capped, "Unknown family"), true, "a family we do not know offers every weight");
 });

@@ -50,6 +50,17 @@ function weightsOf(fonts: readonly FontChoice[], family: string): readonly numbe
   return fonts.find((font) => font.family === family)?.weights ?? ALL_WEIGHTS;
 }
 
+/** The weight Bold sets for a family: its lightest from 700 up, or its heaviest when it has none. */
+function boldWeightOf(fonts: readonly FontChoice[], family: string): number {
+  const weights = weightsOf(fonts, family);
+  return weights.find((weight) => weight >= 700) ?? Math.max(...weights);
+}
+
+/** Whether Bold can do anything for this family: false when it has nothing heavier than regular. */
+export function boldAvailable(fonts: readonly FontChoice[], family: string): boolean {
+  return boldWeightOf(fonts, family) > 400;
+}
+
 /** The Weight list for a family, labelled as the ad editor labels weights. */
 export function weightOptions(fonts: readonly FontChoice[], family: string): string[] {
   return weightsOf(fonts, family).map(weightLabel);
@@ -61,10 +72,14 @@ export function textPanelValues(
   override: StyleOverride | null,
   computed: ComputedTypography,
   palette: readonly PaletteChoice[],
+  fonts: readonly FontChoice[] = [],
 ): TextPanelValues {
   const color = override?.color;
   const tokenColor = color && "token" in color ? palette.find((choice) => choice.label === color.token)?.value : undefined;
   const fontWeight = override?.fontWeight ?? computed.fontWeight;
+  const family = override?.fontFamily ?? computed.fontFamily;
+  // Bold is the family's own bold: 700 and up, or its heaviest weight when it has no 700.
+  const boldWeight = boldWeightOf(fonts, family);
   return {
     color: color ? ("hex" in color ? color.hex : (tokenColor ?? computed.color)) : computed.color,
     colorToken: color && "token" in color ? color.token : null,
@@ -72,7 +87,7 @@ export function textPanelValues(
     fontFamily: override?.fontFamily ?? computed.fontFamily,
     fontSize: String(override?.fontSize ?? Math.round(computed.fontSize * 10) / 10),
     fontWeight: weightLabel(fontWeight),
-    bold: fontWeight >= 700,
+    bold: fontWeight >= 700 || (boldWeight > 400 && fontWeight >= boldWeight),
     italic: override?.italic ?? computed.italic,
     underline: override?.underline ?? computed.underline,
     textAlign: override?.textAlign ?? computed.textAlign,
@@ -138,7 +153,7 @@ export function textPanelPatch(
       // nearest below it — an explicit weight, so text that is bold by default stops being bold.
       const weights = weightsOf(fonts, family);
       const weight = change.on
-        ? (weights.find((w) => w >= 700) ?? Math.max(...weights))
+        ? boldWeightOf(fonts, family)
         : (weights.includes(400) ? 400 : ([...weights].reverse().find((w) => w < 700) ?? Math.min(...weights)));
       return { ...base, fontWeight: weight };
     }

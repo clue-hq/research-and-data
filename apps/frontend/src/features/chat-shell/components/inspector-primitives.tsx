@@ -1918,6 +1918,7 @@ export function TextAlignment({
  */
 export function TextStyleToggles({
   bold,
+  boldDisabled = false,
   disabled = false,
   italic,
   onBoldChange,
@@ -1926,6 +1927,8 @@ export function TextStyleToggles({
   underline,
 }: {
   bold: boolean;
+  /** Bold alone cannot act (a font with nothing heavier than regular); the panel says why. */
+  boldDisabled?: boolean;
   disabled?: boolean;
   italic: boolean;
   onBoldChange: (on: boolean) => void;
@@ -1934,14 +1937,14 @@ export function TextStyleToggles({
   underline: boolean;
 }) {
   const toggles = [
-    { label: "Bold", on: bold, change: onBoldChange, glyph: <b>B</b> },
-    { label: "Italic", on: italic, change: onItalicChange, glyph: <i>I</i> },
-    { label: "Underline", on: underline, change: onUnderlineChange, glyph: <u>U</u> },
+    { label: "Bold", on: bold, change: onBoldChange, glyph: <b>B</b>, off: boldDisabled },
+    { label: "Italic", on: italic, change: onItalicChange, glyph: <i>I</i>, off: false },
+    { label: "Underline", on: underline, change: onUnderlineChange, glyph: <u>U</u>, off: false },
   ];
   return (
     <div aria-label="Text style" className={[styles.alignmentControl, disabled && styles.inspectorControlDisabled].filter(Boolean).join(" ")} role="group">
       {toggles.map((toggle) => (
-        <button aria-label={toggle.label} aria-pressed={toggle.on} className={toggle.on ? styles.alignmentActive : ""} disabled={disabled} key={toggle.label} onClick={() => toggle.change(!toggle.on)} type="button">
+        <button aria-label={toggle.label} aria-pressed={toggle.on} className={toggle.on ? styles.alignmentActive : ""} disabled={disabled || toggle.off} key={toggle.label} onClick={() => toggle.change(!toggle.on)} type="button">
           {toggle.glyph}
         </button>
       ))}

@@ -13,6 +13,7 @@ import {
 } from "./inspector-primitives";
 import {
   FONT_SIZE_RANGE,
+  boldAvailable,
   textPanelPatch,
   textPanelValues,
   weightOptions,
@@ -52,7 +53,8 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
   const element = binding.element!;
   const [open, setOpen] = useState(true);
   const [note, setNote] = useState<string | null>(null);
-  const values = textPanelValues(binding.elementOverride, element.computed, binding.palette);
+  const values = textPanelValues(binding.elementOverride, element.computed, binding.palette, binding.fonts);
+  const canBold = boldAvailable(binding.fonts, values.fontFamily);
   // The latest override as this panel last wrote it: a drag's later moves build on its earlier ones.
   const latest = useRef(binding.elementOverride);
   useEffect(() => {
@@ -136,6 +138,7 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
         <InspectorField label="Style">
           <TextStyleToggles
             bold={values.bold}
+            boldDisabled={!canBold}
             disabled={binding.disabled}
             italic={values.italic}
             onBoldChange={(on) => commit({ kind: "bold", on })}
@@ -152,6 +155,11 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
             options="four"
           />
         </InspectorField>
+        {canBold ? null : (
+          <p className={styles.inspectorStatusNote} role="status">
+            {values.fontFamily} has no bold weight, so Bold is not available for this text.
+          </p>
+        )}
         {note ? (
           <p className={styles.inspectorStatusNote} role="status">
             {note}
