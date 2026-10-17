@@ -70,8 +70,9 @@ export function commitStyleEdit(
   const props = componentProps(site, selection.target, selection.componentId);
   if (!props) return null;
   const edits = withStyleOverride(editsOf(props), key, override);
-  const { [EDITS_PROP]: _previous, ...rest } = props;
-  const next = Object.keys(edits).length ? { ...rest, [EDITS_PROP]: edits } : rest;
+  const next: Record<string, unknown> = { ...props };
+  if (Object.keys(edits).length) next[EDITS_PROP] = edits;
+  else delete next[EDITS_PROP];
   if (canonicalJson(next) === canonicalJson(props)) return null;
   const edited = withComponentProps(site, selection.target, selection.componentId, next);
   if (edited === site) return null;
