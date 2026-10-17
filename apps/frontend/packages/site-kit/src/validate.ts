@@ -1,7 +1,8 @@
 // The agent's validator: contracts only (founder ruling 2026-10-08). The component schemas, real
-// clone ids and slots, replacement text that exists, links, kit images, and (for now) one primary
-// destination. Judgement (numbers and their sources, named people, wording from the brief's notes)
-// is the agent's, in its prompt and skills, never a blocking check here. Each error says where it
+// clone ids and slots, replacement text that exists, links and kit images. Judgement (numbers and
+// their sources, named people, wording from the brief's notes, and where the buttons go: one
+// destination for the offer is the agent's skill, founder 2026-10-18) is the agent's, in its prompt
+// and skills, never a blocking check here. Each error says where it
 // is, what is wrong and how to fix it.
 //
 // Pure: the caller hands over the site's files, the brand and the site's agent-written sections.
@@ -135,12 +136,6 @@ export function validateSite(
   const addWritten = (href: unknown, where: string) => {
     if (typeof href === "string" && href) written.push({ where, href });
   };
-  // One primary destination: every button that leaves the site goes to the same place.
-  const destinations = new Map<string, string[]>();
-  const addDestination = (href: unknown, where: string) => {
-    if (typeof href !== "string" || !/^https?:\/\//.test(href)) return;
-    destinations.set(href, [...(destinations.get(href) ?? []), where]);
-  };
 
   // Rich text (plan 2): the grammar, and each of its links to a real page like any other link.
   const checkRich = (value: unknown, where: string) => {
@@ -190,7 +185,6 @@ export function validateSite(
             errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
           }
           if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);
-          if (slot.kind === "href" && key.startsWith("cta")) addDestination(value, `${at}.slots.${key}`);
           if (slot.kind === "image" && !imageAllowed(value)) {
             errors.push(imageError(`${at}.slots.${key}`, value));
           }
@@ -216,14 +210,12 @@ export function validateSite(
         errors.push(imageError(`${at}.image`, item.props.image));
       }
       if ((item.type === "FeatureSplit" && item.props.buttonLabel) || item.type === "CtaBand") {
-        addDestination(item.props.buttonHref, `${at}.buttonHref`);
         addWritten(item.props.buttonHref, `${at}.buttonHref`);
       }
       if (item.type === "ProofCard") addWritten(item.props.linkHref, `${at}.linkHref`);
       if (item.type in agentSections) {
         // An agent section's images must be the brand's (or this site's). Its links — props named
-        // …Href — must reach real pages, and a link prop named for a cta or a button is a primary
-        // destination like any other button's (Wave 2 Lane A, Task 6).
+        // …Href — must reach real pages.
         const walk = (value: unknown, where: string, key: string) => {
           if (typeof value === "string") {
             if (/^surface$|Surface$/.test(key) && !surfaceNames.includes(value)) {
@@ -244,7 +236,6 @@ export function validateSite(
               if (!imageAllowed(value)) errors.push(imageError(where, value));
             } else if (/href$/i.test(key)) {
               addWritten(value, where);
-              if (/cta|button/i.test(key)) addDestination(value, where);
             }
           } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`, key));
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
@@ -262,16 +253,10 @@ export function validateSite(
   }
   const ctaLook = shell.header?.ctaLook;
   if (typeof ctaLook === "string" && ctaLook && !lookNames.includes(ctaLook)) errors.push(lookError("shell.header.ctaLook", ctaLook));
-  addDestination(shell.header?.ctaHref, "shell.header.ctaHref");
   addWritten(shell.header?.ctaHref, "shell.header.ctaHref");
   ((shell.header?.nav as { href?: string }[] | undefined) ?? []).forEach((item, i) => addWritten(item?.href, `shell.header.nav.${i}.href`));
   addWritten(shell.footer?.privacyHref, "shell.footer.privacyHref");
   addWritten(shell.footer?.termsHref, "shell.footer.termsHref");
-
-  if (destinations.size > 1) {
-    const list = [...destinations].map(([href, where]) => `${href} (${where.join(", ")})`).join("; ");
-    errors.push(`site: a 1:1 page has one primary destination, but buttons go to ${destinations.size}: ${list}`);
-  }
 
   // A link to another page of this site must go to a page that exists.
   const routes = new Set(pages.map((p) => p.route));

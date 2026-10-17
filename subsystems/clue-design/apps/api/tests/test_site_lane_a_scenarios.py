@@ -711,13 +711,6 @@ def test_two_realistic_sites_round_trip(client: TestClient) -> None:
     store_site(born_site(conduit_doc, title=site["title"]))
     install_site_inputs(client.app, brand)
     # As exported by the spike, /stories' "teams" clone sends its CTA to a second destination
-    # (/customers), which site-kit's one-primary-destination contract refuses — so the design API
-    # refuses it too, by name, and stores nothing.
-    refused = expect_refused(put_site(client, site, 0, doc=conduit_doc), 422, "site.invalid")
-    assert len(refused["errors"]) == 1, refused["errors"]
-    assert refused["errors"][0].startswith("site: a 1:1 page has one primary destination, but buttons go to 2:")
-    assert "https://www.conduit.ai/customers (pages/stories.content.1(teams).slots.cta_href)" in refused["errors"][0]
-    expect_state(client, 0, 0, 0, born_site(conduit_doc, title=site["title"]), doc=conduit_doc)
-    # With that one CTA pointed at the site's destination, the realistic site round-trips.
-    site["pages"]["/stories"]["content"][1]["props"]["slots"]["cta_href"] = "https://www.conduit.ai/book-demo"
+    # (/customers). One destination for the offer is the agent's skill, not a save check (founder
+    # 2026-10-18), so the realistic site round-trips as exported.
     round_trip(client, conduit_doc, site, brand)
