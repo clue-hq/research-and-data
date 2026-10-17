@@ -49,3 +49,19 @@ Open: founder to choose fixes; nothing edited.
   message ×3).
 - Next: Step 2 founder rulings topic by topic (I1/I3/I4 first). Branch for edits not yet created (proposed
   `design/harness-alignment` off research-streaming).
+
+## Step 4 progress (branch `design/harness-alignment`, local only, not pushed)
+- Steps 2–3 complete; all rulings in `docs/design-harness-alignment/RULINGS.md` (standing rules: playbooks
+  frozen; shared files changed only via `views/scene/` overlays; text sizes are a protected outcome).
+- Done and tagged: T1 `harness-alignment-I1` (b5f0ca3c1, kinds of request, editor_instruction removed),
+  T2 `harness-alignment-I5` (6123e35df, targeted-edit path, one edit-tool rule), T3 `harness-alignment-I4`
+  (b7672d119, review order: request first, plan last), T4 `harness-alignment-I6` (0d1b9a5a4,
+  clarify-design-brief scene copy, cap 6, typed clarification schema, brand-kit scene copies).
+- Verification per topic: named test files + re-capture of the first-call system prompt
+  (`docs/design-harness-alignment/capture.py`) diffed against the previous topic.
+- Known pre-existing failures (also fail at `harness-alignment-baseline`): test_scene_solo_runtime
+  `test_the_account_reads_are_registered_only_when_the_platform_injected_them[True]` (web_search),
+  test_deepagent_harness `test_tool_surfaces_are_exactly_the_ledger` and test_fast_loop
+  `test_flag_on_author_toolset_includes_render` (search_assets).
+- Remaining: T5 I7 reading, T6 I9 leftovers, T7 I8 references, T8 I10, T9 I11, T10 S1/S2/S4, T11 tool
+  parameter schemas (new, founder 2026-10-17); then Step 5 live runs (Conduit/garnerhealth/Clue).
