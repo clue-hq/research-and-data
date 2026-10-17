@@ -1,7 +1,7 @@
 // Drawing rich text (plan 2, spec §4.4) with React: one element for a stored rich string, the same on
 // the server and in the browser that takes a live page over (richHtml is pure), so they never differ.
 import { isValidElement, type ReactNode } from "react";
-import { hasMarkup, richHtml, type RichOptions } from "./rich";
+import { hasMarkup, richHtml } from "./rich";
 
 /** A rich prop as page content. The editor's in-place widget (a ReactNode) passes through; a string
  * with markup becomes an inline span holding its published markup (the grammar is inline only, so the
