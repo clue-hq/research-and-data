@@ -172,7 +172,8 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           fields: {
             preparedFor: { type: "text", label: "Prepared for" },
             accountLogo: { type: "text", label: "Account logo URL (optional)" },
-            ctaLabel: { type: "text", label: "Button label" },
+            // Rich text without links (plan 3): shown in the dock as its words, edited on the page.
+            ctaLabel: { type: "richtext", label: "Button label" },
             ctaHref: { type: "text", label: "Button link" },
             ctaNewTab: { type: "radio", label: "Open the button's link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
             ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select", label: "Button style", options: buttonLookOptions(brand) } } : {}),

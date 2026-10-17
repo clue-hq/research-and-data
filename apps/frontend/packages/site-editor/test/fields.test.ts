@@ -56,6 +56,7 @@ test("the header and footer describe their own fields", () => {
   assert.equal(header.preparedFor.kind, "text");
   assert.equal(header.accountLogo.kind, "image");
   assert.equal(header.ctaHref.kind, "link");
+  assert.equal(header.ctaLabel.kind, "richtext", "the header button's words are rich text, edited on the page (plan 3 review 4)");
   assert.deepEqual(header.nav.item?.map((item) => [item.name, item.kind]), [
     ["label", "text"],
     ["href", "link"],
