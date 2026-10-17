@@ -81,3 +81,62 @@ def responsive_type_section(
         "source": {"url": source.get("url"), "measured_at": source.get("captured_at")},
         "roles": roles,
     }
+
+
+#: A re-measure leaves a role out when today's page draws its desktop size this far from the kit's
+#: stored one: the page changed, the capture window differs, or the kit was edited, and the steps
+#: would not describe the kit's own type.
+REMEASURE_TOLERANCE = 0.15
+
+
+def _round_half(value: float) -> float:
+    return round(value * 2) / 2
+
+
+def _stored_size(kit: dict, role: str) -> float | None:
+    try:
+        size = kit["tokens"]["typography"][role]["value"]["default"]["font_size"]
+    except (KeyError, TypeError):
+        return None
+    return float(size) if isinstance(size, (int, float)) and size > 0 else None
+
+
+def remeasured_section(
+    kit: dict,
+    evidence: BrandEvidence,
+    build_anchors: Callable[[BrandEvidence], TypeAnchors],
+    build: Callable[[TypeAnchors], dict[str, dict]],
+) -> tuple[dict | None, list[str]]:
+    """The ``responsive_type`` section for an EXISTING kit from today's page (spec §3.5): each step is
+    today's narrowing applied to the kit's stored desktop size (step ÷ today's desktop × stored),
+    so the kit's desktop stays exactly as it is. A role the stored kit does not carry, or whose
+    desktop size today is more than ``REMEASURE_TOLERANCE`` away from the stored one, is left out
+    (drawn as unmeasured) and named in the second value."""
+    anchors = build_anchors(evidence)
+    section = responsive_type_section(anchors, evidence, build)
+    if section is None:
+        return None, []
+    today = build(anchors)
+    kept: dict[str, list[dict]] = {}
+    skipped: list[str] = []
+    for role, steps in section["roles"].items():
+        stored = _stored_size(kit, role)
+        fresh = float(today[role]["font_size"])
+        if stored is None or abs(fresh - stored) / stored > REMEASURE_TOLERANCE:
+            skipped.append(role)
+            continue
+        scaled: list[dict] = []
+        previous = stored
+        for step in steps:
+            size = _round_half(step["font_size"] / fresh * stored)
+            if abs(size - previous) < SIZE_STEP and "line_height" not in step:
+                continue
+            scaled.append({**step, "font_size": size})
+            previous = size
+        kept[role] = scaled
+    return {**section, "roles": kept, "scaled_to_stored_desktop": True}, skipped
+
+
+def kit_with_section(kit: dict, section: dict | None) -> dict:
+    """The kit with the re-measured section, and nothing else changed (no section: the kit as is)."""
+    return {**kit, "responsive_type": section} if section is not None else kit

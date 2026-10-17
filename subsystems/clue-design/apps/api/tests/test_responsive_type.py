@@ -70,3 +70,45 @@ def test_the_section_survives_revalidation_and_is_attached_after_validation() ->
     assert carry_kit_sections({"id": "k", "responsive_type": section}, {"id": "k"})["responsive_type"] == section
     assert _attach_responsive_type({"id": "k"}, section) == {"id": "k", "responsive_type": section}
     assert _attach_responsive_type({"id": "k"}, None) == {"id": "k"}
+
+
+# Task 6: re-measuring an existing kit applies the measured narrowing to the kit's STORED desktop sizes.
+from lumen_ingestion.normalizer.responsive_type import kit_with_section, remeasured_section
+
+
+def _kit(headline: float, body: float) -> dict:
+    style = lambda size: {"value": {"default": {"kind": "style", "font_size": size}}}  # noqa: E731
+    return {"id": "brand_kit_ing_x", "tokens": {"typography": {"type.headline": style(headline), "type.body": style(body)}}}
+
+
+def _fresh(h1: list[float], body: list[float]) -> BrandEvidence:
+    """Today's page: desktop h1 h1[0] / body body[0], then widths 991 and 767."""
+    rows = [TypeWidth(width=w, type_samples=[_sample("h1", h, 1), _sample("body", b, 0)]) for w, h, b in zip([991, 767], h1[1:], body[1:])]
+    return BrandEvidence(source={"kind": "website", "url": "https://seller.example/"},
+                         type_samples=[_sample("body", body[0], 0), _sample("h1", h1[0], 1)],
+                         type_widths=TypeWidths(capture_width=1440, widths=rows))
+
+
+def _remeasure(kit: dict, evidence: BrandEvidence):
+    return remeasured_section(kit, evidence, resolve_anchors, lambda a: build_type_styles(a)[0])
+
+
+def test_steps_are_scaled_onto_the_stored_desktop() -> None:
+    section, skipped = _remeasure(_kit(56, 18), _fresh([60, 43, 36], [18, 18, 18]))
+    assert section["roles"]["type.headline"] == [{"max_width": 991, "font_size": 40.0}, {"max_width": 767, "font_size": 33.5}]
+    assert section["roles"]["type.body"] == []
+    assert "type.headline" not in skipped and "type.body" not in skipped
+    assert "type.caption" in skipped, "a role the stored kit does not carry is left out and named"
+
+
+def test_a_role_far_from_the_stored_size_is_skipped_and_named() -> None:
+    section, skipped = _remeasure(_kit(30, 18), _fresh([60, 43, 36], [18, 18, 18]))
+    assert "type.headline" not in section["roles"] and "type.headline" in skipped
+
+
+def test_the_new_version_differs_only_in_the_section() -> None:
+    kit = _kit(56, 18)
+    section, _ = _remeasure(kit, _fresh([60, 43, 36], [18, 18, 18]))
+    updated = kit_with_section(kit, section)
+    assert {key for key in updated if updated[key] != kit.get(key)} == {"responsive_type"}
+    assert kit_with_section(kit, None) == kit

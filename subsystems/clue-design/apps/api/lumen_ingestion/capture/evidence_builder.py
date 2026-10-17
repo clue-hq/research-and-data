@@ -61,6 +61,37 @@ def _pointer(locator: str) -> EvidencePointer:
     return EvidencePointer(source="website", locator=locator)
 
 
+def _type_sample(t) -> TypeSample:
+    return TypeSample(
+        label=t.label,
+        family=t.family,
+        weight=t.weight,
+        size_px=t.size_px,
+        line_height=t.line_height,
+        letter_spacing=t.letter_spacing,
+        color=t.color,
+        background=t.background,
+        area=t.area,
+        pointer=_pointer(t.locator),
+        sample_index=t.sample_index,
+    )
+
+
+def type_evidence(parsed: ParsedSite) -> tuple[list[TypeSample], TypeWidths | None]:
+    """The type samples, and (responsive brand type) the same samples at each narrower width the
+    capture read. Shared with ``scripts/remeasure_kit_type_steps.py``, so a re-measure reads type
+    exactly as an ingestion does."""
+    widths = (
+        TypeWidths(
+            capture_width=parsed.type_capture_width,
+            widths=[TypeWidth(width=width, type_samples=[_type_sample(t) for t in samples]) for width, samples in parsed.type_widths],
+        )
+        if parsed.type_capture_width and parsed.type_widths
+        else None
+    )
+    return [_type_sample(t) for t in parsed.type_samples], widths
+
+
 def _filename_from_url(url: str | None, fallback: str) -> str:
     if not url:
         return fallback
@@ -124,31 +155,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     ]
 
     reporter("Matching your typography…", 0.75)
-    def _type_sample(t) -> TypeSample:
-        return TypeSample(
-            label=t.label,
-            family=t.family,
-            weight=t.weight,
-            size_px=t.size_px,
-            line_height=t.line_height,
-            letter_spacing=t.letter_spacing,
-            color=t.color,
-            background=t.background,
-            area=t.area,
-            pointer=_pointer(t.locator),
-            sample_index=t.sample_index,
-        )
-
-    type_samples = [_type_sample(t) for t in parsed.type_samples]
-    # Responsive brand type: the same samples at each narrower width the capture read.
-    type_widths = (
-        TypeWidths(
-            capture_width=parsed.type_capture_width,
-            widths=[TypeWidth(width=width, type_samples=[_type_sample(t) for t in samples]) for width, samples in parsed.type_widths],
-        )
-        if parsed.type_capture_width and parsed.type_widths
-        else None
-    )
+    type_samples, type_widths = type_evidence(parsed)
 
     # --- resolve download bytes for asset ingest ---
     sha_bytes: dict[str, bytes] = {}
