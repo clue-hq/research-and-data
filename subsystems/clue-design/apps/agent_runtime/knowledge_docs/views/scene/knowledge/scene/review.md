@@ -1,5 +1,24 @@
 # Scene review
 
+Judge the result in this order, before completing the contract below:
+1. Does it do what the person asked? Read their actual message again first, not
+   your plan.
+   - For a revamp, compare with the version you looked at before changing
+     anything: the ad must be visibly reworked. If it reads as the old ad with
+     one change, the request is not met.
+   - For a new direction, judge it as a new ad.
+   - A targeted edit doesn't come here; it follows the system prompt's
+     targeted-edit routine.
+2. Is anything broken: readability, overflow, overlaps, logos, claims and
+   evidence? The checks below cover these.
+3. Does it match your plan in creative-direction.json? The plan is checked last.
+   It can't certify its own choices, and it can't excuse missing the request. If
+   your plan and the person's request disagree, the plan is wrong: revise it with
+   a revision_reason, validate it, and review again.
+
+The first item in `review_needs` is always the person's request in their own
+words. Acceptance requires it to be met.
+
 Judge the current full and compact previews before completing the contract below.
 Name the first read, its comfortably readable explanation, and what the artwork
 adds. Recognizing known words or deciphering enlarged text is not comfortable
@@ -7,7 +26,6 @@ reading. Judge paired-logo authenticity separately from palette, optical weight
 and grouping. A native button can be valid while detached from its message.
 Lost essential product content, unreadable support or a broken message group
 requires rejection and a coherent repair, not an advisory polish warning.
-The direction is a plan to assess; it cannot certify its own aesthetic choices.
 
 ## Candidate critique contract — read before writing
 
@@ -86,6 +104,9 @@ A targeted edit writes no critique: it follows the system prompt's targeted-edit
 routine and finishes with `edit_applied`. Whole-creative `accepted` is for a new ad
 or a revamp.
 After registration, omit `critique_json` in `finalize_run` to reuse that current review.
+If `registered_review_current` is false, resolve `review_error` and renew the
+critique after viewing current pixels; a new view alone does not renew review.
+Don't repeat the same observation across reports; make each check concrete.
 For preflight operation details, read the returned `full_report_path`; diagnostics
 remain complete in the immediate result. Continue below for visual/source judgment.
 

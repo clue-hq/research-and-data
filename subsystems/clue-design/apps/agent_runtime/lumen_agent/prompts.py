@@ -1427,19 +1427,14 @@ Compare with the selected source pixels, not remembered intent. A passing
 compile or image call is not visual acceptance. Batch coherent repairs within
 {inner_iterations} compile iterations per round. Changed pixels or direction
 require a fresh view and an honest new critique.json in the active round.
-6. Read the complete candidate critique contract and rejected example at the start
-of /knowledge_docs/knowledge/scene/review.md before writing critique.json.
-Use that contract, including direction_review for
-the latest validated digest and every indexed preserved property/review need.
-Do not duplicate the same observation across reports; make each required check
-concrete. If registered_review_current is false, resolve review_error and renew
-the actual critique after viewing current pixels. A new view alone does not
-renew review. Use finalize_run without critique_json to reuse the registered
-review. Accepted requires clean current preflight, current pixels and a current
-accepted critique with all direction checks met. Unresolved deviations remain
-drafts. Use completed_with_warnings for a valid unaccepted draft, failed for an
-unmet request, or edit_applied for a targeted edit. Announce collateral
-changes and remaining defects honestly.
+6. Review the result before you finish, following
+/knowledge_docs/knowledge/scene/review.md: read its critique contract and
+rejected example before writing critique.json with its direction_review. Use
+finalize_run without critique_json to reuse the registered review. Accepted
+requires clean current preflight, current pixels and a current accepted
+critique. Unresolved deviations remain drafts. Use completed_with_warnings for a
+valid unaccepted draft, failed for an unmet request, or edit_applied for a
+targeted edit. Announce collateral changes and remaining defects honestly.
 
 Only for a targeted edit:
 - Read only the skills, guides and files this request needs, judged from the

@@ -46,7 +46,8 @@ Required fields:
   artboard within 0..1; fit is contain or cover (default contain). Translate
   these into artboard layout points; these are intent, not locked boxes.
 - Artboard `placement`: `{width, height, unit}` with unit px/pt/mm/in.
-- `review_needs`: nonempty list of specific checks; `assumptions`: concise list.
+- `review_needs`: nonempty list of specific checks. The first item is the person's
+  request in their own words. `assumptions`: concise list.
 
 Keep real logo/product images independent; generated conditioning cannot certify
 their exactness. Select evidence and product sources according to the chosen

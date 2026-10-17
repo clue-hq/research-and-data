@@ -11,7 +11,7 @@ def test_solo_prompt_retains_evidence_and_current_scene_review_without_handoff()
         "creative-direction.json", "validate_creative_direction", "revision_reason",
         "source_assets.json", "brand_colors.json", "rounds/round_N", "critique.json",
         "preflight_design", "render_preview", "view('preview')", "direction_review",
-        "reference_fidelity", "finalize_run", "registered_review_current",
+        "reference_fidelity", "finalize_run",
         "ad-assets.md", "EXACT_FRAME_PAYLOAD", "4 minutes", "30 model calls",
         "compile_dsl_block", "generated_image", "native text",
     ):
@@ -78,7 +78,7 @@ def test_solo_prompt_gives_follow_up_targeted_edits_a_short_routine():
     # One edit-tool rule, stated under the canvas mechanics the routine points to.
     mechanics = prompt[prompt.index("HOW EDITS WORK ON THE CANVAS"):]
     assert "use apply_structured_edit or a\n  compile_dsl_block modify line; they are the same engine operation" in mechanics
-    assert "edit_applied for a targeted edit" in prompt
+    assert "edit_applied for a targeted edit" in " ".join(prompt.split())
     assert "verified scoped edit" not in prompt
 
 
@@ -105,3 +105,32 @@ def test_solo_prompt_decides_how_much_a_turn_may_change_from_the_kind_of_request
     assert "HOW EDITS WORK ON THE CANVAS" in prompt
     assert "warns LUMD0262" in prompt
     assert prompt.count("decide what kind of request this is") == 1
+
+
+def test_self_check_judges_the_request_first_and_the_plan_last():
+    """Harness alignment I4 (founder ruling 2026-10-17): the review's one home is review.md; it asks
+    first whether the person's request was met, then whether anything broke, and checks the
+    agent's own plan last; the person's request is always the first review_needs item."""
+    from pathlib import Path
+
+    scene = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs/views/scene"
+    review = (scene / "knowledge/scene/review.md").read_text()
+    opening = review[: review.index("## Candidate critique contract")]
+    first, broken, plan = (opening.index(f"\n{n}. ") for n in (1, 2, 3))
+    assert first < broken < plan
+    for required in (
+        "Does it do what the person asked? Read their actual message again first",
+        "the ad must be visibly reworked. If it reads as the old ad with\n     one change, the request is not met.",
+        "The plan is checked last.",
+        "the plan is wrong: revise it",
+        "The first item in `review_needs` is always the person's request",
+    ):
+        assert required in opening, required
+    assert "cannot certify its own aesthetic choices" not in review
+    assert "If `registered_review_current` is false" in review
+    contract = (scene / "knowledge/scene/direction-contract.md").read_text()
+    assert "The first item is the person's\n  request in their own words." in contract
+    prompt = prompts.build_scene_solo_prompt("/run_test/workspace")
+    step6 = prompt[prompt.index("6. Review the result before you finish"):prompt.index("Only for a targeted edit:")]
+    assert "knowledge/scene/review.md" in step6
+    assert "registered_review_current" not in step6
