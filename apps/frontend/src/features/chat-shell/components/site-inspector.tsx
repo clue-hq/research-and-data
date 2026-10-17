@@ -13,6 +13,7 @@ import {
   InspectorSelect,
   InspectorTextArea,
 } from "./inspector-primitives";
+import { SiteTextPanel } from "./site-text-panel";
 import styles from "./chat-shell.module.css";
 
 export type SiteImageFieldRenderer = (field: FieldDescription, path: string, value: string) => ReactNode;
@@ -48,7 +49,12 @@ export function SiteInspector({
             {binding.error}
           </p>
         ) : null}
-        {binding.fields ? (
+        {binding.element ? (
+          // Site element inspector: a selected text element is styled here; the section's content
+          // fields come back when the section itself is selected. Keyed by the selection, so each
+          // element starts with fresh drafts.
+          <SiteTextPanel binding={binding} key={binding.selectionKey} />
+        ) : binding.fields ? (
           // DESIGN REVIEW (DR4): the section label for a selected site section.
           <InspectorSection label="Content" onOpenChange={setContentOpen} open={contentOpen}>
             <fieldset disabled={binding.disabled} style={{ display: "contents" }}>
@@ -75,6 +81,7 @@ export function SiteInspector({
             {binding.layers.map((row) => (
               <InspectorLayerRow
                 active={row.active}
+                depth={row.depth ?? 0}
                 icon={row.icon}
                 key={row.key}
                 label={row.label}
