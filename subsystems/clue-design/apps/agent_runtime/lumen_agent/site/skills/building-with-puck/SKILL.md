@@ -83,6 +83,11 @@ Fields and choices are in `catalog/sections.md`.
 - Every button goes to the one destination the brief names for the offer: clone `cta` slots,
   brand-section buttons, and the header button.
 - A link to another page of this site is a `/route`.
+- To make a button open in a new tab, set `buttonNewTab: true` on a feature split or
+  call-to-action band, or `ctaNewTab: true` in the header. In a cloned section, list the button's
+  name in `newTab`, as for its links.
+- A button's words may hold rich text, but never a link: bold, italic and styled words only, no
+  `<a>`.
 
 ## The shell (`shell.json`)
 
@@ -116,6 +121,17 @@ The properties are:
 
 Words styled inside rich text have their own name, the text's name plus `~` and a number
 (`heading~1`).
+
+A button's own name (`button` in a feature split or call-to-action band, `cta` for the header's
+button, the `el` you gave `kit.Button`, a number path in a cloned section) also takes:
+- `fill` and `borderColor`: a colour, as for `color`;
+- `borderWidth`: 0 to 200;
+- `radius`: 0 to 200, `"pill"`, or four corners `[top-left, top-right, bottom-right, bottom-left]`;
+- `padding`: 0 to 200, or `{ "y": 12, "x": 22 }`;
+- `width`: `"fit"` (as wide as its words), `"fill"` (the full width) or 1 to 2000.
+
+Its words are named `<button>.label` (`button.label`, `cta.label`) and take the text properties. A
+fill or stroke set this way also holds when the button is hovered.
 
 Three rules go with it:
 - When you rewrite a section, keep its `_edits` unless the request asks for a different look; you

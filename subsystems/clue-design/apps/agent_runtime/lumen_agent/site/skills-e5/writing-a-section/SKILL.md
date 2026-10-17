@@ -38,8 +38,11 @@ the brand.
 The kit gives you these pieces, with exactly these props:
 - `<kit.Shell surface={...}>…</kit.Shell>`: the section and its surface (it sets the right text
   colour). `surface` is any surface in brand/brand.md.
-- `<kit.Button label="…" href="…" surface={...} look="…" />`: a button. `look` is a button style
-  from brand/brand.md (Buttons); leave it out for the kit's standard button. Its words go in `label`.
+- `<kit.Button label="…" href="…" surface={...} look="…" el="…" />`: a button. `look` is a button
+  style from brand/brand.md (Buttons); leave it out for the kit's standard button. Its words go in
+  `label`. Give it a name with `el` (for example `el="cta"`) so the marketer can click it and change
+  its fill, stroke, corners, padding and width. Its words are then named after it with `.label`
+  (`cta.label`).
 - `<kit.Link href="…">…</kit.Link>`: a text link, drawn like the seller's own links.
 - `<kit.Card look="…" href="…">…</kit.Card>`: a card, drawn like the seller's own cards
   (brand/brand.md, Cards). With `href` the whole card is a link.
@@ -72,8 +75,8 @@ The kit gives you these pieces, with exactly these props:
   those from lists and fields. write_section refuses a section that breaks these rules and says why.
 - Name every heading, paragraph and label: add `data-clue-el="<name>"` to its element, for example
   `<h2 data-clue-el="headline" …>`. Use letters and digits, with dots, underscores or dashes between
-  them, and give each element its own name within the section. For `kit.Eyebrow` and `kit.Link`,
-  pass `el="<name>"` instead. The marketer can then click that text in the editor and change its
+  them, and give each element its own name within the section. For `kit.Eyebrow`, `kit.Link` and
+  `kit.Button`, pass `el="<name>"` instead. The marketer can then click that text in the editor and change its
   colour, font, size, weight and alignment. Text without a name can still be edited as words, but
   not restyled.
   When the text is a prop you marked for editing in place, give its element the prop's own name:

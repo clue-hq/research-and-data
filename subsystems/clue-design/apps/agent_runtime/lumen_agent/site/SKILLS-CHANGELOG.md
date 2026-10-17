@@ -113,3 +113,10 @@ fails without it).
   element is named after the prop; a Rich text section (the grammar, links, `data-new-tab`, styled
   spans `<name>~<n>`); new-tab link props; library fonts ("Other fonts") in `_edits`. Written before
   a run: rich text, links on text and library fonts are new in the editor (plan 2).
+- 2026-10-18 · writing-a-section and building-with-puck (founder-approved, site element inspector
+  plan 3): `kit.Button` takes `el` (its words are `<el>.label`) and the naming rule lists it;
+  "Buttons and links" adds `buttonNewTab` / `ctaNewTab` / a cloned button's name in `newTab`, and
+  that a button's words hold rich text but never a link; "Styling by hand" adds a button's box
+  properties (`fill`, `borderColor`, `borderWidth`, `radius`, `padding`, `width`) and its words'
+  name. Written before a run: buttons are new in the editor (plan 3), so the agent must name them
+  and keep, change or drop the marketer's button styling knowingly.
