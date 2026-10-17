@@ -81,3 +81,61 @@ test("the colour picker offers the brand's role colours, not its technical palet
   const options = sitePalette(brand, (b) => [{ token: "text.brand", value: "#006070" }, { token: "palette.neutral.50", value: "#F6F8FF" }]);
   assert.deepEqual(options, [{ label: "text.brand", value: "#006070" }]);
 });
+
+// Plan 2: styling highlighted words writes the element's text (a styled span) and the section's
+// `_edits` (the span's look) in one commit.
+import { commitWordStyle, wordsOverride } from "./site-selection";
+
+const TYPO = { color: "#014036", fontFamily: "Garner Serif", fontSize: 48, fontWeight: 400, italic: false, underline: false, textAlign: "left" as const };
+const headingWords = (start: number, end: number, text: string, prop = "heading") => ({
+  componentId: "proof",
+  target: "/",
+  element: { key: "heading", kind: "text" as const, label: "7.4%", computed: TYPO, rich: { prop }, words: { start, end, count: 1, text, computed: TYPO } },
+});
+const wordsSite = SiteDocumentSchema.parse({
+  ...site,
+  pages: { ...site.pages, "/": { root: { props: {} }, content: [{ type: "StatsBand", props: { id: "proof", heading: "Top providers win", stats: [] } }] } },
+});
+
+test("styling highlighted words wraps them in a styled span and writes its look, in one commit", () => {
+  const edit = commitWordStyle(wordsSite, headingWords(4, 13, "providers"), (old) => ({ ...old, fontWeight: 700 }));
+  assert.ok(edit && "props" in edit);
+  assert.equal(edit.props.heading, 'Top <span data-s="heading~1">providers</span> win');
+  assert.deepEqual(edit.props._edits, { "heading~1": { fontWeight: 700 } });
+  assert.deepEqual(wordsOverride(edit.site, headingWords(4, 13, "providers")), { fontWeight: 700 });
+  const again = commitWordStyle(edit.site, headingWords(4, 13, "providers"), (old) => ({ ...old, italic: true }));
+  assert.ok(again && "props" in again);
+  assert.deepEqual(again.props._edits, { "heading~1": { fontWeight: 700, italic: true } }, "the same words keep their span");
+});
+
+test("words whose text no longer matches are refused with a note; a change that changes nothing is null", () => {
+  assert.deepEqual(commitWordStyle(wordsSite, headingWords(4, 13, "something"), (old) => ({ ...old, italic: true })), {
+    refused: "The text changed. Highlight the words again.",
+  });
+  assert.equal(commitWordStyle(wordsSite, headingWords(4, 13, "providers"), (old) => old), null);
+});
+
+test("a clone slot never set starts from its captured words", () => {
+  const cloneSite = SiteDocumentSchema.parse({
+    ...site,
+    pages: { ...site.pages, "/": { root: { props: {} }, content: [{ type: "ClonedSection", props: { id: "hero", fragmentId: "frag_0000000000000001", slots: {}, replacements: [], links: [] } }] } },
+  });
+  const selection = {
+    componentId: "hero",
+    target: "/",
+    element: { key: "0", kind: "text" as const, label: "Top", computed: TYPO, rich: { prop: "slots.headline", fallback: "Top<br>words" }, words: { start: 0, end: 3, count: 1, text: "Top", computed: TYPO } },
+  };
+  const edit = commitWordStyle(cloneSite, selection, () => ({ italic: true }));
+  assert.ok(edit && "props" in edit);
+  assert.deepEqual(edit.props.slots, { headline: '<span data-s="0~1">Top</span><br>words' });
+  assert.deepEqual(edit.props._edits, { "0~1": { italic: true } });
+});
+
+test("words highlighted where they cannot be styled on their own say why", async () => {
+  const { wordsUnavailableReason } = await import("./site-selection");
+  const element = { key: "0.1", kind: "text" as const, label: "x", computed: TYPO, rich: null, words: { start: 0, end: 1, count: 1, text: "x", computed: TYPO } };
+  assert.match(wordsUnavailableReason({ target: "/", componentType: "ClonedSection", element })!, /no slot/);
+  assert.match(wordsUnavailableReason({ target: "shell", componentType: "SiteHeader", element })!, /header and footer/);
+  assert.equal(wordsUnavailableReason({ target: "/", componentType: "ClonedSection", element: { ...element, words: null } }), null, "nothing highlighted");
+  assert.equal(wordsUnavailableReason({ target: "/", componentType: "StatsBand", element: { ...element, rich: { prop: "heading" } } }), null);
+});

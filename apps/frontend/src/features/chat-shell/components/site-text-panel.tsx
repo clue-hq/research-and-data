@@ -46,31 +46,43 @@ function refusalNote(change: TextPanelChange): string {
 /**
  * The site element inspector's text panel (plan 1, spec §2 mockup 1): the selected text element's
  * Typography — colour (brand or custom), font, size, weight, bold / italic / underline, alignment —
- * applied to the whole text box. Every change is the element's whole new override, written by the
+ * applied to the whole text box, or (plan 2) to the words highlighted in it. Every change is the element's whole new override, written by the
  * session as one save. While the agent-run lock holds, everything is disabled.
  */
 export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
   const element = binding.element!;
   const [open, setOpen] = useState(true);
   const [note, setNote] = useState<string | null>(null);
-  const values = textPanelValues(binding.elementOverride, element.computed, binding.palette, binding.fonts);
+  // Plan 2: with words highlighted in rich text, every row but Alignment acts on those words (their
+  // styled span); otherwise on the whole text box.
+  const words = element.words && element.rich ? element.words : null;
+  const override = words ? binding.wordsOverride : binding.elementOverride;
+  const computed = words ? words.computed : element.computed;
+  const values = textPanelValues(override, computed, binding.palette, binding.fonts);
   const canBold = boldAvailable(binding.fonts, values.fontFamily);
   // The latest override as this panel last wrote it: a drag's later moves build on its earlier ones.
-  const latest = useRef(binding.elementOverride);
+  const latest = useRef(override);
   useEffect(() => {
-    latest.current = binding.elementOverride;
-  }, [binding.elementOverride]);
+    latest.current = override;
+  }, [override]);
   const pendingColor = useRef<{ hex: string; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   const commit = (change: TextPanelChange) => {
     if (binding.disabled) return;
-    const next = textPanelPatch(latest.current, change, element.computed, binding.fonts);
+    const next = textPanelPatch(latest.current, change, computed, binding.fonts);
     if (!next) {
       setNote(refusalNote(change));
       return;
     }
     setNote(null);
     if (JSON.stringify(next) === JSON.stringify(latest.current ?? {})) return;
+    if (words) {
+      // Each stretch of the words keeps its own look and takes this one change.
+      const refused = binding.onWordStyleCommit((old) => textPanelPatch(old, change, computed, binding.fonts) ?? old);
+      if (refused) setNote(refused);
+      else latest.current = next;
+      return;
+    }
     latest.current = next;
     binding.onStyleCommit(element.key, next);
   };
@@ -96,6 +108,15 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
   return (
     <InspectorSection label="Typography" onOpenChange={setOpen} open={open}>
       <fieldset disabled={binding.disabled} style={{ display: "contents" }}>
+        {words ? (
+          <p className={styles.inspectorStatusNote} role="status">
+            {words.count === 1 ? "1 word selected" : `${words.count} words selected`}
+          </p>
+        ) : binding.wordsUnavailable ? (
+          <p className={styles.inspectorStatusNote} role="status">
+            {binding.wordsUnavailable}
+          </p>
+        ) : null}
         <InspectorField label="Color">
           <ColorControl
             color={values.color}
@@ -149,12 +170,17 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
         </InspectorField>
         <InspectorField label="Alignment">
           <TextAlignment
-            disabled={binding.disabled}
+            disabled={binding.disabled || words !== null}
             horizontal={values.textAlign}
             onHorizontalChange={(value) => commit({ kind: "textAlign", value })}
             options="four"
           />
         </InspectorField>
+        {words ? (
+          <p className={styles.inspectorStatusNote} role="status">
+            Alignment applies to the whole text box.
+          </p>
+        ) : null}
         {canBold ? null : (
           <p className={styles.inspectorStatusNote} role="status">
             {values.fontFamily} has no bold weight, so Bold is not available for this text.

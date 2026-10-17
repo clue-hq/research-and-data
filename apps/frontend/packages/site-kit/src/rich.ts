@@ -405,6 +405,13 @@ export function styleWords(
   return { html: serializeRich(runs), edits: next };
 }
 
+/** The styled span key every highlighted word in `[start, end)` shares, or null (none, or several). */
+export function styleAt(html: string, start: number, end: number): string | null {
+  const { runs, inside } = splitAt(runsOf(html), start, end);
+  const keys = new Set(runs.filter((run, i) => inside[i] && !run.br).map((run) => run.style ?? ""));
+  return keys.size === 1 ? [...keys][0] || null : null;
+}
+
 /** The link the range is in — all of the range's words in one link, or a caret inside one — with
  * that link's whole extent; null otherwise. */
 export function linkAt(html: string, start: number, end: number): (RichLink & { start: number; end: number }) | null {

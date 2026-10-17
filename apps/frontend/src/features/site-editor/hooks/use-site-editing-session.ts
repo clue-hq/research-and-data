@@ -32,6 +32,9 @@ import {
 import {
   commitFieldEdit,
   commitStyleEdit,
+  commitWordStyle,
+  wordsOverride,
+  wordsUnavailableReason,
   elementOverrideOf,
   sitePalette,
   siteInspectorTitle,
@@ -370,6 +373,24 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // Plan 2: a style change on the highlighted words, the same path again: their styled span in the
+  // element's text and its look in `_edits`, one set_props, one save.
+  const commitWords = useCallback(
+    (apply: (old: StyleOverride) => StyleOverride): string | null => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return null;
+      const edit = commitWordStyle(current.site, activeSelection, apply);
+      if (!edit) return null;
+      if ("refused" in edit) return edit.refused;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return null;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: style words in ${activeSelection.element?.key ?? "text"}`);
+      return null;
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
   const palette = useMemo(
     () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
@@ -563,6 +584,9 @@ export function useSiteEditingSession({
     onStyleCommit: commitStyle,
     palette,
     fonts,
+    wordsOverride: wordsOverride(currentSite?.site ?? null, activeSelection),
+    onWordStyleCommit: commitWords,
+    wordsUnavailable: wordsUnavailableReason(activeSelection),
   };
 
   // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.
