@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..colorspace import relative_luminance
+from ..colorspace import contrast_ratio, relative_luminance
 from ..evidence import BrandEvidence, FontEvidence, TypeSample
 
 _DEFAULT_BODY = 16.0
@@ -273,6 +273,8 @@ def type_unit_diagnostic(role: str, field: str, value: float, locator: str) -> d
 
 #: A heading sits on a light background when what is behind it has a relative luminance above this.
 HEADING_INK_LIGHT_LUMINANCE = 0.35
+#: ...and its colour must read on that backdrop (WCAG's large-text minimum); otherwise it is over imagery.
+HEADING_INK_MIN_CONTRAST = 3.0
 
 
 def heading_ink(samples: list[TypeSample]) -> TypeSample | None:
@@ -280,7 +282,8 @@ def heading_ink(samples: list[TypeSample]) -> TypeSample | None:
 
     The ink is the colour of the h1/h2/h3 headings that sit on a light background, weighted by each
     heading's area; the most-weighted colour wins, and its largest heading is returned (for its
-    pointer). Headings on a dark background (a white h1 on a hero) or over an image are ignored.
+    pointer). Headings on a dark background (a white h1 on a hero), or whose colour does not read on
+    the backdrop found behind them (they sit over imagery the compositor cannot see), are ignored.
     """
     weights: dict[str, float] = {}
     largest: dict[str, TypeSample] = {}
@@ -288,6 +291,11 @@ def heading_ink(samples: list[TypeSample]) -> TypeSample | None:
         if sample.label not in _HEADING_LABELS or not sample.color or not sample.background:
             continue
         if relative_luminance(sample.background[:7]) <= HEADING_INK_LIGHT_LUMINANCE:
+            continue
+        # A colour that cannot be read on the backdrop the compositor found (Garner's white hero h1
+        # over a video the compositor cannot see: "white on white") sits over imagery, not on a
+        # light background, and says nothing about the heading ink.
+        if contrast_ratio(sample.color[:7], sample.background[:7]) < HEADING_INK_MIN_CONTRAST:
             continue
         area = sample.area or 0.0
         weights[sample.color] = weights.get(sample.color, 0.0) + area

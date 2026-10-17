@@ -581,6 +581,25 @@ def test_the_heading_ink_is_the_colour_of_headings_on_light_backgrounds() -> Non
     assert validated["ok"] is True
 
 
+def test_a_heading_that_cannot_be_read_on_what_the_compositor_sees_behind_it_is_over_imagery() -> None:
+    """Garner's real capture (kit v4, 2026-10-17): its hero h1 is white over a video with a dark
+    overlay, but the compositor sees only the page's white behind it (the video and the overlay are
+    positioned children, not ancestor backgrounds), so "white on white" was counted as a heading on a
+    light background and, being the largest heading, became the heading ink: white. A heading whose
+    colour does not read against the backdrop the compositor found (under 3:1) sits over imagery, and
+    is ignored; the forest h2s win."""
+    result = _normalize_evidence(_heading_evidence([
+        ("h1", "#FFFFFF", "#FFFFFF", 129_129.0),
+        ("h1", "#FFFFFF", "#FFFFFF", 129_129.0),
+        ("h2", "#014036", "#FFFFFF", 86_016.0),
+        ("h2", "#FFFFFF", "#014036", 86_016.0),
+        ("h2", "#FFFFFF", "#FFFFFF", 61_824.0),
+        ("h2", "#014036", "#FFFFFF", 57_344.0),
+        ("h3", "#000000", "#FFFFFF", 30_825.0),
+    ]))
+    assert result.brand_kit["tokens"]["colors"]["text.heading"]["value"]["default"]["value"] == "#014036"
+
+
 def test_the_most_weighted_heading_colour_wins() -> None:
     result = _normalize_evidence(_heading_evidence([
         ("h2", "#014036", "#F9FAF8", 20_000.0),
