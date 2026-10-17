@@ -65,15 +65,29 @@ import { editsCss, fontSizeCss } from "../src/edits";
 
 test("a hand-set size follows the nearest role: headline at or above the title size, else body", () => {
   const brand = measured(); // headline 87, title 56, body 16 in this kit
-  assert.equal(fontSizeCss(brand, 60), "calc(var(--brand-text-headline) * 0.6897)");
-  assert.equal(fontSizeCss(brand, 56), "calc(var(--brand-text-headline) * 0.6437)");
-  assert.equal(fontSizeCss(brand, 14), "calc(var(--brand-text-body) * 0.875)");
+  assert.equal(fontSizeCss(brand, 60), "calc(var(--brand-text-headline) * 60 / 87)", "exact on desktop (review 6)");
+  assert.equal(fontSizeCss(brand, 56), "calc(var(--brand-text-headline) * 56 / 87)");
+  assert.equal(fontSizeCss(brand, 14), "calc(var(--brand-text-body) * 14 / 16)");
   const css = editsCss("proof", { heading: { fontSize: 60 }, "heading~1": { fontSize: 14 } }, brand);
-  assert.match(css, /\[data-clue-el="heading"\]\{font-size:calc\(var\(--brand-text-headline\) \* 0\.6897\) !important\}/);
-  assert.match(css, /\[data-s="heading~1"\]\{font-size:calc\(var\(--brand-text-body\) \* 0\.875\) !important\}/);
+  assert.match(css, /\[data-clue-el="heading"\]\{font-size:calc\(var\(--brand-text-headline\) \* 60 \/ 87\) !important\}/);
+  assert.match(css, /\[data-s="heading~1"\]\{font-size:calc\(var\(--brand-text-body\) \* 14 \/ 16\) !important\}/);
 });
 
 test("without the section a hand-set size stays px", () => {
   assert.equal(fontSizeCss(garner(), 48), "48px");
   assert.match(editsCss("proof", { heading: { fontSize: 48 } }, garner()), /font-size:48px !important/);
+});
+
+
+test("brand.md claims sizes never change only when every role was measured and none changes (review 11)", () => {
+  const partial = measured({ "type.headline": [], "type.body": [] });
+  delete (partial.kit.responsive_type as { roles: Record<string, unknown> }).roles["type.stat"];
+  assert.doesNotMatch(buildCatalog(partial, "Garner Health")["brand/brand.md"], /do not change with the window/);
+});
+
+test("our buttons and menu links follow the measured steps of the role they are drawn from (review 12)", () => {
+  const css = themeCss(measured({ "type.cta": [{ max_width: 767, font_size: 14 }] }));
+  assert.match(css, /\.brand-btn\{[^}]*font-size:var\(--brand-text-cta\)/);
+  assert.match(css, /\.brand-navlink\{[^}]*font-size:var\(--brand-text-body\)/);
+  assert.match(themeCss(garner()), /\.brand-btn\{[^}]*font-size:\d+(\.\d+)?px/, "an unmeasured kit keeps px");
 });

@@ -205,7 +205,8 @@ export function fontSizeCss(brand: BrandData, px: number): string {
   const role = title !== undefined && px >= title ? "headline" : "body";
   const size = typographyOf(brand, `type.${role}`)?.size;
   if (!steps?.has(role) || !size) return `${px}px`;
-  return `calc(var(--brand-text-${role}) * ${Math.round((px / size) * 10_000) / 10_000})`;
+  // CSS divides exactly, so on desktop the size is exactly `px`.
+  return `calc(var(--brand-text-${role}) * ${px} / ${size})`;
 }
 
 /** One element's override as CSS declarations, in the schema's order. */

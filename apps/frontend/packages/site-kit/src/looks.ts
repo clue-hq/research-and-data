@@ -6,7 +6,7 @@
 import type { BrandData } from "./brand";
 import {
   FALLBACKS, alphaOf, colorOf, contrast, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf,
-  ratioOf, shadowOf, styleOf, tokenEntry, transformOf, trim, typographyOf,
+  ratioOf, shadowOf, styleOf, tokenEntry, transformOf, trim, typographyOf, typeSteps,
 } from "./brand-values";
 import { inkRole, readableInk } from "./surfaces";
 
@@ -168,7 +168,7 @@ export function partsFromSlots(brand: BrandData, slots: Record<string, string> |
         const style = typographyOf(brand, token);
         if (!style) break;
         set("fontFamily", fontStack(brand, style), token);
-        set("fontSize", `${trim(style.size)}px`, token);
+        set("fontSize", typeSize(brand, token, style.size), token);
         set("fontWeight", String(style.weight), token);
         if (style.lineHeight !== null) set("lineHeight", trim(style.lineHeight), token);
         if (style.letterSpacing !== null) set("tracking", `${trim(style.letterSpacing)}em`, token);
@@ -233,11 +233,19 @@ function apply(drawn: Drawn, from: { parts: Parts; tokens: Partial<Record<Part, 
   }
 }
 
+/** A type token's size as CSS: a role the kit measured across window widths is its variable (so it
+ * follows the seller's steps, responsive brand type); anything else its size in px. */
+function typeSize(brand: BrandData, token: string, size: number): string {
+  const role = token.startsWith("type.") ? token.slice("type.".length) : null;
+  // The variable's name is theme.ts's typeVar (dots become dashes); theme imports this file.
+  return role && typeSteps(brand)?.has(role) ? `var(--brand-text-${role.replace(/\./g, "-")})` : `${trim(size)}px`;
+}
+
 function putType(drawn: Drawn, brand: BrandData, role: string, source: Source) {
   const style = typographyOf(brand, role);
   if (!style) return;
   put(drawn, "fontFamily", fontStack(brand, style), role, source);
-  put(drawn, "fontSize", `${trim(style.size)}px`, role, source);
+  put(drawn, "fontSize", typeSize(brand, role, style.size), role, source);
   put(drawn, "fontWeight", String(style.weight), role, source);
   if (style.lineHeight !== null) put(drawn, "lineHeight", trim(style.lineHeight), role, source);
   if (style.letterSpacing !== null) put(drawn, "tracking", `${trim(style.letterSpacing)}em`, role, source);

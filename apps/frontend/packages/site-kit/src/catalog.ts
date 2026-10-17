@@ -227,7 +227,11 @@ function typeStepsLine(brand: BrandData): string[] {
     if (!list?.length || size === undefined) return [];
     return [`${role} ${size}px; ${list.map((step) => `${step.size}px at ${step.maxWidth}px and narrower`).join("; ")}`];
   });
-  if (!changing.length) return ["Type sizes do not change with the window on this site.", ""];
+  if (!changing.length) {
+    // Said only when every role was measured: a role left unmeasured may still shrink.
+    const allMeasured = TYPE_ROLES.every((role) => steps.has(role) || typographyOf(brand, `type.${role}`) === undefined);
+    return allMeasured ? ["Type sizes do not change with the window on this site.", ""] : [];
+  }
   return [`Sizes change with the window, as on the seller's own site (drawn for you by the classes): ${changing.join(". ")}.`, ""];
 }
 
