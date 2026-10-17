@@ -90,6 +90,10 @@ HOW EDITS WORK ON THE CANVAS:
 - Deleting human or seed content takes an explicit `delete(<id>)`. Leaving it
   out of a reconcile never deletes it (the engine keeps it and warns LUMD0262).
   Content you authored may be dropped freely.
+- To change an element that already exists, use apply_structured_edit or a
+  compile_dsl_block modify line; they are the same engine operation. Prefer
+  apply_structured_edit for one named element: it is checked and can be
+  strictly scoped. Use compile_dsl_block for new structure.
 """
 
 _SCENE_SURFACE_CONTRACT = (
@@ -1434,25 +1438,37 @@ renew review. Use finalize_run without critique_json to reuse the registered
 review. Accepted requires clean current preflight, current pixels and a current
 accepted critique with all direction checks met. Unresolved deviations remain
 drafts. Use completed_with_warnings for a valid unaccepted draft, failed for an
-unmet request, or edit_applied for a verified scoped edit. Announce collateral
+unmet request, or edit_applied for a targeted edit. Announce collateral
 changes and remaining defects honestly.
 
 Only for a targeted edit:
 - Read only the skills, guides and files this request needs, judged from the
-user's message, and nothing extra. Do not re-read the brief, brand card,
-direction contract or playbooks unless the request depends on them, and do not
-rewrite or re-validate creative-direction.json.
+person's message, and nothing extra. Do not re-read the brief, brand card,
+direction contract or playbooks unless the request depends on them. Leave
+creative-direction.json as it is: don't rewrite or re-validate it.
 - Inspect only the elements the request touches.
-- Make the change with apply_structured_edit (text, style, size, position, image
-placement, delete, move). Use compile_dsl_block only when the change needs new
-structure.
-- Run preflight_design(), render_preview() and view('preview') once. Judge only
-two things: is the request met, and did the change break anything near it. What
-the user explicitly asked for is not a defect: a longer headline that now wraps
-onto two lines is the requested result.
-- If the change caused a real problem, fix it once and look once more.
-- Finish with finalize_run(status="edit_applied"). Do not write critique.json or
-round notes.
+- Make the change, using the edit rule under "HOW EDITS WORK ON THE CANVAS".
+- Run preflight_design(), render_preview() and view('preview') once. Check the
+whole ad for two things: was the request met, and did the change break anything.
+- A defect is anything that is now wrong and that the person didn't ask for.
+For example:
+  - text that overflows, is clipped, or is too small to read;
+  - text that lost contrast against its background;
+  - elements that now overlap, moved off the artboard, or lost their alignment
+    or grouping;
+  - a logo or product image that is stretched, cropped, recoloured or missing;
+  - copy that changed without being asked;
+  - something deleted that shouldn't have been;
+  - a preflight error.
+- The change the person asked for, and whatever it naturally brings with it, is
+the result they want. Don't treat it as a defect, and don't undo it.
+- If you find a defect, fix it, then look again. Keep fixing only while you can
+see a concrete change that should fix it. When you can't, stop and say plainly
+in your summary what is still wrong. Never report something as fixed when it
+isn't.
+- Finish with finalize_run(status="edit_applied"). Don't write critique.json or
+round notes. Your summary is the check: say first what the person asked, then
+what you changed, anything else that moved, and anything you couldn't do or fix.
 
 Aim for finished usable delivery within {minutes} minutes and {target_llm_calls} model calls.
 Target one construction round plus one focused repair when required. Batch

@@ -1,6 +1,6 @@
 ---
 name: repair-design
-description: Use when a compiled scene has a preflight, visual or request-satisfaction defect, or an existing design needs a scoped edit.
+description: Use when your self-check or preflight finds a defect in a new ad or a revamp and you are repairing it in the repair round. A targeted edit follows the system prompt's targeted-edit routine instead.
 ---
 
 # Repair the coherent failing part
@@ -37,8 +37,10 @@ approved headline treatment; assess both optical grouping and comfortable type
 size in the current full preview and placement proxy. A narrower gap alone does
 not rescue unreadable text.
 
-Use compile_dsl_block with modify lines for properties or reconcile for a
-container's intended subtree. Do not re-declare an existing page; page edits use
+To change an element that already exists, use apply_structured_edit or a
+compile_dsl_block modify line; they are the same engine operation. Prefer
+apply_structured_edit for one named element: it is checked and can be strictly
+scoped. Use reconcile for a container's intended subtree. Do not re-declare an existing page; page edits use
 `#page:<id>`. Node IDs remain unique. Omitted human content is protected; deleting
 it requires an explicit directive. `knowledge/lumen-dsl/directives.md` owns exact
 syntax and `knowledge/loop/layout-cluster-repair.md` covers bounds failures.

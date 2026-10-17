@@ -82,8 +82,9 @@ just to register. Notes, empty gaps and schema validity are not proof of taste/t
 Whole acceptance also needs clean current preflight, current preview/view and a
 current registered accepted critique. A changed scene/direction needs renewed review.
 A caller-selected native_copy_review_profile also applies; no score waives a failure.
-`scoped_edit` requires a seeded validated `intent=edit` turn; review its named edit
-and relevant copy. It can support `edit_applied`, never final whole-creative `accepted`.
+A targeted edit writes no critique: it follows the system prompt's targeted-edit
+routine and finishes with `edit_applied`. Whole-creative `accepted` is for a new ad
+or a revamp.
 After registration, omit `critique_json` in `finalize_run` to reuse that current review.
 For preflight operation details, read the returned `full_report_path`; diagnostics
 remain complete in the immediate result. Continue below for visual/source judgment.
@@ -332,10 +333,3 @@ not a platform specification, a rendered glyph measurement, or proof that copy i
 readable above the floor. It does not measure words inside images. The caller
 selects the profile; changing page units, role names or the direction cannot waive
 it. Without a profile, evaluate the actual requested viewing conditions visually.
-
-For a seeded, validated `intent=edit` turn, `scope="scoped_edit"` may review only
-the named edit and relevant copy, retaining unchanged unrelated text. Keep the
-existing target/operation scope checks and report collateral changes. A passing
-scoped review can support `edit_applied`; it never permits final `accepted` or
-claims to certify the whole creative. Reuse the registered current critique in
-`finalize_run` by omitting `critique_json`; no additional reviewer round is required.

@@ -180,7 +180,11 @@ of its treatment. A flat brand-color rectangle does not preserve those propertie
 Reuse appropriate source artwork or generate the separately placeable treatment;
 use a flat field only when that is the intended and justified visual direction.
 
-Author through `compile_dsl_block` or supported checked operations only. The
+Author through `compile_dsl_block`, `apply_structured_edit` or other checked
+operations only. To change an element that already exists, use
+apply_structured_edit or a compile_dsl_block modify line; they are the same
+engine operation. Prefer apply_structured_edit for one named element: it is
+checked and can be strictly scoped. Use compile_dsl_block for new structure. The
 DSL grammar/directives and artboard-frame reference are authoritative mechanics.
 Reparenting changes parent-relative placement and paint order. Inspect the new
 tree and geometry; an unindexed `parent(...)` can move content before its former

@@ -53,19 +53,33 @@ def test_candidate_frame_does_not_reintroduce_delegation_or_block_discovery(tmp_
 def test_solo_prompt_gives_follow_up_targeted_edits_a_short_routine():
     """Founder target 2026-10-16: a small targeted follow-up edit finishes within 4 minutes."""
     prompt = prompts.build_scene_solo_prompt("/run_edit/workspace")
-    routine = prompt[prompt.index("Only for a targeted edit:"):]
+    routine = prompt[prompt.index("Only for a targeted edit:"):prompt.index("Aim for finished")]
     for required in (
         "Read only the skills, guides and files this request needs",
-        "do not\nrewrite or re-validate creative-direction.json",
+        "Leave\ncreative-direction.json as it is: don't rewrite or re-validate it.",
         "Inspect only the elements the request touches",
-        "apply_structured_edit",
+        'using the edit rule under "HOW EDITS WORK ON THE CANVAS"',
         "view('preview') once",
-        "a longer headline that now wraps\nonto two lines is the requested result",
-        "fix it once and look once more",
+        # Harness alignment I5: the whole ad is checked, a defect is defined, the requested change
+        # is protected, and an unfixed defect is reported — never claimed as fixed.
+        "Check the\nwhole ad for two things",
+        "A defect is anything that is now wrong and that the person didn't ask for.",
+        "a preflight error",
+        "Don't treat it as a defect, and don't undo it.",
+        "Keep fixing only while you can\nsee a concrete change that should fix it.",
+        "Never report something as fixed when it\nisn't.",
         'finalize_run(status="edit_applied")',
-        "Do not write critique.json",
+        "Don't write critique.json or\nround notes.",
+        "say first what the person asked",
     ):
         assert required in routine, required
+    assert "near it" not in routine
+    assert "a longer headline" not in routine
+    # One edit-tool rule, stated under the canvas mechanics the routine points to.
+    mechanics = prompt[prompt.index("HOW EDITS WORK ON THE CANVAS"):]
+    assert "use apply_structured_edit or a\n  compile_dsl_block modify line; they are the same engine operation" in mechanics
+    assert "edit_applied for a targeted edit" in prompt
+    assert "verified scoped edit" not in prompt
 
 
 def test_solo_prompt_decides_how_much_a_turn_may_change_from_the_kind_of_request():

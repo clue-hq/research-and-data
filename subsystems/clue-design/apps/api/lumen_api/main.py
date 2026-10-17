@@ -10290,8 +10290,9 @@ def _empty_page_steering_note(scene: Any) -> Optional[str]:
             "Do not restate the page size: it is already set, and re-stating it rewrites the "
             "page.",
             "",
-            "Once the page has content, edit nodes with `#<node_id> property(...)` modify "
-            "lines, and add, remove or reorder children inside an existing container with "
+            "Once the page has content, change an existing element with apply_structured_edit "
+            "or a `#<node_id> property(...)` modify line, and add, remove or reorder children "
+            "inside an existing container with "
             "`reconcile(<container_id>)` followed by that container's full intended child "
             "subtree.",
         ]

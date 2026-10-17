@@ -322,3 +322,9 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   repair round must not undo the rest of a revamp.
 - **T1 founder addition:** a targeted edit also covers slight formatting changes and slight layout
   changes that are not a rework of the whole ad.
+- **T2 founder changes:** the targeted-edit check covers the whole ad (not "near it"); "defect" is
+  defined with general examples; the protected-change sentence is example-agnostic ("The change the
+  person asked for, and whatever it naturally brings with it, is the result they want"). Fix limit
+  (founder: a cap must not force a false "fixed"): no hard one-fix cap — "Keep fixing only while you can
+  see a concrete change that should fix it. When you can't, stop and say plainly in your summary what is
+  still wrong. Never report something as fixed when it isn't." The run's overall budget still applies.

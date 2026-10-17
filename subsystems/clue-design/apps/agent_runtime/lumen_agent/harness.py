@@ -93,6 +93,9 @@ def _make_candidate_finalize_tool(tools: LumenDesignTools) -> StructuredTool:
 
         Missing, stale or rejected evidence still prevents acceptance. Write
         the current review to the active round's critique.json before accepting.
+        A targeted edit finishes with status='edit_applied' and no critique; its
+        summary states what was asked, what changed, what else moved and
+        anything not done. Accepted is for a new ad or a revamp.
         ops_valid_through_iteration limits draft operation replay (None means
         all ok iterations). baseline_advisory_json records pre-existing issues;
         accommodation_json records accommodation moves. Both default to null.
