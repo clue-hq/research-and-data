@@ -63,5 +63,16 @@ Open: founder to choose fixes; nothing edited.
   `test_the_account_reads_are_registered_only_when_the_platform_injected_them[True]` (web_search),
   test_deepagent_harness `test_tool_surfaces_are_exactly_the_ledger` and test_fast_loop
   `test_flag_on_author_toolset_includes_render` (search_assets).
-- Remaining: T5 I7 reading, T6 I9 leftovers, T7 I8 references, T8 I10, T9 I11, T10 S1/S2/S4, T11 tool
-  parameter schemas (new, founder 2026-10-17); then Step 5 live runs (Conduit/garnerhealth/Clue).
+- Also done and tagged (2026-10-17/18): T5 `harness-alignment-I7` (45ae0f8d9, one reading rule, ls/read_file
+  and skills-section text via harness options), T6 `harness-alignment-I9` (bdcc8e668, leftovers out, minimum text
+  size generated from the active review profile, TodoListMiddleware removed), T7 `harness-alignment-I8`
+  (bc2fe5286, every reference leads somewhere; print-bleed-marks delivered), T8 `harness-alignment-I10`
+  (74c2fb089, guides agree with scene rules; brief label "YOUR ASSIGNMENT FROM THE HEAD OF ABM" for ad legs),
+  T9 `harness-alignment-I11` (c7f73a855, one home per repeated rule; no brief.md / scene_summary for solo),
+  T10 `harness-alignment-S1-S2-S4` (52418eb67, operating note folded into the prompt with where-to-get-
+  evidence lines, MemoryMiddleware + scene AGENTS.md gone, six pointer skills out of the manifest; first
+  system prompt 63.4k -> 56.8k chars).
+- Remaining: T11 tool parameter schemas (founder 2026-10-17; e.g. apply_structured_edit's one `edit_json`
+  string, asset's ~20 prose-only params); owed DB-backed tests on a throwaway migrated DB (listed in
+  RULINGS.md); then Step 5 live runs (Conduit/garnerhealth/Clue). Deferred: port format-skill facts into
+  placement.md.
