@@ -93,7 +93,7 @@ test("hide and show a header logo; showing restores the stored header exactly; a
   const header = { componentId: "header", target: "shell" };
   const hidden = commitHidden(start, header, "logo", true)!;
   assert.deepEqual(componentProps(hidden.site, "shell", "header")!._edits, { logo: { borderWidth: 1, hidden: true } });
-  assert.deepEqual(hideState(hidden.site, { ...header, element: { key: "logo" } as never }), { hidden: true });
+  assert.deepEqual(hideState(hidden.site, { ...header, element: { key: "logo" } as never }), { hidden: true, part: "header" });
   const shown = commitHidden(hidden.site, header, "logo", false)!;
   assert.deepEqual(componentProps(shown.site, "shell", "header"), componentProps(start, "shell", "header"));
   assert.equal(hideState(stats(), { componentId: "proof", target: "/", element: { key: "stats.0" } as never }), null);

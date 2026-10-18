@@ -79,3 +79,56 @@ test("words copied from the seller that also appear elsewhere in the section say
   }));
   assert.match(html, /Other text in this section reads the same, so changing it changes that text too\./);
 });
+
+// Plan 4: a box, an image and a section's own box, rendered through the real inspector.
+const container = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [12, 12, 12, 12], paddingY: 24, paddingX: 32, width: 480, gap: 0, layout: "text", contentAlign: "start", name: "Card" };
+const plan4 = { arrange: null, onMove: noop, hide: null, onHideCommit: noop, sectionBox: null, sectionBoxOverrides: { inner: null, outer: null } };
+
+test("a box shows Fill, Stroke, Layout with its gap, and Arrange with Move up/down and content alignment", () => {
+  const html = renderedModule.exports.render(
+    buttonBinding({
+      ...plan4,
+      element: { key: "stats.1", kind: "container", label: "Card", computed: TYPO, container, arrange: { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1"] } },
+      elementOverride: null,
+      arrange: { canUp: true, canDown: false, note: null },
+      title: "Card",
+    }),
+  );
+  const at = order(html, [">Fill<", ">Stroke<", ">Layout<", ">Gap<", ">Arrange<", "Move up", "Content alignment", ">Layers<"]);
+  assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
+  assert.deepEqual([...at].sort((a, b) => a - b), at, "in the mockup's order");
+  assert.doesNotMatch(html, />Typography</, "a box has no typography rows");
+  assert.match(html, /gap applies to rows and grids/, "a block box says why its gap is off");
+  assert.doesNotMatch(html, /hovered or focused/);
+});
+
+test("a fixed part says why it does not move; a hidden header part offers Shown / Hidden", () => {
+  const html = renderedModule.exports.render(
+    buttonBinding({
+      ...plan4,
+      element: { key: "logo", kind: "image", label: "Logo", computed: TYPO },
+      arrange: { canUp: false, canDown: false, note: "This part's place is set by the section's design; ask the agent to move it." },
+      hide: { hidden: true, part: "header" },
+    }),
+  );
+  assert.match(html, /Image settings \(replace, fit, alt text, corners\) come in the next update\./);
+  assert.match(html, /This part&#x27;s place is set by the section&#x27;s design/);
+  assert.match(html, /aria-label="Show in the header"/);
+  assert.match(html, />Hidden</);
+});
+
+test("a selected section shows its Content, then its own box with Width off", () => {
+  const html = renderedModule.exports.render(
+    buttonBinding({
+      ...plan4,
+      element: null,
+      fields: [{ name: "heading", label: "Heading", kind: "text" }],
+      values: { heading: "H" },
+      sectionBox: { outer: { key: "root", box }, inner: { key: "root.inner", container } },
+    }),
+  );
+  const at = order(html, [">Content<", ">Fill<", ">Layout<", "A section always spans the page.", "Content alignment"]);
+  assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
+  assert.deepEqual([...at].sort((a, b) => a - b), at);
+  assert.doesNotMatch(html, /Move up/, "a section does not move here");
+});

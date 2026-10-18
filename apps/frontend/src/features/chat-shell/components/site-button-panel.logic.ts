@@ -89,7 +89,7 @@ export function buttonPanelValues(override: StyleOverride | null, box: ComputedB
 }
 
 /** A number typed in a box ("12", "12px"), or null when it is not one within [min, max]. */
-function size(value: string, range: { min: number; max: number }): number | null {
+export function size(value: string, range: { min: number; max: number }): number | null {
   const text = value.trim().replace(/px$/i, "").trim();
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const number = Number(text);

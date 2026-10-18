@@ -69,7 +69,7 @@ export interface SiteInspectorBinding {
   arrange: { canUp: boolean; canDown: boolean; note: string | null } | null;
   onMove: (direction: "up" | "down") => void;
   /** Plan 4: Hide for a header or footer part (null for anything else), and one change (one save). */
-  hide: { hidden: boolean } | null;
+  hide: { hidden: boolean; part: "header" | "footer" } | null;
   onHideCommit: (hidden: boolean) => void;
   /** Plan 4: the section's own box when the section is selected (ruling R2), and the manual styling of
    * its outer and inner boxes (each styled through onStyleCommit with its own key). */

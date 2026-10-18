@@ -139,8 +139,12 @@ export function commitHidden(site: SiteDocument, place: Place, key: string, hidd
 }
 
 /** Whether the selected header or footer part is hidden; null for anything that cannot be hidden. */
-export function hideState(site: SiteDocument | null, selection: (Place & { element: Pick<ElementSelection, "key"> | null }) | null): { hidden: boolean } | null {
+export function hideState(
+  site: SiteDocument | null,
+  selection: (Place & { element: Pick<ElementSelection, "key"> | null }) | null,
+): { hidden: boolean; part: "header" | "footer" } | null {
   if (!site || !selection?.element || selection.target !== SHELL_TARGET) return null;
+  if (selection.componentId !== "header" && selection.componentId !== "footer") return null;
   const props = componentProps(site, selection.target, selection.componentId);
-  return props ? { hidden: editsOf(props)[selection.element.key]?.hidden === true } : null;
+  return props ? { hidden: editsOf(props)[selection.element.key]?.hidden === true, part: selection.componentId } : null;
 }

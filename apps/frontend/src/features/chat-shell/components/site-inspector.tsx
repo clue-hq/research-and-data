@@ -14,6 +14,8 @@ import {
   InspectorSelect,
   InspectorTextArea,
 } from "./inspector-primitives";
+import { SiteArrangeSection, SiteHideSection } from "./site-arrange-section";
+import { SiteBoxPanel } from "./site-box-panel";
 import { SiteButtonPanel } from "./site-button-panel";
 import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
@@ -52,39 +54,63 @@ export function SiteInspector({
             {binding.error}
           </p>
         ) : null}
-        {binding.element ? (
+        {binding.element?.kind === "container" ? (
+          // Plan 4: a box: Fill, Stroke, Layout and Arrange (with its content alignment), then Hide
+          // for a header or footer part.
+          <>
+            <SiteBoxPanel binding={binding} key={`box:${binding.selectionKey}`} mode="box" />
+            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
+          </>
+        ) : binding.element?.kind === "image" ? (
+          // Plan 4 (ruling R8): an image can be moved and, in the header and footer, hidden; its own
+          // settings come with the image panel (plan 5).
+          <>
+            <p className={styles.inspectorStatusNote} role="status">
+              Image settings (replace, fit, alt text, corners) come in the next update.
+            </p>
+            <SiteArrangeSection binding={binding} key={`arrange:${binding.selectionKey}`} />
+            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
+          </>
+        ) : binding.element ? (
           // Site element inspector: a selected text element is styled here; the section's content
           // fields come back when the section itself is selected. Keyed by the selection, so each
           // element starts with fresh drafts.
-          // A button (plan 3) adds its box's Fill, Stroke and Layout between its words and its link.
+          // A button (plan 3) adds its box's Fill, Stroke and Layout between its words and its link;
+          // plan 4 adds Arrange and, for a header or footer part, Hide.
           <>
             <SiteTextPanel binding={binding} key={binding.selectionKey} />
             {binding.element.kind === "button" && binding.element.box ? (
               <SiteButtonPanel binding={binding} key={`box:${binding.selectionKey}`} />
             ) : null}
             <SiteLinkRow binding={binding} key={`link:${binding.selectionKey}`} />
+            <SiteArrangeSection binding={binding} key={`arrange:${binding.selectionKey}`} />
+            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
           </>
         ) : binding.fields ? (
           // DESIGN REVIEW (DR4): the section label for a selected site section.
-          <InspectorSection label="Content" onOpenChange={setContentOpen} open={contentOpen}>
-            <fieldset disabled={binding.disabled} style={{ display: "contents" }}>
-              {binding.fields.length === 0 ? (
-                <p className={styles.inspectorFieldLabel}>This section has nothing to edit here.</p>
-              ) : (
-                binding.fields.map((field) => (
-                  <SiteFieldControl
-                    disabled={binding.disabled}
-                    field={field}
-                    key={field.name}
-                    onCommit={binding.onCommit}
-                    path={field.name}
-                    renderImageField={renderImageField}
-                    values={binding.values}
-                  />
-                ))
-              )}
-            </fieldset>
-          </InspectorSection>
+          <>
+            <InspectorSection label="Content" onOpenChange={setContentOpen} open={contentOpen}>
+              <fieldset disabled={binding.disabled} style={{ display: "contents" }}>
+                {binding.fields.length === 0 ? (
+                  <p className={styles.inspectorFieldLabel}>This section has nothing to edit here.</p>
+                ) : (
+                  binding.fields.map((field) => (
+                    <SiteFieldControl
+                      disabled={binding.disabled}
+                      field={field}
+                      key={field.name}
+                      onCommit={binding.onCommit}
+                      path={field.name}
+                      renderImageField={renderImageField}
+                      values={binding.values}
+                    />
+                  ))
+                )}
+              </fieldset>
+            </InspectorSection>
+            {/* Plan 4 (rulings R1, R2): the section's own box, under its words. */}
+            {binding.sectionBox ? <SiteBoxPanel binding={binding} key={`section:${binding.selectionKey}`} mode="section" /> : null}
+          </>
         ) : null}
         <InspectorSection label="Layers" onOpenChange={setLayersOpen} open={layersOpen}>
           <div className={styles.layerList}>
