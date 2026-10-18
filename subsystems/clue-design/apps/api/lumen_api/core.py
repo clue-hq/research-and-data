@@ -13,6 +13,7 @@ from py_lumen_config import settings
 from py_lumen_obs import get_logger
 
 from .font_containers import normalize_ingest_font
+from .image_containers import normalize_ingest_image
 from .observability import (
     current_request_id,
     diagnostic_summary,
@@ -189,6 +190,18 @@ class CoreClient:
             declared_mime_type=declared_mime_type,
             filename=filename,
             provenance=provenance,
+        )
+        if normalized.refusal is not None:
+            if raise_on_error:
+                raise CoreError(normalized.refusal["code"], normalized.refusal["message"])
+            return {"ok": False, "error": dict(normalized.refusal), "diagnostics": []}
+        # 2026-10-18: AVIF and ICO become PNG at the same chokepoint (`image_containers.py`),
+        # because the helper's sniffer stores them as unreadable `application/octet-stream`.
+        normalized = normalize_ingest_image(
+            bytes_base64=normalized.bytes_base64,
+            declared_mime_type=normalized.declared_mime_type,
+            filename=normalized.filename,
+            provenance=normalized.provenance,
         )
         if normalized.refusal is not None:
             if raise_on_error:

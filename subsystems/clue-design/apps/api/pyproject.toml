@@ -37,7 +37,9 @@ dependencies = [
     # WOFF/WOFF2 decode + encode at ingestion / web export (option A, 2026-09-02). fontTools
     # needs this at runtime for `flavor="woff2"`; it was only ever present by accident before.
     "brotli>=1.1,<2",
-    "pillow>=10,<12",
+    # AVIF/ICO -> PNG at ingestion (`image_containers.py`, 2026-10-18): the AVIF decoder ships
+    # in Pillow's wheels from 11.3 (the version the root lock pins).
+    "pillow>=11.3,<12",
     "playwright>=1.45,<2",
     # Stealth render backend (brand-color capture): bot-walled and WebGL-hero
     # sites serve real pages only to a hardened profile (capture PoC 2026-08-30).
