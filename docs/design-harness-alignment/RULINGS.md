@@ -339,3 +339,7 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   not run in this shell and were NOT pointed at the running stack's database. Owed: run both on a
   throwaway migrated DB before merge. The workspace-profile test in that file was updated to the new
   behaviour; a database-free equivalent passes in `test_scene_solo_prompt.py`.
+- **T7 correction during writing:** `search_assets` returns both brand-kit and library images (each with
+  an `origin`), and `place` cannot register a kit asset; its description therefore names both calls
+  ("library" → `asset(action='place', …)`, "brand_kit" → `asset(action='use_brand_asset', …)`) instead
+  of only `place` as first proposed.

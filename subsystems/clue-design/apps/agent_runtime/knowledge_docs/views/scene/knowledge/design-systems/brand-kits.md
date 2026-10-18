@@ -32,7 +32,7 @@ Phase C kits expose:
 
 - approval status: `draft`, `generated_unreviewed`, `approved`, `deprecated`
 - a `medium` mode for digital vs print behavior (see `modes.md`)
-- logo and reusable brand-asset rules (see `logo-and-assets.md`)
+- logo and reusable brand-asset rules (each logo's usage note is in the brand card)
 - strict scene governance diagnostics (see `brand-validation.md`)
 - compatibility reports between kit versions
 

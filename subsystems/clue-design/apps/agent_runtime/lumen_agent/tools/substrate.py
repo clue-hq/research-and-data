@@ -1319,7 +1319,9 @@ class LumenDesignTools:
         """Search all frozen workspace images by type, usage, source, text or exact id.
 
         Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,
-        then asset(action='use_brand_asset', asset_id=...) to place the chosen image.
+        then place the chosen image by its `origin`: a "library" result with
+        asset(action='place', asset_id=..., node_id=...), a "brand_kit" result with
+        asset(action='use_brand_asset', asset_id=..., node_id=...).
         """
         from .asset_catalog import rank_assets, asset_summary
         if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:

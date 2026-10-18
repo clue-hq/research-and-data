@@ -212,6 +212,11 @@ calls — never one at a time. Batchable: view, inspect, and read_file. NEVER
 batch (each stands alone in its own step): task, compile_dsl_block,
 render_preview, preflight_design, asset, and any write."""
 
+# Harness alignment I8 (founder ruling 2026-10-17): the scene agent has no `task` tool, so its copy of
+# the batching rule does not name one. The shared rule stays for the trio prompts.
+_SCENE_BATCHING_RULE = BATCHING_RULE.replace("task, compile_dsl_block", "compile_dsl_block")
+assert _SCENE_BATCHING_RULE != BATCHING_RULE
+
 
 # ---------------------------------------------------------------------------
 # §6.1 ORCHESTRATOR
@@ -1540,7 +1545,7 @@ limit=1000; read more only if the note on the result says it was cut. You can
 come back to any skill or guide later in the turn when a decision needs it.
 Your workspace is {workspace}; guides are under /knowledge_docs and skills under
 /.deepagent/skills.""",
-        _SCENE_SURFACE_CONTRACT, BATCHING_RULE,
+        _SCENE_SURFACE_CONTRACT, _SCENE_BATCHING_RULE,
     ]
     if has_ad_assets:
         sections.append(
