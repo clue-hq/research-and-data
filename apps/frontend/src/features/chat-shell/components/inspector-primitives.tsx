@@ -20,6 +20,7 @@ import {
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
+import { ArtifactTitle } from "./artifact-title";
 import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
 import { REPLACE_IMAGE_MENU_ROWS, replaceImageMenuAction } from "./replace-image-menu.logic";
 import styles from "./chat-shell.module.css";
@@ -139,7 +140,9 @@ export function InspectorHeader({
 }) {
   return (
     <div className={styles.inspectorHeader}>
-      <span>{title}</span>
+      {/* One line, cut with an ellipsis, scrolling through on hover: the artifact header's title
+          (founder 2026-10-19). Keyed on the title so a new selection starts fresh. */}
+      <ArtifactTitle key={title} title={title} />
       <div className={styles.inspectorHeaderActions}>
         {elementActions ? (
           <>
@@ -170,16 +173,19 @@ export function InspectorHeader({
             ) : null}
           </>
         ) : null}
-        <button
-          aria-expanded={moreActionsExpanded}
-          aria-haspopup={moreActionsHasPopup ? "menu" : undefined}
-          aria-label={moreActionsHasPopup ? "Preview inspector element types" : "More inspector actions"}
-          className={styles.inspectorIconButton}
-          onClick={onMoreActions}
-          type="button"
-        >
-          <InspectorIcon name="ellipsis" size={12} />
-        </button>
+        {/* The "…" button only where it opens something (founder 2026-10-19: no empty button). */}
+        {onMoreActions || actionMenu ? (
+          <button
+            aria-expanded={moreActionsExpanded}
+            aria-haspopup={moreActionsHasPopup ? "menu" : undefined}
+            aria-label={moreActionsHasPopup ? "Preview inspector element types" : "More inspector actions"}
+            className={styles.inspectorIconButton}
+            onClick={onMoreActions}
+            type="button"
+          >
+            <InspectorIcon name="ellipsis" size={12} />
+          </button>
+        ) : null}
         {actionMenu}
       </div>
     </div>

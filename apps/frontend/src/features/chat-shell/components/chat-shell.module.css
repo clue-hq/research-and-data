@@ -2097,7 +2097,8 @@
   align-items: center;
   justify-content: flex-start;
   gap: 16px;
-  width: 280px;
+  width: 100%;
+  min-width: 0;
   height: 48px;
   padding: 8px 16px;
   color: var(--chat-shell-content);
