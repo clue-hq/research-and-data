@@ -157,3 +157,16 @@ def test_a_template_made_again_replaces_the_one_before(workspace_id: str, design
     headers = [c["id"] for c in list_site_clones(registry.blobs, tmp_path / "cache") if c["role"] == SITE_HEADER_ROLE]
     assert headers == [second["fragment_id"]]
     assert {home, about} <= {c["id"] for c in list_site_clones(registry.blobs, tmp_path / "cache")}, "both bands stay offered"
+
+
+def test_a_template_made_again_unchanged_settles_on_the_same_template(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
+    """Live check, plan 6: re-running the derivation over an unchanged band is a no-op (it once
+    refused with "cannot be derived from itself")."""
+    _kit(workspace_id)
+    source = _band(workspace_id, design_storage, role="footer", html=FOOTER, page="/")
+    registry = _registry(workspace_id, design_storage, tmp_path)
+    first = registry.mint_site_template(role="site_footer", source_fragment_id=source)
+    again = registry.mint_site_template(role="site_footer", source_fragment_id=source)
+    assert again["fragment_id"] == first["fragment_id"] and again["status"] == "approved" and again["converged"]
+    assert [result.get("skipped") for result in registry.mint_site_templates(kit_id=KIT, kit_version=2)
+            if result["role"] == "site_footer"] == [None]

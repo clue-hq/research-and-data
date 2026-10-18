@@ -1818,11 +1818,18 @@ class DurableAgentClonedSectionRegistry:
         source_url = str(original.get("source_url") or "")
         seller = (urlsplit(source_url).hostname or "the seller").removeprefix("www.")
         label = f"{'Header' if role == 'site_header' else 'Footer'} template — {seller}"
+        css = f"{loaded.css}\n{derived.css_addition}" if derived.css_addition else loaded.css
+        probe = build_fragment_artifact(
+            html=sanitized.html, css=css, rehosted={}, slots=list(derived.slots), preview_digest=None,
+            prelude_reference=PRELUDE_REFERENCE_STRIP, source_fragment_id=source_fragment_id,
+        )
+        # The same template made again settles on itself: no new lineage link.
+        parent = None if probe.fragment_id == previous else (previous or source_fragment_id)
         row, artifact = create_web_fragment(
             self.blobs.storage,
             workspace_id=self.workspace_id,
             html=sanitized.html,
-            css=f"{loaded.css}\n{derived.css_addition}" if derived.css_addition else loaded.css,
+            css=css,
             rehosted={},
             slots=list(derived.slots),
             source_url=source_url,
@@ -1841,8 +1848,8 @@ class DurableAgentClonedSectionRegistry:
                 "slots": [spec.key for spec in derived.slots],
             },
             prelude_reference=PRELUDE_REFERENCE_STRIP,
-            derived_from=previous or source_fragment_id,
-            derived_reason="site template",
+            derived_from=parent,
+            derived_reason="site template" if parent else None,
             source_fragment_id=source_fragment_id,
         )
         status = str(row.get("status") or "")
@@ -1858,7 +1865,7 @@ class DurableAgentClonedSectionRegistry:
             "label": row.get("label") or label,
             "slot_keys": [spec.key for spec in derived.slots],
             "notes": list(derived.notes) + list(sanitized.notes),
-            "converged": row.get("derived_from") == (previous or source_fragment_id) and status == "approved",
+            "converged": status == "approved" and (parent is None or row.get("derived_from") == parent),
         }
 
     def _current_site_template(self, role: str, kit_id: Any) -> Optional[str]:
