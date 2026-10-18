@@ -1352,7 +1352,36 @@ def _mint_page_fragments(
         logger.warning("video renditions failed", exc_info=True)
         diagnostics.append({"code": "LUMI0546", "severity": "warning",
                             "message": f"captured video posters and renditions failed: {type(error).__name__}: {error}"})
+    # The kit's header and footer templates, from the bands just minted (site element inspector,
+    # plan 6). A template that cannot be made never fails the capture: sites then use the fallback.
+    diagnostics.extend(mint_site_templates_after_capture(blobs, kit_id=brand_kit_id, kit_version=brand_kit_version))
     return refs, diagnostics
+
+
+#: A kit's header or footer template could not be made (plan 6). A warning: sites use the fallback.
+SITE_TEMPLATE_CODE = "LUMI0548"
+
+
+def mint_site_templates_after_capture(blobs: DesignBlobStore, *, kit_id: str, kit_version: int) -> list[JsonObject]:
+    """Mint one kit version's header and footer templates; one warning per role it could not make."""
+    import tempfile
+
+    from lumen_api.agent_cloned_sections import DurableAgentClonedSectionRegistry
+
+    try:
+        # The template mint renders nothing, so no engine cache is read or written.
+        registry = DurableAgentClonedSectionRegistry(blobs=blobs, cache_dir=tempfile.gettempdir())
+        results = registry.mint_site_templates(kit_id=kit_id, kit_version=kit_version)
+    except Exception as error:  # noqa: BLE001 — a template never fails the capture
+        logger.warning("site templates failed", exc_info=True)
+        return [{"code": SITE_TEMPLATE_CODE, "severity": "warning",
+                 "message": f"site templates failed: {type(error).__name__}: {error}"}]
+    return [
+        {"code": SITE_TEMPLATE_CODE, "severity": "warning",
+         "message": f"site {str(result['role']).removeprefix('site_')} template not made: {result['skipped']}"}
+        for result in results
+        if result.get("skipped")
+    ]
 
 
 class _SnapshotView:

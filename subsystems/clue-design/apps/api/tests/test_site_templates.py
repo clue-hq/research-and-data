@@ -43,8 +43,10 @@ def test_header_keeps_logo_menu_pattern_and_last_cta(name: str) -> None:
     [menu] = tree.css(f"[{MENU_ATTR}]")
     assert len(menu.css(f"[{MENU_ITEM_ATTR}]")) == 1
     assert len(menu.css(f"[{MENU_ITEM_ATTR}] [{MENU_LABEL_ATTR}], [{MENU_ITEM_ATTR}][{MENU_LABEL_ATTR}]")) == 1
-    outside_menu = [a for a in tree.css("a") if not a.css_first("img, svg") and not _inside(a, menu)]
-    assert [" ".join((a.text() or "").split()) for a in outside_menu] == ["Book a demo"], "one call to action, the last one"
+    # A button's words may sit beside an empty link laid over it (Webflow), or inside the link.
+    outside_menu = [a.parent if (a.parent.tag == "button") else a for a in tree.css("a[href]") if not a.css_first("img, svg") and not _inside(a, menu)]
+    assert [" ".join((node.text() or "").split()) for node in outside_menu] == ["Book a demo"], "one call to action, the last one"
+    assert tree.css_first("[data-lumen-slot^=cta_href]") is not None, "its link can be changed"
     assert "Log in" not in (tree.body.text() or "") and "Login" not in (tree.body.text() or "")
 
 

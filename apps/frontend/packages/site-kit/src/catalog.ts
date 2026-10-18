@@ -456,10 +456,16 @@ function brandFile(brand: BrandData, seller?: string): string {
   ].join("\n");
 }
 
+/** The roles of a kit's header and footer templates (lumen_api/fragments/site_templates.py). */
+const TEMPLATE_ROLES = new Set(["site_header", "site_footer"]);
+
 /** The catalog for one brand, as {relative path: markdown}. `seller` titles brand/brand.md. */
 export function buildCatalog(brand: BrandData, seller: string): Record<string, string> {
   const files: Record<string, string> = {};
-  const clones = Object.values(brand.clones).filter((clone) => clone.in_catalog !== false);
+  const offered = Object.values(brand.clones).filter((clone) => clone.in_catalog !== false);
+  // Plan 6 (ruling R13): the kit's header and footer templates go in shell.json, not on a page.
+  const templates = offered.filter((clone) => TEMPLATE_ROLES.has(clone.role));
+  const clones = offered.filter((clone) => !TEMPLATE_ROLES.has(clone.role));
 
   const byPage = new Map<string, Clone[]>();
   for (const clone of clones) {
@@ -472,6 +478,17 @@ export function buildCatalog(brand: BrandData, seller: string): Record<string, s
     "",
     "Reuse comes first: start from the seller's own sections (clones), then our brand sections.",
     "",
+    ...(templates.length
+      ? [
+          "## Header and footer templates (use them in shell.json)",
+          "",
+          ...templates.map((clone) => {
+            files[`catalog/clones/${clone.id}.md`] = cloneFile(clone);
+            return `- \`${clone.id}\` · ${clone.role} · ${clone.label} · ${Object.keys(clone.slots).length} slots · catalog/clones/${clone.id}.md`;
+          }),
+          "",
+        ]
+      : []),
     "## The seller's own sections (clones), by source page",
   ];
   for (const [page, list] of byPage) {

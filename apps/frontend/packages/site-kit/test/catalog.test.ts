@@ -95,3 +95,18 @@ test("brand.md lists the font library's families with their weights, after the b
   assert.ok(md.includes("- Lora (serif): 400, 700"));
   assert.ok(!buildCatalog(garner(), "Garner Health")["brand/brand.md"].includes("## Other fonts"), "no library, no section");
 });
+
+// Plan 6 (ruling R13): a kit's header and footer templates are listed first, for shell.json, and
+// not among the seller's page sections.
+test("templates are listed first and not among page sections", () => {
+  const brand = garner();
+  const template = { ...Object.values(brand.clones)[0], id: "frag_00000000000000ad", role: "site_header", label: "Header template — garnerhealth.com", section_index: null };
+  brand.clones = { ...brand.clones, [template.id]: template };
+  const index = buildCatalog(brand, "Garner Health")["catalog/index.md"];
+  const templates = index.indexOf("## Header and footer templates (use them in shell.json)");
+  const sections = index.indexOf("## The seller's own sections (clones), by source page");
+  assert.ok(templates >= 0 && templates < sections, index.slice(0, 600));
+  assert.match(index.slice(templates, sections), /`frag_00000000000000ad` · site_header · Header template — garnerhealth\.com/);
+  assert.doesNotMatch(index.slice(sections), /frag_00000000000000ad/);
+  assert.ok(buildCatalog(brand, "Garner Health")["catalog/clones/frag_00000000000000ad.md"], "the template has its card");
+});

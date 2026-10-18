@@ -39,6 +39,7 @@ fail-closed answer an absent one gets.
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlsplit
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -1766,6 +1767,121 @@ class DurableAgentClonedSectionRegistry:
             "converged": already is not None,
             "insertable": row.get("status") == "approved",
         }
+
+
+    # --- site header and footer templates (site element inspector, plan 6) ----------------------
+
+    #: Where each template role is derived from: the kit's captured bands of this role.
+    SITE_TEMPLATE_SOURCES = {"site_header": "nav", "site_footer": "footer"}
+
+    def mint_site_template(self, *, role: str, source_fragment_id: str) -> JsonObject:
+        """Mint one ABM header or footer template from a captured nav or footer band (rulings R4-R6).
+
+        The derivation (:func:`~lumen_api.fragments.site_templates.derive_site_template`) is
+        deterministic; the markup it returns goes through the identical fragment door every clone and
+        repair goes through (sanitize, annotate its slots, scope the CSS against the source's,
+        content-address, insert). **Released at once** (founder 2026-10-18: no approval gate), so the
+        agent is offered it as soon as it exists. Converges onto the row that already holds the same
+        template when it is minted again.
+        """
+        from .fragments.site_templates import COMPOSED_SITE_TEMPLATE, SITE_TEMPLATE_ROLES, derive_site_template
+
+        if role not in SITE_TEMPLATE_ROLES:
+            raise ValueError(f"{role!r} is not a site template role")
+        original = self._repository().find_web_fragment(source_fragment_id)
+        if original is None:
+            raise FragmentRefused(
+                "fragment.unresolved",
+                f"cannot derive a template from {source_fragment_id!r}: this workspace holds no such fragment",
+                reference=source_fragment_id,
+            )
+        loaded = read_web_fragment(self.blobs.storage, workspace_id=self.workspace_id, fragment_id=source_fragment_id)
+        placeholder = self.campaign_shell_placeholder()
+        derived = derive_site_template(role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}")
+        sanitized = sanitize_fragment_html(derived.html, rehosted={})
+        source_url = str(original.get("source_url") or "")
+        seller = (urlsplit(source_url).hostname or "the seller").removeprefix("www.")
+        label = f"{'Header' if role == 'site_header' else 'Footer'} template — {seller}"
+        row, artifact = create_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            html=sanitized.html,
+            css=f"{loaded.css}\n{derived.css_addition}" if derived.css_addition else loaded.css,
+            rehosted={},
+            slots=list(derived.slots),
+            source_url=source_url,
+            section_role=role,
+            label=label,
+            source_kit_id=original.get("source_kit_id"),
+            source_kit_version=original.get("source_kit_version"),
+            preview=None,
+            provenance={
+                "composed": COMPOSED_SITE_TEMPLATE,
+                "shell_role": role,
+                "source_fragment_id": source_fragment_id,
+                "page_url": _page_url(original),
+                "section_index": None,
+                "section_role": role,
+                "slots": [spec.key for spec in derived.slots],
+            },
+            prelude_reference=PRELUDE_REFERENCE_STRIP,
+            derived_from=source_fragment_id,
+            derived_reason="site template",
+            source_fragment_id=source_fragment_id,
+        )
+        status = str(row.get("status") or "")
+        if status == "draft":
+            status = str(
+                set_web_fragment_status(workspace_id=self.workspace_id, fragment_id=artifact.fragment_id, status="approved").get("status")
+                or "approved"
+            )
+        return {
+            "fragment_id": artifact.fragment_id,
+            "role": role,
+            "status": status,
+            "label": row.get("label") or label,
+            "slot_keys": [spec.key for spec in derived.slots],
+            "notes": list(derived.notes) + list(sanitized.notes),
+            "converged": row.get("derived_from") == source_fragment_id and status == "approved",
+        }
+
+    def site_template_sources(self, *, kit_id: str, kit_version: int) -> Dict[str, Optional[JsonObject]]:
+        """Each template role's best captured band of one kit version (ruling R4): the home page's,
+        else the shortest page path, else document order; a degraded band is never used. None for a
+        role the kit captured no usable band for."""
+        rows = [
+            row
+            for row in self._repository().list_web_fragments()
+            if row.get("source_kit_id") == kit_id
+            and int(row.get("source_kit_version") or -1) == int(kit_version)
+            and not row.get("degraded")
+            and str(row.get("status") or "") in {"draft", "approved"}
+        ]
+
+        def rank(row: JsonObject) -> tuple:
+            path = urlsplit(_page_url(row) or "").path or "/"
+            return (path != "/", len(path), path, *self._document_order(row))
+
+        return {
+            role: min((row for row in rows if row.get("section_role") == band), key=rank, default=None)
+            for role, band in self.SITE_TEMPLATE_SOURCES.items()
+        }
+
+    def mint_site_templates(self, *, kit_id: str, kit_version: int) -> List[JsonObject]:
+        """Both templates of one kit version, each from its best captured band. A role with no usable
+        band, or whose band is not derivable, is skipped with the reason."""
+        from .fragments.site_templates import TemplateNotDerivable
+
+        results: List[JsonObject] = []
+        for role, source in self.site_template_sources(kit_id=kit_id, kit_version=kit_version).items():
+            if source is None:
+                results.append({"role": role, "skipped": f"no captured {self.SITE_TEMPLATE_SOURCES[role]}"})
+                continue
+            try:
+                results.append(self.mint_site_template(role=role, source_fragment_id=str(source["fragment_id"])))
+            except (TemplateNotDerivable, FragmentRefused) as error:
+                results.append({"role": role, "skipped": getattr(error, "reason", None) or str(error)})
+        return results
 
 
 #: What a repair's label says it is, before the clone's own words.

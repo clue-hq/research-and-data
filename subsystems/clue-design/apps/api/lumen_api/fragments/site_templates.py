@@ -116,11 +116,11 @@ def derive_site_template(role: str, source_html: str, *, placeholder_src: str) -
             notes.append("no menu found: the template draws no page links")
         if cta is None:
             notes.append("no call to action found: the template has no button")
-        _prune(body, [node for node in (logo, menu, cta) if node is not None])
+        _prune(body, [node for node in (logo, menu, cta[0] if cta else None) if node is not None])
         if menu is not None:
             _reduce_menu(menu)
         if cta is not None:
-            cta.attrs[_CTA_MARK] = ""
+            cta[1].attrs[_CTA_MARK] = ""
         height = _logo_height(logo)
         line_class = _menu_link_class(menu)
         # Drawn right after the logo, in this order (inserted after the slots are detected, so the
@@ -223,15 +223,18 @@ def _find_menu(body: LexborNode, logo: LexborNode) -> LexborNode | None:
     return best
 
 
-def _find_cta(body: LexborNode, logo: LexborNode, menu: LexborNode | None) -> LexborNode | None:
-    """The last link with words outside the logo and the menu that is not a sign-in."""
+def _find_cta(body: LexborNode, logo: LexborNode, menu: LexborNode | None) -> tuple[LexborNode, LexborNode] | None:
+    """The last link with words outside the logo and the menu that is not a sign-in, as (the part to
+    keep, the link). A link laid empty over a button whose words sit beside it (Webflow) takes the
+    button's words, and the button is kept with it."""
     found = None
     for anchor in body.css("a[href]"):
         if _contains(logo, anchor) or (menu is not None and _contains(menu, anchor)):
             continue
-        words = _text(anchor)
+        button = anchor.parent if anchor.parent is not None and (anchor.parent.tag or "") == "button" else None
+        words = _text(anchor) or (_text(button) if button is not None else "")
         if words and not _SIGN_IN.match(words):
-            found = anchor
+            found = (button if button is not None and not _text(anchor) else anchor, anchor)
     return found
 
 
