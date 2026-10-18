@@ -413,6 +413,26 @@ def _scan_text(html: str) -> str:
     return tree.html or ""
 
 
+#: One line of site-kit's Tailwind theme (theme.ts `themeBlock`): a theme variable naming a brand one.
+#: Names come from kit token paths (brand-values.ts TOKEN_PATH, dots written as dashes).
+_THEME_LINE = re.compile(r"  --[A-Za-z0-9_-]+: var\(--brand-[A-Za-z0-9_-]+\);")
+
+
+def _checked_theme(tailwind_theme: str) -> str:
+    """Review K5-5: the theme comes back from the render page, where a section's code runs, and is
+    compiled into the published stylesheet. Only site-kit's exact shape is taken — ONE ``@theme inline``
+    block of ``--name: var(--brand-name);`` lines — so no CSS of a section's can reach the stylesheet."""
+    lines = tailwind_theme.split("\n")
+    if (
+        len(lines) < 3
+        or lines[0] != "@theme inline {"
+        or lines[-2:] != ["}", ""]
+        or not all(_THEME_LINE.fullmatch(line) for line in lines[1:-2])
+    ):
+        raise SiteRenderError(RENDER_FAILED, "the render page's theme is not site-kit's theme")
+    return tailwind_theme
+
+
 def _compile_css(pages: Sequence[RenderedPage], tailwind_theme: str, node_bin: str) -> str:
     try:
         web_export.require_static_css_toolchain(node_bin)
@@ -467,7 +487,7 @@ def render_site(
         RenderedPage(route=str(page["route"]), html=str(page["html"]), data=page.get("data") if live else None)
         for page in result.get("pages") or []
     ]
-    css = _compile_css(pages, str(result.get("tailwindTheme") or ""), node_bin)
+    css = _compile_css(pages, _checked_theme(str(result.get("tailwindTheme") or "")), node_bin)
     module_css = "\n".join(module.css for module in modules if module.css)
     warnings = [str(warning) for warning in result.get("warnings") or []]
     warnings += url_changes

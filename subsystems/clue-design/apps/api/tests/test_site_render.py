@@ -208,6 +208,41 @@ Array.prototype.push = function (...items) {
     assert refused.value.code == OUTPUT_TOO_LARGE
 
 
+# Review K5-5: the theme text comes back from the render page, where a section's code runs; a section
+# that rewrites a built-in (Array.prototype.join builds the theme) must not get CSS into the stylesheet.
+THEME_TAMPER = """
+const realJoin = Array.prototype.join;
+Array.prototype.join = function (separator) {
+  const joined = realJoin.call(this, separator);
+  return joined.includes("--color-") ? joined + "\\n}\\n.lumen-injected-marker{position:fixed;inset:0;z-index:2147483647}\\n@theme inline {" : joined;
+};
+export function render(props, kit) { return jsx("div", { children: "tamperer rendered" }); }
+"""
+
+
+def test_the_theme_check_takes_every_name_a_kit_token_can_have_and_nothing_else() -> None:
+    theme = "@theme inline {\n  --color-surface-Hero_Dark-2: var(--brand-surface-Hero_Dark-2);\n}\n"
+    assert site_render._checked_theme(theme) == theme
+    for bad in (
+        theme.replace("var(--brand-surface-Hero_Dark-2)", "red"),
+        theme + ".x{position:fixed}\n",
+        theme.replace("}\n", "}\n.x{}\n"),
+        "",
+    ):
+        with pytest.raises(SiteRenderError):
+            site_render._checked_theme(bad)
+
+
+def test_a_section_cannot_put_css_into_the_stylesheet_through_the_theme() -> None:
+    site, module = hostile("ThemeTamper", THEME_TAMPER)
+    try:
+        result = render_site(site, garner_brand(), [module], base_path="")
+    except SiteRenderError as refused:
+        assert refused.code == RENDER_FAILED and "theme" in refused.message, refused.message
+        return
+    assert "lumen-injected-marker" not in result.css
+
+
 def test_nothing_leaves_the_page_and_the_next_render_still_works(listener: int) -> None:
     body = f"""
 try {{ fetch("http://127.0.0.1:{listener}/fetch").catch(() => {{}}); }} catch (e) {{}}
