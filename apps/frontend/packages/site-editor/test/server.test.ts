@@ -185,3 +185,28 @@ test("S2b-9: the editor refuses to start on the app's own domain", () => {
   assert.throws(() => readConfig({ ...good, CLUE_SITE_EDITOR_SUFFIX: "edit.cluehq.ai" }, "/dist"), /app's/);
   assert.throws(() => readConfig({ ...good, CLUE_SITE_EDITOR_SUFFIX: "cluehq.ai" }, "/dist"), /app's/);
 });
+
+// Review K3-7: every workspace's editor shares one registrable domain, so one workspace's agent code
+// can set many large cookies there. The editor reads no cookies, and must not answer 431 (blank editor
+// in that browser for every workspace) when they arrive.
+test("K3-7: a request carrying far more cookies than Node's 16 KB default is still served", async () => {
+  const { createEditorServer } = await import("../src/server/server");
+  const http = await import("node:http");
+  const server = createEditorServer(config);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const cookie = Array.from({ length: 50 }, (_, i) => `c${i}=${"x".repeat(4000)}`).join("; ");
+  try {
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = http.request({ host: "127.0.0.1", port, path: "/healthz", headers: { host: HOST, cookie } }, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.on("error", reject);
+      request.end();
+    });
+    assert.equal(status, 200);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

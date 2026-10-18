@@ -572,7 +572,12 @@ every workspace via `LUMEN_SITE_LIVE_WORKSPACES=*`) is on `main` and deployed.
    behind it, if any) can go once step 8 passes.
 10. **Public Suffix List** — when "thousands of users" can be stated honestly (founder 2026-10-15):
     the term from step 1, a role address (e.g. `security@cluehq.ai`), a public abuse-contact page,
-    the PR, and `_psl.cluehq.page` TXT holding the PR's URL.
+    the PR, and `_psl.cluehq.page` TXT holding the PR's URL. **List `edit.deeppresence.ai` in the
+    same PR** (review K3-7): every workspace's editor shares that registrable domain, so one
+    workspace's agent code can set cookies every other workspace's editor receives. Until it is
+    listed, the editor server ignores cookies and accepts up to 1 MB of headers (so it never
+    answers 431); a proxy in front of it with a smaller header limit (Railway's, Cloudflare's
+    32 KB) can still refuse such a request.
 
 ---
 
