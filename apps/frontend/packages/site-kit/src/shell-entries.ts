@@ -2,11 +2,16 @@
 // every renderer alike (the editor's Puck data, the static render, a live page on both sides), so they
 // get the same section machinery as the page's own sections. The editor's combined page is split back
 // into the shell and the page when it saves.
-import { ShellEntrySchema, type ShellEntry, type SiteDocument, type SitePage, type SiteShell } from "./site-document";
+import { SHELL_IDS, type ShellEntry, type SiteDocument, type SitePage, type SiteShell } from "./site-document";
 
-/** A header or footer entry: a section `{type, props}` whose id is its place. */
+/** A header or footer entry: a section `{type, props}` whose id is its place. A plain check, not a zod
+ * parse: this runs inside the hardened render page, whose policy has no 'unsafe-eval', and zod's first
+ * object parse probes `new Function` (a policy violation there). The shape is ShellEntrySchema's. */
 export function isShellEntry(value: unknown): value is ShellEntry {
-  return ShellEntrySchema.safeParse(value).success;
+  if (!value || typeof value !== "object") return false;
+  const { type, props } = value as { type?: unknown; props?: unknown };
+  if (typeof type !== "string" || type.length < 1 || type.length > 200 || !props || typeof props !== "object") return false;
+  return (SHELL_IDS as readonly unknown[]).includes((props as { id?: unknown }).id);
 }
 
 const placed = (shell: SiteShell | null | undefined): shell is SiteShell =>
