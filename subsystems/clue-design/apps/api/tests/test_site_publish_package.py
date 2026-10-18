@@ -873,3 +873,23 @@ def test_styling_that_names_a_brand_font_held_back_by_its_licence_still_publishe
     package = build("pub_locked_style", site, brand, [], blobs=blobs)
     assert f'font-family:"{stix}"' in page_html(package, "/")
     assert not any(family == stix for family, _src in font_faces(page_html(package, "/")))
+
+
+# Site element inspector, plan 6 (ruling R1): the header and footer are sections, so their copied
+# section is checked at publish and their manual styling's fonts ship, like a page's.
+def test_publish_checks_shell_clone_pins() -> None:
+    template = "frag_" + "c" * 16
+    site = garner_site_without_clones("pub_shell_pin")
+    site["shell"]["header"] = {"type": "ClonedSection", "props": {"id": "header", "fragmentId": template}}
+    brand = garner_brand()
+    brand["clones"][template] = {"id": template, "label": "Header template — Garner", "html": "<div></div>", "css": "", "slots": {}}
+    with pytest.raises(SitePublishRefused) as refused:
+        site_publish.check_clone_pins(site, brand, lambda fragment_id: "draft" if fragment_id == template else "approved")
+    assert refused.value.code == "site_publish.clone_not_approved"
+    assert "Header template — Garner" in refused.value.message
+
+
+def test_library_fonts_scan_shell_props() -> None:
+    site = garner_site_without_clones("pub_shell_fonts")
+    site["shell"]["footer"]["props"]["_edits"] = {"legal": {"fontFamily": "Lora"}}
+    assert site_publish._library_families_used(site, garner_brand()) == {"Lora"}

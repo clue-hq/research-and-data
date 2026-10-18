@@ -165,24 +165,25 @@ def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str])
     reaches publish (which applies its own rule) while the agent is not offered it anew. A section
     that no longer exists is left out, so the save check and publish refuse it honestly."""
 
+    from lumen_agent.site.workspace import site_components
+
     pinned: list[dict] = []
     seen: set[str] = set(listed)
-    for page in (site.get("pages") or {}).values():
-        for item in (page or {}).get("content") or []:
-            if item.get("type") != "ClonedSection":
-                continue
-            fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
-            if not fragment_id or fragment_id in seen:
-                continue
-            seen.add(fragment_id)
-            try:
-                loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=fragment_id)
-            except (NotFoundError, FragmentRefused):
-                continue
-            # A web_fragment row names its page, position and brokenness in its own columns
-            # (provenance, degraded/degraded_reason); the registry's one row shaper reads them.
-            section = DurableAgentClonedSectionRegistry._section_row(loaded.row)
-            pinned.append({**clone_from_fragment(section, loaded), "in_catalog": False})
+    for _route, item in site_components(site):
+        if item.get("type") != "ClonedSection":
+            continue
+        fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
+        if not fragment_id or fragment_id in seen:
+            continue
+        seen.add(fragment_id)
+        try:
+            loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=fragment_id)
+        except (NotFoundError, FragmentRefused):
+            continue
+        # A web_fragment row names its page, position and brokenness in its own columns
+        # (provenance, degraded/degraded_reason); the registry's one row shaper reads them.
+        section = DurableAgentClonedSectionRegistry._section_row(loaded.row)
+        pinned.append({**clone_from_fragment(section, loaded), "in_catalog": False})
     return pinned
 
 

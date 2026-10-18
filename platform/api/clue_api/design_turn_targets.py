@@ -310,13 +310,15 @@ def _site_component_props(
 ) -> dict[str, Any] | None:
     """The props of the component a target names, or None when the stored site has no such one."""
     if route == "shell":
+        # Plan 6: the header and footer are section entries, {"type", "props"}.
         shell = site.get("shell")
         part = (
             shell.get(component_id)
             if isinstance(shell, dict) and component_id in _SHELL_PARTS
             else None
         )
-        return part if isinstance(part, dict) else None
+        props = part.get("props") if isinstance(part, dict) else None
+        return props if isinstance(props, dict) else None
     pages = site.get("pages")
     page = pages.get(route) if isinstance(pages, dict) else None
     content = page.get("content") if isinstance(page, dict) else None

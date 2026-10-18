@@ -229,7 +229,10 @@ def _site_doc() -> dict[str, object]:
                 ],
             },
         },
-        "shell": {"header": {"preparedFor": "SCSD", "ctaLabel": "Go"}, "footer": {"legal": "©"}},
+        "shell": {
+            "header": {"type": "SiteHeader", "props": {"id": "header", "accountLine": "For SCSD", "ctaLabel": "Go"}},
+            "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "©"}},
+        },
     }
 
 
@@ -370,3 +373,13 @@ def test_notes_with_no_document_named_reach_no_document() -> None:
     """The composer never lets this through; if it ever did, no site gets a note it cannot place."""
     refs = (_ref("design_node", "site:/#hero", "x"),)
     assert refs_for_document(refs, "doc_a") == ()
+
+
+# Site element inspector, plan 6 (ruling R1): a shell target's field is read from its entry's props.
+def test_targets_name_shell_entries_by_props() -> None:
+    assert validate_site_targets(_site_doc(), ("site:shell#header.accountLine",)) == (
+        SiteTarget(route="shell", component_id="header", prop="accountLine"),
+    )
+    with pytest.raises(DesignTurnTargetError) as refused:
+        validate_site_targets(_site_doc(), ("site:shell#header.preparedFor",))
+    assert refused.value.code == "CONTEXT_REF_NOT_FOUND"

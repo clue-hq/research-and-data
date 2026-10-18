@@ -106,13 +106,15 @@ class SitePublishRefused(Exception):
 
 
 def _clone_ids(site: JsonObject) -> list[str]:
+    """The copied sections the pages and the header and footer use (plan 6: both are sections)."""
+    from lumen_agent.site.workspace import site_components
+
     found: list[str] = []
-    for page in (site.get("pages") or {}).values():
-        for item in (page or {}).get("content") or []:
-            if item.get("type") == "ClonedSection":
-                fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
-                if fragment_id and fragment_id not in found:
-                    found.append(fragment_id)
+    for _route, item in site_components(site):
+        if item.get("type") == "ClonedSection":
+            fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
+            if fragment_id and fragment_id not in found:
+                found.append(fragment_id)
     return found
 
 
@@ -160,12 +162,10 @@ def _library_families_used(site: JsonObject, brand: JsonObject) -> set[str]:
             if isinstance(family, str) and family not in own:
                 used.add(family)
 
-    for page in (site.get("pages") or {}).values():
-        for item in (page or {}).get("content") or []:
-            scan(item.get("props") if isinstance(item, dict) else None)
-    shell = site.get("shell") or {}
-    scan(shell.get("header"))
-    scan(shell.get("footer"))
+    from lumen_agent.site.workspace import site_components
+
+    for _route, item in site_components(site):
+        scan(item.get("props"))
     return used
 
 

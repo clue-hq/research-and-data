@@ -23,7 +23,7 @@ import json
 import os
 import re
 import shutil
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -279,6 +279,33 @@ def site_pages_of(site: Mapping[str, Any]) -> dict[str, dict]:
     return {route: page for route, page in (site.get("pages") or {}).items() if isinstance(page, dict)}
 
 
+_SHELL_PARTS = ("header", "footer")
+
+
+def shell_entry(shell: Any, part: str) -> dict | None:
+    """The header's or footer's entry when it is a section (plan 6: ``{"type", "props"}``); an old-shape
+    part (fixed props) is no section and reads as None."""
+
+    entry = shell.get(part) if isinstance(shell, Mapping) else None
+    if isinstance(entry, dict) and isinstance(entry.get("type"), str) and isinstance(entry.get("props"), dict):
+        return entry
+    return None
+
+
+def site_components(site: Mapping[str, Any]) -> Iterator[tuple[str, dict]]:
+    """Every section of a stored site, the one walk the API and the agent use: ``(route, item)`` for
+    each page item in page order, then ``("shell", entry)`` for the header and the footer."""
+
+    for route, page in site_pages_of(site).items():
+        for item in page.get("content") or []:
+            if isinstance(item, dict):
+                yield route, item
+    for part in _SHELL_PARTS:
+        entry = shell_entry(site.get("shell"), part)
+        if entry is not None:
+            yield "shell", entry
+
+
 def site_pages(workspace: Path) -> dict[str, dict]:
     """The workspace's pages by route: page.json is "/", pages/<name>.json is "/<name>"."""
 
@@ -317,12 +344,7 @@ def read_site_files(
         pages = {**site_pages_of(base), **pages}
     shell_file = workspace / "shell.json"
     shell = json.loads(shell_file.read_text()) if shell_file.exists() else base.get("shell")
-    used = {
-        str(item.get("type"))
-        for page in pages.values()
-        for item in page.get("content") or []
-        if isinstance(item, dict)
-    }
+    used = {str(item.get("type")) for _route, item in site_components({"pages": pages, "shell": shell})}
     return {
         **dict(base),
         "pages": pages,
@@ -728,7 +750,6 @@ def saved_line(
 #: (ids may contain dots), and only when the site has no such section is it "<id>.<field>", split at
 #: the LAST dot.
 _TARGET_ROUTE = re.compile(r"/(?:[a-z0-9][a-z0-9-]*)?")
-_SHELL_PARTS = ("header", "footer")
 
 
 def _is_site_part(site: Mapping[str, Any] | None, route: str, part_id: str) -> bool:
@@ -736,8 +757,7 @@ def _is_site_part(site: Mapping[str, Any] | None, route: str, part_id: str) -> b
     if site is None:
         return False
     if route == "shell":
-        shell = site.get("shell")
-        return part_id in _SHELL_PARTS and isinstance(shell, Mapping) and isinstance(shell.get(part_id), Mapping)
+        return part_id in _SHELL_PARTS and shell_entry(site.get("shell"), part_id) is not None
     content = (site_pages_of(site).get(route) or {}).get("content")
     return any(
         isinstance(item, Mapping) and isinstance(item.get("props"), Mapping) and item["props"].get("id") == part_id

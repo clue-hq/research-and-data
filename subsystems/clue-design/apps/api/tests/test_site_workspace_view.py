@@ -265,3 +265,17 @@ def test_search_candidates_are_the_kits_and_the_librarys_images() -> None:
                "asset_old": {"record": {"kind": "raster_image", "status": "archived"}}}
     candidates = view.search_candidates(kit, library)
     assert {k: v["origin"] for k, v in candidates.items()} == {"asset_logo": "brand_kit", "asset_photo": "library"}
+
+
+def test_pinned_clones_include_the_shell(monkeypatch) -> None:
+    """Plan 6: a template used only by the header, no longer offered, still draws and publishes."""
+
+    row = {"fragment_id": _frag("tmpl"), "section_role": "site_header", "label": "Header template"}
+    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html="<header></header>", css="", slot_manifest={}, row=row))
+    site = {"pages": {"/": {"content": []}}, "shell": {
+        "header": {"type": "ClonedSection", "props": {"id": "header", "fragmentId": _frag("tmpl")}},
+        "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "©"}},
+    }}
+    [clone] = view.pinned_site_clones(site, SimpleNamespace(storage=None, workspace_id="ws"), listed=set())
+    assert clone["id"] == _frag("tmpl") and clone["in_catalog"] is False

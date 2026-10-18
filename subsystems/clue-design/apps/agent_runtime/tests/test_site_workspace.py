@@ -394,3 +394,32 @@ def test_the_site_summary_reads_a_buttons_words_and_new_tab(tmp_path: Path) -> N
     assert '   - button "Book a demo" (bold "a demo") → https://garnerhealth.com/demo, new tab' in text
     assert ('button "Request the analysis" ("the analysis" styled by hand as cta.label~1) → '
             'https://garnerhealth.com/provider-impact-analysis, new tab') in text
+
+
+# Site element inspector, plan 6 (ruling R1): the header and footer are section entries.
+def test_read_site_files_pins_a_shell_agent_section(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    site = garner_site()
+    ws.write_site_files(workspace, site)
+    shell = json.loads((workspace / "shell.json").read_text())
+    shell["header"] = {"type": "SiteHeaderAcme", "props": {"id": "header", "surface": "page"}}
+    (workspace / "shell.json").write_text(json.dumps(shell))
+    sections = {"SiteHeaderAcme": SiteSection(name="SiteHeaderAcme", digest="f" * 64, props_schema={}, module_js="", css="")}
+    read = ws.read_site_files(workspace, site, sections)
+    assert read["agent_sections"] == {"SiteHeaderAcme": "f" * 64}
+
+
+def test_site_components_walks_the_pages_then_the_shell() -> None:
+    site = garner_site()
+    walked = list(ws.site_components(site))
+    assert walked[-2:] == [("shell", site["shell"]["header"]), ("shell", site["shell"]["footer"])]
+    assert all(route != "shell" for route, _ in walked[:-2]) and len(walked) > 2
+    old = {**site, "shell": {"header": {"preparedFor": "SCSD"}, "footer": {"legal": "©"}}}
+    assert all(route != "shell" for route, _ in ws.site_components(old)), "an old-shape shell is no section"
+
+
+def test_a_shell_target_reads_its_entry() -> None:
+    site = garner_site()
+    assert ws._is_site_part(site, "shell", "header")
+    assert not ws._is_site_part({**site, "shell": {"header": {"preparedFor": "x"}, "footer": {}}}, "shell", "header")
