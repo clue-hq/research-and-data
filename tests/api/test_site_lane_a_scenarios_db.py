@@ -135,19 +135,26 @@ def _site(*, with_dotted: bool) -> dict[str, Any]:
         "id": SITE_ID,
         "title": "Syracuse",
         "theme": {},
+        # Plan 6: the header and footer are section entries, {"type", "props"}.
         "shell": {
             "header": {
-                "id": "header",
-                "preparedFor": ACCOUNT_NAME,
-                "accountLogo": "",
-                "ctaLabel": "Request the analysis",
-                "ctaHref": "/analysis",
+                "type": "SiteHeader",
+                "props": {
+                    "id": "header",
+                    "accountLine": f"Prepared for {ACCOUNT_NAME}",
+                    "accountLogo": "",
+                    "ctaLabel": "Request the analysis",
+                    "ctaHref": "/analysis",
+                },
             },
             "footer": {
-                "id": "footer",
-                "legal": "© 2026. Prepared for Syracuse City School District.",
-                "privacyHref": "https://example.com/privacy",
-                "termsHref": "https://example.com/terms",
+                "type": "SiteFooter",
+                "props": {
+                    "id": "footer",
+                    "legal": "© 2026. Prepared for Syracuse City School District.",
+                    "privacyHref": "https://example.com/privacy",
+                    "termsHref": "https://example.com/terms",
+                },
             },
         },
         "pages": {

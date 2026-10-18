@@ -801,6 +801,7 @@ class Settings(BaseSettings):
         "x-ai/grok-4.6": 500_000,
         "x-ai/grok-4.7": 500_000,
         "meta/muse-spark-1.3": 1_048_576,
+        "openai/gpt-6.1-sol": 1_050_000,
     }
     # Seconds a streamed agent model call may wait for its FIRST chunk before the next model is
     # tried (production 2026-10-04: grok-4.6 sent nothing for 300 s). 0 = no first-chunk deadline;

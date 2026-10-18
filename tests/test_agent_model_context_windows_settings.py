@@ -24,6 +24,7 @@ DEFAULT = {
     "x-ai/grok-4.6": 500_000,
     "x-ai/grok-4.7": 500_000,
     "meta/muse-spark-1.3": 1_048_576,
+    "openai/gpt-6.1-sol": 1_050_000,
 }
 
 
