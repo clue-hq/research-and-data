@@ -294,7 +294,7 @@ footer.
 | 3 | Click a button and edit everything about it | Built 2026-10-18 (Tasks 1–7, 9 and the site.md part of 8); live-checked on Garner (Carmel Clay: header and CTA band buttons) and Conduit (Oliver Hotels: a copied hero button), both restored to their starting content; end-of-plan review done 2026-10-18 and all 11 findings fixed; skill text approved and written 2026-10-18; frontend `build` owed with the lane stack down |  `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-3-buttons.md` |
 | 4 | Click any box (section, card, row, div) and style or move it | Finished 2026-10-18: built, reviewed (1 Critical, 6 Important fixed; 8 Minor deferred), skill text approved and written; live-checked on Conduit (Oliver Hotels: a copied card restyled, centred and moved, header logo hidden and shown) and Garner (Carmel Clay on kit v7: Feature split's own box padding, a heading's fixed-place note, the footer's link group alignment note and move), both undone back to their starting versions (stored sites equal); Clue has no microsite in the lane | `docs/superpowers/plans/2026-10-18-site-element-inspector-plan-4-containers.md` |
 | 5 | Click an image and set its fit, alt text and corners | Finished 2026-10-18: built, reviewed (3 Important and 1 Minor fixed; 8 Minor deferred), skill text approved and written; live-checked on Conduit (Oliver Hotels: a copied image's alt text with quotes, & and <>, 24 px corners, replaced from the library through its slot) and Garner (Carmel Clay: the Feature split photo's alt text and a library replacement), both undone back to their starting versions (stored sites equal); Clue has no microsite in the lane | `docs/superpowers/plans/2026-10-18-site-element-inspector-plan-5-images.md` |
-| 6 | Headers and footers as editable templates, changed by the marketer and the agent like any section | Not written (founder 2026-10-17: build it as plan 6) | — |
+| 6 | Headers and footers as editable templates, changed by the marketer and the agent like any section | Design written 2026-10-18, awaiting founder review; plan not written | `docs/superpowers/specs/2026-10-18-site-header-footer-templates-design.md` |
 
 ### 7.2 What each plan covers
 
@@ -373,6 +373,14 @@ site document, the editor and publishing treat the header and footer.)
   in place, like any section; saved, undoable and published the same way.
 - Agent-written header code can use placeholders for the seller's logo, the account's logo and the
   account's name, filled the same way templates fill them.
+- Its design (2026-10-18) is the authority for its scope:
+  `docs/superpowers/specs/2026-10-18-site-header-footer-templates-design.md`. In short: one shared
+  header and footer per site, stored as section entries; one header and one footer template per brand
+  kit derived at extraction from the seller's own top bar and footer, made ABM-focused, no approval gate;
+  the agent may change them or write its own on-brand header; account name and logo are filled in once
+  at site start (live markers and per-account copies come later with site templating); a compact header
+  on phones; see-through over the hero and sticky as header properties; the older ABM pair stays offered
+  until the founder retires it.
 - Everything plans 1–5 built (selecting, styling, typing in place, links, buttons, boxes, images)
   works in the header and footer because they are sections.
 
@@ -431,6 +439,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 
 ### 7.7 Change log
 
+- 2026-10-18: plan 6's design written (`docs/superpowers/specs/2026-10-18-site-header-footer-templates-design.md`) from the founder conversation and builder-checked. Founder answers: header and footer templates derived per brand kit from the seller's own, no approval gate; account name and logo filled in once at site start (live markers and per-account copies wait for site templating); compact header on phones, no drawer; the older ABM pair stays offered until the founder retires it. Awaiting the founder's review of the design; plan 6 not written.
 - 2026-10-18: plan 5 finished and live-checked. The image panel caught up by itself after each undo (the picture and alt text came back), and the Layers row and panel title took the new alt text.
 - 2026-10-18: plan 5's end-of-plan review fixed: the image panel catches up after an undo and when a picture's file loads; a picture whose file has not loaded keeps Fit live; an agent image is replaceable only through the prop that holds its own file; a backslash in a copied image's alt text survives. Founder approved plan 5's skill text; written.
 - 2026-10-18: plan 5 built. Found while building: the HTML parser escapes only quotes in an attribute, so the clone filler escapes `&`, `<` and `>` in alt text itself; an image slot filled on a `<picture>`'s `<img>` also removes the picture's `<source>` elements, which would otherwise be chosen over the new picture.
