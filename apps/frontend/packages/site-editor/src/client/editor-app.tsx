@@ -50,11 +50,26 @@ function selectionScope(_target: string, componentId: string): Element | null {
   return document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`);
 }
 
-/** Marks an element's canvas outline. A section, and its background (its own outermost box), span the
- * canvas's width, so theirs is drawn inside their edges ("inset", styles.css). */
-function markOutline(element: Element, attribute: string, scope: Element | null): void {
-  const inset = scope !== null && (element === scope || sectionBoxOf(scope, window)?.outer === element);
-  element.setAttribute(attribute, inset ? "inset" : "true");
+/** Marks an element's canvas outline and returns the element that carries the mark. The outline of a
+ * section, or of its background (its own outermost box), is drawn by the section's wrapper as a layer
+ * over everything in the section (styles.css, founder 2026-10-19): a CSS outline on either is painted
+ * under a copied section's positioned layers (live check: Oliver's copied hero showed none). */
+function markOutline(element: Element, attribute: string, scope: Element | null): Element {
+  const drawnByWrapper = scope !== null && (element === scope || sectionBoxOf(scope, window)?.outer === element);
+  if (!scope || !drawnByWrapper) {
+    element.setAttribute(attribute, "true");
+    return element;
+  }
+  const at = scope.getBoundingClientRect();
+  const box = element.getBoundingClientRect();
+  const name = attribute === ELEMENT_SELECTED ? "selected" : "hovered";
+  const style = (scope as HTMLElement).style;
+  style.setProperty(`--clue-${name}-top`, `${box.top - at.top}px`);
+  style.setProperty(`--clue-${name}-left`, `${box.left - at.left}px`);
+  style.setProperty(`--clue-${name}-width`, `${box.width}px`);
+  style.setProperty(`--clue-${name}-height`, `${box.height}px`);
+  scope.setAttribute(attribute, "section");
+  return scope;
 }
 
 /** Any computed colour as #RRGGBB: rgb() directly, anything else (oklch, color()) through a canvas,
@@ -440,13 +455,14 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     // pointer, found exactly as the click finds it. Worked out once per frame, and only when the pointer
     // is over another node or has moved within a section's blank space.
     let hovered: Element | null = null;
+    let marked: Element | null = null;
     let pending: PointerEvent | null = null;
     let hoverFrame = 0;
     const setHovered = (element: Element | null, scope?: Element) => {
       if (element === hovered) return;
-      hovered?.removeAttribute(ELEMENT_HOVERED);
+      marked?.removeAttribute(ELEMENT_HOVERED);
       hovered = element;
-      if (hovered) markOutline(hovered, ELEMENT_HOVERED, scope ?? null);
+      marked = element ? markOutline(element, ELEMENT_HOVERED, scope ?? null) : null;
     };
     const updateHover = () => {
       hoverFrame = 0;
@@ -515,11 +531,14 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (element) markOutline(element, ELEMENT_SELECTED, scope);
     };
     apply();
+    // The wrapper-drawn outline (a section, a background) is measured: measured again on resize.
+    window.addEventListener("resize", apply);
     const frame = requestAnimationFrame(settle);
     // Once more when a slower redraw has landed: the panel then shows the look a new copy of the site
     // (an undo) drew, not the one before it (the controller posts only when the look changed).
     const later = setTimeout(() => controller.refreshSelection(), 250);
     return () => {
+      window.removeEventListener("resize", apply);
       cancelAnimationFrame(frame);
       clearTimeout(later);
     };

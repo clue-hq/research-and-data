@@ -35,9 +35,33 @@ html, body, #root { height: 100%; margin: 0; }
   outline: 1.5px dashed var(--puck-color-azure-04) !important;
   outline-offset: 2px !important;
 }
-/* A section and its background (founder 2026-10-19) span the canvas: their outline is drawn inside. */
-[data-clue-el-selected="inset"],
-[data-clue-el-hovered="inset"]:not([data-clue-el-selected]) { outline-offset: -2px !important; }
+/* A section and its background (founder 2026-10-19): the section's wrapper draws their outline as a
+   layer over everything in the section, at the box the frame measured (editor-app markOutline). A CSS
+   outline on either is painted under a copied section's positioned layers. */
+[data-puck-component][data-clue-el-selected="section"],
+[data-puck-component][data-clue-el-hovered="section"] { outline: none !important; }
+[data-puck-component][data-clue-el-selected="section"]::after,
+[data-puck-component][data-clue-el-hovered="section"]::before {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+[data-puck-component][data-clue-el-selected="section"]::after {
+  top: var(--clue-selected-top, 0);
+  left: var(--clue-selected-left, 0);
+  width: var(--clue-selected-width, 100%);
+  height: var(--clue-selected-height, 100%);
+  border: 2px solid var(--puck-color-azure-04);
+}
+[data-puck-component][data-clue-el-hovered="section"]::before {
+  top: var(--clue-hovered-top, 0);
+  left: var(--clue-hovered-left, 0);
+  width: var(--clue-hovered-width, 100%);
+  height: var(--clue-hovered-height, 100%);
+  border: 1.5px dashed var(--puck-color-azure-04);
+}
 /* Ours replaces Puck's own section outline and hover tint. */
 [class*="_DraggableComponent-overlay_"] { outline: none !important; background: none !important; }
 
