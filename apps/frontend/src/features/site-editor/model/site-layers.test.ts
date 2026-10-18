@@ -95,3 +95,31 @@ test("a button is listed with its section's elements, drawn as a box (plan 3)", 
   const button = rows.find((row) => row.elementKey === "button");
   assert.deepEqual([button?.icon, button?.active, button?.depth], ["rectangle", true, 1]);
 });
+
+// Plan 4: Layers is the selected section's tree: boxes, texts, buttons and images nested by parent,
+// boxes by their names, hidden header and footer parts marked.
+test("Layers nests boxes, texts and images by parent, names boxes and marks hidden parts", () => {
+  const elements = [
+    { key: "stats", kind: "container" as const, label: "Grid", parent: null },
+    { key: "stats.0", kind: "container" as const, label: "Card", parent: "stats" },
+    { key: "stats.0.value", kind: "text" as const, label: "7%", parent: "stats.0" },
+    { key: "image", kind: "image" as const, label: "Image", parent: null },
+    { key: "source", kind: "text" as const, label: "Source", parent: null },
+  ];
+  const rows = siteLayerRows({ cloneLabels, route: "/", selection: { componentId: "proof", target: "/", elementKey: "stats.0", elements }, site });
+  assert.deepEqual(
+    rows.filter((row) => row.elementKey).map((row) => [row.label, row.depth, row.icon, row.active]),
+    [
+      ["Grid", 1, "div", false],
+      ["Card", 2, "div", true],
+      ["7%", 3, "type", false],
+      ["Image", 1, "image", false],
+      ["Source", 1, "type", false],
+    ],
+  );
+  const header = siteLayerRows({
+    cloneLabels, route: "/", site,
+    selection: { componentId: "header", target: "shell", elementKey: null, elements: [{ key: "logo", kind: "image", label: "Logo", parent: "brand", hidden: true }, { key: "brand", kind: "container", label: "Row", parent: null }] },
+  });
+  assert.ok(header.some((row) => row.label === "Logo (hidden)" && row.depth === 2), JSON.stringify(header));
+});

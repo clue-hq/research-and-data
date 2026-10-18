@@ -1,5 +1,5 @@
 import { EDITS_PROP, editsOf, withStyleOverride, type StyleOverride } from "@clue/site-kit/edits";
-import type { ElementSelection, ElementSummary, FieldDescription } from "@clue/site-kit/editor-protocol";
+import type { ElementSelection, ElementSummary, FieldDescription, SectionBox } from "@clue/site-kit/editor-protocol";
 import { canonicalJson, componentProps, getAtPath, pageFor, setAtPath, withComponentProps } from "@clue/site-kit/editor-site";
 import { retypeRich, richText, styleAt, styleWords } from "@clue/site-kit/rich";
 import type { SiteDocument } from "@clue/site-kit/site-document";
@@ -16,8 +16,10 @@ export interface SiteSelection {
   target: string;
   /** The selected text element of the section (site element inspector), or null for the section. */
   element: ElementSelection | null;
-  /** The section's text elements, for Layers. */
+  /** The section's elements, for Layers (plan 4: a tree, by each element's parent). */
   elements: ElementSummary[];
+  /** Plan 4: the section's own box, when the section itself is selected (else null). */
+  sectionBox?: SectionBox | null;
 }
 
 /** Everything the dock draws, as data and callbacks (presentation never reaches the session). */
@@ -63,6 +65,16 @@ export interface SiteInspectorBinding {
   linkState: LinkRowState;
   pages: readonly { route: string; title: string }[];
   onLinkCommit: (change: LinkChange) => string | null;
+  /** Plan 4: Arrange for the selected element (null when it has no neighbours), and one move (one save). */
+  arrange: { canUp: boolean; canDown: boolean; note: string | null } | null;
+  onMove: (direction: "up" | "down") => void;
+  /** Plan 4: Hide for a header or footer part (null for anything else), and one change (one save). */
+  hide: { hidden: boolean } | null;
+  onHideCommit: (hidden: boolean) => void;
+  /** Plan 4: the section's own box when the section is selected (ruling R2), and the manual styling of
+   * its outer and inner boxes (each styled through onStyleCommit with its own key). */
+  sectionBox: SectionBox | null;
+  sectionBoxOverrides: { outer: StyleOverride | null; inner: StyleOverride | null };
 }
 
 /** One committed field value → the edited site and the component's whole new props. */
@@ -255,4 +267,16 @@ export function siteInspectorTitle(site: SiteDocument | null, route: string, sel
   if (selectedRow) return selectedRow.label;
   const title = site ? pageFor(site, route)?.root.props.title : undefined;
   return title && title.trim() ? title : route;
+}
+
+/** Plan 4: the manual styling of the selected section's own box, outer and inner. */
+export function sectionBoxOverridesOf(
+  site: SiteDocument | null,
+  selection: { componentId: string; target: string; sectionBox?: SectionBox | null } | null,
+): { outer: StyleOverride | null; inner: StyleOverride | null } {
+  const box = selection?.sectionBox;
+  const props = site && selection && box ? componentProps(site, selection.target, selection.componentId) : null;
+  if (!props || !box) return { inner: null, outer: null };
+  const edits = editsOf(props);
+  return { inner: edits[box.inner.key] ?? null, outer: edits[box.outer.key] ?? null };
 }

@@ -21,6 +21,7 @@ import {
   siteInitKey,
 } from "../model/site-frame-sync";
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
+import { arrangeState, commitHidden, commitMove, hideState } from "../model/site-arrange";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
   EMPTY_ROUTE_HISTORY,
@@ -41,6 +42,7 @@ import {
   wordsOverride,
   wordsUnavailableReason,
   elementOverrideOf,
+  sectionBoxOverridesOf,
   sitePalette,
   siteInspectorTitle,
   type SiteInspectorBinding,
@@ -218,6 +220,7 @@ export function useSiteEditingSession({
           element: message.payload.element ?? null,
           elements: message.payload.elements ?? [],
           fields: message.payload.fields,
+          sectionBox: message.payload.sectionBox ?? null,
           target: message.payload.route,
         });
         return;
@@ -446,6 +449,42 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // Plan 4: one move among neighbours (one set_props, one save); the selection follows the element
+  // to its new key (an array item's key is its place).
+  const commitMoveCb = useCallback(
+    (direction: "up" | "down") => {
+      const current = copy.get();
+      const arrange = activeSelection?.element?.arrange;
+      if (!activeSelection || !arrange || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitMove(current.site, activeSelection, arrange, direction, load.brand);
+      if (!edit) return;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: move ${arrange.item} ${direction}`);
+      if (edit.key !== activeSelection.element?.key) {
+        post("select", { componentId: activeSelection.componentId, elementKey: edit.key, route: activeSelection.target }, current.documentId);
+      }
+    },
+    [activeDocumentId, activeSelection, copy, editing, load.brand, locked, post, save],
+  );
+  // Plan 4: hiding or showing a header or footer part, the same path.
+  const commitHide = useCallback(
+    (hidden: boolean) => {
+      const current = copy.get();
+      const key = activeSelection?.element?.key;
+      if (!activeSelection || !key || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitHidden(current.site, activeSelection, key, hidden);
+      if (!edit) return;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: ${hidden ? "hide" : "show"} ${key}`);
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
   const palette = useMemo(
     () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
@@ -651,6 +690,12 @@ export function useSiteEditingSession({
     linkState: linkRowState(currentSite?.site ?? null, activeSelection),
     pages: currentSite ? sitePages(currentSite.site) : [],
     onLinkCommit: commitLink,
+    arrange: arrangeState(currentSite?.site ?? null, activeSelection),
+    onMove: commitMoveCb,
+    hide: hideState(currentSite?.site ?? null, activeSelection),
+    onHideCommit: commitHide,
+    sectionBox: activeSelection && !activeSelection.element ? (activeSelection.sectionBox ?? null) : null,
+    sectionBoxOverrides: sectionBoxOverridesOf(currentSite?.site ?? null, activeSelection),
   };
 
   // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.

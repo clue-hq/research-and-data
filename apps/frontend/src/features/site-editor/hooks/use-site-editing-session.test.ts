@@ -534,3 +534,33 @@ test("while the agent-run lock holds, a style commit sends and saves nothing", a
   assert.equal(mounted.latest().inspector.disabled, true);
   await mounted.unmount();
 });
+
+// Plan 4: a move among neighbours is one save and one undo step, and the selection follows the moved
+// element to its new key; Hide on a header part is one save too.
+test("moving a stat is one save and one undo step, and the selection follows it", async () => {
+  const start = startSite();
+  const cta = start.pages["/"].content.find((item) => item.props.id === "cta")!;
+  cta.props = { ...cta.props, stats: [{ value: "7%", label: "less" }, { value: "2x", label: "more" }] };
+  const server = fakeServer(start);
+  const mounted = await mountSiteSession(server);
+  const arrangeOf = (key: string) => ({ item: key, parent: "stats", siblings: ["stats.0", "stats.1"] });
+  const BOX = { fill: "", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 400 };
+  mounted.frame.attachDescriber((_target, _componentId, key) => ({
+    element: key?.startsWith("stats.")
+      ? { key, kind: "container", label: "Card", computed: TYPO, container: { ...BOX, gap: 0, layout: "text", contentAlign: "start", name: "Card" }, arrange: arrangeOf(key) }
+      : null,
+    elements: [{ key: "stats.0", kind: "container", label: "Card", parent: null }, { key: "stats.1", kind: "container", label: "Card", parent: null }],
+  }));
+  mounted.frame.elementClicked("/", "cta", "stats.1");
+  await selectCta(mounted);
+  const inspector = mounted.latest().inspector;
+  assert.deepEqual(inspector.arrange, { canUp: true, canDown: false, note: null });
+  const undo = server.undo.length;
+  inspector.onMove("up");
+  await mounted.settle(12);
+  const stored = server.site.pages["/"].content.find((item) => item.props.id === "cta")!;
+  assert.deepEqual(stored.props.stats, [{ value: "2x", label: "more" }, { value: "7%", label: "less" }]);
+  assert.equal(server.undo.length, undo + 1, "one save, one undo step");
+  assert.equal(mounted.latest().inspector.element?.key, "stats.0", "the selection follows the moved stat");
+  await mounted.unmount();
+});

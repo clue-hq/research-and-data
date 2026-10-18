@@ -3,19 +3,23 @@ import { pageFor } from "@clue/site-kit/editor-site";
 import type { ElementSummary } from "@clue/site-kit/editor-protocol";
 import { SHELL_TARGET, type SiteDocument } from "@clue/site-kit/site-document";
 
-/** One Layers row: the header, a page section, or the footer — or (depth 1) one text element of the
- * selected one. */
+/** One Layers row: the header, a page section, or the footer — or (depth 1 and deeper, plan 4) one
+ * element of the selected one, nested by the box it sits in. */
 export interface SiteLayerRow {
   active: boolean;
   componentId: string;
-  /** Depth-1 rows only: the text element this row selects. */
+  /** Element rows only: the element this row selects. */
   elementKey?: string;
-  depth?: 0 | 1;
-  icon: "div" | "layout-template" | "type" | "rectangle";
+  depth?: number;
+  icon: "div" | "image" | "layout-template" | "type" | "rectangle";
   key: string;
   label: string;
   target: string;
 }
+
+/** Each element kind's Layers icon: a button (plan 3) and a box (plan 4) show as boxes, as in the web
+ * inspector's layers. */
+const ELEMENT_ICON: Record<ElementSummary["kind"], SiteLayerRow["icon"]> = { button: "rectangle", container: "div", image: "image", text: "type" };
 
 // site-kit's own section labels (sections.tsx), never its Puck-panel labels "(agent)" / "Cloned section".
 const BUILT_IN_LABELS: Readonly<Record<string, string>> = {
@@ -59,21 +63,29 @@ export function siteLayerRows({
   // The section row is active while the section itself is selected; with an element selected, the
   // element's row is.
   const isActive = (target: string, componentId: string) => isSelected(target, componentId) && selectedElement === null;
-  /** The selected section's text elements and buttons, right under its row. */
-  const elementRows = (target: string, componentId: string): SiteLayerRow[] =>
-    isSelected(target, componentId)
-      ? (selection?.elements ?? []).map((element) => ({
-          active: element.key === selectedElement,
-          componentId,
-          depth: 1 as const,
-          elementKey: element.key,
-          // A button (plan 3) shows as a box, as in the web inspector's layers.
-          icon: element.kind === "button" ? ("rectangle" as const) : ("type" as const),
-          key: `${target}#${componentId}~${element.key}`,
-          label: element.label,
-          target,
-        }))
-      : [];
+  /** The selected section's elements right under its row, each one deeper than the box it sits in. */
+  const elementRows = (target: string, componentId: string): SiteLayerRow[] => {
+    if (!isSelected(target, componentId)) return [];
+    const elements = selection?.elements ?? [];
+    const parentOf = new Map(elements.map((element) => [element.key, element.parent ?? null]));
+    const depthOf = (key: string): number => {
+      let depth = 1;
+      // Bounded by the list's length, so a parent loop in a bad message cannot hang the dock.
+      for (let up = parentOf.get(key) ?? null; up !== null && depth <= elements.length; up = parentOf.get(up) ?? null) depth += 1;
+      return depth;
+    };
+    return elements.map((element) => ({
+      active: element.key === selectedElement,
+      componentId,
+      depth: depthOf(element.key),
+      elementKey: element.key,
+      icon: ELEMENT_ICON[element.kind],
+      key: `${target}#${componentId}~${element.key}`,
+      // A hidden header or footer part (plan 4) stays listed, so it can be shown again.
+      label: element.hidden ? `${element.label} (hidden)` : element.label,
+      target,
+    }));
+  };
   const shellRow = (part: "header" | "footer"): SiteLayerRow => ({
     active: isActive(SHELL_TARGET, part),
     componentId: part,
