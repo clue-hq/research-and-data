@@ -28,6 +28,7 @@ import {
   sceneDragPanViewport,
   sceneSelectionOutline,
   sceneTextPaintedBox,
+  selectionStrokesPaintedOutline,
   sceneViewportModel,
   sceneWheelViewport,
   selectionHandleRects,
@@ -995,6 +996,23 @@ test("Plan 4: a text node's outline is the union of its painted lines; the layou
       height: frame.height,
     },
   });
+});
+
+test("2026-10-18: a selected text with a frame strokes only the frame; the letters' outline is hover-only", () => {
+  const outline = {
+    nodeId: "text_proof_stat",
+    x: 10,
+    y: 10,
+    width: 60,
+    height: 20,
+    rotation: 0,
+    frame: { x: 10, y: 10, width: 120, height: 20 },
+  };
+  assert.equal(selectionStrokesPaintedOutline(outline, "selection"), false);
+  assert.equal(selectionStrokesPaintedOutline(outline, "hover"), true);
+  const unframed = { ...outline, frame: null };
+  assert.equal(selectionStrokesPaintedOutline(unframed, "selection"), true);
+  assert.equal(selectionStrokesPaintedOutline(unframed, "hover"), true);
 });
 
 test("Plan 4: a hug box (lines fill it within the rounding contract) draws no frame", () => {

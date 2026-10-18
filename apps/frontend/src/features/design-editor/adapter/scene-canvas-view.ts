@@ -706,6 +706,19 @@ export interface SceneSelectionOutline {
   frame: { x: number; y: number; width: number; height: number } | null;
 }
 
+/** Founder ruling 2026-10-18 (amends R5): whether the overlay strokes the
+ * outline around a text's letters. A SELECTED text that has a dashed frame
+ * shows only that frame — the box its handles resize — because two boxes on
+ * one selection read as two things to resize. The letters' outline stays as
+ * the hover preview, and every selection without a frame strokes its outline
+ * as before (there the outline IS the box). */
+export function selectionStrokesPaintedOutline(
+  outline: SceneSelectionOutline,
+  variant: "selection" | "hover",
+): boolean {
+  return variant === "hover" || outline.frame === null;
+}
+
 /** Plan 4 item F: the layout box may differ from the painted box by taffy's
  * whole-pixel rounding (a hug box sits up to half a pixel under the measured
  * height — `layout.rs` ROUNDING_TOLERANCE); only a larger difference is a
