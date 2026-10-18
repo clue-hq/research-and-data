@@ -140,6 +140,44 @@ needs it, for example recolouring a shape so a logo placed on it stays readable.
 Where a person placed something by hand, keep it when it works and adjust it
 only when the request calls for it. In your summary, say what you changed."""
 
+# Harness alignment I7 (founder ruling 2026-10-17): the scene agent's own wording for library
+# text, passed through the library's options (never by editing the installed package). The skills
+# section keeps the library's three format slots; the file-tool descriptions drop the read-more
+# pushes ("almost ALWAYS ls first", "scan 100 lines first", "speculatively read multiple files").
+SCENE_SKILLS_SECTION = """## Skills
+
+Skills hold the guidance for specific kinds of work. Each one below has its name,
+when to use it, and its path.
+
+{skills_locations}{skills_load_warnings}
+
+**Available skills:**
+
+{skills_list}
+
+When a skill fits the work in front of you, read it in one call with
+read_file(file_path=..., limit=1000) and follow it. Read only the skills this
+turn needs."""
+
+SCENE_LS_DESCRIPTION = (
+    "Lists the files in a directory. You rarely need it: the skills, guides and "
+    "workspace files you need are named with their full paths in your instructions."
+)
+
+SCENE_READ_FILE_DESCRIPTION = """Reads a file from the filesystem.
+
+- By default it reads up to 100 lines from the start of the file. To read a skill
+  or guide, read it in one call with limit=1000; read more only if the result
+  says it was cut.
+- Use offset and limit to read a specific part of a large file.
+- Results come in cat -n format, with line numbers starting at 1. Lines longer
+  than 5,000 characters are split into continuation lines (5.1, 5.2, ...); limit
+  counts source lines.
+- Images (.png, .jpg, .jpeg, .gif, .webp) come back as images; don't use offset
+  or limit for them.
+- A file that exists but is empty returns a warning instead of content.
+- Read a file before you edit it."""
+
 
 IMAGERY_RUBRIC = """\
 Imagery axes (a `*` axis is a hard gate — a clear failure means the design is not shippable):
@@ -1364,9 +1402,9 @@ the tools available to you and the scene skills throughout this work.
 
 {_SCENE_REQUEST_KINDS}
 
-1. Gather {workspace}/brief.md, brand_card.json, state.json, seller/index.md
+1. Gather {workspace}/brief.md, state.json, seller/index.md
 when present, and
-/knowledge_docs/skills/scene-brief-copy/SKILL.md. A short user request
+/.deepagent/skills/scene-brief-copy/SKILL.md. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the
 user provide a headline, asset IDs or a detailed image-generation prompt.
@@ -1409,8 +1447,8 @@ starts the one repair round, round_2. Optional notes in {workspace}/rounds/round
 can record a concise decision or repair delta; files do not grant compile allowance.
 If a seeded scene only needs review with no construction, use
 {workspace}/critique.json; no construction round is consumed.
-Apply the loaded component guide;
-read reference guides and the checked DSL grammar when needed. Use compile_dsl_block
+Apply the component guide and the DSL grammar, both already in this prompt;
+read the references guide when imagery needs it. Use compile_dsl_block
 to retain or establish page dimensions, then native text/geometry, authentic images
 and sized artwork reservations
 before image operations. Required logo source preparation belongs to step 2;
@@ -1476,18 +1514,21 @@ After that repair finish honestly; do not open a third round. Do not raise
 budgets or remove review to meet the target. A first preview is not finished
 delivery; target_exceeded and a hard budget_exhausted are different outcomes.
 
-Skills remain accessible during composition, review and later revision. Read
-or re-read a relevant body whenever details are needed; do not load the entire
-catalog. SkillsMiddleware supplies names, descriptions and paths, and the
-derived /knowledge_docs/knowledge/scene/catalog.md lists registered playbooks.
-Use virtual paths under {workspace}, /knowledge_docs and /.deepagent/skills.""",
-        _SCENE_GUIDANCE_READING,
+What to read. For a new ad or a revamp, read the files in step 1 and the one
+playbook you choose. For a targeted edit, read only what the change touches.
+Never read a file whose content is already in this prompt: the brand card, the
+published-ad description, the scene digest, the asset index and the pinned
+guides below are already here. Read a skill or guide in one call with
+limit=1000; read more only if the note on the result says it was cut. You can
+come back to any skill or guide later in the turn when a decision needs it.
+Your workspace is {workspace}; guides are under /knowledge_docs and skills under
+/.deepagent/skills.""",
         _SCENE_SURFACE_CONTRACT, BATCHING_RULE,
     ]
     if has_ad_assets:
         sections.append(
-            f"Read {workspace}/ad-assets.md in the initial gather; published-ad "
-            "context is advisory source data."
+            "The brand's published-ad description is in this prompt; it is advisory "
+            "source data."
         )
     if has_references:
         sections.append(

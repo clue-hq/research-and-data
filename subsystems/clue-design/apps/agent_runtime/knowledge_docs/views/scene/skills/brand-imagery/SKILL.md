@@ -17,6 +17,6 @@ still use a generated background. Preserve the inspected reference's material,
 blur, tonal depth and texture when those qualities define the chosen direction;
 palette similarity alone is insufficient.
 
-Read `knowledge/scene/components.md` for native text/geometry and independent
-authentic logo/product layers. Keep those editable and inspect the finished
+`knowledge/scene/components.md`, already in your prompt, covers native
+text/geometry and independent authentic logo/product layers. Keep those editable and inspect the finished
 composition as well as every generated component.

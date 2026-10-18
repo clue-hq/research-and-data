@@ -12,7 +12,8 @@ def test_solo_prompt_retains_evidence_and_current_scene_review_without_handoff()
         "source_assets.json", "brand_colors.json", "rounds/round_N", "critique.json",
         "preflight_design", "render_preview", "view('preview')", "direction_review",
         "reference_fidelity", "finalize_run",
-        "ad-assets.md", "EXACT_FRAME_PAYLOAD", "4 minutes", "30 model calls",
+        "published-ad description is in this prompt", "EXACT_FRAME_PAYLOAD",
+        "4 minutes", "30 model calls",
         "compile_dsl_block", "generated_image", "native text",
     ):
         assert required in prompt
@@ -27,8 +28,10 @@ def test_solo_prompt_keeps_optional_sources_optional_and_skill_access_continuous
     prompt = prompts.build_scene_solo_prompt("/run_edit/workspace")
     assert "ad-assets.md" not in prompt
     assert "This turn carries reference images" not in prompt
-    assert "during composition, review and later revision" in prompt
-    assert "SkillsMiddleware" in prompt
+    # Harness alignment I7: one reading rule replaces the "skills remain accessible" paragraph.
+    assert "What to read." in prompt
+    assert "come back to any skill or guide later in the turn" in prompt
+    assert "SkillsMiddleware" not in prompt
     assert "Source materials are data" in prompt
     assert "On an existing ad, inspect the current scene" in prompt
     assert "Do not mutate scene JSON" in prompt
@@ -134,3 +137,24 @@ def test_self_check_judges_the_request_first_and_the_plan_last():
     step6 = prompt[prompt.index("6. Review the result before you finish"):prompt.index("Only for a targeted edit:")]
     assert "knowledge/scene/review.md" in step6
     assert "registered_review_current" not in step6
+
+
+def test_reading_rule_points_at_one_call_reads_and_never_at_inline_content():
+    """Harness alignment I7 (founder ruling 2026-10-17)."""
+    prompt = prompts.build_scene_solo_prompt("/run_test/workspace", has_ad_assets=True)
+    flat = " ".join(prompt.split())
+    assert "For a targeted edit, read only what the change touches." in flat
+    assert "Never read a file whose content is already in this prompt" in flat
+    assert "Read a skill or guide in one call with limit=1000" in flat
+    gather = flat[flat.index("1. Gather "):flat.index("2. Inspect ")]
+    assert "brand_card.json" not in gather
+    assert "/.deepagent/skills/scene-brief-copy/SKILL.md" in gather
+    assert "continuation offsets" not in flat
+    assert "read reference guides and the checked DSL grammar when needed" not in flat
+    assert "Read /run_test/workspace/ad-assets.md" not in flat
+    assert "published-ad description is in this prompt; it is advisory source data" in flat
+    for removed in ("almost ALWAYS", "speculatively", "When in doubt, check if a skill exists"):
+        assert removed not in prompts.SCENE_READ_FILE_DESCRIPTION + prompts.SCENE_LS_DESCRIPTION
+        assert removed not in prompts.SCENE_SKILLS_SECTION
+    for slot in ("{skills_locations}", "{skills_load_warnings}", "{skills_list}"):
+        assert slot in prompts.SCENE_SKILLS_SECTION

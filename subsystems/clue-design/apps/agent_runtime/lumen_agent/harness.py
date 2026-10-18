@@ -43,6 +43,9 @@ from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .platform_reads import make_platform_read_tools
 from .prompts import (
     SCENE_LOGO_SELECTION_GUIDANCE,
+    SCENE_LS_DESCRIPTION,
+    SCENE_READ_FILE_DESCRIPTION,
+    SCENE_SKILLS_SECTION,
     build_author_prompt,
     build_orchestrator_prompt,
     build_reviewer_prompt,
@@ -352,8 +355,17 @@ def _create_scene_solo_graph(
 
     middleware = [
         TodoListMiddleware(),
-        SkillsMiddleware(backend=backend, sources=skills),
-        FilesystemMiddleware(backend=backend, _permissions=_filesystem_permissions()),
+        # Harness alignment I7: our wording for the skills section and the ls/read_file
+        # descriptions, through the library's own options (scene agent only).
+        SkillsMiddleware(backend=backend, sources=skills, system_prompt=SCENE_SKILLS_SECTION),
+        FilesystemMiddleware(
+            backend=backend,
+            _permissions=_filesystem_permissions(),
+            custom_tool_descriptions={
+                "ls": SCENE_LS_DESCRIPTION,
+                "read_file": SCENE_READ_FILE_DESCRIPTION,
+            },
+        ),
         SceneGuidanceReadMiddleware(backend),
         create_summarization_middleware(model, backend),
         PatchToolCallsMiddleware(),

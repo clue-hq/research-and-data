@@ -173,7 +173,7 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(
     assert first_system.count(component_body) == 1
     initial_gather = first_system.split("1. Gather ", 1)[1].split("2. Inspect ", 1)[0]
     assert component_path not in initial_gather
-    assert "Apply the loaded component guide" in first_system
+    assert "Apply the component guide and the DSL grammar, both already in this prompt" in first_system
     saved = checkpoint.get_tuple(invocation)
     assert saved is not None
     assert saved.checkpoint["channel_values"]["turn_request"] == user_prompt
