@@ -3324,6 +3324,12 @@
   scrollbar-width: thin;
 }
 
+/* Every row keeps its full height and the list scrolls: in a column with a max height the rows
+   would otherwise shrink to fit, squeezing a long layer tree into overlapping rows. */
+.layerList > * {
+  flex-shrink: 0;
+}
+
 .layerRow {
   --layer-depth: 0;
   position: relative;
