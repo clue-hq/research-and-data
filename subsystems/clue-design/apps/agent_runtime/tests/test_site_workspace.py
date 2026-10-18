@@ -342,6 +342,20 @@ def test_the_site_summary_reads_box_edits(tmp_path: Path) -> None:
     assert "- Header styled by hand: logo — hidden" in text
 
 
+def test_the_site_summary_reads_one_sided_padding(tmp_path: Path) -> None:
+    """Live check 2026-10-18: padding may set only its top and bottom, or only its sides."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
+        "id": "padded", "surface": "brand", "heading": "H", "buttonLabel": "Go", "buttonHref": "/",
+        "_edits": {"root.inner": {"padding": {"y": 120}}, "column": {"padding": {"x": 8}}}}})
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert "   - styled by hand: root.inner — padding 120 px top and bottom" in text
+    assert "   - styled by hand: column — padding 8 px left and right" in text
+
+
 def test_the_site_summary_reads_a_buttons_words_and_new_tab(tmp_path: Path) -> None:
     """Site element inspector (plan 3): a button's words as rich text, and whether it opens a new tab."""
     site = garner_site()

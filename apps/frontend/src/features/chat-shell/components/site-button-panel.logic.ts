@@ -81,8 +81,8 @@ export function buttonPanelValues(override: StyleOverride | null, box: ComputedB
     radiusMode: radius === "pill" || (radius === undefined && drawnPill(box)) ? "pill" : Array.isArray(radius) ? "custom" : "number",
     radius: corners[0],
     corners,
-    paddingY: round(padding === undefined ? box.paddingY : typeof padding === "number" ? padding : padding.y),
-    paddingX: round(padding === undefined ? box.paddingX : typeof padding === "number" ? padding : padding.x),
+    paddingY: round(padding === undefined ? box.paddingY : typeof padding === "number" ? padding : (padding.y ?? box.paddingY)),
+    paddingX: round(padding === undefined ? box.paddingX : typeof padding === "number" ? padding : (padding.x ?? box.paddingX)),
     widthMode: width === "fill" ? "fill" : typeof width === "number" ? "fixed" : "fit",
     width: round(typeof width === "number" ? width : box.width),
   };
@@ -166,10 +166,14 @@ export function buttonPanelPatch(override: StyleOverride | null, change: ButtonP
     case "paddingX": {
       const value = size(change.value, BOX_RANGE);
       if (value === null) return null;
-      const y = change.kind === "paddingY" ? value : within(shown.paddingY, BOX_RANGE);
-      const x = change.kind === "paddingX" ? value : within(shown.paddingX, BOX_RANGE);
-      if (String(y) === shown.paddingY && String(x) === shown.paddingX) return base;
-      return { ...base, padding: { y, x } };
+      // Only the side typed is written; the other keeps what the override already sets, or else the
+      // element's own padding (live check, 2026-10-18: a section's side margin narrows on phones).
+      const side = change.kind === "paddingY" ? "y" : "x";
+      if (String(value) === (side === "y" ? shown.paddingY : shown.paddingX)) return base;
+      const current = base.padding;
+      const sides: { y?: number; x?: number } = typeof current === "number" ? { x: current, y: current } : { ...current };
+      sides[side] = value;
+      return { ...base, padding: sides };
     }
     case "widthMode":
       if (change.value === shown.widthMode) return base;

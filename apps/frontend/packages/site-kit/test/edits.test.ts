@@ -271,7 +271,7 @@ test("box properties parse within their ranges and shapes, and refuse anything e
   for (const value of ok) assert.ok(StyleOverrideSchema.safeParse(value).success, JSON.stringify(value));
   const bad = [
     { borderWidth: -1 }, { borderWidth: 201 }, { radius: 300 }, { radius: "round" }, { radius: [1, 2, 3] }, { radius: [1, 2, 3, 400] },
-    { padding: 201 }, { padding: { y: 1 } }, { padding: { y: 1, x: 2, z: 3 } }, { width: 0 }, { width: 2001 }, { width: "half" },
+    { padding: 201 }, { padding: {} }, { padding: { y: 1, x: 2, z: 3 } }, { width: 0 }, { width: 2001 }, { width: "half" },
     { fill: "red" }, { background: { token: "x" } },
   ];
   for (const value of bad) assert.equal(StyleOverrideSchema.safeParse(value).success, false, JSON.stringify(value));
@@ -348,4 +348,12 @@ test("hidden is refused on a page section and accepted on the shell", () => {
     result.errors[0],
     `page.content.0(${id})._edits.logo: hidden is for the header and footer; to drop a part of a section, rewrite the section`,
   );
+});
+
+test("one side of padding (live check, 2026-10-18): only that side is drawn, the other keeps the brand's", () => {
+  assert.ok(StyleOverrideSchema.safeParse({ padding: { y: 24 } }).success);
+  assert.ok(StyleOverrideSchema.safeParse({ padding: { x: 8 } }).success);
+  assert.match(editsCss("s1", { box: { padding: { y: 24 } } }, brand), /\{padding-top:24px !important;padding-bottom:24px !important\}/);
+  assert.match(editsCss("s1", { box: { padding: { x: 8 } } }, brand), /\{padding-left:8px !important;padding-right:8px !important\}/);
+  assert.match(editsCss("s1", { box: { padding: { y: 12, x: 22 } } }, brand), /\{padding:12px 22px !important\}/);
 });

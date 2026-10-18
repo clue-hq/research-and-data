@@ -515,7 +515,13 @@ def _styled_by_hand(edits: object) -> list[str]:
         if isinstance(padding, (int, float)):
             words.append(f"padding {padding:g} px")
         elif isinstance(padding, Mapping):
-            words.append(f"padding {padding.get('y', 0):g} × {padding.get('x', 0):g} px")
+            y, x = padding.get("y"), padding.get("x")
+            if y is not None and x is not None:
+                words.append(f"padding {y:g} × {x:g} px")
+            elif y is not None:
+                words.append(f"padding {y:g} px top and bottom")
+            elif x is not None:
+                words.append(f"padding {x:g} px left and right")
         width = override.get("width")
         if width == "fill":
             words.append("full width")

@@ -41,7 +41,9 @@ test("sizes: numbers within range; anything else refused, never clamped", () => 
   assert.deepEqual(buttonPanelPatch(null, { kind: "radiusPill" }, box), { radius: "pill" });
   assert.deepEqual(buttonPanelPatch(null, { kind: "corner", index: 2, value: "20" }, box), { radius: [6, 6, 20, 6] }, "custom corners start from what is drawn");
   assert.deepEqual(buttonPanelPatch({ radius: "pill" }, { kind: "radiusCustom" }, box), { radius: [6, 6, 6, 6] });
-  assert.deepEqual(buttonPanelPatch(null, { kind: "paddingY", value: "8" }, box), { padding: { y: 8, x: 22 } });
+  // Only the side typed is saved (live check, 2026-10-18): the other keeps the brand's own padding.
+  assert.deepEqual(buttonPanelPatch(null, { kind: "paddingY", value: "8" }, box), { padding: { y: 8 } });
+  assert.deepEqual(buttonPanelPatch({ padding: { y: 8 } }, { kind: "paddingX", value: "30" }, box), { padding: { y: 8, x: 30 } });
   assert.deepEqual(buttonPanelPatch({ padding: 10 }, { kind: "paddingX", value: "30" }, box), { padding: { y: 10, x: 30 } });
   assert.deepEqual(buttonPanelPatch(null, { kind: "widthMode", value: "fill" }, box), { width: "fill" });
   assert.deepEqual(buttonPanelPatch(null, { kind: "widthMode", value: "fixed" }, box), { width: 214 }, "fixed starts at the width drawn");
@@ -64,7 +66,7 @@ test("switching mode starts from what is drawn, within what can be written", () 
   assert.deepEqual(buttonPanelPatch(null, { kind: "corner", index: 0, value: "4" }, pill), { radius: [4, 200, 200, 200] });
   assert.deepEqual(buttonPanelPatch(null, { kind: "widthMode", value: "fixed" }, pill), { width: 2000 });
   assert.deepEqual(buttonPanelPatch(null, { kind: "widthMode", value: "fixed" }, { ...box, width: 0 }), { width: 1 });
-  assert.deepEqual(buttonPanelPatch(null, { kind: "paddingY", value: "10" }, pill), { padding: { y: 10, x: 200 } });
+  assert.deepEqual(buttonPanelPatch(null, { kind: "paddingY", value: "10" }, pill), { padding: { y: 10 } });
   assert.deepEqual(buttonPanelPatch({ radius: 8 }, { kind: "radiusNumber" }, box), { radius: 8 }, "already a number: nothing changes");
 });
 

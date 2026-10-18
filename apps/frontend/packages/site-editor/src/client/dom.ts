@@ -136,8 +136,14 @@ export function elementKeyAt(
   point: { x: number; y: number },
   view?: Pick<Window, "getComputedStyle">,
 ): string | null {
-  // With a view (plan 4), boxes and images too; the section's own box never (ruling R1).
-  const candidates = view ? inspectableElementsIn(scope, view).filter(({ hidden }) => !hidden).map(({ element }) => element) : keyedElementsIn(scope);
+  // With a view (plan 4), boxes and images too; the section's own box never (ruling R1), nor a box
+  // that covers nearly all of it (live check 2026-10-18: a copied hero's full-width padded column),
+  // so blank space selects the section. Those boxes stay in Layers.
+  const candidates = view
+    ? inspectableElementsIn(scope, view)
+        .filter(({ element, hidden, kind }) => !hidden && !(kind === "container" && coversSection(element, scope, view)))
+        .map(({ element }) => element)
+    : keyedElementsIn(scope);
   const hit = asElement(target);
   const button = view && hit ? buttonAround(hit, view) : null;
   if (button && candidates.includes(button)) return validKey(button);
@@ -154,6 +160,17 @@ export function elementKeyAt(
     if (!best || area <= best.area) best = { area, element };
   }
   return best ? validKey(best.element) : null;
+}
+
+/** Shares of the section's box a box must cover to count as the section for a click. */
+const COVER_WIDTH = 0.95;
+const COVER_HEIGHT = 0.85;
+
+/** Whether a box covers nearly all of its section's own box (or of the scope, when it has none). */
+function coversSection(element: Element, scope: Element, view: Pick<Window, "getComputedStyle">): boolean {
+  const section = (sectionBoxOf(scope, view)?.outer ?? scope).getBoundingClientRect();
+  const box = element.getBoundingClientRect();
+  return section.width > 0 && section.height > 0 && box.width >= section.width * COVER_WIDTH && box.height >= section.height * COVER_HEIGHT;
 }
 
 /** What Layers shows for an element: its words, whitespace collapsed, cut at 60 characters. */

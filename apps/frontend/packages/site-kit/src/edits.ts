@@ -65,8 +65,17 @@ export const StyleOverrideSchema = z
     borderWidth: z.number().min(0).max(200).optional(),
     /** px; "pill" (fully round ends); or four corners [topLeft, topRight, bottomRight, bottomLeft]. */
     radius: z.union([z.number().min(0).max(200), z.literal("pill"), z.array(corner).length(4)]).optional(),
-    /** px all round, or vertical and horizontal. */
-    padding: z.union([z.number().min(0).max(200), z.object({ y: z.number().min(0).max(200), x: z.number().min(0).max(200) }).strict()]).optional(),
+    /** px all round, or vertical and/or horizontal: a side left out keeps the element's own padding
+     * (live check, 2026-10-18: typing only the top and bottom no longer fixes the brand's side margin). */
+    padding: z
+      .union([
+        z.number().min(0).max(200),
+        z
+          .object({ y: z.number().min(0).max(200).optional(), x: z.number().min(0).max(200).optional() })
+          .strict()
+          .refine((sides) => sides.y !== undefined || sides.x !== undefined, { message: "padding needs y, x or both" }),
+      ])
+      .optional(),
     /** "fit" (as wide as its content), "fill" (its container's width) or px. */
     width: z.union([z.literal("fit"), z.literal("fill"), z.number().min(1).max(2000)]).optional(),
     // Plan 4 (boxes). The space between a row's or a grid's children.
@@ -261,6 +270,15 @@ export function sizeScaleFrom(
   return headline === 1 && body === 1 ? null : { body, headline, title };
 }
 
+/** Padding as CSS: all round, both sides, or only the side that is set. */
+function paddingCss(padding: StyleOverride["padding"]): [string, string | undefined][] {
+  if (padding === undefined) return [];
+  if (typeof padding === "number") return [["padding", `${padding}px`]];
+  if (padding.y !== undefined && padding.x !== undefined) return [["padding", `${padding.y}px ${padding.x}px`]];
+  if (padding.y !== undefined) return [["padding-top", `${padding.y}px`], ["padding-bottom", `${padding.y}px`]];
+  return [["padding-left", `${padding.x}px`], ["padding-right", `${padding.x}px`]];
+}
+
 const FLEX_ALIGN = { start: "flex-start", center: "center", end: "flex-end" } as const;
 const TEXT_ALIGN = { start: "left", center: "center", end: "right" } as const;
 
@@ -291,7 +309,7 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
     ["border-width", override.borderWidth !== undefined ? `${override.borderWidth}px` : undefined],
     ["border-style", override.borderWidth !== undefined ? "solid" : undefined],
     ["border-radius", radiusCss(override.radius)],
-    ["padding", override.padding === undefined ? undefined : typeof override.padding === "number" ? `${override.padding}px` : `${override.padding.y}px ${override.padding.x}px`],
+    ...paddingCss(override.padding),
     ["width", override.width === undefined ? undefined : override.width === "fit" ? "fit-content" : override.width === "fill" ? "100%" : `${override.width}px`],
     ["gap", override.gap !== undefined ? `${override.gap}px` : undefined],
     ...alignCss(override.contentAlign),

@@ -480,3 +480,27 @@ test("review I4 follow-up: a heading holding Puck's in-place editor (its own blo
   const kinds = Object.fromEntries(inspectableElementsIn(scope, fakeView({}) as unknown as Window).map(({ element, kind }) => [element.id, kind]));
   assert.deepEqual(kinds, { h: "text", q: "text" });
 });
+
+// Live check 2026-10-18: on a real copied hero a full-width column with its own padding covers the
+// section, so blank space in it meant that column; a box covering nearly all of the section's box is
+// part of the section for a click (it stays in Layers, selectable there).
+test("a box covering nearly all of the section is no click target; blank space in it selects the section", () => {
+  const doc = new JSDOM(`
+    <div id="hs" data-puck-component="hero"><div class="clue-section"><div data-lumen-fragment="true">
+      <section id="hsec" data-clue-el="0">
+        <div id="cover" data-clue-el="0.0"><h1 id="ht" data-clue-el="0.0.0">Title</h1>
+          <div id="narrow" data-clue-el="0.0.1"><div id="hcard" data-clue-el="0.0.1.0"><p id="hp" data-clue-el="0.0.1.0.0">Card</p></div><div id="hcard2" data-clue-el="0.0.1.1"><p data-clue-el="0.0.1.1.0">Two</p></div></div>
+        </div>
+      </section>
+    </div></div></div>`).window.document;
+  const scope = doc.getElementById("hs")!;
+  stubBoxes(scope, {
+    hs: [0, 0, 1000, 600], hsec: [0, 0, 1000, 600], cover: [0, 10, 1000, 590], ht: [100, 60, 900, 120],
+    narrow: [200, 200, 800, 500], hcard: [200, 200, 480, 500], hp: [220, 220, 400, 260], hcard2: [520, 200, 800, 500],
+  });
+  const view = fakeView({ cover: { paddingTop: "48px", paddingLeft: "48px" }, narrow: { display: "flex" }, hcard: { backgroundColor: "rgb(255, 255, 255)" } }) as unknown as Window;
+  assert.equal(elementKeyAt(scope, scope, { x: 950, y: 560 }, view), null, "blank space in the covering column is the section");
+  assert.equal(elementKeyAt(scope, scope, { x: 500, y: 350 }, view), "0.0.1", "a narrower box is still a target");
+  assert.equal(elementKeyAt(scope, scope, { x: 300, y: 450 }, view), "0.0.1.0");
+  assert.ok(inspectableElementsIn(scope, view).some(({ element }) => element.id === "cover"), "still listed in Layers");
+});
