@@ -13,7 +13,8 @@ test("the stylesheet carries the brand-token utilities site-kit's sections use, 
     assert.ok(css.includes(utility), utility);
   }
   assert.ok(css.includes("--puck-color-azure-04"), "Puck's stylesheet is bundled");
-  assert.ok(css.includes("[data-site-shell-selected]"));
+  // Plan 6: the header is a Puck item, outlined by Puck; its sticky / see-through placement is ours.
+  assert.ok(css.includes("data-clue-sticky"), "the canvas draws a sticky header");
 });
 
 test("K5-2: the canvas has every brand utility the published page can have, the brand's spacing included", async () => {
