@@ -79,3 +79,22 @@ Open: founder to choose fixes; nothing edited.
 - Remaining: owed DB-backed tests on a throwaway migrated DB (listed in RULINGS.md); optional offline
   probe of the new edit schema (~12 edit requests, model writes calls, engine validates; <$1); then Step 5
   live runs (Conduit/garnerhealth/Clue). Deferred: port format-skill facts into placement.md.
+
+## Step 5, first live runs (2026-10-18, after T11; model gpt-6.1-sol)
+- Lane switched to Sol: cherry-picked trenton's 5461c1fd6 (cd6da0562, examples only) + `.env` LUMEN_AGENT_MODEL /
+  _REVIEWER = openai:openai/gpt-6.1-sol (backup `.env.bak-2026-10-18-before-sol`); stack down/up so every process runs
+  T1–T11 (the old stack predated T1). No Clue workspace in this DB (needs onboarding + extraction) → Stripe used.
+- Same request in each project chat: "Create a LinkedIn square ad (1080×1080) for this campaign."
+  Conduit run_4856de3d… 202 s / 21 calls / $0.45 / accepted round 2; Garner run_ab6d68a6… 332 s / 31 / $0.59 / round 2;
+  Stripe run_8f932b33… 217 s / 12 / $0.32 / round 1. Head of ABM ~2 min each before the leg.
+- Worked: 2 batched read steps; self-check judged the request and caught real defects (Conduit image fit, Garner logo);
+  small targeted repairs; all text passes legible-feed-v1; on-brand; T11 structured edits succeeded first try (2/2);
+  stop_reason short ("request met") 3/3; record_gap used for real product gaps.
+- Problems: all three CTAs start "Explore …"; Conduit body is 4 lines of client boilerplate because the Head of ABM brief
+  said "Client phrasing to use as the offer"; Stripe CTA arrow far from its text (review missed it); Sol sends all 28
+  asset params; Garner spent 6 steps revising creative-direction.json; Garner over the 240 s / 20-call target.
+- Engine/data findings: LUMB0805 typography-role warnings appear after any post-compile edit (Conduit, Garner);
+  Garner kit SVG wordmark renders ~64×20 ink in a 222×64 frame and its reversed logo has no preview;
+  direction-contract.md still writes `validate_creative_direction()` with brackets.
+- Tracer: scratchpad `trace_design_run.py <run_id>` reads messages from checkpoint_writes (channel 'messages'),
+  not checkpoint snapshots; Sol returns no reasoning text.
