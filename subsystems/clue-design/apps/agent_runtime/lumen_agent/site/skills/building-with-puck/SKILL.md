@@ -27,8 +27,8 @@ facts are in your workspace.
 ```
 
 Every section has a unique `id` you choose (short, lowercase, for example `hero`, `proof`). The
-header and footer are not sections; they live in `shell.json`. You may restyle, reorder and hide the
-header's and footer's parts through their `_edits` (see Styling by hand).
+header and footer are sections too. The site has one of each, kept in `shell.json` and drawn on
+every page (see The header and footer).
 
 ## Reuse first
 
@@ -90,16 +90,63 @@ Fields and choices are in `catalog/sections.md`.
 - A button's words may hold rich text, but never a link: bold, italic and styled words only, no
   `<a>`.
 
-## The shell (`shell.json`)
+## The header and footer (`shell.json`)
+
+`shell.json` holds the site's one header and one footer. Each is a section, written like a section on
+a page, with the id `header` or `footer`:
 
 ```json
-{ "header": { "preparedFor": "Lakeside Hospital", "accountLogo": "",
-              "ctaLabel": "See the staffing plan", "ctaHref": "https://…" },
-  "footer": { "legal": "© 2026 Northwind. Prepared for Lakeside Hospital.",
-              "privacyHref": "https://…", "termsHref": "https://…" } }
+{ "header": { "type": "ClonedSection", "props": { "id": "header", "fragmentId": "frag_…",
+      "slots": { "account_line": "Built for Acme Health's care team", "account_logo": "/asset-store/…" },
+      "replacements": [], "links": [] } },
+  "footer": { "type": "ClonedSection", "props": { "id": "footer", "fragmentId": "frag_…", "slots": {},
+      "replacements": [], "links": [] } } }
 ```
 
-Leave `accountLogo` empty unless the workspace gives you the account's logo file.
+**Start from the brand's templates.** `catalog/index.md` lists them first, under "Header and footer
+templates". They are made from the seller's own header and footer, so they look like the seller's
+site, and they carry what a page for an account needs: the seller's logo, the account's logo, a line
+for the account, the site's pages as the menu, and one button.
+
+- **The account line** (`account_line`): write it for this account, in the seller's voice. It is not a
+  fixed phrase. "Built for Acme Health's care team", "Your staffing plan, Acme" and "Prepared for Acme
+  Health" are all fine. On a site for several accounts, write a line for the group, or hide it.
+- **The account's logo** (`account_logo`): a file from "The account's logo" in brand/brand.md. When
+  there is none, or the site is for several accounts, set `account_shown` to `false`: that hides the
+  logo and the thin line before it.
+- **The button**: its link (`cta_href`) and its words. Point it at the one destination for the offer.
+- **The menu** lists the site's pages by itself, in order, and grows when you add a page. Rename an
+  item with `menuLabels`, by page name (`_home` is the home page):
+  `"menuLabels": { "_home": "Overview", "analysis": "The analysis" }`. A site with one page shows no
+  page links.
+- **`menuExtra`** adds links after the pages: `[{ "label": "Pricing", "href": "https://…" }]`. Use it
+  only on a site made for several accounts or a whole segment, when one of the seller's own pages
+  helps the reader. Never on a site for one account: those links lead the reader away from a page
+  written for them.
+- Any other word in a template is a slot like a clone's; change it there when it reads oddly for this
+  site.
+
+**When the brand has no template**, use the plain header and footer:
+
+```json
+{ "header": { "type": "SiteHeader", "props": { "id": "header", "accountLine": "Built for Acme Health's care team",
+      "accountLogo": "", "ctaLabel": "See the staffing plan", "ctaHref": "https://…" } },
+  "footer": { "type": "SiteFooter", "props": { "id": "footer", "legal": "© 2026 Example Co.",
+      "privacyHref": "https://…", "termsHref": "https://…" } } }
+```
+
+Their link words are `privacyLabel` and `termsLabel` (empty shows "Privacy policy" and "Terms"), and
+`logo` replaces the seller's logo when the person gives you another file. `menuLabels` and `menuExtra`
+work here too.
+
+**Your own**: when neither fits, you may write the header or footer as a section of your own (the
+writing-a-section skill) and use it as the header's or footer's `type`.
+
+**Staying at the top, and over the first section.** The header can stay at the top while the page
+scrolls, and can sit over the first section (the first section then starts under it). Set them on the
+header's own box: `"_edits": { "root": { "sticky": true, "overlay": true } }`. Over a photo, give the
+header's own box a fill with some opacity so its words stay readable, and give the first section more
+top padding if its words end up under the header.
 
 ## Styling by hand (`_edits`)
 
@@ -137,8 +184,9 @@ fill or stroke set this way also holds when the button is hovered.
 A box's name also takes the button's properties above (fill, stroke, corners, padding, width).
 Boxes are: in our sections `root` (the section's own box) and `root.inner` (the box holding its
 padding), `card`, `row`, `column`, `lead`, `stats` and each `stats.<n>`; the `el` you gave
-`kit.Card` or a `data-clue-el` you wrote; any number path in a cloned section; in the header
-`brand`, `actions`, `nav` and `ctaArea`, in the footer `links`. A box also takes:
+`kit.Card` or a `data-clue-el` you wrote; any number path in a cloned section (a header or footer
+template too); in the plain header `brand`, `actions`, `menu` and `ctaArea`, in the plain footer
+`links`. A box also takes:
 - `gap`: 0 to 200, the space between its children (rows and grids only);
 - `contentAlign`: `{ "along": "row", "to": "center" }`, how its contents line up across it.
   `along` says how the box lays them out: `row` (side by side), `stack` (one under another),
@@ -149,8 +197,10 @@ Two more, for cloned sections and the header and footer only:
   (`"0.2": { "order": ["0.2.1", "0.2.0"] }`). A child left out keeps its place. In our sections and
   yours, items move by reordering their list prop instead.
 - `hidden`: `true` hides a header or footer part: the seller's logo (`logo`), the account's logo
-  (`accountLogo`), the divider (`divider`), a menu link (`nav.0`), the button (`ctaArea`), a footer
-  link (`privacy`, `terms`). It is refused on a page section; rewrite the section instead.
+  (`accountLogo`), the divider (`divider`), a menu item (`menu.analysis` for a page, `menu._home` for
+  the home page, `menu._0` for the first `menuExtra` link), the button (`ctaArea`), a footer link
+  (`privacy`, `terms`), or any number path in a template. It is refused on a page section; rewrite
+  the section instead.
 
 An image's name (`image` in a feature split; `logo` and `accountLogo` in the header, `logo` in the
 footer; the `el` you gave `kit.Image`; a number path in a cloned section) takes the stroke and corner
@@ -196,11 +246,10 @@ letters, digits and dashes.
 
 - Link to another page with its address, for example a button or a clone link set to
   `/analysis`. A link to a page that does not exist is an error.
-- Add a page to the header's `nav` when visitors should reach it from every page:
-  `"nav": [{ "label": "The analysis", "href": "/analysis" }]`.
+- A page you add joins the header's menu by itself; rename it there with `menuLabels`.
 - The header, the footer and the one destination for the offer are shared by every page.
 - For a link that opens in a new tab, set `linkNewTab: true` on a proof card, `"newTab": true` on a
-  nav link, or `privacyNewTab` / `termsNewTab` in the footer. In a cloned section, list the link's
+  `menuExtra` link, or `privacyNewTab` / `termsNewTab` in the footer. In a cloned section, list the link's
   text name in `newTab`, for example `"newTab": ["0.2"]`.
 - Render each page you changed: `render_page("/analysis")`.
 

@@ -98,3 +98,21 @@ The kit gives you these pieces, with exactly these props:
   keep their place.
 - Make it look like the seller's sections around it. Render and compare.
 - Place it in page.json by its name, like any other section.
+
+## A header or footer of your own
+
+When no template fits the site, you may write the header or the footer as a section. Put it in
+`shell.json` as the header's (or footer's) `type`, with the id `header` (or `footer`).
+
+- Build it from the brand, like every section: its type roles, colours, surfaces, button styles and
+  link style (brand/brand.md, Buttons and Links). Look at the seller's own header (its nav band in
+  `catalog/`) and follow its layout and spacing. It must look like the seller's site, never like a
+  generic header with their logo dropped in.
+- The seller's logo: `kit.Image` with a logo file from brand/brand.md. The account's logo and line:
+  props you fill for this account (for example `accountLogo` and `accountLine`), the line marked for
+  editing in place.
+- The site's pages: `kit.menu` lists them in order, each with `label`, `href` and `key`. Draw each with
+  `kit.Link` and give it `el={item.key}`, so the person can style and hide them.
+- One button, with `kit.Button`, to the one destination for the offer.
+- Keep it short. A header is one row: logos, the account line, the menu, the button. A footer is the
+  seller's mark, the legal line and the legal links.

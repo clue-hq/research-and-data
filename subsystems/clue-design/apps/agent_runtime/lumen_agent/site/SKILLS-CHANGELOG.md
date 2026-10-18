@@ -131,3 +131,9 @@ fails without it).
   and write plain alt text; an image's `_edits` (stroke, corners, `imageFit`); a new "Alt text"
   section (`imageAlt`, `logoAlt`, `accountLogoAlt`, a cloned section's `alts`). Written with the
   feature: plan 5 made images replaceable and styleable, and alt text editable.
+- 2026-10-18 · writing-a-section and building-with-puck (founder-approved, site element inspector
+  plan 6): the header and footer are sections in `shell.json`; start from the brand's header and
+  footer templates; the account line is written for the account, never a fixed phrase; the menu
+  follows the site's pages (`menuLabels`; `menuExtra` only on sites for several accounts); sticky and
+  overlay on the header's root; menu item names for `hidden`; how to write a header or footer of
+  your own (`kit.menu`). Written with the feature: plan 6 replaced the fixed header and footer.
