@@ -1,10 +1,9 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import { getAtPath } from "@clue/site-kit/editor-site";
 import { richText } from "@clue/site-kit/rich";
-import { layerListHeight } from "@/features/site-editor/model/site-layers";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
 import {
   InspectorField,
@@ -22,6 +21,7 @@ import { SiteButtonPanel } from "./site-button-panel";
 import { SiteImagePanel } from "./site-image-panel";
 import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
+import { useLayerListFill } from "./use-layer-list-fill";
 import styles from "./chat-shell.module.css";
 
 export type SiteImageFieldRenderer = (field: FieldDescription, path: string, value: string) => ReactNode;
@@ -44,7 +44,7 @@ export function SiteInspector({
   const [contentOpen, setContentOpen] = useState(true);
   const [layersOpen, setLayersOpen] = useState(true);
   const layerListRef = useRef<HTMLDivElement>(null);
-  useFillToDockBottom(layerListRef);
+  useLayerListFill(layerListRef);
   return (
     <aside aria-label="Website inspector" className={styles.inspector}>
       <div className={styles.inspectorRail}>
@@ -131,34 +131,6 @@ export function SiteInspector({
       </div>
     </aside>
   );
-}
-
-/** Layers fills the panel down to the bottom of its scrolling dock, or to the chat box's top when it is
- * open (the dock already ends there), however few rows it has; with too little room it keeps a minimum
- * and the dock scrolls. Measured,
- * because the section around it sizes itself to its content for its open and close animation. */
-function useFillToDockBottom(listRef: RefObject<HTMLDivElement | null>) {
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    const dock = list?.closest<HTMLElement>(`.${styles.inspectorDock}`) ?? list?.parentElement?.closest<HTMLElement>("aside")?.parentElement;
-    if (!list || !dock) return;
-    const fit = () => {
-      const listTop = list.getBoundingClientRect().top - dock.getBoundingClientRect().top + dock.scrollTop;
-      // The list IS that height (not capped at it), so Layers reaches the bottom however few rows it has.
-      const section = list.closest("section");
-      const bottomGap = section ? section.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom : undefined;
-      list.style.height = `${layerListHeight({ dockHeight: dock.clientHeight, listTop, bottomGap })}px`;
-      list.style.maxHeight = "none";
-    };
-    fit();
-    const observer = new ResizeObserver(fit);
-    observer.observe(dock);
-    // The rail is the panel's content (the aside always fills the dock, so it never reports a change):
-    // it changes height whenever a section above opens, closes or changes.
-    const rail = list.closest<HTMLElement>(`.${styles.inspectorRail}`);
-    if (rail) observer.observe(rail);
-    return () => observer.disconnect();
-  }, [listRef]);
 }
 
 function textOf(value: unknown): string {
