@@ -5,9 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from lumen_agent.site.tools import SiteTools
 from lumen_agent.site.workspace import materialize_workspace
+from lumen_api.site_kit_cli import site_kit_toolchain_missing
 from site_fixtures import FakeAssets, garner_brand, garner_site, inputs_for, png
+
+needs_node = pytest.mark.skipif(site_kit_toolchain_missing() is not None, reason="site-kit toolchain missing")
 
 PHOTO, MARK = "1" * 64, "2" * 64
 
@@ -64,3 +69,44 @@ def test_generate_image_refuses_bad_references_and_reports_failures(tmp_path: Pa
     assert "could not make the image" in failing.generate_image("x", "16:9", [])
     unsaved = _tools(tmp_path / "c", FakeImages(), FakeAssets(blobs={PHOTO: ("image/png", png())}, fail_register=True))
     assert unsaved.generate_image("x", "1:1", []).startswith("The image was made but could not be saved (storage down).")
+
+
+def test_fetch_logo_finds_a_companys_logos_and_makes_them_placeable(tmp_path: Path) -> None:
+    mark, other = png("navy", (40, 20)), png("gray", (20, 20))
+    assets = FakeAssets(blobs={PHOTO: ("image/png", png())}, logos={"lakeside.org": [
+        ("light_lockup", mark, "image/png", None, False),
+        ("unclassified", other, "image/png", "Lakeside (site header)", True)]})
+    tools = _tools(tmp_path, FakeImages(), assets)
+    text = tools.fetch_logo("lakeside.org", "Lakeside Hospital")
+    assert assets.fetched == [("lakeside.org", "Lakeside Hospital")]
+    by_file = {entry["file"]: entry for entry in tools.brand["assets"].values()}
+    files = [line.split("`")[1] for line in text.splitlines() if line.startswith("- `")]
+    assert len(files) == 2 and all(by_file[file]["kind"] == "account_logo" for file in files)
+    assert "the full logo, for light backgrounds" in text and "Lakeside (site header)" in text
+    assert tools.view_asset([files[0]])[0]["text"].startswith(files[0])  # it can look before it places
+
+
+def test_fetch_logo_says_plainly_when_nothing_was_found_or_it_could_not_run(tmp_path: Path) -> None:
+    tools = _tools(tmp_path / "a", FakeImages())
+    assert tools.fetch_logo("nobody.example").startswith("No logo was found for nobody.example.")
+    assert tools.fetch_logo("down.example").startswith("The logo search failed (vendor down).")
+    assert tools.fetch_logo("  ").startswith("Give the company's website domain")
+
+
+@needs_node
+def test_a_logo_fetched_in_an_earlier_request_still_validates(tmp_path: Path) -> None:
+    """A logo fetch_logo stored is a blob of this workspace, not one of the brand's assets: the next
+    request's check holds it as the save does (siteImages), so an unrelated change stays valid."""
+
+    held = "3" * 64
+    site = garner_site()
+    site["shell"]["header"]["props"]["accountLogo"] = f"/asset-store/{held}"
+    assets = FakeAssets(blobs={held: ("image/png", png("navy"))})
+    inputs = inputs_for(brand=garner_brand(), assets=assets)
+    workspace = tmp_path / "workspace"
+    materialize_workspace(workspace, inputs, site=site)
+    tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, retry_delay_s=0)
+    assert tools.validate_page() == "VALID."
+    gone = SiteTools(workspace=workspace, inputs=inputs_for(brand=garner_brand(), assets=FakeAssets()), base_site=site,
+                     retry_delay_s=0)
+    assert "INVALID" in gone.validate_page()  # a file the workspace does not hold is still refused

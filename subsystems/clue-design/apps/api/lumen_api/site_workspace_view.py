@@ -111,9 +111,14 @@ def project_files_from(reads: Any) -> list[dict]:
     ]
 
 
-def fetch_account_logos(blobs: Any, account_card: Mapping[str, Any] | None, *, fetcher: Any = None, cache: Any = None) -> list:
+def fetch_account_logos(
+    blobs: Any, account_card: Mapping[str, Any] | None, *, fetcher: Any = None, cache: Any = None,
+    raise_errors: bool = False,
+) -> list:
     """The target account's logo family (the spike's `fetch_account_logo`), stored as design blobs:
-    the recommended logos, then every other real logo found, each named /asset-store/<sha256>."""
+    the recommended logos, then every other real logo found, each named /asset-store/<sha256>.
+    A failed fetch is an empty list at the request start; the agent's own fetch_logo asks for the
+    error (``raise_errors``) so it can say why."""
 
     from lumen_agent.site.inputs import AccountLogo
 
@@ -127,6 +132,8 @@ def fetch_account_logos(blobs: Any, account_card: Mapping[str, Any] | None, *, f
         outcome = fetcher(str(domain), company_name=card.get("name"), cache=cache)
     except Exception:  # noqa: BLE001 - a blocked site or a vendor miss: the header goes without a logo
         logger.info("site_turn.account_logo_unavailable", domain=str(domain), exc_info=True)
+        if raise_errors:
+            raise
         return []
     logos = []
     for prepared, alternative in [*((p, False) for p in outcome.prepared), *((a, True) for a in outcome.alternatives)]:

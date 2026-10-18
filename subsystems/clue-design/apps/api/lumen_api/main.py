@@ -12408,16 +12408,18 @@ def _execute_site_turn_job(
             # sections are checked (and taught) as interactive.
             live = live_sites_enabled(workspace_id)
             brand_kit, _source, kit_assets, font_spec = resolve_web_turn_brand_kit(doc["scene"], blobs)
+            logo_cache = DurableLogoFamilyCache(blobs=blobs)
             inputs = build_site_turn_inputs(
                 document=doc, store=store, blobs=blobs, cache_dir=cache_dir, platform_reads=platform_reads,
                 account_card=envelope.config.get("account_card"), delegation_bundle=bundle,
                 brand_kit=brand_kit, kit_assets=kit_assets, font_spec=font_spec,
                 asset_library=pinned_asset_library(store, envelope.run_id),
                 assets=DurableSiteAssetPort(blobs=blobs, cache_dir=cache_dir, core=_turn_core(host),
-                                            invocations=invocations, run_id=envelope.run_id),
+                                            invocations=invocations, run_id=envelope.run_id,
+                                            logo_cache=logo_cache),
                 site_versions=DurableSiteVersionPort(store, document_id),
                 renderer=PlatformSiteRenderer(read_blob=blobs.read_blob, live=live),
-                logo_cache=DurableLogoFamilyCache(blobs=blobs),
+                logo_cache=logo_cache,
             )
             inputs = replace(
                 inputs,

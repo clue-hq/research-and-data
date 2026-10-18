@@ -64,6 +64,10 @@ class SiteAssetPort(Protocol):
     ) -> dict:
         """Store a generated image as an AI-generated library asset: ``{asset_id, digest, file}``."""
 
+    def fetch_logos(self, domain: str, company_name: str | None = None) -> list[AccountLogo]:
+        """A company's real logo family (Brandfetch and its own site), stored as this workspace's
+        blobs: the recommended logos, then the alternatives. Empty when none was found."""
+
 
 class SiteSectionPort(Protocol):
     def compile(self, *, name: str, source: str) -> dict:

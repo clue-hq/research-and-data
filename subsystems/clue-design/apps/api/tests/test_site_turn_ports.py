@@ -468,3 +468,26 @@ def test_a_schema_the_render_page_cannot_read_is_one_error_to_fix(monkeypatch: p
         "ok": False,
         "errors": [SCHEMA_UNREADABLE.format(code="render.failed", message='the props need "surface"')],
     }
+
+
+def test_fetching_a_logo_stores_the_family_as_this_workspaces_blobs(tmp_path, design_storage) -> None:
+    """The site agent's fetch_logo: the same Brandfetch + logo-ladder family the request starts with,
+    for any domain, through the same family cache, stored so the save check holds the files."""
+
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    light = SimpleNamespace(cell="light_lockup", body=b"<svg viewBox='0 0 2 1'/>", content_type="image/svg+xml", label="Acme")
+    asked: list[tuple] = []
+    cache = object()
+
+    def fetcher(domain, *, company_name, cache):
+        asked.append((domain, company_name, cache))
+        return SimpleNamespace(prepared=[light], alternatives=[])
+
+    port = DurableSiteAssetPort(blobs=blobs, cache_dir=tmp_path / "cache", core=FakeCore(),
+                                invocations=RecordingInvocations(), run_id="run_site_1",
+                                logo_cache=cache, logo_fetcher=fetcher)
+    [logo] = port.fetch_logos("acme.example", company_name="Acme")
+    digest = hashlib.sha256(light.body).hexdigest()
+    assert asked == [("acme.example", "Acme", cache)]
+    assert (logo.cell, logo.file, logo.alternative) == ("light_lockup", f"/asset-store/{digest}", False)
+    assert port.exists(digest)

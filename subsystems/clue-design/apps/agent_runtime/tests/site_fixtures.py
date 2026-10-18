@@ -67,6 +67,9 @@ class FakeAssets:
     blobs: dict[str, tuple[str, bytes]] = field(default_factory=dict)
     generated: list[dict] = field(default_factory=list)
     fail_register: bool = False
+    #: fetch_logos: domain -> [(cell, bytes, media type, label or None, alternative)].
+    logos: dict[str, list[tuple]] = field(default_factory=dict)
+    fetched: list[tuple] = field(default_factory=list)
 
     def read(self, digest: str) -> tuple[str, bytes]:
         if digest not in self.blobs:
@@ -85,6 +88,22 @@ class FakeAssets:
         self.blobs[digest] = (mime_type, image_bytes)
         self.generated.append({"prompt": prompt, "model": model, "digest": digest})
         return {"asset_id": f"asset_gen_{digest[:12]}", "digest": digest, "file": f"/asset-store/{digest}"}
+
+    def fetch_logos(self, domain: str, company_name: str | None = None) -> list:
+        import hashlib
+
+        from lumen_agent.site.inputs import AccountLogo
+
+        self.fetched.append((domain, company_name))
+        if domain == "down.example":
+            raise RuntimeError("vendor down")
+        found = []
+        for cell, body, mime, label, alternative in self.logos.get(domain, []):
+            digest = hashlib.sha256(body).hexdigest()
+            self.blobs[digest] = (mime, body)
+            found.append(AccountLogo(cell=cell, file=f"/asset-store/{digest}", content_type=mime, label=label,
+                                     alternative=alternative))
+        return found
 
 
 @dataclass

@@ -31,7 +31,7 @@ from typing import Any, Callable
 from lumen_api.site_kit_cli import SiteKitCliError, validate_site_files
 
 from .inputs import SiteSection, SiteTurnInputs
-from .workspace import record_component, turn_brand, write_site_files
+from .workspace import LOGO_CELLS, record_component, turn_brand, write_site_files
 
 FETCH_LIMIT = 12_000
 VIEW_ASSET_MAX = 4
@@ -52,6 +52,7 @@ REFERENCE_PX = 1024
 _NOT_REFERENCES = frozenset({"generated_image", "account_logo"})
 _SOURCES = re.compile(r'\bsrc="([^"]*)"|url\(\s*[\'"]?([^\'")\s]+)[\'"]?\s*\)')
 _ASSET_FILE = re.compile(r"^/asset-store/([0-9a-f]{64})$")
+_ASSET_DIGEST = re.compile(r"/asset-store/([0-9a-f]{64})")
 
 #: Tool name -> the description the model reads, in the order the model sees them (the spike's
 #: order, `search_assets` after `view_asset`). A name joins the tool set when its method exists.
@@ -100,6 +101,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", \"4:3\" or "
         "\"1:1\"; style_references are one to three of the brand's own photos from brand/brand.md. "
         "Returns the image's path and shows it to you."
+    ),
+    "fetch_logo": (
+        "Find a company's real published logos by its website domain, for example \"lakeside.org\" "
+        "(from Brandfetch and the company's own site). Returns the recommended logos and any others "
+        "found, each a file you can place where the account's logo goes. Look at one with view_asset "
+        "before you use it."
     ),
     "web_search": (
         "Search the web. Set include_domains to the seller's domain to find its own published case "
@@ -386,10 +393,31 @@ class SiteTools:
 
     # --- validate ------------------------------------------------------------------------------
 
+    def _held_images(self, files: dict) -> list[str]:
+        """The /asset-store images the site's files use that the brand does not list but this
+        workspace holds (a logo fetch_logo stored in an earlier request): the save check accepts them
+        as ``siteImages``, so this check does too."""
+
+        listed = {entry.get("file") for entry in (self.brand.get("assets") or {}).values() if isinstance(entry, dict)}
+        found = set(_ASSET_DIGEST.findall(json.dumps(files)))
+        held = []
+        for digest in sorted(found):
+            file = f"/asset-store/{digest}"
+            if file in listed or self.inputs.assets is None:
+                continue
+            try:
+                if self.inputs.assets.exists(digest):
+                    held.append(file)
+            except Exception:  # noqa: BLE001 - an unanswerable custody read holds nothing
+                continue
+        return held
+
     def _validate_raw(self) -> dict:
         try:
+            files = self._site_files()
             return validate_site_files(
-                self._site_files(), self.brand, {name: s.props_schema for name, s in self.sections.items()}
+                files, self.brand, {name: s.props_schema for name, s in self.sections.items()},
+                site_images=self._held_images(files),
             )
         except SiteKitCliError as error:
             # The validator could not run: not a verdict on the page (FinishGuard leaves it to the save).
@@ -669,6 +697,38 @@ class SiteTools:
              "slot or image prop, or leave it out if it breaks the images-and-logos rules."},
             _image_bytes_block(result.image_bytes, max_px=VIEW_ASSET_PX),
         ]
+
+    def fetch_logo(self, domain: str, company_name: str | None = None) -> str:
+        """Find a company's real published logos by its website domain (see the images-and-logos skill)."""
+
+        domain = (domain or "").strip()
+        if not domain:
+            return "Give the company's website domain, for example \"lakeside.org\"."
+        if self.inputs.assets is None:
+            return "The logo search is not available in this request."
+        try:
+            logos = self.inputs.assets.fetch_logos(domain, company_name=company_name)
+        except Exception as error:  # noqa: BLE001 - a blocked site or a vendor miss is an answer
+            self._record("fetch_logo", domain=domain, ok=False, error=str(error)[:200])
+            return (f"The logo search failed ({str(error)[:200]}). Try the company's main domain once more, "
+                    "or leave the account's logo hidden and say so in your report.")
+        self._record("fetch_logo", domain=domain, ok=True, count=len(logos))
+        if not logos:
+            return (f"No logo was found for {domain}. Leave the account's logo hidden and say so in your "
+                    "report; the person can add the file later.")
+        assets = self.brand.setdefault("assets", {})
+        lines = [f"Logos found for {domain}:"]
+        for logo in logos:
+            digest = digest_of_file(logo.file) or hashlib.sha256(logo.file.encode()).hexdigest()
+            what = logo.label or LOGO_CELLS.get(logo.cell, logo.cell)
+            assets[f"fetched_logo_{digest[:16]}"] = {
+                "kind": "account_logo", "label": logo.label, "description": what,
+                "mime": logo.content_type, "file": logo.file, "logo": None,
+            }
+            lines.append(f"- `{logo.file}`: {what}" + (" (another logo found; use it only when none of the "
+                                                         "recommended ones fits)" if logo.alternative else ""))
+        lines.append("Look at one with view_asset before you place it.")
+        return "\n".join(lines)
 
     # --- research ------------------------------------------------------------------------------
 

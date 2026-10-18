@@ -110,12 +110,18 @@ class SiteAssetError(RuntimeError):
 class DurableSiteAssetPort:
     """SiteAssetPort over this workspace's design blobs and its asset library."""
 
-    def __init__(self, *, blobs: Any, cache_dir: Any, core: Any, invocations: Any, run_id: str) -> None:
+    def __init__(
+        self, *, blobs: Any, cache_dir: Any, core: Any, invocations: Any, run_id: str,
+        logo_cache: Any = None, logo_fetcher: Any = None,
+    ) -> None:
         self.blobs = blobs
         self.cache_dir = Path(cache_dir)
         self.core = core
         self.invocations = invocations
         self.run_id = run_id
+        #: fetch_logos: the logo-family cache the request start uses, and a test seam for the fetch.
+        self.logo_cache = logo_cache
+        self.logo_fetcher = logo_fetcher
 
     def read(self, digest: str) -> tuple[str, bytes]:
         return self.blobs.read_blob(digest)
@@ -162,6 +168,16 @@ class DurableSiteAssetPort:
             workspace_id=self.blobs.workspace_id, actor="agent", actor_id=self.run_id,
         )
         return {"asset_id": str(record.get("id") or asset_id), "digest": digest, "file": f"/asset-store/{digest}"}
+
+
+    def fetch_logos(self, domain: str, company_name: str | None = None) -> list:
+        """The site agent's fetch_logo: the family the request start fetches for its account
+        (``fetch_account_logos``), for any domain, stored as this workspace's blobs."""
+
+        from .site_workspace_view import fetch_account_logos
+
+        card = {"domain": domain, "name": company_name}
+        return fetch_account_logos(self.blobs, card, fetcher=self.logo_fetcher, cache=self.logo_cache, raise_errors=True)
 
 
 @dataclass(frozen=True)
