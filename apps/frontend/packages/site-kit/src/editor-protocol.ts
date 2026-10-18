@@ -106,9 +106,13 @@ export type ComputedTypography = z.infer<typeof ComputedTypographySchema>;
 /** One element of the selected section the inspector can select (plan 1: text only). */
 export const ElementSummarySchema = z.object({
   key: ElementKeySchema,
-  /** plan 1: text; plan 3: button (a box with its words inside). */
-  kind: z.enum(["text", "button"]),
+  /** plan 1: text; plan 3: button (a box with its words inside); plan 4: container (a box), image. */
+  kind: z.enum(["text", "button", "container", "image"]),
   label: z.string().max(80),
+  /** Plan 4, Layers' tree: the nearest listed element around it; null at the top of the section. */
+  parent: ElementKeySchema.nullable().optional(),
+  /** Plan 4: a header or footer part hidden by hand (it has no box on the canvas). */
+  hidden: z.literal(true).optional(),
 });
 export type ElementSummary = z.infer<typeof ElementSummarySchema>;
 /** Plan 2. Where the element's words are stored when they are rich text (a prop path: `heading`,
@@ -158,6 +162,31 @@ export const LabelSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
 ]);
 export type ComputedBox = z.infer<typeof ComputedBoxSchema>;
+/** Plan 4: a box as drawn: plan 3's box, the gap between its children, how it lays them out (a row, a
+ * stack, a grid or flowing text, ruling R3), how they line up across it, and what the panel calls it. */
+export const ComputedContainerSchema = ComputedBoxSchema.extend({
+  gap: z.number().nonnegative().max(10_000),
+  layout: z.enum(["row", "stack", "grid", "text"]),
+  contentAlign: z.enum(["start", "center", "end"]),
+  name: z.string().min(1).max(40),
+});
+export type ComputedContainer = z.infer<typeof ComputedContainerSchema>;
+/** An element's key in a list of siblings: never a styled span's. */
+const SiblingKeySchema = ElementKeySchema.refine((key) => !key.includes("~"), { message: "a styled span is no sibling" });
+/** Plan 4: where the selected element moves (spec §4.8): it (or the wrapper it sits in alone), its
+ * keyed parent, and the parent's keyed children in their order. */
+export const ArrangeSchema = z
+  .object({ item: SiblingKeySchema, parent: ElementKeySchema, siblings: z.array(SiblingKeySchema).min(2).max(200) })
+  .refine((arrange) => arrange.siblings.includes(arrange.item), { message: "the item is one of the siblings" });
+export type Arrange = z.infer<typeof ArrangeSchema>;
+/** Plan 4, ruling R2: the section's own box when the section is selected: its outer box (fill, stroke,
+ * corners) and the box holding its padding (padding, gap, content alignment); the same key for a copied
+ * section's one top element. */
+export const SectionBoxSchema = z.object({
+  outer: z.object({ key: ElementKeySchema, box: ComputedBoxSchema }),
+  inner: z.object({ key: ElementKeySchema, container: ComputedContainerSchema }),
+});
+export type SectionBox = z.infer<typeof SectionBoxSchema>;
 export type LabelSource = z.infer<typeof LabelSourceSchema>;
 export type RichSource = z.infer<typeof RichSourceSchema>;
 export type Words = z.infer<typeof WordsSchema>;
@@ -173,6 +202,10 @@ export const ElementSelectionSchema = ElementSummarySchema.extend({
   labelElement: z.object({ key: ElementKeySchema, computed: ComputedTypographySchema, rich: RichSourceSchema.nullable().optional() }).nullable().optional(),
   box: ComputedBoxSchema.nullable().optional(),
   labelSource: LabelSourceSchema.nullable().optional(),
+  /** Plan 4, a box: its look as drawn. */
+  container: ComputedContainerSchema.nullable().optional(),
+  /** Plan 4: where it moves among its neighbours; absent when it has none. */
+  arrange: ArrangeSchema.nullable().optional(),
 });
 export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
 
@@ -250,6 +283,8 @@ export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
       props: Props,
       element: ElementSelectionSchema.nullable().optional(),
       elements: z.array(ElementSummarySchema).max(500).optional(),
+      /** Plan 4: the section's own box, when the section itself is selected. */
+      sectionBox: SectionBoxSchema.nullable().optional(),
     }),
   }),
   z.object({ ...envelope, type: z.literal("deselected"), payload: z.object({}).strict() }),

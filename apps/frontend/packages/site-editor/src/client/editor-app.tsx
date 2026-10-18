@@ -10,15 +10,18 @@ import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site
 import type { BootContext } from "./boot";
 import { buildPageConfig, shellFieldDescriptions } from "./config";
 import {
+  arrangeOf,
   buttonAround,
   buttonLabelOf,
   clickIntent,
   computedBox,
+  computedContainer,
+  listedSummary,
+  sectionBoxOf,
   computedTypography,
   cssColorToHex,
   elementKeyAt,
   elementSelection,
-  elementSummary,
   findKeyedElement,
   inspectableElementsIn,
   isButtonElement,
@@ -175,6 +178,24 @@ function describeButton(controller: FrameController, target: string, componentId
   };
 }
 
+/** Plan 4: the header's or footer's parts hidden by hand, read from the stored shell (they have no box
+ * on the canvas, so the canvas cannot tell). */
+function hiddenParts(controller: FrameController, target: string, componentId: string): Set<string> {
+  if (target !== SHELL_TARGET || (componentId !== "header" && componentId !== "footer")) return new Set();
+  const edits = (controller.getState().site?.shell?.[componentId] as { _edits?: Record<string, { hidden?: boolean }> } | undefined)?._edits ?? {};
+  return new Set(Object.entries(edits).flatMap(([key, override]) => (override?.hidden === true ? [key] : [])));
+}
+
+/** A chosen box or image (plan 4): its summary, its typography (what it passes to its text), and for a
+ * box its look as drawn. */
+function describeBox(element: Element, item: Parameters<typeof listedSummary>[0]): ElementSelection {
+  return {
+    ...listedSummary(item, window),
+    computed: computedTypography(element, window, toHex),
+    ...(item.kind === "container" ? { container: computedContainer(element, window, toHex) } : {}),
+  };
+}
+
 /** Responsive brand type (review finding 3): every typography in the selection carries the brand's
  * size scale where the element is drawn now, so the panel shows and takes sizes as drawn in a
  * narrowed preview. Nothing is added on desktop or for a kit that did not measure its steps. */
@@ -238,16 +259,30 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     controller.attachDescriber((target, componentId, key) => {
       const scope = selectionScope(target, componentId);
       if (!scope) return { element: null, elements: [] };
+      const listed = inspectableElementsIn(scope, window, hiddenParts(controller, target, componentId));
       const found = key ? findKeyedElement(scope, key) : null;
+      const kind = found ? listed.find((item) => item.element === found)?.kind : undefined;
+      let element: ElementSelection | null = null;
+      if (found) {
+        const described =
+          isButtonElement(found, window)
+            ? describeButton(controller, target, componentId, found)
+            : kind === "container" || kind === "image"
+              ? describeBox(found, listed.find((item) => item.element === found)!)
+              : describeElement(controller, target, componentId, found);
+        const arrange = arrangeOf(found, scope);
+        element = withSizeScale({ ...described, ...(arrange ? { arrange } : {}) }, found, controller.getState().brand);
+      }
+      const box = key ? null : sectionBoxOf(scope);
       return {
-        element: found
-          ? withSizeScale(
-              isButtonElement(found, window) ? describeButton(controller, target, componentId, found) : describeElement(controller, target, componentId, found),
-              found,
-              controller.getState().brand,
-            )
+        element,
+        elements: listed.map((item) => listedSummary(item, window)),
+        sectionBox: box
+          ? {
+              inner: { container: computedContainer(box.inner, window, toHex), key: box.inner.getAttribute("data-clue-el") ?? "" },
+              outer: { box: computedBox(box.outer, window, toHex), key: box.outer.getAttribute("data-clue-el") ?? "" },
+            }
           : null,
-        elements: inspectableElementsIn(scope, window).map(({ element, kind }) => elementSummary(element, kind)),
       };
     });
     return () => controller.attachDescriber(null);

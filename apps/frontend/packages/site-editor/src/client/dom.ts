@@ -1,5 +1,5 @@
-import { ELEMENT_KEY_ATTR, ElementKeySchema, sizeScaleFrom } from "@clue/site-kit/edits";
-import type { ComputedBox, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
+import { ELEMENT_KEY_ATTR, ElementKeySchema, ROOT_INNER_KEY, ROOT_KEY, sizeScaleFrom } from "@clue/site-kit/edits";
+import type { Arrange, ComputedBox, ComputedContainer, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
 import type { BrandData } from "@clue/site-kit";
 
 export type ClickAction =
@@ -106,12 +106,10 @@ export function keyedElementsIn(scope: Element): Element[] {
   });
 }
 
-/** The text element (or, plan 3, button) with this key inside the scope, or null: the first element
- * carrying a valid key, as a section's `_edits` rule would style it. */
+/** The element with this key inside the scope (plan 4: any keyed element, text, button, box or
+ * image), or null: the first element carrying a valid key, as a section's `_edits` rule would style it. */
 export function findKeyedElement(scope: Element, key: string): Element | null {
-  const selectable = (element: Element) =>
-    isTextElement(element) || ["a", "button"].includes(element.tagName.toLowerCase()) || element.classList.contains("brand-btn");
-  return [...scope.querySelectorAll(KEYED)].find((element) => validKey(element) === key && selectable(element)) ?? null;
+  return [...scope.querySelectorAll(KEYED)].find((element) => validKey(element) === key) ?? null;
 }
 
 /** The key of the element a click meant: the target's own text element or button when the click
@@ -124,18 +122,22 @@ export function elementKeyAt(
   point: { x: number; y: number },
   view?: Pick<Window, "getComputedStyle">,
 ): string | null {
-  const texts = view ? inspectableElementsIn(scope, view).map(({ element }) => element) : keyedElementsIn(scope);
+  // With a view (plan 4), boxes and images too; the section's own box never (ruling R1).
+  const candidates = view ? inspectableElementsIn(scope, view).filter(({ hidden }) => !hidden).map(({ element }) => element) : keyedElementsIn(scope);
   const hit = asElement(target);
   const button = view && hit ? buttonAround(hit, view) : null;
-  if (button && texts.includes(button)) return validKey(button);
-  const direct = hit ? texts.find((element) => element.contains(hit)) : undefined;
+  if (button && candidates.includes(button)) return validKey(button);
+  // The innermost listed element holding the target.
+  const holding = hit ? candidates.filter((element) => element.contains(hit)) : [];
+  const direct = holding.find((element) => !holding.some((other) => other !== element && element.contains(other)));
   if (direct) return validKey(direct);
   let best: { element: Element; area: number } | null = null;
-  for (const element of texts) {
+  for (const element of candidates) {
     const box = element.getBoundingClientRect();
     if (point.x < box.left || point.x > box.right || point.y < box.top || point.y > box.bottom) continue;
     const area = (box.right - box.left) * (box.bottom - box.top);
-    if (!best || area < best.area) best = { area, element };
+    // A tie goes to the later element: inner elements come after the box around them.
+    if (!best || area <= best.area) best = { area, element };
   }
   return best ? validKey(best.element) : null;
 }
@@ -291,27 +293,220 @@ export function buttonLabelOf(button: Element): Element | null {
   return [...button.querySelectorAll(KEYED)].find((element) => isTextElement(element)) ?? button;
 }
 
-/** The scope's elements the inspector selects, in document order: buttons, and text that is not a
- * button's words; a repeated key is skipped (the first owns it). */
-export function inspectableElementsIn(scope: Element, view: Pick<Window, "getComputedStyle">): { element: Element; kind: "text" | "button" }[] {
+export type InspectableElement = { element: Element; kind: ElementSummary["kind"]; parent: string | null; hidden?: true };
+
+/** How many elements Layers lists for one section (the message's limit). */
+export const MAX_LISTED = 500;
+
+/** The scope's elements the inspector selects, in document order, each with its nearest listed
+ * ancestor's key (Layers' tree, plan 4): buttons, text that is not a button's words, images and boxes.
+ * The section's own box is left out (it is the section, ruling R1), and so are pass-through wrappers
+ * (R10). A repeated key is skipped (the first owns it). `hiddenKeys`: the header's or footer's parts
+ * hidden by hand, listed (hidden) though they have no box. */
+export function inspectableElementsIn(
+  scope: Element,
+  view: Pick<Window, "getComputedStyle">,
+  hiddenKeys: ReadonlySet<string> = new Set(),
+): InspectableElement[] {
   const seen = new Set<string>();
-  const found: { element: Element; kind: "text" | "button" }[] = [];
+  const found: { element: Element; kind: ElementSummary["kind"]; hidden?: true }[] = [];
   const buttons: Element[] = [];
-  for (const element of scope.querySelectorAll(KEYED)) {
+  const box = sectionBoxOf(scope);
+  const own = box ? new Set([box.outer, box.inner]) : new Set<Element>();
+  const all = [...(scope.matches(KEYED) ? [scope] : []), ...scope.querySelectorAll(KEYED)];
+  for (const element of all) {
+    if (found.length >= MAX_LISTED) break;
     const key = validKey(element);
-    if (key === null || seen.has(key)) continue;
+    if (key === null || seen.has(key) || own.has(element)) continue;
     if (buttons.some((button) => button.contains(element))) continue;
-    if (isButtonElement(element, view)) {
+    if (hiddenKeys.has(key)) {
+      seen.add(key);
+      found.push({ element, hidden: true, kind: isImageElement(element) ? "image" : isTextElement(element) && visibleWords(element) ? "text" : "container" });
+    } else if (isButtonElement(element, view)) {
       seen.add(key);
       buttons.push(element);
       found.push({ element, kind: "button" });
-    } else if (isTextElement(element) && (element.children.length > 0 || (element.textContent ?? "").trim() !== "")) {
+    } else if (isImageElement(element)) {
+      if (!hasBox(element)) continue;
+      seen.add(key);
+      found.push({ element, kind: "image" });
+    } else if (isTextElement(element) && visibleWords(element)) {
       // An empty element (a copied button's overlay link) has nothing to show or style.
       seen.add(key);
       found.push({ element, kind: "text" });
+    } else if (isContainerElement(element, view)) {
+      seen.add(key);
+      found.push({ element, kind: "container" });
     }
   }
-  return found;
+  const listed = new Map(found.map((item) => [item.element, validKey(item.element)!]));
+  return found.map((item) => {
+    let parent: string | null = null;
+    for (let up = item.element.parentElement; up && scope.contains(up); up = up.parentElement) {
+      const key = listed.get(up);
+      if (key !== undefined) {
+        parent = key;
+        break;
+      }
+      if (up === scope) break;
+    }
+    return { ...item, parent };
+  });
+}
+
+/** One listed element as Layers shows it (plan 4): a box by its name (ruling R7), an image by its alt
+ * text or its key in words ("accountLogo" → "Account logo"), text and buttons by their words; with its
+ * parent and, for a hidden part, hidden. */
+export function listedSummary(item: InspectableElement, view: Pick<Window, "getComputedStyle">): ElementSummary {
+  const base = elementSummary(item.element, item.kind);
+  const key = base.key;
+  let label = base.label;
+  if (item.kind === "container") label = containerName(item.element, view);
+  if (item.kind === "image") {
+    const alt = (item.element.getAttribute("alt") ?? "").trim();
+    const words = /^[A-Za-z]+$/.test(key) ? key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() : "";
+    label = (alt || (words ? words[0].toUpperCase() + words.slice(1) : "Image")).slice(0, 80);
+  }
+  return { ...base, label, parent: item.parent, ...(item.hidden ? { hidden: true as const } : {}) };
+}
+
+// Plan 4: boxes and images. A box is any keyed element drawn with a box of its own that is not text,
+// a button or an image; the section's own box is `root` / `root.inner` (ours, the agent's kit.Shell,
+// the shell) or a copied section's one top element.
+
+const IMAGE_TAGS = new Set(["img", "picture", "video", "svg"]);
+const NO_WORDS = new Set(["script", "style", "noscript", "template"]);
+
+/** A keyed image or icon. */
+export function isImageElement(element: Element): boolean {
+  return validKey(element) !== null && IMAGE_TAGS.has(element.tagName.toLowerCase());
+}
+
+function hasBox(element: Element): boolean {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+/** Whether the element holds words a visitor reads (not a script's or a style's). */
+function visibleWords(element: Element): boolean {
+  const walk = (node: Element): boolean =>
+    [...node.childNodes].some((child) =>
+      child.nodeType === 3
+        ? (child.nodeValue ?? "").trim() !== ""
+        : child.nodeType === 1 && !NO_WORDS.has((child as Element).tagName.toLowerCase()) && walk(child as Element),
+    );
+  return walk(element);
+}
+
+const visible = (style: CSSStyleDeclaration) => !transparent(style.backgroundColor) || (Number.parseFloat(style.borderTopWidth) || 0) > 0;
+
+/** A copied wrapper that adds nothing (ruling R10): one element child, no words of its own, no fill
+ * or stroke, and the same drawn box as its child (within 1px). */
+function isPassThrough(element: Element, view: Pick<Window, "getComputedStyle">): boolean {
+  const children = [...element.children].filter((child) => !NO_WORDS.has(child.tagName.toLowerCase()));
+  if (children.length !== 1) return false;
+  if ([...element.childNodes].some((child) => child.nodeType === 3 && (child.nodeValue ?? "").trim() !== "")) return false;
+  if (visible(view.getComputedStyle(element))) return false;
+  const a = element.getBoundingClientRect();
+  const b = children[0].getBoundingClientRect();
+  return Math.abs(a.left - b.left) <= 1 && Math.abs(a.top - b.top) <= 1 && Math.abs(a.right - b.right) <= 1 && Math.abs(a.bottom - b.bottom) <= 1;
+}
+
+/** A box the inspector selects (plan 4). */
+export function isContainerElement(element: Element, view: Pick<Window, "getComputedStyle">): boolean {
+  if (validKey(element) === null || isImageElement(element) || isButtonElement(element, view)) return false;
+  if (isTextElement(element) && visibleWords(element)) return false;
+  const display = view.getComputedStyle(element).display;
+  if (display === "inline" || display === "contents" || display === "none") return false;
+  return hasBox(element) && !isPassThrough(element, view);
+}
+
+/** How the box lays out its contents (ruling R3): a row, a stack, a grid, or flowing text. */
+function layoutOf(style: CSSStyleDeclaration): ComputedContainer["layout"] {
+  if (style.display === "flex" || style.display === "inline-flex") return style.flexDirection.startsWith("column") ? "stack" : "row";
+  if (style.display === "grid" || style.display === "inline-grid") return "grid";
+  return "text";
+}
+
+const LINE_UP: Record<string, ComputedContainer["contentAlign"]> = {
+  center: "center", "flex-end": "end", end: "end", right: "end", "-webkit-right": "end", "-webkit-center": "center",
+};
+
+/** What the panel calls the box (ruling R7). */
+export function containerName(element: Element, view: Pick<Window, "getComputedStyle">): string {
+  const tag = element.tagName.toLowerCase();
+  if (tag === "nav") return "Menu";
+  if (tag === "li") return "List item";
+  if (tag === "ul" || tag === "ol") return "List";
+  if (element.classList.contains("brand-card") || /^stats\.\d+$/.test(validKey(element) ?? "")) return "Card";
+  const style = view.getComputedStyle(element);
+  if (visible(style) && cornersOf(style).some((corner) => (Number.parseFloat(corner) || 0) > 0)) return "Card";
+  const layout = layoutOf(style);
+  return layout === "row" ? "Row" : layout === "stack" ? "Column" : layout === "grid" ? "Grid" : "Box";
+}
+
+/** A box as the browser draws it: plan 3's box, its gap, layout, how its contents line up, its name. */
+export function computedContainer(element: Element, view: Pick<Window, "getComputedStyle">, toHex: (color: string) => string | null): ComputedContainer {
+  const style = view.getComputedStyle(element);
+  const layout = layoutOf(style);
+  const lineUp = layout === "row" ? style.justifyContent : layout === "stack" ? style.alignItems : layout === "grid" ? style.justifyItems : style.textAlign;
+  const gap = Number.parseFloat(style.columnGap || style.getPropertyValue("gap")) || 0;
+  return {
+    ...computedBox(element, view, toHex),
+    gap: Math.min(10_000, Math.max(0, gap)),
+    layout,
+    contentAlign: LINE_UP[lineUp] ?? "start",
+    name: containerName(element, view),
+  };
+}
+
+/** The section's own box (ruling R2): `root` and its `root.inner` (ours, an agent's kit.Shell, the
+ * header and footer, whose scope element is the box itself), or a copied section's one top element.
+ * Null when the section has none (an agent section that draws no kit.Shell, a copied section with
+ * several top elements). */
+export function sectionBoxOf(scope: Element): { outer: Element; inner: Element } | null {
+  const outer = validKey(scope) === ROOT_KEY ? scope : [...scope.querySelectorAll(KEYED)].find((element) => validKey(element) === ROOT_KEY);
+  if (outer) {
+    const inner = [...outer.querySelectorAll(KEYED)].find((element) => validKey(element) === ROOT_INNER_KEY) ?? outer;
+    return { inner, outer };
+  }
+  const fragment = scope.querySelector(COPIED_SECTION);
+  const tops = fragment ? [...fragment.children].filter((child) => validKey(child) !== null) : [];
+  return tops.length === 1 ? { inner: tops[0], outer: tops[0] } : null;
+}
+
+/** Where the element moves among its neighbours (spec §4.8): the element (or a wrapper that only
+ * holds it: unkeyed, or keyed and drawn as the same box, such as the header's button area) among its
+ * keyed parent's keyed children, in their order. Null when that is no keyed element with a neighbour
+ * inside the section, or when it is the section's own box. */
+export function arrangeOf(element: Element, scope: Element): Arrange | null {
+  let item = element;
+  for (;;) {
+    const parent = item.parentElement;
+    if (!parent || item === scope || !scope.contains(parent)) return null;
+    const parentKey = validKey(parent);
+    if (parentKey === null && parent !== scope) {
+      item = parent;
+      continue;
+    }
+    const siblings = [...parent.children].flatMap((child) => {
+      const key = validKey(child);
+      return key !== null && !key.includes("~") ? [key] : [];
+    });
+    const itemKey = validKey(item);
+    if (siblings.length >= 2) {
+      if (itemKey === null || parentKey === null || itemKey === ROOT_KEY || itemKey === ROOT_INNER_KEY || siblings.length > 200) return null;
+      return { item: itemKey, parent: parentKey, siblings };
+    }
+    if (parent === scope || parentKey === ROOT_KEY || parentKey === ROOT_INNER_KEY || !sameBox(parent, item)) return null;
+    item = parent;
+  }
+}
+
+function sameBox(a: Element, b: Element): boolean {
+  const x = a.getBoundingClientRect();
+  const y = b.getBoundingClientRect();
+  return Math.abs(x.left - y.left) <= 1 && Math.abs(x.top - y.top) <= 1 && Math.abs(x.right - y.right) <= 1 && Math.abs(x.bottom - y.bottom) <= 1;
 }
 
 /** The four corner radii; from the shorthand when the browser gives no longhands. */

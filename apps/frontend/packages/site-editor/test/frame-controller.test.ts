@@ -610,3 +610,37 @@ test("a redraw that drops the highlight keeps the words; the marketer's own clic
   assert.equal(h.lastWords(), null, "after a click or a key, a collapse clears the words");
   assert.equal(h.controller.keptWords(), null);
 });
+
+// Plan 4: a selected section carries its own box (ruling R1, R2); a change in Layers' tree re-posts.
+test("selected for a section carries its section box; for an element none", async () => {
+  const h = harness();
+  const BOX = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 1000 };
+  const sectionBox = { outer: { key: "root", box: BOX }, inner: { key: "root.inner", container: { ...BOX, gap: 0, layout: "text" as const, contentAlign: "start" as const, name: "Box" } } };
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key === "heading" ? { key, kind: "text" as const, label: key, computed: TYPO } : null,
+    elements: [{ key: "heading", kind: "text" as const, label: "heading", parent: null }],
+    sectionBox: key ? null : sectionBox,
+  }));
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const selected = () => h.posts.filter((post) => post.type === "selected").map((post) => post.payload as { element: unknown; sectionBox?: unknown });
+  assert.deepEqual(selected().at(-1)?.sectionBox, sectionBox);
+  // A click on an element of the selected section re-posts with the element, and no section box.
+  h.controller.elementClicked("/", "cta", "heading");
+  assert.equal(selected().at(-1)?.sectionBox ?? null, null);
+});
+
+test("a change in which parent an element sits under re-posts the selection", async () => {
+  const h = harness();
+  let parent: string | null = null;
+  h.controller.attachDescriber(() => ({ element: null, elements: [{ key: "heading", kind: "text" as const, label: "heading", parent }] }));
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const count = () => h.posts.filter((post) => post.type === "selected").length;
+  const before = count();
+  h.controller.refreshSelection();
+  assert.equal(count(), before, "nothing changed");
+  parent = "column";
+  h.controller.refreshSelection();
+  assert.equal(count(), before + 1);
+});

@@ -241,3 +241,29 @@ test("a selected button carries its label, its computed box and its label source
     assert.equal(parseFrameToApp(frameToApp("selected", { route: "/", componentId: "cta", componentType: "CtaBand", fields: [], props: {}, element: { ...element, labelSource: source } } as never, ctx))?.type, "selected");
   }
 });
+
+// Plan 4: a selected box carries its look as drawn and where it moves; `selected` for a section
+// carries the section's own box; Layers' elements name their parent.
+test("a selected box carries its container look and its arrange; the section box and the tree round-trip", () => {
+  const box = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [12, 12, 12, 12], paddingY: 24, paddingX: 32, width: 480 };
+  const container = { ...box, gap: 12, layout: "grid" as const, contentAlign: "center" as const, name: "Card" };
+  const element = {
+    key: "stats.1", kind: "container" as const, label: "Card", computed: ELEMENT.computed, container,
+    arrange: { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1"] },
+  };
+  const elements = [
+    { key: "stats", kind: "container" as const, label: "Grid", parent: null },
+    { key: "stats.1", kind: "container" as const, label: "Card", parent: "stats" },
+    { key: "logo", kind: "image" as const, label: "Logo", parent: null, hidden: true as const },
+  ];
+  const sectionBox = { outer: { key: "root", box }, inner: { key: "root.inner", container: { ...container, name: "Section" } } };
+  const payload = { route: "/", componentId: "stats", componentType: "StatsBand", fields: [], props: {}, element, elements, sectionBox };
+  const parsed = parseFrameToApp(frameToApp("selected", payload, ctx));
+  assert.deepEqual(parsed?.type === "selected" ? parsed.payload : null, payload);
+  const refused = (change: object) => parseFrameToApp(frameToApp("selected", { ...payload, element: { ...element, ...change } } as never, ctx));
+  assert.equal(refused({ arrange: { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1~2"] } }), null, "a span key is no sibling");
+  assert.equal(refused({ arrange: { item: "stats.1", parent: "stats", siblings: Array.from({ length: 201 }, (_, i) => `k${i}`) } }), null, "over 200 siblings");
+  assert.equal(refused({ arrange: { item: "stats.1", parent: "stats", siblings: ["stats.1"] } }), null, "no neighbour");
+  assert.equal(refused({ container: { ...container, layout: "column" } }), null);
+  assert.equal(refused({ container: { ...container, name: "x".repeat(41) } }), null);
+});

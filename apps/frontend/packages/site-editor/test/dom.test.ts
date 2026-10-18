@@ -98,9 +98,11 @@ test("a click whose target is inside a text element (an in-place field) needs no
   assert.equal(elementKeyAt(section, sectionEl("h").querySelector("b"), { x: -50, y: -50 }), "heading");
 });
 
-test("findKeyedElement finds a text element by key, never outside its section", () => {
+test("findKeyedElement finds any keyed element by key (plan 4: boxes and images too), never outside its section", () => {
   assert.equal(findKeyedElement(section, "body")?.id, "b");
-  assert.equal(findKeyedElement(section, "photo"), null);
+  assert.equal(findKeyedElement(section, "photo")?.id, "img");
+  assert.equal(findKeyedElement(section, "card")?.id, "card");
+  assert.equal(findKeyedElement(section, "nowhere"), null);
   assert.equal(findKeyedElement(section, '"]{}body{'), null);
 });
 
@@ -274,4 +276,146 @@ test("the size scale is read from the brand's variables at the element; none on 
   assert.deepEqual(sizeScaleAt(el, measuredKit, view("43.5px", "14.4px")), { headline: 0.5, body: 0.9, title: 56 });
   assert.equal(sizeScaleAt(el, measuredKit, view("87px", "16px")), null, "desktop");
   assert.equal(sizeScaleAt(el, brand, view("43.5px", "14.4px")), null, "a kit that did not measure its steps");
+});
+
+// Plan 4: boxes and images. A fake view gives each element the style a browser would draw, by id.
+import { arrangeOf, computedContainer, containerName, isContainerElement, isImageElement, sectionBoxOf } from "../src/client/dom";
+
+const BASE_STYLE: Record<string, string> = {
+  display: "block", backgroundColor: "rgba(0, 0, 0, 0)", borderTopWidth: "0px", borderTopColor: "rgb(0, 0, 0)",
+  borderTopLeftRadius: "0px", borderTopRightRadius: "0px", borderBottomRightRadius: "0px", borderBottomLeftRadius: "0px", borderRadius: "0px",
+  paddingTop: "0px", paddingLeft: "0px", flexDirection: "row", justifyContent: "normal", alignItems: "normal", justifyItems: "normal",
+  textAlign: "start", columnGap: "normal", rowGap: "normal", color: "rgb(0, 0, 0)", fontFamily: "Inter", fontSize: "16px", fontWeight: "400",
+  fontStyle: "normal", textDecorationLine: "none", visibility: "visible",
+};
+const fakeView = (styles: Record<string, Record<string, string>>) => ({
+  getComputedStyle: (element: Element) => {
+    const style: Record<string, string> = { ...BASE_STYLE, ...(element.tagName === "SPAN" || element.tagName === "A" ? { display: "inline" } : {}), ...styles[element.id] };
+    return { ...style, getPropertyValue: (name: string) => style[name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())] ?? "" } as unknown as CSSStyleDeclaration;
+  },
+});
+const stubBoxes = (scope: Element, boxes: Record<string, [number, number, number, number]>) => {
+  for (const element of [scope, ...scope.querySelectorAll("*")]) {
+    const [left, top, right, bottom] = boxes[element.id] ?? [0, 0, 0, 0];
+    (element as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top });
+  }
+};
+
+const boxDom = new JSDOM(`
+  <div data-puck-component="stats" id="scope"><div class="clue-section">
+    <section id="root" data-clue-el="root"><div id="inner" data-clue-el="root.inner">
+      <dl id="grid" data-clue-el="stats">
+        <div id="s0" data-clue-el="stats.0"><dt id="v0" data-clue-el="stats.0.value">7%</dt></div>
+        <div id="s1" data-clue-el="stats.1"><dt id="v1" data-clue-el="stats.1.value">2x</dt></div>
+      </dl>
+      <div id="col" data-clue-el="column"><h2 id="h" data-clue-el="heading">H</h2><p id="b" data-clue-el="body">B</p></div>
+      <ul id="list" data-clue-el="list"><li id="li0" data-clue-el="list.0"><p id="li0t" data-clue-el="list.0.t">One</p></li><li id="li1" data-clue-el="list.1"><p id="li1t" data-clue-el="list.1.t">Two</p></li></ul>
+      <div id="wrap" data-clue-el="0.1"><div id="card" data-clue-el="0.1.0"><p id="ct" data-clue-el="0.1.0.0">Card</p></div></div>
+      <span id="inl" data-clue-el="inl"><svg id="icon" data-clue-el="inl.0"></svg></span>
+      <img id="photo" data-clue-el="image" src="/x.png">
+    </div></section>
+  </div></div>`);
+const bx = (id: string) => boxDom.window.document.getElementById(id)!;
+const boxScope = bx("scope");
+stubBoxes(boxScope, {
+  scope: [0, 0, 1000, 800], root: [0, 0, 1000, 800], inner: [0, 0, 1000, 800],
+  grid: [0, 0, 1000, 200], s0: [0, 0, 480, 200], v0: [10, 10, 100, 40], s1: [520, 0, 1000, 200], v1: [530, 10, 620, 40],
+  col: [0, 220, 1000, 320], h: [0, 220, 1000, 260], b: [0, 270, 1000, 300],
+  list: [0, 330, 1000, 400], li0: [0, 330, 1000, 360], li0t: [0, 330, 200, 360], li1: [0, 370, 1000, 400], li1t: [0, 370, 200, 400],
+  wrap: [0, 420, 500, 600], card: [0, 420, 500, 600], ct: [10, 430, 200, 460],
+  inl: [600, 420, 620, 440], icon: [600, 420, 620, 440], photo: [600, 450, 800, 600],
+});
+const boxStyles: Record<string, Record<string, string>> = {
+  grid: { display: "grid", columnGap: "24px", justifyItems: "center" },
+  s0: { backgroundColor: "rgb(255, 255, 255)", borderTopLeftRadius: "8px" },
+  col: { display: "flex", flexDirection: "column", alignItems: "center" },
+  card: { backgroundColor: "rgb(255, 255, 255)", borderTopLeftRadius: "12px", borderTopRightRadius: "12px", borderBottomRightRadius: "12px", borderBottomLeftRadius: "12px", paddingTop: "24px", paddingLeft: "32px" },
+  list: { display: "block" },
+};
+const boxView = fakeView(boxStyles) as unknown as Window;
+
+test("boxes and images: a grid, a stack, cards, a list and its items are containers with their names and layouts", () => {
+  const grid = computedContainer(bx("grid"), boxView, cssColorToHex);
+  assert.equal(grid.layout, "grid");
+  assert.equal(grid.gap, 24);
+  assert.equal(grid.contentAlign, "center");
+  assert.equal(grid.name, "Grid");
+  const col = computedContainer(bx("col"), boxView, cssColorToHex);
+  assert.deepEqual([col.layout, col.contentAlign, col.name], ["stack", "center", "Column"]);
+  assert.equal(containerName(bx("s0"), boxView), "Card", "a stat is a card");
+  assert.equal(containerName(bx("card"), boxView), "Card", "a filled box with corners");
+  assert.equal(containerName(bx("list"), boxView), "List");
+  assert.equal(containerName(bx("li0"), boxView), "List item");
+  const card = computedContainer(bx("card"), boxView, cssColorToHex);
+  assert.deepEqual([card.fill, card.paddingY, card.paddingX, card.radius[0], card.layout], ["#FFFFFF", 24, 32, 12, "text"]);
+  assert.equal(isContainerElement(bx("inl"), boxView), false, "an inline span is no box");
+  assert.equal(isContainerElement(bx("h"), boxView), false, "a heading is text");
+  assert.equal(isImageElement(bx("photo")), true);
+  assert.equal(isImageElement(bx("icon")), true);
+});
+
+test("a click between two cards selects their grid; on a card the card; on its words the words; on blank section space nothing (the section)", () => {
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 500, y: 100 }, boxView), "stats");
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 300, y: 150 }, boxView), "stats.0");
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 50, y: 25 }, boxView), "stats.0.value");
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 400, y: 550 }, boxView), "0.1.0", "the card, not its pass-through wrapper");
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 700, y: 500 }, boxView), "image");
+  assert.equal(elementKeyAt(boxScope, boxScope, { x: 900, y: 700 }, boxView), null, "the section's own box is never a click target");
+  assert.equal(elementKeyAt(boxScope, bx("ct"), { x: -1, y: -1 }, boxView), "0.1.0.0", "a direct hit picks the innermost element");
+});
+
+test("a pass-through wrapper is neither listed nor clickable; a wrapper with its own fill is", () => {
+  const listed = (view: Window) => inspectableElementsIn(boxScope, view).map(({ element }) => element.id);
+  assert.ok(!listed(boxView).includes("wrap"));
+  assert.ok(listed(boxView).includes("card"));
+  const filled = fakeView({ ...boxStyles, wrap: { backgroundColor: "rgb(1, 2, 3)" } }) as unknown as Window;
+  assert.ok(listed(filled).includes("wrap"));
+});
+
+test("Layers' tree: each element's parent is its nearest listed ancestor; the section's own box is left out", () => {
+  const tree = Object.fromEntries(inspectableElementsIn(boxScope, boxView).map(({ element, kind, parent }) => [element.id, `${kind}<${parent ?? "-"}`]));
+  assert.deepEqual(tree, {
+    grid: "container<-", s0: "container<stats", v0: "text<stats.0", s1: "container<stats", v1: "text<stats.1",
+    col: "container<-", h: "text<column", b: "text<column",
+    list: "container<-", li0: "container<list", li0t: "text<list.0", li1: "container<list", li1t: "text<list.1",
+    card: "container<-", ct: "text<0.1.0", icon: "image<-", photo: "image<-",
+  });
+});
+
+const headerDom = new JSDOM(`
+  <div class="brand-root"><header id="hroot" data-clue-section="shell-header" data-clue-el="root"><div id="hinner" data-clue-el="root.inner">
+    <div id="brand" data-clue-el="brand"><img id="logo" data-clue-el="logo" src="/l.png"><span id="prep" data-clue-el="prepared"><span id="name" data-clue-el="preparedFor">Carmel</span></span></div>
+    <div id="actions" data-clue-el="actions"><nav id="nav" data-clue-el="nav"><a id="n0" data-clue-el="nav.0" href="/a">A</a></nav><span id="area" data-clue-el="ctaArea"><a id="cta" class="brand-btn" data-clue-el="cta"><span id="ctal" data-clue-el="cta.label">Go</span></a></span></div>
+  </div></header></div>`);
+const hx = (id: string) => headerDom.window.document.getElementById(id)!;
+stubBoxes(hx("hroot"), { hroot: [0, 0, 1000, 60], hinner: [0, 0, 1000, 60], brand: [0, 0, 400, 60], prep: [100, 10, 300, 50], name: [180, 10, 300, 50], actions: [600, 0, 1000, 60], nav: [600, 10, 800, 50], n0: [600, 10, 640, 50], area: [820, 10, 1000, 50], cta: [820, 10, 1000, 50], ctal: [840, 20, 980, 40] });
+const headerView = fakeView({ brand: { display: "flex" }, actions: { display: "flex" }, nav: { display: "flex" }, area: { display: "inline-flex" }, prep: { display: "inline" } }) as unknown as Window;
+
+test("arrangeOf: a stat among stats; a heading among its keyed neighbours; the header's button through its area; none for a section's box", () => {
+  assert.deepEqual(arrangeOf(bx("s1"), boxScope), { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1"] });
+  assert.deepEqual(arrangeOf(bx("h"), boxScope), { item: "heading", parent: "column", siblings: ["heading", "body"] });
+  assert.deepEqual(arrangeOf(hx("cta"), hx("hroot")), { item: "ctaArea", parent: "actions", siblings: ["nav", "ctaArea"] });
+  assert.equal(arrangeOf(bx("root"), boxScope), null);
+  assert.equal(arrangeOf(hx("n0"), hx("hroot")), null, "a lone menu link has no neighbour");
+});
+
+test("the section's box: ours and the shell's are root and root.inner; a copied section's is its one top element", () => {
+  const ours = sectionBoxOf(boxScope);
+  assert.deepEqual([ours?.outer.id, ours?.inner.id], ["root", "inner"]);
+  const shell = sectionBoxOf(hx("hroot"));
+  assert.deepEqual([shell?.outer.id, shell?.inner.id], ["hroot", "hinner"]);
+  const copied = new JSDOM(`<div id="c"><div class="clue-section"><div data-lumen-fragment="true"><section id="top" data-clue-el="0"><p data-clue-el="0.0">x</p></section></div></div></div>`).window.document;
+  const box = sectionBoxOf(copied.getElementById("c")!);
+  assert.deepEqual([box?.outer.id, box?.inner.id], ["top", "top"]);
+  const two = new JSDOM(`<div id="c"><div data-lumen-fragment="true"><p data-clue-el="0">a</p><p data-clue-el="1">b</p></div></div>`).window.document;
+  assert.equal(sectionBoxOf(two.getElementById("c")!), null, "two top elements: no one box");
+});
+
+test("a hidden header part is listed hidden even with no box; an inline span is not a container", () => {
+  const found = inspectableElementsIn(hx("hroot"), headerView, new Set(["logo"]));
+  const logo = found.find(({ element }) => element.id === "logo");
+  assert.deepEqual(logo && { kind: logo.kind, hidden: logo.hidden, parent: logo.parent }, { kind: "image", hidden: true, parent: "brand" });
+  assert.ok(!found.some(({ element }) => element.id === "prep"), "the inline Prepared-for line is part of its group, not a box");
+  assert.ok(!found.some(({ element }) => element.id === "area"), "the button's area is a pass-through wrapper (moving the button moves it)");
+  assert.ok(found.some(({ element, kind }) => element.id === "cta" && kind === "button"));
 });

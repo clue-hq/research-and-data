@@ -1,17 +1,6 @@
 import { normalizeRichIn, type BrandData } from "@clue/site-kit";
 import { ExternalHrefSchema } from "@clue/site-kit/editor-protocol";
-import type {
-  AppToFrameMessage,
-  AppToFramePayloads,
-  EditorMode,
-  ElementSelection,
-  ElementSummary,
-  FieldDescription,
-  FrameToAppPayloads,
-  FrameToAppType,
-  SiteGeometry,
-  Words,
-} from "@clue/site-kit/editor-protocol";
+import type { AppToFrameMessage, AppToFramePayloads, EditorMode, ElementSelection, ElementSummary, FieldDescription, FrameToAppPayloads, FrameToAppType, SectionBox, SiteGeometry, Words } from "@clue/site-kit/editor-protocol";
 import {
   canonicalJson,
   componentProps,
@@ -52,7 +41,7 @@ export type ElementDescriber = (
   target: SiteTarget,
   componentId: string,
   elementKey: string | null,
-) => { element: ElementSelection | null; elements: ElementSummary[] };
+) => { element: ElementSelection | null; elements: ElementSummary[]; sectionBox?: SectionBox | null };
 
 const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
 
@@ -61,7 +50,7 @@ export type KeptWords = { target: SiteTarget; componentId: string; key: string; 
 
 /** Which elements a description shows (keys and labels), without their computed look. */
 function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
-  return JSON.stringify([element?.key ?? null, elements.map((item) => [item.key, item.label])]);
+  return JSON.stringify([element?.key ?? null, elements.map((item) => [item.key, item.label, item.kind, item.parent ?? null, item.hidden ?? false])]);
 }
 
 export interface FrameState {
@@ -298,9 +287,11 @@ export class FrameController {
     const described = this.describe(target, componentId, key);
     const element = described.element ? this.withKeptWords(target, componentId, described.element) : null;
     const { elements } = described;
+    // Plan 4: the section's own box rides along when the section itself is selected.
+    const sectionBox = element ? null : (described.sectionBox ?? null);
     this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
     this.described = { askedKey: key, componentType, fields, shown: shownElements(element, elements), words: JSON.stringify(element?.words ?? null) };
-    this.post("selected", { componentId, componentType, element, elements, fields, props, route: target });
+    this.post("selected", { componentId, componentType, element, elements, fields, props, route: target, ...(sectionBox ? { sectionBox } : {}) });
   }
 
   /** The element with the words to show: the ones on the canvas now (kept from here on), else the ones
