@@ -1378,7 +1378,8 @@ def mint_site_templates_after_capture(blobs: DesignBlobStore, *, kit_id: str, ki
                  "message": f"site templates failed: {type(error).__name__}: {error}"}]
     return [
         {"code": SITE_TEMPLATE_CODE, "severity": "warning",
-         "message": f"site {str(result['role']).removeprefix('site_')} template not made: {result['skipped']}"}
+         "message": f"site {str(result['role']).removeprefix('site_')} template"
+                    f"{' (' + str(result['layout']).replace('_', ' ') + ')' if result.get('layout') else ''} not made: {result['skipped']}"}
         for result in results
         if result.get("skipped")
     ]

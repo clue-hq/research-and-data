@@ -26,8 +26,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "site_templates"
 PLACEHOLDER = "/asset-store/" + "c" * 64
 
 
-def _derive(name: str, role: str):
-    return derive_site_template(role, (FIXTURES / f"{name}.html").read_text(), placeholder_src=PLACEHOLDER)
+def _derive(name: str, role: str, layout: str | None = None):
+    return derive_site_template(role, (FIXTURES / f"{name}.html").read_text(), placeholder_src=PLACEHOLDER, layout=layout)
 
 
 def _annotated(derived) -> LexborHTMLParser:
@@ -37,7 +37,7 @@ def _annotated(derived) -> LexborHTMLParser:
 
 @pytest.mark.parametrize("name", ["webflow_header", "tailwind_header"])
 def test_header_keeps_logo_menu_pattern_and_last_cta(name: str) -> None:
-    tree = _annotated(_derive(name, SITE_HEADER_ROLE))
+    tree = _annotated(_derive(name, SITE_HEADER_ROLE, "with_menu"))
     logos = [a for a in tree.css("a[href='/']") if a.css_first("img, svg")]
     assert len(logos) == 1
     [menu] = tree.css(f"[{MENU_ATTR}]")
@@ -71,12 +71,62 @@ def test_header_inserts_the_account_after_the_logo(name: str) -> None:
     assert account.attributes.get("data-lumen-slot") == "account_shown"
     image = account.css_first("img.clue-account-logo")
     assert image.attributes.get("data-lumen-slot") == "account_logo" and image.attributes.get("src") == PLACEHOLDER
-    line = account.next
-    assert line is not None and line.attributes.get("data-lumen-slot") == "account_line"
-    assert "clue-account-line" in (line.attributes.get("class") or "")
-    menu_link = tree.css_first(f"[{MENU_ATTR}] a")
-    for token in (menu_link.attributes.get("class") or "").split():
-        assert token in (line.attributes.get("class") or "").split(), "the account line takes the menu link's look"
+    assert tree.css_first("[data-lumen-slot=account_line]") is not None
+
+
+# Founder 2026-10-19: two header templates the agent chooses between. An ABM page is normally one
+# page: the seller's logo and the account's on the left, "Prepared for …" in the centre, the button on
+# the right. A site with more pages keeps the line beside the logos and puts the menu in the centre.
+def _zones(tree):
+    [row] = tree.css(".clue-header-row")
+    zones = [child for child in row.iter(include_text=False) if "clue-zone" in (child.attributes.get("class") or "")]
+    return [z.attributes["class"].split()[-1] for z in zones], {z.attributes["class"].split()[-1]: z for z in zones}
+
+
+@pytest.mark.parametrize("name", ["webflow_header", "tailwind_header"])
+def test_a_one_page_header_puts_the_account_line_in_the_centre(name: str) -> None:
+    tree = _annotated(_derive(name, SITE_HEADER_ROLE, "one_page"))
+    order, zone = _zones(tree)
+    assert order == ["clue-zone-start", "clue-zone-centre", "clue-zone-end"]
+    assert zone["clue-zone-start"].css_first("a[href='/'] img, a[href='/'] svg") is not None
+    assert zone["clue-zone-start"].css_first(".clue-account") is not None
+    assert zone["clue-zone-centre"].css_first(".clue-account-line") is not None
+    assert "Book a demo" in (zone["clue-zone-end"].text() or "")
+    assert tree.css_first(f"[{MENU_ATTR}]") is None, "one page: no menu"
+
+
+@pytest.mark.parametrize("name", ["webflow_header", "tailwind_header"])
+def test_a_header_with_a_page_menu_puts_the_menu_in_the_centre(name: str) -> None:
+    tree = _annotated(_derive(name, SITE_HEADER_ROLE, "with_menu"))
+    order, zone = _zones(tree)
+    assert order == ["clue-zone-start", "clue-zone-centre", "clue-zone-end"]
+    assert zone["clue-zone-start"].css_first(".clue-account") is not None
+    assert zone["clue-zone-start"].css_first(".clue-account-line") is not None
+    assert zone["clue-zone-centre"].css_first(f"[{MENU_ATTR}]") is not None
+    assert "Book a demo" in (zone["clue-zone-end"].text() or "")
+
+
+def test_the_one_page_layout_is_the_default_and_an_unknown_layout_is_refused() -> None:
+    assert _derive("webflow_header", SITE_HEADER_ROLE).html == _derive("webflow_header", SITE_HEADER_ROLE, "one_page").html
+    with pytest.raises(ValueError):
+        _derive("webflow_header", SITE_HEADER_ROLE, "sideways")
+
+
+def test_the_three_zones_are_a_grid_and_phones_keep_the_logos_and_the_line() -> None:
+    css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
+    assert ".clue-header-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);" in css
+    assert "@media (max-width:767px){.clue-header-row{grid-template-columns:auto minmax(0,1fr)}.clue-zone-end{display:none}" in css
+
+
+def test_the_account_line_is_plain_words_in_the_headers_own_type() -> None:
+    """The line no longer borrows the seller's menu-link classes (their drawer box on phones, their hover
+    pill, their centring: three live-check defects); it takes the header's own font and colour."""
+    derived = _derive("webflow_header", SITE_HEADER_ROLE)
+    line = _annotated(derived).css_first(".clue-account-line")
+    assert line.attributes.get("class") == "clue-account-line"
+    rule = derived.css_addition[derived.css_addition.index(".clue-account-line{"):].split("}", 1)[0]
+    for part in ("font:inherit", "color:inherit", "max-width:40vw", "min-width:0", "white-space:nowrap", "text-overflow:ellipsis"):
+        assert part in rule, part
 
 
 @pytest.mark.parametrize(("name", "role"), [("webflow_header", SITE_HEADER_ROLE), ("tailwind_header", SITE_HEADER_ROLE), ("webflow_footer", SITE_FOOTER_ROLE), ("tailwind_footer", SITE_FOOTER_ROLE)])
@@ -165,18 +215,9 @@ def test_a_drawer_hidden_on_desktop_is_not_the_menu() -> None:
         '<div class="lg:hidden"><a href="/1">Phone 1</a><a href="/2">Phone 2</a><a href="/3">Phone 3</a><a href="/4">Phone 4</a></div>'
         '<a class="btn" href="/demo">Book a demo</a></header>'
     )
-    tree = _annotated(derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER))
+    tree = _annotated(derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER, layout="with_menu"))
     assert "Desk A" in tree.css_first(f"[{MENU_ATTR}]").html
     assert "Phone" not in (tree.body.text() or "")
-
-
-# Final review I4: on a phone the account line shrinks (ellipsis) rather than pushing the header wide.
-def test_the_account_line_shrinks_rather_than_overflowing() -> None:
-    css = _derive("tailwind_header", SITE_HEADER_ROLE).css_addition
-    rule = css.split(".clue-account-line{", 1)[1].split("}", 1)[0]
-    # Capped, not shrinking (live check: a shrinking line was squeezed by an empty menu box on desktop).
-    for declaration in ("max-width:40vw", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"):
-        assert declaration in rule, rule
 
 
 # Final review I3 (founder 2026-10-18, option a): a seller's logo drawn in the page's code (an inline
@@ -229,21 +270,6 @@ def test_a_logo_that_is_already_an_image_is_kept() -> None:
     assert not any("kit's logo file" in note for note in derived.notes)
 
 
-def test_the_account_line_keeps_its_width_and_drops_the_menu_links_drawer_look() -> None:
-    """Live check, plan 6 (Garner): the account line borrows the menu link's class for its type, and
-    Garner's menu link turns into a full-width padded drawer row on phones; and on a wide window an
-    empty menu box squeezed the line to an ellipsis. The line keeps its own width up to 40% of the
-    window and none of the drawer row's box."""
-    css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
-    rule = css[css.index(".clue-account-line{"):].split("}", 1)[0]
-    # display:block: an ellipsis needs a block box, and a borrowed menu link class can make it a flex
-    # box (Conduit: the line was cut mid-word on phones).
-    for part in ("display:block", "flex:0 0 auto", "max-width:40vw", "width:auto", "padding:0", "border:0", "text-overflow:ellipsis"):
-        assert part in rule, part
-    # On a phone (site-kit's phone width, where the menu is hidden) the line shrinks to fit the window.
-    assert "@media (max-width:767px){.clue-account-line{flex-shrink:1;min-width:0}}" in css
-
-
 def test_a_very_wide_account_logo_cannot_push_the_header_wide() -> None:
     css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
     rule = css[css.index(".clue-account-logo{"):].split("}", 1)[0]
@@ -254,9 +280,8 @@ def test_the_account_parts_sit_above_the_headers_own_background_layer() -> None:
     """Live check, plan 6 (Garner): on phones the header's absolutely placed white background layer
     (`.nav_bg`, z-index 1) covered the account parts, which sat in the plain flow under it."""
     css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
-    for name in (".clue-account{", ".clue-account-line{"):
-        rule = css[css.index(name):].split("}", 1)[0]
-        assert "position:relative" in rule and "z-index:10" in rule, rule
+    rule = css[css.index(".clue-zone{"):].split("}", 1)[0]
+    assert "position:relative" in rule and "z-index:10" in rule, rule
 
 
 def test_the_account_line_takes_the_menu_links_type_but_never_its_link_look() -> None:
@@ -270,3 +295,13 @@ def test_the_account_line_takes_the_menu_links_type_but_never_its_link_look() ->
     rule = css[css.index(plain):].split("}", 1)[0]
     for part in ("background:none", "box-shadow:none", "outline:none", "border-radius:0", "cursor:auto"):
         assert part in rule, part
+
+
+def test_a_header_whose_parts_sit_loose_in_the_capture_still_gets_its_zones() -> None:
+    """The box holding the kept parts can be the capture's body itself (no wrapping header element):
+    the zones then get a box of their own."""
+    html = '<a class="logo" href="/"><img src="' + PLACEHOLDER + '" height="20"></a><p>Promo</p><a class="btn" href="/demo">Book a demo</a>'
+    tree = _annotated(derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER))
+    order, zone = _zones(tree)
+    assert order == ["clue-zone-start", "clue-zone-centre", "clue-zone-end"]
+    assert "Book a demo" in (zone["clue-zone-end"].text() or "") and "Promo" not in (tree.body.text() or "")

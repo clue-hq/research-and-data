@@ -51,13 +51,13 @@ def test_mint_site_template_releases_an_approved_clone(workspace_id: str, design
     _kit(workspace_id)
     source = _band(workspace_id, design_storage, role="nav", html=_header(), page="/")
     registry = _registry(workspace_id, design_storage, tmp_path)
-    minted = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=source)
-    assert minted["status"] == "approved" and minted["role"] == SITE_HEADER_ROLE
+    minted = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=source, layout="with_menu")
+    assert minted["status"] == "approved" and minted["role"] == SITE_HEADER_ROLE and minted["layout"] == "with_menu"
     assert {"account_line", "account_logo", "account_shown", "cta_href"} <= set(minted["slot_keys"])
     row = HybridRepository(workspace_id=workspace_id).require_web_fragment(minted["fragment_id"])
     assert row["section_role"] == SITE_HEADER_ROLE and row["status"] == "approved"
     assert row["derived_from"] == source and row["source_kit_id"] == KIT
-    assert minted["label"] == "Header template — seller.example"
+    assert minted["label"] == "Header template, with page menu — seller.example"
     [clone] = [c for c in list_site_clones(registry.blobs, tmp_path / "cache") if c["id"] == minted["fragment_id"]]
     assert clone["role"] == SITE_HEADER_ROLE
     assert f"{MENU_ATTR}=" in clone["html"] and "data-clue-menu-item" in clone["html"] and "data-clue-menu-label" in clone["html"]
@@ -73,18 +73,19 @@ def test_mint_site_templates_prefers_the_home_page_and_skips_degraded(workspace_
     _band(workspace_id, design_storage, role="nav", html=_header("Pricing"), page="/pricing")
     _band(workspace_id, design_storage, role="footer", html=FOOTER, page="/careers")
     set_web_fragment_degraded(workspace_id=workspace_id, fragment_id=home, degraded=True, reason="blank_render")
-    results = {result["role"]: result for result in _registry(workspace_id, design_storage, tmp_path).mint_site_templates(kit_id=KIT, kit_version=2)}
-    header = HybridRepository(workspace_id=workspace_id).require_web_fragment(results["site_header"]["fragment_id"])
+    results = {(result["role"], result.get("layout")): result for result in _registry(workspace_id, design_storage, tmp_path).mint_site_templates(kit_id=KIT, kit_version=2)}
+    header = HybridRepository(workspace_id=workspace_id).require_web_fragment(results[("site_header", "one_page")]["fragment_id"])
     assert header["derived_from"] == about, "the degraded home page is skipped; the shortest path wins"
-    assert results["site_footer"]["status"] == "approved"
+    assert results[("site_footer", None)]["status"] == "approved"
 
 
 def test_mint_site_templates_reports_not_derivable(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
     _kit(workspace_id)
     _band(workspace_id, design_storage, role="nav", html='<header><nav><a href="/a">A</a><a href="/b">B</a></nav></header>', page="/")
-    results = {result["role"]: result for result in _registry(workspace_id, design_storage, tmp_path).mint_site_templates(kit_id=KIT, kit_version=2)}
-    assert results["site_header"] == {"role": "site_header", "skipped": "no logo"}
-    assert results["site_footer"] == {"role": "site_footer", "skipped": "no captured footer"}
+    results = {(result["role"], result.get("layout")): result for result in _registry(workspace_id, design_storage, tmp_path).mint_site_templates(kit_id=KIT, kit_version=2)}
+    assert results[("site_header", "one_page")] == {"role": "site_header", "layout": "one_page", "skipped": "no logo"}
+    assert results[("site_header", "with_menu")] == {"role": "site_header", "layout": "with_menu", "skipped": "no logo"}
+    assert results[("site_footer", None)] == {"role": "site_footer", "skipped": "no captured footer"}
 
 
 def test_the_capture_mints_templates_and_reports_what_it_could_not(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
@@ -148,9 +149,10 @@ def test_a_template_made_again_replaces_the_one_before(workspace_id: str, design
     _kit(workspace_id)
     home = _band(workspace_id, design_storage, role="nav", html=_header("Home"), page="/")
     registry = _registry(workspace_id, design_storage, tmp_path)
-    first = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=home)
+    # The bands differ in a menu word, so the menu layout derives two different templates.
+    first = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=home, layout="with_menu")
     about = _band(workspace_id, design_storage, role="nav", html=_header("About"), page="/about")
-    second = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=about)
+    second = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=about, layout="with_menu")
     assert second["fragment_id"] != first["fragment_id"]
     rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
     assert rows[first["fragment_id"]]["superseded_by"] == second["fragment_id"]
@@ -170,3 +172,22 @@ def test_a_template_made_again_unchanged_settles_on_the_same_template(workspace_
     assert again["fragment_id"] == first["fragment_id"] and again["status"] == "approved" and again["converged"]
     assert [result.get("skipped") for result in registry.mint_site_templates(kit_id=KIT, kit_version=2)
             if result["role"] == "site_footer"] == [None]
+
+
+def test_a_kit_offers_both_header_templates_the_agent_chooses_between(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
+    """Founder 2026-10-19: a one-page header ("Prepared for …" in the centre) and a header with the
+    page menu, side by side in the catalog; making one again never replaces the other."""
+    _kit(workspace_id)
+    _band(workspace_id, design_storage, role="nav", html=_header(), page="/")
+    registry = _registry(workspace_id, design_storage, tmp_path)
+    results = [r for r in registry.mint_site_templates(kit_id=KIT, kit_version=2) if r["role"] == SITE_HEADER_ROLE]
+    assert sorted(r["layout"] for r in results) == ["one_page", "with_menu"] and all(r["status"] == "approved" for r in results)
+    by_layout = {r["layout"]: r for r in results}
+    assert by_layout["one_page"]["label"] == "Header template, one page — seller.example"
+    assert by_layout["with_menu"]["label"] == "Header template, with page menu — seller.example"
+    clones = {c["id"]: c for c in list_site_clones(registry.blobs, tmp_path / "cache") if c["role"] == SITE_HEADER_ROLE}
+    assert set(clones) == {by_layout["one_page"]["fragment_id"], by_layout["with_menu"]["fragment_id"]}
+    assert MENU_ATTR not in clones[by_layout["one_page"]["fragment_id"]]["html"]
+    assert MENU_ATTR in clones[by_layout["with_menu"]["fragment_id"]]["html"]
+    again = [r for r in registry.mint_site_templates(kit_id=KIT, kit_version=2) if r["role"] == SITE_HEADER_ROLE]
+    assert {r["fragment_id"] for r in again} == set(clones), "made again unchanged: the same two"

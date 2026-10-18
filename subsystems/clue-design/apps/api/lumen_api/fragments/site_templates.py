@@ -48,6 +48,13 @@ MENU_ATTR = "data-clue-menu"
 MENU_ITEM_ATTR = "data-clue-menu-item"
 MENU_LABEL_ATTR = "data-clue-menu-label"
 
+#: The two header templates the agent chooses between (founder 2026-10-19). An ABM page is normally
+#: one page: the seller's logo and the account's on the left, "Prepared for …" in the centre, the
+#: button on the right. A site with more pages keeps the line beside the logos, the menu in the centre.
+HEADER_ONE_PAGE = "one_page"
+HEADER_WITH_MENU = "with_menu"
+HEADER_LAYOUTS: tuple[str, ...] = (HEADER_ONE_PAGE, HEADER_WITH_MENU)
+
 #: What the account line says before the agent writes it for the account.
 ACCOUNT_LINE_FALLBACK = "Prepared for you"
 #: site-kit's phone width (``FALLBACKS.phoneMaxWidth``): below it the menu is hidden.
@@ -68,6 +75,9 @@ _CONTENT = "a, button, img, svg, video, picture, input"
 #: A slot the derivation has chosen but not yet turned into a selector (removed before returning).
 _PENDING = "data-clue-slot-pending"
 _CTA_MARK = "data-clue-cta-pending"
+#: Where the account parts and the line go (replaced after the slots are detected).
+_ACCOUNT_AT = "data-clue-account-at"
+_LINE_AT = "data-clue-line-at"
 
 
 class TemplateNotDerivable(Exception):
@@ -91,7 +101,8 @@ class DerivedTemplate:
 
 
 def derive_site_template(
-    role: str, source_html: str, *, placeholder_src: str, seller_logo_src: str | None = None
+    role: str, source_html: str, *, placeholder_src: str, seller_logo_src: str | None = None,
+    layout: str | None = None,
 ) -> DerivedTemplate:
     """The ABM ``role`` template (header or footer) from a captured fragment's sanitized markup.
 
@@ -99,9 +110,14 @@ def derive_site_template(
     pixel the fragment holds); the agent fills the ``account_logo`` slot when it writes a site.
     ``seller_logo_src`` is the kit's own logo file: it stands in for a seller's logo drawn in the
     page's code (an inline SVG), which the editor cannot replace (founder 2026-10-18).
+    ``layout`` is a header's: :data:`HEADER_ONE_PAGE` (the default) or :data:`HEADER_WITH_MENU`.
     """
     if role not in SITE_TEMPLATE_ROLES:
         raise ValueError(f"{role!r} is not a site template role")
+    if role == SITE_HEADER_ROLE:
+        layout = layout or HEADER_ONE_PAGE
+        if layout not in HEADER_LAYOUTS:
+            raise ValueError(f"{layout!r} is not a header layout; expected one of {', '.join(HEADER_LAYOUTS)}")
     tree = LexborHTMLParser(source_html or "")
     body = tree.body
     if body is None:
@@ -122,9 +138,11 @@ def derive_site_template(
     if role == SITE_HEADER_ROLE:
         if logo is None:
             raise TemplateNotDerivable("no logo")
-        menu = _find_menu(body, logo)
-        cta = _find_cta(body, logo, menu)
-        if menu is None:
+        with_menu = layout == HEADER_WITH_MENU
+        found_menu = _find_menu(body, logo)
+        menu = found_menu if with_menu else None
+        cta = _find_cta(body, logo, found_menu)
+        if with_menu and menu is None:
             notes.append("no menu found: the template draws no page links")
         if cta is None:
             notes.append("no call to action found: the template has no button")
@@ -134,37 +152,39 @@ def derive_site_template(
         if cta is not None:
             cta[1].attrs[_CTA_MARK] = ""
         height = _logo_height(logo)
-        line_class = _menu_link_class(menu)
-        # Drawn right after the logo, in this order (inserted after the slots are detected, so the
-        # detector never claims them).
+        _into_zones(logo, menu, cta[0] if cta else None, line_in_centre=not with_menu)
+        # Inserted where the markers sit after the slots are detected, so the detector never claims
+        # them. The line takes the header's own type (never the seller's menu-link classes, whose
+        # phone-drawer box, hover pill and centring broke it on the live sites).
         account = [
             f'<span class="clue-account" {_PENDING}="account_shown|visibility">'
             '<span class="clue-account-rule" aria-hidden="true"></span>'
             f'<img class="clue-account-logo" src="{escape(placeholder_src)}" alt="" {_PENDING}="account_logo|image">'
             "</span>",
-            f'<span class="{escape(" ".join([*line_class, "clue-account-line"]))}" {_PENDING}="account_line|text">'
-            f"{escape(ACCOUNT_LINE_FALLBACK)}</span>",
+            f'<span class="clue-account-line" {_PENDING}="account_line|text">{escape(ACCOUNT_LINE_FALLBACK)}</span>',
         ]
         css_addition += (
-            # Above the header's own background layers (Garner's absolutely placed `.nav_bg` covered
-            # the account parts on phones; the seller's logo is stacked above it, these were not).
-            ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0;position:relative;z-index:10}"
+            # Three zones over the seller's own header box (its background, height and padding stay):
+            # the start and end columns share the room left over, so the centre is the true centre.
+            ".clue-header-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);"
+            "align-items:center;column-gap:1.5em}"
+            # Anything else the seller's header box held (a background layer) sits behind the zones.
+            ".clue-header-row>:not(.clue-zone){grid-column:1/-1;grid-row:1}"
+            # Above the header's own background layers (Garner's absolutely placed `.nav_bg`).
+            ".clue-zone{position:relative;z-index:10;display:flex;align-items:center;gap:0.75em;min-width:0}"
+            ".clue-zone-start{justify-self:start}.clue-zone-centre{justify-self:center}.clue-zone-end{justify-self:end}"
+            ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0}"
             ".clue-account-rule{align-self:stretch;width:1px;background-color:currentColor;opacity:0.3}"
             f".clue-account-logo{{display:block;height:{height};width:auto;max-width:30vw;object-fit:contain}}"
-            # The line borrows the menu link's class for its type, never its box: a seller's menu link
-            # can turn into a full-width padded drawer row on phones. It keeps its own width, up to
-            # 40% of the window, then gives way with an ellipsis rather than pushing the header wide. On a
-            # wide window it never shrinks (a seller's menu box gives way instead); on a phone, where the
-            # menu is hidden (site-kit's phone width), it shrinks to fit.
-            ".clue-account-line{display:block;flex:0 0 auto;width:auto;max-width:40vw;padding:0;border:0;margin:0;"
-            "position:relative;z-index:10;"
-            "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-            f"@media (max-width:{PHONE_MAX_WIDTH}){{.clue-account-line{{flex-shrink:1;min-width:0}}}}"
-            # The borrowed classes can carry the link's own look (Conduit: a hover background, a focus
-            # ring, rounding); the line is plain words in every state. Same specificity as the seller's
-            # state rules and written after them, so it wins.
+            # Up to 40% of the window, then an ellipsis rather than pushing the header wide.
+            ".clue-account-line{display:block;max-width:40vw;min-width:0;margin:0;padding:0;border:0;"
+            "font:inherit;color:inherit;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+            # Plain words in every state, whatever the seller's stylesheet says about a span in a header.
             ".clue-account-line,.clue-account-line:hover,.clue-account-line:focus,.clue-account-line:focus-visible{"
             "background:none;box-shadow:none;outline:none;border-radius:0;text-decoration:none;cursor:auto}"
+            # Phones (site-kit's phone width): the logos and the line; the hero carries the button.
+            f"@media (max-width:{PHONE_MAX_WIDTH}){{.clue-header-row{{grid-template-columns:auto minmax(0,1fr)}}"
+            ".clue-zone-end{display:none}.clue-zone-centre{justify-self:start}}"
         )
     else:
         copyright_line = _find_copyright(body)
@@ -330,15 +350,53 @@ def _find_copyright(body: LexborNode) -> LexborNode | None:
     return found
 
 
+def _lowest_common_ancestor(nodes: list[LexborNode]) -> LexborNode:
+    chain = []
+    current: LexborNode | None = nodes[0]
+    while current is not None:
+        chain.append(current)
+        current = current.parent
+    for candidate in chain:
+        if all(_contains(candidate, node) for node in nodes[1:]):
+            return candidate
+    return chain[-1]
+
+
+def _into_zones(logo: LexborNode, menu: LexborNode | None, cta: LexborNode | None, *, line_in_centre: bool) -> None:
+    """Rebuild the box that holds the kept parts as three zones: the logo and the account's place,
+    then the line or the menu, then the call to action. The box keeps its own element and classes (the
+    seller's padding and width); whatever else it held stays after the zones (a background layer)."""
+    kept = [node for node in (logo, menu, cta) if node is not None]
+    row = _lowest_common_ancestor(kept) if len(kept) > 1 else (logo.parent or logo)
+    others = [
+        child.html or "" for child in _children(row)
+        if not any(_contains(child, node) for node in kept)
+    ]
+    line_at = f"<span {_LINE_AT}></span>"
+    start = (logo.html or "") + f"<span {_ACCOUNT_AT}></span>" + ("" if line_in_centre else line_at)
+    centre = line_at if line_in_centre else (menu.html or "" if menu is not None else "")
+    end = cta.html or "" if cta is not None else ""
+    zones = (
+        f'<div class="clue-zone clue-zone-start">{start}</div>'
+        f'<div class="clue-zone clue-zone-centre">{centre}</div>'
+        f'<div class="clue-zone clue-zone-end">{end}</div>'
+    )
+    if (row.tag or "") in {"body", "html"}:
+        # The parts sit loose in the capture: the zones get a box of their own.
+        for child in _children(row):
+            child.decompose()
+        row.insert_child(_node(f'<div class="clue-header-row">{zones}{"".join(others)}</div>'))
+        return
+    attributes = dict(row.attributes)
+    attributes["class"] = " ".join([*(attributes.get("class") or "").split(), "clue-header-row"])
+    rendered = " ".join(f'{name}="{escape(value)}"' if value is not None else name for name, value in attributes.items())
+    row.replace_with(_node(f"<{row.tag} {rendered}>{zones}{''.join(others)}</{row.tag}>"))
+
+
 def _logo_height(logo: LexborNode) -> str:
     image = logo if (logo.tag or "") == "img" else logo.css_first("img")
     height = (image.attributes.get("height") or "") if image is not None else ""
     return f"{int(height)}px" if height.isdigit() and int(height) > 0 else ACCOUNT_LOGO_HEIGHT
-
-
-def _menu_link_class(menu: LexborNode | None) -> list[str]:
-    anchor = menu.css_first("a") if menu is not None else None
-    return (anchor.attributes.get("class") or "").split() if anchor is not None else []
 
 
 # --------------------------------------------------------------------------- #
@@ -360,10 +418,11 @@ def _with_slots(body: LexborNode, account: list[str], css_addition: str, notes: 
         if node is None or (menu is not None and _contains(menu, node)):
             continue
         node.attrs[_PENDING] = f"{spec.key}|{spec.kind}"
-    logo = _find_logo(detected_body)
-    if logo is not None:
-        for part in reversed(account):
-            logo.insert_after(_node(part))
+    if account:
+        for marker, part in ((_ACCOUNT_AT, account[0]), (_LINE_AT, account[1])):
+            at = detected_body.css_first(f"[{marker}]")
+            if at is not None:
+                at.replace_with(_node(part))
 
     taken = {(node.attributes.get(_PENDING) or "").split("|")[0] for node in detected_body.css(f"[{_PENDING}]")}
 

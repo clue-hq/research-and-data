@@ -61,31 +61,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.apply:
         for result in registry.mint_site_templates(kit_id=kit_id, kit_version=version):
-            print(f"  {result['role']}: " + (f"skipped ({result['skipped']})" if result.get("skipped") else f"{result['fragment_id']} {result['status']} — {result['label']}"))
+            name = result["role"] + (f" ({result['layout']})" if result.get("layout") else "")
+            print(f"  {name}: " + (f"skipped ({result['skipped']})" if result.get("skipped") else f"{result['fragment_id']} {result['status']} — {result['label']}"))
         return 0
 
+    from lumen_api.fragments.site_templates import HEADER_LAYOUTS, SITE_HEADER_ROLE
+
     for role, source in registry.site_template_sources(kit_id=kit_id, kit_version=version).items():
-        if source is None:
-            print(f"  {role}: no usable captured band")
-            continue
-        loaded = read_web_fragment(blobs.storage, workspace_id=args.workspace, fragment_id=str(source["fragment_id"]))
-        try:
-            derived = derive_site_template(role, loaded.html, placeholder_src="/asset-store/" + "0" * 64,
-                                           seller_logo_src=registry._kit_logo_file(kit_id, version))
-        except TemplateNotDerivable as error:
-            print(f"  {role}: from {source['fragment_id']} — not derivable ({error.reason})")
-            continue
-        print(f"  {role}: from {source['fragment_id']} ({source.get('label')})")
-        print(f"    slots: {', '.join(f'{spec.key} ({spec.kind})' for spec in derived.slots)}")
-        for note in derived.notes:
-            print(f"    note: {note}")
-        if args.preview_dir:
-            args.preview_dir.mkdir(parents=True, exist_ok=True)
-            wrapper = "lumen-frag-" + str(source["fragment_id"]).removeprefix("frag_")
-            css = f"{loaded.css}\n{derived.css_addition.replace('.clue-', f'.{wrapper} .clue-')}"
-            page = f"<!doctype html><meta charset=utf-8><title>{escape(role)}</title><style>{css}</style><div class=\"{wrapper}\">{derived.html}</div>"
-            (args.preview_dir / f"{role}.html").write_text(page)
-            print(f"    preview: {args.preview_dir / f'{role}.html'}")
+        for layout in (HEADER_LAYOUTS if role == SITE_HEADER_ROLE else (None,)):
+            name = role + (f"-{layout}" if layout else "")
+            if source is None:
+                print(f"  {name}: no usable captured band")
+                continue
+            loaded = read_web_fragment(blobs.storage, workspace_id=args.workspace, fragment_id=str(source["fragment_id"]))
+            try:
+                derived = derive_site_template(role, loaded.html, placeholder_src="/asset-store/" + "0" * 64,
+                                               seller_logo_src=registry._kit_logo_file(kit_id, version), layout=layout)
+            except TemplateNotDerivable as error:
+                print(f"  {name}: from {source['fragment_id']} — not derivable ({error.reason})")
+                continue
+            print(f"  {name}: from {source['fragment_id']} ({source.get('label')})")
+            print(f"    slots: {', '.join(f'{spec.key} ({spec.kind})' for spec in derived.slots)}")
+            for note in derived.notes:
+                print(f"    note: {note}")
+            if args.preview_dir:
+                args.preview_dir.mkdir(parents=True, exist_ok=True)
+                wrapper = "lumen-frag-" + str(source["fragment_id"]).removeprefix("frag_")
+                css = f"{loaded.css}\n{derived.css_addition.replace('.clue-', f'.{wrapper} .clue-')}"
+                page = f"<!doctype html><meta charset=utf-8><title>{escape(name)}</title><style>{css}</style><div class=\"{wrapper}\">{derived.html}</div>"
+                (args.preview_dir / f"{name}.html").write_text(page)
+                print(f"    preview: {args.preview_dir / f'{name}.html'}")
     return 0
 
 

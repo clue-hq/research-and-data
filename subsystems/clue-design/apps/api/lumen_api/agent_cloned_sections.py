@@ -642,6 +642,8 @@ class DurableAgentClonedSectionRegistry:
                 else None
             ),
             "created_at": row.get("created_at"),
+            # Plan 6: a header template's layout (`one_page` / `with_menu`); None otherwise.
+            "template_layout": provenance.get("layout") if isinstance(provenance.get("layout"), str) else None,
             # --- D-F6: is this clone broken, is it a repair, and has it been repaired? --------
             "degraded": degraded,
             "degraded_reason": row.get("degraded_reason") if degraded else None,
@@ -1784,7 +1786,7 @@ class DurableAgentClonedSectionRegistry:
     #: Where each template role is derived from: the kit's captured bands of this role.
     SITE_TEMPLATE_SOURCES = {"site_header": "nav", "site_footer": "footer"}
 
-    def mint_site_template(self, *, role: str, source_fragment_id: str) -> JsonObject:
+    def mint_site_template(self, *, role: str, source_fragment_id: str, layout: Optional[str] = None) -> JsonObject:
         """Mint one ABM header or footer template from a captured nav or footer band (rulings R4-R6).
 
         The derivation (:func:`~lumen_api.fragments.site_templates.derive_site_template`) is
@@ -1794,10 +1796,17 @@ class DurableAgentClonedSectionRegistry:
         agent is offered it as soon as it exists. Converges onto the row that already holds the same
         template when it is minted again.
         """
-        from .fragments.site_templates import COMPOSED_SITE_TEMPLATE, SITE_TEMPLATE_ROLES, derive_site_template
+        from .fragments.site_templates import (
+            COMPOSED_SITE_TEMPLATE,
+            HEADER_ONE_PAGE,
+            SITE_HEADER_ROLE,
+            SITE_TEMPLATE_ROLES,
+            derive_site_template,
+        )
 
         if role not in SITE_TEMPLATE_ROLES:
             raise ValueError(f"{role!r} is not a site template role")
+        layout = (layout or HEADER_ONE_PAGE) if role == SITE_HEADER_ROLE else None
         original = self._repository().find_web_fragment(source_fragment_id)
         if original is None:
             raise FragmentRefused(
@@ -1808,16 +1817,18 @@ class DurableAgentClonedSectionRegistry:
         loaded = read_web_fragment(self.blobs.storage, workspace_id=self.workspace_id, fragment_id=source_fragment_id)
         # A template made again replaces the kit's current template of this role (its lineage
         # parent); the band it is made from stays provenance (`source_fragment_id`).
-        previous = self._current_site_template(role, original.get("source_kit_id"))
+        previous = self._current_site_template(role, original.get("source_kit_id"), layout)
         placeholder = self.campaign_shell_placeholder()
         seller_logo = self._kit_logo_file(original.get("source_kit_id"), original.get("source_kit_version"))
         derived = derive_site_template(
-            role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}", seller_logo_src=seller_logo
+            role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}", seller_logo_src=seller_logo,
+            layout=layout,
         )
         sanitized = sanitize_fragment_html(derived.html, rehosted={})
         source_url = str(original.get("source_url") or "")
         seller = (urlsplit(source_url).hostname or "the seller").removeprefix("www.")
-        label = f"{'Header' if role == 'site_header' else 'Footer'} template — {seller}"
+        kind = {None: "Footer template", "one_page": "Header template, one page"}.get(layout, "Header template, with page menu")
+        label = f"{kind} — {seller}"
         css = f"{loaded.css}\n{derived.css_addition}" if derived.css_addition else loaded.css
         probe = build_fragment_artifact(
             html=sanitized.html, css=css, rehosted={}, slots=list(derived.slots), preview_digest=None,
@@ -1841,6 +1852,7 @@ class DurableAgentClonedSectionRegistry:
             provenance={
                 "composed": COMPOSED_SITE_TEMPLATE,
                 "shell_role": role,
+                **({"layout": layout} if layout else {}),
                 "source_fragment_id": source_fragment_id,
                 "page_url": _page_url(original),
                 "section_index": None,
@@ -1861,6 +1873,7 @@ class DurableAgentClonedSectionRegistry:
         return {
             "fragment_id": artifact.fragment_id,
             "role": role,
+            **({"layout": layout} if layout else {}),
             "status": status,
             "label": row.get("label") or label,
             "slot_keys": [spec.key for spec in derived.slots],
@@ -1868,15 +1881,18 @@ class DurableAgentClonedSectionRegistry:
             "converged": status == "approved" and (parent is None or row.get("derived_from") == parent),
         }
 
-    def _current_site_template(self, role: str, kit_id: Any) -> Optional[str]:
-        """The template of ``role`` from this kit that is on offer now (released, not replaced), or
-        None when the kit has none yet."""
+    def _current_site_template(self, role: str, kit_id: Any, layout: Optional[str] = None) -> Optional[str]:
+        """The template of ``role`` (and, for a header, ``layout``) from this kit that is on offer now
+        (released, not replaced), or None when the kit has none yet. A header minted before layouts
+        existed counts as the one with the page menu."""
         if not kit_id:
             return None
         for row in self.list_sections().get("sections") or []:
+            row_layout = row.get("template_layout") or ("with_menu" if role == "site_header" else None)
             if (
                 row.get("section_role") == role
                 and row.get("source_kit_id") == kit_id
+                and row_layout == layout
                 and row.get("status") == "approved"
                 and not row.get("superseded_by")
             ):
@@ -1941,15 +1957,20 @@ class DurableAgentClonedSectionRegistry:
         band, or whose band is not derivable, is skipped with the reason."""
         from .fragments.site_templates import TemplateNotDerivable
 
+        from .fragments.site_templates import HEADER_LAYOUTS, SITE_HEADER_ROLE
+
         results: List[JsonObject] = []
         for role, source in self.site_template_sources(kit_id=kit_id, kit_version=kit_version).items():
-            if source is None:
-                results.append({"role": role, "skipped": f"no captured {self.SITE_TEMPLATE_SOURCES[role]}"})
-                continue
-            try:
-                results.append(self.mint_site_template(role=role, source_fragment_id=str(source["fragment_id"])))
-            except (TemplateNotDerivable, FragmentRefused) as error:
-                results.append({"role": role, "skipped": getattr(error, "reason", None) or str(error)})
+            # A header is minted in each layout the agent chooses between (founder 2026-10-19).
+            for layout in (HEADER_LAYOUTS if role == SITE_HEADER_ROLE else (None,)):
+                named = {"role": role, **({"layout": layout} if layout else {})}
+                if source is None:
+                    results.append({**named, "skipped": f"no captured {self.SITE_TEMPLATE_SOURCES[role]}"})
+                    continue
+                try:
+                    results.append(self.mint_site_template(role=role, source_fragment_id=str(source["fragment_id"]), layout=layout))
+                except (TemplateNotDerivable, FragmentRefused) as error:
+                    results.append({**named, "skipped": getattr(error, "reason", None) or str(error)})
         return results
 
 

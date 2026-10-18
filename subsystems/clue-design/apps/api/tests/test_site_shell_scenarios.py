@@ -32,7 +32,7 @@ from lumen_api.site_workspace_view import list_site_clones
 NAV = (Path(__file__).parent / "fixtures" / "site_templates" / "webflow_header.html").read_text()
 
 
-def template_brand(workspace_id: str, design_storage, tmp_path) -> tuple[dict, str, str]:
+def template_brand(workspace_id: str, design_storage, tmp_path, layout: str = "one_page") -> tuple[dict, str, str]:
     """The Garner brand with a header template minted from a captured nav band, as the catalog offers
     it (the real clone shape), and the template's placeholder logo file."""
     _row, band = create_web_fragment(
@@ -41,7 +41,7 @@ def template_brand(workspace_id: str, design_storage, tmp_path) -> tuple[dict, s
         provenance={"page_url": "https://garnerhealth.com/", "section_index": 0}, prelude_reference=PRELUDE_REFERENCE_STRIP,
     )
     registry = DurableAgentClonedSectionRegistry(blobs=DesignBlobStore(design_storage, workspace_id), cache_dir=tmp_path / "cache")
-    minted = registry.mint_site_template(role="site_header", source_fragment_id=band.fragment_id)
+    minted = registry.mint_site_template(role="site_header", source_fragment_id=band.fragment_id, layout=layout)
     [clone] = [c for c in list_site_clones(registry.blobs, tmp_path / "cache") if c["id"] == minted["fragment_id"]]
     brand = garner_brand()
     brand["clones"] = {**brand["clones"], clone["id"]: clone}
@@ -96,7 +96,7 @@ def test_template_header_edited_undone_published(client: TestClient, workspace_i
 
 
 def test_menu_follows_pages(client: TestClient, workspace_id: str, design_storage, tmp_path) -> None:  # noqa: F811
-    brand, template, _placeholder = template_brand(workspace_id, design_storage, tmp_path)
+    brand, template, _placeholder = template_brand(workspace_id, design_storage, tmp_path, layout="with_menu")
     site = stored(client, with_template_header(garner_site_without_clones("site_menu"), template, menuLabels={"analysis": "The analysis"}), brand)
     assert save(client, "site_menu", site).status_code == 200
     grown = copy.deepcopy(site)
