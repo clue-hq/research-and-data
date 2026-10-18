@@ -157,6 +157,15 @@ to the old version onto the new one (`--repin-documents`). The job, and that opt
 founder's yes and a time estimate. A full re-extraction also produces the section, through the normal
 path.
 
+### 3.6 A role whose element disappears at a narrower width (founder, 2026-10-18)
+
+Found by the live check: Garner's button is hidden below 991px, so the button role kept its 1024px
+size on every narrower screen. At a width where a role's own measured element is not drawn, the role
+follows the nearest role's narrowing there — the headline's when its desktop size is at or above the
+title size, else the body's — as a hand-set size does (§3.4). Roles whose size comes from the
+headline or body, and the headline and body themselves, are unchanged. Kits need a re-measure to
+pick this up.
+
 ## 4. Proof
 
 - Unit and scenario tests through the real code: measuring a fixture page that steps (media
