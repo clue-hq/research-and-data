@@ -172,3 +172,21 @@ test("a video shows its notes for Replace and Alt text, and keeps Fit and Stroke
   assert.match(html, />Fit</);
   assert.match(html, />Stroke</);
 });
+
+// Founder 2026-10-19: Arrange's Order row looks like the ad editor's Layer row — icon buttons in the
+// same grid, named by their aria-label, a disabled one dimmed.
+test("Arrange's Order row is the ad editor's icon row: Move up and Move down as icon buttons", () => {
+  const html = renderedModule.exports.render(
+    buttonBinding({
+      ...plan4,
+      element: { key: "stats.1", kind: "container", label: "Card", computed: TYPO, container, arrange: { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1"] } },
+      elementOverride: null,
+      arrange: { canUp: true, canDown: false, note: null },
+      title: "Card",
+    }),
+  );
+  assert.doesNotMatch(html, /↑|↓/, "no arrow glyph words");
+  assert.match(html, /aria-label="Move up"[^>]*>.*?layer-up/s);
+  assert.match(html, /aria-label="Move down"[^>]*disabled=""[^>]*>.*?layer-down/s);
+  assert.match(html, /grid-template-columns:repeat\(2, minmax\(0, 1fr\)\)/);
+});

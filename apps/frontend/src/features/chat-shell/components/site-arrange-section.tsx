@@ -2,8 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
-import { InspectorField, InspectorSection, SegmentedControl } from "./inspector-primitives";
+import { InspectorField, InspectorIcon, InspectorSection, SegmentedControl } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
+
+const MOVES = [
+  ["Move up", "layer-up", "up"],
+  ["Move down", "layer-down", "down"],
+] as const;
 
 /**
  * Arrange (plan 4, spec §4.8): Move up and Move down among the element's neighbours, each one save,
@@ -19,13 +24,16 @@ export function SiteArrangeSection({ binding, children, order = true }: { bindin
     <InspectorSection label="Arrange" onOpenChange={setOpen} open={open}>
       {arrange ? (
         <InspectorField label="Order">
-          <div className={styles.fieldGrid}>
-            <button className={styles.inspectorControl} disabled={binding.disabled || !arrange.canUp} onClick={() => binding.onMove("up")} type="button">
-              ↑ Move up
-            </button>
-            <button className={styles.inspectorControl} disabled={binding.disabled || !arrange.canDown} onClick={() => binding.onMove("down")} type="button">
-              ↓ Move down
-            </button>
+          {/* The ad editor's Layer row (ad-dummy-inspectors.tsx `DummyIconButtons`), founder 2026-10-19. */}
+          <div className={styles.dummyInspectorActionGrid} style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+            {MOVES.map(([label, icon, direction]) => {
+              const off = binding.disabled || !(direction === "up" ? arrange.canUp : arrange.canDown);
+              return (
+                <button aria-label={label} className={off ? styles.inspectorControlDisabled : ""} disabled={off} key={direction} onClick={() => binding.onMove(direction)} type="button">
+                  <InspectorIcon name={icon} size={14} />
+                </button>
+              );
+            })}
           </div>
         </InspectorField>
       ) : null}
