@@ -137,11 +137,11 @@ export function elementKeyAt(
   view?: Pick<Window, "getComputedStyle">,
 ): string | null {
   // With a view (plan 4), boxes and images too; the section's own box never (ruling R1), nor a box
-  // that covers nearly all of it (live check 2026-10-18: a copied hero's full-width padded column),
-  // so blank space selects the section. Those boxes stay in Layers.
+  // or image that covers nearly all of it (live check 2026-10-18: a copied hero's full-width padded
+  // column and its background photo), so blank space selects the section. They stay in Layers.
   const candidates = view
     ? inspectableElementsIn(scope, view)
-        .filter(({ element, hidden, kind }) => !hidden && !(kind === "container" && coversSection(element, scope, view)))
+        .filter(({ element, hidden, kind }) => !hidden && !((kind === "container" || kind === "image") && coversSection(element, scope, view)))
         .map(({ element }) => element)
     : keyedElementsIn(scope);
   const hit = asElement(target);

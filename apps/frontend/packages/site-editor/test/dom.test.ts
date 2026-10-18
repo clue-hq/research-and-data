@@ -504,3 +504,16 @@ test("a box covering nearly all of the section is no click target; blank space i
   assert.equal(elementKeyAt(scope, scope, { x: 300, y: 450 }, view), "0.0.1.0");
   assert.ok(inspectableElementsIn(scope, view).some(({ element }) => element.id === "cover"), "still listed in Layers");
 });
+
+test("a background image covering nearly all of the section leaves blank clicks to the section too", () => {
+  const doc = new JSDOM(`
+    <div id="bs" data-puck-component="hero"><div class="clue-section"><div data-lumen-fragment="true">
+      <section id="bsec" data-clue-el="0"><img id="bg" data-clue-el="0.0" src="/bg.jpg"><h1 id="bt" data-clue-el="0.1">Title</h1><img id="small" data-clue-el="0.2" src="/s.jpg"></section>
+    </div></div></div>`).window.document;
+  const scope = doc.getElementById("bs")!;
+  stubBoxes(scope, { bs: [0, 0, 1000, 600], bsec: [0, 0, 1000, 600], bg: [0, 0, 1000, 600], bt: [100, 100, 900, 160], small: [100, 300, 300, 500] });
+  const view = fakeView({ bg: { position: "absolute" } }) as unknown as Window;
+  assert.equal(elementKeyAt(scope, scope, { x: 950, y: 50 }, view), null, "blank space over the background is the section");
+  assert.equal(elementKeyAt(scope, scope, { x: 200, y: 400 }, view), "0.2", "a smaller image is still a target");
+  assert.ok(inspectableElementsIn(scope, view).some(({ element }) => element.id === "bg"), "the background stays in Layers");
+});
