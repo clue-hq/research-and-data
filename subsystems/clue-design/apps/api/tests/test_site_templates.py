@@ -257,3 +257,16 @@ def test_the_account_parts_sit_above_the_headers_own_background_layer() -> None:
     for name in (".clue-account{", ".clue-account-line{"):
         rule = css[css.index(name):].split("}", 1)[0]
         assert "position:relative" in rule and "z-index:10" in rule, rule
+
+
+def test_the_account_line_takes_the_menu_links_type_but_never_its_link_look() -> None:
+    """Live check, plan 6 (Conduit): the line borrows the menu link's classes for its type, and those
+    carried the link's hover background, focus ring and rounding (`hover:bg-ink/5`, `focus-visible:ring-3`,
+    `rounded-md`): in the editor the line showed a pill while typed in, and a visitor hovering it would
+    see a link that is not one. The line is plain words in every state."""
+    css = _derive("tailwind_header", SITE_HEADER_ROLE).css_addition
+    plain = ".clue-account-line,.clue-account-line:hover,.clue-account-line:focus,.clue-account-line:focus-visible{"
+    assert plain in css
+    rule = css[css.index(plain):].split("}", 1)[0]
+    for part in ("background:none", "box-shadow:none", "outline:none", "border-radius:0", "cursor:auto"):
+        assert part in rule, part

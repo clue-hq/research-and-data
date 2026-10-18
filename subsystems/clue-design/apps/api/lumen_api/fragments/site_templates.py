@@ -160,6 +160,11 @@ def derive_site_template(
             "position:relative;z-index:10;"
             "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
             f"@media (max-width:{PHONE_MAX_WIDTH}){{.clue-account-line{{flex-shrink:1;min-width:0}}}}"
+            # The borrowed classes can carry the link's own look (Conduit: a hover background, a focus
+            # ring, rounding); the line is plain words in every state. Same specificity as the seller's
+            # state rules and written after them, so it wins.
+            ".clue-account-line,.clue-account-line:hover,.clue-account-line:focus,.clue-account-line:focus-visible{"
+            "background:none;box-shadow:none;outline:none;border-radius:0;text-decoration:none;cursor:auto}"
         )
     else:
         copyright_line = _find_copyright(body)
