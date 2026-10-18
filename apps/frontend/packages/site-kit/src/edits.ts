@@ -40,6 +40,11 @@ export const ColorValueSchema = z.union(
 );
 
 const corner = z.number().min(0).max(200);
+/** A child's key in an `order`: an element, never a styled span. */
+const OrderKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
+
+/** Properties only the shell's header and footer may set. */
+export const SHELL_ONLY_PROPS = ["hidden"] as const;
 
 /** One element's manual styling. Every property is optional; bold is fontWeight 700. */
 export const StyleOverrideSchema = z
@@ -61,6 +66,24 @@ export const StyleOverrideSchema = z
     padding: z.union([z.number().min(0).max(200), z.object({ y: z.number().min(0).max(200), x: z.number().min(0).max(200) }).strict()]).optional(),
     /** "fit" (as wide as its content), "fill" (its container's width) or px. */
     width: z.union([z.literal("fit"), z.literal("fill"), z.number().min(1).max(2000)]).optional(),
+    // Plan 4 (boxes). The space between a row's or a grid's children.
+    gap: z.number().min(0).max(200).optional(),
+    /** How the box's contents line up across, stored with the CSS it set (ruling R3): along a row
+     * (justify-content), in a stack (align-items), in a grid (justify-items), or plain text (text-align). */
+    contentAlign: z
+      .object({ along: z.enum(["row", "stack", "grid", "text"]), to: z.enum(["start", "center", "end"]) })
+      .strict()
+      .optional(),
+    /** The order of this box's children, by their keys (spec §4.8): applied to the markup before it is
+     * drawn (copied sections and the shell), never as CSS. Keys it does not name keep their places. */
+    order: z
+      .array(OrderKeySchema)
+      .min(1)
+      .max(200)
+      .refine((keys) => new Set(keys).size === keys.length, { message: "each key once in an order" })
+      .optional(),
+    /** The header's and footer's parts only (the validator refuses it on a page section): not drawn. */
+    hidden: z.literal(true).optional(),
   })
   .strict();
 
@@ -82,6 +105,11 @@ export function editsOf(props: Record<string, unknown>): Edits {
 export function withoutEdits<T extends Record<string, unknown>>(props: T): Omit<T, "_edits"> {
   const { _edits: _, ...rest } = props;
   return rest;
+}
+
+/** Every key whose override orders its children, with that order (plan 4). */
+export function orderOf(edits: Edits): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(edits).flatMap(([key, override]) => (override.order ? [[key, override.order]] : [])));
 }
 
 /** The edits with one element's override replaced. A property set to undefined is dropped, and an
@@ -230,6 +258,18 @@ export function sizeScaleFrom(
   return headline === 1 && body === 1 ? null : { body, headline, title };
 }
 
+const FLEX_ALIGN = { start: "flex-start", center: "center", end: "flex-end" } as const;
+const TEXT_ALIGN = { start: "left", center: "center", end: "right" } as const;
+
+/** Content alignment as the one property it was set as (ruling R3). */
+function alignCss(align: StyleOverride["contentAlign"]): [string, string | undefined][] {
+  if (!align) return [];
+  if (align.along === "row") return [["justify-content", FLEX_ALIGN[align.to]]];
+  if (align.along === "stack") return [["align-items", FLEX_ALIGN[align.to]]];
+  if (align.along === "grid") return [["justify-items", align.to]];
+  return [["text-align", TEXT_ALIGN[align.to]]];
+}
+
 /** One element's override as CSS declarations, in the schema's order. */
 function declarations(brand: BrandData, override: StyleOverride): string[] {
   const out: [string, string | undefined][] = [
@@ -250,6 +290,9 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
     ["border-radius", radiusCss(override.radius)],
     ["padding", override.padding === undefined ? undefined : typeof override.padding === "number" ? `${override.padding}px` : `${override.padding.y}px ${override.padding.x}px`],
     ["width", override.width === undefined ? undefined : override.width === "fit" ? "fit-content" : override.width === "fill" ? "100%" : `${override.width}px`],
+    ["gap", override.gap !== undefined ? `${override.gap}px` : undefined],
+    ...alignCss(override.contentAlign),
+    ["display", override.hidden ? "none" : undefined],
   ];
   return out.flatMap(([property, value]) => (value ? [`${property}:${value} !important`] : []));
 }

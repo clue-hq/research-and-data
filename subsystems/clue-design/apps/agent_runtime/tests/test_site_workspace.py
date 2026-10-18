@@ -320,6 +320,28 @@ def test_the_site_summary_reads_a_buttons_hand_set_look(tmp_path: Path) -> None:
     assert "   - styled by hand: button.label — corners 0 / 4 / 8 / 16 px, padding 10 px, 240 px wide" in text
 
 
+def test_the_site_summary_reads_box_edits(tmp_path: Path) -> None:
+    """Site element inspector (plan 4): gap, content alignment, the order of a box's children and a
+    hidden header part in plain words."""
+    site = garner_site()
+    site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
+        "id": "styled_box", "surface": "brand", "heading": "H", "buttonLabel": "Go", "buttonHref": "/",
+        "_edits": {
+            "stats.1": {"gap": 12, "contentAlign": {"along": "row", "to": "center"}},
+            "0.2": {"order": ["0.2.1", "0.2.0"]},
+            "column": {"contentAlign": {"along": "stack", "to": "end"}},
+        }}})
+    site["shell"]["header"]["_edits"] = {"logo": {"hidden": True}}
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert "   - styled by hand: stats.1 — gap 12 px, contents centred along the row" in text
+    assert "   - styled by hand: 0.2 — children in the order 0.2.1, 0.2.0" in text
+    assert "   - styled by hand: column — contents to the end in the stack" in text
+    assert "- Header styled by hand: logo — hidden" in text
+
+
 def test_the_site_summary_reads_a_buttons_words_and_new_tab(tmp_path: Path) -> None:
     """Site element inspector (plan 3): a button's words as rich text, and whether it opens a new tab."""
     site = garner_site()

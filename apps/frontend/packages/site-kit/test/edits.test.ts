@@ -15,6 +15,7 @@ import {
   editsCss,
   editsOf,
   editsProblems,
+  orderOf,
   withStyleOverride,
   withoutEdits,
 } from "../src/edits";
@@ -291,4 +292,60 @@ test("an unknown fill or stroke token is reported at its key", () => {
   assert.equal(problems.length, 2, problems.join("\n"));
   assert.match(problems[0], /^button: fill token "no\.fill" is not one of this brand's colours/);
   assert.match(problems[1], /^button: stroke colour token "no\.border" is not one of this brand's colours/);
+});
+
+// Plan 4: boxes. Gap, content alignment (stored with the CSS it set, ruling R3), the order of a box's
+// children (applied to the markup, not drawn as CSS) and hidden (the header's and footer's parts only).
+test("gap, contentAlign, order and hidden parse; out-of-range and wrong shapes are refused", () => {
+  assert.ok(StyleOverrideSchema.safeParse({ gap: 12, contentAlign: { along: "row", to: "center" }, order: ["0.1", "0.0"], hidden: true }).success);
+  assert.ok(StyleOverrideSchema.safeParse({ gap: 0 }).success);
+  assert.equal(StyleOverrideSchema.safeParse({ gap: 201 }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ contentAlign: { along: "column", to: "center" } }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ contentAlign: { along: "row", to: "middle" } }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ contentAlign: { along: "row", to: "center", extra: 1 } }).success, false);
+  const twice = StyleOverrideSchema.safeParse({ order: ["a", "a"] });
+  assert.equal(twice.success, false);
+  assert.match(JSON.stringify(twice.error?.issues), /each key once in an order/);
+  assert.equal(StyleOverrideSchema.safeParse({ order: ["a~1"] }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ order: [] }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ order: Array.from({ length: 201 }, (_, i) => `k${i}`) }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ hidden: false }).success, false);
+});
+
+test("box CSS for containers: gap, each content alignment's own property, hidden; an order draws nothing", () => {
+  assert.equal(
+    editsCss("s1", { card: { gap: 12, contentAlign: { along: "stack", to: "center" }, hidden: true } }, brand),
+    '[data-clue-section="s1"] [data-clue-el="card"]{gap:12px !important;align-items:center !important;display:none !important}',
+  );
+  const along = (value: "row" | "stack" | "grid" | "text", to: "start" | "center" | "end") =>
+    editsCss("s1", { box: { contentAlign: { along: value, to } } }, brand);
+  assert.match(along("row", "start"), /\{justify-content:flex-start !important\}/);
+  assert.match(along("row", "end"), /\{justify-content:flex-end !important\}/);
+  assert.match(along("stack", "end"), /\{align-items:flex-end !important\}/);
+  assert.match(along("grid", "center"), /\{justify-items:center !important\}/);
+  assert.match(along("grid", "start"), /\{justify-items:start !important\}/);
+  assert.match(along("text", "end"), /\{text-align:right !important\}/);
+  assert.match(along("text", "start"), /\{text-align:left !important\}/);
+  assert.equal(editsCss("s1", { box: { order: ["box.1", "box.0"] } }, brand), "");
+});
+
+test("orderOf lists the order of every key that has one", () => {
+  assert.deepEqual(orderOf({ a: { order: ["a.1", "a.0"] }, b: { gap: 4 }, c: { order: ["c.2"] } }), { a: ["a.1", "a.0"], c: ["c.2"] });
+  assert.deepEqual(orderOf({}), {});
+});
+
+test("hidden is refused on a page section and accepted on the shell", () => {
+  const s = readSite("garner-syracuse");
+  const home = structuredClone(s.pages["/"]);
+  const id = home.content[0].props.id;
+  home.content[0].props._edits = { logo: { hidden: true } };
+  const shell = structuredClone(s.shell);
+  shell.header._edits = { logo: { hidden: true } };
+  shell.footer._edits = { privacy: { hidden: true } };
+  const result = validateSite({ pages: { "/": home, "/analysis": s.pages["/analysis"] }, shell }, brand, {});
+  assert.equal(result.errors.length, 1, result.errors.join("\n"));
+  assert.equal(
+    result.errors[0],
+    `page.content.0(${id})._edits.logo: hidden is for the header and footer; to drop a part of a section, rewrite the section`,
+  );
 });

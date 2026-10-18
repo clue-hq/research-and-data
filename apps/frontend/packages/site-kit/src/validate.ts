@@ -127,8 +127,14 @@ export function validateSite(
   const OURS = new Set(["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"]);
   // Manual styling (`_edits`) names the brand's colour tokens and font families: a contract, like
   // surfaces. Its shape is the schema's; a malformed `_edits` is reported there, not again here.
-  const addEditsProblems = (props: Record<string, unknown> | undefined, where: string) => {
-    for (const line of editsProblems(editsOf(props ?? {}), brand)) errors.push(`${where}._edits.${line}`);
+  const addEditsProblems = (props: Record<string, unknown> | undefined, where: string, shell = false) => {
+    const edits = editsOf(props ?? {});
+    for (const line of editsProblems(edits, brand)) errors.push(`${where}._edits.${line}`);
+    if (shell) return;
+    // Plan 4, ruling R9: hiding is for the header's and footer's parts; a section draws what it holds.
+    for (const [key, override] of Object.entries(edits)) {
+      if (override.hidden) errors.push(`${where}._edits.${key}: hidden is for the header and footer; to drop a part of a section, rewrite the section`);
+    }
   };
 
   // Links the page writes (not the clones' own captured links, which keep pointing at the seller).
@@ -245,8 +251,8 @@ export function validateSite(
     });
   }
 
-  addEditsProblems(shell.header, "shell.header");
-  addEditsProblems(shell.footer, "shell.footer");
+  addEditsProblems(shell.header, "shell.header", true);
+  addEditsProblems(shell.footer, "shell.footer", true);
   const accountLogo = shell.header?.accountLogo;
   if (accountLogo && !imageAllowed(accountLogo) && !accountLogos.has(String(accountLogo))) {
     errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);

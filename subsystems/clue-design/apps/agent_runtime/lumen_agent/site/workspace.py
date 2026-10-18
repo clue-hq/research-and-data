@@ -410,6 +410,8 @@ _WEIGHT_NAMES = {100: "Thin", 200: "Extra Light", 300: "Light", 400: "Regular", 
                  600: "Semi Bold", 700: "Bold", 800: "Extra Bold", 900: "Black"}
 _ALIGN_WORDS = {"left": "left-aligned", "center": "centred", "right": "right-aligned",
                 "justify": "justified"}
+_CONTENT_TO = {"start": "to the start", "center": "centred", "end": "to the end"}
+_CONTENT_ALONG = {"row": "along the row", "stack": "in the stack", "grid": "in the grid"}
 
 
 class _RichReader(HTMLParser):
@@ -521,6 +523,21 @@ def _styled_by_hand(edits: object) -> list[str]:
             words.append("as wide as its words")
         elif isinstance(width, (int, float)):
             words.append(f"{width:g} px wide")
+        # Plan 4 (boxes): spacing, how the contents line up, the children's order, a hidden part.
+        if override.get("gap") is not None:
+            words.append(f"gap {override['gap']:g} px")
+        align = override.get("contentAlign")
+        if isinstance(align, Mapping):
+            to, along = align.get("to"), align.get("along")
+            if along == "text":
+                words.append("text " + _ALIGN_WORDS.get({"start": "left", "end": "right"}.get(to, to), str(to)))
+            else:
+                words.append(f"contents {_CONTENT_TO.get(to, str(to))} {_CONTENT_ALONG.get(along, str(along))}")
+        order = override.get("order")
+        if isinstance(order, list) and order:
+            words.append("children in the order " + ", ".join(str(child) for child in order))
+        if override.get("hidden") is True:
+            words.append("hidden")
         if words:
             out.append(f"{key} — {', '.join(words)}")
     return out
