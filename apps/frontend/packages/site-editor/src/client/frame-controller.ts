@@ -55,7 +55,7 @@ export type KeptWords = { target: SiteTarget; componentId: string; key: string; 
 /** How the selected element (its computed type, box or container, its words' type) and the section's
  * own box are drawn, as JSON, for spotting a change after a new copy of the site arrives. */
 function lookOf(element: ElementSelection | null, sectionBox: SectionBox | null | undefined): string {
-  return JSON.stringify([element?.computed ?? null, element?.box ?? null, element?.container ?? null, element?.labelElement?.computed ?? null, sectionBox ?? null]);
+  return JSON.stringify([element?.computed ?? null, element?.box ?? null, element?.container ?? null, element?.image ?? null, element?.labelElement?.computed ?? null, sectionBox ?? null]);
 }
 
 function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
@@ -380,6 +380,13 @@ export class FrameController {
     if (lookChanged) this.lookWatch = 0;
     const props = componentProps(this.state.site, selection.target, selection.componentId) ?? {};
     this.postSelected(selection.target, selection.componentId, described.componentType, described.fields, props, described.askedKey);
+  }
+
+  /** An image's file finished loading on the canvas (plan 5, review I2): its drawn shape may have
+   * changed, so the selection is described again (posted only when its look changed). */
+  imageLoaded(): void {
+    this.lookWatch = LOOK_WATCH;
+    this.refreshSelection();
   }
 
   private takePendingElement(target: SiteTarget, componentId: string): string | null {

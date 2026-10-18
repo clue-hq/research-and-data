@@ -514,8 +514,8 @@ function alignRoomOf(element: Element, style: CSSStyleDeclaration, layout: Compu
 const FIT: Record<string, ComputedImage["fit"]> = { cover: "fill", contain: "fit", "scale-down": "fit" };
 
 /** An image as drawn (plan 5): what it is, its box, its fit, whether its box's shape differs from the
- * picture's own by more than 1% (only then do Fill and Fit look different, ruling R3; unknown counts
- * as no), its alt text and its file. */
+ * picture's own by more than 1% (only then do Fill and Fit look different, ruling R3; an unknown size
+ * counts as yes), its alt text and its file. */
 export function computedImage(element: Element, view: Pick<Window, "getComputedStyle">, toHex: (color: string) => string | null): ComputedImage {
   const tag = element.tagName.toLowerCase();
   const media: ComputedImage["media"] = tag === "video" ? "video" : tag === "svg" ? "svg" : "img";
@@ -524,8 +524,10 @@ export function computedImage(element: Element, view: Pick<Window, "getComputedS
   const sized = element as Partial<HTMLImageElement & HTMLVideoElement>;
   const naturalWidth = media === "video" ? sized.videoWidth : sized.naturalWidth;
   const naturalHeight = media === "video" ? sized.videoHeight : sized.naturalHeight;
+  // A file not loaded yet (a lazy image, review I2) has no natural size: Fit stays live until it is
+  // known (the frame describes the image again when it loads).
   const known = Boolean(naturalWidth && naturalHeight && rect.width > 0 && rect.height > 0);
-  const fitMatters = known && Math.abs(rect.width / rect.height / (naturalWidth! / naturalHeight!) - 1) > 0.01;
+  const fitMatters = !known || Math.abs(rect.width / rect.height / (naturalWidth! / naturalHeight!) - 1) > 0.01;
   const src = element.getAttribute("src") ?? (sized.currentSrc || "");
   return {
     alt: (element.getAttribute("alt") ?? "").slice(0, 300),

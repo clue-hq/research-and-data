@@ -667,3 +667,24 @@ test("a drawn look changed by a new copy of the site is posted again; one that c
   h.controller.refreshSelection();
   assert.equal(sizes().at(-1), 32, "the new drawn look reaches the panel");
 });
+
+test("review I1/I2: an image's drawn look (fit, corners) is posted after a new copy of the site, and when its file loads", async () => {
+  const h = harness();
+  const BOX = { fill: "", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 400 };
+  let image = { media: "img" as const, box: BOX, fit: "fill" as const, fitMatters: true, alt: "", src: "/brands/x.png" };
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key === "image" ? { key, kind: "image" as const, label: "Image", computed: TYPO, image } : null,
+    elements: [{ key: "image", kind: "image" as const, label: "Image", parent: null }],
+  }));
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "image");
+  h.controller.componentSelected("cta", "CtaBand", [], {});
+  const fits = () => h.posts.filter((post) => post.type === "selected").map((post) => (post.payload as { element: { image: { fit: string; fitMatters: boolean } } | null }).element?.image);
+  await h.controller.receive(appToFrame("set_props", { componentId: "cta", props: { id: "cta" }, route: "/", rev: 2 }, { documentId: "doc_1", nonce: NONCE }));
+  image = { ...image, fit: "fit" as never };
+  h.controller.refreshSelection();
+  assert.equal(fits().at(-1)?.fit, "fit", "the undone fit reaches the panel");
+  image = { ...image, fitMatters: false };
+  h.controller.imageLoaded();
+  assert.equal(fits().at(-1)?.fitMatters, false, "a file that loaded after the selection is described again");
+});

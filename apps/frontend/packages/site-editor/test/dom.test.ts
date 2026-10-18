@@ -543,3 +543,9 @@ test("an image's fit, shape and alt as drawn; a picture is a wrapper; a video an
   assert.equal(isImageElement(doc.getElementById("pic")!), false, "a picture is a wrapper");
   assert.equal(isImageElement(doc.getElementById("inpic")!), true);
 });
+
+test("review I2: an image whose file has not loaded yet (no natural size) keeps Fit live", () => {
+  const doc = new JSDOM(`<div id="ls"><img id="lazy" data-clue-el="a" loading="lazy" src="/brands/a.jpg"></div>`).window.document;
+  stubBoxes(doc.getElementById("ls")!, { lazy: [0, 0, 1000, 300] });
+  assert.equal(computedImage(doc.getElementById("lazy")!, fakeView({}) as unknown as Window, cssColorToHex).fitMatters, true);
+});

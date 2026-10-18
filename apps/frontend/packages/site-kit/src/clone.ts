@@ -116,7 +116,10 @@ export function fillClone(
   // so &, < and > are escaped here: alt text is text, never markup.
   for (const [key, alt] of Object.entries(extras.alts ?? {})) {
     const image = byKey(root, key);
-    if (image?.tagName === "IMG") image.setAttribute("alt", alt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+    // A raw backslash is dropped by the parser (review M1), so it is written as its reference too.
+    if (image?.tagName === "IMG") {
+      image.setAttribute("alt", alt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\\/g, "&#92;"));
+    }
   }
 
   // Links that open in a new tab, named by element key: the key is on the link, or on the text inside it.

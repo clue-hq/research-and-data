@@ -112,3 +112,8 @@ test("cloneImageAt reports the slot, how many images use it, and the captured al
   assert.deepEqual(cloneImageAt(box('<div><img src="/brands/x.png"></div>'), "0.0"), { slot: null, uses: 1, alt: "" });
   assert.equal(cloneImageAt(pictured(), "0.0"), null, "the picture itself is no image");
 });
+
+test("review M1: a backslash in a copied image's alt text survives (the parser drops raw backslashes)", () => {
+  const html = fillClone(pictured(), {}, [], [], { alts: { "0.1": "AC\\DC" } });
+  assert.ok(html.includes('alt="AC&#92;DC"'), html);
+});

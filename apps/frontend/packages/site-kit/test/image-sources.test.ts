@@ -9,8 +9,8 @@ const clone: Clone = {
   html: '<div><img data-lumen-slot="hero" src="/brands/a.jpg"><img data-lumen-slot="hero" src="/brands/a.jpg"><img src="/brands/b.jpg"></div>',
   slots: { hero: { kind: "image", fallback: "/brands/a.jpg" } },
 };
-const of = (type: string, key: string, props: Record<string, unknown> = {}, media: "img" | "video" | "svg" = "img", c: Clone | null = null) =>
-  imageSourcesOf({ clone: c, key, media, props, type });
+const of = (type: string, key: string, props: Record<string, unknown> = {}, media: "img" | "video" | "svg" = "img", c: Clone | null = null, src = "/brands/x.png") =>
+  imageSourcesOf({ clone: c, key, media, props, src, type });
 
 test("our image, the header's account logo and the seller's logo", () => {
   assert.deepEqual(of("FeatureSplit", "image"), { alt: { kind: "prop", prop: "imageAlt" }, image: { kind: "prop", prop: "image", uses: 1 } });
@@ -40,4 +40,9 @@ test("videos and icons", () => {
   assert.equal(VIDEO_REPLACE, "Ask the agent to change a video.");
   assert.equal(VIDEO_ALT, "Videos have no alt text; the agent can describe one in the words beside it.");
   assert.equal(ICON_NOTE, "This is an icon drawn in code; ask the agent to change it.");
+});
+
+test("review I3: an agent's named prop is the image's source only when it holds the file the image draws", () => {
+  assert.deepEqual(of("QuoteBand", "photo", { photo: "/brands/x.png", hero: "/brands/y.png" }, "img", null, "/brands/x.png").image, { kind: "prop", prop: "photo", uses: 1 });
+  assert.deepEqual(of("QuoteBand", "photo", { photo: "/brands/x.png", hero: "/brands/y.png" }, "img", null, "/brands/y.png").image, { kind: "fixed", reason: AGENT_IMAGE });
 });

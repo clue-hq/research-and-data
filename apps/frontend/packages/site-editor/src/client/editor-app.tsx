@@ -216,7 +216,7 @@ function describeBox(
     props = (entry?.props ?? {}) as Record<string, unknown>;
     clone = type === "ClonedSection" && state.brand ? (state.brand.clones[String(props.fragmentId ?? "")] ?? null) : null;
   }
-  const sources = imageSourcesOf({ clone, key: described.key, media: image.media, props, type });
+  const sources = imageSourcesOf({ clone, key: described.key, media: image.media, props, src: image.src, type });
   return { ...described, altSource: sources.alt, image, imageSource: sources.image };
 }
 
@@ -384,6 +384,13 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
       }
     };
+    // Plan 5 (review I2): an image whose file loads after it was described is described again.
+    const onLoad = (event: Event) => {
+      const tag = (event.target as Element | null)?.tagName;
+      if (tag === "IMG" || tag === "VIDEO") controller.imageLoaded();
+    };
+    document.addEventListener("load", onLoad, true);
+    document.addEventListener("loadeddata", onLoad, true);
     // Keys a rich text editor handles itself (keys.ts `shield`): stopped on the body on their way up,
     // after the editor and before Puck's listener on `document`.
     const shielded = new WeakSet<Event>();
@@ -429,6 +436,8 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       document.removeEventListener("focusout", onFocusOut, true);
       document.removeEventListener("input", onInput, true);
       document.removeEventListener("dblclick", onDoubleClick, true);
+      document.removeEventListener("load", onLoad, true);
+      document.removeEventListener("loadeddata", onLoad, true);
     };
   }, [controller]);
 

@@ -26,8 +26,11 @@ export function imageSourcesOf(input: {
   props: Record<string, unknown>;
   clone: Clone | null;
   media: ComputedImage["media"];
+  /** The file the image draws: an agent's named prop is its source only when it holds this file
+   * (review I3: `el` may name a prop that is not this image's). */
+  src: string;
 }): { image: ImageSource; alt: AltSource } {
-  const { clone, key, media, props, type } = input;
+  const { clone, key, media, props, src, type } = input;
   if (media === "svg") return { alt: fixed(ICON_NOTE), image: fixed(ICON_NOTE) };
   if (media === "video") return { alt: fixed(VIDEO_ALT), image: fixed(VIDEO_REPLACE) };
   if (type === "SiteHeader" && key === "accountLogo") {
@@ -45,6 +48,6 @@ export function imageSourcesOf(input: {
   const named = props[key];
   return {
     alt: fixed(AGENT_ALT),
-    image: typeof named === "string" && IMAGE_FILE.test(named) ? { kind: "prop", prop: key, uses: 1 } : fixed(AGENT_IMAGE),
+    image: typeof named === "string" && IMAGE_FILE.test(named) && named === src ? { kind: "prop", prop: key, uses: 1 } : fixed(AGENT_IMAGE),
   };
 }
