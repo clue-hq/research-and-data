@@ -1,7 +1,7 @@
 """Site element inspector, plan 4: boxes in the real editor frame.
 
 A click on a card selects it as a box named "Card" with its look as drawn; a click between stats
-selects their grid; a click on blank section space selects the section with its own box; a copied
+selects their grid; a click on blank section space selects the section, naming its background; a copied
 card three wrappers deep is selected itself, and Layers leaves the wrappers out. A `set_props`
 carrying a box's `_edits` redraws it; a content alignment set on the footer's row keeps its property
 when the footer becomes a stack on a phone; a hidden header logo is drawn hidden and still listed.
@@ -118,7 +118,9 @@ def test_between_stats_the_grid_and_blank_section_space_the_section_with_its_box
     mark = len(received(page))
     page.mouse.click(root["x"] + 2, root["y"] + root["height"] - 2)  # the section's own padding
     payload = wait_selected(page, mark, None, "proof")
-    assert payload["sectionBox"]["outer"]["key"] == "root" and payload["sectionBox"]["inner"]["key"] == "root.inner", payload.get("sectionBox")
+    # The whole section (founder 2026-10-19): its background rides as a key; a second blank click selects
+    # it (test_editor_section_background.py).
+    assert payload["backgroundKey"] == "root" and not payload.get("sectionBox"), payload
 
 
 def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wrappers(app: Any, browser_page: Any, editor_origin: str) -> None:
@@ -140,13 +142,12 @@ def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wr
     for wrapper in (".w1", ".w2", "ls-h", "ls-b", "section.wr"):
         assert frame.locator(f'[data-puck-component="wrapped"] {wrapper}').first.get_attribute("data-clue-el") not in listed, (wrapper, listed)
 
-    # Blank space in the copied section (its own padding) selects the section, whose box is the
-    # <section> under ingestion's display:contents wrappers (review C1).
+    # Blank space in the copied section (its own padding) selects the section, whose background is the
+    # <section> under ingestion's display:contents wrappers (review C1; founder 2026-10-19).
     mark = len(received(page))
     click_at(page, frame, '[data-puck-component="wrapped"] section.wr', 4, 4)
     payload = wait_selected(page, mark, None, "wrapped")
-    assert payload["sectionBox"]["outer"]["key"] == section_key == payload["sectionBox"]["inner"]["key"], payload.get("sectionBox")
-    assert payload["sectionBox"]["inner"]["container"]["paddingY"] == 40, payload["sectionBox"]
+    assert payload["backgroundKey"] == section_key and not payload.get("sectionBox"), payload
 
 
 def test_a_boxs_edits_redraw_it(app: Any, browser_page: Any, editor_origin: str) -> None:

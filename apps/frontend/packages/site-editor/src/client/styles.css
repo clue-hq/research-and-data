@@ -35,6 +35,11 @@ html, body, #root { height: 100%; margin: 0; }
   outline: 1.5px dashed var(--puck-color-azure-04) !important;
   outline-offset: 2px !important;
 }
+/* A section and its background (founder 2026-10-19) span the canvas: their outline is drawn inside. */
+[data-clue-el-selected="inset"],
+[data-clue-el-hovered="inset"]:not([data-clue-el-selected]) { outline-offset: -2px !important; }
+/* Ours replaces Puck's own section outline and hover tint. */
+[class*="_DraggableComponent-overlay_"] { outline: none !important; background: none !important; }
 
 /* Rich text fields (site element inspector, plan 2) draw like the published text: the one paragraph
    TipTap keeps around the words adds no margin of its own. */

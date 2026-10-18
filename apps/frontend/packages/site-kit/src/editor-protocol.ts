@@ -315,8 +315,12 @@ export const FrameToAppMessageSchema = z.discriminatedUnion("type", [
       props: Props,
       element: ElementSelectionSchema.nullable().optional(),
       elements: z.array(ElementSummarySchema).max(500).optional(),
-      /** Plan 4: the section's own box, when the section itself is selected. */
+      /** The section's own box, when its background is selected (founder 2026-10-19; plan 4 sent it
+       * with the whole section). */
       sectionBox: SectionBoxSchema.nullable().optional(),
+      /** The key of the section's own outermost box, its background (founder 2026-10-19), whenever the
+       * section has one: Layers lists it as "Background", and selecting that key selects it. */
+      backgroundKey: ElementKeySchema.nullable().optional(),
     }),
   }),
   z.object({ ...envelope, type: z.literal("deselected"), payload: z.object({}).strict() }),

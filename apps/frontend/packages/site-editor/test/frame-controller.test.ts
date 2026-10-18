@@ -646,18 +646,21 @@ test("a redraw that drops the highlight keeps the words; the marketer's own clic
 });
 
 // Plan 4: a selected section carries its own box (ruling R1, R2); a change in Layers' tree re-posts.
-test("selected for a section carries its section box; for an element none", async () => {
+test("selected for a section's background carries its section box; for the whole section or an element none", async () => {
   const h = harness();
   const BOX = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 1000 };
   const sectionBox = { outer: { key: "root", box: BOX }, inner: { key: "root.inner", container: { ...BOX, gap: 0, layout: "text" as const, contentAlign: "start" as const, name: "Box" } } };
   h.controller.attachDescriber((_target, _componentId, key) => ({
     element: key === "heading" ? { key, kind: "text" as const, label: key, computed: TYPO } : null,
     elements: [{ key: "heading", kind: "text" as const, label: "heading", parent: null }],
-    sectionBox: key ? null : sectionBox,
+    backgroundKey: "root",
+    sectionBox: key === "root" ? sectionBox : null,
   }));
   await h.controller.receive(init());
   h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
   const selected = () => h.posts.filter((post) => post.type === "selected").map((post) => post.payload as { element: unknown; sectionBox?: unknown });
+  assert.equal(selected().at(-1)?.sectionBox ?? null, null, "the whole section: Layers only (founder 2026-10-19)");
+  h.controller.elementClicked("/", "cta", "root");
   assert.deepEqual(selected().at(-1)?.sectionBox, sectionBox);
   // A click on an element of the selected section re-posts with the element, and no section box.
   h.controller.elementClicked("/", "cta", "heading");
@@ -721,4 +724,67 @@ test("review I1/I2: an image's drawn look (fit, corners) is posted after a new c
   image = { ...image, fitMatters: false };
   h.controller.imageLoaded();
   assert.equal(fits().at(-1)?.fitMatters, false, "a file that loaded after the selection is described again");
+});
+
+// Founder 2026-10-19: a section's own outermost box is its background. A first click on blank space
+// selects the section; a second one, in the section already selected, selects its background.
+function backgroundHarness() {
+  const h = harness();
+  const BOX = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 1200 };
+  const CONTAINER = { ...BOX, gap: 0, layout: "stack" as const, contentAlign: "start" as const, name: "Box", width: 1200 };
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key === "heading" ? { key, kind: "text" as const, label: key, computed: TYPO } : null,
+    elements: [{ key: "heading", kind: "text" as const, label: "heading" }],
+    backgroundKey: "root",
+    sectionBox: key === "root" ? { inner: { key: "root.inner", container: CONTAINER }, outer: { key: "root", box: BOX } } : null,
+  }));
+  const selected = () =>
+    h.posts
+      .filter((post) => post.type === "selected")
+      .map((post) => post.payload as { element: { key: string } | null; sectionBox?: { outer: { key: string } }; backgroundKey?: string });
+  return { ...h, selected };
+}
+
+test("a blank click selects the section (naming its background), a second one in it selects the background", async () => {
+  const h = backgroundHarness();
+  await h.controller.receive(init());
+  h.controller.canvasClicked("/", "cta", null);
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  assert.equal(h.selected().at(-1)?.element, null);
+  assert.equal(h.selected().at(-1)?.sectionBox, undefined, "the whole section carries no box of its own");
+  assert.equal(h.selected().at(-1)?.backgroundKey, "root");
+  assert.equal(h.controller.getState().selection?.elementKey, null);
+
+  h.controller.canvasClicked("/", "cta", null);
+  assert.equal(h.selected().at(-1)?.sectionBox?.outer.key, "root");
+  assert.equal(h.selected().at(-1)?.element, null);
+  assert.equal(h.controller.getState().selection?.elementKey, "root");
+
+  const count = h.selected().length;
+  h.controller.canvasClicked("/", "cta", null);
+  assert.equal(h.selected().length, count, "blank space of the selected background keeps it");
+});
+
+test("a blank click with an element of the section selected selects the section, not the background", async () => {
+  const h = backgroundHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  h.controller.canvasClicked("/", "cta", "heading");
+  h.controller.canvasClicked("/", "cta", null);
+  assert.equal(h.controller.getState().selection?.elementKey, null);
+  assert.equal(h.selected().at(-1)?.sectionBox, undefined);
+});
+
+test("the app's select of the section itself never drills into its background; naming the background selects it", async () => {
+  const h = backgroundHarness();
+  await h.controller.receive(init());
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  await h.controller.receive(appToFrame("select", { componentId: "cta", elementKey: null, route: "/" }, ctx));
+  assert.equal(h.controller.getState().selection?.elementKey, null);
+  await h.controller.receive(appToFrame("select", { componentId: "cta", elementKey: "root", route: "/" }, ctx));
+  assert.equal(h.controller.getState().selection?.elementKey, "root");
+  assert.equal(h.selected().at(-1)?.sectionBox?.outer.key, "root");
+  await h.controller.receive(appToFrame("select", { componentId: "cta", elementKey: null, route: "/" }, ctx));
+  assert.equal(h.controller.getState().selection?.elementKey, null, "the section's row selects the whole section again");
+  assert.equal(h.selected().at(-1)?.sectionBox, undefined);
 });

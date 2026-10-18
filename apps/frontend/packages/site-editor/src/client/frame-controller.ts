@@ -40,7 +40,7 @@ export type ElementDescriber = (
   target: SiteTarget,
   componentId: string,
   elementKey: string | null,
-) => { element: ElementSelection | null; elements: ElementSummary[]; sectionBox?: SectionBox | null };
+) => { element: ElementSelection | null; elements: ElementSummary[]; sectionBox?: SectionBox | null; backgroundKey?: string | null };
 
 const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
 /** How many re-describes after a new copy of the site may post a changed look (the redraw may take
@@ -55,6 +55,11 @@ export type KeptWords = { target: SiteTarget; componentId: string; key: string; 
  * own box are drawn, as JSON, for spotting a change after a new copy of the site arrives. */
 function lookOf(element: ElementSelection | null, sectionBox: SectionBox | null | undefined): string {
   return JSON.stringify([element?.computed ?? null, element?.box ?? null, element?.container ?? null, element?.image ?? null, element?.labelElement?.computed ?? null, sectionBox ?? null]);
+}
+
+/** The section's own box when the key asked for is its background (and no element took it). */
+function backgroundBox(element: ElementSelection | null, key: string | null, described: ReturnType<ElementDescriber>): SectionBox | null {
+  return !element && key !== null && key === (described.backgroundKey ?? null) ? (described.sectionBox ?? null) : null;
 }
 
 function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
@@ -128,6 +133,8 @@ export class FrameController {
     componentType: string;
     fields: FieldDescription[];
     askedKey: string | null;
+    /** The section's own outermost box's key (its background), or null when it has none. */
+    backgroundKey: string | null;
     shown: string;
     /** The words last posted, as JSON ("null" for none). */
     words: string;
@@ -280,6 +287,24 @@ export class FrameController {
     if (target === this.state.route || target === SHELL_TARGET) this.puck?.select(componentId, { scroll: false });
   }
 
+  /** A click on the canvas (editor-app): `key` is the element it reached, or null for blank space.
+   * Founder 2026-10-19: blank space of the section already selected as a whole (or of its background)
+   * selects the section's background; any other blank click selects the section. The app's own select
+   * never drills in (`select` goes straight to `elementClicked`). */
+  canvasClicked(clicked: SiteTarget, componentId: string, key: string | null): void {
+    this.elementClicked(clicked, componentId, key ?? this.blankClickSelects(clicked, componentId));
+  }
+
+  /** What a click on this section's blank space selects: its background's key, or null for the
+   * section itself (the canvas's dashed outline previews it). */
+  blankClickSelects(clicked: SiteTarget, componentId: string): string | null {
+    const target = isShellId(componentId) ? SHELL_TARGET : clicked;
+    const current = this.state.selection;
+    const backgroundKey = this.described?.backgroundKey ?? null;
+    const inSelected = current?.target === target && current.componentId === componentId;
+    return backgroundKey !== null && inSelected && (current.elementKey === null || current.elementKey === backgroundKey) ? backgroundKey : null;
+  }
+
   /** One `selected`, with the element as the canvas has it now: a key the section no longer has is
    * the whole section. */
   private postSelected(
@@ -293,11 +318,30 @@ export class FrameController {
     const described = this.describe(target, componentId, key);
     const element = described.element ? this.withKeptWords(target, componentId, described.element) : null;
     const { elements } = described;
-    // Plan 4: the section's own box rides along when the section itself is selected.
-    const sectionBox = element ? null : (described.sectionBox ?? null);
-    this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
-    this.described = { askedKey: key, componentType, fields, look: lookOf(element, sectionBox), shown: shownElements(element, elements), words: JSON.stringify(element?.words ?? null) };
-    this.post("selected", { componentId, componentType, element, elements, fields, props, route: target, ...(sectionBox ? { sectionBox } : {}) });
+    const backgroundKey = described.backgroundKey ?? null;
+    // The section's own box rides along when its background is selected (founder 2026-10-19).
+    const sectionBox = backgroundBox(element, key, described);
+    this.set({ selection: { componentId, elementKey: element?.key ?? (sectionBox ? key : null), target } });
+    this.described = {
+      askedKey: key,
+      backgroundKey,
+      componentType,
+      fields,
+      look: lookOf(element, sectionBox),
+      shown: shownElements(element, elements),
+      words: JSON.stringify(element?.words ?? null),
+    };
+    this.post("selected", {
+      componentId,
+      componentType,
+      element,
+      elements,
+      fields,
+      props,
+      route: target,
+      ...(sectionBox ? { sectionBox } : {}),
+      ...(backgroundKey ? { backgroundKey } : {}),
+    });
   }
 
   /** The element with the words to show: the ones on the canvas now (kept from here on), else the ones
@@ -363,10 +407,11 @@ export class FrameController {
     const selection = this.state.selection;
     const described = this.described;
     if (this.state.mode !== "edit" || !selection || !described || !this.state.site) return;
-    const { element, elements, sectionBox } = this.describe(selection.target, selection.componentId, described.askedKey);
+    const description = this.describe(selection.target, selection.componentId, described.askedKey);
+    const { element, elements } = description;
     const watching = this.lookWatch > 0;
     if (watching) this.lookWatch -= 1;
-    const lookChanged = watching && lookOf(element, element ? null : (sectionBox ?? null)) !== described.look;
+    const lookChanged = watching && lookOf(element, backgroundBox(element, described.askedKey, description)) !== described.look;
     if (shownElements(element, elements) === described.shown && !lookChanged) return;
     if (lookChanged) this.lookWatch = 0;
     const props = componentProps(this.state.site, selection.target, selection.componentId) ?? {};

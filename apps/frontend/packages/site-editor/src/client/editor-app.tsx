@@ -50,6 +50,13 @@ function selectionScope(_target: string, componentId: string): Element | null {
   return document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`);
 }
 
+/** Marks an element's canvas outline. A section, and its background (its own outermost box), span the
+ * canvas's width, so theirs is drawn inside their edges ("inset", styles.css). */
+function markOutline(element: Element, attribute: string, scope: Element | null): void {
+  const inset = scope !== null && (element === scope || sectionBoxOf(scope, window)?.outer === element);
+  element.setAttribute(attribute, inset ? "inset" : "true");
+}
+
 /** Any computed colour as #RRGGBB: rgb() directly, anything else (oklch, color()) through a canvas,
  * which always reads back sRGB pixels. */
 let colorCanvas: CanvasRenderingContext2D | null = null;
@@ -305,11 +312,15 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         const arrange = arrangeOf(found, scope);
         element = withSizeScale({ ...described, ...(arrange ? { arrange } : {}) }, found, controller.getState().brand);
       }
-      const box = key ? null : sectionBoxOf(scope, window);
+      // The section's own outermost box is its background (founder 2026-10-19): its key always rides
+      // along, its look only when it is the one asked for.
+      const box = sectionBoxOf(scope, window);
+      const backgroundKey = box?.outer.getAttribute("data-clue-el") || null;
       return {
         element,
         elements: listed.map((item) => listedSummary(item, window)),
-        sectionBox: box
+        backgroundKey,
+        sectionBox: box && key !== null && key === backgroundKey
           ? {
               inner: { container: computedContainer(box.inner, window, toHex), key: box.inner.getAttribute("data-clue-el") ?? "" },
               outer: { box: computedBox(box.outer, window, toHex), key: box.outer.getAttribute("data-clue-el") ?? "" },
@@ -381,7 +392,7 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (action.kind === "component" && action.componentId) {
         // The header and footer are Puck items addressed as the shell (plan 6, ruling R3).
         const target = isShellId(action.componentId) ? SHELL_TARGET : controller.getState().route;
-        controller.elementClicked(target, action.componentId, elementKeyAt(action.element, event.target, point, window));
+        controller.canvasClicked(target, action.componentId, elementKeyAt(action.element, event.target, point, window));
         controller.annotate(target, action.componentId, rectOf(action.element, scroll));
       }
     };
@@ -431,11 +442,11 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     let hovered: Element | null = null;
     let pending: PointerEvent | null = null;
     let hoverFrame = 0;
-    const setHovered = (element: Element | null) => {
+    const setHovered = (element: Element | null, scope?: Element) => {
       if (element === hovered) return;
       hovered?.removeAttribute(ELEMENT_HOVERED);
       hovered = element;
-      hovered?.setAttribute(ELEMENT_HOVERED, "true");
+      if (hovered) markOutline(hovered, ELEMENT_HOVERED, scope ?? null);
     };
     const updateHover = () => {
       hoverFrame = 0;
@@ -446,7 +457,11 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const { action } = clickIntent(event.target, "edit");
       if (action.kind !== "component" || !action.element) return setHovered(null);
       const key = elementKeyAt(action.element, event.target, { x: event.clientX, y: event.clientY }, window);
-      setHovered(key ? findKeyedElement(action.element, key) : null);
+      if (key) return setHovered(findKeyedElement(action.element, key), action.element);
+      // Blank space: the section, or its background once the section is selected (founder 2026-10-19).
+      const target = isShellId(action.componentId) ? SHELL_TARGET : controller.getState().route;
+      const background = controller.blankClickSelects(target, action.componentId);
+      setHovered(background ? findKeyedElement(action.element, background) : action.element, action.element);
     };
     const onPointerMove = (event: PointerEvent) => {
       pending = event;
@@ -492,10 +507,12 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     const apply = () => {
       for (const element of document.querySelectorAll(`[${ELEMENT_SELECTED}]`)) element.removeAttribute(ELEMENT_SELECTED);
       const selection = state.selection;
-      if (!selection?.elementKey) return;
+      if (!selection) return;
       const scope = selectionScope(selection.target, selection.componentId);
-      const element = scope ? findKeyedElement(scope, selection.elementKey) : null;
-      element?.setAttribute(ELEMENT_SELECTED, "true");
+      if (!scope) return;
+      // The whole section is outlined like an element (founder 2026-10-19).
+      const element = selection.elementKey ? findKeyedElement(scope, selection.elementKey) : scope;
+      if (element) markOutline(element, ELEMENT_SELECTED, scope);
     };
     apply();
     const frame = requestAnimationFrame(settle);
