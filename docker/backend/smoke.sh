@@ -32,6 +32,7 @@ check "site-kit section check folder writable" run test -w /app/apps/frontend/pa
 check "node" run node --version
 check "ffmpeg" quiet run ffmpeg -version
 check "ffprobe" quiet run ffprobe -version
+check "ffmpeg mp3 encoder (research media speech audio)" run bash -c 'ffmpeg -hide_banner -encoders | grep -q libmp3lame'
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
 # The site renderer's own hardened page, launched exactly as the services run it: it reads the

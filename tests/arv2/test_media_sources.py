@@ -217,6 +217,28 @@ def test_same_episode_needs_date_duration_and_title_together():
     assert not same_episode(episode(title, None), video())
 
 
+def test_one_shared_title_word_is_enough_when_the_lengths_agree_within_seconds():
+    # The Modern Hotelier #276 (2026-10-16 trial): the same day, both 3,040 s long, and the two
+    # titles share only "Kasa". The channel retitles its videos, the feed keeps the episode title.
+    day = datetime(2026, 4, 8, 9, tzinfo=UTC)
+    clip = video(title="Inside Kasa's Acquisition of Mint House and Rapid Growth", duration_s=3040)
+    title = "#276: Building a Tech-Forward Hotel Brand | with Roman Pedan of Kasa"
+    assert same_episode(episode(title, day, duration=3040), clip)
+    assert same_episode(episode(title, day, duration=3044), clip)
+
+
+def test_one_shared_title_word_is_not_enough_when_the_lengths_only_roughly_agree():
+    day = datetime(2026, 4, 8, 9, tzinfo=UTC)
+    clip = video(title="Inside Kasa's Acquisition of Mint House and Rapid Growth", duration_s=3040)
+    title = "#276: Building a Tech-Forward Hotel Brand | with Roman Pedan of Kasa"
+    # Within the ordinary 5% tolerance, but a single shared word needs the lengths to agree.
+    assert not same_episode(episode(title, day, duration=3070), clip)
+    # No shared word at all never matches, however exact the length.
+    assert not same_episode(episode("Quarterly earnings recap", day, duration=3040), clip)
+    # Nor does an exact length outside the date window.
+    assert not same_episode(episode(title, day - timedelta(days=9), duration=3040), clip)
+
+
 def test_naive_feed_dates_compare_as_utc():
     assert same_episode(
         episode("Scaling field ABM with Emily Wall", datetime(2026, 4, 7, 10)), video()

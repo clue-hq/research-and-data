@@ -19,6 +19,19 @@ active_resolution: ContextVar[list[str] | None] = ContextVar("arv2_media_resolut
 active_operation: ContextVar[UUID | None] = ContextVar("arv2_media_operation", default=None)
 
 
+async def used_seconds(runtime: Any, conn: Any) -> int:
+    """Media seconds this job has reserved or spent (failed steps hold none)."""
+    return int(
+        (
+            await conn.execute(
+                text("""SELECT COALESCE(sum(seconds),0) FROM arv2_media_operation
+      WHERE workspace_id=:ws AND owner_job=:job AND state<>'failed'"""),
+                {"ws": runtime.scope.workspace_id, "job": runtime.scope.job_id},
+            )
+        ).scalar_one()
+    )
+
+
 async def begin(
     runtime: Any, conn: Any, *, item_id: UUID, stage: str, request: dict[str, Any], seconds: int = 0
 ) -> tuple[dict[str, Any], bool]:
@@ -98,13 +111,7 @@ async def begin(
             )
         decision(runtime, row, "reuse_or_wait")
         return dict(row), False
-    used = (
-        await conn.execute(
-            text("""SELECT COALESCE(sum(seconds),0) FROM arv2_media_operation
-      WHERE workspace_id=:ws AND owner_job=:job AND state<>'failed'"""),
-            {"ws": ws, "job": job},
-        )
-    ).scalar_one()
+    used = await used_seconds(runtime, conn)
     if used + seconds > runtime.settings.arv2_media_seconds_ceiling:
         telemetry.record(
             runtime,
@@ -240,6 +247,21 @@ async def finish(
             "state": state,
             "result": json.dumps(result or {}, default=str),
             "error": error,
+        },
+    )
+
+
+async def settle_seconds(runtime: Any, conn: Any, op: dict[str, Any], seconds: int) -> None:
+    """A step reserved an estimate of the recording's length (a link-fed transcription); once
+    the provider has measured it, the job's allowance holds the measured length."""
+    await conn.execute(
+        text("""UPDATE arv2_media_operation SET seconds=:seconds
+      WHERE workspace_id=:ws AND operation_id=:id AND owner_token=:owner"""),
+        {
+            "ws": runtime.scope.workspace_id,
+            "id": op["operation_id"],
+            "owner": op["owner_token"],
+            "seconds": seconds,
         },
     )
 

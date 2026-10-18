@@ -37,6 +37,10 @@ USER_AGENT = "CluePodcastResearch/1.0"
 EPISODE_DATE_WINDOW = timedelta(days=7)
 EPISODE_DURATION_SHARE = 0.05
 EPISODE_DURATION_FLOOR_S = 90
+#: A channel often retitles its video; when the lengths agree within this many seconds, one shared
+#: title word is enough (with the date). Two episodes of one show, in one week, within seconds of
+#: each other's length and sharing a word, are not a realistic confusion.
+EPISODE_DURATION_EXACT_S = 5
 #: Description links followed, and feeds read, per video.
 MAX_LINKS = 4
 MAX_FEEDS = 3
@@ -317,7 +321,13 @@ def episode_match(episode: Candidate, video: VideoDetails) -> Literal["match", "
     ours, theirs = title_words(video.title), title_words(episode.title)
     shared = ours & theirs
     shorter = min(len(ours), len(theirs))
-    if not (len(shared) >= 2 or (shorter > 0 and 2 * len(shared) >= shorter)):
+    same_length = (
+        episode.duration_s is not None
+        and abs(episode.duration_s - video.duration_s) <= EPISODE_DURATION_EXACT_S
+    )
+    if not (
+        len(shared) >= 2 or (shorter > 0 and 2 * len(shared) >= shorter) or (shared and same_length)
+    ):
         return None
     if not episode.duration_s:
         return "possible"

@@ -279,7 +279,7 @@ def test_an_oversized_feed_is_refused_before_it_is_parsed() -> None:
     look at what the host actually served — not an unbounded allocation and not a silent empty
     result.
     """
-    padding = "<item><title>x</title></item>" * 200_000
+    padding = "<item><title>x</title></item>" * (MAX_FEED_BYTES // 29 + 1)
     oversized = f"<rss><channel><title>Big</title>{padding}</channel></rss>"
     assert len(oversized.encode("utf-8")) > MAX_FEED_BYTES
 

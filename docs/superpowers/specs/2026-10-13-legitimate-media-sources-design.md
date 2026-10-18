@@ -44,6 +44,25 @@ For any link, in this order:
 3. **A recording the page offers directly**: a direct audio or video file, an RSS feed, an `<audio>`
    or `<video>` element, schema.org `contentUrl`. Downloaded, prepared with `ffmpeg`, sent to
    Deepgram. A feed episode with a `podcast:transcript` tag uses that transcript instead.
+   **Amended 2026-10-16 (founder ruling, reverses keeping every recording "for repairs"):** an
+   audio file is not downloaded. Deepgram is given its link and fetches it itself. Its length is
+   the feed's or Apple's; failing that, the file's size from one header-only request, read at a
+   cautious 64 kbit/s, so the media allowance is still checked before paying; the allowance then
+   holds Deepgram's measured length. The proof kept is Deepgram's own record of the file it heard
+   (its sha256, request id and duration, in the saved response) and the link. We download only a
+   video file (`ffmpeg` extracts its audio), a recording whose length cannot be known, and a link
+   Deepgram answers it cannot fetch (its `400 REMOTE_CONTENT_ERROR`, which hears nothing): then
+   the bytes we fetched are uploaded. A Deepgram server error or timeout is never retried. A
+   repair re-reads the link; if the publisher has removed the recording, the repair reports it
+   unavailable and the existing transcript stands. Size estimates only skip a download: one that
+   does not clearly fit the allowance is downloaded and measured.
+   **Downloads (same ruling):** at most 500 MB. A download is transcription input only: it lives
+   in a temporary folder deleted as soon as the step ends (transcript saved, or anything failed);
+   its raw record keeps a hash and size, never the bytes; nothing of it is stored. Whatever was
+   downloaded (stereo, studio quality, a video, an MP3 with cover art), only small mono speech audio
+   is sent: the first audio track, one channel, 16 kHz, 64 kbit/s MP3 (about 0.5 MB a minute). A
+   retry after a failure downloads again; the step is known by the downloaded file's hash, so it
+   is never bought twice. What is kept: the transcript, Deepgram's response and the link.
 4. **A YouTube embed on the page** goes to the YouTube path (step 2 onwards for that video).
 
 New: when the plain fetch is refused (403) or finds no recording, the page is fetched again with
@@ -69,6 +88,10 @@ could not open):
    them (title, date, duration, link) for the agent to choose with `episode_hint`. None: next step.
    (The proof of concept's word-overlap guess once returned episode 280 for episode 265; title words
    alone never decide.)
+   **Amended 2026-10-16:** "shared title words" means two words, or half of the shorter title, as
+   before; but when the lengths agree within 5 seconds, one shared word is enough. Channels retitle
+   their videos: The Modern Hotelier #276 was posted the same day at the same 3,040 s under a title
+   that shares only "Kasa" with the episode's, and was sent to Gemini instead of its free transcript.
 5. **From the matched episode:** its `podcast:transcript` if it has one, otherwise its audio sent to
    Deepgram, as in step 1.
 

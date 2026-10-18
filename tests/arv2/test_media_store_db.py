@@ -12,6 +12,7 @@ from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
 from clue_api.arv2.account_research_refusals import RefusalError
 from clue_api.arv2.gemini_media_client import MediaBudget
+from clue_api.arv2.media_resolution import PROBE_HEADER
 from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.media_types import Candidate, Quality, Segment
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
@@ -708,28 +709,41 @@ def prepared_offline_recording(monkeypatch):
 
     def prepare(path):
         data = path.read_bytes()
+        # The real preparation's shape (media_recording.prepare_audio), without running ffmpeg.
         return path, {
             "mime": "audio/mpeg",
             "duration_s": json.loads(data)["duration"],
-            "preparation": "original_audio_bytes",
+            "preparation": "mono_speech_mp3",
+            "original_sha256": hashlib.sha256(data).hexdigest(),
             "audio_sha256": hashlib.sha256(data).hexdigest(),
         }
 
     monkeypatch.setattr(media_acquisition, "prepare_audio", prepare)
 
 
+#: Marks a downloaded recording's bytes, so a test can prove they are stored nowhere.
+DOWNLOADED = "DOWNLOADED-RECORDING-BYTES"
+
+
+def stores_downloaded_bytes(rt) -> bool:
+    import base64
+
+    needles = (DOWNLOADED.encode(), base64.b64encode(DOWNLOADED.encode())[:20])
+    return any(n in blob for blob in rt.storage.blobs.values() for n in needles)
+
+
 def offline_audio(duration=60):
     import json
 
-    return HttpResponse(
-        200, {"content-type": "audio/mpeg"}, json.dumps({"duration": duration}).encode()
-    )
+    body = json.dumps({"duration": duration, "marker": DOWNLOADED}).encode()
+    # A real file server states the size, which link-first reads as an estimated length.
+    return HttpResponse(200, {"content-type": "audio/mpeg", "content-length": str(len(body))}, body)
 
 
-def deepgram_speech(value):
+def deepgram_speech(value, duration=60):
     return json_response(
         {
-            "metadata": {"request_id": "fixture-asr", "duration": 60},
+            "metadata": {"request_id": "fixture-asr", "duration": duration, "sha256": "dg-sha"},
             "results": {
                 "channels": [{"alternatives": [{"transcript": value}]}],
                 "utterances": [{"start": 1.25, "end": 5.75, "speaker": 0, "transcript": value}],
@@ -747,6 +761,7 @@ def embeddings(count=1):
 @pytest.mark.parametrize("duration", [60, 601])
 def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
     import json
+    from urllib.parse import parse_qs, urlsplit
 
     from clue_api.arv2.media_tools import ReadMediaArgs, read_media
 
@@ -762,8 +777,8 @@ def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
             wire = ScriptedTransport(
                 [
                     HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
-                    offline_audio(duration),
-                    deepgram_speech("We require reliable evidence."),
+                    # The feed states the length: Deepgram gets the link, nothing is downloaded.
+                    deepgram_speech("We require reliable evidence.", duration),
                     embeddings(),
                 ]
             )
@@ -783,6 +798,9 @@ def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
             requests = [r for r in wire.requests if "/v1/listen?" in r.url]
             assert len(requests) == 1
             assert json.loads(requests[0].body) == {"url": "https://example.com/source.mp3"}
+            # The job's own names steer recognition: "Kasa", not "Casa".
+            sent = parse_qs(urlsplit(requests[0].url).query)
+            assert rt.scope.account_name and sent["keyterm"] == [rt.scope.account_name]
             seconds = (
                 await conn.execute(
                     text(
@@ -793,6 +811,225 @@ def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
                 )
             ).scalar_one()
             assert seconds == duration
+
+    run_async(scenario())
+
+
+def podcast_feed(length="<itunes:duration>1800</itunes:duration>"):
+    feed = f"""<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+      <channel><title>Source show</title><item><guid>ep-1</guid><title>Evidence</title>
+      <link>https://example.com/episode-1</link>{length}
+      <enclosure url="https://example.com/source.mp3" type="audio/mpeg"/>
+      </item></channel></rss>"""
+    return HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode())
+
+
+def deepgram_cannot_fetch():
+    return HttpResponse(
+        400,
+        {"content-type": "application/json"},
+        b'{"err_code":"REMOTE_CONTENT_ERROR","err_msg":"The remote server hosting the media '
+        b'returned a client error: 403 Forbidden."}',
+    )
+
+
+async def link_first_read(rt, wire):
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    rt.clients = MediaClients()
+    rt._transport_factory = lambda: wire
+    return await read_media(
+        rt,
+        ReadMediaArgs(url="https://example.com/feed", episode_hint="ep-1", purpose="Find needs"),
+    )
+
+
+async def transcribe_seconds(conn, rt):
+    return (
+        await conn.execute(
+            text(
+                "SELECT state, seconds FROM arv2_media_operation WHERE workspace_id=:ws "
+                "AND owner_job=:job AND stage='transcribe' ORDER BY state"
+            ),
+            {"ws": rt.scope.workspace_id, "job": rt.scope.job_id},
+        )
+    ).all()
+
+
+def test_a_podcast_with_a_known_length_goes_to_deepgram_by_link_and_is_never_downloaded():
+    import json
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            wire = ScriptedTransport(
+                [podcast_feed(), deepgram_speech("We need evidence.", 1795), embeddings()]
+            )
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            # Nothing but the feed, Deepgram and the index: the recording is never fetched by us.
+            assert not [r for r in wire.requests if r.url.startswith("https://example.com/source")]
+            listen = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert json.loads(listen[0].body) == {"url": "https://example.com/source.mp3"}
+            # The budget reserved the feed's 1,800 s and settled on Deepgram's measured 1,795 s.
+            assert [tuple(r) for r in await transcribe_seconds(conn, rt)] == [("succeeded", 1795)]
+            audio = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM artifact WHERE workspace_id=:ws "
+                        "AND media_type LIKE 'audio/%'"
+                    ),
+                    {"ws": rt.scope.workspace_id},
+                )
+            ).scalar_one()
+            assert audio == 0
+            # Deepgram's own record of the file it fetched is kept as the proof.
+            saved = await store.load_transcript(rt, conn, UUID(result["version_ref"]))
+            assert saved["quality"]["diagnostics"]["metadata"]["sha256"] == "dg-sha"
+
+    run_async(scenario())
+
+
+def test_without_a_stated_length_the_file_size_sets_the_budget_before_paying():
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            # 14.4 MB at the cautious 64 kbit/s is 1,800 s: within the 9,000 s allowance.
+            probe = HttpResponse(
+                200, {"content-type": "audio/mpeg", "content-length": "14400000"}, b""
+            )
+            wire = ScriptedTransport(
+                [podcast_feed(length=""), probe, deepgram_speech("Evidence.", 900), embeddings()]
+            )
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            assert wire.requests[1].url == "https://example.com/source.mp3"
+            assert wire.requests[1].headers[PROBE_HEADER] == "1"
+            assert [tuple(r) for r in await transcribe_seconds(conn, rt)] == [("succeeded", 900)]
+
+    run_async(scenario())
+
+
+def test_a_size_estimate_over_the_allowance_is_measured_by_downloading_not_refused():
+    import json
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            # A 50-minute episode at 256 kbit/s (The Modern Hotelier #276, 2026-10-16 trial): 97 MB,
+            # which the cautious 64 kbit/s reading takes for 12,161 s, over the 9,000 s allowance.
+            # The estimate may only skip a download; it never refuses a recording on its own.
+            probe = HttpResponse(
+                200, {"content-type": "audio/mpeg", "content-length": "97288880"}, b""
+            )
+            wire = ScriptedTransport(
+                [
+                    podcast_feed(length=""),
+                    probe,
+                    offline_audio(3040),
+                    deepgram_speech("We need evidence.", 3040),
+                    embeddings(),
+                ]
+            )
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            # Measured exactly from the download; what was downloaded is what is sent (as small
+            # speech audio, never the link again), and nothing of it is kept.
+            listen = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert len(listen) == 1 and listen[0].headers["Content-Type"] == "audio/mpeg"
+            assert json.loads(listen[0].body)["marker"] == DOWNLOADED
+            assert not stores_downloaded_bytes(rt)
+            assert [tuple(r) for r in await transcribe_seconds(conn, rt)] == [("succeeded", 3040)]
+
+    run_async(scenario())
+
+
+def test_when_deepgram_cannot_fetch_the_link_the_recording_is_downloaded_and_uploaded():
+    import json
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            wire = ScriptedTransport(
+                [
+                    podcast_feed(),
+                    deepgram_cannot_fetch(),
+                    offline_audio(1800),
+                    deepgram_speech("We need evidence.", 1800),
+                    embeddings(),
+                ]
+            )
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            first, second = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert json.loads(first.body) == {"url": "https://example.com/source.mp3"}
+            # The retry sends the audio we fetched, never the same link again.
+            assert second.headers["Content-Type"] == "audio/mpeg"
+            assert json.loads(second.body)["duration"] == 1800
+            # Founder ruling 2026-10-16: the download is deleted with its temporary folder;
+            # neither the file, nor its raw record's body, nor the sent audio is stored.
+            assert not stores_downloaded_bytes(rt)
+            states = [tuple(r) for r in await transcribe_seconds(conn, rt)]
+            assert states == [("failed", 1800), ("succeeded", 1800)]
+
+    run_async(scenario())
+
+
+def test_a_retry_after_a_failure_downloads_again_because_nothing_was_kept(monkeypatch):
+    from clue_api.arv2 import media_acquisition
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            real = media_acquisition.prepare_audio
+
+            def fail_once(path):
+                monkeypatch.setattr(media_acquisition, "prepare_audio", real)
+                raise ValueError("recording preparation failed: ffmpeg exit 1")
+
+            monkeypatch.setattr(media_acquisition, "prepare_audio", fail_once)
+            wire = ScriptedTransport(
+                [
+                    podcast_feed(),
+                    deepgram_cannot_fetch(),
+                    offline_audio(1800),
+                    # The retry reads the feed again; the link already failed, so it downloads.
+                    podcast_feed(),
+                    offline_audio(1800),
+                    deepgram_speech("We need evidence.", 1800),
+                    embeddings(),
+                ]
+            )
+            failed = await link_first_read(rt, wire)
+            assert failed["state"] == "unavailable"
+            assert failed["gaps"] == ["recording preparation failed: ffmpeg exit 1"]
+            result = await link_first_read(rt, wire)
+            assert result["state"] == "available"
+            downloads = [r for r in wire.requests if r.url == "https://example.com/source.mp3"]
+            assert len(downloads) == 2
+            assert len([r for r in wire.requests if "/v1/listen?" in r.url]) == 2
+            assert not stores_downloaded_bytes(rt)
+
+    run_async(scenario())
+
+
+def test_a_recording_may_be_up_to_500_mb():
+    from clue_api.arv2.media_resolution import MAX_MEDIA_BYTES
+
+    assert MAX_MEDIA_BYTES == 500 * 1024 * 1024
+
+
+def test_a_deepgram_server_error_on_a_link_is_never_retried_or_downloaded():
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            down = HttpResponse(504, {"content-type": "text/plain"}, b"Gateway Timeout")
+            wire = ScriptedTransport([podcast_feed(), down])
+            result = await link_first_read(rt, wire)
+            assert result == {"state": "unknown", "gap": "acquisition_outcome_unknown"}
+            assert len([r for r in wire.requests if "/v1/listen?" in r.url]) == 1
+            assert not [r for r in wire.requests if r.url.startswith("https://example.com/source")]
+            assert [r.state for r in await transcribe_seconds(conn, rt)] == ["unknown"]
 
     run_async(scenario())
 
@@ -881,6 +1118,8 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
                     offline_audio(),
                     offline_audio(),
                     deepgram_speech("Our buying process needs reliable evidence."),
+                    # The retry reads the file's size again (free) before recovering the answer.
+                    offline_audio(),
                     embeddings(),
                 ]
             )
@@ -896,7 +1135,7 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
             with pytest.raises(RuntimeError):
                 await read_media(rt, args)
             recovered = await read_media(rt, args)
-            assert recovered["state"] == "available" and len(wire.requests) == 4
+            assert recovered["state"] == "available" and len(wire.requests) == 5
             assert sum("/v1/listen?" in r.url for r in wire.requests) == 1
 
     run_async(scenario())
@@ -1239,7 +1478,6 @@ def test_run_media_summary_counts_reads_by_method_and_gap():
             wire = ScriptedTransport(
                 [
                     HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
-                    offline_audio(60),
                     deepgram_speech("We require reliable evidence."),
                     embeddings(),
                     HttpResponse(200, {"content-type": "text/html"}, b"<p>Show notes only</p>"),
@@ -1333,7 +1571,6 @@ def test_a_feed_with_no_matching_episode_returns_its_episodes_to_choose_from():
             wire = ScriptedTransport(
                 [
                     HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
-                    offline_audio(60),
                     deepgram_speech("The first talk."),
                     embeddings(),
                 ]
@@ -1355,7 +1592,9 @@ def test_a_feed_with_no_matching_episode_returns_its_episodes_to_choose_from():
                 ),
             )
             assert chosen["state"] == "available"
-            assert any(r.url == "https://example.com/1.mp3" for r in wire.requests)
+            # The chosen episode's own link is what Deepgram was sent.
+            listen = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert [json.loads(r.body) for r in listen] == [{"url": "https://example.com/1.mp3"}]
 
     run_async(scenario())
 
