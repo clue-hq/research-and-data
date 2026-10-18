@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { componentProps } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
-import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState, showsSectionPanel } from "./site-shell";
+import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState } from "./site-shell";
 
 const site = {
   id: "doc", title: "A", theme: {}, agent_sections: {},
@@ -32,18 +32,6 @@ test("sticky and overlay are written on the header's root and removed exactly", 
   const off = commitHeaderPlacement(commitHeaderPlacement(both.site, "overlay", false)!.site, "sticky", false)!;
   assert.deepEqual(componentProps(off.site, "shell", "header"), componentProps(site, "shell", "header"));
   assert.equal(commitHeaderPlacement(site, "sticky", false), null, "nothing changes");
-});
-
-
-// Founder 2026-10-19: the header and footer are treated like every other part of the page. The whole
-// header, the whole footer and a whole copied section show nothing of their own (only Layers, plus the
-// header's own settings); every part is edited by clicking it.
-test("the whole-section panel is shown only for our own sections", () => {
-  assert.equal(showsSectionPanel({ target: "shell", componentType: "ClonedSection" }), false);
-  assert.equal(showsSectionPanel({ target: "shell", componentType: "SiteHeader" }), false);
-  assert.equal(showsSectionPanel({ target: "/", componentType: "ClonedSection" }), false);
-  assert.equal(showsSectionPanel({ target: "/", componentType: "FeatureSplit" }), true);
-  assert.equal(showsSectionPanel(null), false);
 });
 
 // The account logo's own Visibility is the template's "Account shown" (the logo and the thin line

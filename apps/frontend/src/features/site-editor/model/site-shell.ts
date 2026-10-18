@@ -39,15 +39,6 @@ export function commitHeaderPlacement(
   return nextProps ? { props: nextProps, site: edited } : null;
 }
 
-/** Founder 2026-10-19: the header and footer are treated like every other part of the page. A whole
- * copied section, the whole header and the whole footer show nothing of their own when selected (only
- * Layers, plus the header's own settings above): every part is edited by clicking it. Our own sections
- * keep their section-level panel. */
-export function showsSectionPanel(selection: { target: string; componentType: string } | null): boolean {
-  if (!selection) return false;
-  return selection.target !== SHELL_TARGET && selection.componentType !== "ClonedSection";
-}
-
 type AccountLogoSelection = {
   target: string;
   componentId: string;

@@ -711,8 +711,9 @@ export function useSiteEditingSession({
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
-    // Founder 2026-10-19: a whole section shows only Layers (and the header's own settings); its parts
-    // and its background are edited by selecting them.
+    // Founder 2026-10-19: "for now" a whole section shows only Layers (and the header's own settings);
+    // its parts and its background are edited by selecting them. The Content fields panel stays built:
+    // `activeSelection?.fields ?? null` here brings it back.
     fields: null,
     layers,
     // The lock's own sentence while it holds (the Edit pill carries the same words).
