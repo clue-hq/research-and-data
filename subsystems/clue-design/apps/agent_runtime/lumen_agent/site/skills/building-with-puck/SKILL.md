@@ -27,7 +27,8 @@ facts are in your workspace.
 ```
 
 Every section has a unique `id` you choose (short, lowercase, for example `hero`, `proof`). The
-header and footer are not sections; they live in `shell.json`.
+header and footer are not sections; they live in `shell.json`. You may restyle, reorder and hide the
+header's and footer's parts through their `_edits` (see Styling by hand).
 
 ## Reuse first
 
@@ -132,6 +133,24 @@ button, the `el` you gave `kit.Button`, a number path in a cloned section) also 
 
 Its words are named `<button>.label` (`button.label`, `cta.label`) and take the text properties. A
 fill or stroke set this way also holds when the button is hovered.
+
+A box's name also takes the button's properties above (fill, stroke, corners, padding, width).
+Boxes are: in our sections `root` (the section's own box) and `root.inner` (the box holding its
+padding), `card`, `row`, `column`, `lead`, `stats` and each `stats.<n>`; the `el` you gave
+`kit.Card` or a `data-clue-el` you wrote; any number path in a cloned section; in the header
+`brand`, `actions`, `nav` and `ctaArea`, in the footer `links`. A box also takes:
+- `gap`: 0 to 200, the space between its children (rows and grids only);
+- `contentAlign`: `{ "along": "row", "to": "center" }`, how its contents line up across it.
+  `along` says how the box lays them out: `row` (side by side), `stack` (one under another),
+  `grid`, or `text` (plain text); `to` is `start`, `center` or `end`.
+
+Two more, for cloned sections and the header and footer only:
+- `order`: the order of a box's children, as the list of their names
+  (`"0.2": { "order": ["0.2.1", "0.2.0"] }`). A child left out keeps its place. In our sections and
+  yours, items move by reordering their list prop instead.
+- `hidden`: `true` hides a header or footer part: the seller's logo (`logo`), the account's logo
+  (`accountLogo`), the divider (`divider`), a menu link (`nav.0`), the button (`ctaArea`), a footer
+  link (`privacy`, `terms`). It is refused on a page section; rewrite the section instead.
 
 Three rules go with it:
 - When you rewrite a section, keep its `_edits` unless the request asks for a different look; you

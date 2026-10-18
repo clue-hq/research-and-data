@@ -44,12 +44,14 @@ The kit gives you these pieces, with exactly these props:
   its fill, stroke, corners, padding and width. Its words are then named after it with `.label`
   (`cta.label`).
 - `<kit.Link href="…">…</kit.Link>`: a text link, drawn like the seller's own links.
-- `<kit.Card look="…" href="…">…</kit.Card>`: a card, drawn like the seller's own cards
-  (brand/brand.md, Cards). With `href` the whole card is a link.
+- `<kit.Card look="…" href="…" el="…">…</kit.Card>`: a card, drawn like the seller's own cards
+  (brand/brand.md, Cards). With `href` the whole card is a link. Give it a name with `el` so the
+  marketer can click it and change its fill, stroke, corners, padding, gap and width.
 - `<kit.Eyebrow>…</kit.Eyebrow>`: the small label above a heading.
-- `<kit.Image src="…" alt="…" />`: an image from brand/brand.md, by its file path. Add
+- `<kit.Image src="…" alt="…" el="…" />`: an image from brand/brand.md, by its file path. Add
   `fit="fill"` to make it cover a box you position, for a background photo, or `fit="contain"` to
-  show the whole image. A logo is always shown whole.
+  show the whole image. A logo is always shown whole. Give it a name with `el` so the marketer can
+  select it and move it.
 - Motion: add a class from brand/brand.md (Motion) to an element, for example
   `className="brand-motion-pulse"`. Write no transition or animation of your own.
 
@@ -83,5 +85,13 @@ The kit gives you these pieces, with exactly these props:
   `<h2 data-clue-el="headline">{props.headline}</h2>`, and for a list item
   ``data-clue-el={`cards.${index}.title`}``. The marketer can then also style single words in it
   and make them links.
+- Name the boxes a marketer may want to restyle or move: a card, a row of cards, a column. Add
+  `data-clue-el="<name>"` to your own `<div>`, `<ul>` or `<li>`, or pass `el` to `kit.Card`.
+  `kit.Shell` already names the section's own box (`root`, and `root.inner` for the box with its
+  padding), so do not use those two names yourself.
+  To let the marketer move items up or down, draw them from a list prop and name each one after the
+  list and its place: ``el={`cards.${index}`}``. Name the text inside an item after the item
+  (``cards.${index}.title``), so its styling moves with it. Boxes that are not drawn from a list
+  keep their place.
 - Make it look like the seller's sections around it. Render and compare.
 - Place it in page.json by its name, like any other section.

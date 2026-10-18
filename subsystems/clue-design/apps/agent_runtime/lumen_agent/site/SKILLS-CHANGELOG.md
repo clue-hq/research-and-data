@@ -120,3 +120,9 @@ fails without it).
   properties (`fill`, `borderColor`, `borderWidth`, `radius`, `padding`, `width`) and its words'
   name. Written before a run: buttons are new in the editor (plan 3), so the agent must name them
   and keep, change or drop the marketer's button styling knowingly.
+- 2026-10-18 · writing-a-section and building-with-puck (founder-approved, site element inspector
+  plan 4): name boxes (`kit.Card el`, `kit.Image el`, `data-clue-el` on your own boxes, not `root`
+  or `root.inner`); movable items drawn from a list prop and named `<prop>.<index>`; box `_edits`
+  (gap, contentAlign), `order` (cloned sections and the shell), `hidden` (header and footer parts);
+  the agent may restyle, reorder and hide header and footer parts. Written with the feature: plan 4
+  made boxes styleable and movable, and an unnamed box cannot be selected.
