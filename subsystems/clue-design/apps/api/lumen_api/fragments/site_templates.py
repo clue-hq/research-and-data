@@ -88,11 +88,15 @@ class DerivedTemplate:
     notes: tuple[str, ...]
 
 
-def derive_site_template(role: str, source_html: str, *, placeholder_src: str) -> DerivedTemplate:
+def derive_site_template(
+    role: str, source_html: str, *, placeholder_src: str, seller_logo_src: str | None = None
+) -> DerivedTemplate:
     """The ABM ``role`` template (header or footer) from a captured fragment's sanitized markup.
 
     ``placeholder_src`` is the account logo's default file (the co-brand placeholder, an invisible
     pixel the fragment holds); the agent fills the ``account_logo`` slot when it writes a site.
+    ``seller_logo_src`` is the kit's own logo file: it stands in for a seller's logo drawn in the
+    page's code (an inline SVG), which the editor cannot replace (founder 2026-10-18).
     """
     if role not in SITE_TEMPLATE_ROLES:
         raise ValueError(f"{role!r} is not a site template role")
@@ -107,6 +111,11 @@ def derive_site_template(role: str, source_html: str, *, placeholder_src: str) -
     notes: list[str] = []
     css_addition = ""
     account: list[str] = []
+    if logo is not None and (drawn := _drawn_logo_as_file(logo, seller_logo_src)):
+        notes.append(drawn)
+        if seller_logo_src:
+            css_addition = ".clue-seller-logo{display:block;max-width:none;object-fit:contain}"
+            logo = _find_logo(body)
 
     if role == SITE_HEADER_ROLE:
         if logo is None:
@@ -134,7 +143,7 @@ def derive_site_template(role: str, source_html: str, *, placeholder_src: str) -
             f'<span class="{escape(" ".join([*line_class, "clue-account-line"]))}" {_PENDING}="account_line|text">'
             f"{escape(ACCOUNT_LINE_FALLBACK)}</span>",
         ]
-        css_addition = (
+        css_addition += (
             ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0}"
             ".clue-account-rule{align-self:stretch;width:1px;background-color:currentColor;opacity:0.3}"
             f".clue-account-logo{{display:block;height:{height};width:auto}}"
@@ -204,6 +213,26 @@ def _find_logo(body: LexborNode) -> LexborNode | None:
     while current is not None and (current.tag or "") != "a":
         current = current.parent
     return current if current is not None else image
+
+
+def _drawn_logo_as_file(logo: LexborNode, seller_logo_src: str | None) -> str | None:
+    """A logo drawn in the page's code (an inline SVG and no image) is swapped for the kit's logo file,
+    keeping the drawing's classes and size attributes so it sits where the drawing sat. Returns the
+    note saying what happened, or None when the logo is already an image or holds no drawing."""
+    drawing = logo if (logo.tag or "") == "svg" else logo.css_first("svg")
+    if drawing is None or (logo.tag or "") == "img" or logo.css_first("img") is not None:
+        return None
+    if not seller_logo_src:
+        return "the seller's logo is drawn in the page's code and cannot be replaced in the editor"
+    attributes = [f'src="{escape(seller_logo_src)}"', 'alt=""']
+    classes = " ".join([*(drawing.attributes.get("class") or "").split(), "clue-seller-logo"])
+    attributes.append(f'class="{escape(classes)}"')
+    for size in ("width", "height"):
+        value = drawing.attributes.get(size) or ""
+        if value.isdigit():
+            attributes.append(f'{size}="{value}"')
+    drawing.replace_with(_node(f"<img {' '.join(attributes)}>"))
+    return "the seller's logo was drawn in the page's code: the kit's logo file stands in so it can be replaced"
 
 
 def _link_items(container: LexborNode) -> list[LexborNode]:

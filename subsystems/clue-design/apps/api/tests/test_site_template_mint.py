@@ -96,3 +96,34 @@ def test_the_capture_mints_templates_and_reports_what_it_could_not(workspace_id:
     assert diagnostics == [{"code": SITE_TEMPLATE_CODE, "severity": "warning", "message": "site footer template not made: no captured footer"}]
     roles = {row["section_role"] for row in HybridRepository(workspace_id=workspace_id).list_web_fragments()}
     assert SITE_HEADER_ROLE in roles
+
+
+def _logo_record(asset_id: str, digest: str) -> dict:
+    return {
+        "id": asset_id, "label": "Seller logo", "kind": "vector", "status": "ready", "tags": [],
+        "media": {"mime_type": "image/svg+xml", "byte_length": 10,
+                  "digest": {"algorithm": "sha256", "value": digest},
+                  "location": {"provider": "local-store", "opaque_ref": f"sha256/{digest[:2]}/{digest}", "url": None}},
+    }
+
+
+def test_a_header_whose_logo_is_drawn_in_code_takes_the_kits_primary_logo(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
+    """Final review I3 (founder, option a): the kit's primary logo (else its wordmark) stands in for an
+    inline-SVG logo so the template's seller logo can be replaced."""
+    repo = HybridRepository(workspace_id=workspace_id)
+    primary, mark = "a" * 64, "b" * 64
+    repo.create_asset_record(_logo_record("asset_seller_primary", primary))
+    repo.create_asset_record(_logo_record("asset_seller_mark", mark))
+    repo.create_brand_kit(
+        {"id": KIT, "version": 2, "name": "Seller", "approval_status": "approved",
+         "assets": {"logos": {"mark": {"usage": "mark", "variants": [{"name": "full_color", "asset_id": "asset_seller_mark"}]},
+                              "primary": {"usage": "primary", "variants": [{"name": "one_color", "asset_id": "asset_seller_primary"}]}}}},
+        {}, [], "website",
+    )
+    source = _band(workspace_id, design_storage, role="footer", html=FOOTER, page="/")
+    minted = _registry(workspace_id, design_storage, tmp_path).mint_site_template(role="site_footer", source_fragment_id=source)
+    row = HybridRepository(workspace_id=workspace_id).require_web_fragment(minted["fragment_id"])
+    [clone] = [c for c in list_site_clones(_registry(workspace_id, design_storage, tmp_path).blobs, tmp_path / "cache")
+               if c["id"] == row["fragment_id"]]
+    assert f"/asset-store/{primary}" in clone["html"] and "<svg" not in clone["html"]
+    assert f"/asset-store/{mark}" not in clone["html"]

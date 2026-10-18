@@ -1797,7 +1797,10 @@ class DurableAgentClonedSectionRegistry:
             )
         loaded = read_web_fragment(self.blobs.storage, workspace_id=self.workspace_id, fragment_id=source_fragment_id)
         placeholder = self.campaign_shell_placeholder()
-        derived = derive_site_template(role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}")
+        seller_logo = self._kit_logo_file(original.get("source_kit_id"), original.get("source_kit_version"))
+        derived = derive_site_template(
+            role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}", seller_logo_src=seller_logo
+        )
         sanitized = sanitize_fragment_html(derived.html, rehosted={})
         source_url = str(original.get("source_url") or "")
         seller = (urlsplit(source_url).hostname or "the seller").removeprefix("www.")
@@ -1844,6 +1847,37 @@ class DurableAgentClonedSectionRegistry:
             "notes": list(derived.notes) + list(sanitized.notes),
             "converged": row.get("derived_from") == source_fragment_id and status == "approved",
         }
+
+    #: Which of the kit's logos stands in for a seller's logo drawn in the page's code, first match wins.
+    KIT_LOGO_ORDER = ("primary", "wordmark")
+
+    def _kit_logo_file(self, kit_id: Any, kit_version: Any) -> Optional[str]:
+        """The kit's header logo as ``/asset-store/<sha256>``: its primary logo, else its wordmark,
+        else any other; None when the kit, the logo or its bytes cannot be read (the template then
+        keeps the drawn logo, noted as not replaceable)."""
+        if not kit_id:
+            return None
+        repository = self._repository()
+        try:
+            kit = repository.require_brand_kit(str(kit_id), int(kit_version) if kit_version is not None else None)
+        except Exception:  # noqa: BLE001 - no kit, no stand-in
+            return None
+        logos = (((kit.get("brand_kit") or {}).get("assets") or {}).get("logos") or {})
+        names = [*(name for name in self.KIT_LOGO_ORDER if name in logos), *(name for name in logos if name not in self.KIT_LOGO_ORDER)]
+        for name in names:
+            for variant in (logos.get(name) or {}).get("variants") or []:
+                asset_id = variant.get("asset_id") if isinstance(variant, dict) else None
+                if not asset_id:
+                    continue
+                try:
+                    record = repository.require_asset_record(str(asset_id))
+                except Exception:  # noqa: BLE001 - a missing record: try the next
+                    continue
+                record = record.get("asset") or record
+                digest = ((record.get("media") or {}).get("digest") or {}).get("value")
+                if isinstance(digest, str) and len(digest) == 64:
+                    return f"/asset-store/{digest}"
+        return None
 
     def site_template_sources(self, *, kit_id: str, kit_version: int) -> Dict[str, Optional[JsonObject]]:
         """Each template role's best captured band of one kit version (ruling R4): the home page's,

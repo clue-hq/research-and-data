@@ -176,3 +176,53 @@ def test_the_account_line_shrinks_rather_than_overflowing() -> None:
     rule = css.split(".clue-account-line{", 1)[1].split("}", 1)[0]
     for declaration in ("min-width:0", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"):
         assert declaration in rule, rule
+
+
+# Final review I3 (founder 2026-10-18, option a): a seller's logo drawn in the page's code (an inline
+# SVG) cannot be replaced in the editor, so the template draws the kit's own logo file in its place.
+DRAWN = (
+    '<header class="h"><a class="logo" href="/"><svg class="logo-svg" width="96" height="24" viewBox="0 0 96 24">'
+    '<path d="M0 0h96"></path></svg></a><nav class="menu"><a href="/a">Alpha</a><a href="/b">Beta</a></nav>'
+    '<a class="btn" href="/demo">Book a demo</a></header>'
+)
+DRAWN_FOOTER = (
+    '<footer><a class="logo" href="/"><svg class="logo-svg" viewBox="0 0 96 24"><path d="M0 0h96"></path></svg></a>'
+    '<p>© 2026 Acme Inc.</p><a href="/privacy">Privacy</a></footer>'
+)
+KIT_LOGO = "/asset-store/" + "d" * 64
+
+
+@pytest.mark.parametrize(("html", "role"), [(DRAWN, SITE_HEADER_ROLE), (DRAWN_FOOTER, SITE_FOOTER_ROLE)])
+def test_a_logo_drawn_in_the_page_code_becomes_the_kits_logo_file(html: str, role: str) -> None:
+    derived = derive_site_template(role, html, placeholder_src=PLACEHOLDER, seller_logo_src=KIT_LOGO)
+    logo = _annotated(derived).css_first("a[href='/']")
+    assert logo.css_first("svg") is None
+    image = logo.css_first("img")
+    assert image.attributes["src"] == KIT_LOGO
+    assert {"logo-svg", "clue-seller-logo"} <= set(image.attributes["class"].split()), "it keeps the drawn logo's sizing"
+    assert ".clue-seller-logo{" in derived.css_addition
+    assert any("kit's logo file" in note for note in derived.notes)
+
+
+def test_the_kits_logo_keeps_the_drawn_logos_height_and_the_account_logo_matches_it() -> None:
+    derived = derive_site_template(SITE_HEADER_ROLE, DRAWN, placeholder_src=PLACEHOLDER, seller_logo_src=KIT_LOGO)
+    image = _annotated(derived).css_first("a[href='/'] img")
+    assert image.attributes.get("height") == "24"
+    assert ".clue-account-logo{display:block;height:24px" in derived.css_addition
+
+
+def test_without_a_kit_logo_a_drawn_logo_stays_and_the_note_says_so() -> None:
+    derived = derive_site_template(SITE_HEADER_ROLE, DRAWN, placeholder_src=PLACEHOLDER)
+    assert _annotated(derived).css_first("a[href='/'] svg") is not None
+    assert any("cannot be replaced" in note for note in derived.notes)
+
+
+def test_a_logo_that_is_already_an_image_is_kept() -> None:
+    html = DRAWN.replace(
+        '<svg class="logo-svg" width="96" height="24" viewBox="0 0 96 24"><path d="M0 0h96"></path></svg>',
+        '<img class="logo-img" src="/asset-store/' + "e" * 64 + '" alt="Acme">',
+    )
+    derived = derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER, seller_logo_src=KIT_LOGO)
+    image = _annotated(derived).css_first("a[href='/'] img")
+    assert image.attributes["src"] == "/asset-store/" + "e" * 64
+    assert not any("kit's logo file" in note for note in derived.notes)

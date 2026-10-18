@@ -70,7 +70,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         loaded = read_web_fragment(blobs.storage, workspace_id=args.workspace, fragment_id=str(source["fragment_id"]))
         try:
-            derived = derive_site_template(role, loaded.html, placeholder_src="/asset-store/" + "0" * 64)
+            derived = derive_site_template(role, loaded.html, placeholder_src="/asset-store/" + "0" * 64,
+                                           seller_logo_src=registry._kit_logo_file(kit_id, version))
         except TemplateNotDerivable as error:
             print(f"  {role}: from {source['fragment_id']} — not derivable ({error.reason})")
             continue
