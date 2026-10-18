@@ -203,21 +203,42 @@ export function InspectorSection({
   const regionRef = useRef<HTMLDivElement>(null);
   const regionInnerRef = useRef<HTMLDivElement>(null);
 
+  // Only a person opening or closing the section animates (founder 2026-10-19): a section that appears
+  // (a new selection) is simply there, and an open section follows its content's height directly, so
+  // the panel never replays when the selection changes.
+  // The open state this section last showed: only a change of it animates (a section that appears, or
+  // runs its effect again in development, is simply set).
+  const shownOpenRef = useRef<boolean | null>(null);
   useLayoutEffect(() => {
     const region = regionRef.current;
     const inner = regionInnerRef.current;
-
     if (!region || !inner) return;
+    const previous = shownOpenRef.current;
+    shownOpenRef.current = open;
 
-    const syncHeight = () => {
-      region.style.height = open ? `${inner.scrollHeight}px` : "0px";
-    };
+    if (previous === null || previous === open) {
+      const transition = region.style.transition;
+      region.style.transition = "none";
+      region.style.height = open ? "auto" : "0px";
+      void region.offsetHeight;
+      region.style.transition = transition;
+      return;
+    }
 
-    syncHeight();
-    const observer = new ResizeObserver(syncHeight);
-    observer.observe(inner);
-
-    return () => observer.disconnect();
+    if (open) {
+      region.style.height = `${inner.scrollHeight}px`;
+      // The fade ends before the height does: wait for the height, then follow the content.
+      const settle = (event: TransitionEvent) => {
+        if (event.target !== region || event.propertyName !== "height") return;
+        region.style.height = "auto";
+        region.removeEventListener("transitionend", settle);
+      };
+      region.addEventListener("transitionend", settle);
+      return () => region.removeEventListener("transitionend", settle);
+    }
+    region.style.height = `${region.scrollHeight}px`;
+    void region.offsetHeight;
+    region.style.height = "0px";
   }, [open]);
 
   return (

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import { getAtPath } from "@clue/site-kit/editor-site";
 import { richText } from "@clue/site-kit/rich";
+import { layerListHeight } from "@/features/site-editor/model/site-layers";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
 import {
   InspectorField,
@@ -42,6 +43,8 @@ export function SiteInspector({
 }) {
   const [contentOpen, setContentOpen] = useState(true);
   const [layersOpen, setLayersOpen] = useState(true);
+  const layerListRef = useRef<HTMLDivElement>(null);
+  useFillToDockBottom(layerListRef);
   return (
     <aside aria-label="Website inspector" className={styles.inspector}>
       <div className={styles.inspectorRail}>
@@ -60,26 +63,27 @@ export function SiteInspector({
           // Plan 4: a box: Fill, Stroke, Layout and Arrange (with its content alignment), then Hide
           // for a header or footer part.
           <>
-            <SiteBoxPanel binding={binding} key={`box:${binding.selectionKey}`} mode="box" />
-            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
+            <SiteBoxPanel binding={binding} key="box" mode="box" />
+            <SiteHideSection binding={binding} key="hide" />
           </>
         ) : binding.element?.kind === "image" ? (
           // Plan 5: an image: Image (Replace), Fit, Alt text, Stroke, Arrange and Visibility.
-          <SiteImagePanel binding={binding} key={`image:${binding.selectionKey}`} renderImageField={renderImageField} />
+          <SiteImagePanel binding={binding} key="image" renderImageField={renderImageField} />
         ) : binding.element ? (
           // Site element inspector: a selected text element is styled here; the section's content
-          // fields come back when the section itself is selected. Keyed by the selection, so each
-          // element starts with fresh drafts.
+          // fields come back when the section itself is selected. Keyed by the kind of selection, not
+          // the element (founder 2026-10-19): moving between two texts keeps every group in place and
+          // changes its values; each group resets its own per-element state.
           // A button (plan 3) adds its box's Fill, Stroke and Layout between its words and its link;
           // plan 4 adds Arrange and, for a header or footer part, Hide.
           <>
-            <SiteTextPanel binding={binding} key={binding.selectionKey} />
+            <SiteTextPanel binding={binding} key="text" />
             {binding.element.kind === "button" && binding.element.box ? (
-              <SiteButtonPanel binding={binding} key={`box:${binding.selectionKey}`} />
+              <SiteButtonPanel binding={binding} key="button-box" />
             ) : null}
-            <SiteLinkRow binding={binding} key={`link:${binding.selectionKey}`} />
-            <SiteArrangeSection binding={binding} key={`arrange:${binding.selectionKey}`} />
-            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
+            <SiteLinkRow binding={binding} key="link" />
+            <SiteArrangeSection binding={binding} key="arrange" />
+            <SiteHideSection binding={binding} key="hide" />
           </>
         ) : binding.fields ? (
           // DESIGN REVIEW (DR4): the section label for a selected site section.
@@ -104,14 +108,14 @@ export function SiteInspector({
               </fieldset>
             </InspectorSection>
             {/* Plan 4 (rulings R1, R2): the section's own box, under its words. */}
-            {binding.sectionBox ? <SiteBoxPanel binding={binding} key={`section:${binding.selectionKey}`} mode="section" /> : null}
+            {binding.sectionBox ? <SiteBoxPanel binding={binding} key="section" mode="section" /> : null}
           </>
         ) : null}
         {/* Plan 6 (ruling R12): the header's own placement, when the header itself is selected (the
             whole header shows only this and Layers: founder 2026-10-19). */}
-        {!binding.element ? <SiteHeaderPlacement binding={binding} key={`header:${binding.selectionKey}`} /> : null}
+        {!binding.element ? <SiteHeaderPlacement binding={binding} key="header" /> : null}
         <InspectorSection label="Layers" onOpenChange={setLayersOpen} open={layersOpen}>
-          <div className={styles.layerList}>
+          <div className={styles.layerList} ref={layerListRef}>
             {binding.layers.map((row) => (
               <InspectorLayerRow
                 active={row.active}
@@ -127,6 +131,34 @@ export function SiteInspector({
       </div>
     </aside>
   );
+}
+
+/** Layers fills the panel down to the bottom of its scrolling dock, or to the chat box's top when it is
+ * open (the dock already ends there), however few rows it has; with too little room it keeps a minimum
+ * and the dock scrolls. Measured,
+ * because the section around it sizes itself to its content for its open and close animation. */
+function useFillToDockBottom(listRef: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const dock = list?.closest<HTMLElement>(`.${styles.inspectorDock}`) ?? list?.parentElement?.closest<HTMLElement>("aside")?.parentElement;
+    if (!list || !dock) return;
+    const fit = () => {
+      const listTop = list.getBoundingClientRect().top - dock.getBoundingClientRect().top + dock.scrollTop;
+      // The list IS that height (not capped at it), so Layers reaches the bottom however few rows it has.
+      const section = list.closest("section");
+      const bottomGap = section ? section.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom : undefined;
+      list.style.height = `${layerListHeight({ dockHeight: dock.clientHeight, listTop, bottomGap })}px`;
+      list.style.maxHeight = "none";
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(dock);
+    // The rail is the panel's content (the aside always fills the dock, so it never reports a change):
+    // it changes height whenever a section above opens, closes or changes.
+    const rail = list.closest<HTMLElement>(`.${styles.inspectorRail}`);
+    if (rail) observer.observe(rail);
+    return () => observer.disconnect();
+  }, [listRef]);
 }
 
 function textOf(value: unknown): string {

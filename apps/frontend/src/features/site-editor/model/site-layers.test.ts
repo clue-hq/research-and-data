@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BrandData } from "@clue/site-kit";
 import { SiteDocumentSchema } from "@clue/site-kit/site-document";
-import { cloneLabelsOf, componentLabel, siteLayerRows } from "./site-layers";
+import { cloneLabelsOf, componentLabel, siteLayerRows, layerListHeight } from "./site-layers";
 
 const site = SiteDocumentSchema.parse({
   id: "doc-a",
@@ -126,4 +126,15 @@ test("Layers nests boxes, texts and images by parent, names boxes and marks hidd
     selection: { componentId: "header", target: "shell", elementKey: null, elements: [{ key: "logo", kind: "image", label: "Logo", parent: "brand", hidden: true }, { key: "brand", kind: "container", label: "Row", parent: null }] },
   });
   assert.ok(header.some((row) => row.label === "Logo (hidden)" && row.depth === 2), JSON.stringify(header));
+});
+
+// Founder 2026-10-19: Layers runs to the bottom of the panel (or to the chat box's top when it is open),
+// never a fixed half; when the parts above leave too little room it keeps a usable height and the
+// panel scrolls.
+test("Layers takes the room left down to the bottom of the dock", () => {
+  assert.equal(layerListHeight({ dockHeight: 1000, listTop: 300 }), 1000 - 300 - 16);
+  assert.equal(layerListHeight({ dockHeight: 600, listTop: 500 }), 240, "too little room: the minimum, the panel scrolls");
+  assert.equal(layerListHeight({ dockHeight: 0, listTop: 0 }), 240);
+  // The section's real padding and border below the list, so the panel does not overflow by a hairline.
+  assert.equal(layerListHeight({ dockHeight: 1096, listTop: 98, bottomGap: 16.5 }), 1096 - 98 - 17);
 });

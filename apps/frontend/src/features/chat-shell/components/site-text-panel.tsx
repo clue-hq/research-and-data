@@ -53,7 +53,10 @@ function refusalNote(change: TextPanelChange): string {
 export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
   const element = binding.element!;
   const [open, setOpen] = useState(true);
-  const [note, setNote] = useState<string | null>(null);
+  // A note belongs to the element it was said about; moving to another element clears it.
+  const [noteFor, setNoteFor] = useState<{ key: string; text: string } | null>(null);
+  const note = noteFor?.key === binding.selectionKey ? noteFor.text : null;
+  const setNote = (text: string | null) => setNoteFor(text ? { key: binding.selectionKey, text } : null);
   // Plan 3: a selected button's typography is its label's (the words inside the box); its Text row
   // retypes those words.
   const label = element.kind === "button" ? (element.labelElement ?? null) : null;
@@ -102,8 +105,8 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
     if (pendingColor.current) clearTimeout(pendingColor.current.timer);
     pendingColor.current = { hex, timer: setTimeout(flushColor, COLOR_DRAG_SETTLE_MS) };
   };
-  // A colour still settling when the selection moves on is written, never dropped.
-  useEffect(() => () => flushColor(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // A colour still settling when the selection moves on is written to its own element, never dropped.
+  useEffect(() => () => flushColor(), [binding.selectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The element's own family leads the list when it is not one of the brand's (a seller's font in a
   // copied section), so the list always shows what the text uses.

@@ -341,8 +341,8 @@ export function EditorSurface({
         <div className={styles.chatBody}>
           <div className={styles.inspectorDock}>
             <SiteInspector
+              // Never remounted by a selection: see chat-surface.tsx.
               binding={siteSession.inspector}
-              key={siteSession.inspector.selectionKey}
               renderImageField={(field, path, value) => {
                 const binding = siteSession.imageField(path, value);
                 return binding ? (

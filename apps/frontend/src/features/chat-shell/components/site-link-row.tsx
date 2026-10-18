@@ -25,9 +25,15 @@ const OPEN_IN: { label: string; value: "same" | "new" }[] = [
  */
 export function SiteLinkRow({ binding }: { binding: SiteInspectorBinding }) {
   const [open, setOpen] = useState(true);
-  const [note, setNote] = useState<string | null>(null);
+  // The note and the "Goes to" choice belong to the selected element; another element starts afresh.
+  const key = binding.selectionKey;
+  const [noteFor, setNoteFor] = useState<{ key: string; text: string } | null>(null);
+  const note = noteFor?.key === key ? noteFor.text : null;
+  const setNote = (text: string | null) => setNoteFor(text ? { key, text } : null);
   // Which control "Goes to" shows; until the marketer picks, the link's own kind decides.
-  const [destination, setDestination] = useState<"web" | "page" | null>(null);
+  const [destinationFor, setDestinationFor] = useState<{ key: string; value: "web" | "page" } | null>(null);
+  const destination = destinationFor?.key === key ? destinationFor.value : null;
+  const setDestination = (value: "web" | "page") => setDestinationFor({ key, value });
   const state = binding.linkState;
   const commit = (change: { href: string; newTab: boolean } | null) => {
     if (binding.disabled) return;

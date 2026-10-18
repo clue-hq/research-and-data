@@ -42,7 +42,9 @@ export function SiteImagePanel({
   const [imageOpen, setImageOpen] = useState(true);
   const [fitOpen, setFitOpen] = useState(true);
   const [altOpen, setAltOpen] = useState(true);
-  const [altNote, setAltNote] = useState<string | null>(null);
+  const [altNoteFor, setAltNoteFor] = useState<{ key: string; text: string } | null>(null);
+  const altNote = altNoteFor?.key === binding.selectionKey ? altNoteFor.text : null;
+  const setAltNote = (text: string | null) => setAltNoteFor(text ? { key: binding.selectionKey, text } : null);
   if (!image) return null;
   const fit = imagePanelValues(binding.elementOverride, image);
   const replace = binding.imageReplace;

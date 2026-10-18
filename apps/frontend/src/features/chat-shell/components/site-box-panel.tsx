@@ -80,7 +80,10 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
   const [strokeOpen, setStrokeOpen] = useState(true);
   const [layoutOpen, setLayoutOpen] = useState(true);
   // A refusal is said under the section whose control refused it.
-  const [note, setNote] = useState<{ section: PanelSection; text: string } | null>(null);
+  const [noteFor, setNoteFor] = useState<{ key: string; section: PanelSection; text: string } | null>(null);
+  const note = noteFor?.key === binding.selectionKey ? noteFor : null;
+  const setNote = (value: { section: PanelSection; text: string } | null) =>
+    setNoteFor(value ? { ...value, key: binding.selectionKey } : null);
   // Each key's override as last written, so a quick second change builds on the first.
   const latest = useRef<Record<string, StyleOverride | null>>({});
   const paintKey = targets?.paint.key;
@@ -118,7 +121,8 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
     if (pendingColor.current) clearTimeout(pendingColor.current.timer);
     pendingColor.current = { change, target, timer: setTimeout(flushColor, COLOR_DRAG_SETTLE_MS) };
   };
-  useEffect(() => () => flushColor(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // A colour still settling when the selection moves on is written to its own box, never dropped.
+  useEffect(() => () => flushColor(), [binding.selectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!targets) return null;
   const { layout, paint } = targets;

@@ -110,3 +110,23 @@ export function siteLayerRows({
     ...(site.shell ? [shellRow("footer"), ...elementRows(SHELL_TARGET, "footer")] : []),
   ];
 }
+
+/** The space below the list inside its section (the section's own bottom padding). */
+const LAYER_LIST_BOTTOM_GAP = 16;
+/** The least height Layers keeps; with less room the whole panel scrolls instead. */
+const LAYER_LIST_MIN_HEIGHT = 240;
+
+/** Founder 2026-10-19: Layers runs to the bottom of the panel's dock (which ends at the chat box's top
+ * when it is open). `listTop` is the list's top inside the dock's scrolled content. */
+export function layerListHeight({
+  dockHeight,
+  listTop,
+  bottomGap = LAYER_LIST_BOTTOM_GAP,
+}: {
+  dockHeight: number;
+  listTop: number;
+  /** What sits below the list inside its section (padding and border), measured where it can be. */
+  bottomGap?: number;
+}): number {
+  return Math.max(LAYER_LIST_MIN_HEIGHT, Math.floor(dockHeight - listTop - Math.ceil(bottomGap)));
+}

@@ -1042,10 +1042,10 @@ export function ChatSurface({
           {dockContent === "site-inspector" ? (
             <div className={styles.inspectorDock}>
               <SiteInspector
-                // Keyed on the selection only (the web dock's rule): a new selection starts with
-                // fresh drafts; a write never remounts the panel.
+                // Never remounted by a selection (founder 2026-10-19): the panel stays in place, its
+                // groups come and go by the kind of selection, and each group resets its own
+                // per-element state (notes, a settling colour, the link's "Goes to" choice).
                 binding={siteSession.inspector}
-                key={siteSession.inspector.selectionKey}
                 renderImageField={(field, path, value) => {
                   const binding = siteSession.imageField(path, value);
                   return binding ? (
