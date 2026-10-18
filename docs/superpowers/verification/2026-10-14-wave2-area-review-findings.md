@@ -419,7 +419,10 @@ The six Critical findings across the whole review:
 ### S3 — The design API's site backend (Lane A)
 
 #### S3-1 — Agent section code can rewrite what the render page reports: it gets past the size limit and can choose the error the marketer sees
-- **Severity:** Important (security and availability). Status: open.
+- **Severity:** Important (security and availability). Status: **fixed 2026-10-19** (`4fb8318c2`: the page
+  captures its built-ins before any section loads and answers with one string; the design API measures
+  that string itself and takes only the page's own error codes; the theme text is checked against
+  site-kit's exact shape for K5-5, `2b0d42e10`).
 - **What could happen:**
   - a section returns a page far larger than the limit: 5 MB came back against a 1 MB cap in the probe,
     and 80 MB pushed the design API process to about 1.85 GB of memory for one render;
@@ -536,8 +539,10 @@ The six Critical findings across the whole review:
 ### S5 — The site agent's runtime and the platform's site-turn wiring (Lane B)
 
 #### S5-1 — Agent section code can read files from the server and put their contents on the page
-- **Severity:** Important (security). Status: open. **Re-graded up by the controller** from the
-  reviewer's Minor, after finding a second route during verification.
+- **Severity:** Important (security). Status: **fixed 2026-10-19** (`c32a1fef7`: the check reads every
+  import, re-export and `require` from the parsed code; the bundler resolves nothing but the section).
+  **Re-graded up by the controller** from the reviewer's Minor, after finding a second route during
+  verification.
 - **What could happen:** a section the agent writes, perhaps steered by text on a web page it fetched,
   pulls in a file from the server that compiles it, and its render shows the file's contents. They then
   appear in the agent's own screenshot and, if published, on the public page. Any file the design API or
@@ -914,8 +919,9 @@ when an async step completes.
 **This group gated everything else.** S7-1 is fixed (option A, 2026-10-14) and S2b-2, which blocked every
 live walk, is fixed; then S7-2, S7-4, K3-8, S2b-9 (2026-10-14) and the domain-move findings K3-6, S4-1, S4-3,
 S7-3 (2026-10-15: label unique across domains, the origin serving either domain by label, the 301 last,
-the move script that refuses rather than leave a row behind, a two-label suffix refused). Only K3-7 (the
-Public Suffix List request and an editor-server fallback) remains. Before runbook §8 step 2 in production,
+the move script that refuses rather than leave a row behind, a two-label suffix refused). K3-7's editor-server
+fallback is done (2026-10-19, `34e2bcdd7`: 1 MB headers, no cookies read); only its Public Suffix List request
+remains, the founder's (pages-hosting runbook §9 step 10). Before runbook §8 step 2 in production,
 these fixes must be deployed and migration `abf95e465478` run.
 
 ### 4.6 Brand capture misses common modern patterns
