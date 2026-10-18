@@ -4,7 +4,7 @@ import type { ElementSummary } from "@clue/site-kit/editor-protocol";
 import { SHELL_TARGET, type SiteDocument } from "@clue/site-kit/site-document";
 
 /** One Layers row: the header, a page section, or the footer — or (depth 1 and deeper, plan 4) one
- * element of the selected one, nested by the box it sits in. */
+ * element of the selected one, nested by the box it sits in, after its Background (founder 2026-10-19). */
 export interface SiteLayerRow {
   active: boolean;
   componentId: string;
@@ -52,7 +52,7 @@ export function siteLayerRows({
 }: {
   cloneLabels: Readonly<Record<string, string>>;
   route: string;
-  selection: { componentId: string; target: string; elementKey?: string | null; elements?: readonly ElementSummary[] } | null;
+  selection: { componentId: string; target: string; elementKey?: string | null; backgroundKey?: string | null; elements?: readonly ElementSummary[] } | null;
   site: SiteDocument | null;
 }): SiteLayerRow[] {
   const page = site ? pageFor(site, route) : null;
@@ -74,7 +74,12 @@ export function siteLayerRows({
       for (let up = parentOf.get(key) ?? null; up !== null && depth <= elements.length; up = parentOf.get(up) ?? null) depth += 1;
       return depth;
     };
-    return elements.map((element) => ({
+    // Founder 2026-10-19: the section's own outermost box, first, as its Background.
+    const backgroundKey = selection?.backgroundKey ?? null;
+    const background: SiteLayerRow[] = backgroundKey
+      ? [{ active: backgroundKey === selectedElement, componentId, depth: 1, elementKey: backgroundKey, icon: "div", key: `${target}#${componentId}~${backgroundKey}`, label: "Background", target }]
+      : [];
+    return [...background, ...elements.map((element) => ({
       active: element.key === selectedElement,
       componentId,
       depth: depthOf(element.key),
@@ -84,7 +89,7 @@ export function siteLayerRows({
       // A hidden header or footer part (plan 4) stays listed, so it can be shown again.
       label: element.hidden ? `${element.label} (hidden)` : element.label,
       target,
-    }));
+    }))];
   };
   const shellRow = (part: "header" | "footer"): SiteLayerRow => ({
     active: isActive(SHELL_TARGET, part),

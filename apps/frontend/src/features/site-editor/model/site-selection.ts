@@ -18,8 +18,10 @@ export interface SiteSelection {
   element: ElementSelection | null;
   /** The section's elements, for Layers (plan 4: a tree, by each element's parent). */
   elements: ElementSummary[];
-  /** Plan 4: the section's own box, when the section itself is selected (else null). */
+  /** The section's own box, when its background is selected (else null; founder 2026-10-19). */
   sectionBox?: SectionBox | null;
+  /** The key of the section's own outermost box, its background, when it has one. */
+  backgroundKey?: string | null;
 }
 
 /** Everything the dock draws, as data and callbacks (presentation never reaches the session). */
@@ -278,6 +280,12 @@ export function siteInspectorTitle(site: SiteDocument | null, route: string, sel
 }
 
 /** Plan 4: the manual styling of the selected section's own box, outer and inner. */
+/** The key the selection names: its element's, its background's (founder 2026-10-19), or null for the
+ * whole section. */
+export function selectedKeyOf(selection: Pick<SiteSelection, "element" | "sectionBox" | "backgroundKey">): string | null {
+  return selection.element?.key ?? (selection.sectionBox ? (selection.backgroundKey ?? selection.sectionBox.outer.key) : null);
+}
+
 export function sectionBoxOverridesOf(
   site: SiteDocument | null,
   selection: { componentId: string; target: string; sectionBox?: SectionBox | null } | null,

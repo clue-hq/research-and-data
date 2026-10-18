@@ -22,7 +22,7 @@ import {
 } from "../model/site-frame-sync";
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { arrangeState, commitHidden, commitMove, hideState } from "../model/site-arrange";
-import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState, showsSectionPanel } from "../model/site-shell";
+import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState } from "../model/site-shell";
 import { commitImageAlt, imageAltOf, imageReplaceTarget } from "../model/site-image";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
@@ -47,6 +47,7 @@ import {
   sectionBoxOverridesOf,
   sitePalette,
   siteInspectorTitle,
+  selectedKeyOf,
   type SiteInspectorBinding,
   type SiteSelection,
 } from "../model/site-selection";
@@ -227,6 +228,7 @@ export function useSiteEditingSession({
           elements: message.payload.elements ?? [],
           fields: message.payload.fields,
           sectionBox: message.payload.sectionBox ?? null,
+          backgroundKey: message.payload.backgroundKey ?? null,
           target: message.payload.route,
         });
         return;
@@ -350,7 +352,7 @@ export function useSiteEditingSession({
   const layers = siteLayerRows({
     cloneLabels,
     route,
-    selection: activeSelection && { ...activeSelection, elementKey: activeSelection.element?.key ?? null },
+    selection: activeSelection && { ...activeSelection, elementKey: selectedKeyOf(activeSelection) },
     site: currentSite?.site ?? null,
   });
   const values =
@@ -709,9 +711,9 @@ export function useSiteEditingSession({
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
-    // Founder 2026-10-19: a whole copied section, header or footer shows only Layers (and the header's
-    // own settings); its parts are edited by clicking them.
-    fields: showsSectionPanel(activeSelection) ? (activeSelection?.fields ?? null) : null,
+    // Founder 2026-10-19: a whole section shows only Layers (and the header's own settings); its parts
+    // and its background are edited by selecting them.
+    fields: null,
     layers,
     // The lock's own sentence while it holds (the Edit pill carries the same words).
     note: saves.note ?? (locked ? AGENT_RUN_LOCK_NOTE : null),
@@ -719,7 +721,7 @@ export function useSiteEditingSession({
     onSelectLayer: selectLayer,
     // Each element is its own selection: fresh drafts when another element (or the section) is chosen.
     selectionKey: activeSelection
-      ? `${activeSelection.target}#${activeSelection.componentId}${activeSelection.element ? `~${activeSelection.element.key}` : ""}`
+      ? `${activeSelection.target}#${activeSelection.componentId}${selectedKeyOf(activeSelection) ? `~${selectedKeyOf(activeSelection)}` : ""}`
       : `page:${route}`,
     title: siteInspectorTitle(currentSite?.site ?? null, route, layers.find((row) => row.active)),
     values,
@@ -745,7 +747,7 @@ export function useSiteEditingSession({
     onHideCommit: commitHide,
     headerPlacement: headerPlacementState(currentSite?.site ?? null, activeSelection),
     onHeaderPlacementCommit: commitPlacement,
-    sectionBox: activeSelection && !activeSelection.element && showsSectionPanel(activeSelection) ? (activeSelection.sectionBox ?? null) : null,
+    sectionBox: activeSelection && !activeSelection.element ? (activeSelection.sectionBox ?? null) : null,
     sectionBoxOverrides: sectionBoxOverridesOf(currentSite?.site ?? null, activeSelection),
     imageAlt: imageAltOf(currentSite?.site ?? null, activeSelection, load.brand),
     onImageAltCommit: commitAlt,

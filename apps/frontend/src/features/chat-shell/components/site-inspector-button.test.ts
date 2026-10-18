@@ -120,20 +120,29 @@ test("a fixed part says why it does not move; a hidden header part offers Shown 
   assert.match(html, />Hidden</);
 });
 
-test("a selected section shows its Content, then its own box with Width off", () => {
+// Founder 2026-10-19: a whole section shows only Layers; its background shows the section's own box.
+test("a whole section shows only Layers", () => {
+  const html = renderedModule.exports.render(buttonBinding({ ...plan4, element: null, title: "Stats band" }));
+  assert.match(html, />Layers</);
+  for (const label of [">Content<", ">Fill<", ">Stroke<", ">Layout<", ">Arrange<", ">Typography<"]) assert.doesNotMatch(html, new RegExp(label), label);
+});
+
+test("a section's background shows its own box with Width off, and no header placement", () => {
   const html = renderedModule.exports.render(
     buttonBinding({
       ...plan4,
       element: null,
-      fields: [{ name: "heading", label: "Heading", kind: "text" }],
-      values: { heading: "H" },
       sectionBox: { outer: { key: "root", box }, inner: { key: "root.inner", container } },
+      headerPlacement: { sticky: false, overlay: false },
+      title: "Background",
     }),
   );
-  const at = order(html, [">Content<", ">Fill<", ">Layout<", "A section always spans the page.", "Content alignment"]);
+  const at = order(html, [">Fill<", ">Stroke<", ">Layout<", "A section always spans the page.", "Content alignment", ">Layers<"]);
   assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
   assert.deepEqual([...at].sort((a, b) => a - b), at);
+  assert.doesNotMatch(html, />Content</);
   assert.doesNotMatch(html, /Move up/, "a section does not move here");
+  assert.doesNotMatch(html, /Stays at the top/, "the header's placement belongs to the whole header");
 });
 
 // Plan 5: the image panel.

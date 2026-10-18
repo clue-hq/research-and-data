@@ -91,6 +91,27 @@ test("with no element selected the section row is active and its elements still 
   assert.equal(rows.filter((row) => row.depth === 1).length, 1);
 });
 
+// Founder 2026-10-19: the selected section's own outermost box is listed first under it as its
+// Background; the row selects that key, and is the active row while the background is selected.
+test("the selected section lists its Background first, a box row active while the background is selected", () => {
+  const elements = [{ key: "heading", kind: "text" as const, label: "7.4%" }];
+  const whole = siteLayerRows({ cloneLabels, route: "/", site, selection: { componentId: "proof", target: "/", elementKey: null, backgroundKey: "root", elements } });
+  assert.deepEqual(
+    whole.slice(2, 5).map((row) => [row.label, row.depth ?? 0, row.elementKey ?? null, row.active, row.icon]),
+    [
+      ["Stats band", 0, null, true, "layout-template"],
+      ["Background", 1, "root", false, "div"],
+      ["7.4%", 1, "heading", false, "type"],
+    ],
+  );
+  const background = siteLayerRows({ cloneLabels, route: "/", site, selection: { componentId: "proof", target: "/", elementKey: "root", backgroundKey: "root", elements } });
+  assert.deepEqual(background.filter((row) => row.active).map((row) => row.label), ["Background"]);
+  const header = siteLayerRows({ cloneLabels, route: "/", site, selection: { componentId: "header", target: "shell", elementKey: null, backgroundKey: "0", elements: [] } });
+  assert.deepEqual(header.slice(0, 2).map((row) => [row.label, row.elementKey ?? null, row.key]), [["Header", null, "shell#header"], ["Background", "0", "shell#header~0"]]);
+  const none = siteLayerRows({ cloneLabels, route: "/", site, selection: { componentId: "steps", target: "/", elementKey: null, backgroundKey: null, elements: [] } });
+  assert.equal(none.some((row) => row.label === "Background"), false, "a section with no one outermost box has none");
+});
+
 test("a button is listed with its section's elements, drawn as a box (plan 3)", () => {
   const rows = siteLayerRows({
     cloneLabels, route: "/", site,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { componentProps } from "@clue/site-kit/editor-site";
 import { SiteDocumentSchema } from "@clue/site-kit/site-document";
-import { commitFieldEdit, siteInspectorTitle } from "./site-selection";
+import { commitFieldEdit, selectedKeyOf, siteInspectorTitle } from "./site-selection";
 
 const site = SiteDocumentSchema.parse({
   id: "doc-a",
@@ -236,4 +236,12 @@ test("a line break in a button's words shows as a space in the Text row (review 
     { type: "CtaBand", props: { id: "cta", heading: "H", buttonLabel: "Book<br>now", buttonHref: "/" } },
   ] } } });
   assert.equal(labelTextOf(broken, buttonSelection({ kind: "prop", prop: "buttonLabel" })), "Book now");
+});
+
+test("the selection names its element, else its background while the background is selected, else nothing", () => {
+  const box = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 100 };
+  const sectionBox = { outer: { key: "root", box }, inner: { key: "root.inner", container: { ...box, gap: 0, layout: "text" as const, contentAlign: "start" as const, name: "Box" } } };
+  assert.equal(selectedKeyOf({ element: null, sectionBox: null, backgroundKey: "root" }), null);
+  assert.equal(selectedKeyOf({ element: null, sectionBox, backgroundKey: "root" }), "root");
+  assert.equal(selectedKeyOf({ element: { key: "heading", kind: "text", label: "H" } as never, sectionBox: null, backgroundKey: "root" }), "heading");
 });

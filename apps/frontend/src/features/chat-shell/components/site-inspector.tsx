@@ -105,13 +105,15 @@ export function SiteInspector({
                 )}
               </fieldset>
             </InspectorSection>
-            {/* Plan 4 (rulings R1, R2): the section's own box, under its words. */}
-            {binding.sectionBox ? <SiteBoxPanel binding={binding} key="section" mode="section" /> : null}
           </>
+        ) : binding.sectionBox ? (
+          // Founder 2026-10-19: a section's background (its own outermost box) shows the section-box
+          // panel (plan 4, ruling R2): Fill and Stroke on the outer box, Layout and alignment on the inner.
+          <SiteBoxPanel binding={binding} key="section" mode="section" />
         ) : null}
         {/* Plan 6 (ruling R12): the header's own placement, when the header itself is selected (the
             whole header shows only this and Layers: founder 2026-10-19). */}
-        {!binding.element ? <SiteHeaderPlacement binding={binding} key="header" /> : null}
+        {!binding.element && !binding.sectionBox ? <SiteHeaderPlacement binding={binding} key="header" /> : null}
         <InspectorSection label="Layers" onOpenChange={setLayersOpen} open={layersOpen}>
           <LayerList>
             {binding.layers.map((row) => (
