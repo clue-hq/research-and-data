@@ -271,9 +271,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     #   keeps private notes apart, Design writes every word, and research is offered for an
     #   unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
     #   paths. Prompt v18 and the recipe stay.
-    #   v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an ad,
-    #   Head of ABM may suggest what its headline could say, but only as a suggestion. The manual
-    #   re-mints at `manual-*@v19` (its tools chapter renders that description) and
+    #   v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an
+    #   ad, Head of ABM may suggest what its headline could say, but only as a suggestion. The
+    #   manual re-mints at `manual-*@v19` (its tools chapter renders that description) and
     #   `stage0-interview@v46` only repoints its manual paths. Prompt v18 and the recipe stay.
     # v74 (2026-10-16, the website release merges main): main's v71 keeps its number (production
     # ran it); the website line re-mints on top of it — v73's surface plus `manage_products@1`,
@@ -283,10 +283,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # search leaves out, chosen from `brand/knowledge/proof/customers.md` (stage0-interview v45).
     # The conversation recipe moves 34 -> 35 and the manual re-mints at `manual-*@v18`. Prompt v18
     # stays.
-    # v75 (2026-10-19, the website line merges research-streaming): research-streaming's v72 keeps its
-    # number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top of it —
-    # v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines' chapters)
-    # and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
+    # v75 (2026-10-19, the website line merges research-streaming): research-streaming's v72 keeps
+    # its number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top
+    # of it — v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines'
+    # chapters) and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
     AgentRole.HEAD_OF_ABM: "v75",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",

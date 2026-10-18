@@ -13,10 +13,9 @@ it, and a hostile name is never selectable.
 
 from __future__ import annotations
 
-import re
-
 import copy
 import hashlib
+import re
 from typing import Any
 
 import pytest

@@ -686,8 +686,8 @@ async def _account_contacts(
     """The account's buying committee as the account screen lists it, each person with their
     written contact page."""
 
+    from clue_api.arv2.display.gather import TITLE_KEY
     from clue_api.frontend_read.display_pages import (
-        TITLE_KEY,
         committee,
         committee_claims,
         displayable,

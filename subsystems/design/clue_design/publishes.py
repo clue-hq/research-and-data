@@ -625,9 +625,10 @@ def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension:
     Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
     import ``lumen_api``) and the design API share one rule.
 
-    Only the type itself is compared, not its parameters: an agent section's module is first stored
-    by the section tool as ``text/javascript``, and its artifact row keeps that type when the publish
-    registers the same bytes as a page asset. The canonical type is what is served either way.
+    Only the type itself is compared, not its parameters: an agent section's module is first
+    stored by the section tool as ``text/javascript``, and its artifact row keeps that type when
+    the publish registers the same bytes as a page asset. The canonical type is what is served
+    either way.
     """
     expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
     if expected is None:
@@ -640,5 +641,7 @@ def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension:
 
 
 def _essence(media_type: str) -> str:
-    """``type/subtype`` alone, lower-cased: ``text/javascript; charset=utf-8`` → ``text/javascript``."""
+    """``type/subtype`` alone, lower-cased.
+
+    ``text/javascript; charset=utf-8`` → ``text/javascript``."""
     return media_type.split(";", 1)[0].strip().lower()

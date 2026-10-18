@@ -52,7 +52,10 @@ exclude = ["subsystems/clue-design"]
 line-length = 100
 target-version = "py312"
 src = ["subsystems", "platform", "tests", "libs"]
-extend-exclude = ["subsystems/clue-design", ".context", "docs/superpowers/drafts"]
+# `trials/` holds throwaway spikes and trial runners (the Puck spike, the web-agent trials), and
+# `docs/benchmarks/` one-off report scripts kept beside their reports: outside the product and every
+# other gate.
+extend-exclude = ["subsystems/clue-design", ".context", "docs/superpowers/drafts", "trials", "docs/benchmarks"]
 
 [tool.ruff.lint]
 # T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured
@@ -71,6 +74,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "platform/api/clue_api/manual_build.py" = ["T20"]
 "scripts/**" = ["T20"]
 "tests/**" = ["T20"]
+# The site editor's browser tests carry the JavaScript they run in the page inline, one statement a
+# line, the way it reads in the browser.
+"tests/site_editor/**" = ["E501"]
+# An applied migration (main's): its one long line is inside the SQL it ran, never rewritten.
+"alembic/versions/9429b503cc9d_design_asset_image_embeddings.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_api", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_page_origin"]

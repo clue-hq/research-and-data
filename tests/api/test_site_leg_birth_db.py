@@ -27,13 +27,13 @@ from tests.api.test_genad_leg_document_birth_db import (
     _seed_conversation,
 )
 from tests.api.test_genweb_leg_document_birth_db import engine_web_doc
-from tests.api.test_multi_artifact_leg_birth_db import _seed_account_entity
 from tests.api.test_genweb_web_turn_dispatch_db import (
     _FakeLane,
     _run_turn,
     _seed_leg_conversation,
     _submit_message,
 )
+from tests.api.test_multi_artifact_leg_birth_db import _seed_account_entity
 from tests.db.conftest import run_async
 from tests.profiling.conftest import migrated_db, rollback_conn  # noqa: F401
 

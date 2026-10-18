@@ -82,7 +82,7 @@ def azure_at_left_edge(page: Any, frame: Any, selector: str) -> bool:
         )
     ).convert("RGB")
     return any(
-        all(abs(a - b) <= 40 for a, b in zip(shot.getpixel((x, y)), AZURE))
+        all(abs(a - b) <= 40 for a, b in zip(shot.getpixel((x, y)), AZURE, strict=True))
         for x in range(shot.width)
         for y in range(shot.height)
     )

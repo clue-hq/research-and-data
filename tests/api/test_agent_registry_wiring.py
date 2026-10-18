@@ -317,8 +317,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + design_publish_site@1, ungranted (Wave 2 Lane A, Task 21)
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
-    # Product management (2026-10-15, main): `manage_products@1`, granted at head-of-abm@v71 (175 -> 176).
-    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list) (176 -> 177).
+    # Product management (2026-10-15, main): `manage_products@1`, granted at head-of-abm@v71
+    # (175 -> 176).
+    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
+    # (176 -> 177).
     assert len(by_address) == 177
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
@@ -448,7 +450,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # + manage_products@1 (2026-10-15, main), granted at head-of-abm@v71.
-    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list) (176 -> 177).
+    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
+    # (176 -> 177).
     assert len(by_address) == 177  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
