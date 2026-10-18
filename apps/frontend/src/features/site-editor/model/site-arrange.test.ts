@@ -108,6 +108,18 @@ test("hide and show a header logo; showing restores the stored header exactly; a
   assert.equal(hideState(stats(), { componentId: "proof", target: "/", element: { key: "stats.0" } as never }), null);
 });
 
+// Plan 6 live check: in a template's menu the words carry their own key (`menu.<name>.label`); hiding
+// them from the panel hides the whole menu item, never just its words (an empty link left behind).
+test("hiding a template menu item's words hides the item", () => {
+  const start = site([], shellOf({ accountLine: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" }));
+  const header = { componentId: "header", target: "shell" };
+  const hidden = commitHidden(start, header, "menu.rollout.label", true)!;
+  assert.deepEqual(componentProps(hidden.site, "shell", "header")!._edits, { "menu.rollout": { hidden: true } });
+  assert.deepEqual(hideState(hidden.site, { ...header, element: { key: "menu.rollout.label" } as never }), { hidden: true, part: "header" });
+  const shown = commitHidden(hidden.site, header, "menu.rollout.label", false)!;
+  assert.deepEqual(componentProps(shown.site, "shell", "header"), componentProps(start, "shell", "header"));
+});
+
 // End-of-plan review I1 and I6: the selection stays on the element the marketer selected (not the
 // wrapper the move climbed to), and a second quick press builds on the first.
 test("review I1: a move through a wrapper keeps the selected element's own key; an array move renames it", () => {

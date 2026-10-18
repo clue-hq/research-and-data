@@ -136,10 +136,17 @@ export function arrangeState(
   return { canDown: at >= 0 && at < arrange.siblings.length - 1, canUp: at > 0, note: null };
 }
 
+/** The part a hide applies to: a template menu item's words (`menu.<name>.label`, site-kit clone.ts) hide
+ * the whole item, never just the words (plan 6 live check: that left an empty link in the menu). */
+function hideKey(key: string): string {
+  return /^menu\.[^.]+\.label$/.test(key) ? key.slice(0, -".label".length) : key;
+}
+
 /** Hiding or showing a header or footer part (ruling R9): `hidden: true` in its `_edits` entry, or the
  * property removed (an entry left empty goes with it). Null when nothing changes. */
-export function commitHidden(site: SiteDocument, place: Place, key: string, hidden: boolean): { props: Record<string, unknown>; site: SiteDocument } | null {
+export function commitHidden(site: SiteDocument, place: Place, selectedKey: string, hidden: boolean): { props: Record<string, unknown>; site: SiteDocument } | null {
   if (place.target !== SHELL_TARGET) return null;
+  const key = hideKey(selectedKey);
   const props = componentProps(site, place.target, place.componentId);
   if (!props) return null;
   const edits = editsOf(props);
@@ -161,5 +168,5 @@ export function hideState(
   if (!site || !selection?.element || selection.target !== SHELL_TARGET) return null;
   if (selection.componentId !== "header" && selection.componentId !== "footer") return null;
   const props = componentProps(site, selection.target, selection.componentId);
-  return props ? { hidden: editsOf(props)[selection.element.key]?.hidden === true, part: selection.componentId } : null;
+  return props ? { hidden: editsOf(props)[hideKey(selection.element.key)]?.hidden === true, part: selection.componentId } : null;
 }
