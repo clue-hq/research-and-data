@@ -25,34 +25,75 @@ test("the key attribute is the one the inspector reads", () => {
 test("brand sections name each text element by the prop it draws", () => {
   assert.deepEqual(
     keys(draw(sections.StatsBand.render({ id: "s", surface: "page", align: "left", eyebrow: "E", heading: "H", intro: "I", stats: [{ value: "7%", label: "less" }, { value: "2x", label: "more" }], source: "S" } as never))),
-    ["eyebrow", "heading", "intro", "stats.0.value", "stats.0.label", "stats.1.value", "stats.1.label", "source"],
+    ["root", "root.inner", "lead", "eyebrow", "heading", "intro", "stats", "stats.0", "stats.0.value", "stats.0.label", "stats.1", "stats.1.value", "stats.1.label", "source"],
   );
   assert.deepEqual(
     keys(draw(sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "E", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["eyebrow", "heading", "body", "button", "button.label"],
+    ["root", "root.inner", "row", "column", "eyebrow", "heading", "body", "button", "button.label"],
+  );
+  assert.deepEqual(
+    keys(draw(sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "/brands/x.png", imageSide: "left", buttonLabel: "", buttonHref: "/", buttonLook: "" } as never))),
+    ["root", "root.inner", "row", "image", "column", "heading", "body"],
   );
   assert.deepEqual(
     keys(draw(sections.ProofCard.render({ id: "p", surface: "card", kicker: "K", metric: "13%", metricLabel: "L", heading: "H", body: "B", source: "S", linkLabel: "Read", linkHref: "/x" } as never))),
-    ["kicker", "metric", "metricLabel", "heading", "body", "source", "linkLabel"],
+    ["root", "root.inner", "card", "figure", "kicker", "metric", "metricLabel", "story", "heading", "body", "source", "linkLabel"],
   );
   assert.deepEqual(
     keys(draw(sections.CtaBand.render({ id: "c", surface: "brand", heading: "H", body: "B", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["heading", "body", "button", "button.label"],
+    ["root", "root.inner", "column", "heading", "body", "button", "button.label"],
   );
 });
 
 test("an empty optional text draws no element and so no key", () => {
   assert.deepEqual(
     keys(draw(sections.CtaBand.render({ id: "c", surface: "brand", heading: "H", body: "", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never))),
-    ["heading", "button", "button.label"],
+    ["root", "root.inner", "column", "heading", "button", "button.label"],
   );
 });
 
-test("the header and footer name their text", () => {
-  const header = { preparedFor: "Carmel Clay Schools", accountLogo: "", ctaLabel: "Go", ctaHref: "/", nav: [{ label: "Analysis", href: "/analysis" }] };
-  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["preparedFor", "nav.0", "cta", "cta.label"]);
-  const footer = { legal: "© 2026", privacyHref: "/privacy", termsHref: "/terms" };
-  assert.deepEqual(keys(draw(<SiteFooter brand={brand} footer={footer} href={href} />)), ["legal", "privacy", "terms"]);
+const header = { preparedFor: "Carmel Clay Schools", accountLogo: "/brands/carmel.png", ctaLabel: "Go", ctaHref: "/", nav: [{ label: "Analysis", href: "/analysis" }] };
+const footer = { legal: "© 2026", privacyHref: "/privacy", termsHref: "/terms" };
+
+test("the header and footer key every part (plan 4)", () => {
+  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), [
+    "root", "root.inner", "brand", "logo", "divider", "accountLogo", "prepared", "preparedFor", "actions", "nav", "nav.0", "ctaArea", "cta", "cta.label",
+  ]);
+  assert.deepEqual(keys(draw(<SiteFooter brand={brand} footer={footer} href={href} />)), ["root", "root.inner", "logo", "legal", "links", "privacy", "terms"]);
+});
+
+test("the header draws its groups in their order", () => {
+  const html = draw(<SiteHeader brand={brand} header={{ ...header, _edits: { brand: { order: ["prepared", "logo", "divider", "accountLogo"] }, actions: { order: ["ctaArea", "nav"] } } }} href={href} />);
+  const at = keys(html);
+  assert.ok(at.indexOf("prepared") < at.indexOf("logo"), at.join(","));
+  assert.ok(at.indexOf("ctaArea") < at.indexOf("nav"), at.join(","));
+});
+
+test("an order with unknown and missing keys keeps the rest in place", () => {
+  const brandGroup = (order: string[]) =>
+    keys(draw(<SiteHeader brand={brand} header={{ ...header, _edits: { brand: { order } } }} href={href} />)).filter((key) => ["logo", "divider", "accountLogo", "prepared"].includes(key));
+  assert.deepEqual(brandGroup(["accountLogo", "ghost"]), ["logo", "divider", "accountLogo", "prepared"]);
+  assert.deepEqual(brandGroup(["prepared", "logo"]), ["prepared", "divider", "accountLogo", "logo"]);
+});
+
+test("the footer draws its parts and its links in their order", () => {
+  const at = keys(draw(<SiteFooter brand={brand} footer={{ ...footer, _edits: { "root.inner": { order: ["links", "legal", "logo"] }, links: { order: ["terms", "privacy"] } } }} href={href} />));
+  assert.deepEqual(at, ["root", "root.inner", "links", "terms", "privacy", "legal", "logo"]);
+});
+
+test("a hidden part and the shell's own box are styled through the scope on the header itself", () => {
+  const html = draw(<SiteHeader brand={brand} header={{ ...header, _edits: { root: { fill: { hex: "#112233", opacity: 100 } }, logo: { hidden: true } } }} href={href} />);
+  assert.match(html, /\[data-clue-section="shell-header"\]\[data-clue-el="root"\],\[data-clue-section="shell-header"\] \[data-clue-el="root"\]\{background-color:#112233FF !important/);
+  assert.match(html, /\[data-clue-section="shell-header"\] \[data-clue-el="logo"\]\{display:none !important\}/);
+});
+
+test("kit.Card and kit.Image take the agent's name, and only a valid one; kit.Shell is a section box", () => {
+  const kit = makeKit(href, brand);
+  assert.deepEqual(keys(draw(<>{kit.Card({ el: "cards.0", children: "x" })}{kit.Card({ el: "cards.1", href: "/x", children: "y" })}</>)), ["cards.0", "cards.1"]);
+  assert.deepEqual(keys(draw(kit.Card({ el: 'x" onclick="', children: "x" }))), []);
+  assert.deepEqual(keys(draw(kit.Image({ src: "/brands/photo.png", el: "photo" }))), ["photo"]);
+  assert.deepEqual(keys(draw(kit.Image({ src: "/brands/photo.png", el: "a b" }))), []);
+  assert.deepEqual(keys(draw(kit.Shell({ surface: "page", children: "x" }))), ["root", "root.inner"]);
 });
 
 test("kit.Eyebrow and kit.Link take the agent's name, and only a valid one", () => {
@@ -96,9 +137,9 @@ test("script, style and svg text is never keyed", () => {
 // Plan 3: every button is a box key and a label key.
 test("our sections' buttons and the header's are keyed as a box and a label", () => {
   const feature = draw(sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Go", buttonHref: "/", buttonLook: "" } as never));
-  assert.deepEqual(keys(feature), ["heading", "body", "button", "button.label"]);
+  assert.deepEqual(keys(feature), ["root", "root.inner", "row", "column", "heading", "body", "button", "button.label"]);
   const header = { preparedFor: "Carmel", accountLogo: "", ctaLabel: "Book", ctaHref: "/", nav: [] };
-  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["preparedFor", "cta", "cta.label"]);
+  assert.deepEqual(keys(draw(<SiteHeader brand={brand} header={header} href={href} />)), ["root", "root.inner", "brand", "logo", "divider", "prepared", "preparedFor", "actions", "ctaArea", "cta", "cta.label"]);
 });
 
 test("kit.Button takes the agent's name for its box and label, and only a valid one", () => {

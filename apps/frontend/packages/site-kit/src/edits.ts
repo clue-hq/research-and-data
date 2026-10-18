@@ -16,6 +16,9 @@ export const EDITS_PROP = "_edits";
 export const ELEMENT_KEY_ATTR = "data-clue-el";
 /** The attribute on the box around a section (or the shell's header or footer) that scopes its edits. */
 export const SECTION_SCOPE_ATTR = "data-clue-section";
+/** The key of a section's own box, and of the box inside it that holds the brand's padding (plan 4). */
+export const ROOT_KEY = "root";
+export const ROOT_INNER_KEY = "root.inner";
 /** The scope names of the shell's header and footer. */
 export const SHELL_SCOPE = { header: "shell-header", footer: "shell-footer" } as const;
 
@@ -311,7 +314,11 @@ export function editsCss(scope: string, edits: Edits, brand: BrandData): string 
       if (!ElementKeySchema.safeParse(key).success || !override.success) return [];
       const css = declarations(brand, override.data);
       const attr = isSpanKey(key) ? SPAN_KEY_ATTR : ELEMENT_KEY_ATTR;
-      return css.length ? [`[${SECTION_SCOPE_ATTR}="${scope}"] [${attr}="${key}"]{${css.join(";")}}`] : [];
+      const inside = `[${SECTION_SCOPE_ATTR}="${scope}"] [${attr}="${key}"]`;
+      // A section's own box (plan 4, `root`) may be the scoped element itself: the shell's header and
+      // footer carry their scope on the box. Same specificity either way.
+      const selector = key === ROOT_KEY ? `[${SECTION_SCOPE_ATTR}="${scope}"][${attr}="${key}"],${inside}` : inside;
+      return css.length ? [`${selector}{${css.join(";")}}`] : [];
     })
     .join("");
 }

@@ -23,7 +23,10 @@ export type Kit = {
    * `<el>.label`. */
   Button: (props: { label: ReactNode; href: string; surface: AnySurface; look?: string; disabled?: boolean; el?: string }) => ReactNode;
   /** look: a card style brand.md lists (Cards); href makes the whole card a link. */
-  Card: (props: { look?: string; href?: string; children: ReactNode }) => ReactNode;
+  /** el: a name for this card in the site inspector (as for Eyebrow), so the marketer can style it; for
+   * cards drawn from an array prop, name each `<prop>.<index>` (`el={`cards.${i}`}`) and the marketer can
+   * move them too. */
+  Card: (props: { look?: string; href?: string; children: ReactNode; el?: string }) => ReactNode;
   /** el: a name for this text in the site inspector (letters and digits, with dots, underscores or
    * dashes between them; unique in the section), so the marketer can select and style it. Without
    * one it is not selectable. */
@@ -34,7 +37,7 @@ export type Kit = {
   /** fit="fill": covers its positioned parent (a background photo). fit="contain": the whole image
    * inside its box, never cropped or rounded (a logo). Neither: full width with the brand's corners.
    * A logo from the brand kit is always shown whole. */
-  Image: (props: { src: string; alt?: string; fit?: "fill" | "contain"; className?: never }) => ReactNode;
+  Image: (props: { src: string; alt?: string; fit?: "fill" | "contain"; className?: never; el?: string }) => ReactNode;
   /** True while the marketer edits this page in the editor's Edit mode: show the section's first
    * state and start nothing (no timers, no autoplay), so a click selects it instead of driving it. */
   editing: boolean;
@@ -62,18 +65,21 @@ export function makeKit(href: Href, brand: BrandData): Kit {
       // Words stored in the prop the button is named after (R6), so the editor hides it when they are empty.
       <BrandButton brand={brand} label={label} href={href(target)} surface={surface} look={look} disabled={disabled} el={elementKey(el)} words={elementKey(el)} />
     ),
-    Card: ({ look, href: target, children }) => {
+    Card: ({ look, href: target, children, el }) => {
       const chosen = lookNamed(brand, "card", look);
       const className = chosen ? `brand-card brand-card-look-${chosen.index}` : "brand-card";
-      return target ? <a href={href(target) || "#"} className={className}>{children}</a> : <div className={className}>{children}</div>;
+      const key = elementKey(el);
+      return target
+        ? <a href={href(target) || "#"} className={className} data-clue-el={key}>{children}</a>
+        : <div className={className} data-clue-el={key}>{children}</div>;
     },
     Eyebrow: ({ children, el }) => <Eyebrow el={elementKey(el)}>{children}</Eyebrow>,
     Link: ({ href: target, children, el }) => (
       <a href={href(target) || "#"} className="brand-link" data-clue-el={elementKey(el)}>{children}</a>
     ),
     // eslint-disable-next-line @next/next/no-img-element
-    Image: ({ src, alt, fit }) =>
-      src ? <img src={src} alt={alt ?? ""} className={IMAGE_CLASS[fit ?? (logos.has(src) ? "contain" : "standard")]} /> : null,
+    Image: ({ src, alt, fit, el }) =>
+      src ? <img src={src} alt={alt ?? ""} className={IMAGE_CLASS[fit ?? (logos.has(src) ? "contain" : "standard")]} data-clue-el={elementKey(el)} /> : null,
     editing: false,
   };
 }

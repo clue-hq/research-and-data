@@ -38,7 +38,7 @@ test("an agent section renders inside its data-agent-section wrapper, with the k
     maxOutputBytes: 10_000_000,
   });
   const html = result.pages[0].html;
-  assert.ok(html.includes('<div data-agent-section="QuoteBand"><section class="bg-surface-brand text-on-surface-brand">'), html);
+  assert.ok(html.includes('<div data-agent-section="QuoteBand"><section class="bg-surface-brand text-on-surface-brand" data-clue-el="root">'), html);
   assert.ok(html.includes("Fewer surprises."));
 });
 
@@ -187,8 +187,8 @@ test("the header's edits are scoped to the header", () => {
   shell.header._edits = { preparedFor: { fontWeight: 700 } };
   shell.footer._edits = { legal: { underline: true } };
   const html = renderSitePages({ site: { ...site, shell }, brand, basePath: "", routes: ["/"], agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
-  assert.match(html, /<header data-clue-section="shell-header" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-header"\] \[data-clue-el="preparedFor"\]\{font-weight:700 !important\}<\/style>/);
-  assert.match(html, /<footer data-clue-section="shell-footer" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-footer"\] \[data-clue-el="legal"\]\{text-decoration-line:underline !important\}<\/style>/);
+  assert.match(html, /<header data-clue-section="shell-header" data-clue-el="root" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-header"\] \[data-clue-el="preparedFor"\]\{font-weight:700 !important\}<\/style>/);
+  assert.match(html, /<footer data-clue-section="shell-footer" data-clue-el="root" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-footer"\] \[data-clue-el="legal"\]\{text-decoration-line:underline !important\}<\/style>/);
 });
 
 test("a section with no _edits has no style element", () => {

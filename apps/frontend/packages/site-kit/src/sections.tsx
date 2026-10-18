@@ -47,9 +47,11 @@ const headingRoleField = {
 const text = (label: string) => ({ type: "text" as const, label, contentEditable: true });
 const area = (label: string) => ({ type: "textarea" as const, label, contentEditable: true });
 
+/** A section's box (plan 4, ruling R2): `root` takes its fill, stroke and corners, `root.inner` holds the
+ * brand's section padding and takes padding, gap and content alignment. */
 export const Shell = ({ surface, children }: { surface: AnySurface; children: ReactNode }) => (
-  <section className={surfaceClass(surface)}>
-    <div className="brand-content px-page-margin py-section">{children}</div>
+  <section className={surfaceClass(surface)} data-clue-el="root">
+    <div className="brand-content px-page-margin py-section" data-clue-el="root.inner">{children}</div>
   </section>
 );
 
@@ -162,14 +164,14 @@ export function makeSections(
       const columns = ["", "sm:grid-cols-1", "sm:grid-cols-2", "sm:grid-cols-3", "sm:grid-cols-2 lg:grid-cols-4"][stats.length] ?? "sm:grid-cols-3";
       return (
         <Shell surface={surface}>
-          <div className={centered ? "mx-auto text-center [&>*]:mx-auto" : ""}>
+          <div className={centered ? "mx-auto text-center [&>*]:mx-auto" : ""} data-clue-el="lead">
             <Eyebrow el="eyebrow">{r(eyebrow)}</Eyebrow>
             <h2 className="mt-stack-tight max-w-[24ch] font-title text-title brand-ink-title" data-clue-el="heading">{r(heading)}</h2>
             {intro ? <p className="mt-stack-default max-w-[60ch] font-body text-body brand-ink-body" data-clue-el="intro">{r(intro)}</p> : null}
           </div>
-          <dl className={`mt-stack-loose grid gap-stack-loose ${columns} ${centered ? "text-center [&_dd]:mx-auto" : ""}`}>
+          <dl className={`mt-stack-loose grid gap-stack-loose ${columns} ${centered ? "text-center [&_dd]:mx-auto" : ""}`} data-clue-el="stats">
             {stats.map((stat, index) => (
-              <div key={index} className="brand-rule-t pt-stack-default">
+              <div key={index} className="brand-rule-t pt-stack-default" data-clue-el={`stats.${index}`}>
                 <dt className="font-headline text-headline brand-ink-headline" data-clue-el={`stats.${index}.value`}>{stat.value}</dt>
                 <dd className="mt-stack-tight max-w-[32ch] font-body text-body brand-ink-body" data-clue-el={`stats.${index}.label`}>{stat.label}</dd>
               </div>
@@ -200,12 +202,12 @@ export function makeSections(
     render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
       <Shell surface={surface}>
         {/* No image: one text column, not an empty frame beside the words. */}
-        <div className={image ? "grid items-center gap-stack-loose md:grid-cols-2" : "max-w-[60ch]"}>
+        <div className={image ? "grid items-center gap-stack-loose md:grid-cols-2" : "max-w-[60ch]"} data-clue-el="row">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} />
+            <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} data-clue-el="image" />
           ) : null}
-          <div>
+          <div data-clue-el="column">
             <Eyebrow el="eyebrow">{rich(eyebrow, href)}</Eyebrow>
             <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`} data-clue-el="heading">{rich(heading, href)}</h2>
             <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p>
@@ -235,13 +237,13 @@ export function makeSections(
     },
     render: ({ surface, kicker, metric, metricLabel, heading, body, source, linkLabel, linkHref, linkNewTab }) => (
       <Shell surface="page">
-        <div className={`grid gap-stack-loose rounded-card p-card-padding md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${surfaceClass(surface)}`}>
-          <div>
+        <div className={`grid gap-stack-loose rounded-card p-card-padding md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${surfaceClass(surface)}`} data-clue-el="card">
+          <div data-clue-el="figure">
             <Eyebrow el="kicker">{rich(kicker, href)}</Eyebrow>
             <p className="mt-stack-default font-display text-display brand-ink-display" data-clue-el="metric">{rich(metric, href)}</p>
             <p className="mt-stack-tight font-body text-body brand-ink-body" data-clue-el="metricLabel">{rich(metricLabel, href)}</p>
           </div>
-          <div className="self-end">
+          <div className="self-end" data-clue-el="story">
             <h3 className="font-title text-title brand-ink-title" data-clue-el="heading">{rich(heading, href)}</h3>
             {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p> : null}
             {source ? <p className="mt-stack-default font-caption text-caption brand-ink-caption" data-clue-el="source">{rich(source, href)}</p> : null}
@@ -266,7 +268,7 @@ export function makeSections(
     defaultProps: { surface: "brand", heading: "The one next step", body: "", buttonLabel: "Get started", buttonHref: "", buttonLook: "" },
     render: ({ surface, heading, body, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
       <Shell surface={surface}>
-        <div className="mx-auto max-w-[60ch] text-center">
+        <div className="mx-auto max-w-[60ch] text-center" data-clue-el="column">
           <h2 className="font-headline text-headline brand-ink-headline" data-clue-el="heading">{rich(heading, href)}</h2>
           {body ? <p className="mt-stack-default font-body text-body brand-ink-body" data-clue-el="body">{rich(body, href)}</p> : null}
           <div className="mt-stack-loose">
