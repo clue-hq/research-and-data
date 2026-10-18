@@ -49,10 +49,9 @@ the references and preference context actually available to that run. Do not
 transfer one brand's chosen size or type ratio to unrelated brands or formats.
 
 The diagnostic `resolved_font_size * viewing_width / page_width` explains how
-type scales; it is not a universal size target. If a caller explicitly selected
-a numeric review profile, satisfy it alongside visual hierarchy; report a
-conflict with an approved treatment rather than silently overriding that
-treatment. With no selected profile, do not invent a numeric acceptance floor.
+type scales; it is not a universal size target. Meet the minimum text size
+alongside visual hierarchy; report a conflict with an approved treatment rather
+than silently overriding that treatment.
 Preserve an approved headline and change support only as far as needed for the
 second read. Give it enough width and height to wrap comfortably; a natural
 single line is also valid. Use a supplied size token or checked explicit edit,

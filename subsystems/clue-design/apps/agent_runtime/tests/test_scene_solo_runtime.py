@@ -99,10 +99,12 @@ def test_solo_compiled_graph_has_no_dispatch_and_builds_only_the_active_model(
     assert checked == [config.orchestrator_model]
     names = set(graph.nodes["tools"].bound.tools_by_name)
     assert not {"task", "task_background", "task_result", "task_status"} & names
+    # Harness alignment I9: no to-do tool in the scene agent.
+    assert "write_todos" not in names
     assert {
         "view", "render_preview", "inspect", "compile_dsl_block", "asset", "fetch_logo",
         "validate_binding_set", "preflight_design", "validate_creative_direction",
-        "record_gap", "finalize_run", "read_file", "write_file", "edit_file", "write_todos",
+        "record_gap", "finalize_run", "read_file", "write_file", "edit_file",
         # A follow-up's targeted edit goes through the typed edit builder, not a compile.
         "apply_structured_edit",
     } <= names

@@ -21,9 +21,7 @@ copy, evidence pointers, intent and the layer plan; do not create competing
 briefs. Validate it before use, construct through checked DSL and asset tools,
 and judge the actual current render. Page-only preparation for fetching a required
 authentic target logo may precede the direction under the direction contract;
-creative construction and new imagery spend may not. These responsibilities can
-belong to one agent; when the configured runtime delegates, share this same validated record.
-Available tools define each agent's authority.
+creative construction and new imagery spend may not. Your tools define what you can do.
 
 Load shared mechanics when needed:
 

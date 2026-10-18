@@ -89,7 +89,7 @@ whole rectangle: for text-over-image, put the image behind the text and verify
 local contrast; for separate regions, keep their content clear. Match a generated
 image's ground to the neighboring field, or use a deliberate frame/bleed supported
 by the references. View their boundary in the composite before accepting it.
-Satisfy the caller-selected review profile as well as visual hierarchy. Its floor
+Meet the minimum text size as well as visual hierarchy. Its floor
 is a rejection threshold, not the final size or proof that every face reads well.
 
 For a no-CTA request, compose without an action region. For an awareness pitch

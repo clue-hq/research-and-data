@@ -334,3 +334,8 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
 - **NEW TOPIC T11 (founder, 2026-10-17): review every scene tool's parameter schema** the same way —
   e.g. `apply_structured_edit` (one `edit_json` string whose format lives only in a prose example) and
   `asset` (~20 parameters described only in prose). Runs after T10.
+- **T6 verification note:** `test_scene_copy_review_profile.py` and `test_scene_copy_review.py` need a
+  migrated design database (their fixture's preflight reads font bytes from the design store); they could
+  not run in this shell and were NOT pointed at the running stack's database. Owed: run both on a
+  throwaway migrated DB before merge. The workspace-profile test in that file was updated to the new
+  behaviour; a database-free equivalent passes in `test_scene_solo_prompt.py`.

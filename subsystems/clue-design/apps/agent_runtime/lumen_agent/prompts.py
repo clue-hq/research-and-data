@@ -1392,9 +1392,22 @@ def build_scene_solo_prompt(
     frame_payload: str | None = None,
     target_llm_calls: int = 45, target_wall_clock_s: float = 900.0,
     inner_iterations: int = 4,
+    review_profile: dict | None = None,
 ) -> str:
     """One scene owner using the candidate skills and unchanged acceptance gates."""
     minutes = int(round(target_wall_clock_s / 60.0)) or 1
+    # Harness alignment I9 (founder ruling 2026-10-17): the minimum text size is written from the
+    # active review profile (LUMEN_AGENT_SCENE_REVIEW_PROFILE), so the number the agent reads can
+    # never drift from the one review enforces. No profile, no line.
+    min_text_size = ""
+    if review_profile:
+        em = review_profile["minimum_nominal_em_px"]
+        display = review_profile["display_width_px"]
+        min_text_size = (
+            f"\nMinimum text size: every native text fragment must be at least {em:g}px when the\n"
+            f"ad is shown {display:g}px wide, which is {em * 1080 / display:g}px on a 1080px-wide\n"
+            "canvas. Plan copy length, space and type to fit it."
+        )
     sections = [
         f"""You are the design agent for editable scene creatives. You own creative
 direction, original copy, source selection, construction and visual review. Use
@@ -1458,7 +1471,7 @@ with returned real asset IDs. Preserve independent authentic logos and product
 images; generation cannot certify their exactness. Keep copy and buttons editable.
 Use supplied type and color tokens, text height hugs, checked operations and
 actual geometry. Do not mutate scene JSON. Exact source and diagnostics are
-already journaled by tools; do not manually transcribe duplicate trace files.
+already journaled by tools; do not manually transcribe duplicate trace files.{min_text_size}
 5. Run preflight_design(), repair actual diagnostics, then render_preview().
 Use its authoritative freshness summary: if preflight_current is false, run
 preflight again and render before judging. view('preview') and inspect the
@@ -1513,6 +1526,10 @@ a target miss is recorded but does not itself prohibit the one necessary repair.
 After that repair finish honestly; do not open a third round. Do not raise
 budgets or remove review to meet the target. A first preview is not finished
 delivery; target_exceeded and a hard budget_exhausted are different outcomes.
+
+How you work: be concise and direct, with no preamble. Report accurately; don't
+praise your own work. If something fails the same way twice, stop and change
+approach.
 
 What to read. For a new ad or a revamp, read the files in step 1 and the one
 playbook you choose. For a targeted edit, read only what the change touches.

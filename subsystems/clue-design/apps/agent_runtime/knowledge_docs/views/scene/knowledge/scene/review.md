@@ -99,7 +99,7 @@ It does not certify the unreviewed remainder. Never turn unverified into met/rea
 just to register. Notes, empty gaps and schema validity are not proof of taste/truth.
 Whole acceptance also needs clean current preflight, current preview/view and a
 current registered accepted critique. A changed scene/direction needs renewed review.
-A caller-selected native_copy_review_profile also applies; no score waives a failure.
+The minimum text size also applies; no score waives a failure.
 A targeted edit writes no critique: it follows the system prompt's targeted-edit
 routine and finishes with `edit_applied`. Whole-creative `accepted` is for a new ad
 or a revamp.
@@ -241,8 +241,8 @@ After a repair, the new scene needs its own render and view. Save the critique
 for that round/current scene and name unresolved blockers honestly. A blocker
 cannot be explained away as polish. Avoid retrying an identical failed treatment.
 
-The earlier controls provide negative evidence: self-accepted white-on-pale copy,
-an unsupported luminous motif, a substituted wordmark treatment, and a product
+These are examples of real failures: white copy on a pale texture accepted as
+readable, an unsupported glowing motif, a substituted wordmark, and a product
 crop too small to communicate. Each is a distinct failure. Palette similarity,
 native editability and valid export do not compensate for those failures.
 
@@ -334,23 +334,16 @@ material itself; schema validation does not verify source strings or meaning.
 Readability status is `readable`, `unreadable` or `unverified`, with a concise
 placement-specific reason covering all fragments of that occurrence. Examine
 each occurrence in the existing current full preview and feed proxy, including
-overlap, clipping, local contrast and small support/attribution. There is no
-universal font-size threshold. Whole acceptance requires complete passing copy
+overlap, clipping, local contrast and small support/attribution. Beyond the minimum text size, there is no fixed
+font-size target. Whole acceptance requires complete passing copy
 coverage, support and readability, bound to this direction, scene and preview.
 An incomplete rejected review can retain partial rows and unresolved judgments.
 
-When direction validation or the native-copy inventory reports a caller-selected
-`native_copy_review_profile` / `review_profile`, its viewing assumption is part of
-this run's contract. Check each fragment's `nominal_size_review` before accepting.
-An unavailable or below-minimum measurement blocks whole-creative acceptance;
-recompose, simplify, or remove optional copy through the checked tools and inspect
-the updated preview. The compact-feed profile uses a conservative native size
-floor at its declared display width. The stricter `legible-feed-v1` profile uses
-10px nominal em at 360px display width (30 source px for a 1080px page). It rejects
-the formerly accepted 17–25px source labels without imposing one final type size:
-hierarchy, font appearance, contrast and wrapping still need judgment.
-This is an internal review condition,
-not a platform specification, a rendered glyph measurement, or proof that copy is
-readable above the floor. It does not measure words inside images. The caller
-selects the profile; changing page units, role names or the direction cannot waive
-it. Without a profile, evaluate the actual requested viewing conditions visually.
+Minimum text size. Every native text fragment must meet the minimum text size in
+your instructions. Check each fragment's `nominal_size_review` before accepting.
+An unavailable or below-minimum measurement blocks whole-creative acceptance:
+recompose, simplify or remove optional copy through the checked tools, then
+inspect the updated preview. The minimum is a rejection floor, not the final type
+size: hierarchy, font appearance, contrast and wrapping still need judgment, and
+it doesn't measure words inside images. Changing page units, role names or the
+direction cannot waive it.

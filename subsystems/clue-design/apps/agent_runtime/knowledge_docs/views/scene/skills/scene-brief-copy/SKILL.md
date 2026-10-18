@@ -71,5 +71,4 @@ Write `/run_<id>/workspace/creative-direction.json` using
 Record concise assumptions, voice evidence, visual invariants and deliberate
 variations there rather than asking routine aesthetic questions.
 If validation refuses, repair the named fields; never proceed on an invalid
-record. Use this validated record for construction. When delegating, pass it
-inline with its workspace path.
+record. Use this validated record for construction.

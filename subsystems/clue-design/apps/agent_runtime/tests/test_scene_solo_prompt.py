@@ -158,3 +158,57 @@ def test_reading_rule_points_at_one_call_reads_and_never_at_inline_content():
         assert removed not in prompts.SCENE_SKILLS_SECTION
     for slot in ("{skills_locations}", "{skills_load_warnings}", "{skills_list}"):
         assert slot in prompts.SCENE_SKILLS_SECTION
+
+
+def test_leftovers_are_gone_and_the_minimum_text_size_comes_from_the_active_profile():
+    """Harness alignment I9 (founder ruling 2026-10-17)."""
+    from pathlib import Path
+
+    profile = {"id": "legible-feed-v1", "display_width_px": 360.0, "minimum_nominal_em_px": 10.0}
+    prompt = prompts.build_scene_solo_prompt("/run_test/workspace", review_profile=profile)
+    flat = " ".join(prompt.split())
+    assert ("at least 10px when the ad is shown 360px wide, which is 30px on a 1080px-wide "
+            "canvas") in flat
+    assert "Minimum text size" not in prompts.build_scene_solo_prompt("/run_test/workspace")
+    assert "be concise and direct, with no preamble" in flat
+    assert "If something fails the same way twice, stop and change approach." in flat
+    scene = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs/views/scene"
+    delivered = "\n".join(
+        (scene / rel).read_text() for rel in (
+            "AGENT.md", "skills/scene-brief-copy/SKILL.md", "skills/tools/SKILL.md",
+            "knowledge/scene/review.md", "knowledge/scene/components.md",
+            "knowledge/scene/placement.md", "skills/account-identity-composition/SKILL.md",
+            "knowledge/loop/layout-cluster-repair.md", "knowledge/export/preview-quality.md",
+        )
+    )
+    flat_docs = " ".join(delivered.split())
+    for removed in ("delegat", "Feedback To The Author", "The visual reviewer should reject",
+                    "The earlier controls", "caller-selected", "Caller-selected",
+                    "internal review condition", "universal font-size threshold"):
+        assert removed not in flat_docs, removed
+    assert "These are examples of real failures" in flat_docs
+    assert "Every native text fragment must meet the minimum text size in your instructions" in flat_docs
+
+
+def test_brief_no_longer_repeats_the_review_profile_but_state_still_carries_it(tmp_path, monkeypatch):
+    """Harness alignment I9: brief.md is the brief; the profile stays in state for the tools."""
+    import json
+    from dataclasses import replace
+
+    from agent_fixtures import FakeCoreClient, runtime_config
+    from lumen_agent.materialize import materialize_agent_workspace
+    from lumen_agent.tools.substrate import LumenDesignTools
+    from lumen_agent.workspace import scaffold_workspace
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = replace(
+        runtime_config(tmp_path), scene_skill_bundle="candidate", scene_solo=True,
+        scene_review_profile="legible-feed-v1",
+    )
+    materialize_agent_workspace(config, knowledge_view="scene")
+    tools = LumenDesignTools(config, "Make a square ad")
+    workspace = scaffold_workspace(tools, "Make a square ad")
+    brief = (workspace / "brief.md").read_text()
+    assert brief == f"# Design turn brief — run {tools.run_id}\n\nMake a square ad"
+    state = json.loads((workspace / "state.json").read_text())
+    assert state["native_copy_review_profile"]["id"] == "legible-feed-v1"

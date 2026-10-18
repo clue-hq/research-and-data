@@ -287,21 +287,10 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
 
     state = initial_turn_state(tools, prompt)
     header = f"# Design turn brief — run {tools.run_id}\n\n"
-    review_context = ""
-    if profile := state.get("native_copy_review_profile"):
-        # Expose the same delivered policy used by review in the first gather,
-        # before the agent chooses copy length, typography and composition.
-        review_context = (
-            "\n\n## Caller-selected native-copy review\n\n"
-            f"{json.dumps(profile)}\n\n"
-            "For whole-creative acceptance, every native text fragment must meet this "
-            "nominal em floor at the selected viewing width. Plan copy length, space and "
-            "type together before authoring: nominal em = resolved font size × display "
-            "width / canonical page width. This is an explicit internal evaluation "
-            "condition, not a platform specification or a readability guarantee. "
-            "Inspect the final preview for actual readability.\n"
-        )
-    (workspace / "brief.md").write_text(header + prompt + review_context, encoding="utf-8")
+    # Harness alignment I9 (founder ruling 2026-10-17): the minimum text size now reaches the agent
+    # once, in the system prompt (written from the same profile review enforces); the brief no
+    # longer repeats it with evaluation-harness wording.
+    (workspace / "brief.md").write_text(header + prompt, encoding="utf-8")
 
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"

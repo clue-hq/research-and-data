@@ -341,20 +341,19 @@ def _create_scene_solo_graph(
     the upstream factory; our rules are deny-only, requiring no HITL layer.
     """
     from deepagents import __version__
-    from deepagents.graph import BASE_AGENT_PROMPT
     from deepagents.middleware.filesystem import FilesystemMiddleware
     from deepagents.middleware.memory import MemoryMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
     from deepagents.middleware.skills import SkillsMiddleware
     from deepagents.middleware.summarization import create_summarization_middleware
     from langchain.agents import create_agent
-    from langchain.agents.middleware import TodoListMiddleware
     from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
     from .guidance_reads import SceneGuidanceReadMiddleware
 
+    # Harness alignment I9 (founder ruling 2026-10-17): no to-do middleware (unused in solo runs,
+    # ~5k characters a turn) and no library base prompt — the scene prompt is the whole identity.
     middleware = [
-        TodoListMiddleware(),
         # Harness alignment I7: our wording for the skills section and the ls/read_file
         # descriptions, through the library's own options (scene agent only).
         SkillsMiddleware(backend=backend, sources=skills, system_prompt=SCENE_SKILLS_SECTION),
@@ -378,7 +377,7 @@ def _create_scene_solo_graph(
     return create_agent(
         model,
         tools=tools,
-        system_prompt=system_prompt + "\n\n" + BASE_AGENT_PROMPT,
+        system_prompt=system_prompt,
         middleware=middleware,
         state_schema=LumenTurnState,
         checkpointer=checkpointer,
@@ -836,6 +835,7 @@ def create_design_deepagent(
                 target_llm_calls=runtime_config.fast_loop_target_llm_calls,
                 target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
                 inner_iterations=runtime_config.fast_loop_inner_iterations,
+                review_profile=tools._native_copy_review_profile(),
             ),
             skills=workspace_skills,
             checkpointer=checkpointer,
