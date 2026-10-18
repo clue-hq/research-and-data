@@ -13,6 +13,8 @@ it, and a hostile name is never selectable.
 
 from __future__ import annotations
 
+import re
+
 import copy
 import hashlib
 from typing import Any
@@ -80,7 +82,8 @@ def test_a_click_on_text_selects_that_element_with_its_typography(app: Any, brow
 
     assert re.match(HEX, payload["element"]["computed"]["color"]), payload["element"]
     assert payload["element"]["computed"]["fontSize"] > 0
-    keys = [element["key"] for element in payload["elements"]]
+    # Plan 4 lists the section's boxes too; its texts keep their order.
+    keys = [element["key"] for element in payload["elements"] if element["kind"] == "text"]
     assert keys[:3] == ["eyebrow", "heading", "intro"] and "stats.0.value" in keys and "stats.0.label" in keys, keys
 
     mark = len(received(page))
@@ -116,7 +119,8 @@ def test_a_cloned_sections_text_is_selectable_and_its_styling_never_rebuilds_the
 ) -> None:
     init = garner_init(mode="edit")
     page, frame = open_site(app, browser_page, editor_origin, init)
-    target = frame.locator('[data-puck-component="hero"] [data-clue-el]').first
+    # The first text: plan 4 keys the clone's boxes too, so the innermost keyed element with words.
+    target = frame.locator('[data-puck-component="hero"] [data-clue-el]:not(:has([data-clue-el]))').filter(has_text=re.compile(r"\w")).first
     key = target.get_attribute("data-clue-el")
     assert key, "the clone's text carries a structural key"
     markup = frame.locator('[data-puck-component="hero"] [data-lumen-fragment]').first
