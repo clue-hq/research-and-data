@@ -137,3 +137,14 @@ fails without it).
   follows the site's pages (`menuLabels`; `menuExtra` only on sites for several accounts); sticky and
   overlay on the header's root; menu item names for `hidden`; how to write a header or footer of
   your own (`kit.menu`). Written with the feature: plan 6 replaced the fixed header and footer.
+- 2026-10-18 · system prompt (`shell.json` line) and images-and-logos part 4 (founder-approved,
+  inspector plan 6): the header and footer are sections; the account's logo sits beside the
+  seller's in the header (`account_logo` or `accountLogo`), hidden when there is none. Failing case:
+  both still described the old header ("Prepared for" place, `accountLogo` only).
+- 2026-10-18 · system prompt (tools) and images-and-logos part 4 (founder-approved): `fetch_logo`
+  finds the account's real logos when brand.md has none or none fits. Failing case: the site agent
+  had no way to find a logo mid-request (only the fetch before the request, for the one account).
+- 2026-10-19 · building-with-puck, the header part (founder-approved direction): two header templates
+  (one page, with page menu) and which to use; the account line is "Prepared for" + the full name, never
+  shortened for phones. Failing case: Oliver's agent wrote "For Oliver" to fit mobile and the header put
+  the line beside the logo with an empty menu box.

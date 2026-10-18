@@ -106,17 +106,20 @@ a page, with the id `header` or `footer`:
 **Start from the brand's templates.** `catalog/index.md` lists them first, under "Header and footer
 templates". They are made from the seller's own header and footer, so they look like the seller's
 site, and they carry what a page for an account needs: the seller's logo, the account's logo, a line
-for the account, the site's pages as the menu, and one button.
+for the account and one button.
 
-- **The account line** (`account_line`): write it for this account, in the seller's voice. It is not a
-  fixed phrase. "Built for Acme Health's care team", "Your staffing plan, Acme" and "Prepared for Acme
-  Health" are all fine. On a site for several accounts, write a line for the group, or hide it.
+- **Which header**: there are two. Use "Header template, one page" for a site with one page, which is
+  the usual page for an account: the account line sits in the centre. Use "Header template, with page
+  menu" only when the site has more than one page: the menu sits in the centre.
+- **The account line** (`account_line`): write the account's full name after "Prepared for", for
+  example "Prepared for Acme Health". Don't shorten it to fit a phone: the header shortens long lines
+  on small screens by itself. On a site for several accounts, write a line for the group, or hide it.
 - **The account's logo** (`account_logo`): a file from "The account's logo" in brand/brand.md. When
   there is none, or the site is for several accounts, set `account_shown` to `false`: that hides the
   logo and the thin line before it.
 - **The button**: its link (`cta_href`) and its words. Point it at the one destination for the offer.
-- **The menu** lists the site's pages by itself, in order, and grows when you add a page. Rename an
-  item with `menuLabels`, by page name (`_home` is the home page):
+- **The menu** (the header with page menu) lists the site's pages by itself, in order, and grows when
+  you add a page. Rename an item with `menuLabels`, by page name (`_home` is the home page):
   `"menuLabels": { "_home": "Overview", "analysis": "The analysis" }`. A site with one page shows no
   page links.
 - **`menuExtra`** adds links after the pages: `[{ "label": "Pricing", "href": "https://…" }]`. Use it

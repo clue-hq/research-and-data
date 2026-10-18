@@ -50,11 +50,17 @@ def test_the_approved_prompt_and_skill_changes_are_in_place() -> None:
     assert "brings back an earlier saved version of the site (`site.md` lists them)." in prompt
     assert "- `search_assets`: finds the seller's other images" in prompt
     assert "and for new sections `writing-a-section` and" in prompt
+    assert "the site's one header and one footer, each a section like those on a page" in prompt
+    assert '"Prepared for …", optional links' not in prompt
+    assert "- `fetch_logo`: finds a company's real published logos by its website domain" in prompt
     building = (SITE / "skills/building-with-puck/SKILL.md").read_text()
     assert "brings back the last good version." not in building
     assert "bring back an earlier saved version with `restore_version`" in building
     images = (SITE / "skills/images-and-logos/SKILL.md").read_text()
     assert "Find them with `search_assets`" in images
+    assert "beside the seller's logo: the template's `account_logo`" in images
+    assert 'header\'s "Prepared for" place' not in images
+    assert "call `fetch_logo` with\n  the account's website domain" in images
     section = (SITE / "skills-e5/writing-a-section/SKILL.md").read_text()
     assert "surface: z.string()," in section
     assert 'z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"])' not in section

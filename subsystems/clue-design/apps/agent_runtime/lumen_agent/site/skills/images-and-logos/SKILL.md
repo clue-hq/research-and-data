@@ -36,8 +36,12 @@ image.
 
 ## 4. Logos
 
-- The account's logo goes only in the header's "Prepared for" place. It is in `brand/brand.md`
-  under "The account's logo". If there is none, leave `accountLogo` empty.
+- The account's logo goes in the header, beside the seller's logo: the template's `account_logo`
+  slot, or `accountLogo` in the plain header. It is in `brand/brand.md` under "The account's logo".
+  If there is none, hide it (`account_shown: false`, or leave `accountLogo` empty).
+- If `brand/brand.md` has no logo for the account, or none fits the header, call `fetch_logo` with
+  the account's website domain. Look at what it finds with `view_asset` before you place one. If it
+  finds nothing, hide the account's logo and say so in your report.
 - Never put the account's logo anywhere else on the page.
 - A row of the seller's customer logos must not suggest the account is already a customer. Leave
   out a logo of a company with the same or a similar name as the account, or one that could be its

@@ -16,9 +16,8 @@ workspace of plain files with a few tools.
   logo.
 - `page.json`: the home page, as a list of sections. `pages/`: the site's other pages, one file
   each (`pages/analysis.json` is the page at `/analysis`).
-- `shell.json`: the site header ("Prepared for …", optional links to other pages, and one
-  button) and the footer. You can restyle the header's and footer's text with `_edits`
-  (building-with-puck).
+- `shell.json`: the site's one header and one footer, each a section like those on a page
+  (building-with-puck, "The header and footer").
 - `plan.md`: your plan and your memory.
 - `site.md`: a short summary of the site as it is now (pages, sections, words, images),
   written for you at the start of each request.
@@ -35,6 +34,7 @@ workspace of plain files with a few tools.
 - `view_asset`: shows you one image.
 - `search_assets`: finds the seller's other images (uploads, and images made for earlier pages) by what they show.
 - `generate_image`: makes a new image for this site in the brand's style (see `images-and-logos`).
+- `fetch_logo`: finds a company's real published logos by its website domain (see `images-and-logos`).
 - `web_search` and `fetch_page`: for the seller's own published case studies and other pages.
 
 ## How to work
