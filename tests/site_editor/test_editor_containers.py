@@ -173,8 +173,8 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
     init = boxes_init()
     page, frame = open_boxes(app, browser_page, editor_origin, init)
     shell = copy.deepcopy(init["site"]["shell"])
-    shell["footer"]["_edits"] = {"root.inner": {"contentAlign": {"along": "row", "to": "center"}}}
-    shell["header"]["_edits"] = {"logo": {"hidden": True}}
+    shell["footer"]["props"]["_edits"] = {"root.inner": {"contentAlign": {"along": "row", "to": "center"}}}
+    shell["header"]["props"]["_edits"] = {"logo": {"hidden": True}}
     site = copy.deepcopy(init["site"])
     site["shell"] = shell
     page.evaluate("(site) => window.__send('replace_site', { site, rev: 3 })", site)

@@ -80,7 +80,7 @@ def test_the_editor_renders_a_site_and_reports_selections(
         f"selecting `proof` moved the canvas's scroll: {scroll_top} -> {settled['scroll']}"
     )
 
-    frame.locator(".brand-root > header").click()
+    frame.locator('[data-puck-component="header"] header').click(force=True)
     page.wait_for_function(
         "() => window.__received.some((m) => m.type === 'selected' && m.payload.route === 'shell')"
     )
@@ -88,7 +88,8 @@ def test_the_editor_renders_a_site_and_reports_selections(
         m for m in received(page) if m["type"] == "selected" and m["payload"]["route"] == "shell"
     ][-1]
     assert shell["payload"]["componentId"] == "header"
-    assert frame.locator(".brand-root > header[data-site-shell-selected]").count() == 1
+    # Plan 6: the header is a Puck item, so Puck outlines it like any section.
+    assert shell["payload"]["componentType"] == "SiteHeader"
 
 
 # The clones' state: their editable text slots, the canvas's scroll, the height of `stands`, and

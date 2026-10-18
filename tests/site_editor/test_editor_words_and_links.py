@@ -124,16 +124,16 @@ def test_words_in_a_clone_slot_name_the_slot_and_its_captured_words(app: Any, br
 
 def test_links_say_where_they_are_written(app: Any, browser_page: Any, editor_origin: str) -> None:
     init = garner_init(mode="edit")
-    init["site"]["shell"]["header"]["nav"] = [{"label": "Analysis", "href": "/analysis"}]
+    init["site"]["shell"]["header"]["props"]["menuExtra"] = [{"label": "Analysis", "href": "/analysis"}]
     page, frame = open_site(app, browser_page, editor_origin, init)
     mark = len(received(page))
-    frame.locator('header [data-clue-el="nav.0"]').click(force=True)
+    frame.locator('header [data-clue-el="menu._0"]').click(force=True)
     page.wait_for_function(
         """(start) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element
-          && m.payload.element.key === 'nav.0')""",
+          && m.payload.element.key === 'menu._0')""",
         arg=mark,
         timeout=10000,
     )
     element = [m for m in received(page)[mark:] if m["type"] == "selected"][-1]["payload"]["element"]
-    assert element["link"] == {"source": {"kind": "prop", "href": "nav.0.href", "newTab": "nav.0.newTab"}, "href": "/analysis"}, element
+    assert element["link"] == {"source": {"kind": "prop", "href": "menuExtra.0.href", "newTab": "menuExtra.0.newTab"}, "href": "/analysis"}, element
     assert element["rich"] is None

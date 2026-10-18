@@ -144,14 +144,14 @@ def test_a_cloned_sections_text_is_selectable_and_its_styling_never_rebuilds_the
     assert frame.locator('[data-puck-component="hero"] [contenteditable="true"]').count() == editable_before
 
 
-def test_the_headers_account_name_is_selected_through_the_shell(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_headers_account_line_is_selected_through_the_shell(app: Any, browser_page: Any, editor_origin: str) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     mark = len(received(page))
-    frame.locator('header [data-clue-el="preparedFor"]').click(force=True)
+    frame.locator('header [data-clue-el="accountLine"]').click(force=True)
     page.wait_for_function(
         """(start) => window.__received.slice(start).some((m) => m.type === 'selected'
           && m.payload.route === 'shell' && m.payload.componentId === 'header'
-          && m.payload.element && m.payload.element.key === 'preparedFor')""",
+          && m.payload.element && m.payload.element.key === 'accountLine')""",
         arg=mark,
         timeout=10000,
     )
