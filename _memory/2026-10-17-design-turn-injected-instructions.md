@@ -72,7 +72,10 @@ Open: founder to choose fixes; nothing edited.
   T10 `harness-alignment-S1-S2-S4` (52418eb67, operating note folded into the prompt with where-to-get-
   evidence lines, MemoryMiddleware + scene AGENTS.md gone, six pointer skills out of the manifest; first
   system prompt 63.4k -> 56.8k chars).
-- Remaining: T11 tool parameter schemas (founder 2026-10-17; e.g. apply_structured_edit's one `edit_json`
-  string, asset's ~20 prose-only params); owed DB-backed tests on a throwaway migrated DB (listed in
-  RULINGS.md); then Step 5 live runs (Conduit/garnerhealth/Clue). Deferred: port format-skill facts into
-  placement.md.
+- T11 tool parameter schemas done 2026-10-18 (tag `harness-alignment-T11`): typed input schemas in
+  `lumen_agent/models/scene_tool_inputs.py`, apply_structured_edit takes an object (9 kinds), finalize_run
+  = status/stop_reason/summary, validate_binding_set not offered; all rulings in RULINGS.md. Also fixed a
+  T9 test regression in test_scene_logo_guidance.py. Evidence counts recounted by unique run id (28 turns).
+- Remaining: owed DB-backed tests on a throwaway migrated DB (listed in RULINGS.md); optional offline
+  probe of the new edit schema (~12 edit requests, model writes calls, engine validates; <$1); then Step 5
+  live runs (Conduit/garnerhealth/Clue). Deferred: port format-skill facts into placement.md.

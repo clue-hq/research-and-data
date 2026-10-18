@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import io
 import json
 import math
@@ -730,18 +731,17 @@ def _view_pixels(
 def make_view_tool(tools: LumenDesignTools):
     from langchain_core.tools import tool
 
-    @tool
+    from ..models.scene_tool_inputs import ViewInput
+
+    # Harness alignment T11: typed, described parameters; the description is sent dedented.
+    @tool(args_schema=ViewInput)
     def view(target: str, frame_index: StrictInt | None = None) -> list:
-        """Look at real pixels. target="preview" returns the latest rendered PNG;
-        target="asset:<asset_id>" returns that asset's source preview thumbnail —
-        a brand-kit asset, a workspace library asset, or an asset registered in
-        the current scene (including newly generated imagery). Returns image
-        content so you can judge by looking, not by guessing from metadata.
-        Optional frame_index is an explicit nonnegative integer for a GIF original
-        in this run's authorized asset context, including reference:<n> aliases.
-        It inspects one composited source frame; animation is not reviewed. The
-        original digest and decoded pixel dimensions accompany the still. Omit
-        it to retain the default preview; it is unsupported for target="preview"."""
+        """Look at real pixels: the latest rendered preview, or one image. Returns the image itself so you
+        can judge by looking, not by guessing from metadata.
+        - For the preview it adds a check of how the text reads at feed size, when one can be made. A
+          preview rendered before the scene last changed is refused; render again first.
+        - For an image it adds the image's details.
+        """
         # Containment (sweep A2): NOTHING inside view() — a provider-rejectable
         # image, an unreadable file, a corrupt/undecodable thumbnail — may
         # propagate as an unhandled exception and kill the turn unfinalized. On
@@ -767,4 +767,5 @@ def make_view_tool(tools: LumenDesignTools):
                 pass
             return f"view failed: {exc}"
 
+    view.description = inspect.cleandoc(view.description)
     return view

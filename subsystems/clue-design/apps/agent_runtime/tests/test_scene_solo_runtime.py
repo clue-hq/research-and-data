@@ -103,11 +103,13 @@ def test_solo_compiled_graph_has_no_dispatch_and_builds_only_the_active_model(
     assert "write_todos" not in names
     assert {
         "view", "render_preview", "inspect", "compile_dsl_block", "asset", "fetch_logo",
-        "validate_binding_set", "preflight_design", "validate_creative_direction",
+        "preflight_design", "validate_creative_direction",
         "record_gap", "finalize_run", "read_file", "write_file", "edit_file",
         # A follow-up's targeted edit goes through the typed edit builder, not a compile.
         "apply_structured_edit",
     } <= names
+    # Harness alignment T11: never called and never mentioned, so not offered.
+    assert "validate_binding_set" not in names
     assert tools.fast_loop_budget is not None
     assert config.scene_reviewer_enabled is False
     topology = [
@@ -198,7 +200,7 @@ def test_solo_bound_prompt_separates_logo_page_bootstrap_from_creative_construct
     assert preparation.index("fetch_logo") < preparation.index("view('asset:<returned_id>')")
     assert "creative nodes or new imagery spend" in preparation
     direction = prompt.split("3. Write ", 1)[1].split("4. Create ", 1)[0]
-    assert "validate_creative_direction()" in direction
+    assert "call validate_creative_direction." in " ".join(direction.split())  # T11 D4
     assert "Resolve refusals before construction" in direction
     # Harness alignment I11: the step-2 instruction is the one home of this rule. The eagerly
     # bound component guide no longer carries its own copy, so it cannot carry a conflicting one.

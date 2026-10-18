@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -297,14 +298,12 @@ def make_render_preview_tool(
 
     @tool
     def render_preview() -> str:
-        """Render the current scene to a validated PNG (and canonical SVG) on disk
-        and return a compact text summary: artifact paths, dimensions, validation
-        status, and any export diagnostics. Seeing the pixels is view("preview")'s
-        job — this tool never returns image blocks.
-
-        Requires preflight_design after any scene mutation — export refuses
-        unresolved token paints."""
+        """Render the current scene to a checked PNG and SVG, and return a short text summary: file paths,
+        size, check status and any export problems. It returns no image; look with view("preview"). After
+        any change, run preflight_design first: export refuses unresolved token colours.
+        """
         with log_span("tool_render_preview", logger=logger):
             return _render_preview_text(tools, checkpoint=checkpoint, budget=budget)
 
+    render_preview.description = inspect.cleandoc(render_preview.description)
     return render_preview

@@ -15,6 +15,7 @@ See ``docs/deepagent-architecture.md`` for the ratified design.
 
 from __future__ import annotations
 
+import inspect
 import json
 from contextlib import nullcontext
 from dataclasses import replace
@@ -26,7 +27,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from py_lumen_obs import get_logger
 from py_lumen_obs.config import run_log
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from .budget import BudgetExhausted, RunBudget, attach_budget_callback
 from .cancellation import (
@@ -38,6 +39,17 @@ from .cancellation import (
 from .checkpoint import RUN_ID_KEY, invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
+from .models.scene_tool_inputs import (
+    ApplyStructuredEditInput,
+    AssetInput,
+    CompileDslBlockInput,
+    FetchLogoInput,
+    FinalizeRunInput,
+    InspectInput,
+    RecordGapInput,
+    SearchAssetsInput,
+    ValidateCreativeDirectionInput,
+)
 from .models.schemas import ClarificationRequest, SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .platform_reads import make_platform_read_tools
@@ -64,12 +76,57 @@ logger = get_logger("lumen_agent.harness")
 
 
 def _make_candidate_fetch_logo_tool(tools: LumenDesignTools) -> StructuredTool:
-    """Replace only legacy selection advice; use the original callable/schema."""
-    description = tools.fetch_logo.__doc__
-    start = description.index("        In an account-personalized")
+    """Replace only the legacy selection paragraph, and give the parameters their typed schema."""
+    description = inspect.cleandoc(tools.fetch_logo.__doc__)
+    start = description.index("In an account-personalized")
     end = description.index("\n\n", start)
     description = description[:start] + SCENE_LOGO_SELECTION_GUIDANCE + description[end:]
-    return StructuredTool.from_function(tools.fetch_logo, description=description)
+    return StructuredTool.from_function(
+        tools.fetch_logo, description=description, args_schema=FetchLogoInput
+    )
+
+
+def _scene_tool(function: Any, args_schema: type[BaseModel]) -> StructuredTool:
+    """A solo scene tool with its typed input schema (harness alignment T11, 2026-10-18).
+
+    The description stays the function's own docstring, dedented so the model is not sent the
+    source indentation; each parameter's meaning comes from `args_schema`. The function itself is
+    unchanged and keeps validating as the backstop.
+    """
+    return StructuredTool.from_function(
+        function, args_schema=args_schema, description=inspect.cleandoc(function.__doc__)
+    )
+
+
+def _make_structured_edit_tool(tools: LumenDesignTools) -> StructuredTool:
+    """`apply_structured_edit` taking a real object instead of a JSON string (T11 D2).
+
+    The engine contract is unchanged: the edit (with `scope` folded in, as the method expects) is
+    serialized to the same JSON string the method has always taken. The schema offers the nine
+    kinds the scene agent uses; optional engine settings carry the DSL's own defaults.
+    """
+
+    def apply_structured_edit(edit: Any, scope: Any = None) -> str:
+        """Change elements that already exist, through the engine's checked edit builder: change an
+        element's properties, or delete, move, duplicate, replace, group or ungroup elements. It is
+        the same engine operation as a compile_dsl_block modify line, but checked: with a scope, the
+        engine refuses any change outside the elements you name. Returns the applied operations and
+        any warnings, or the error with diagnostics. Confirm ids with inspect first.
+        """
+        if isinstance(edit, BaseModel):
+            payload = edit.model_dump(mode="json", exclude_none=True)
+            if "patch" in type(edit).model_fields:
+                payload["patch"] = edit.patch  # the patch is passed through exactly as written
+        else:
+            payload = dict(edit)
+        if scope is not None:
+            payload["scope"] = (
+                scope.model_dump(mode="json", exclude_none=True)
+                if isinstance(scope, BaseModel) else scope
+            )
+        return tools.apply_structured_edit(json.dumps(payload))
+
+    return _scene_tool(apply_structured_edit, ApplyStructuredEditInput)
 
 
 def _make_request_clarification_tool(tools: LumenDesignTools) -> StructuredTool:
@@ -80,50 +137,28 @@ def _make_request_clarification_tool(tools: LumenDesignTools) -> StructuredTool:
     as the args schema hands the model every field, its description and the limit before it calls.
     The method still validates (and answers a bad payload with a readable error) as the backstop.
     """
-    return StructuredTool.from_function(tools.request_clarification, args_schema=ClarificationRequest)
-
-
-class _CandidateFinalizeInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: str
-    stop_reason: str
-    summary: str
-    ops_valid_through_iteration: int | None = None
-    baseline_advisory_json: str = "null"
-    accommodation_json: str = "null"
+    return _scene_tool(tools.request_clarification, ClarificationRequest)
 
 
 def _make_candidate_finalize_tool(tools: LumenDesignTools) -> StructuredTool:
-    def finalize_run(
-        status: str,
-        stop_reason: str,
-        summary: str,
-        ops_valid_through_iteration: int | None = None,
-        baseline_advisory_json: str = "null",
-        accommodation_json: str = "null",
-    ) -> str:
-        """Finalize with this run's latest registered visual review.
+    """The agent's finalize_run: status, stop_reason and summary (T11, founder rulings 2026-10-18).
 
-        Missing, stale or rejected evidence still prevents acceptance. Write
-        the current review to the active round's critique.json before accepting.
-        A targeted edit finishes with status='edit_applied' and no critique; its
-        summary states what was asked, what changed, what else moved and
-        anything not done. Accepted is for a new ad or a revamp.
-        ops_valid_through_iteration limits draft operation replay (None means
-        all ok iterations). baseline_advisory_json records pre-existing issues;
-        accommodation_json records accommodation moves. Both default to null.
+    Dropped from the agent's schema, kept on the method for the runtime's own re-finalize:
+    `baseline_advisory_json` and `accommodation_json` (old-pipeline carry-overs nothing computes or
+    reads), and `ops_valid_through_iteration` (the deep agent has no earlier-scene restore, so any
+    value below its last step would make the editor's Accept silently drop later edits).
+    """
+
+    def finalize_run(status: str, stop_reason: str, summary: str) -> str:
+        """Finish the turn. Call it once, as your last step. With status accepted it checks your
+        registered review. It needs a clean, current preflight, a current preview, and a
+        critique.json in the active round that accepts the current scene; missing, out-of-date or
+        rejected review evidence is refused. A targeted edit finishes with edit_applied and no
+        critique.json.
         """
-        return tools.finalize_run(
-            status=status,
-            stop_reason=stop_reason,
-            summary=summary,
-            ops_valid_through_iteration=ops_valid_through_iteration,
-            baseline_advisory_json=baseline_advisory_json,
-            accommodation_json=accommodation_json,
-        )
+        return tools.finalize_run(status=status, stop_reason=stop_reason, summary=summary)
 
-    return StructuredTool.from_function(finalize_run, args_schema=_CandidateFinalizeInput)
+    return _scene_tool(finalize_run, FinalizeRunInput)
 
 
 # --- fast loop v1 §5.7: the skill index the orchestrator selects from --------
@@ -812,11 +847,32 @@ def create_design_deepagent(
     if scene_solo:
         from .prompts import build_scene_solo_prompt
 
+        # Harness alignment T11 (founder rulings 2026-10-18): every solo scene tool carries a typed
+        # input schema with one plain line per parameter. validate_binding_set is not offered
+        # (never called, never mentioned; the platform's scaling route checks binding sets itself),
+        # and search_assets is no longer added twice.
+        typed = {
+            "inspect": _scene_tool(tools.inspect, InspectInput),
+            "search_assets": _scene_tool(tools.search_assets, SearchAssetsInput),
+            "record_gap": _scene_tool(tools.record_gap, RecordGapInput),
+            "validate_creative_direction": _scene_tool(
+                tools.validate_creative_direction, ValidateCreativeDirectionInput
+            ),
+            "preflight_design": StructuredTool.from_function(
+                tools.preflight_design, description=inspect.cleandoc(tools.preflight_design.__doc__)
+            ),
+        }
+        orchestrator_tools = [
+            typed.get(getattr(tool, "name", getattr(tool, "__name__", "")), tool)
+            for tool in orchestrator_tools
+        ]
         orchestrator_tools.extend([
-            tools.compile_dsl_block, tools.asset, tools.search_assets, fetch_logo, tools.validate_binding_set,
+            _scene_tool(tools.compile_dsl_block, CompileDslBlockInput),
+            _scene_tool(tools.asset, AssetInput),
+            fetch_logo,
             # A follow-up's targeted edit (text, style, size, position, image placement, delete,
             # move) goes straight through the engine's typed edit builder instead of a compile.
-            tools.apply_structured_edit,
+            _make_structured_edit_tool(tools),
         ])
         tools.record(
             "orchestrator", "scene_agent_topology",

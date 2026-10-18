@@ -691,7 +691,11 @@ class LumenDesignTools:
     @_tool_span
     @_scene_mutation
     def compile_dsl_block(self, source: str) -> str:
-        """Compile a Lumen DSL block and update the scene only from core output."""
+        """Compile a block of Lumen DSL into the scene: new structure, modify lines (#id ...) for existing
+        elements, and directives such as delete(id). Returns the compile result with diagnostics. Each
+        compile counts toward the round's compile limit in your instructions. Past the limit it refuses
+        and changes nothing, and the scene from your last good compile stands.
+        """
         self._begin_solo_construction()
         # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
         # costs nothing: no iteration number, no metrics compile, no scene touch.
@@ -1316,12 +1320,10 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
-        """Search all frozen workspace images by type, usage, source, text or exact id.
-
-        Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,
-        then place the chosen image by its `origin`: a "library" result with
-        asset(action='place', asset_id=..., node_id=...), a "brand_kit" result with
-        asset(action='use_brand_asset', asset_id=..., node_id=...).
+        """Search every image in the brand kit and the workspace library by type, use, source, text or
+        exact id. Returns short details for each match. View a match before choosing it, then place it by
+        its origin: a "library" result with asset(action='place', asset_id=..., node_id=...), a
+        "brand_kit" result with asset(action='use_brand_asset', asset_id=..., node_id=...).
         """
         from .asset_catalog import rank_assets, asset_summary
         if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
@@ -1565,52 +1567,37 @@ class LumenDesignTools:
         company_name: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
-        """Fetch a company's REAL logo family and register it here.
+        """Fetch a real company's logos and register them. Use it for every company in the design that
+        isn't us: the target account, a named customer, a partner.
 
-        Use this whenever the design shows a company that is not us — the target
-        account, a named customer, a partner. Pass their domain
-        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
-        too when you know it, because it sharpens the identity check.
+        It returns up to four logos, one per cell:
+        - light_lockup and dark_lockup: the full logo, for light and for dark backgrounds;
+        - light_mark and dark_mark: the symbol alone, for light and for dark backgrounds.
 
-        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:
-        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x
-        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).
-        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and
-        `dark_mark`. Place them with `asset(action="place", ...)` like any other
-        registered asset. A cell is missing when the brand publishes nothing for
-        it — that is a real answer, and it is never filled by recoloring
-        another cell.
+        A missing cell means the company publishes nothing for it. That is a real answer, and it is never
+        filled by recolouring another cell. Place a cell with asset(action="place", ...).
 
-        Each cell is the best PROVEN asset from two sources — Brandfetch and a
-        scrape of the company's own site — judged by measured ink colour for the
-        surface, completeness, format and size. Every asset says which source
-        served it. `alternatives` lists every other real asset found for the
-        company (a vendor icon, a short form, a losing candidate), each
-        registered too and each saying why it is not in a cell. Use a cell
-        first; reach for an alternative only when the cell does not fit the
-        placement — for example when the dark lockup turns out to be only a
-        symbol — and say so. Results
-        are cached per workspace+company, so asking twice in a project costs
-        one fetch — pass `force_refresh=True` only when the user says the logo
-        is wrong or outdated, which refetches and replaces the cached family.
+        Each cell is the best proven logo from two sources, Brandfetch and the company's own site, chosen
+        by its measured colour against the background, completeness, format and size. Each says which
+        source it came from. `alternatives` lists every other real logo found (a vendor icon, a short
+        form, a candidate that lost); each is registered and says why it isn't in a cell. Use a cell
+        first. Use an alternative only when the cell doesn't fit the placement, for example when the dark
+        lockup turns out to be only a symbol, and say so.
 
-        In an account-personalized or co-branded design, the OTHER company's
-        logo must be its COMPLETE lockup — the `light_lockup`/`dark_lockup`
-        cell for the surface you are placing on. The bare `*_mark` is a
-        fallback for when the brand publishes no lockup, or the placement is
-        genuinely too small to hold one — never the first choice: a naked
-        symbol does not identify an account the way its full logo does.
+        In an account-personalized or co-branded design, the OTHER company's logo must be its COMPLETE
+        lockup — the `light_lockup`/`dark_lockup` cell for the surface you are placing on. The bare
+        `*_mark` is a fallback for when the brand publishes no lockup, or the placement is genuinely too
+        small to hold one — never the first choice: a naked symbol does not identify an account the way
+        its full logo does.
 
-        If it comes back `needs_review`, nothing was registered because no asset
-        could be attributed to that company with confidence. Say so and ask for
-        the file. Never draw, recolor or approximate a logo.
+        If the result is needs_review, nothing was registered, because no logo could be tied to that
+        company with confidence. Say so and ask the person for the file. Never draw, recolour or
+        approximate a logo.
 
-        Static fetch only on the ladder fallback: a site that builds its header
-        in JavaScript has no logo to read there, and reports that plainly.
+        The site check reads only the page's HTML. A site that builds its header with JavaScript has no
+        logo there, and the result says so.
 
-        The scene must already contain a page/artboard: on a pageless scene this
-        tool REFUSES before fetching (error `scene.page_required`) — author the
-        page first.
+        It needs a page in the scene. Without one it refuses (scene.page_required) before fetching.
         """
         refused = self._refuse_without_page("fetch_logo")
         if refused is not None:
@@ -2911,70 +2898,29 @@ class LumenDesignTools:
         crop_rect: list[Any] | None = None,
         frame_index: StrictInt | None = None,
     ) -> str:
-        """Generate or place a design asset. Pick `action`:
+        """Create, crop or place images. Pick `action`:
+        - generate_image: make a new image from a prompt. It is registered and returns its asset_id but is
+          not placed; view it, then place it yourself. The result reports the references it used.
+        - edit_image: change the image already placed in a node (recolour, warmth, background, fix a flawed
+          subject) without changing the composition. The result goes back into the same node, in the same
+          place. Prefer it over a new image when the image is right but flawed.
+        - crop_image: cut an exact rectangle out of an original image, with no model and no resampling. It
+          returns a separate, unplaced image and a crop receipt; view it, then place it in its own image
+          node. It can't recover hidden or missing parts, or remove a background inside the rectangle.
+          Rotated (EXIF-oriented) or unsupported images are refused.
+        - generate_qr: make a QR code from a URL or text.
+        - place: put an image you generated or cropped this run, or a library image, into an image node,
+          an empty leaf frame you reserved for it, or an image slot. A library image is registered into the
+          scene for you. The node keeps its id and geometry, and a vector image stays a native vector. You
+          don't need to declare an empty image node first. Reversible.
+        - use_brand_asset: put one of the brand kit's logos or images into a node or slot, recorded as
+          coming from the brand kit. Pick the logo variant for the background (the reversed one on dark).
+          Needs an attached brand kit.
 
-        - `action="generate_image"` — generate a raster image from `prompt` and
-          register it (returns its asset_id; NOT auto-placed). Pass `target_node_id`
-          (or `target_slot_id`) so the aspect is derived from that frame's geometry —
-          images are cropped to fill, never stretched. Optional `aspect_ratio` /
-          `width` / `height`, `brand_notes`, `transparent_background`, `label`.
-          `reference_asset_ids` selects up to four inspected style inputs by ID
-          from this run's attachments, brand kit, workspace library or scene.
-          Omit it to use turn attachments; [] uses no references. A selection
-          replaces automatic attachments. Source pixels and their digest are
-          verified before spending; unavailable selections return an error.
-          Optional reference_roles align with selected IDs: source, treatment,
-          composition. reference_framing states what to preserve/vary; operation
-          records intent such as close_companion. These participate in caching.
-          Successful model/cache results report exact `reference_inputs` and
-          persisted provider `image_request_receipt` when available.
-          Viewing an asset alone does not attach it. Keep exact UI and logos as
-          separate source layers; this action produces a new raster component.
-        - `action="edit_image"` — edit the image already placed in `node_id` with a
-          text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT
-          changing the composition; the edited result re-enters the same node with its
-          current placement preserved. Set `transparent_background=True` to remove the
-          background. Prefer this over a full regenerate when the image is right-but-flawed.
-          This source-only route does not accept reference_asset_ids, reference_roles
-          or reference_framing. For selected-reference changes, generate_image with
-          those inputs, inspect the result and place it explicitly.
-        - `action="crop_image"` — extract an exact rectangle from an inspected
-          original raster `asset_id`, without a model or resampling. `crop_rect`
-          is four integers [left, top, right, bottom] in ORIGINAL source pixels,
-          half-open; right/bottom excluded. Use original dimensions, not preview
-          dimensions. Bounds must be nonempty and inside the source. Nonidentity
-          EXIF orientation and unsupported images are refused. Animated cropping
-          requires an explicit nonnegative integer `frame_index` (GIF only); use
-          view(target="asset:<id>", frame_index=...) to inspect that original
-          frame first. Coordinates are its decoded composited full-frame pixels,
-          not a thumbnail or smaller GIF patch. Omitting the index refuses animation.
-          Preserves decoded pixels/alpha and original asset; returns a separate image asset
-          and crop_receipt with source digest/rect. Inspect, then explicitly place
-          it in an independent image node. Cannot recover occluded or absent UI,
-          nor remove backgrounds baked inside the selected rectangle.
-        - `action="generate_qr"` — generate a deterministic QR asset from `data`
-          (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
-          so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
-        - `action="place"` — place an existing asset (`asset_id`: one you generated
-          this run, or one from this workspace's asset library — a library asset is
-          registered into the scene for you)
-          into an existing image or intentionally reserved empty leaf `fr`
-          (`node_id`), or a bound image slot (`slot_id`). Raster/logo placement
-          converts the leaf to an image in place, preserving its ID and geometry;
-          path-backed vectors stay native. Containers with children cannot be
-          consumed; missing node/asset IDs remain errors. No assetless image
-          declaration is needed. Use `fit` (default cover), normalized focal point
-          (`focal_x`/`focal_y`, 0..1, default centered), `alt` text, and optional
-          `preserve_transparency`. Reversible.
-        - `action="use_brand_asset"` — register one of the attached Brand Kit's assets
-          (a logo variant or brand image; `asset_id` from the brand context card's
-          inventory) into the scene with brand_guide provenance and place it into
-          the same supported `node_id` target or `slot_id` as `place`.
-          Logos place with fit `contain` (never cropped);
-          pick the variant by background (reversed on dark fields). Requires an
-          attached kit — without one this action errors.
-
-        Every action mutates the scene only through the canonical core operation path."""
+        generate_image, crop_image and generate_qr refuse before spending anything if the scene has no
+        page yet. Keep exact product UI and logos as their own layers; generate_image makes a new image and
+        never copies them.
+        """
         if frame_index is not None and action != "crop_image":
             return self._tool_error(
                 "asset.frame_unsupported_action",
@@ -3267,9 +3213,9 @@ class LumenDesignTools:
     @_tool_span
     @_scene_mutation
     def preflight_design(self) -> str:
-        """Run canonical brand/token/layout preflight using the effective Brand Kit
-        (the kit passed by value in config — the document's attached kit — or the
-        platform default)."""
+        """Check the scene against the brand kit in effect (the document's attached kit, or the platform
+        default): brand tokens, rules and layout. Returns the diagnostics to fix.
+        """
         iteration_dir = self._iteration_dir()
         self._preflight_scene_stamp = None
         self._preflight_iteration = self.iteration
@@ -4206,12 +4152,9 @@ class LumenDesignTools:
 
     @_scene_mutation
     def validate_creative_direction(self, revision_reason: str = "") -> str:
-        """Validate this run's creative-direction.json against its delivered catalog.
-
-        Checks the compact handoff and source availability, not visual quality
-        or truth of model-authored evidence excerpts. Writes no scene geometry.
-        Candidate revisions after validation need a concise revision_reason;
-        unchanged canonical content preserves the digest and existing review.
+        """Check this run's creative-direction.json: that it matches its contract, and that the sources it
+        names were delivered. It doesn't judge visual quality, or whether your evidence quotes are true,
+        and it changes nothing in the scene. Call it after writing the file, and again after changing it.
         """
         from ..materialize import scene_view_manifest
         from ..models.creative_direction import (
@@ -4592,7 +4535,11 @@ class LumenDesignTools:
         evidence: str,
         suggested_phase: Optional[str] = None,
     ) -> str:
-        """Record a product gap instead of hiding unsupported semantics in prompts."""
+        """Record a gap in the product: something the tools, the engine or the guides can't do, or did
+        wrong, so the team can fix it. Use it instead of quietly working around a missing capability. It
+        is not for missing evidence behind a claim; that goes in your review's source_gaps. It changes
+        nothing in the design.
+        """
         coerced_area = _coerce_gap_area(area)
         if coerced_area.value != area:
             summary = f"[reported area: {area}] {summary}"
@@ -4655,25 +4602,8 @@ class LumenDesignTools:
         foreground_color: str | None = None,
         region: list[float] | None = None,
     ) -> str:
-        """Read-only inspection of the in-memory scene. Pick `view`:
-
-        - `view="scene"` — document, pages, counts, slots, effective brand.
-        - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
-        - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
-        - `view="slots"` — every slot key → bound nodes.
-        - `view="copy_review"` — candidate-only, complete current exported native
-          text inventory for direction_review bindings; includes observation limits.
-        - `view="geometry"` (target=node_id) — stored computed geometry + declared
-          transform/size for one node.
-        - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
-        - `view="image_contrast"` (target=asset_id, foreground_color="#RRGGBB",
-          region=[left,top,right,bottom]) — measure an opaque text color over
-          actual image pixels. Region is normalized 0..1 in SOURCE coordinates;
-          account for placement cropping. Returns sampled ratios and threshold
-          checks. Excludes overlaid plates, glyphs, opacity and effects; inspect
-          the final composition too. Transparent/profiled sources return a gap.
-
-        Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
+        """Read the current scene without changing it. Use it to confirm an id before you edit it.
+        """
         if view == "scene":
             return self.summarize_scene()
         if view == "slots":

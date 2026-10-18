@@ -378,3 +378,34 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   `test_scene_solo_runtime.py::test_the_account_reads_are_registered_only_when_the_platform_injected_them[True]`
   and `test_deepagent_harness.py::test_tool_surfaces_are_exactly_the_ledger` (their expected tool sets
   predate `web_search` and `search_assets`), and `test_fast_loop.py::test_flag_on_author_toolset_includes_render`.
+- **T11 RULED (founder, 2026-10-18) — tool parameter schemas.** Every solo scene tool gets a typed
+  input schema (`lumen_agent/models/scene_tool_inputs.py`, bound in the solo harness) with one plain
+  line per parameter; tool descriptions stay the methods' docstrings (sent dedented) and keep only
+  what the tool does, when, and what it returns. Rule for values: a fixed list only where the code
+  already refuses every other value (`asset.action`, `fit`, `reference_roles`, `inspect.view`,
+  structured-edit kinds); free text with the usual values named where the code accepts more
+  (`record_gap.area`, `search_assets.kind`, `ec_level`, `aspect_ratio`, `operation`, `view.target`);
+  ranges/lengths enforced only where the code already refuses outside them (the focal point keeps its
+  0–1 range in text only). D1: `asset` stays one tool. D2: `apply_structured_edit` takes `edit` (an
+  object, one of nine shapes) and `scope` instead of a JSON string; `request` layer kept and
+  described; clone/replace `slot_policy` and clone `computed_policy` optional with the DSL's defaults
+  (detach, clear). E1: kinds offered = modify, delete, move_before, move_after, move_to_parent,
+  clone_subtree, replace_node, group, ungroup (left out: archive_asset, hard_delete_asset,
+  detach_to_freehand, reattach_to_layout, convert_container_layout, freeze_layout,
+  delete_export_profile). D3/E2: `finalize_run` = status, stop_reason (free text), summary; dropped
+  from the agent's schema (kept on the method for the runtime's re-finalize): baseline_advisory_json,
+  accommodation_json, ops_valid_through_iteration. D3: `validate_binding_set` not offered. E3:
+  `record_gap.suggested_phase` dropped. D4: tool names in prose without "()" (six places) and the
+  "finalize_run without critique_json" line reworded (the agent's tool has no such parameter).
+- **T11 notes:** every example edit in the schema was run through the real engine first (all
+  accepted; a partial transform is refused — hence "all seven fields are required"). The solo list
+  no longer adds `search_assets` twice. `request_clarification`'s description is now sent dedented
+  too. Tool schemas grew 26.2k → 40.0k chars, almost all of it `apply_structured_edit`
+  (1.0k → 12.7k: nine typed shapes plus the patch reference); the system prompt is unchanged in size.
+  Run evidence was recounted by unique run id (two lanes hold copies of the same sessions): 28 local
+  turns, not 43.
+- **Found during T11 — a T9 test regression:** `test_scene_logo_guidance.py`'s prompt half expected
+  the logo-selection policy in the system prompt; T9 (I11) gave it one home, the fetch_logo
+  description, and that file was not in T9's test run. Fixed in T11: the prompt half now checks the
+  prompt points at fetch_logo and carries no legacy restriction; the bound-tool half still checks the
+  policy itself.
