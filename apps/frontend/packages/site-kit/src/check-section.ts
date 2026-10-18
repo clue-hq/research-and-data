@@ -401,11 +401,32 @@ function editInPlaceErrors(source: string): (line: number, column: number, messa
   };
 }
 
-export function lint(source: string, options: LintOptions = {}): string[] {
+/** Every module the code names, read from its parsed structure (review S5-1): imports and re-exports
+ * outside the allowed list, `import x = require(…)`, and `require` itself, which the bundler would
+ * otherwise follow to any file on the server. */
+function moduleReferences(source: string): string[] {
   const errors: string[] = [];
-  for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
-    if (!ALLOWED_IMPORTS.has(m[1])) errors.push(`import "${m[1]}" is not allowed; a section imports only zod, react types and @/puck/agent-kit`);
-  }
+  const allowedOnly = `a section imports only zod, react types and @/puck/agent-kit`;
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
+      const specifier = node.moduleSpecifier.text;
+      if (!ALLOWED_IMPORTS.has(specifier)) {
+        errors.push(ts.isImportDeclaration(node) ? `import "${specifier}" is not allowed; ${allowedOnly}` : `export … from "${specifier}" is not allowed; ${allowedOnly}`);
+      }
+    }
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      errors.push(`import … = require(…) is not allowed; ${allowedOnly}`);
+    }
+    if (ts.isIdentifier(node) && node.text === "require") errors.push(`"require" loads code the check never saw; ${allowedOnly}`);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return [...new Set(errors)];
+}
+
+export function lint(source: string, options: LintOptions = {}): string[] {
+  const errors: string[] = [...moduleReferences(source)];
   const colourStrings = attributeStrings(source, COLOUR_ATTRIBUTES);
   for (const text of colourStrings) {
     for (const m of text.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) errors.push(`colour value ${m[0]}; use the brand's colour tokens`);

@@ -49,22 +49,9 @@ export async function compileSection(input: CompileInput): Promise<Compiled> {
     fs.writeFileSync(checked, source);
     errors.push(...typeCheck(checked));
     if (errors.length) return fail(errors);
-    const bundled = await build({
-      entryPoints: [checked],
-      bundle: true,
-      write: false,
-      format: "esm",
-      jsx: "automatic",
-      platform: "neutral",
-      target: "es2022",
-      // "@/*" stays external so a value import of the kit is caught below instead of bundling the
-      // host's own sections into the module; type imports are erased either way.
-      external: [...HOST_SPECIFIERS, "@/*"],
-      logLevel: "silent",
-    });
-    // esbuild opens the module with a comment naming the checked file's path; dropped so the bytes
-    // (and so the digest) depend on the source alone.
-    const moduleJs = bundled.outputFiles[0].text.replace(/^\/\/ [^\n]*\n/, "");
+    const bundled = await bundleSection(checked);
+    if (!bundled.ok) return fail(bundled.errors);
+    const { moduleJs } = bundled;
     const imports = [...moduleJs.matchAll(/(?:^|\n)\s*import\s[^"']*["']([^"']+)["']/g)].map((m) => m[1]);
     const foreign = imports.filter((specifier) => !(HOST_SPECIFIERS as readonly string[]).includes(specifier));
     if (foreign.length) {
@@ -75,6 +62,44 @@ export async function compileSection(input: CompileInput): Promise<Compiled> {
     return { ok: true, name, moduleJs, tailwindTheme: tailwindThemeCss(brand) };
   } finally {
     fs.rmSync(checkDir, { recursive: true, force: true });
+  }
+}
+
+/** Review S5-1: the bundler resolves nothing but the section itself. Every other module is either one
+ * a host provides (left as an import) or refused, so no file on the server can be read into a module
+ * whatever the check missed. "@/*" stays external so a value import of the kit is caught after the
+ * build instead of bundling the host's own sections into the module; type imports are erased. */
+export async function bundleSection(entry: string): Promise<{ ok: true; moduleJs: string } | { ok: false; errors: string[] }> {
+  const external = (specifier: string) => (HOST_SPECIFIERS as readonly string[]).includes(specifier) || specifier.startsWith("@/");
+  try {
+    const bundled = await build({
+      entryPoints: [entry],
+      bundle: true,
+      write: false,
+      format: "esm",
+      jsx: "automatic",
+      platform: "neutral",
+      target: "es2022",
+      logLevel: "silent",
+      plugins: [
+        {
+          name: "section-only",
+          setup(builder) {
+            builder.onResolve({ filter: /.*/ }, (args) => {
+              if (args.kind === "entry-point") return undefined;
+              if (external(args.path)) return { external: true, path: args.path };
+              return { errors: [{ text: `"${args.path}" is not allowed; a section imports only zod, react types and @/puck/agent-kit` }] };
+            });
+          },
+        },
+      ],
+    });
+    // esbuild opens the module with a comment naming the checked file's path; dropped so the bytes
+    // (and so the digest) depend on the source alone.
+    return { ok: true, moduleJs: bundled.outputFiles[0].text.replace(/^\/\/ [^\n]*\n/, "") };
+  } catch (error) {
+    const failures = (error as { errors?: { text: string }[] }).errors;
+    return { ok: false, errors: failures?.length ? failures.map((failure) => failure.text) : [String(error)] };
   }
 }
 

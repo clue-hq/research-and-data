@@ -116,3 +116,36 @@ test("S2a-2: a section with props marked to edit in place compiles from its own 
     assert.doesNotMatch(result.moduleJs, /custom/);
   }
 });
+
+// Review S5-1: a section must never pull a file from the server into its module. The check reads every
+// import, re-export and require from the parsed code; the bundler resolves nothing but the section.
+const SECRET_DIR = fs.mkdtempSync(`${(await import("node:os")).tmpdir()}/s5-1-`);
+const SECRET = `${SECRET_DIR}/secret.json`;
+fs.writeFileSync(SECRET, JSON.stringify({ token: "S5-1-SECRET-VALUE" }));
+
+for (const [what, line] of [
+  ["a re-export", `export { token } from "${SECRET}";`],
+  ["a require", `const leaked = require("${SECRET}");`],
+  ["an import-equals require", `import leaked = require("${SECRET}");`],
+  ["a require alias", `const load = require;`],
+] as const) {
+  test(`S5-1: ${what} is refused, in both modes, and nothing of the file reaches the module`, async () => {
+    for (const interactive of [false, true]) {
+      const source = EXAMPLE.replace("export function render", `${line}\nexport function render`);
+      const result = await compileSection({ name: "QuoteBand", source, brand: garner(), interactive });
+      assert.equal(result.ok, false, `${what} (interactive ${interactive}) compiled`);
+      assert.doesNotMatch(JSON.stringify(result), /S5-1-SECRET-VALUE/);
+    }
+  });
+}
+
+test("S5-1: the bundler itself resolves no file but the section, even past the check", async () => {
+  const { bundleSection } = await import("../bin/compile-section");
+  const dir = fs.mkdtempSync(`${(await import("node:os")).tmpdir()}/s5-1-entry-`);
+  const entry = `${dir}/Leak.tsx`;
+  fs.writeFileSync(entry, `const leaked = require("${SECRET}");\nexport { other } from "${SECRET}";\nexport const value = leaked;\n`);
+  const result = await bundleSection(entry);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.ok(result.errors.some((e) => e.includes("secret.json")), result.errors.join("; "));
+  assert.doesNotMatch(JSON.stringify(result), /S5-1-SECRET-VALUE/);
+});
