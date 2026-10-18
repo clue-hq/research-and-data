@@ -66,7 +66,7 @@ export type EditorParts = {
   /** A hook, called while an agent section draws in the editor: reads a section's props as stored
    * (plain strings, before Puck puts its in-place widgets in), by its id (S2a-2 §2.5). */
   useRawProps?: () => (id: string) => Record<string, unknown> | undefined;
-  /** Plan 6: the fallback header's menu labels typed in place (site-kit/editor's MenuLabels). */
+  /** Plan 6: menu labels of the fallback header, typed in place (MenuLabels from site-kit/editor). */
   MenuLabels?: (props: { itemId: string; children: ReactNode }) => ReactNode;
   /** The rich text field (site-kit/editor's richTextField): our rich props edit as rich text (plan 2). */
   richField?: (label: string, options?: { links?: boolean }) => object;
