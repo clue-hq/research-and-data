@@ -11,7 +11,7 @@ import type { SceneImageAiBinding } from "@/features/design-editor/adapter/scene
 import { listImageAssets, uploadWebAsset } from "@/features/design-editor/data/assets";
 import { DESIGN_API_BFF_PREFIX } from "@/features/design-editor/data/design-bff";
 import type { AssetRecord } from "@/features/design-editor/engine/scene/contracts";
-import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
+import type { AssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import { editSceneAsset, generateSceneAsset } from "@/features/design-editor/hooks/use-scene-image-ai";
 import {
   EMPTY_SITE_IMAGE_AI,
@@ -39,7 +39,7 @@ export interface SiteImageFieldBinding {
 
 export interface SiteImages {
   field: (target: SiteImageTarget, value: string) => SiteImageFieldBinding;
-  library: SceneAssetLibraryBinding | null;
+  library: AssetLibraryBinding | null;
   openLibraryFor: (target: SiteImageTarget) => void;
   uploadToLibraryTarget: (file: File) => Promise<void>;
 }
@@ -246,7 +246,7 @@ export function useSiteImages({
     [ai, openLibraryFor, placeFile, registry, runner],
   );
 
-  const library: SceneAssetLibraryBinding | null = documentId
+  const library: AssetLibraryBinding | null = documentId
     ? {
         category,
         close: () => setLibraryTarget(null),

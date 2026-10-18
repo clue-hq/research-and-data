@@ -9,7 +9,7 @@ import { PAGELESS_SCENE_NOTICE } from "@/features/design-editor/adapter/scene-pa
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
 import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
-import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
+import type { AssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   dispatchInspectorEvent,
@@ -871,7 +871,7 @@ function AdImageInspector({
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
-  assetLibrary?: SceneAssetLibraryBinding;
+  assetLibrary?: AssetLibraryBinding;
   imageAi?: SceneImageAiBinding;
   onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
@@ -1033,7 +1033,7 @@ export function ImageInspector({
    * the library as the pill's second source; the picker itself is the session's
    * surface. Absent (the dummy fixture path) leaves "Replace image" the plain
    * file-dialog button it shipped as. */
-  assetLibrary?: SceneAssetLibraryBinding;
+  assetLibrary?: AssetLibraryBinding;
   /** AD2.7: an inline write error. Same one-line floor the web branch renders
    * (the W3.3 founder gate forbids any new failure UI). */
   error?: string | null;
