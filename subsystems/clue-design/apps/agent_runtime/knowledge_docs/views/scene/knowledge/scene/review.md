@@ -143,8 +143,9 @@ treatment. Compare the reference's visual invariants against the actual rendered
 relationships, not merely matching palette or motif. Read the relevant playbook
 and shared resources again if a revision raises a new question; discovery remains
 available throughout review. A missing CTA is not a defect when the objective
-needs none; a present CTA must have the right next step, brand-supported form,
-measured label and readable local contrast. Check placement-specific overlays
+needs none; a present CTA must name this ad's real next step in words specific to
+its message, with a brand-supported form, measured label and readable local
+contrast. Check placement-specific overlays
 through `knowledge/scene/placement.md`, never a universal bottom exclusion band.
 
 Read the composite as a short visual argument: identify its first read, the

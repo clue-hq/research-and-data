@@ -5,11 +5,8 @@ description: Use when deciding whether imagery helps a scene creative and which 
 
 # brand imagery
 
-Start with the request's imagery requirement. When a creation or change request
-asks for new imagery or artwork variants, plan actual generated image components
-and the requested number of distinct outputs. Read `knowledge/scene/references.md`
-for inspected source selection, generation and output review. Existing imagery,
-a flat token fill or native gradient does not fulfill a request for new artwork.
+Start with the request's imagery requirement; `knowledge/scene/references.md`
+says how a request for new imagery is fulfilled.
 
 When imagery is optional, choose whether a suitable real image, a generated
 component or typography alone best carries the message. A type-led concept can

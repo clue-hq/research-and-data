@@ -96,14 +96,16 @@ HOW EDITS WORK ON THE CANVAS:
   strictly scoped. Use compile_dsl_block for new structure.
 """
 
-_SCENE_SURFACE_CONTRACT = (
-    SHARED_SURFACE_CONTRACT.replace(
-        "`*_lockup` is the complete logo (symbol + name — the first choice wherever\n"
-        "it fits), `*_mark` is the bare symbol (small placements only); place them\n",
-        SCENE_LOGO_SELECTION_GUIDANCE + "\nPlace each asset\n",
-    ).split("THE SHARED-SURFACE CONTRACT", 1)[0]
-    + _SCENE_EDIT_MECHANICS
-)
+# Harness alignment I11 (founder ruling 2026-10-17): the logo rules have one home, the fetch_logo
+# tool description (which carries SCENE_LOGO_SELECTION_GUIDANCE); the system prompt keeps one line.
+_SCENE_LOGO_RULE = """\
+ANOTHER COMPANY'S LOGO IS FETCHED, NEVER DRAWN: call fetch_logo for any company
+that is not us (the target account, a named customer, a partner); its
+description says how to choose and place the result. Never draw, recolor or
+approximate someone else's logo.
+"""
+
+_SCENE_SURFACE_CONTRACT = _SCENE_LOGO_RULE + _SCENE_EDIT_MECHANICS
 
 # Harness alignment I1 (founder ruling 2026-10-17): one place decides how much a turn on an
 # existing ad may change. The targeted-edit routine it names is the fenced section further down.
@@ -1420,8 +1422,7 @@ the tools available to you and the scene skills throughout this work.
 
 {_SCENE_REQUEST_KINDS}
 
-1. Gather {workspace}/brief.md, state.json, seller/index.md
-when present, and
+1. Gather {workspace}/state.json, seller/index.md when present, and
 /.deepagent/skills/scene-brief-copy/SKILL.md. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the

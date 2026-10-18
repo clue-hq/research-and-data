@@ -200,10 +200,10 @@ def test_solo_bound_prompt_separates_logo_page_bootstrap_from_creative_construct
     direction = prompt.split("3. Write ", 1)[1].split("4. Create ", 1)[0]
     assert "validate_creative_direction()" in direction
     assert "Resolve refusals before construction" in direction
-    # The eagerly bound component guide must carry the same exception; checking
-    # only the solo instructions misses conflicting policy in the actual input.
-    component_page_policy = prompt.split("Page before spend:", 1)[1].split("\n\n", 1)[0]
-    assert "page-only source preparation" in component_page_policy
+    # Harness alignment I11: the step-2 instruction is the one home of this rule. The eagerly
+    # bound component guide no longer carries its own copy, so it cannot carry a conflicting one.
+    assert "Page before spend" not in prompt
+    assert prompt.count("page-only source preparation") == 1
 
 
 @pytest.mark.parametrize(

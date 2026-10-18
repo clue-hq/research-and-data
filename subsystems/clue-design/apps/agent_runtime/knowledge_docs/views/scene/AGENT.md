@@ -15,13 +15,7 @@ context; discovery is not limited to the opening move. Avoid loading the entire
 library without a specific need. Playbook selection explains intent, not a
 mandatory sequence of layouts or a limit on original composition.
 
-The canonical direction is `creative-direction.json` in the run workspace.
-`knowledge/scene/direction-contract.md` owns its shape. It carries selected
-copy, evidence pointers, intent and the layer plan; do not create competing
-briefs. Validate it before use, construct through checked DSL and asset tools,
-and judge the actual current render. Page-only preparation for fetching a required
-authentic target logo may precede the direction under the direction contract;
-creative construction and new imagery spend may not. Your tools define what you can do.
+Your tools define what you can do.
 
 Load shared mechanics when needed:
 
@@ -36,5 +30,4 @@ Compile and preflight are necessary, but do not establish visual quality.
 Keep claims tied to supplied or retrieved evidence. Missing evidence means
 omit or qualify the claim and record the gap. Never invent logos, product UI,
 attributions, statistics or source IDs. Native text plus geometry can be the
-finished design. CTA presence, form, voice and copy follow the current intent and
-inspected advertiser examples; the channel may already provide the action.
+finished design.

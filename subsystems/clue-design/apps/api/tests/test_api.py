@@ -1388,6 +1388,8 @@ def test_editor_prompt_without_targets_carries_no_scope_rules() -> None:
     assert "editor_instruction" not in prompt
     assert "Prefer targeted repairs" not in prompt
     assert "touch as little else as possible" not in prompt
+    # Harness alignment I11: no scene_summary copy either; the system prompt's digest has more.
+    assert "scene_summary" not in prompt
 
 
 def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) -> None:

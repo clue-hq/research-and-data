@@ -3,10 +3,6 @@
 Write one compact JSON record to the run workspace's `creative-direction.json`.
 Use `validate_creative_direction()` before construction. This is the shared
 direction record; do not repeat it in separate creative/imagery/reference briefs.
-For a required authentic target logo on a pageless scene, only explicit page
-dimensions may be compiled first as source preparation. Fetch and view the real
-logo, then include its returned registered ID in the first complete direction.
-Creative nodes and new imagery spend still require validated direction.
 Round `direction.md` can refer to it and contain only the repair delta.
 The tool returns the direction digest and indexed review requirements. Carry
 that result into current-scene review. A semantic revision after validation uses

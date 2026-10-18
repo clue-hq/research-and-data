@@ -8,8 +8,7 @@ Establish one dominant
 element, a clear second read and intentional space. Components are reusable
 mechanics, not fixed proportions, mandatory cards or required layout patterns.
 Recompose for the actual words, imagery and aspect ratio. Type-only is a valid
-finished direction when imagery is optional; requested new artwork still needs
-generation. CTA, eyebrow, benefit row and proof card are optional.
+finished direction when imagery is optional. CTA, eyebrow, benefit row and proof card are optional.
 
 Use native editable text for copy, native geometry for frames, simple paths,
 connectors and meaningful UI-independent diagrams. Use real independently
@@ -110,12 +109,7 @@ Quotes and metrics use independent native text with source-backed qualification
 and attribution where needed. Their treatment follows the inspected examples,
 not a compulsory card. Use native connectors only when the relationship is real.
 
-Page before spend: on a pageless document compile explicit page dimensions before
-logo or image operations. Required authentic target-logo acquisition permits
-page-only source preparation before the first complete direction: fetch and view
-the real logo, then validate the direction with its returned asset ID. Creative
-nodes and artwork construction, including new imagery spend, follow validated
-direction. Reserve artwork as an empty leaf `fr`.
+Reserve artwork as an empty leaf `fr`.
 For a real raster/logo asset, `asset(action="place", ...)`
 accepts that frame or an existing image: it changes the leaf to an image in
 place, preserving its ID, parent/order and geometry. It cannot consume a frame

@@ -354,3 +354,8 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
 - **Owed DB-backed tests (run on a throwaway migrated DB before merge):** test_scene_copy_review_profile.py,
   test_scene_copy_review.py (T6), test_scene_turn_persist.py's two leg-prompt tests and test_web_turns.py
   (T8).
+- **T9 notes:** brief.md is no longer written for the solo scene agent (and a stale copy left in a
+  persistent session folder is deleted at turn start); the trio configuration still writes it. The
+  state.json FILE drops `turn_request` for solo; the graph state keeps it. `scene_context_summary` in
+  main.py had no other caller and was removed. A runtime test that required the components guide to
+  repeat the page-only logo exception now asserts there is a single home instead.

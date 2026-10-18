@@ -286,11 +286,18 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     previews.mkdir(parents=True, exist_ok=True)
 
     state = initial_turn_state(tools, prompt)
-    header = f"# Design turn brief — run {tools.run_id}\n\n"
-    # Harness alignment I9 (founder ruling 2026-10-17): the minimum text size now reaches the agent
-    # once, in the system prompt (written from the same profile review enforces); the brief no
-    # longer repeats it with evaluation-harness wording.
-    (workspace / "brief.md").write_text(header + prompt, encoding="utf-8")
+    # Harness alignment I11 (founder ruling 2026-10-17): the solo scene agent reads the person's
+    # message in the conversation itself, so it gets no brief.md copy of it (and a copy an earlier
+    # turn left in a persistent session folder is removed, so it can never be read as current).
+    # The trio prompts still read brief.md, so other configurations keep it.
+    solo = bool(getattr(tools.config, "scene_solo", False))
+    if solo:
+        (workspace / "brief.md").unlink(missing_ok=True)
+    else:
+        header = f"# Design turn brief — run {tools.run_id}\n\n"
+        # Harness alignment I9: the minimum text size reaches the agent once, in the system
+        # prompt; the brief no longer repeats it with evaluation-harness wording.
+        (workspace / "brief.md").write_text(header + prompt, encoding="utf-8")
 
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
@@ -361,8 +368,11 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
             encoding="utf-8",
         )
 
+    # Harness alignment I11: the state FILE does not repeat the message for the solo agent; the
+    # graph state keeps `turn_request` for the runtime.
+    file_state = {k: v for k, v in state.items() if not (solo and k == "turn_request")}
     (workspace / "state.json").write_text(
-        json.dumps(state, indent=2), encoding="utf-8"
+        json.dumps(file_state, indent=2), encoding="utf-8"
     )
 
     # RC: references.md ONLY when references rode the turn. No references → this

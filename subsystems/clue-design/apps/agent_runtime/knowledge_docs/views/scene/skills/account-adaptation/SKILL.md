@@ -106,8 +106,7 @@ reading order. Vary messaging only when evidence changes the argument.
 
 Preserve the advertiser's voice, palette and visual system unless a deliberate
 departure is requested. Choose the identity treatment through the supporting
-skill rather than treating a logo row as the creative concept. CTA presence
-follows the actual next step; an awareness ad need not have one.
+skill rather than treating a logo row as the creative concept.
 
 The direction's `copy` contains only native artwork text, including a separator.
 Keep requested companion channel copy out of the image and direction schema; label it separately in the existing

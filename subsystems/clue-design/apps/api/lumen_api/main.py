@@ -12532,7 +12532,7 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
         "target_node_ids": targets,
-        "scene_summary": scene_context_summary(payload.scene),
+        # Harness alignment I11: no scene_summary — the system prompt's scene digest carries more.
         "current_diagnostics": payload.diagnostics[:20],
     }
     instructions = (payload.agent_instructions or "").strip()
@@ -12548,17 +12548,6 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
         "Editor context JSON:\n"
         f"{json.dumps(context, indent=2)}"
     )
-
-
-def scene_context_summary(scene: JsonObject) -> JsonObject:
-    return {
-        "meta": scene.get("meta", {}),
-        "pages": page_summary(scene),
-        "nodes": node_summary(scene)[:80],
-        "slots": slot_summary(scene),
-        "asset_count": len(scene.get("assets", {})),
-        "export_profile_count": len(scene.get("export_profiles", [])),
-    }
 
 
 def agent_response_from_trace(

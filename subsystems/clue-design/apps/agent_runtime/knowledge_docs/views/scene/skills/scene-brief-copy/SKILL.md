@@ -44,8 +44,10 @@ context is unavailable; never invent missing qualifiers. Review every actual occ
 under `knowledge/scene/review.md`. For a CTA, decide whether this intent needs an artwork
 action at all, whether the channel already supplies it, and how this advertiser's
 relevant examples express it: absent, inline text, a link, a button or another
-supported form. Choose copy that names the real next step. Do not default every
-creative to a pill or to "Book a demo". Derive shape, typography and spacing from
+supported form. Choose copy that names the real next step. Write it for this ad's
+message and content, specific to what the viewer just read, never a stock phrase
+such as "Learn more", "Get started" or "Book a demo". Do not default every
+creative to a pill. Derive shape, typography and spacing from
 observed brand examples and remeasure for the words. A proof or workflow story
 need not end in a button. Keep channel headline/body/action distinct from artwork
 copy; the record's `copy` contains only the independent artwork text layers.
@@ -57,18 +59,12 @@ here. Blend a relevant supporting technique when evidence and intent call for it
 record the main family in the direction record. These are procedures, not a template menu.
 Load another relevant body or re-read one during
 composition, review or revision. A selection is not a one-time discovery lock.
-Already loaded shared guides need no second read through a wrapper skill. If the
-user asks for new imagery or variants, carry that requirement into generated
-layers and inspect the actual outputs; reusing an old image or substituting a
-native flat field does not satisfy a new-artwork request.
+Already loaded shared guides need no second read through a wrapper skill.
 If its evidence or assets are unavailable, pick a supportable direction and note
 the limitation; ask only as clarify-design-brief says.
 Preserve exact copy when the user supplies it; don't rewrite control
 inputs to make the composition easier.
 
-Write `/run_<id>/workspace/creative-direction.json` using
-`knowledge/scene/direction-contract.md`, then call `validate_creative_direction()`.
-Record concise assumptions, voice evidence, visual invariants and deliberate
-variations there rather than asking routine aesthetic questions.
-If validation refuses, repair the named fields; never proceed on an invalid
-record. Use this validated record for construction.
+In creative-direction.json, record concise assumptions, voice evidence, visual
+invariants and deliberate variations rather than asking routine aesthetic
+questions.
