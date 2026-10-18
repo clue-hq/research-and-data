@@ -32,9 +32,9 @@ def _site_kit_built() -> None:
 
 #: A site site-kit's validator passes with an empty brand (no clones, no images), so A2's write
 #: validation accepts it: a shell, and one CtaBand whose button goes to the shell's destination.
-SHELL = {"header": {"id": "header", "preparedFor": "Acme", "ctaLabel": "Book a demo",
-                    "ctaHref": "https://seller.example/demo"},
-         "footer": {"id": "footer", "legal": "© Seller"}}
+SHELL = {"header": {"type": "SiteHeader", "props": {"id": "header", "accountLine": "Prepared for Acme", "ctaLabel": "Book a demo",
+                                                    "ctaHref": "https://seller.example/demo"}},
+         "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "© Seller"}}}
 
 
 def _site(doc_id: str, heading: str = "Hello") -> dict:

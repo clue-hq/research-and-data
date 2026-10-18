@@ -33,7 +33,7 @@ def rich(site: dict) -> dict:
     props["heading"] = HEADING
     props["intro"] = INTRO
     props["_edits"] = {"heading~1": {"fontWeight": 700, "fontFamily": "Fraunces"}}
-    changed["shell"]["header"]["nav"] = [{"label": "The analysis", "href": "/analysis", "newTab": True}]
+    changed["shell"]["header"]["props"]["menuExtra"] = [{"label": "The analysis", "href": "/analysis", "newTab": True}]
     return changed
 
 

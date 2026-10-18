@@ -81,9 +81,10 @@ def boxes(site: dict, fragment_id: str = CARDS["id"]) -> dict:
             "props": {"id": "cards", "fragmentId": fragment_id, "slots": {}, "replacements": [], "links": [], "_edits": {"0": {"order": ["0.2", "0.0", "0.1"]}}},
         }
     )
-    header = changed["shell"]["header"]
-    header["nav"] = [{"label": "Contact", "href": "/"}, {"label": "The analysis", "href": "/analysis"}]
-    header["_edits"] = {"actions": {"order": ["ctaArea", "nav"]}, "logo": {"hidden": True}}
+    # Plan 6: the header's menu lists the site's pages (Overview, Analysis), relabelled and reordered.
+    header = changed["shell"]["header"]["props"]
+    header["menuLabels"] = {"_home": "Contact", "analysis": "The analysis"}
+    header["_edits"] = {"actions": {"order": ["ctaArea", "menu"]}, "menu": {"order": ["menu.analysis", "menu._home"]}, "logo": {"hidden": True}}
     return changed
 
 
@@ -113,7 +114,7 @@ def test_boxes_moves_and_hidden_parts_are_saved_read_back_undone_redone_and_publ
     proof = next(item for item in read["pages"]["/"]["content"] if item["props"]["id"] == "proof")["props"]
     assert proof["stats"][0] == proof_stats[1] and proof["_edits"]["stats.1"] == {"fill": {"hex": "#FFFFFF", "opacity": 100}}
     assert read["pages"]["/"]["content"][-1]["props"]["_edits"] == {"0": {"order": ["0.2", "0.0", "0.1"]}}
-    assert read["shell"]["header"]["_edits"] == {"actions": {"order": ["ctaArea", "nav"]}, "logo": {"hidden": True}}
+    assert read["shell"]["header"]["props"]["_edits"] == {"actions": {"order": ["ctaArea", "menu"]}, "menu": {"order": ["menu.analysis", "menu._home"]}, "logo": {"hidden": True}}
 
     # Undo takes the whole change back, the header included; redo brings it again.
     assert client.post("/documents/site_boxes/site/undo", json={"base_version": version(client, "site_boxes")}).status_code == 200
@@ -121,7 +122,7 @@ def test_boxes_moves_and_hidden_parts_are_saved_read_back_undone_redone_and_publ
     assert undone["shell"]["header"] == site["shell"]["header"]
     assert all(item["props"]["id"] != "card_proof" for item in undone["pages"]["/analysis"]["content"])
     assert client.post("/documents/site_boxes/site/redo", json={"base_version": version(client, "site_boxes")}).status_code == 200
-    assert stored_site(client, "site_boxes")["shell"]["header"]["_edits"]["logo"] == {"hidden": True}
+    assert stored_site(client, "site_boxes")["shell"]["header"]["props"]["_edits"]["logo"] == {"hidden": True}
 
     ok(publish(client, "site_boxes", slug="box-site"))
     analysis = published_page_html(workspace_id, "box-site", "/analysis")
@@ -145,9 +146,9 @@ def test_boxes_moves_and_hidden_parts_are_saved_read_back_undone_redone_and_publ
     assert 'data-clue-el="0.2"' in home, "a moved copied card keeps its captured key"
     assert before(home, f">{proof_stats[1]['value']}<", f">{proof_stats[0]['value']}<"), "the moved stat comes first"
     assert "color:#0F59B0FF !important" in rule(home, "proof", "stats.0.value")
-    assert before(home, 'data-clue-el="ctaArea"', 'data-clue-el="nav"'), "the header's button before its menu"
-    assert before(home, ">Contact<", ">The analysis<"), "the menu in its new order"
-    assert "display:none !important" in rule(home, "shell-header", "logo")
+    assert before(home, 'data-clue-el="ctaArea"', 'data-clue-el="menu"'), "the header's button before its menu"
+    assert before(home, ">The analysis<", ">Contact<"), "the menu in its new order"
+    assert "display:none !important" in rule(home, "header", "logo")
 
 
 def test_a_hidden_section_part_a_repeated_order_key_a_wide_gap_and_an_unknown_alignment_are_refused_by_name(client: TestClient) -> None:  # noqa: F811

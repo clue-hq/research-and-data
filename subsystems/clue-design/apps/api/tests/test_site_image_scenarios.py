@@ -59,7 +59,7 @@ def images(site: dict, fragment_id: str, new_file: str, logo: str) -> dict:
         {"type": "ClonedSection", "props": {"id": "gallery", "fragmentId": fragment_id, "slots": {"photo": new_file}, "replacements": [], "links": [],
                                             "alts": {"0.0": "Hotel lobby"}}}
     )
-    header = changed["shell"]["header"]
+    header = changed["shell"]["header"]["props"]
     header["accountLogo"] = logo
     header["accountLogoAlt"] = "Carmel Clay Schools"
     header["logoAlt"] = "Garner Health"
@@ -79,7 +79,7 @@ def test_images_are_saved_read_back_undone_redone_and_published(client: TestClie
         what.pop(key)
     site["pages"]["/"]["content"].pop()
     for key in ("accountLogoAlt", "logoAlt"):
-        site["shell"]["header"].pop(key)
+        site["shell"]["header"]["props"].pop(key)
     assert save(client, "site_images", site).status_code == 200
     response = save(client, "site_images", changed)
     assert response.status_code == 200, response.text
@@ -87,7 +87,7 @@ def test_images_are_saved_read_back_undone_redone_and_published(client: TestClie
     read = stored_site(client, "site_images")
     assert read["pages"]["/analysis"]["content"][0]["props"]["imageAlt"] == ALT
     assert read["pages"]["/"]["content"][-1]["props"]["alts"] == {"0.0": "Hotel lobby"}
-    assert read["shell"]["header"]["accountLogoAlt"] == "Carmel Clay Schools"
+    assert read["shell"]["header"]["props"]["accountLogoAlt"] == "Carmel Clay Schools"
 
     assert client.post("/documents/site_images/site/undo", json={"base_version": version(client, "site_images")}).status_code == 200
     undone = stored_site(client, "site_images")
@@ -126,7 +126,7 @@ def test_bad_alt_texts_an_unknown_fit_and_a_span_alts_key_are_refused_by_name(cl
         s["pages"]["/analysis"]["content"][0]["props"]["imageAlt"] = "x" * 301
 
     def line_break(s: dict) -> None:
-        s["shell"]["header"]["accountLogoAlt"] = "two\nlines"
+        s["shell"]["header"]["props"]["accountLogoAlt"] = "two\nlines"
 
     def stretch(s: dict) -> None:
         s["pages"]["/analysis"]["content"][0]["props"]["_edits"] = {"image": {"imageFit": "stretch"}}

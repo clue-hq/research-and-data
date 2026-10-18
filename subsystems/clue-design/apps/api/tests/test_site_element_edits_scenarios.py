@@ -55,7 +55,7 @@ def styled(site: dict, edits: dict, header_edits: dict | None = None) -> dict:
     changed = copy.deepcopy(site)
     changed["pages"]["/"]["content"][0]["props"]["_edits"] = edits
     if header_edits is not None:
-        changed["shell"]["header"]["_edits"] = header_edits
+        changed["shell"]["header"]["props"]["_edits"] = header_edits
     return changed
 
 
@@ -65,13 +65,13 @@ def test_manual_styling_is_saved_read_back_undone_redone_and_published(
     site = stored(client, garner_site_without_clones("site_style"))
     section_id = site["pages"]["/"]["content"][0]["props"]["id"]
     assert save(client, "site_style", site).status_code == 200
-    with_style = styled(site, {"heading": STYLE}, {"preparedFor": {"fontWeight": 700}})
+    with_style = styled(site, {"heading": STYLE}, {"accountLine": {"fontWeight": 700}})
     response = save(client, "site_style", with_style)
     assert response.status_code == 200, response.text
 
     read = stored_site(client, "site_style")
     assert read["pages"]["/"]["content"][0]["props"]["_edits"] == {"heading": STYLE}
-    assert read["shell"]["header"]["_edits"] == {"preparedFor": {"fontWeight": 700}}
+    assert read["shell"]["header"]["props"]["_edits"] == {"accountLine": {"fontWeight": 700}}
 
     undone = client.post(
         "/documents/site_style/site/undo", json={"base_version": version(client, "site_style")}
@@ -100,7 +100,7 @@ def test_manual_styling_is_saved_read_back_undone_redone_and_published(
         "text-align:center !important",
     ):
         assert expected in declarations, (expected, declarations)
-    header_rule = '[data-clue-section="shell-header"] [data-clue-el="preparedFor"]'
+    header_rule = '[data-clue-section="header"] [data-clue-el="accountLine"]'
     assert header_rule + "{font-weight:700 !important}" in html
     assert 'data-clue-el="heading"' in html, (
         "the styled element carries its key on the published page"

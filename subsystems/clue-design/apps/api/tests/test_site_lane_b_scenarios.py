@@ -1074,9 +1074,9 @@ def test_e_f_an_image_this_workspace_does_not_hold(client: TestClient, model: Mo
 # =================================================================================================
 
 #: A plain site site-kit's validator passes with no kit at all (Task 12's), for workspace B.
-PLAIN_SHELL = {"header": {"id": "header", "preparedFor": "Acme", "ctaLabel": "Book a demo",
-                          "ctaHref": "https://seller.example/demo"},
-               "footer": {"id": "footer", "legal": "© Seller"}}
+PLAIN_SHELL = {"header": {"type": "SiteHeader", "props": {"id": "header", "accountLine": "Prepared for Acme", "ctaLabel": "Book a demo",
+                                                          "ctaHref": "https://seller.example/demo"}},
+               "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "© Seller"}}}
 
 
 def plain_site(document_id: str) -> dict:

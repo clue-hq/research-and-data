@@ -436,7 +436,7 @@ export function render(props, kit) {
 
 def linked_site(document_id: str, module) -> dict:
     site = garner_site_without_clones(document_id)
-    site["shell"]["header"]["nav"] = [
+    site["shell"]["header"]["props"]["menuExtra"] = [
         {"label": "The analysis", "href": "/analysis"},
         {"label": "Home", "href": "/"},
         {"label": "Email", "href": "mailto:team@garner.example"},
@@ -486,10 +486,10 @@ def test_internal_links_are_rebased_on_every_page_and_nothing_else_moves(blobs: 
     # A javascript: link written into the shell never gets as far as the render: the site-kit
     # validator refuses it at publish, by where it is.
     site, brand = hold_site_images(linked_site("pub_links_js", module), garner_brand(), blobs)
-    site["shell"]["header"]["nav"].append({"label": "Steal", "href": "javascript:steal()"})
+    site["shell"]["header"]["props"]["menuExtra"].append({"label": "Steal", "href": "javascript:steal()"})
     with pytest.raises(SiteDocumentInvalid) as refused:
         build("pub_links_js", site, brand, [module], blobs=blobs)
-    assert any(error.startswith("shell.header.nav.3.href:") for error in refused.value.errors), refused.value.errors
+    assert any(error.startswith("shell.header.menuExtra.3.href:") for error in refused.value.errors), refused.value.errors
 
 
 # f. noindex ---------------------------------------------------------------------------------------

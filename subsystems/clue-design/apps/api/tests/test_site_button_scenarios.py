@@ -64,8 +64,8 @@ def buttons(site: dict, fragment_id: str = CLOSE["id"]) -> dict:
     what["buttonLabel"] = LABEL
     what["buttonNewTab"] = True
     what["_edits"] = {"button": BOX, "button.label~1": {"italic": True}}
-    changed["shell"]["header"]["ctaNewTab"] = True
-    changed["shell"]["header"]["ctaLabel"] = "Request <strong>the analysis</strong>"
+    changed["shell"]["header"]["props"]["ctaNewTab"] = True
+    changed["shell"]["header"]["props"]["ctaLabel"] = "Request <strong>the analysis</strong>"
     changed["pages"]["/"]["content"].append(
         {
             "type": "ClonedSection",
@@ -98,14 +98,14 @@ def test_buttons_are_saved_read_back_undone_redone_and_published(client: TestCli
     read = stored_site(client, "site_buttons")
     what = read["pages"]["/analysis"]["content"][0]["props"]
     assert (what["buttonLabel"], what["buttonNewTab"], what["_edits"]["button"]) == (LABEL, True, BOX)
-    assert read["shell"]["header"]["ctaNewTab"] is True
+    assert read["shell"]["header"]["props"]["ctaNewTab"] is True
     close = read["pages"]["/"]["content"][-1]["props"]
     assert close["slots"] == {"cta_label": 'Book <span data-s="0.1.0~1">a demo</span>'}
 
     assert client.post("/documents/site_buttons/site/undo", json={"base_version": version(client, "site_buttons")}).status_code == 200
     undone = stored_site(client, "site_buttons")
     assert "_edits" not in undone["pages"]["/analysis"]["content"][0]["props"]
-    assert "ctaNewTab" not in undone["shell"]["header"]
+    assert "ctaNewTab" not in undone["shell"]["header"]["props"]
     assert client.post("/documents/site_buttons/site/redo", json={"base_version": version(client, "site_buttons")}).status_code == 200
     assert stored_site(client, "site_buttons")["pages"]["/analysis"]["content"][0]["props"]["_edits"]["button"] == BOX
 
@@ -162,6 +162,6 @@ def test_buttons_may_go_to_different_outside_addresses(client: TestClient) -> No
     content = two["pages"]["/analysis"]["content"]
     next(item for item in content if item["type"] == "FeatureSplit")["props"]["buttonHref"] = "https://garnerhealth.com/demo"
     next(item for item in content if item["type"] == "CtaBand")["props"]["buttonHref"] = "https://garnerhealth.com/contact"
-    two["shell"]["header"]["ctaHref"] = "https://garnerhealth.com/pricing"
+    two["shell"]["header"]["props"]["ctaHref"] = "https://garnerhealth.com/pricing"
     response = save(client, "site_buttons_two", two)
     assert response.status_code == 200, response.text

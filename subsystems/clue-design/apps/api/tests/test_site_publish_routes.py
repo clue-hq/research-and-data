@@ -457,7 +457,7 @@ def nothing_published(workspace_id: str, document_id: str, slug: str) -> None:
 
 def test_f_a_link_to_a_page_the_site_lacks_is_refused(client: TestClient, workspace_id: str) -> None:
     site = garner_site_without_clones("site_badlink")
-    site["shell"]["header"]["nav"] = [{"label": "Pricing", "href": "/pricing"}]
+    site["shell"]["header"]["props"]["menuExtra"] = [{"label": "Pricing", "href": "/pricing"}]
     stored(client, site)  # stored directly, as an old row would be: the save route would refuse it
     detail = refused(publish(client, "site_badlink", slug="badlink-site"), 422, "site.invalid")
     assert any("links to /pricing, which is not a page of this site" in error for error in detail["errors"]), detail
