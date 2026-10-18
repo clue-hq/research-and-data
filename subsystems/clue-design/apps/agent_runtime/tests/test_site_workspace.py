@@ -342,6 +342,29 @@ def test_the_site_summary_reads_box_edits(tmp_path: Path) -> None:
     assert "- Header styled by hand: logo — hidden" in text
 
 
+def test_the_site_summary_reads_image_fit_and_alt_texts(tmp_path: Path) -> None:
+    """Site element inspector (plan 5): an image's fit, and alt texts on our images, the header's logos
+    and a copied section's images."""
+    site = garner_site()
+    page = site["pages"]["/"]["content"]
+    page.append({"type": "FeatureSplit", "props": {
+        "id": "photo", "surface": "page", "heading": "H", "body": "B", "image": "/brands/x.png",
+        "imageAlt": "A quiet clinic waiting room", "_edits": {"image": {"imageFit": "fill"}}}})
+    clone = next(item for item in page if item["type"] == "ClonedSection")
+    clone["props"]["alts"] = {"0.2.1": "Hotel lobby"}
+    clone["props"]["_edits"] = {"0.2.1": {"imageFit": "fit"}}
+    site["shell"]["header"]["accountLogoAlt"] = "Carmel Clay Schools"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    text = ws.site_summary(workspace, garner_brand())
+    assert '   - image alt text: "A quiet clinic waiting room"' in text
+    assert "   - styled by hand: image — image fills its box" in text
+    assert '   - alt text 0.2.1: "Hotel lobby"' in text
+    assert "   - styled by hand: 0.2.1 — image fits inside its box" in text
+    assert '- Account logo alt text: "Carmel Clay Schools"' in text
+
+
 def test_the_site_summary_reads_one_sided_padding(tmp_path: Path) -> None:
     """Live check 2026-10-18: padding may set only its top and bottom, or only its sides."""
     site = garner_site()

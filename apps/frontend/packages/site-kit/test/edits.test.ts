@@ -357,3 +357,10 @@ test("one side of padding (live check, 2026-10-18): only that side is drawn, the
   assert.match(editsCss("s1", { box: { padding: { x: 8 } } }, brand), /\{padding-left:8px !important;padding-right:8px !important\}/);
   assert.match(editsCss("s1", { box: { padding: { y: 12, x: 22 } } }, brand), /\{padding:12px 22px !important\}/);
 });
+
+// Plan 5: images. Fit is drawn as object-fit.
+test("imageFit parses fill and fit and draws object-fit; anything else is refused", () => {
+  assert.match(editsCss("s1", { "0.1": { imageFit: "fill" } }, brand), /\{object-fit:cover !important\}/);
+  assert.match(editsCss("s1", { "0.1": { imageFit: "fit" } }, brand), /\{object-fit:contain !important\}/);
+  assert.equal(StyleOverrideSchema.safeParse({ imageFit: "stretch" }).success, false);
+});

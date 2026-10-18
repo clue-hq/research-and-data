@@ -96,6 +96,8 @@ export const StyleOverrideSchema = z
       .optional(),
     /** The header's and footer's parts only (the validator refuses it on a page section): not drawn. */
     hidden: z.literal(true).optional(),
+    /** Plan 5, an image: "fill" covers its box (may crop), "fit" shows it whole inside it. */
+    imageFit: z.enum(["fill", "fit"]).optional(),
   })
   .strict();
 
@@ -314,6 +316,7 @@ function declarations(brand: BrandData, override: StyleOverride): string[] {
     ["gap", override.gap !== undefined ? `${override.gap}px` : undefined],
     ...alignCss(override.contentAlign),
     ["display", override.hidden ? "none" : undefined],
+    ["object-fit", override.imageFit === undefined ? undefined : override.imageFit === "fill" ? "cover" : "contain"],
   ];
   return out.flatMap(([property, value]) => (value ? [`${property}:${value} !important`] : []));
 }

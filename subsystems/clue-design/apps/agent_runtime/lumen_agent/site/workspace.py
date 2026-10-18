@@ -544,6 +544,11 @@ def _styled_by_hand(edits: object) -> list[str]:
             words.append("children in the order " + ", ".join(str(child) for child in order))
         if override.get("hidden") is True:
             words.append("hidden")
+        # Plan 5 (images).
+        if override.get("imageFit") == "fill":
+            words.append("image fills its box")
+        elif override.get("imageFit") == "fit":
+            words.append("image fits inside its box")
         if words:
             out.append(f"{key} — {', '.join(words)}")
     return out
@@ -577,6 +582,11 @@ def site_summary(
                 f"- Prepared for: {header.get('preparedFor')}; button {_rich_words(header.get('ctaLabel') or '')} → {header.get('ctaHref')}"
                 + (", new tab" if header.get("ctaNewTab") else ""),
                 f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}"]
+        # Plan 5: the logos' alt texts.
+        for label, value in (("Logo alt text", header.get("logoAlt")), ("Account logo alt text", header.get("accountLogoAlt")),
+                             ("Footer logo alt text", shell.get("footer", {}).get("logoAlt"))):
+            if value:
+                out.append(f'- {label}: "{_short(str(value), 120)}"')
         for part in ("header", "footer"):
             styled = _styled_by_hand(shell.get(part, {}).get("_edits"))
             out += [f"- {part.capitalize()} styled by hand: {line}" for line in styled]
@@ -606,6 +616,8 @@ def site_summary(
                     out.append(f"   - link {link.get('find')} → {link.get('replace')}")
                 if props.get("newTab"):
                     out.append(f"   - links opening in a new tab: {', '.join(str(key) for key in props['newTab'])}")
+                for key, alt in (props.get("alts") or {}).items():
+                    out.append(f'   - alt text {key}: "{_short(str(alt), 120)}"')
             else:
                 out.append(f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface")
                 for key in ("eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source"):
@@ -615,6 +627,8 @@ def site_summary(
                     out.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
                 if props.get("image"):
                     out.append(f"   - image: {image(props['image'])}")
+                if props.get("imageAlt"):
+                    out.append(f'   - image alt text: "{_short(str(props["imageAlt"]), 120)}"')
                 if props.get("buttonLabel"):
                     tab = ", new tab" if props.get("buttonNewTab") else ""
                     out.append(f"   - button {_rich_words(props['buttonLabel'])} → {props.get('buttonHref')}{tab}")

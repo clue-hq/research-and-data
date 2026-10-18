@@ -66,3 +66,29 @@ test("a stored schema that cannot be read is named, not ignored", () => {
   assert.equal(out.valid, false);
   assert.ok(out.errors.some((e: string) => e.startsWith("agent_sections.Broken: its stored props schema could not be read")), out.errors.join("\n"));
 });
+
+// Plan 5 (ruling R2, R8): alt texts are plain text of at most 300 characters.
+test("alt texts are plain text of at most 300 characters, on our images, the shell's logos and copied images", () => {
+  const MESSAGE = "alt text is plain text of at most 300 characters, with no line breaks or control characters";
+  const withAlts = (feature: string, header: string, clone: Record<string, string>) => {
+    const home = structuredClone(site.pages["/"]);
+    const analysis = structuredClone(site.pages["/analysis"]);
+    analysis.content[0].props.imageAlt = feature;
+    const hero = home.content.find((item: { type: string }) => item.type === "ClonedSection")!;
+    hero.props.alts = clone;
+    const shell = structuredClone(site.shell);
+    shell.header.accountLogoAlt = header;
+    shell.header.logoAlt = 'Garner "Health"';
+    shell.footer.logoAlt = "Garner";
+    return validateSite({ pages: { "/": home, "/analysis": analysis }, shell }, brand, {});
+  };
+  const ok = 'Dr. "Smith" & <team>';
+  assert.deepEqual(withAlts(ok, ok, { "0.1": ok }), { valid: true, errors: [] });
+  const bad = withAlts("x".repeat(301), "line\nbreak", { "0.1": "x".repeat(301) });
+  assert.equal(bad.valid, false);
+  for (const field of ["imageAlt", "accountLogoAlt", "alts.0.1"]) {
+    assert.ok(bad.errors.some((error) => error.includes(field) && error.endsWith(MESSAGE)), `${field}: ${bad.errors.join("\n")}`);
+  }
+  const spanKey = withAlts("", "", { "0.1~2": "x" });
+  assert.equal(spanKey.valid, false, spanKey.errors.join("\n"));
+});

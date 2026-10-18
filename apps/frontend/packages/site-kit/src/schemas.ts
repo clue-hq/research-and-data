@@ -42,6 +42,16 @@ const link = z
 const optionalLink = link.default("");
 /** An image is a file from the brand's asset list; the validator checks membership. */
 const image = z.string().default("");
+/** Plan 5 (ruling R2, R8): an image's alt text: plain text (drawn escaped, never markup), at most 300
+ * characters, no line breaks or control characters; empty is a decorative image. */
+export const ALT_TEXT_RULE = "alt text is plain text of at most 300 characters, with no line breaks or control characters";
+export const AltTextSchema = z
+  .string()
+  .max(300, ALT_TEXT_RULE)
+  .regex(/^[^\u0000-\u001F\u007F]*$/, ALT_TEXT_RULE);
+const altText = AltTextSchema.optional();
+/** A copied element's key in `alts`: an element, never a styled span. */
+const AltKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/, "an alt text is named by its image's element key");
 
 export const StatsBandSchema = z
   .object({
@@ -65,6 +75,7 @@ export const FeatureSplitSchema = z
     headingRole: HeadingRole.default("title"),
     body: text.min(1),
     image,
+    imageAlt: altText,
     imageSide: z.enum(["left", "right"]).default("left"),
     buttonLabel: optionalText,
     buttonHref: optionalLink,
@@ -113,6 +124,8 @@ export const ClonedSectionSchema = z
     links: z.array(z.object({ find: text.min(1), replace: link }).strict()).default([]),
     /** The section's links that open in a new tab, by their element key (data-clue-el). */
     newTab: z.array(ElementKeySchema).default([]),
+    /** Plan 5: alt texts of its images, by element key. */
+    alts: z.record(AltKeySchema, AltTextSchema).optional(),
   })
   .strict();
 
@@ -222,6 +235,8 @@ export const ShellSchema = z
         id: z.string().optional(),
         preparedFor: text.min(1),
         accountLogo: optionalText,
+        logoAlt: altText,
+        accountLogoAlt: altText,
         ctaLabel: text.min(1),
         ctaHref: link,
         ctaNewTab: z.boolean().optional(),
@@ -234,6 +249,7 @@ export const ShellSchema = z
       .object({
         id: z.string().optional(),
         legal: text.min(1),
+        logoAlt: altText,
         privacyHref: optionalLink,
         privacyNewTab: z.boolean().optional(),
         termsHref: optionalLink,
