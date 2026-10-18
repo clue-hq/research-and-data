@@ -33,6 +33,7 @@ import { buildKitTokenMaps, type KitTokenMaps } from "../engine/scene/tokenColor
 import { useSceneArrange } from "./use-scene-arrange";
 import { useSceneAssetLibrary } from "./use-scene-asset-library";
 import { useSceneClipboard } from "./use-scene-clipboard";
+import { useSceneDelete } from "./use-scene-delete";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
@@ -729,6 +730,21 @@ export function useSceneEditingSession({
     selectedNodeId: primaryNodeId,
     viewportPageCenter,
     writes,
+  });
+
+  // The Delete key (Backspace on a Mac keyboard): the WHOLE selection set, not
+  // the primary — several layer-panel-selected elements go in one undo frame.
+  const clearSelection = useCallback(() => select(null, false), [select]);
+  useSceneDelete({
+    applyOps: writes.applyOps,
+    clearMessages: writes.clearMessages,
+    clearSelection,
+    documentId: activeDocumentId,
+    onNote: writes.reportNote,
+    pageId,
+    scene,
+    selectedIds,
+    writeGate: writes.writeGate,
   });
 
   // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside

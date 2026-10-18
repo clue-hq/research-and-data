@@ -62,6 +62,8 @@ PROVIDER = "exa_websets"
 
 #: The Websets API lives under its own version path, beside the synchronous ``/search``.
 WEBSETS_BASE_PATH = "/websets/v0/websets"
+#: Exa Imports: our own list of companies, which a search can ``exclude`` (spec 2026-10-16 §4.6).
+IMPORTS_PATH = "/websets/v0/imports"
 
 #: Websets' price list, in credits, for one result that satisfied every criterion. Rows that
 #: failed a criterion are returned and are **not** charged.
@@ -89,6 +91,11 @@ ITEMS_TIMEOUT_S = 180.0
 
 __all__ = [
     "CREDITS_PER_MATCH",
+    "IMPORTS_PATH",
+    "ExaImportError",
+    "ImportHandle",
+    "ImportStatus",
+    "import_csv",
     "ITEMS_PAGE_LIMIT",
     "ITEMS_TIMEOUT_S",
     "MAX_ITEM_PAGES",
@@ -129,6 +136,33 @@ class WebsetSearchView:
     analyzed: int | None
     recall_estimate: int | None
     criteria_success_rates: tuple[tuple[str, float | None], ...]
+
+
+class ExaImportError(RuntimeError):
+    """Exa refused an Import step; the caller goes on without it (the domain skip still applies)."""
+
+
+@dataclass(frozen=True)
+class ImportHandle:
+    import_id: str
+    upload_url: str
+
+
+@dataclass(frozen=True)
+class ImportStatus:
+    """An Import as Exa last described it: its ``status`` and ``count``, the rows Exa read from the
+    file (``None`` while Exa has not said). ``completed`` with ``count`` 0 is an Import that holds
+    nothing and so excludes nothing."""
+
+    status: str
+    count: int | None
+
+
+def import_csv(domains: Sequence[str]) -> bytes:
+    """The Import file: a ``url`` column, one ``https://<domain>`` per distinct domain, sorted so
+    the same list is the same bytes."""
+    rows = "".join(f"https://{domain}\n" for domain in sorted(set(domains)))
+    return f"url\n{rows}".encode()
 
 
 @dataclass(frozen=True)
@@ -490,6 +524,7 @@ class ExaWebsetsClient:
         title: str,
         exclude_webset_ids: Sequence[str] = (),
         recall: bool = True,
+        exclude_import_ids: Sequence[str] = (),
     ) -> WebsetView:
         """Create a webset with one search. Returns immediately; the work happens after.
 
@@ -506,10 +541,10 @@ class ExaWebsetsClient:
             "entity": {"type": "company"},
             "criteria": [{"description": description} for description in criteria],
         }
-        if exclude_webset_ids:
-            search["exclude"] = [
-                {"source": "webset", "id": webset_id} for webset_id in exclude_webset_ids
-            ]
+        exclude = [{"source": "webset", "id": webset_id} for webset_id in exclude_webset_ids]
+        exclude += [{"source": "import", "id": import_id} for import_id in exclude_import_ids]
+        if exclude:
+            search["exclude"] = exclude
         if recall:
             # Absent unless asked for: ``recall`` makes Exa estimate how many companies match the
             # search in total, and it costs :data:`RECALL_CREDITS`, so the caller opts into it.
@@ -532,6 +567,82 @@ class ExaWebsetsClient:
             timeout_s=WEBSETS_TIMEOUT_S,
         )
         return _webset_view(result)
+
+    def create_import(self, *, csv_bytes: bytes, count: int, title: str) -> ImportHandle:
+        """Open an Import for ``csv_bytes`` (see :func:`import_csv`). Free. The file itself goes up
+        with :meth:`upload_import` to the address Exa returns, within the hour it stays valid."""
+        result = self._call(
+            operation="import-create",
+            label="websets-import-create",
+            method="POST",
+            path=IMPORTS_PATH,
+            body={
+                "format": "csv",
+                "entity": {"type": "company"},
+                "count": count,
+                "size": len(csv_bytes),
+                "title": title,
+                # The URL column, by its position counted from 0. Exa's documented example shows 1,
+                # but 1 names a column this file does not have, and Exa then completes the Import
+                # having read none of its rows (live, 2026-10-16: 0 of 24 read at 1, 24 of 24 at 0).
+                "csv": {"identifier": 0},
+            },
+            estimate=SpendEstimate(),
+            cost_reader=_zero_cost_reader,
+            timeout_s=WEBSETS_TIMEOUT_S,
+        )
+        refusal = _refusal(result.response)
+        body = _body_json(result.response)
+        import_id, upload_url = _str(body.get("id")), _str(body.get("uploadUrl"))
+        if refusal is not None or not import_id or not upload_url:
+            raise ExaImportError(refusal or "exa returned no import id or upload url")
+        return ImportHandle(import_id=import_id, upload_url=upload_url)
+
+    def upload_import(self, *, upload_url: str, csv_bytes: bytes) -> None:
+        """PUT the file to Exa's signed upload address. The address is not Exa's API, so the API
+        key is never sent to it."""
+        result = self._caller.call(
+            CallSpec(
+                provider=PROVIDER,
+                operation="import-upload",
+                label="websets-import-upload",
+                request=HttpRequest(
+                    method="PUT",
+                    url=upload_url,
+                    headers={"content-type": "text/csv"},
+                    body=csv_bytes,
+                    timeout_s=WEBSETS_TIMEOUT_S,
+                ),
+                estimate=SpendEstimate(),
+                cost_reader=_zero_cost_reader,
+                max_attempts=1,
+            )
+        )
+        if not 200 <= result.response.status < 300:
+            raise ExaImportError(f"import upload refused: http {result.response.status}")
+
+    def get_import(self, import_id: str) -> ImportStatus:
+        """The Import's status (``pending``, ``processing``, ``completed``, ``failed`` or
+        ``canceled``) and how many rows Exa read from its file."""
+        result = self._call(
+            operation="import-get",
+            label="websets-import-get",
+            method="GET",
+            path=f"{IMPORTS_PATH}/{import_id}",
+            body=None,
+            estimate=SpendEstimate(),
+            cost_reader=_zero_cost_reader,
+            timeout_s=WEBSETS_TIMEOUT_S,
+        )
+        refusal = _refusal(result.response)
+        if refusal is not None:
+            raise ExaImportError(refusal)
+        body = _body_json(result.response)
+        count = body.get("count")
+        return ImportStatus(
+            status=_str(body.get("status")) or "unknown",
+            count=count if isinstance(count, int) and not isinstance(count, bool) else None,
+        )
 
     def cancel(self, webset_id: str) -> WebsetView:
         """Stop every search still running on a webset. Free; Exa marks the webset ``idle``.

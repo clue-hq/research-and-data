@@ -1315,6 +1315,10 @@ class DiscoveryCandidateView(BaseModel):
     fit: float | None
 
 
+#: The dispositions ``read_discovery_run@3`` lists apart: a gate's exclusion and the brief's.
+_EXCLUDED_DISPOSITIONS = frozenset({"excluded", "excluded_by_brief"})
+
+
 class DiscoveryCandidateV3View(DiscoveryCandidateView):
     """``read_discovery_run@3``'s candidate: ``@2``'s, plus the gate that excluded it.
 
@@ -1494,10 +1498,15 @@ async def read_discovery_run(
         for candidate in await list_candidates(conn, run_id=run_uuid)
         if candidate.workspace_id == workspace_id
     ]
+    # A company the brief excluded (spec 2026-10-16 §4.6) is listed with the gate exclusions; it was
+    # never judged, so it is never among the candidates the human may be shown.
     excluded = (
         sorted(
-            (candidate for candidate in scoped if candidate.disposition == "excluded"),
-            key=lambda candidate: (candidate.excluded_by_gate or "", candidate.name),
+            (candidate for candidate in scoped if candidate.disposition in _EXCLUDED_DISPOSITIONS),
+            key=lambda candidate: (
+                candidate.excluded_by_gate or candidate.excluded_by_entry or "",
+                candidate.name,
+            ),
         )
         if excluded_apart
         else []
@@ -1506,7 +1515,7 @@ async def read_discovery_run(
         (
             candidate
             for candidate in scoped
-            if not (excluded_apart and candidate.disposition == "excluded")
+            if not (excluded_apart and candidate.disposition in _EXCLUDED_DISPOSITIONS)
         ),
         key=_candidate_order,
     )

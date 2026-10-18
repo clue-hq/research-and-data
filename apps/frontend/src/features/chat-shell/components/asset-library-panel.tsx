@@ -2,10 +2,18 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
+import type { LogoSearchState, SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { AssetLibraryItem } from "@/features/design-editor/adapter/scene-asset-library";
 import { InspectorSelect } from "./inspector-primitives";
-import { ASSET_LIBRARY_CATEGORIES, nextFocusIndex, shouldCloseOnKey, shouldCloseOnPointer, splitLibrarySections } from "./asset-library-panel.logic";
+import {
+  ASSET_LIBRARY_CATEGORIES,
+  logoResultCaption,
+  logoSearchHeading,
+  nextFocusIndex,
+  shouldCloseOnKey,
+  shouldCloseOnPointer,
+  splitLibrarySections,
+} from "./asset-library-panel.logic";
 import styles from "./chat-shell.module.css";
 
 /**
@@ -65,38 +73,111 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
     </button>
   );
 
+  const logoSearch = library.logoSearch;
+  const logoTile = (logo: LogoSearchState["results"][number]) => {
+    const caption = logoResultCaption(logo);
+    const saving = logoSearch.savingAssetId === logo.asset_id;
+    return (
+      <button
+        aria-label={`${caption.title}, ${caption.source}${saving ? " (adding…)" : ""}`}
+        className={styles.logoSearchTile}
+        disabled={logoSearch.savingAssetId !== null}
+        key={logo.asset_id}
+        onClick={() => library.pickLogo(logo.asset_id)}
+        type="button"
+      >
+        <span className={`${styles.logoSearchPreview} ${logo.background === "dark" ? styles.logoSearchPreviewDark : ""}`}>
+          <Image alt="" fill sizes="96px" src={logo.preview} unoptimized />
+        </span>
+        <span className={styles.logoSearchCaption}>
+          {saving ? "Adding…" : caption.title}
+          <span className={styles.logoSearchSource}>{caption.source}</span>
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div aria-label="Asset library" className={styles.assetLibraryPanel} ref={panelRef} role="dialog">
       <div className={styles.assetLibraryHeader}>
         <span>Asset library</span>
         <button aria-label="Close asset library" className={styles.assetLibraryClose} onClick={library.close} type="button">✕</button>
       </div>
-      <div className={styles.assetLibraryTools}>
-        <input aria-label="Search assets" className={styles.assetLibrarySearch} onChange={(event) => library.setQuery(event.target.value)} placeholder="Search" value={library.query} />
-        {/* The shared select's control is `width: 100%`, so it is given a fixed
-            share of the toolbar rather than the whole row — the search box
-            keeps its `flex: 1`. */}
-        <div className={styles.assetLibraryCategory}>
-          <InspectorSelect
-            label="Filter assets by type"
-            onChange={(label) => {
-              const chosen = ASSET_LIBRARY_CATEGORIES.find((option) => option.label === label);
-              if (chosen) library.setCategory(chosen.value);
-            }}
-            options={ASSET_LIBRARY_CATEGORIES.map((option) => option.label)}
-            value={categoryLabel}
-          />
-        </div>
+      <div className={styles.assetLibraryTabs} role="tablist">
+        <button aria-selected={library.tab === "library"} className={styles.assetLibraryTab} onClick={() => library.setTab("library")} role="tab" type="button">Library</button>
+        <button aria-selected={library.tab === "logo-search"} className={styles.assetLibraryTab} onClick={() => library.setTab("logo-search")} role="tab" type="button">Logo search</button>
       </div>
-      {library.error ? (
-        <div className={styles.assetLibraryError} role="alert">{library.error} <button className={styles.assetLibraryRetry} onClick={library.refresh} type="button">Retry</button></div>
-      ) : null}
-      <div className={styles.assetLibraryBody}>
-        {brand.length > 0 ? <><div className={styles.assetLibrarySection}>Brand kit</div><div className={styles.assetLibraryGrid}>{brand.map((item, i) => tile(item, i))}</div></> : null}
-        <div className={styles.assetLibrarySection}>Workspace{library.loading ? " · loading…" : ""}</div>
-        <div className={styles.assetLibraryGrid}>{workspace.map((item, i) => tile(item, brand.length + i))}</div>
-        {!library.loading && ordered.length === 0 ? <p className={styles.assetLibraryEmpty}>No images match.</p> : null}
-      </div>
+      {library.tab === "logo-search" ? (
+        <>
+          <form
+            className={styles.assetLibraryTools}
+            onSubmit={(event) => { event.preventDefault(); library.searchLogos(); }}
+          >
+            <input
+              aria-label="Company website"
+              autoFocus
+              className={styles.assetLibrarySearch}
+              onChange={(event) => library.setLogoQuery(event.target.value)}
+              placeholder="Company website, like stripe.com"
+              value={logoSearch.query}
+            />
+            <button
+              className={styles.logoSearchButton}
+              disabled={logoSearch.status === "searching" || logoSearch.query.trim() === ""}
+              type="submit"
+            >
+              Search
+            </button>
+          </form>
+          {logoSearch.error ? <div className={styles.assetLibraryError} role="alert">{logoSearch.error}</div> : null}
+          <div className={styles.assetLibraryBody}>
+            {logoSearch.status === "searching" ? (
+              <p className={styles.logoSearchState} role="status">Searching for logos… this can take up to 20 seconds.</p>
+            ) : null}
+            {logoSearch.status === "done" && logoSearch.results.length === 0 ? (
+              <p className={styles.logoSearchState} role="status">
+                We couldn&rsquo;t confirm a logo for {logoSearch.searchedFor}.<br />
+                Try the company&rsquo;s main website, or upload the file.
+              </p>
+            ) : null}
+            {logoSearch.status === "done" && logoSearch.results.length > 0 ? (
+              <>
+                <div className={styles.assetLibrarySection}>{logoSearchHeading(logoSearch.name, logoSearch.results.length)}</div>
+                <div className={styles.logoSearchGrid}>{logoSearch.results.map(logoTile)}</div>
+              </>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={styles.assetLibraryTools}>
+            <input aria-label="Search assets" className={styles.assetLibrarySearch} onChange={(event) => library.setQuery(event.target.value)} placeholder="Search" value={library.query} />
+            {/* The shared select's control is `width: 100%`, so it is given a fixed
+                share of the toolbar rather than the whole row — the search box
+                keeps its `flex: 1`. */}
+            <div className={styles.assetLibraryCategory}>
+              <InspectorSelect
+                label="Filter assets by type"
+                onChange={(label) => {
+                  const chosen = ASSET_LIBRARY_CATEGORIES.find((option) => option.label === label);
+                  if (chosen) library.setCategory(chosen.value);
+                }}
+                options={ASSET_LIBRARY_CATEGORIES.map((option) => option.label)}
+                value={categoryLabel}
+              />
+            </div>
+          </div>
+          {library.error ? (
+            <div className={styles.assetLibraryError} role="alert">{library.error} <button className={styles.assetLibraryRetry} onClick={library.refresh} type="button">Retry</button></div>
+          ) : null}
+          <div className={styles.assetLibraryBody}>
+            {brand.length > 0 ? <><div className={styles.assetLibrarySection}>Brand kit</div><div className={styles.assetLibraryGrid}>{brand.map((item, i) => tile(item, i))}</div></> : null}
+            <div className={styles.assetLibrarySection}>Workspace{library.loading ? " · loading…" : ""}</div>
+            <div className={styles.assetLibraryGrid}>{workspace.map((item, i) => tile(item, brand.length + i))}</div>
+            {!library.loading && ordered.length === 0 ? <p className={styles.assetLibraryEmpty}>No images match.</p> : null}
+          </div>
+        </>
+      )}
       <div className={styles.assetLibraryFooter}>
         <button className={styles.assetLibraryUpload} onClick={() => fileRef.current?.click()} type="button">Upload from computer</button>
         <input accept="image/png,image/jpeg,image/webp,image/svg+xml" className={styles.visuallyHiddenInput}

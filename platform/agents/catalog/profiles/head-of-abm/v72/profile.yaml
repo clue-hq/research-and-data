@@ -2,22 +2,6 @@ schema_version: '1'
 kind: profile
 name: head-of-abm
 version: v72
-# v72 (2026-10-05, website quality week 1, A1): v71's surface exactly - the same prompt v18, grant,
-# workspace, caps and recipe 33. The re-minted manual v18 teaches the brief format for a page:
-# Head of ABM gives Design direction (purpose, reader, action, angle, suggested structure, facts as
-# source material with their sources, fitting customer stories) and keeps its private notes
-# (claim limits, evidence limits, the buying committee) in a separate "never shown on the page"
-# part; Design writes every word itself. It also offers account research when a 1:1 page is asked
-# for an unresearched account (a recommendation, never a gate). The open_design_leg description
-# says the same and states that the leg's first design turn is queued at once. stage0-interview
-# v45 is v44 with its manual paths repointed to v18. No tool address moves.
-# v71 (2026-10-04, integration of brand-context-fixes/typography onto research-streaming): v70's
-# surface exactly - the same prompt v18, grant, workspace, caps and recipe 33. Two corrections ride
-# the re-minted manual v17: the design leg's first turn is queued from the human's own message the
-# moment the leg opens (manual-siblings, manual-gates-authority and the open_design_leg note used
-# to say opening a leg starts nothing, contradicting prompt v18), and read_account_research now
-# pages the overview by whole section (its offset_not_paged refusal is gone). stage0-interview v44
-# is v43 with its manual paths repointed to v17. No tool address moves.
 status: active
 role: head_of_abm
 prompt:
@@ -27,7 +11,7 @@ prompt:
 skills:
 - name: stage0-interview
   version: v45
-  sha256: be5ebe83da05c223b4dcc4768310aff513ecadfa22478f73ac821549a8ae8cd8
+  sha256: ab6394dde58675a1d87feb89deeed10888466f1dd7a7dc3346de7257ac756ace
 - name: account-research-briefing
   version: v3
   sha256: af01631ec609d588216a4a802a4ab44d6e91e851fa2bca579d01e108a057757e
@@ -54,7 +38,7 @@ skills:
   sha256: 574523688be149818a7c25f33da34bfab4904e3c7734d990f65891c359b74b73
 - name: manual-tools
   version: v18
-  sha256: ad60071aab294bb021961f232d1bb2f2c0861f2d22864cc6964e9a586adbdbcf
+  sha256: 256bb180298226dc77aa89274d5d19983dae3147f9857c2d8da02ae2165efcdb
 - name: manual-fields
   version: v18
   sha256: 9f2d2cc559b76e319e076275c0483342cf170d66484ebf4a9e0b2241e6e9bf90
@@ -66,19 +50,19 @@ skills:
   sha256: 40bc76d02367d6fa4caeb8568724d8c8008f74e58f67515aeab910e111558a29
 - name: manual-discovery
   version: v18
-  sha256: 4c49c03f812f3d80e5376a278bfa2da6863d60a7bfced4b447314e4703191c7d
+  sha256: 63ff31130a3f27989ca0b02ba4e4ad7d9c8497040c89edec232a63c3478cd0b0
 - name: manual-documents-decisions
   version: v18
   sha256: c4909f41e4375ae033aaf8db58ef5f280ce1b880f9f30e47f8c9cab62c047509
 - name: manual-gates-authority
   version: v18
-  sha256: a440437d52c3a7b4a283cafd4abdcb60cd14fa4938084ad8fa1eab1c869cd14c
+  sha256: ef3696a79920b6086ea1eb8f559efa72cb2a90189938d204268c52c9581f5003
 - name: manual-humans-screens
   version: v18
   sha256: 205b12936c8b7ef6bdee1969d6d061896575a88c0b95f04847f1e3003f4b8fd8
 - name: manual-siblings
   version: v18
-  sha256: 52c5f7a7bfeb8b760840b7e880678fa186a065429abe7c3154cde9c780229981
+  sha256: 459cf2e266c1eaf53b99e809b2967b44b77ed174f0077f353f2cb9f641095565
 - name: manual-errors
   version: v18
   sha256: df9fb2fa69b590f9798ca138105d21c3f2cfb072c07743e313896fe60b8f47bc
@@ -102,9 +86,13 @@ tools:
 # gates with roles, source), and `read_discovery_run@3` (summary, end reason, exclusions).
 # stage0-interview v43 section 7b teaches the brief; the manual re-mints at `manual-*@v16`; the
 # conversation recipe moves 32 -> 33. Prompt v18 stays.
+# v72 (spec 2026-10-16-discovery-excludes-seller-customers): `launch_arv2_discovery` RE-PINNED at
+# `@3`, whose brief adds `exclude` — the companies the search leaves out, chosen from
+# `brand/knowledge/proof/customers.md`. stage0-interview v45 section 7b says how; the manual
+# re-mints at `manual-*@v18`; the conversation recipe moves 34 -> 35. Prompt v18 stays.
 - name: launch_arv2_discovery
-  version: '2'
-  input_schema_sha256: 06a8291240e24374f610997fceb1372a7f0462839309fd0920ead029ce8f6a16
+  version: '3'
+  input_schema_sha256: cc2bde42bd475019b60aacf18a4fa76d9c31c8bb7d7166df33bf8194de462f9a
   output_schema_sha256: bbf0f09767552e89cb6744319152dc99c25e370abfb1e4948cf6248a700b3552
 - name: launch_arv2_person_research
   version: '1'
@@ -162,6 +150,14 @@ tools:
   version: '1'
   input_schema_sha256: 29e91cff09b7565ce93f9a5fd32509cc779bf93cb5b74c9d94bd755d12761012
   output_schema_sha256: 71be2f7de9d4a1f36dd29f94578d12f3f3eb213ef414f79de5d0ef8ff87094cb
+# v71 (product management, spec 2026-10-15): v70's surface with ONE address ADDED —
+# `manage_products@1`: add, rename, merge or remove the brand's products when the person asks
+# (founder ruling D3: applied directly). stage0-interview v44 only repoints its manual paths; the
+# manual re-mints at `manual-*@v17`; the conversation recipe moves 33 -> 34. Prompt v18 stays.
+- name: manage_products
+  version: '1'
+  input_schema_sha256: 14b74832991d4ccc8e082671e38b3076488e21b0a1b78b2aad26708166e93473
+  output_schema_sha256: 0971c049845cc805984415699100ab0e67480e085efc007b8b085872083c3d83
 # v62 (web search, spec 2026-09-22 — re-minted on the research-streaming merge; v61 is the
 # automatic-targeting profile): v61's surface with ONE address ADDED — `web_search@1`, one
 # deep-lite open-web search, used LAST after the claims and the seller's knowledge files,

@@ -79,9 +79,9 @@ research launch, and the discovery launch.
 of which can be applied automatically by the targeting tool `(enforced)`. There is no spend estimate gate on any of them.**
 No amount is shown to the human, and each launch reports an estimate of zero, so the turn's
 budget ceiling can never stop one. Writing a persona document spends nothing beyond the turn
-you write it on. Opening a design leg makes no provider call itself, but it queues the leg's
-first design turn from the human's message at once, and that turn spends, with no per turn
-approval. Deciding that a spend is wanted is therefore yours to get right `(asked of you)`.
+you write it on. Opening a design leg spends nothing, but the human's next message on that
+thread starts a design turn that does, with no per turn approval. Deciding that a spend is
+wanted is therefore yours to get right `(asked of you)`.
 
 The only precondition those launches actually enforce, beyond the pins, is that the current
 turn carries a captured human action `(enforced)`. Any such turn satisfies it. So these rules

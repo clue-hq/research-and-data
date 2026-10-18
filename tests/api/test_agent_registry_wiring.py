@@ -174,7 +174,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # v71 (2026-10-15, main): `manage_products@1` granted; stage0@v44 and manual@v17 repointed.
         # v74 (2026-10-16, the website release): the website line's v73 (design-leg first turn,
         # page briefs, ad headline suggestions) re-minted on main's v71; stage0@v47, manual@v20.
-        AgentRole.HEAD_OF_ABM: ("084236fb80fc310678088e89753882de6a5e87a3dd78ff349994dba71ffda42f"),
+        # v75 (2026-10-19, merges research-streaming's v72): `launch_arv2_discovery@3`; stage0@v48,
+        # manual@v21.
+        AgentRole.HEAD_OF_ABM: ("bd9f98635b67f326a2aabc128552b3726c5d1c66f81f43c7304aac650b82a917"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -316,9 +318,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): `manage_products@1`, granted at head-of-abm@v71 (175 -> 176).
-    assert len(by_address) == 176
+    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list) (176 -> 177).
+    assert len(by_address) == 177
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["read_discovery_run@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -445,7 +448,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # + manage_products@1 (2026-10-15, main), granted at head-of-abm@v71.
-    assert len(by_address) == 176  # + read_account_research@3 (2026-10-05)
+    # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list) (176 -> 177).
+    assert len(by_address) == 177  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
@@ -542,10 +546,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `launch_arv2_discovery` is available at `@2` (the brief in its input) and `read_discovery_run`
     # at `@3` (summary, end reason, exclusions) — `head-of-abm@v70` pins both exact contracts —
     # and `@1` / `@2` drop to ROLE_UNAVAILABLE. Taught by stage0-interview v43 section 7b.
+    # `head-of-abm@v72` re-pins discovery at `@3` (the brief's exclude list, spec 2026-10-16).
     assert available == {
         "inspect_statement_history@1",
         "launch_arv2_account_research@1",
-        "launch_arv2_discovery@2",
+        "launch_arv2_discovery@3",
         "launch_arv2_person_research@1",
         "open_design_leg@5",
         "configure_project_targeting@1",
@@ -630,9 +635,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v74"
+    assert production.profile_ref.address == "profile:head-of-abm@v75"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v47"
+        "skill:stage0-interview@v48"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -672,15 +677,17 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     stage0-interview version whose section 7b teaches how to write the brief.
     """
 
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v74"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v75"
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
-    assert "launch_arv2_discovery@2" in granted
+    # v72 re-pins it at `@3` (the brief's exclude list, spec 2026-10-16).
+    assert "launch_arv2_discovery@3" in granted
+    assert "launch_arv2_discovery@2" not in granted
     assert "launch_arv2_discovery@1" not in granted
     assert "read_discovery_run@3" in granted
     assert "read_discovery_run@2" not in granted
-    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v47"
-    body = head.open_skill("skill:stage0-interview@v47")
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v48"
+    body = head.open_skill("skill:stage0-interview@v48")
     assert "## 7b. Discover accounts for this project" in body
     assert "`must_not`" in body
     assert "discovery_in_progress" in body
@@ -703,7 +710,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v47")
+    body = production.open_skill("skill:stage0-interview@v48")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -763,7 +770,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v47",
+        "skill:stage0-interview@v48",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -773,7 +780,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v20" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v21" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -783,7 +790,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v20")
+    assert briefing_path in head.open_skill("skill:manual-tools@v21")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -896,7 +903,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v47")
+    body = head.open_skill("skill:stage0-interview@v48")
 
     assert required_guidance in body
 
@@ -950,7 +957,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v47" not in remaining
+    assert "skill:stage0-interview@v48" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -961,7 +968,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v20" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v21" for name in MANUAL_CHAPTERS),
     ]
 
 

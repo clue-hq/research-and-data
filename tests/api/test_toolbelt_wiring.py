@@ -1555,7 +1555,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
-    assert len(registry) == 176
+    # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
+    assert len(registry) == 177
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1643,7 +1644,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
-    assert len(registry) == 176
+    # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
+    assert len(registry) == 177
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

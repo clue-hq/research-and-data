@@ -40,6 +40,7 @@ from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import decode_jsonb
+from clue_research.identity.normalize import registrable_domain
 
 __all__ = [
     "PENDING_DISPOSITION",
@@ -98,8 +99,18 @@ SearchKind = Literal["strict", "strict_topup", "relaxed", "round"]
 #: of this project already found. Both are stamped before any gate is asked. ``excluded`` is a
 #: company a ``must`` gate failed or a ``must_not`` gate passed: kept on the run with the gate that
 #: excluded it (``excluded_by_gate``), never added to the project's accounts and never shown.
+#: ``excluded_by_brief`` is a company the brief's ``exclude`` list (or the seller's own domain)
+#: named, stamped before any spend with the entry that matched it (``excluded_by_entry``; spec
+#: 2026-10-16-discovery-excludes-seller-customers §4.6).
 Disposition = Literal[
-    "pending", "pass", "partial", "unclear", "duplicate_of_existing", "found_before", "excluded"
+    "pending",
+    "pass",
+    "partial",
+    "unclear",
+    "duplicate_of_existing",
+    "found_before",
+    "excluded",
+    "excluded_by_brief",
 ]
 
 #: The dispositions that mean the human was shown this company — §4's *shown*, and equally the
@@ -145,7 +156,7 @@ _SEARCH_COLUMNS = (
 _CANDIDATE_COLUMNS = (
     "candidate_id, run_id, workspace_id, project_id, pass, domain, websets_url, name, "
     "provider_snapshot_json, verdicts_json, fit, disposition, decision, decided_by_user_id, "
-    "decided_at, account_entity_id, excluded_by_gate"
+    "decided_at, account_entity_id, excluded_by_gate, excluded_by_entry"
 )
 
 
@@ -254,6 +265,7 @@ class CandidateRow:
     decided_at: datetime | None = None
     account_entity_id: UUID | None = None
     excluded_by_gate: str | None = None
+    excluded_by_entry: str | None = None
 
 
 async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> bool:
@@ -750,7 +762,7 @@ async def upsert_candidate(conn: AsyncConnection, row: CandidateRow) -> UUID:
             " :candidate_id, :run_id, :workspace_id, :project_id, :pass, :domain, :websets_url, "
             " :name, CAST(:provider_snapshot AS jsonb), CAST(:verdicts AS jsonb), :fit, "
             " :disposition, :decision, :decided_by_user_id, :decided_at, :account_entity_id, "
-            " :excluded_by_gate) "
+            " :excluded_by_gate, :excluded_by_entry) "
             "ON CONFLICT (run_id, domain) DO UPDATE SET "
             " provider_snapshot_json = EXCLUDED.provider_snapshot_json, name = EXCLUDED.name, "
             " websets_url = EXCLUDED.websets_url "
@@ -774,6 +786,7 @@ async def upsert_candidate(conn: AsyncConnection, row: CandidateRow) -> UUID:
             "decided_at": row.decided_at,
             "account_entity_id": row.account_entity_id,
             "excluded_by_gate": row.excluded_by_gate,
+            "excluded_by_entry": row.excluded_by_entry,
         },
     )
     return UUID(str(result.scalar_one()))
@@ -839,13 +852,16 @@ async def project_found_domains(
 
     A later run skips these (``found_before``) without asking a gate: they were found once, and a
     company the human has since removed from the project must not come back through discovery.
-    The current run is excluded so a run never hides its own candidates from itself.
+    The current run is excluded so a run never hides its own candidates from itself. A company a
+    brief excluded was never judged, so it is not "found": the next run decides from its own
+    brief, and a person's correction to the customer page takes effect there.
     """
     rows = await conn.execute(
         text(
             "SELECT DISTINCT domain FROM arv2_discovery_candidate "
             "WHERE workspace_id = :workspace_id AND project_id = :project_id "
-            "AND run_id <> :before_run_id AND disposition <> 'pending'"
+            "AND run_id <> :before_run_id "
+            "AND disposition NOT IN ('pending', 'excluded_by_brief')"
         ),
         {
             "workspace_id": workspace_id,
@@ -854,6 +870,23 @@ async def project_found_domains(
         },
     )
     return frozenset(str(row[0]) for row in rows)
+
+
+async def seller_domain(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> str | None:
+    """The seller's own domain as the platform knows it: the ``company_domain`` of the brand's most
+    recent whole-brand onboarding, whatever its status (spec 2026-10-16 §4.6) — the domain is known
+    when the run starts, and a discovery launched while its background phase still runs must leave
+    the seller out too. ``None`` when the brand was never onboarded; discovery then excludes only
+    what its brief names."""
+    domain = await conn.scalar(
+        text(
+            "SELECT company_domain FROM onboarding_run "
+            "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND kind = 'full' "
+            "ORDER BY requested_at DESC LIMIT 1"
+        ),
+        {"workspace_id": workspace_id, "brand_id": brand_id},
+    )
+    return (registrable_domain(str(domain)) or None) if domain else None
 
 
 async def mark_candidates_approved(
@@ -975,4 +1008,5 @@ def _candidate(row: RowMapping) -> CandidateRow:
         decided_at=row["decided_at"],
         account_entity_id=row["account_entity_id"],
         excluded_by_gate=row["excluded_by_gate"],
+        excluded_by_entry=row["excluded_by_entry"],
     )

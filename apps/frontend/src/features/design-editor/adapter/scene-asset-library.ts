@@ -52,8 +52,16 @@ export function kitLibraryEntries(kit: unknown): KitLibraryEntry[] {
   return entries;
 }
 
+/** Every logo fetched by the shared logo lookup (the agent's `fetch_logo`, the library's Logo
+ * search) carries this tag — `LOGO_TAGS` in `lumen_agent/tools/logo_fetch.py`. */
+export const FETCHED_LOGO_TAG = "logo-ladder";
+
 /** Structural on purpose: the Brand context page passes its own zod-parsed list record. */
-export function registryCategory(record: { source: { kind: string } }): "ai-generated" | "upload" {
+export function registryCategory(record: {
+  source: { kind: string };
+  tags?: readonly string[] | null;
+}): "logo" | "ai-generated" | "upload" {
+  if (record.tags?.includes(FETCHED_LOGO_TAG)) return "logo";
   return record.source.kind === "generated" ? "ai-generated" : "upload";
 }
 

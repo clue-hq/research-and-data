@@ -108,12 +108,13 @@ launch_arv2_discovery:
   afterwards: >-
     If you have not read section 7b of the stage0-interview skill ("Discover accounts for this
     project") in this conversation, read it before you call this tool. It says how to write the
-    query, the criteria and the gates.
-    A discovery run is queued with the brief you wrote. It checks every company against your
-    gates, adds the ones that pass to this project's accounts, and searches again with the same
-    brief for any shortfall, up to three more times. This conversation is busy until it ends;
-    you then get a turn that starts with its summary.
-  skill_section: stage0-interview v43 section 7b, "Discover accounts for this project".
+    query, the criteria, the gates and the exclude list.
+    A discovery run is queued with the brief you wrote. It leaves out every company on your
+    exclude list and the seller's own domain, checks every other company against your gates,
+    adds the ones that pass to this project's accounts, and searches again with the same brief
+    for any shortfall, up to three more times. This conversation is busy until it ends; you then
+    get a turn that starts with its summary.
+  skill_section: stage0-interview v45 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.

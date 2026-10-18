@@ -31,6 +31,11 @@ it("categorizes registry-only records: generated → ai-generated, everything el
   assert.equal(registryCategory(GENERATED), "ai-generated");
   assert.equal(registryCategory(rec("u")), "upload");
   assert.equal(registryCategory(rec("w", { source: { kind: "website", url: "https://x", captured_at: null } })), "upload");
+  // A logo the shared lookup fetched (the agent's fetch_logo, the library's Logo search) is a logo.
+  assert.equal(
+    registryCategory(rec("l", { source: { kind: "website", url: "https://x", captured_at: null }, tags: ["target-account", "logo-ladder"] })),
+    "logo",
+  );
 });
 
 it("pins kit items first in kit order, then the registry in server order, deduped with the kit winning", () => {

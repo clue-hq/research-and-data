@@ -33,7 +33,8 @@ buys nothing twice. Only one run is active in a project at a time.
 ## How a run works
 
 1. The first search asks for `target_count` companies with your query and criteria, skipping every
-   company this project already has or found before.
+   company this project already has or found before, every company on your `exclude` list, and
+   the seller's own domain.
 2. Each company found is checked: first its own website, then one question per gate.
 3. A company is **excluded** when a `must` gate fails or a `must_not` gate passes. It does not join
    the project and does not count toward `target_count`. An unclear answer never excludes.
@@ -65,6 +66,7 @@ The guard values you may see are `ok`, `quote_not_on_page`, `wrong_company`, `ou
 | `excluded` | a `must` failed or a `must_not` passed; kept on the run only |
 | `duplicate_of_existing` | already one of this project's accounts |
 | `found_before` | an earlier discovery of this project found it |
+| `excluded_by_brief` | on your `exclude` list, or the seller's own domain; never checked, never added |
 
 Every candidate also names the search that found it: `strict` for every round of a run of the search you write; `relaxed` appears only on runs from before 2026-09-30, when the platform loosened a criterion by itself.
 
@@ -73,6 +75,8 @@ Every candidate also names the search that found it: `strict` for every round of
 - **verified**: at least one gate verdict exists.
 - **shown**: `pass`, `partial` or `unclear` — the companies added to the project.
 - **excluded**: kept on the run with the gate that excluded them.
+- **excluded by the brief**: the companies your `exclude` list (or the seller's own domain) left
+  out; the summary counts them apart.
 - **approved**: a human recorded the approval decision.
 
 `approved` is the only decision the store holds; a company the human did not choose is not chosen,

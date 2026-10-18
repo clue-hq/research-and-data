@@ -28,7 +28,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | --- | --- | --- | --- | --- |
 | `inspect_statement_history@1` | read | no | no | Complete a project step |
 | `launch_arv2_account_research@1` | spend | yes | no | Complete a project step |
-| `launch_arv2_discovery@2` | spend | yes | no | Complete a project step |
+| `launch_arv2_discovery@3` | spend | yes | no | Complete a project step |
 | `launch_arv2_person_research@1` | spend | yes | no | Complete a project step |
 | `open_design_leg@5` | write | no | no | Complete a project step |
 | `propose_field@2` | write | no | no | Complete a project step |
@@ -43,6 +43,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `run_python@1` | write | no | no | Complete a project step |
 | `submit_ingestion@1` | spend | yes | no | Complete a project step |
 | `configure_project_targeting@1` | write | no | no | Complete a project step |
+| `manage_products@1` | write | no | no | Update the product list |
 | `web_search@1` | spend | yes | no | Search the web |
 
 ## inspect_statement_history@1
@@ -153,9 +154,9 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **See also.** `.deepagent/skills/manual-siblings/v18/SKILL.md`, `.deepagent/skills/manual-gates-authority/v18/SKILL.md`, `.deepagent/skills/manual-accounts-research/v18/SKILL.md`.
 
-## launch_arv2_discovery@2
+## launch_arv2_discovery@3
 
-**What it does.** Launch account discovery for one project with the search you write: what kind of company to find (query), what every company must satisfy (criteria), and the checks run on every company found (gates, each with a role: must, must_not or prefer). Read section 7b of the stage0-interview skill before calling. The project needs a confirmed ICP and product set. A successful result means the run was created or replayed, never that companies were found; this conversation stays busy until the run ends and you get a turn with its summary. Manual: .deepagent/skills/manual-tools/v18/SKILL.md#launch_arv2_discovery
+**What it does.** Launch account discovery for one project with the search you write: what kind of company to find (query), what every company must satisfy (criteria), the checks run on every company found (gates, each with a role: must, must_not or prefer), and the companies to leave out with their domains (exclude: the seller's existing customers you chose from brand/knowledge/proof/customers.md, and the seller's own domains). Read section 7b of the stage0-interview skill before calling. The project needs a confirmed ICP and product set. A successful result means the run was created or replayed, never that companies were found; this conversation stays busy until the run ends and you get a turn with its summary. Manual: .deepagent/skills/manual-tools/v18/SKILL.md#launch_arv2_discovery
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -175,6 +176,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `query` | `str` | required | none | — |
 | `criteria` | `list[str]` | required | none | — |
 | `gates` | `list[BriefGate]` | required | none | — |
+| `exclude` | `list[ExcludedCompany]` | (built per call) | none | — |
 
 **Outputs**
 
@@ -201,9 +203,9 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `icp_digest_mismatch` | Tell the human the pinned ICP has changed since it was pinned, and that it must be confirmed again before discovery runs. |
 | `icp_front_matter_invalid` | Tell the human which front-matter field the pinned ICP document is missing; it has to be authored and confirmed again. |
 
-**Afterwards.** If you have not read section 7b of the stage0-interview skill ("Discover accounts for this project") in this conversation, read it before you call this tool. It says how to write the query, the criteria and the gates. A discovery run is queued with the brief you wrote. It checks every company against your gates, adds the ones that pass to this project's accounts, and searches again with the same brief for any shortfall, up to three more times. This conversation is busy until it ends; you then get a turn that starts with its summary.
+**Afterwards.** If you have not read section 7b of the stage0-interview skill ("Discover accounts for this project") in this conversation, read it before you call this tool. It says how to write the query, the criteria, the gates and the exclude list. A discovery run is queued with the brief you wrote. It leaves out every company on your exclude list and the seller's own domain, checks every other company against your gates, adds the ones that pass to this project's accounts, and searches again with the same brief for any shortfall, up to three more times. This conversation is busy until it ends; you then get a turn that starts with its summary.
 
-**Taught by.** stage0-interview v43 section 7b, "Discover accounts for this project".
+**Taught by.** stage0-interview v45 section 7b, "Discover accounts for this project".
 
 **See also.** `.deepagent/skills/manual-discovery/v18/SKILL.md`, `.deepagent/skills/manual-siblings/v18/SKILL.md`, `.deepagent/skills/manual-gates-authority/v18/SKILL.md`.
 
@@ -263,7 +265,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## open_design_leg@5
 
-**What it does.** Hand this conversation to the design deepagent — the only way to get a website (or any design artifact) made. Use it the moment the user asks for a landing page, microsite, or page to be built or changed. For a NEW website pass doc_kind='web' and no document_id; for a NEW ad or any designed page pass doc_kind='scene' and no document_id. In both cases also pass artifacts, one item per artifact the user wants — a title the user would recognise, a note with that item's own words (its account, its emphasis), and account_id when the item is for a tagged research account; one item for one ad, twenty for twenty accounts, five for five variants with a distinct emphasis each; the shared ask stays in brief. Each item becomes its own document, opens in its own tab and iterates in its own design session, and they appear in the project's gallery immediately. Put the user's actual ask and your direction in brief — what the artifacts are for, who they are for, the angle, a suggested structure and the facts to draw on, with your private notes kept apart (the brief format is in the siblings chapter of the manual) — because Design sees the brief, not this conversation. Design writes the words on the page itself; do not write its copy. To keep working on an EXISTING artifact pass its document_id instead (doc_kind and artifacts are then refused). On a scene birth the design agent authors the page itself — size, unit (px for digital, mm/in for print) and layout come from the user's own words, so put everything the user said about format, dimensions, medium and purpose in brief. Do not infer or restate dimensions yourself; Design owns them. To resume a design session you closed by mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is open, every user message on this thread goes directly to Design — you will not see the thread again until the leg closes. Opening a leg starts the design work at once: the platform queues the leg's first design turn from the user's message on this turn, so the user does not need to send anything else. The tool itself makes no provider call; the queued design turn is what spends, and generating a page takes minutes, not seconds. Tell the user the design session is open and what is being made, and end your turn. Queued is not finished: never say the design is done.
+**What it does.** Hand this conversation to the design deepagent — the only way to get a website (or any design artifact) made. Use it the moment the user asks for a landing page, microsite, or page to be built or changed. For a NEW website pass doc_kind='web' and no document_id; for a NEW ad or any designed page pass doc_kind='scene' and no document_id. In both cases also pass artifacts, one item per artifact the user wants — a title the user would recognise, a note with that item's own words (its account, its emphasis), and account_id when the item is for a tagged research account; one item for one ad, twenty for twenty accounts, five for five variants with a distinct emphasis each; the shared ask stays in brief. Each item becomes its own document, opens in its own tab and iterates in its own design session, and they appear in the project's gallery immediately. Put the user's actual ask in brief — what the artifacts are for, who they are for, what they must say — because Design sees the brief, not this conversation. To keep working on an EXISTING artifact pass its document_id instead (doc_kind and artifacts are then refused). On a scene birth the design agent authors the page itself — size, unit (px for digital, mm/in for print) and layout come from the user's own words, so put everything the user said about format, dimensions, medium and purpose in brief. Do not infer or restate dimensions yourself; Design owns them. To resume a design session you closed by mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is open, every user message on this thread goes directly to Design — you will not see the thread again until the leg closes. Opening a leg spends nothing and runs no design turn: the user's NEXT message is what starts generation, and generating a page takes minutes, not seconds. Tell the user the design session is open and end your turn.
 
 - Effect class: `write`.
 - Spends: no.
@@ -330,7 +332,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `design_leg_reopen_wrong_thread` | Only a leg of this conversation can be reopened; open a fresh one here instead. |
 | `design_leg_reopen_not_closed` | Tell the human that leg is still open and they can simply keep talking to Design. |
 
-**Afterwards.** A design leg is open on this thread, and its first design turn is already queued from the human's own message, so nobody needs to say anything to start it. The design agent takes over the conversation. You do not run again while it is open and you cannot close it; the human ends it by saying so. The artifact it produces appears in the project's gallery.
+**Afterwards.** A design leg is open on this thread and the design agent takes over the conversation. You do not run again while it is open and you cannot close it; the human ends it by saying so. The artifact it produces appears in the project's gallery.
 
 **Taught by.** Not taught by the current skill.
 
@@ -428,7 +430,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_account_research@2
 
-**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids), whole sections a page at a time: follow next_offset until it is null to read all of them. When the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v18/SKILL.md#read_account_research
+**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v18/SKILL.md#read_account_research
 
 - Effect class: `read`.
 - Spends: no.
@@ -457,9 +459,9 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `section` | `str` | — |
 | `overview` | `tuple[AccountOverviewSection, ...]` | The written sections when `section='overview'`, else empty. |
 | `claims` | `tuple[AccountClaimView, ...]` | The account's servable claims when `section='claims'`, else empty. |
-| `truncated` | `bool` | More exists than this page holds: continue with `offset = next_offset`, for claims and overview sections alike. |
+| `truncated` | `bool` | More exists than this page holds: continue with `offset = next_offset` (claims), or read the claims when a long overview was cut. |
 | `excluded` | `dict[str, int]` | What the account pages' own gate held back, by reason: `sensitive`, `unverified`, `outreach_unsafe`. A non-zero count means "there is more here, and it is not servable". |
-| `offset` | `int` | Where this page started: a claim index for claims, a section index for the overview. |
+| `offset` | `int` | Where this page started in the account's servable claims. |
 | `next_offset` | `int or None` | Where the next page starts, or `None` when this page ends the list. |
 | `prefixes` | `dict[str, int]` | The account's claim families with their servable counts. |
 
@@ -468,8 +470,8 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | Field | Type | What it is |
 | --- | --- | --- |
 | `section_key` | `str` | — |
-| `body_text` | `str` | `display_block.body_json` as JSON text, whole. Text rather than a nested object because the stored body has no bound of its own; the overview pages by whole section instead, so a long overview spreads across reads rather than losing its tail. |
-| `body_truncated` | `bool` | This one section is larger than a whole page on its own, so its tail is not here. Every other section is served complete. |
+| `body_text` | `str` | `display_block.body_json` as JSON text, capped at `BODY_CHARS`. Text rather than a nested object because the stored body has no bound of its own — nothing in the display package limits how many items a section holds or how long one item is — and an unbounded blob is context the model pays for on every later turn of the thread. |
+| `body_truncated` | `bool` | The body was longer than the cap and the tail is not here. |
 | `cited_claim_ids` | `tuple[str, ...]` | — |
 | `generated_at` | `str` | — |
 
@@ -495,11 +497,10 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `arv2_reads_not_composed` | Tell the human the reads are not wired on this deployment; do not answer from memory instead. |
 | `account_not_found` | Take the account id from read_project_accounts and call again; a merged account is refused under its old id, so use the survivor. |
 | `overview_not_written` | Read again with section 'claims', and say the overview has not been written yet rather than that the account is unresearched. |
-| `insights_not_written` | The insights page has not been written yet. Read the overview or the claims instead, and do not describe it as missing research. |
-| `context_required` | The account was researched in more than one project and this read could not tell which. Read section 'claims' instead, or ask the human to open the account in the app. |
 | `account_not_researched` | Say plainly that nothing is known about this account yet, and offer to research it. |
 | `no_claims_under_prefix` | Pick one of the families the refusal lists and read again; never invent a prefix. |
 | `offset_past_end` | You have already read to the end. Stop paging and answer from what you have. |
+| `offset_not_paged` | Drop offset; the overview is served whole. |
 
 **Afterwards.** Nothing changes. You hold what the store actually says about one account, which is what a statement about that account must rest on. Never state a fact about an account from memory of an earlier thread.
 
@@ -990,6 +991,65 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** stage0-interview v35 section 4, "Apply the products and ICP automatically".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v18/SKILL.md`, `.deepagent/skills/manual-gates-authority/v18/SKILL.md`.
+
+## manage_products@1
+
+**What it does.** Change this brand's product list when the person asks you to: add a product, rename one, merge several into one (for example features that onboarding listed as separate products), or remove one. The change applies at once to the product list, the product pages, the catalog and every project that uses those products. For add and merge, write page_markdown: the product's page, from what you know and the pages being merged. If you only suspect the list is wrong, ask the person first instead of calling this. Manual: .deepagent/skills/manual-tools/v18/SKILL.md#manage_products
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: product_change keyed by the presenting turn and the call's inputs.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `action`, `product_id`, `product_ids`, `into_product_id`, `name`.
+- The human sees: "Update the product list".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `action` | `Literal['add', 'rename', 'merge', 'remove']` | required | none | What to do to the brand's product list. |
+| `product_id` | `str or None` | `None` | max_length=200 | rename / remove: the product to change. |
+| `product_ids` | `tuple[str, ...] or None` | `None` | min_length=1, max_length=200 | merge: the products folded in. |
+| `into_product_id` | `str or None` | `None` | max_length=200 | merge: fold into this existing product ... |
+| `name` | `str or None` | `None` | max_length=240 | ... or (merge) into a product with this name; add / rename: the product's name. |
+| `page_markdown` | `str or None` | `None` | max_length=200000 | add / merge: the product's page, written by you. |
+| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `change_id` | `str` | The change, as recorded in the brand's product change log. |
+| `action` | `str` | — |
+| `summary` | `str` | One sentence saying what changed, ready to tell the person. |
+| `product_id` | `str` | The product the change is about (for a merge, the product the others were folded into). |
+| `product_name` | `str` | — |
+| `aliases` | `tuple[str, ...]` | Its other names, including the names of products merged into it. |
+| `page_document_id` | `str or None` | The product page this call wrote, for add and merge. |
+| `catalog_document_id` | `str` | The regenerated product catalog. |
+| `projects_updated` | `int` | Projects whose product set moved to the new list. |
+| `projects_needing_choice` | `int` | Projects left with no product, which keep their old set until the person chooses. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `products_input_invalid` | Add exactly the field the message names for this action and call again. |
+| `products_page_required` | Write the product's page in page_markdown, from the pages being merged and what you know, and call again. |
+| `products_turn_unavailable` | Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved. |
+| `products_storage_unavailable` | Tell the person product changes cannot be saved on this deployment right now. |
+| `product_not_found` | Read the product catalog again and use a product id from it. |
+| `product_not_active` | Read the catalog again; that product was already merged or removed, so work from today's list. |
+| `product_name_taken` | Ask the person for a different name, or merge into the product that already has it. |
+| `name_invalid` | Use a product name between 1 and 240 characters. |
+| `merge_invalid` | Name at least one other product to merge, and either into_product_id or name but not both. |
+
+**Afterwards.** The brand's product list, its product pages and its catalog changed together, and every project that used a merged or removed product now uses the new list (each shows a notice in its chat). Old names are kept as "also called" names. Tell the person what changed in one sentence; the next turn's brand files already reflect it.
+
+**Taught by.** No skill section; the tool's own description says when to call it (spec 2026-10-15 product management).
+
+**See also.** `.deepagent/skills/manual-documents-decisions/v18/SKILL.md`.
 
 ## web_search@1
 
