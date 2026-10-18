@@ -116,6 +116,9 @@ def test_the_three_zones_are_a_grid_and_phones_keep_the_logos_and_the_line() -> 
     css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
     assert ".clue-header-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);" in css
     assert "@media (max-width:767px){.clue-header-row{grid-template-columns:auto minmax(0,1fr)}.clue-zone-end{display:none}" in css
+    # Live check (Oliver): on a phone the line is the only thing beside the logos, so the 40% cap would
+    # cut "Prepared for Oliver H…" with room to spare; there it takes the rest of the row.
+    assert ".clue-account-line{max-width:none}" in css[css.index("@media (max-width:767px)"):]
 
 
 def test_the_account_line_is_plain_words_in_the_headers_own_type() -> None:

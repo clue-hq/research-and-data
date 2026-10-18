@@ -184,7 +184,7 @@ def derive_site_template(
             "background:none;box-shadow:none;outline:none;border-radius:0;text-decoration:none;cursor:auto}"
             # Phones (site-kit's phone width): the logos and the line; the hero carries the button.
             f"@media (max-width:{PHONE_MAX_WIDTH}){{.clue-header-row{{grid-template-columns:auto minmax(0,1fr)}}"
-            ".clue-zone-end{display:none}.clue-zone-centre{justify-self:start}}"
+            ".clue-zone-end{display:none}.clue-zone-centre{justify-self:start}.clue-account-line{max-width:none}}"
         )
     else:
         copyright_line = _find_copyright(body)
