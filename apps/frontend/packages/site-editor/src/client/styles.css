@@ -26,9 +26,15 @@ html, body, #root { height: 100%; margin: 0; }
 [data-puck-component] > .clue-section[data-clue-sticky],
 [data-puck-component] > .clue-section[data-clue-overlay] { position: static; height: auto; }
 
-/* Site element inspector: the selected text element inside its section. Drawn by the frame (an
-   attribute set on the element), never by re-rendering Puck, which would rebuild clone markup. */
-[data-clue-el-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: 2px; }
+/* Site element inspector: the selected element (solid) and the element under the pointer (dashed,
+   founder 2026-10-19) inside their section. Drawn by the frame (an attribute set on the element), never
+   by re-rendering Puck, which would rebuild clone markup. Important: a copied section's own stylesheet
+   is scoped under its wrapper and often resets outlines, which outranked these and drew nothing. */
+[data-clue-el-selected] { outline: 2px solid var(--puck-color-azure-04) !important; outline-offset: 2px !important; }
+[data-clue-el-hovered]:not([data-clue-el-selected]) {
+  outline: 1.5px dashed var(--puck-color-azure-04) !important;
+  outline-offset: 2px !important;
+}
 
 /* Rich text fields (site element inspector, plan 2) draw like the published text: the one paragraph
    TipTap keeps around the words adds no margin of its own. */

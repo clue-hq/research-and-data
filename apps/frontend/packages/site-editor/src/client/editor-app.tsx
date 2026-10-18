@@ -42,6 +42,7 @@ const usePuck = createUsePuck();
 const PERMISSIONS: Partial<Permissions> = { delete: false, drag: false, duplicate: false, edit: true, insert: false };
 const VIEWPORTS: Viewports = [{ height: "auto", label: "Page", width: "100%" }];
 const ELEMENT_SELECTED = "data-clue-el-selected";
+const ELEMENT_HOVERED = "data-clue-el-hovered";
 
 /** Where a selection's elements live on the canvas: its Puck item (the header and footer are items
  * too: plan 6). */
@@ -424,6 +425,39 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const prop = props ? Object.keys(props).find((key) => props[key] === src && src.startsWith("/asset-store/")) : undefined;
       if (prop) controller.requestAsset(target, componentId, prop);
     };
+    // Founder 2026-10-19: in edit mode the element a click would select is outlined (dashed) under the
+    // pointer, found exactly as the click finds it. Worked out once per frame, and only when the pointer
+    // is over another node or has moved within a section's blank space.
+    let hovered: Element | null = null;
+    let pending: PointerEvent | null = null;
+    let hoverFrame = 0;
+    const setHovered = (element: Element | null) => {
+      if (element === hovered) return;
+      hovered?.removeAttribute(ELEMENT_HOVERED);
+      hovered = element;
+      hovered?.setAttribute(ELEMENT_HOVERED, "true");
+    };
+    const updateHover = () => {
+      hoverFrame = 0;
+      const event = pending;
+      pending = null;
+      if (!event) return;
+      if (controller.getState().mode !== "edit") return setHovered(null);
+      const { action } = clickIntent(event.target, "edit");
+      if (action.kind !== "component" || !action.element) return setHovered(null);
+      const key = elementKeyAt(action.element, event.target, { x: event.clientX, y: event.clientY }, window);
+      setHovered(key ? findKeyedElement(action.element, key) : null);
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      pending = event;
+      if (!hoverFrame) hoverFrame = requestAnimationFrame(updateHover);
+    };
+    const onPointerLeave = () => {
+      pending = null;
+      setHovered(null);
+    };
+    document.addEventListener("pointermove", onPointerMove, true);
+    document.documentElement.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKeyDown, true);
     document.body.addEventListener("keydown", onKeyDownBubbling);
@@ -432,6 +466,10 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     document.addEventListener("dblclick", onDoubleClick, true);
     return () => {
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("pointermove", onPointerMove, true);
+      document.documentElement.removeEventListener("pointerleave", onPointerLeave);
+      if (hoverFrame) cancelAnimationFrame(hoverFrame);
+      setHovered(null);
       window.removeEventListener("keydown", onKeyDown, true);
       document.body.removeEventListener("keydown", onKeyDownBubbling);
       document.removeEventListener("focusout", onFocusOut, true);
