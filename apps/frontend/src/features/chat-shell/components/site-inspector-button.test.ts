@@ -45,12 +45,13 @@ function buttonBinding(overrides: Record<string, unknown> = {}): Record<string, 
 
 const order = (html: string, labels: string[]) => labels.map((label) => html.indexOf(label));
 
-test("a button shows Typography with its words, then Fill, Stroke, Layout and Link", () => {
+test("a button shows Typography, then Fill, Stroke, Layout and Link; words typed on the page get no Text box", () => {
   const html = renderedModule.exports.render(buttonBinding());
-  const at = order(html, [">Typography<", 'aria-label="Button text"', ">Fill<", ">Stroke<", ">Layout<", ">Link<", ">Layers<"]);
+  const at = order(html, [">Typography<", ">Fill<", ">Stroke<", ">Layout<", ">Link<", ">Layers<"]);
   assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
   assert.deepEqual([...at].sort((a, b) => a - b), at, "in the mockup's order");
-  assert.match(html, /value="Request the analysis"/);
+  // Founder 2026-10-19: words are changed on the page; the Text box is only for words that cannot be.
+  assert.doesNotMatch(html, /aria-label="Button text"/);
   assert.doesNotMatch(html, />Alignment</, "a button's words have no alignment of their own");
   assert.match(html, /also holds when the button is hovered or focused/);
 });
@@ -80,6 +81,8 @@ test("words copied from the seller that also appear elsewhere in the section say
     element: { ...(buttonBinding().element as object), labelSource: { kind: "replacement", find: "Book a demo", shared: true } },
   }));
   assert.match(html, /Other text in this section reads the same, so changing it changes that text too\./);
+  // A copied button's words with no slot cannot be typed on the page: the Text box is their one way.
+  assert.match(html, /aria-label="Button text"[^>]*value="Request the analysis"/);
 });
 
 // Plan 4: a box, an image and a section's own box, rendered through the real inspector.

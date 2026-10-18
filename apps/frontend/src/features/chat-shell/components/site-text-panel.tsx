@@ -125,7 +125,10 @@ export function SiteTextPanel({ binding }: { binding: SiteInspectorBinding }) {
             {binding.wordsUnavailable}
           </p>
         ) : null}
-        {label ? (
+        {/* Founder 2026-10-19: words are changed on the page. The Text row stays only for words that cannot
+            be typed there: a copied button's words with no slot (a replacement), or a note saying why
+            they cannot change at all. */}
+        {label && (element.labelSource?.kind === "replacement" || binding.labelText === null) ? (
           <InspectorField label="Text">
             {binding.labelText === null ? (
               <p className={styles.inspectorStatusNote} role="status">
