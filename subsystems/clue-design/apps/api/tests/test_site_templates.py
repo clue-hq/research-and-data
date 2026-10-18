@@ -119,6 +119,9 @@ def test_the_three_zones_are_a_grid_and_phones_keep_the_logos_and_the_line() -> 
     # Live check (Oliver): on a phone the line is the only thing beside the logos, so the 40% cap would
     # cut "Prepared for Oliver H…" with room to spare; there it takes the rest of the row.
     assert ".clue-account-line{max-width:none}" in css[css.index("@media (max-width:767px)"):]
+    # Live check (Carmel): the centre zone sized itself to the words and ran past the window; it fills
+    # the rest of the row, so a long line ends in an ellipsis inside the header's own margins.
+    assert ".clue-zone-centre{justify-self:stretch}" in css[css.index("@media (max-width:767px)"):]
 
 
 def test_the_account_line_is_plain_words_in_the_headers_own_type() -> None:
