@@ -589,3 +589,32 @@ test("review I6: two quick presses of Move up take the third stat to the top", a
   assert.equal(mounted.latest().inspector.element?.key, "stats.0");
   await mounted.unmount();
 });
+
+// Plan 5: an image's alt text typed in the panel is one save and one undo step.
+test("an image's alt text is one save and one undo step", async () => {
+  const start = startSite();
+  const hero = start.pages["/"].content.find((item) => item.props.id === "hero")!;
+  hero.props = { ...hero.props, image: "/brands/x.png" };
+  const server = fakeServer(start);
+  const mounted = await mountSiteSession(server);
+  const BOX = { fill: "", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 400 };
+  mounted.frame.attachDescriber((_target, _componentId, key) => ({
+    element: key === "image"
+      ? { key, kind: "image", label: "Image", computed: TYPO, image: { media: "img", box: BOX, fit: null, fitMatters: false, alt: "", src: "/brands/x.png" }, imageSource: { kind: "prop", prop: "image", uses: 1 }, altSource: { kind: "prop", prop: "imageAlt" } }
+      : null,
+    elements: [{ key: "image", kind: "image", label: "Image", parent: null }],
+  }));
+  mounted.frame.elementClicked("/", "hero", "image");
+  mounted.frame.componentSelected("hero", "FeatureSplit", [], { heading: "Old headline" });
+  await mounted.settle();
+  const inspector = mounted.latest().inspector;
+  assert.equal(inspector.imageAlt, "");
+  assert.deepEqual(inspector.imageReplace, { prop: "image", uses: 1 });
+  const undo = server.undo.length;
+  assert.equal(inspector.onImageAltCommit("A quiet clinic"), null);
+  await mounted.settle(12);
+  assert.equal(server.site.pages["/"].content.find((item) => item.props.id === "hero")!.props.imageAlt, "A quiet clinic");
+  assert.equal(server.undo.length, undo + 1);
+  assert.equal(mounted.latest().inspector.onImageAltCommit("x".repeat(301)), "Alt text is plain text of at most 300 characters, with no line breaks.");
+  await mounted.unmount();
+});

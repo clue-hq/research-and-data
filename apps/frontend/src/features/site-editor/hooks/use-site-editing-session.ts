@@ -22,6 +22,7 @@ import {
 } from "../model/site-frame-sync";
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { arrangeState, commitHidden, commitMove, hideState } from "../model/site-arrange";
+import { commitImageAlt, imageAltOf, imageReplaceTarget } from "../model/site-image";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
   EMPTY_ROUTE_HISTORY,
@@ -478,6 +479,23 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, load.brand, locked, post, save],
   );
+  // Plan 5: an image's alt text, the same path (one set_props, one save).
+  const commitAlt = useCallback(
+    (text: string): string | null => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return null;
+      const edit = commitImageAlt(current.site, activeSelection, text, load.brand);
+      if (!edit) return null;
+      if ("refused" in edit) return edit.refused;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return null;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
+      save(edit.site, `inspector: alt text ${activeSelection.element?.key ?? "image"}`);
+      return null;
+    },
+    [activeDocumentId, activeSelection, copy, editing, load.brand, locked, post, save],
+  );
   // Plan 4: hiding or showing a header or footer part, the same path.
   const commitHide = useCallback(
     (hidden: boolean) => {
@@ -705,6 +723,9 @@ export function useSiteEditingSession({
     onHideCommit: commitHide,
     sectionBox: activeSelection && !activeSelection.element ? (activeSelection.sectionBox ?? null) : null,
     sectionBoxOverrides: sectionBoxOverridesOf(currentSite?.site ?? null, activeSelection),
+    imageAlt: imageAltOf(currentSite?.site ?? null, activeSelection, load.brand),
+    onImageAltCommit: commitAlt,
+    imageReplace: imageReplaceTarget(activeSelection),
   };
 
   // K6-2: Publish waits for every edit on its way, so the version it ships is the one on screen.

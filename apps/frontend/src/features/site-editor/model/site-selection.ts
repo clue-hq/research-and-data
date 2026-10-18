@@ -75,6 +75,11 @@ export interface SiteInspectorBinding {
    * its outer and inner boxes (each styled through onStyleCommit with its own key). */
   sectionBox: SectionBox | null;
   sectionBoxOverrides: { outer: StyleOverride | null; inner: StyleOverride | null };
+  /** Plan 5, an image: its alt text as stored (null when the marketer cannot change it), one change
+   * (one save; a note when refused), and where Replace writes its file (null when it cannot). */
+  imageAlt: string | null;
+  onImageAltCommit: (text: string) => string | null;
+  imageReplace: { prop: string; uses: number } | null;
 }
 
 /** One committed field value → the edited site and the component's whole new props. */

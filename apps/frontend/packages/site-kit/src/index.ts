@@ -5,6 +5,7 @@
 export { brandData, type BrandAsset, type BrandData, type FontFace } from "./brand";
 export {
   cloneButtonAt,
+  cloneImageAt,
   cloneOrderOf,
   cloneLinkAt,
   fillClone,
