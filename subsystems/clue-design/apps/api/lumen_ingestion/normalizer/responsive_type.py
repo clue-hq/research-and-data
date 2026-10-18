@@ -52,6 +52,15 @@ def _source_index(role: str, anchors: TypeAnchors) -> int | None:
     return anchors.headline_index if role in _HEADLINE_ROLES else anchors.body_index
 
 
+def _own_index(role: str, anchors: TypeAnchors) -> int | None:
+    """The rendered sample a role has of its own (Garner's button, an h2), or None when its size
+    comes from the headline or the body."""
+    anchor = anchor_for_role(role, anchors)
+    if anchor is None or anchor.sample_index is None:
+        return None
+    return None if anchor.sample_index in (anchors.headline_index, anchors.body_index) else anchor.sample_index
+
+
 def responsive_type_section(
     anchors: TypeAnchors,
     evidence: BrandEvidence,
@@ -77,11 +86,23 @@ def responsive_type_section(
     read = {sample.sample_index for entry in widths for sample in entry.type_samples if sample.sample_index is not None}
     if anchors.headline_index not in read and anchors.body_index not in read:
         return None
+    title = float(desktop["type.title"]["font_size"]) if "type.title" in desktop else None
     for entry in widths:
+        drawn = {sample.sample_index for sample in entry.type_samples if sample.sample_index is not None}
         current.update({sample.sample_index: sample for sample in entry.type_samples if sample.sample_index is not None})
-        for role, style in build(_anchors_at(anchors, current)).items():
+        built = build(_anchors_at(anchors, current))
+        for role, style in built.items():
             size, line_height = style["font_size"], style["line_height"]
             was_size, was_line_height = previous[role]
+            own = _own_index(role.removeprefix("type."), anchors)
+            if own is not None and own not in drawn:
+                # Founder, 2026-10-18 (option A): its element is not drawn at this width (a button hidden
+                # below a break point), so it follows the nearest role's narrowing here — the headline's
+                # at or above the title size, else the body's — as a hand-set size does (edits.ts
+                # fontSizeCss), instead of keeping its last measured step at every narrower width.
+                reference = "type.headline" if title is not None and desktop[role]["font_size"] >= title else "type.body"
+                ratio = built[reference]["font_size"] / desktop[reference]["font_size"]
+                size, line_height = round(desktop[role]["font_size"] * ratio * 2) / 2, was_line_height
             size_moved = abs(size - was_size) >= SIZE_STEP
             line_height_moved = abs(line_height - was_line_height) >= LINE_HEIGHT_STEP
             if not (size_moved or line_height_moved):

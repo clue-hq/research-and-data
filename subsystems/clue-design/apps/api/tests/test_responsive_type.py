@@ -149,3 +149,26 @@ def test_a_remeasure_that_keeps_no_role_says_so() -> None:
     """Review finding 11: every role far from the stored kit → nothing to publish."""
     section, skipped = _remeasure(_kit(20, 40), _fresh([60, 43, 36], [18, 18, 18]))
     assert section is None and {"type.headline", "type.body"} <= set(skipped)
+
+
+# Founder, 2026-10-18 (option A): a role whose own element is not drawn at a narrower width (Garner's
+# button is hidden below 991) follows the nearest role's narrowing there — the headline's when it is
+# at or above the title size, else the body's — instead of keeping its last measured step forever.
+def test_a_role_whose_element_disappears_follows_the_nearest_role_below_that_width() -> None:
+    def row(width: int, samples: list[TypeSample]) -> TypeWidth:
+        return TypeWidth(width=width, type_samples=samples)
+
+    evidence = BrandEvidence(
+        source={"kind": "website", "url": "https://seller.example/", "captured_at": "2026-10-18T00:00:00Z"},
+        type_samples=[_sample("body", 18, 0), _sample("h1", 56, 1), _sample("button", 14, 2), _sample("h2", 40, 3)],
+        type_widths=TypeWidths(capture_width=1440, widths=[
+            row(1024, [_sample("body", 18, 0), _sample("h1", 56, 1), _sample("button", 10.5, 2), _sample("h2", 40, 3)]),
+            row(768, [_sample("body", 16, 0), _sample("h1", 40, 1)]),
+            row(390, [_sample("body", 16, 0), _sample("h1", 34, 1)]),
+        ]),
+    )
+    roles = _section(evidence)["roles"]
+    # 14 × 16/18 = 12.4 → 12.5 at 768; the body does not move at 390, so neither does the button.
+    assert roles["type.cta"] == [{"max_width": 1024, "font_size": 10.5}, {"max_width": 768, "font_size": 12.5}]
+    # The title (its own h2, 40 = the title size) follows the headline: 40 × 40/56 → 28.5, × 34/56 → 24.5.
+    assert roles["type.title"] == [{"max_width": 768, "font_size": 28.5}, {"max_width": 390, "font_size": 24.5}]
