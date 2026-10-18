@@ -214,3 +214,28 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
     )
     logo = [element for element in last_selected(page, "header")["elements"] if element["key"] == "logo"]
     assert logo and logo[0].get("hidden") is True and logo[0]["kind"] == "image", logo
+
+
+def test_after_an_undo_the_panel_gets_the_drawn_look_again(app: Any, browser_page: Any, editor_origin: str) -> None:
+    """Plan 4 live check: after an undo (the app's new copy of the site) the panel kept showing the
+    undone padding. The frame re-sends the selection once the redraw shows a different look."""
+    init = boxes_init()
+    page, frame = open_boxes(app, browser_page, editor_origin, init)
+    mark = len(received(page))
+    click_at(page, frame, CARD, 6, 6)
+    drawn = wait_selected(page, mark, "card", "card_proof")["element"]["container"]["paddingY"]
+    props = copy.deepcopy(PROOF)
+    props["_edits"] = {"card": {"padding": {"y": 90}}}
+    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 2 })", props)
+    page.wait_for_function(
+        """(start) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element && m.payload.element.container && m.payload.element.container.paddingY === 90)""",
+        arg=mark,
+        timeout=10000,
+    )
+    mark = len(received(page))
+    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 3 })", copy.deepcopy(PROOF))
+    page.wait_for_function(
+        """([start, drawn]) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element && m.payload.element.container && m.payload.element.container.paddingY === drawn)""",
+        arg=[mark, drawn],
+        timeout=10000,
+    )

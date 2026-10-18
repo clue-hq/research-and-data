@@ -644,3 +644,26 @@ test("a change in which parent an element sits under re-posts the selection", as
   h.controller.refreshSelection();
   assert.equal(count(), before + 1);
 });
+
+// Plan 4 live check: after an undo (the app's new copy of the site), the panel showed the old drawn
+// value. A look that changes after a copy arrives is posted; a look that changes on its own is not.
+test("a drawn look changed by a new copy of the site is posted again; one that changes on its own is not", async () => {
+  const h = harness();
+  let size = 48;
+  h.controller.attachDescriber((_target, _componentId, key) => ({
+    element: key === "heading" ? { key, kind: "text" as const, label: key, computed: { ...TYPO, fontSize: size } } : null,
+    elements: [{ key: "heading", kind: "text" as const, label: "heading", parent: null }],
+  }));
+  await h.controller.receive(init());
+  h.controller.elementClicked("/", "cta", "heading");
+  h.controller.componentSelected("cta", "CtaBand", [], { heading: "Hello" });
+  const sizes = () => h.posts.filter((post) => post.type === "selected").map((post) => (post.payload as { element: { computed: { fontSize: number } } | null }).element?.computed.fontSize);
+  const before = sizes().length;
+  size = 60; // an animation, say: nothing the app sent
+  h.controller.refreshSelection();
+  assert.equal(sizes().length, before, "no post for a look that changes on its own");
+  await h.controller.receive(appToFrame("set_props", { componentId: "cta", props: { heading: "Hello", id: "cta" }, route: "/", rev: 2 }, { documentId: "doc_1", nonce: NONCE }));
+  size = 32; // the undone style: the canvas redrew from the app's copy
+  h.controller.refreshSelection();
+  assert.equal(sizes().at(-1), 32, "the new drawn look reaches the panel");
+});

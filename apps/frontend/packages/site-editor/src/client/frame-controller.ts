@@ -44,11 +44,20 @@ export type ElementDescriber = (
 ) => { element: ElementSelection | null; elements: ElementSummary[]; sectionBox?: SectionBox | null };
 
 const NO_ELEMENTS: ElementDescriber = () => ({ element: null, elements: [] });
+/** How many re-describes after a new copy of the site may post a changed look (the redraw may take
+ * more than one). */
+const LOOK_WATCH = 3;
 
 /** Highlighted words the controller keeps through a redraw (plan 2). */
 export type KeptWords = { target: SiteTarget; componentId: string; key: string; words: Words };
 
 /** Which elements a description shows (keys and labels), without their computed look. */
+/** How the selected element (its computed type, box or container, its words' type) and the section's
+ * own box are drawn, as JSON, for spotting a change after a new copy of the site arrives. */
+function lookOf(element: ElementSelection | null, sectionBox: SectionBox | null | undefined): string {
+  return JSON.stringify([element?.computed ?? null, element?.box ?? null, element?.container ?? null, element?.labelElement?.computed ?? null, sectionBox ?? null]);
+}
+
 function shownElements(element: ElementSelection | null, elements: ElementSummary[]): string {
   return JSON.stringify([element?.key ?? null, elements.map((item) => [item.key, item.label, item.kind, item.parent ?? null, item.hidden ?? false])]);
 }
@@ -122,7 +131,13 @@ export class FrameController {
     shown: string;
     /** The words last posted, as JSON ("null" for none). */
     words: string;
+    /** How the element and the section's box were drawn when last posted, as JSON. */
+    look: string;
   } | null = null;
+  /** Re-describes left in which a changed look is posted: set when the app sends a new copy of the
+   * site (an undo, a redo, a save), so the panel never keeps showing an undone value; otherwise a
+   * look that changes on its own (an animation) is never posted. */
+  private lookWatch = 0;
   /** The highlighted words last seen on the canvas (plan 2), kept until the marketer clicks or types:
    * a redraw (an outside edit, a save) drops the browser's selection, but the panel goes on acting on
    * those words. */
@@ -290,7 +305,7 @@ export class FrameController {
     // Plan 4: the section's own box rides along when the section itself is selected.
     const sectionBox = element ? null : (described.sectionBox ?? null);
     this.set({ selection: { componentId, elementKey: element?.key ?? null, target } });
-    this.described = { askedKey: key, componentType, fields, shown: shownElements(element, elements), words: JSON.stringify(element?.words ?? null) };
+    this.described = { askedKey: key, componentType, fields, look: lookOf(element, sectionBox), shown: shownElements(element, elements), words: JSON.stringify(element?.words ?? null) };
     this.post("selected", { componentId, componentType, element, elements, fields, props, route: target, ...(sectionBox ? { sectionBox } : {}) });
   }
 
@@ -357,8 +372,12 @@ export class FrameController {
     const selection = this.state.selection;
     const described = this.described;
     if (this.state.mode !== "edit" || !selection || !described || !this.state.site) return;
-    const { element, elements } = this.describe(selection.target, selection.componentId, described.askedKey);
-    if (shownElements(element, elements) === described.shown) return;
+    const { element, elements, sectionBox } = this.describe(selection.target, selection.componentId, described.askedKey);
+    const watching = this.lookWatch > 0;
+    if (watching) this.lookWatch -= 1;
+    const lookChanged = watching && lookOf(element, element ? null : (sectionBox ?? null)) !== described.look;
+    if (shownElements(element, elements) === described.shown && !lookChanged) return;
+    if (lookChanged) this.lookWatch = 0;
     const props = componentProps(this.state.site, selection.target, selection.componentId) ?? {};
     this.postSelected(selection.target, selection.componentId, described.componentType, described.fields, props, described.askedKey);
   }
@@ -475,6 +494,7 @@ export class FrameController {
 
   private replaceSite(site: SiteDocument, rev: number): void {
     if (!this.state.site) return;
+    this.lookWatch = LOOK_WATCH;
     // The copy already on screen (the marketer's unsent typing included): only the revision moves.
     if (canonicalJson(site) === canonicalJson(this.state.site)) {
       this.set({ rev });
@@ -550,6 +570,7 @@ export class FrameController {
    * the next proposal carries both, from the patch's revision. */
   private applyOutsideEdit(site: SiteDocument, target: SiteTarget, rev: number): void {
     this.reproposeOver(rev);
+    this.lookWatch = LOOK_WATCH;
     if (site === this.state.site) {
       this.set({ rev });
       return;

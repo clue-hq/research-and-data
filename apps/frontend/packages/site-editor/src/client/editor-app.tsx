@@ -436,7 +436,13 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     };
     apply();
     const frame = requestAnimationFrame(settle);
-    return () => cancelAnimationFrame(frame);
+    // Once more when a slower redraw has landed: the panel then shows the look a new copy of the site
+    // (an undo) drew, not the one before it (the controller posts only when the look changed).
+    const later = setTimeout(() => controller.refreshSelection(), 250);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(later);
+    };
   }, [controller, state.selection, state.mountKey, state.site]);
 
   const shellJson = state.site?.shell ? canonicalJson(state.site.shell) : "";
