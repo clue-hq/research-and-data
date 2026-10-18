@@ -17,6 +17,7 @@ import {
 import { SiteArrangeSection, SiteHideSection } from "./site-arrange-section";
 import { SiteBoxPanel } from "./site-box-panel";
 import { SiteButtonPanel } from "./site-button-panel";
+import { SiteImagePanel } from "./site-image-panel";
 import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
 import styles from "./chat-shell.module.css";
@@ -62,15 +63,8 @@ export function SiteInspector({
             <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
           </>
         ) : binding.element?.kind === "image" ? (
-          // Plan 4 (ruling R8): an image can be moved and, in the header and footer, hidden; its own
-          // settings come with the image panel (plan 5).
-          <>
-            <p className={styles.inspectorStatusNote} role="status">
-              Image settings (replace, fit, alt text, corners) come in the next update.
-            </p>
-            <SiteArrangeSection binding={binding} key={`arrange:${binding.selectionKey}`} />
-            <SiteHideSection binding={binding} key={`hide:${binding.selectionKey}`} />
-          </>
+          // Plan 5: an image: Image (Replace), Fit, Alt text, Stroke, Arrange and Visibility.
+          <SiteImagePanel binding={binding} key={`image:${binding.selectionKey}`} renderImageField={renderImageField} />
         ) : binding.element ? (
           // Site element inspector: a selected text element is styled here; the section's content
           // fields come back when the section itself is selected. Keyed by the selection, so each

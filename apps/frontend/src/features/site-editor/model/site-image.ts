@@ -54,7 +54,7 @@ export function commitImageAlt(
     next = alt ? setAtPath(props, source.prop, alt) : { ...props };
     if (!alt) delete next[source.prop];
   } else {
-    const { [source.key]: _, ...others } = (props.alts as Record<string, string> | undefined) ?? {};
+    const others = Object.fromEntries(Object.entries((props.alts as Record<string, string> | undefined) ?? {}).filter(([key]) => key !== source.key));
     const alts = alt === capturedAlt(props, source.key, brand) ? others : { ...others, [source.key]: alt };
     next = { ...props, alts };
     if (!Object.keys(alts).length) delete next.alts;

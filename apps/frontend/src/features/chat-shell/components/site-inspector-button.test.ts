@@ -106,12 +106,15 @@ test("a fixed part says why it does not move; a hidden header part offers Shown 
   const html = renderedModule.exports.render(
     buttonBinding({
       ...plan4,
-      element: { key: "logo", kind: "image", label: "Logo", computed: TYPO },
+      element: { key: "logo", kind: "image", label: "Logo", computed: TYPO, image: { media: "img", box, fit: null, fitMatters: false, alt: "", src: "/brands/logo.png" }, imageSource: { kind: "fixed", reason: "The seller's logo comes from the brand kit." }, altSource: { kind: "prop", prop: "logoAlt" } },
       arrange: { canUp: false, canDown: false, note: "This part's place is set by the section's design; ask the agent to move it." },
       hide: { hidden: true, part: "header" },
+      imageAlt: "", onImageAltCommit: noop, imageReplace: null,
     }),
   );
-  assert.match(html, /Image settings \(replace, fit, alt text, corners\) come in the next update\./);
+  // Plan 5: the seller's logo cannot be replaced here; its alt text can.
+  assert.match(html, /The seller&#x27;s logo comes from the brand kit\./);
+  assert.match(html, /aria-label="Alt text"/);
   assert.match(html, /This part&#x27;s place is set by the section&#x27;s design/);
   assert.match(html, /aria-label="Show in the header"/);
   assert.match(html, />Hidden</);
@@ -131,4 +134,41 @@ test("a selected section shows its Content, then its own box with Width off", ()
   assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
   assert.deepEqual([...at].sort((a, b) => a - b), at);
   assert.doesNotMatch(html, /Move up/, "a section does not move here");
+});
+
+// Plan 5: the image panel.
+const picture = { media: "img", box, fit: "fill", fitMatters: true, alt: "A room", src: "/brands/x.png" };
+const imageBinding = (overrides: Record<string, unknown> = {}) =>
+  buttonBinding({
+    ...plan4,
+    element: { key: "image", kind: "image", label: "Image", computed: TYPO, image: picture, imageSource: { kind: "prop", prop: "image", uses: 1 }, altSource: { kind: "prop", prop: "imageAlt" } },
+    elementOverride: null, values: { image: "/brands/x.png" }, imageAlt: "A room", onImageAltCommit: noop, imageReplace: { prop: "image", uses: 1 },
+    ...overrides,
+  });
+
+test("an image shows Image, Fit, Alt text, Stroke, Arrange and Layers in order", () => {
+  const html = renderedModule.exports.render(imageBinding({ arrange: { canUp: true, canDown: true, note: null } }));
+  const at = order(html, [">Image<", ">Fit<", ">Alt text<", ">Stroke<", ">Arrange<", ">Layers<"]);
+  assert.ok(at.every((index) => index >= 0), JSON.stringify(at));
+  assert.deepEqual([...at].sort((a, b) => a - b), at, "in the mockup's order");
+  assert.equal((html.match(/aria-label="Color opacity"/g) ?? []).length, 1, "only Stroke's colour: an image has no Fill");
+  assert.doesNotMatch(html, /Padding top and bottom/, "an image has no Layout");
+  assert.match(html, /value="A room"/);
+});
+
+test("fit is off with its note when the shape does not change it; a shared picture says how many it changes", () => {
+  const html = renderedModule.exports.render(imageBinding({ element: { key: "image", kind: "image", label: "Image", computed: TYPO, image: { ...picture, fitMatters: false }, imageSource: { kind: "slot", slot: "hero", uses: 2 }, altSource: { kind: "clone", key: "0.1" } }, imageReplace: { prop: "slots.hero", uses: 2 } }));
+  assert.match(html, /This image is shown at its own shape, so Fill and Fit look the same here\./);
+  assert.match(html, /This picture appears 2 times on this section; replacing it changes all of them\./);
+});
+
+test("a video shows its notes for Replace and Alt text, and keeps Fit and Stroke", () => {
+  const html = renderedModule.exports.render(imageBinding({
+    element: { key: "0.3", kind: "image", label: "Image", computed: TYPO, image: { ...picture, media: "video" }, imageSource: { kind: "fixed", reason: "Ask the agent to change a video." }, altSource: { kind: "fixed", reason: "Videos have no alt text; the agent can describe one in the words beside it." } },
+    imageAlt: null, imageReplace: null,
+  }));
+  assert.match(html, /Ask the agent to change a video\./);
+  assert.match(html, /Videos have no alt text/);
+  assert.match(html, />Fit</);
+  assert.match(html, />Stroke</);
 });

@@ -69,7 +69,7 @@ function refusalNote(change: BoxPanelChange): string {
  * whole new override, written by the session as one save. While the agent-run lock holds, everything is
  * disabled.
  */
-export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding; mode: "button" | "box" | "section" }) {
+export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding; mode: "button" | "box" | "section" | "image" }) {
   const targets = boxTargets({
     element: mode === "section" ? null : binding.element,
     elementOverride: binding.elementOverride,
@@ -132,11 +132,14 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
     topLeft: values.corners[0],
     topRight: values.corners[1],
   };
-  const isBox = mode !== "button";
+  // An image (plan 5, ruling R7) takes only Stroke; a button no gap or arrange.
+  const isBox = mode === "box" || mode === "section";
+  const image = mode === "image";
   const widthOff = binding.disabled || layout.widthNote !== null;
 
   return (
     <fieldset disabled={binding.disabled} style={{ display: "contents" }}>
+      {image ? null : (
       <InspectorSection label="Fill" onOpenChange={setFillOpen} open={fillOpen}>
         <InspectorField label="Color">
           <ColorControl
@@ -156,6 +159,7 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
         ) : null}
         <Note note={note} section="fill" />
       </InspectorSection>
+      )}
       <InspectorSection label="Stroke" onOpenChange={setStrokeOpen} open={strokeOpen}>
         <InspectorField label="Color">
           <ColorControl
@@ -214,6 +218,7 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
         ) : null}
         <Note note={note} section="stroke" />
       </InspectorSection>
+      {image ? null : (
       <InspectorSection label="Layout" onOpenChange={setLayoutOpen} open={layoutOpen}>
         <div className={styles.fieldGrid}>
           <InspectorField label="Padding Y">
@@ -279,6 +284,7 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
         ) : null}
         <Note note={note} section="layout" />
       </InspectorSection>
+      )}
       {isBox ? (
         <SiteArrangeSection binding={binding} order={mode === "box"}>
           <InspectorField label="Content alignment">

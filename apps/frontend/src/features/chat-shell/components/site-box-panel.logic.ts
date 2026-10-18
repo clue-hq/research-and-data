@@ -66,14 +66,15 @@ export type BoxTarget = { key: string; override: StyleOverride | null; box: Comp
  * Layout on itself; a section's own box writes Fill and Stroke on its outer box and Layout on its inner
  * box, with Width disabled (`widthNote`). Null when the selection has no box (text, an image). */
 export function boxTargets(input: {
-  element: Pick<ElementSelection, "key" | "kind" | "container" | "box"> | null;
+  element: Pick<ElementSelection, "key" | "kind" | "container" | "box" | "image"> | null;
   elementOverride: StyleOverride | null;
   sectionBox: SectionBox | null;
   sectionBoxOverrides: { outer: StyleOverride | null; inner: StyleOverride | null };
 }): { paint: BoxTarget; layout: BoxTarget & { widthNote: string | null } } | null {
   const { element } = input;
   if (element) {
-    const box = element.kind === "container" ? element.container : element.kind === "button" ? element.box : null;
+    // Plan 5: an image's Stroke is drawn on the image itself.
+    const box = element.kind === "container" ? element.container : element.kind === "button" ? element.box : element.kind === "image" ? element.image?.box : null;
     if (!box) return null;
     const target = { box, key: element.key, override: input.elementOverride };
     return { layout: { ...target, widthNote: null }, paint: target };
