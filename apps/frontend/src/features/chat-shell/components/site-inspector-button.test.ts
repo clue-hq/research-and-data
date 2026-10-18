@@ -82,7 +82,7 @@ test("words copied from the seller that also appear elsewhere in the section say
 
 // Plan 4: a box, an image and a section's own box, rendered through the real inspector.
 const container = { fill: "#FFFFFF", borderColor: "", borderWidth: 0, radius: [12, 12, 12, 12], paddingY: 24, paddingX: 32, width: 480, gap: 0, layout: "text", contentAlign: "start", name: "Card" };
-const plan4 = { arrange: null, onMove: noop, hide: null, onHideCommit: noop, sectionBox: null, sectionBoxOverrides: { inner: null, outer: null } };
+const plan4 = { arrange: null, onMove: noop, hide: null, onHideCommit: noop, headerPlacement: null, onHeaderPlacementCommit: noop, sectionBox: null, sectionBoxOverrides: { inner: null, outer: null } };
 
 test("a box shows Fill, Stroke, Layout with its gap, and Arrange with Move up/down and content alignment", () => {
   const html = renderedModule.exports.render(

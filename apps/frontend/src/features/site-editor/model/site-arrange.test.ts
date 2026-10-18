@@ -10,6 +10,12 @@ import { FIXED_MOVE, arrangeState, commitHidden, commitMove, hideState, moveWrit
 const site = (content: { type: string; props: Record<string, unknown> }[], shell: object | null = null) =>
   ({ id: "doc", title: "A", theme: {}, agent_sections: {}, shell, pages: { "/": { root: { props: { title: "Home" } }, content } } }) as unknown as SiteDocument;
 
+/** Plan 6: the header and footer are section entries. */
+const shellOf = (header: Record<string, unknown>, type = "SiteHeader") => ({
+  header: { type, props: { id: "header", ...header } },
+  footer: { type: "SiteFooter", props: { id: "footer", legal: "", privacyHref: "", termsHref: "" } },
+});
+
 const stats = () =>
   site([
     {
@@ -42,15 +48,18 @@ test("remapItemKeys renames only whole keys under the two items (stats.1 never t
   assert.deepEqual(remapItemKeys(props, "stats", 0, 1)._edits, { "stats.0": { gap: 4 }, "stats.10": { gap: 8 }, "stats.1~2": { fontWeight: 700 }, x: { order: ["stats.1", "stats.0"] } });
 });
 
-test("the header's menu link moves by reordering nav; its new-tab flag moves with it", () => {
-  const withNav = site([], { header: { id: "header", preparedFor: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/", nav: [{ label: "A", href: "/a" }, { label: "B", href: "/b", newTab: true }], _edits: { "nav.1": { fontWeight: 700 } } }, footer: { id: "footer", legal: "", privacyHref: "", termsHref: "" } });
-  const header = { componentId: "header", componentType: "SiteHeader", target: "shell" };
-  const arrange = { item: "nav.1", parent: "nav", siblings: ["nav.0", "nav.1"] };
-  assert.deepEqual(moveWrite(withNav, header, arrange), { kind: "array", prop: "nav" });
-  const moved = commitMove(withNav, header, arrange, "up")!;
-  const props = componentProps(moved.site, "shell", "header")!;
-  assert.deepEqual(props.nav, [{ label: "B", href: "/b", newTab: true }, { label: "A", href: "/a" }]);
-  assert.deepEqual(props._edits, { "nav.0": { fontWeight: 700 } });
+// Plan 6 (ruling R11): the header's menu items move through `order` (they are keyed by page); a
+// template header orders like any copied section; an agent's header is fixed, as on a page.
+test("moveWrite gives order for header entries of type ClonedSection and SiteHeader, and fixed for an agent's header", () => {
+  const arrange = { item: "menu.team", parent: "menu", siblings: ["menu._home", "menu.team"] };
+  const ours = site([], shellOf({ accountLine: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" }));
+  assert.deepEqual(moveWrite(ours, { componentId: "header", componentType: "SiteHeader", target: "shell" }, arrange), { kind: "order" });
+  const moved = commitMove(ours, { componentId: "header", componentType: "SiteHeader", target: "shell" }, arrange, "up")!;
+  assert.deepEqual(componentProps(moved.site, "shell", "header")!._edits, { menu: { order: ["menu.team", "menu._home"] } });
+  const template = site([], shellOf({ fragmentId: clone.id, slots: {}, replacements: [], links: [] }, "ClonedSection"));
+  assert.deepEqual(moveWrite(template, { componentId: "header", componentType: "ClonedSection", target: "shell" }, { item: "0.1", parent: "0", siblings: ["0.0", "0.1"] }), { kind: "order" });
+  const agent = site([], shellOf({ surface: "page" }, "SiteHeaderAcme"));
+  assert.deepEqual(moveWrite(agent, { componentId: "header", componentType: "SiteHeaderAcme", target: "shell" }, { item: "a", parent: "row", siblings: ["a", "b"] }), { kind: "fixed", reason: FIXED_MOVE });
 });
 
 const clone: Clone = {
@@ -89,7 +98,7 @@ test("ends: the first cannot move up, the last cannot move down", () => {
 });
 
 test("hide and show a header logo; showing restores the stored header exactly; a page section offers no hide", () => {
-  const start = site([], { header: { id: "header", preparedFor: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/", _edits: { logo: { borderWidth: 1 } } }, footer: { id: "footer", legal: "", privacyHref: "", termsHref: "" } });
+  const start = site([], shellOf({ accountLine: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/", _edits: { logo: { borderWidth: 1 } } }));
   const header = { componentId: "header", target: "shell" };
   const hidden = commitHidden(start, header, "logo", true)!;
   assert.deepEqual(componentProps(hidden.site, "shell", "header")!._edits, { logo: { borderWidth: 1, hidden: true } });
@@ -102,9 +111,9 @@ test("hide and show a header logo; showing restores the stored header exactly; a
 // End-of-plan review I1 and I6: the selection stays on the element the marketer selected (not the
 // wrapper the move climbed to), and a second quick press builds on the first.
 test("review I1: a move through a wrapper keeps the selected element's own key; an array move renames it", () => {
-  const shell = site([], { header: { id: "header", preparedFor: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" }, footer: { id: "footer", legal: "", privacyHref: "", termsHref: "" } });
+  const shell = site([], shellOf({ accountLine: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" }));
   const header = { componentId: "header", componentType: "SiteHeader", target: "shell" };
-  const moved = commitMove(shell, header, { item: "ctaArea", parent: "actions", siblings: ["nav", "ctaArea"] }, "up", null, "cta")!;
+  const moved = commitMove(shell, header, { item: "ctaArea", parent: "actions", siblings: ["menu", "ctaArea"] }, "up", null, "cta")!;
   assert.equal(moved.key, "cta", "still the button, not its area");
   const inside = commitMove(stats(), proof, statArrange, "up", null, "stats.1.value")!;
   assert.equal(inside.key, "stats.0.value");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import { pageMenuLink } from "@clue/site-kit";
 import { test } from "node:test";
-import { componentProps } from "@clue/site-kit/editor-site";
 import { SiteDocumentSchema } from "@clue/site-kit/site-document";
 import { linkPatch, linkRowState, sitePages } from "./site-link-row.logic";
 
@@ -19,7 +19,10 @@ const site = SiteDocumentSchema.parse({
     },
     "/analysis": { root: { props: { title: "The analysis" } }, content: [] },
   },
-  shell: { header: { id: "header", preparedFor: "SCSD", nav: [{ label: "Analysis", href: "/analysis" }] }, footer: { id: "footer", legal: "©" } },
+  shell: {
+    header: { type: "SiteHeader", props: { id: "header", accountLine: "SCSD", ctaLabel: "Go", ctaHref: "/", menuExtra: [{ label: "Pricing", href: "https://seller.example/pricing" }] } },
+    footer: { type: "SiteFooter", props: { id: "footer", legal: "©" } },
+  },
   agent_sections: {},
 });
 type Sel = NonNullable<Parameters<typeof linkRowState>[1]>;
@@ -38,10 +41,6 @@ test("an own link shows its address and new tab from the app's copy, and is chan
   assert.ok(edit && "props" in edit);
   assert.equal(edit.props.linkHref, "/analysis");
   assert.equal(edit.props.linkNewTab, true);
-  const nav = sel("header", { key: "nav.0", link: { source: { kind: "prop", href: "nav.0.href", newTab: "nav.0.newTab" } } }, "shell", "SiteHeader");
-  const navEdit = linkPatch(site, nav, { href: "https://garner.example/x", newTab: false });
-  assert.ok(navEdit && "props" in navEdit);
-  assert.deepEqual(componentProps(navEdit.site, "shell", "header")?.nav, [{ label: "Analysis", href: "https://garner.example/x" }]);
 });
 
 test("words in rich text: no link yet offers to make one; a link in them is edited whole; removing unwraps it", () => {
@@ -92,9 +91,11 @@ test("where no link can be made the row says why", () => {
     kind: "none",
     reason: "This text is copied from the seller's page and has no slot, so it cannot become a link.",
   });
-  assert.deepEqual(linkRowState(site, sel("header", { key: "preparedFor" }, "shell", "SiteHeader")), {
+  // Plan 6 (ruling R11): the header's text is like any section's; a page menu item says why.
+  assert.deepEqual(linkRowState(site, sel("header", { key: "divider" }, "shell", "SiteHeader")), { kind: "none", reason: "This text cannot become a link." });
+  assert.deepEqual(linkRowState(site, sel("header", { key: "menu.analysis", link: { source: { kind: "fixed", reason: pageMenuLink("Analysis") } } }, "shell", "SiteHeader")), {
     kind: "none",
-    reason: "Text in the header and footer cannot become a link yet.",
+    reason: "This link opens the site's Analysis page; the menu follows the site's pages.",
   });
   assert.deepEqual(linkRowState(site, sel("proof", { key: "cta", link: { source: { kind: "fixed", reason: "The agent's section sets this link; ask the agent to change it." } } }, "/", "Probe")), {
     kind: "none",
@@ -134,4 +135,13 @@ test("a copied button's new tab counts a key on its words too, and Same tab clea
   const same = linkPatch(withWordsKey.site, button, { href: "/analysis", newTab: false });
   assert.ok(same && "props" in same);
   assert.equal(same.props.newTab, undefined, "Same tab removes the words' key as well");
+});
+
+// Plan 6 (ruling R8): an extra menu link is edited where it lives, in menuExtra.
+test("an extra menu link edits menuExtra", () => {
+  const extra = sel("header", { key: "menu._0", link: { source: { kind: "prop", href: "menuExtra.0.href", newTab: "menuExtra.0.newTab" }, href: "https://seller.example/pricing" } }, "shell", "SiteHeader");
+  assert.deepEqual(linkRowState(site, extra), { href: "https://seller.example/pricing", kind: "link", newTab: false, removable: false, shared: false });
+  const patched = linkPatch(site, extra, { href: "https://seller.example/plans", newTab: true });
+  assert.ok(patched && "props" in patched);
+  assert.deepEqual((patched as unknown as { props: { menuExtra: unknown } }).props.menuExtra, [{ label: "Pricing", href: "https://seller.example/plans", newTab: true }]);
 });

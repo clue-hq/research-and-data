@@ -14,7 +14,10 @@ const brand = { clones: { [clone.id]: clone } } as never;
 const site = () =>
   ({
     id: "doc", title: "A", theme: {}, agent_sections: {},
-    shell: { header: { id: "header", preparedFor: "C", accountLogo: "/brands/c.png", ctaLabel: "Go", ctaHref: "/" }, footer: { id: "footer", legal: "©", privacyHref: "", termsHref: "" } },
+    shell: {
+      header: { type: "SiteHeader", props: { id: "header", accountLine: "C", accountLogo: "/brands/c.png", ctaLabel: "Go", ctaHref: "/" } },
+      footer: { type: "SiteFooter", props: { id: "footer", legal: "©", privacyHref: "", termsHref: "" } },
+    },
     pages: { "/": { root: { props: { title: "Home" } }, content: [
       { type: "FeatureSplit", props: { id: "f", heading: "H", body: "B", image: "/brands/x.png" } },
       { type: "ClonedSection", props: { id: "c", fragmentId: clone.id, slots: {}, replacements: [], links: [] } },
@@ -64,4 +67,13 @@ test("Replace targets the image prop, the header's account logo, a clone slot an
   assert.deepEqual(imageReplaceTarget(copied), { prop: "slots.hero", uses: 2 });
   assert.deepEqual(imageReplaceTarget({ ...feature, element: { ...(feature.element as object), imageSource: { kind: "prop", prop: "photo", uses: 1 } } as never }), { prop: "photo", uses: 1 });
   assert.equal(imageReplaceTarget({ ...feature, element: { ...(feature.element as object), imageSource: { kind: "fixed", reason: "brand kit" } } as never }), null);
+});
+
+// Plan 6 (ruling R11): the seller's logo in the header is replaced through its `logo` prop.
+test("the header's logo replaces through its prop", () => {
+  const logo = { componentId: "header", target: "shell", element: { key: "logo", altSource: { kind: "prop", prop: "logoAlt" }, image: { alt: "" }, imageSource: { kind: "prop", prop: "logo", uses: 1 } } as never };
+  assert.deepEqual(imageReplaceTarget(logo), { prop: "logo", uses: 1 });
+  const written = commitImageAlt(site(), logo, "Garner Health", brand)!;
+  assert.ok(!("refused" in written));
+  assert.equal(("site" in written ? written.site : null)!.shell!.header.props.logoAlt, "Garner Health");
 });

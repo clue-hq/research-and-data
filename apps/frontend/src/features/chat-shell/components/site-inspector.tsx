@@ -15,6 +15,7 @@ import {
   InspectorTextArea,
 } from "./inspector-primitives";
 import { SiteArrangeSection, SiteHideSection } from "./site-arrange-section";
+import { SiteHeaderPlacement } from "./site-header-placement";
 import { SiteBoxPanel } from "./site-box-panel";
 import { SiteButtonPanel } from "./site-button-panel";
 import { SiteImagePanel } from "./site-image-panel";
@@ -104,6 +105,8 @@ export function SiteInspector({
             </InspectorSection>
             {/* Plan 4 (rulings R1, R2): the section's own box, under its words. */}
             {binding.sectionBox ? <SiteBoxPanel binding={binding} key={`section:${binding.selectionKey}`} mode="section" /> : null}
+            {/* Plan 6 (ruling R12): the header's own placement, when the header itself is selected. */}
+            <SiteHeaderPlacement binding={binding} key={`header:${binding.selectionKey}`} />
           </>
         ) : null}
         <InspectorSection label="Layers" onOpenChange={setLayersOpen} open={layersOpen}>

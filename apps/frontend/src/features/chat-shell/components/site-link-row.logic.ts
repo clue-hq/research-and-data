@@ -66,7 +66,6 @@ export function linkRowState(site: SiteDocument | null, selection: LinkSelection
     return { href: entry?.replace ?? element.link?.href ?? source.find, kind: "link", newTab, removable: false, shared: source.shared };
   }
   if (source?.kind === "fixed") return { kind: "none", reason: source.reason };
-  if (selection.target === "shell") return { kind: "none", reason: "Text in the header and footer cannot become a link yet." };
   if (selection.componentType === "ClonedSection") {
     return { kind: "none", reason: "This text is copied from the seller's page and has no slot, so it cannot become a link." };
   }

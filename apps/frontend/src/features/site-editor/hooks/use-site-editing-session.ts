@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { brandColorChoices, brandFontFamilies, libraryFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
 import type { Arrange, FrameToAppMessage } from "@clue/site-kit/editor-protocol";
 import { linkPatch, linkRowState, sitePages, type LinkChange } from "@/features/chat-shell/components/site-link-row.logic";
-import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
+import { componentEntry, componentProps, getAtPath, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
@@ -22,6 +22,7 @@ import {
 } from "../model/site-frame-sync";
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { arrangeState, commitHidden, commitMove, hideState } from "../model/site-arrange";
+import { commitHeaderPlacement, headerPlacementState } from "../model/site-shell";
 import { commitImageAlt, imageAltOf, imageReplaceTarget } from "../model/site-image";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
@@ -512,6 +513,21 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, activeSelection, copy, editing, locked, post, save],
   );
+  // Plan 6: the header's placement (sticky, over the first section), the same path.
+  const commitPlacement = useCallback(
+    (which: "sticky" | "overlay", on: boolean) => {
+      const current = copy.get();
+      if (!activeSelection || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitHeaderPlacement(current.site, which, on);
+      if (!edit) return;
+      const rev = copy.edit(current.documentId, edit.site);
+      if (rev === null) return;
+      sent.current = { ...sent.current, rev };
+      post("set_props", { componentId: "header", props: edit.props, rev, route: "shell" }, current.documentId);
+      save(edit.site, `inspector: header ${which} ${on ? "on" : "off"}`);
+    },
+    [activeDocumentId, activeSelection, copy, editing, locked, post, save],
+  );
   const palette = useMemo(
     () => (load.brand ? sitePalette(load.brand, brandColorChoices) : []),
     [load.brand],
@@ -587,8 +603,9 @@ export function useSiteEditingSession({
     annotateRef.current = ({ componentId, geometry, route: target }) => {
       if (!acceptsFrameEdits({ editing, locked }) || !currentSite) return;
       const shellPart = target === "shell" ? componentId : null;
-      const item = shellPart ? null : pageFor(currentSite.site, target)?.content.find((entry) => entry.props.id === componentId);
-      const componentType = shellPart ? (shellPart === "header" ? "SiteHeader" : "SiteFooter") : (item?.type ?? "Section");
+      // Plan 6: the header and footer are sections of any type, named for their place.
+      const item = componentEntry(currentSite.site, target, componentId);
+      const componentType = item?.type ?? "Section";
       const name = shellPart
         ? shellPart === "header" ? "Header" : "Footer"
         : componentLabel(componentType, item?.props ?? {}, cloneLabels);
@@ -721,6 +738,8 @@ export function useSiteEditingSession({
     onMove: commitMoveCb,
     hide: hideState(currentSite?.site ?? null, activeSelection),
     onHideCommit: commitHide,
+    headerPlacement: headerPlacementState(currentSite?.site ?? null, activeSelection),
+    onHeaderPlacementCommit: commitPlacement,
     sectionBox: activeSelection && !activeSelection.element ? (activeSelection.sectionBox ?? null) : null,
     sectionBoxOverrides: sectionBoxOverridesOf(currentSite?.site ?? null, activeSelection),
     imageAlt: imageAltOf(currentSite?.site ?? null, activeSelection, load.brand),

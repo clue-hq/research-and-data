@@ -18,7 +18,9 @@ const ITEM = /^(.+)\.(\d+)$/;
 
 /** Where a move of this element is written, decided from the stored site (ruling R5): its array prop
  * (`<prop>.<n>` among `<prop>.<m>` siblings, `<prop>` an array), else the parent's `order` (a copied
- * section, the header or footer), else nowhere (our fixed layouts, an agent's plain layout). */
+ * section, our header or footer), else nowhere (our fixed layouts, an agent's plain layout). */
+const ORDERED_TYPES = new Set(["ClonedSection", "SiteHeader", "SiteFooter"]);
+
 export function moveWrite(site: SiteDocument, section: Section, arrange: Arrange): MoveWrite {
   const props = componentProps(site, section.target, section.componentId);
   const item = ITEM.exec(arrange.item);
@@ -32,7 +34,9 @@ export function moveWrite(site: SiteDocument, section: Section, arrange: Arrange
     };
     if (Array.isArray(list) && arrange.siblings.every(inList)) return { kind: "array", prop };
   }
-  if (section.target === SHELL_TARGET || section.componentType === "ClonedSection") return { kind: "order" };
+  // Drawn markup that applies `order`: a copied section, and our header and footer (plan 6: the header
+  // may be any section now, so the type decides, not the place).
+  if (ORDERED_TYPES.has(section.componentType)) return { kind: "order" };
   return { kind: "fixed", reason: FIXED_MOVE };
 }
 

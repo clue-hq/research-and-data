@@ -8,7 +8,6 @@ import {
   pageFor,
   withAssetAt,
   withComponentProps,
-  withPage,
 } from "@clue/site-kit/editor-site";
 import { SHELL_TARGET, isShellId, type SectionLink, type SiteDocument, type SitePage, type SiteTarget } from "@clue/site-kit/site-document";
 import type { LoadedSection } from "./sections";

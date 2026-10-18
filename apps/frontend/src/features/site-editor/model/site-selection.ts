@@ -71,6 +71,10 @@ export interface SiteInspectorBinding {
   /** Plan 4: Hide for a header or footer part (null for anything else), and one change (one save). */
   hide: { hidden: boolean; part: "header" | "footer" } | null;
   onHideCommit: (hidden: boolean) => void;
+  /** Plan 6 (rulings R10, R12): the header's own placement when the header itself is selected (null
+   * otherwise), and one change (one save). */
+  headerPlacement: { sticky: boolean; overlay: boolean } | null;
+  onHeaderPlacementCommit: (which: "sticky" | "overlay", on: boolean) => void;
   /** Plan 4: the section's own box when the section is selected (ruling R2), and the manual styling of
    * its outer and inner boxes (each styled through onStyleCommit with its own key). */
   sectionBox: SectionBox | null;
@@ -202,7 +206,6 @@ export const STALE_WORDS = "The text changed. Highlight the words again.";
 export function wordsUnavailableReason(selection: { target: string; componentType: string; element: ElementSelection | null } | null): string | null {
   const element = selection?.element;
   if (!selection || !element?.words || element.rich) return null;
-  if (selection.target === "shell") return "Words in the header and footer are styled as a whole for now: changes here apply to the whole text.";
   if (selection.componentType === "ClonedSection") {
     return "This text is copied from the seller's page and has no slot, so it is styled as a whole: changes here apply to the whole text.";
   }

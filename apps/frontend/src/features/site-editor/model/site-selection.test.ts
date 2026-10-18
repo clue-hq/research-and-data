@@ -15,7 +15,10 @@ const site = SiteDocumentSchema.parse({
     },
     "/analysis": { root: { props: {} }, content: [] },
   },
-  shell: { header: { id: "header", preparedFor: "SCSD" }, footer: { id: "footer", legal: "©" } },
+  shell: {
+    header: { type: "SiteHeader", props: { id: "header", accountLine: "SCSD", ctaLabel: "Go", ctaHref: "/" } },
+    footer: { type: "SiteFooter", props: { id: "footer", legal: "©" } },
+  },
   agent_sections: {},
 });
 
@@ -32,8 +35,9 @@ test("a repeating item's field commits at its index", () => {
 });
 
 test("a header field commits through the shell target", () => {
-  const edit = commitFieldEdit(site, { componentId: "header", target: "shell" }, "preparedFor", "Syracuse City School District");
-  assert.equal(componentProps(edit!.site, "shell", "header")?.preparedFor, "Syracuse City School District");
+  const edit = commitFieldEdit(site, { componentId: "header", target: "shell" }, "accountLine", "Syracuse City School District");
+  assert.equal(componentProps(edit!.site, "shell", "header")?.accountLine, "Syracuse City School District");
+  assert.equal(edit!.site.shell!.header.type, "SiteHeader", "the entry keeps its type");
 });
 
 test("a commit for a section that is gone changes nothing", () => {
@@ -65,8 +69,8 @@ test("clearing the last property removes the element's entry, and an empty _edit
 });
 
 test("a header style commits through the shell target", () => {
-  const edit = commitStyleEdit(site, { componentId: "header", target: "shell" }, "preparedFor", { color: { token: "text.primary" } });
-  assert.deepEqual(componentProps(edit!.site, "shell", "header")?._edits, { preparedFor: { color: { token: "text.primary" } } });
+  const edit = commitStyleEdit(site, { componentId: "header", target: "shell" }, "accountLine", { color: { token: "text.primary" } });
+  assert.deepEqual(componentProps(edit!.site, "shell", "header")?._edits, { accountLine: { color: { token: "text.primary" } } });
 });
 
 test("a style commit that changes nothing, or for a section that is gone, returns null", () => {
@@ -135,7 +139,9 @@ test("words highlighted where they cannot be styled on their own say why", async
   const { wordsUnavailableReason } = await import("./site-selection");
   const element = { key: "0.1", kind: "text" as const, label: "x", computed: TYPO, rich: null, words: { start: 0, end: 1, count: 1, text: "x", computed: TYPO } };
   assert.match(wordsUnavailableReason({ target: "/", componentType: "ClonedSection", element })!, /no slot/);
-  assert.match(wordsUnavailableReason({ target: "shell", componentType: "SiteHeader", element })!, /header and footer/);
+  // Plan 6 (ruling R11): the header's and footer's words are rich like any section's.
+  assert.equal(wordsUnavailableReason({ target: "shell", componentType: "ClonedSection", element: { ...element, rich: { prop: "slots.account_line" } } }), null);
+  assert.doesNotMatch(wordsUnavailableReason({ target: "shell", componentType: "SiteHeader", element }) ?? "", /header and footer/);
   assert.equal(wordsUnavailableReason({ target: "/", componentType: "ClonedSection", element: { ...element, words: null } }), null, "nothing highlighted");
   assert.equal(wordsUnavailableReason({ target: "/", componentType: "StatsBand", element: { ...element, rich: { prop: "heading" } } }), null);
 });

@@ -18,7 +18,11 @@ const site = SiteDocumentSchema.parse({
       ],
     },
   },
-  shell: { header: { id: "header" }, footer: { id: "footer" } },
+  // Plan 6: the header is a template (a copied section), the footer the fallback.
+  shell: {
+    header: { type: "ClonedSection", props: { id: "header", fragmentId: "frag_95041c54da629d99" } },
+    footer: { type: "SiteFooter", props: { id: "footer", legal: "©" } },
+  },
   agent_sections: { AnalysisSteps: "a".repeat(64) },
 });
 const cloneLabels = { frag_95041c54da629d99: "Hero — Top Providers. Bottom line results." };
