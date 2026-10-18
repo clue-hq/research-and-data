@@ -32,9 +32,20 @@ export const SitePageSchema = z.looseObject({
   zones: z.record(z.string(), z.unknown()).optional(),
 });
 
+/** Plan 6 (ruling R1): the header and footer are sections, stored once per site under these ids. */
+export const SHELL_IDS = ["header", "footer"] as const;
+export type ShellId = (typeof SHELL_IDS)[number];
+export const isShellId = (value: string): value is ShellId => (SHELL_IDS as readonly string[]).includes(value);
+
+/** One of the two: a section entry like a page's, whose id is its place. */
+export const ShellEntrySchema = z.looseObject({
+  type: z.string().min(1).max(200),
+  props: z.looseObject({ id: z.enum(SHELL_IDS) }),
+});
+
 export const SiteShellSchema = z.looseObject({
-  header: z.record(z.string(), z.unknown()),
-  footer: z.record(z.string(), z.unknown()),
+  header: ShellEntrySchema,
+  footer: ShellEntrySchema,
 });
 
 export const SiteDocumentSchema = z.looseObject({
@@ -44,12 +55,15 @@ export const SiteDocumentSchema = z.looseObject({
   pages: z
     .record(SiteRouteSchema, SitePageSchema)
     .refine((pages) => Object.hasOwn(pages, "/"), { message: "a site always has a home page at /" }),
-  shell: SiteShellSchema.nullable(),
+  // An old-shape shell (before plan 6) opens as no shell rather than refusing the whole site: it draws
+  // nothing until the agent rewrites shell.json (ruling R1; there is no migration).
+  shell: z.preprocess((value) => (SiteShellSchema.safeParse(value).success ? value : null), SiteShellSchema.nullable()),
   agent_sections: z.record(AgentSectionNameSchema, SectionDigestSchema).default({}),
 });
 
 export type SiteComponent = z.infer<typeof SiteComponentSchema>;
 export type SitePage = z.infer<typeof SitePageSchema>;
+export type ShellEntry = z.infer<typeof ShellEntrySchema>;
 export type SiteShell = z.infer<typeof SiteShellSchema>;
 export type SiteDocument = z.infer<typeof SiteDocumentSchema>;
 

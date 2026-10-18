@@ -55,7 +55,7 @@ const BRANDS: [string, () => BrandData | null][] = [
 
 type Item = { type: string; props: Record<string, unknown> };
 type Page = { root: { props: { title: string } }; content: Item[] };
-type Shell = { header: Record<string, unknown>; footer: Record<string, unknown> };
+type Shell = { header: Item; footer: Item };
 type Site = { pages: Record<string, Page>; shell: Shell; looks: string[]; surfaces: string[] };
 
 /** Every one of our section types on every surface the brand has, one page per button look (the
@@ -88,11 +88,11 @@ function fullSite(brand: BrandData): Site {
     pages[route] = { root: { props: { title: route } }, content };
   });
   const shell: Shell = {
-    header: {
-      preparedFor: "Acme Health", accountLogo: "", ctaLabel: "Book a demo", ctaHref: "/", ctaLook: looks[1] ?? "",
-      nav: looks.slice(1, 7).map((_, i) => ({ label: `Look ${i + 1}`, href: `/look-${i + 1}` })),
-    },
-    footer: { legal: "© The seller", privacyHref: "/", termsHref: "/" },
+    header: { type: "SiteHeader", props: {
+      id: "header", accountLine: "Prepared for Acme Health", accountLogo: "", ctaLabel: "Book a demo", ctaHref: "/", ctaLook: looks[1] ?? "",
+      menuExtra: looks.slice(1, 7).map((_, i) => ({ label: `Look ${i + 1}`, href: `/look-${i + 1}` })),
+    } },
+    footer: { type: "SiteFooter", props: { id: "footer", legal: "© The seller", privacyHref: "/", termsHref: "/" } },
   };
   return { pages, shell, looks, surfaces };
 }
@@ -103,7 +103,7 @@ type AnyConfig = { root: Renderable; components: Record<string, Renderable> };
 /** Every page through the published config's root (the shell around it), and the shell's own two
  * components through the shell-mode config. */
 function renderSite(brand: BrandData, site: Site): string {
-  const config = makeConfig(brand, { cloneHtml: fillClone, shell: site.shell as never, basePath: "/s/a9" }) as unknown as AnyConfig;
+  const config = makeConfig(brand, { cloneHtml: fillClone, shell: { header: site.shell.header.props, footer: site.shell.footer.props } as never, basePath: "/s/a9" }) as unknown as AnyConfig;
   const pages = Object.values(site.pages).map((page) => renderToStaticMarkup(
     <>{config.root.render({
       title: page.root.props.title,
@@ -115,8 +115,8 @@ function renderSite(brand: BrandData, site: Site): string {
   const shellConfig = makeConfig(brand, { cloneHtml: fillClone, mode: "shell" }) as unknown as AnyConfig;
   const shell = renderToStaticMarkup(
     <>{shellConfig.root.render({ children: <>
-      {shellConfig.components.SiteHeader.render(site.shell.header)}
-      {shellConfig.components.SiteFooter.render(site.shell.footer)}
+      {shellConfig.components.SiteHeader.render(site.shell.header.props)}
+      {shellConfig.components.SiteFooter.render(site.shell.footer.props)}
     </> })}</>,
   );
   return [...pages, shell].join("\n");
@@ -312,8 +312,8 @@ for (const [name, load] of BRANDS) {
       ...cards.map((cardLook, i) => ({ type: "Promo", props: { id: `card-${i}`, surface: "page", cardLook } })),
     ] } };
     const shell: Shell = {
-      header: { preparedFor: "Acme", accountLogo: "", ctaLabel: "Go", ctaHref: "/", ctaLook: looks[0] ?? "", nav: [] },
-      footer: { legal: "©", privacyHref: "", termsHref: "" },
+      header: { type: "SiteHeader", props: { id: "header", accountLine: "Acme", accountLogo: "", ctaLabel: "Go", ctaHref: "/", ctaLook: looks[0] ?? "" } },
+      footer: { type: "SiteFooter", props: { id: "footer", legal: "©", privacyHref: "", termsHref: "" } },
     };
     const result = validateSite({ pages, shell }, brand!, { Promo });
     assert.deepEqual(result.errors, []);

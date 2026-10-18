@@ -3,7 +3,7 @@
 // never drift from them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMPONENT_SCHEMAS, PageSchema, ShellSchema, formatIssues } from "../src/schemas";
+import { COMPONENT_SCHEMAS, PageSchema, formatIssues, shellSchemaWith } from "../src/schemas";
 import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { validateSite } from "../src/validate";
@@ -16,7 +16,7 @@ test("the phase-1 pages and shells validate clean", () => {
       const result = PageSchema.safeParse(page);
       assert.ok(result.success, `${name}${route}: ${result.success ? "" : formatIssues(result.error)}`);
     }
-    const shell = ShellSchema.safeParse(s.shell);
+    const shell = shellSchemaWith().safeParse(s.shell);
     assert.ok(shell.success, `${name} shell: ${shell.success ? "" : formatIssues(shell.error)}`);
   }
 });

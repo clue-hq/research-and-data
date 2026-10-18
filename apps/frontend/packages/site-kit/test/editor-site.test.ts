@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   canonicalJson,
+  componentEntry,
   componentProps,
   getAtPath,
   internalRoute,
@@ -50,7 +51,7 @@ test("a page component's props are read and replaced by id, and the id is kept",
 });
 
 test("the header and footer are addressed through the shell target", () => {
-  assert.equal(componentProps(document, "shell", "header")?.preparedFor, "Syracuse City School District");
+  assert.equal(componentProps(document, "shell", "header")?.accountLine, "Prepared for Syracuse City School District");
   const edited = withComponentProps(document, "shell", "footer", { legal: "© 2027" });
   assert.equal(componentProps(edited, "shell", "footer")?.legal, "© 2027");
   assert.equal(componentProps(edited, "shell", "footer")?.id, "footer");
@@ -99,4 +100,14 @@ test("⌘Z, ⇧⌘Z and Ctrl+Y become undo and redo, but never while typing", ()
   assert.equal(shortcutFor(key("z")), null);
   assert.equal(shortcutFor(key("z", { metaKey: true, target: { isContentEditable: true } })), null);
   assert.equal(shortcutFor(key("z", { ctrlKey: true, target: { tagName: "INPUT" } })), null);
+});
+
+// Plan 6 (ruling R1): a shell entry is read and written like a page section.
+test("componentEntry and componentProps read a shell entry; withComponentProps keeps its type and id", () => {
+  assert.equal(componentEntry(document, "shell", "header")?.type, "SiteHeader");
+  assert.equal(componentEntry(document, "/", document.pages["/"].content[0].props.id)?.type, document.pages["/"].content[0].type);
+  assert.equal(componentEntry(document, "shell", "sidebar"), null);
+  const edited = withComponentProps(document, "shell", "header", { accountLine: "Built for Syracuse", id: "other" });
+  assert.equal(edited.shell?.header.type, "SiteHeader");
+  assert.deepEqual(edited.shell?.header.props, { accountLine: "Built for Syracuse", id: "header" });
 });

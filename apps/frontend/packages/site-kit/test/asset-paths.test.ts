@@ -43,7 +43,7 @@ test("the spike's old paths are refused", () => {
 
 test("the header's account logo must be one of the account's logos", () => {
   const shell = structuredClone(site.shell);
-  shell.header.accountLogo = LOGO;
+  shell.header.props.accountLogo = LOGO;
   const pages = { "/": site.pages["/"], "/analysis": site.pages["/analysis"] };
   assert.equal(validateSite({ pages, shell }, brand, {}, { siteImages: [], accountLogos: [LOGO] }).valid, true);
   const refused = validateSite({ pages, shell }, brand, {});

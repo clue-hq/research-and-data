@@ -2,15 +2,23 @@
   "brand": "garner",
   "shell": {
     "header": {
-      "preparedFor": "Syracuse City School District",
-      "accountLogo": "",
-      "ctaLabel": "Request the analysis",
-      "ctaHref": "https://garnerhealth.com/provider-impact-analysis"
+      "type": "SiteHeader",
+      "props": {
+        "id": "header",
+        "accountLine": "Prepared for Syracuse City School District",
+        "accountLogo": "",
+        "ctaLabel": "Request the analysis",
+        "ctaHref": "https://garnerhealth.com/provider-impact-analysis"
+      }
     },
     "footer": {
-      "legal": "\u00a9 2026 Garner Health. Prepared for Syracuse City School District.",
-      "privacyHref": "https://garnerhealth.com/privacy-policy",
-      "termsHref": "https://garnerhealth.com/terms-of-use"
+      "type": "SiteFooter",
+      "props": {
+        "id": "footer",
+        "legal": "© 2026 Garner Health. Prepared for Syracuse City School District.",
+        "privacyHref": "https://garnerhealth.com/privacy-policy",
+        "termsHref": "https://garnerhealth.com/terms-of-use"
+      }
     }
   },
   "pages": {
@@ -46,7 +54,7 @@
             "fragmentId": "frag_79934268c8621bd2",
             "slots": {
               "headline": "$4.2 million more for healthcare",
-              "body": "Your 2025\u201326 budget added $4.2 million for healthcare, based on plan changes and claim projections from your actuaries.",
+              "body": "Your 2025–26 budget added $4.2 million for healthcare, based on plan changes and claim projections from your actuaries.",
               "headline_2": "The plan stays as it is",
               "body_2": "PPO, PPO 3 and HDHP 2 keep their terms. Garner sits on top as an added benefit.",
               "headline_3": "Excellus stays too",
@@ -104,7 +112,7 @@
                 "label": "lower medical spend per member per year"
               },
               {
-                "value": "2020\u201324",
+                "value": "2020–24",
                 "label": "years studied, against a matched control group"
               }
             ],

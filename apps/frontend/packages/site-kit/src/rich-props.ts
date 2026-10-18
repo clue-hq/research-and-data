@@ -19,12 +19,13 @@ export function richValuesOfItem(
   propsSchemaOf: PropsSchemaOf,
 ): { path: string; value: string; links: boolean }[] {
   const props = item.props ?? {};
+  // Ours when either list names the type (the header has only words without links: plan 6).
   const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
-  if (ours) {
-    const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type] ?? [];
+  const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type];
+  if (ours || noLinks) {
     return [
-      ...richValuesAt(props, ours).map((entry) => ({ ...entry, links: true })),
-      ...richValuesAt(props, noLinks).map((entry) => ({ ...entry, links: false })),
+      ...richValuesAt(props, ours ?? []).map((entry) => ({ ...entry, links: true })),
+      ...richValuesAt(props, noLinks ?? []).map((entry) => ({ ...entry, links: false })),
     ];
   }
   if (item.type === "ClonedSection") {

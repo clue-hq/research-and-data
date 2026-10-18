@@ -18,12 +18,13 @@ import { editsOf, editsProblems, withoutEdits } from "./edits";
 import { buttonLooks, cardLooks } from "./looks";
 import { isRichLink, richLinks, richProblems } from "./rich";
 import { richValuesOfItem } from "./rich-props";
-import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
+import { formatIssues, pageSchemaWith, shellSchemaWith } from "./schemas";
+import { SHELL_IDS, type ShellId } from "./site-document";
 import { surfaceChoices } from "./surfaces";
 
 type Item = { type: string; props: Record<string, unknown> };
 type Page = { content?: Item[] };
-type Shell = { header?: Record<string, unknown>; footer?: Record<string, unknown> };
+type Shell = Partial<Record<ShellId, Item>>;
 
 /** The site's files: route -> page JSON ("/" is page.json, "/<name>" is pages/<name>.json), and shell.json. */
 export type SiteFiles = { pages: Record<string, unknown>; shell: unknown | null };
@@ -103,8 +104,18 @@ export function validateSite(
   }
   if (errors.length && !pages.length) return { valid: false, errors };
 
-  const shellResult = ShellSchema.safeParse(shell);
-  if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e}`));
+  // Plan 6 (ruling R1): the header and footer are section entries. The old shape (fixed props) is
+  // named once, with how to fix it, instead of a list of schema issues.
+  const agentSchemaMap = Object.fromEntries(Object.entries(agentSections).map(([name, module]) => [name, module.schema as never]));
+  const isEntry = (value: unknown) =>
+    !!value && typeof value === "object" && typeof (value as Item).type === "string" && !!(value as Item).props && typeof (value as Item).props === "object";
+  const shellEntries = isEntry(shell.header) && isEntry(shell.footer);
+  if (!shellEntries) {
+    errors.push('shell.json: the header and footer are sections: {"header": {"type": …, "props": {"id": "header", …}}, "footer": {…}} (building-with-puck skill)');
+  } else {
+    const shellResult = shellSchemaWith(agentSchemaMap).safeParse(shell);
+    if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e}`));
+  }
 
   const allowedImages = new Set([...Object.values(brand.assets).map((asset) => asset.file), ...images.siteImages]);
   const accountLogos = new Set(images.accountLogos);
@@ -127,13 +138,18 @@ export function validateSite(
   const OURS = new Set(["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"]);
   // Manual styling (`_edits`) names the brand's colour tokens and font families: a contract, like
   // surfaces. Its shape is the schema's; a malformed `_edits` is reported there, not again here.
-  const addEditsProblems = (props: Record<string, unknown> | undefined, where: string, shell = false) => {
+  const addEditsProblems = (props: Record<string, unknown> | undefined, where: string, part: ShellId | null) => {
     const edits = editsOf(props ?? {});
     for (const line of editsProblems(edits, brand)) errors.push(`${where}._edits.${line}`);
-    if (shell) return;
-    // Plan 4, ruling R9: hiding is for the header's and footer's parts; a section draws what it holds.
     for (const [key, override] of Object.entries(edits)) {
-      if (override.hidden) errors.push(`${where}._edits.${key}: hidden is for the header and footer; to drop a part of a section, rewrite the section`);
+      // Plan 6, ruling R10: the header's own placement, on its root only.
+      if ((override.sticky || override.overlay) && !(part === "header" && key === "root")) {
+        errors.push(`${where}._edits.${key}: sticky and overlay are for the header itself (its root)`);
+      }
+      // Plan 4, ruling R9: hiding is for the header's and footer's parts; a section draws what it holds.
+      if (override.hidden && !part) {
+        errors.push(`${where}._edits.${key}: hidden is for the header and footer; to drop a part of a section, rewrite the section`);
+      }
     }
   };
 
@@ -151,6 +167,113 @@ export function validateSite(
     if (!problems.length) for (const href of richLinks(value)) addWritten(href, where);
   };
 
+  // One section's contract checks, wherever it sits: a page's content, or the header or footer
+  // (plan 6). `at` names it in every error; `part` is the shell place, or null on a page.
+  const checkItem = (item: Item, at: string, part: ShellId | null) => {
+    // The account's own logos are allowed anywhere in the header and footer, never on a page.
+    const imageOk = (value: unknown) => imageAllowed(value) || (part !== null && typeof value === "string" && accountLogos.has(value));
+    addEditsProblems(item.props, at, part);
+    for (const { path, value, links } of richValuesOfItem(item, brand, (type) => agentSections[type]?.propsSchema)) checkRich(value, `${at}.${path}`, links);
+    if (OURS.has(item.type)) {
+      const surface = item.props.surface;
+      if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
+      const look = item.props.buttonLook;
+      if (typeof look === "string" && look && !lookNames.includes(look)) errors.push(lookError(`${at}.buttonLook`, look));
+    }
+    // Plan 6 (ruling R8): links the agent keeps after the site's pages in a menu.
+    ((item.props.menuExtra as { href?: string }[] | undefined) ?? []).forEach((extra, i) => addWritten(extra?.href, `${at}.menuExtra.${i}.href`));
+    if (item.type === "SiteHeader") {
+      if (!imageOk(item.props.accountLogo)) {
+        errors.push(`${at}.accountLogo: "${String(item.props.accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);
+      }
+      if (!imageOk(item.props.logo)) errors.push(imageError(`${at}.logo`, item.props.logo));
+      const ctaLook = item.props.ctaLook;
+      if (typeof ctaLook === "string" && ctaLook && !lookNames.includes(ctaLook)) errors.push(lookError(`${at}.ctaLook`, ctaLook));
+      addWritten(item.props.ctaHref, `${at}.ctaHref`);
+    }
+    if (item.type === "SiteFooter") {
+      if (!imageOk(item.props.logo)) errors.push(imageError(`${at}.logo`, item.props.logo));
+      addWritten(item.props.privacyHref, `${at}.privacyHref`);
+      addWritten(item.props.termsHref, `${at}.termsHref`);
+    }
+    if (item.type === "ClonedSection") {
+      const id = String(item.props.fragmentId ?? "");
+      const clone = brand.clones[id];
+      if (!clone) {
+        if (/^frag_[0-9a-f]{16}$/.test(id)) errors.push(`${at}.fragmentId: "${id}" is not one of this brand's clones; see catalog/index.md`);
+        return;
+      }
+      const card = `catalog/clones/${id}.md`;
+      for (const [key, value] of Object.entries((item.props.slots as Record<string, unknown>) ?? {})) {
+        const slot = clone.slots[key];
+        if (!slot) {
+          errors.push(`${at}.slots.${key}: "${key}" is not a slot of ${id}; its slots are ${Object.keys(clone.slots).join(", ")} (${card})`);
+          continue;
+        }
+        if (slot.kind === "text" && typeof value !== "string") errors.push(`${at}.slots.${key}: a text slot takes a string`);
+        if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !isRichLink(value)))) {
+          errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
+        }
+        if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);
+        if (slot.kind === "image" && !imageOk(value)) {
+          errors.push(imageError(`${at}.slots.${key}`, value));
+        }
+        if (slot.kind === "visibility" && typeof value !== "boolean") errors.push(`${at}.slots.${key}: a visibility slot takes true or false`);
+      }
+      // Only whole text nodes, as the renderer replaces them (review finding S1-3).
+      const replaceable = replaceableTexts(clone);
+      ((item.props.replacements as { find?: string }[]) ?? []).forEach((r, i) => {
+        const find = (r?.find ?? "").replace(/\s+/g, " ").trim();
+        if (find && !replaceable.includes(find)) {
+          errors.push(`${at}.replacements.${i}: "${find}" is not text in ${id}; use exact text from "Other visible text" in ${card}`);
+        }
+      });
+      const hrefs = new Set(parse(clone.html).querySelectorAll("a[href]").map((a) => a.getAttribute("href")));
+      ((item.props.links as { find?: string; replace?: string }[]) ?? []).forEach((l, i) => {
+        if (l?.find && l.find !== "*" && !hrefs.has(l.find)) {
+          errors.push(`${at}.links.${i}: no link "${l.find}" in ${id}; use an href from ${card}, or "*" for every link`);
+        }
+        addWritten(l?.replace, `${at}.links.${i}`);
+      });
+    }
+    if (item.type === "FeatureSplit" && !imageAllowed(item.props.image)) {
+      errors.push(imageError(`${at}.image`, item.props.image));
+    }
+    if ((item.type === "FeatureSplit" && item.props.buttonLabel) || item.type === "CtaBand") {
+      addWritten(item.props.buttonHref, `${at}.buttonHref`);
+    }
+    if (item.type === "ProofCard") addWritten(item.props.linkHref, `${at}.linkHref`);
+    if (item.type in agentSections) {
+      // An agent section's images must be the brand's (or this site's). Its links — props named
+      // …Href — must reach real pages.
+      const walk = (value: unknown, where: string, key: string) => {
+        if (typeof value === "string") {
+          if (/^surface$|Surface$/.test(key) && !surfaceNames.includes(value)) {
+            errors.push(surfaceError(where, value));
+            return;
+          }
+          if (/^cardLook$|CardLook$/.test(key)) {
+            if (value && !cardNames.includes(value)) {
+              errors.push(`${where}: "${value}" is not one of this brand's card styles; its styles are ${cardNames.join(", ")}, or leave it out for the standard card (brand/brand.md, Cards)`);
+            }
+            return;
+          }
+          if (/^look$|Look$/.test(key)) {
+            if (value && !lookNames.includes(value)) errors.push(lookError(where, value));
+            return;
+          }
+          if (IMAGE_PATH.test(value)) {
+            if (!imageOk(value)) errors.push(imageError(where, value));
+          } else if (/href$/i.test(key)) {
+            addWritten(value, where);
+          }
+        } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`, key));
+        else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
+      };
+      walk(withoutEdits(item.props), at, "");
+    }
+  };
+
   for (const { where: file, page } of pages) {
     // Name sections by position and id everywhere, e.g. content.3(proof), so every error reads alike.
     const withIds = (line: string) =>
@@ -160,110 +283,9 @@ export function validateSite(
       });
     const pageResult = PageSchema.safeParse(page);
     if (!pageResult.success) errors.push(...formatIssues(pageResult.error).split("\n").map((e) => `${file}.${withIds(e)}`));
-
-    // Clones: real ids, real slots, matching replacements and links.
-    (page.content ?? []).forEach((item, index) => {
-      const at = `${file}.content.${index}(${String(item.props?.id ?? "?")})`;
-      addEditsProblems(item.props, at);
-      for (const { path, value, links } of richValuesOfItem(item, brand, (type) => agentSections[type]?.propsSchema)) checkRich(value, `${at}.${path}`, links);
-      if (OURS.has(item.type)) {
-        const surface = item.props.surface;
-        if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
-        const look = item.props.buttonLook;
-        if (typeof look === "string" && look && !lookNames.includes(look)) errors.push(lookError(`${at}.buttonLook`, look));
-      }
-      if (item.type === "ClonedSection") {
-        const id = String(item.props.fragmentId ?? "");
-        const clone = brand.clones[id];
-        if (!clone) {
-          if (/^frag_[0-9a-f]{16}$/.test(id)) errors.push(`${at}.fragmentId: "${id}" is not one of this brand's clones; see catalog/index.md`);
-          return;
-        }
-        const card = `catalog/clones/${id}.md`;
-        for (const [key, value] of Object.entries((item.props.slots as Record<string, unknown>) ?? {})) {
-          const slot = clone.slots[key];
-          if (!slot) {
-            errors.push(`${at}.slots.${key}: "${key}" is not a slot of ${id}; its slots are ${Object.keys(clone.slots).join(", ")} (${card})`);
-            continue;
-          }
-          if (slot.kind === "text" && typeof value !== "string") errors.push(`${at}.slots.${key}: a text slot takes a string`);
-          if (slot.kind === "href" && (typeof value !== "string" || (value !== "" && !isRichLink(value)))) {
-            errors.push(`${at}.slots.${key}: a link slot takes an https:// URL, a /route or a #anchor`);
-          }
-          if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);
-          if (slot.kind === "image" && !imageAllowed(value)) {
-            errors.push(imageError(`${at}.slots.${key}`, value));
-          }
-          if (slot.kind === "visibility" && typeof value !== "boolean") errors.push(`${at}.slots.${key}: a visibility slot takes true or false`);
-        }
-        // Only whole text nodes, as the renderer replaces them (review finding S1-3).
-        const replaceable = replaceableTexts(clone);
-        ((item.props.replacements as { find?: string }[]) ?? []).forEach((r, i) => {
-          const find = (r?.find ?? "").replace(/\s+/g, " ").trim();
-          if (find && !replaceable.includes(find)) {
-            errors.push(`${at}.replacements.${i}: "${find}" is not text in ${id}; use exact text from "Other visible text" in ${card}`);
-          }
-        });
-        const hrefs = new Set(parse(clone.html).querySelectorAll("a[href]").map((a) => a.getAttribute("href")));
-        ((item.props.links as { find?: string; replace?: string }[]) ?? []).forEach((l, i) => {
-          if (l?.find && l.find !== "*" && !hrefs.has(l.find)) {
-            errors.push(`${at}.links.${i}: no link "${l.find}" in ${id}; use an href from ${card}, or "*" for every link`);
-          }
-          addWritten(l?.replace, `${at}.links.${i}`);
-        });
-      }
-      if (item.type === "FeatureSplit" && !imageAllowed(item.props.image)) {
-        errors.push(imageError(`${at}.image`, item.props.image));
-      }
-      if ((item.type === "FeatureSplit" && item.props.buttonLabel) || item.type === "CtaBand") {
-        addWritten(item.props.buttonHref, `${at}.buttonHref`);
-      }
-      if (item.type === "ProofCard") addWritten(item.props.linkHref, `${at}.linkHref`);
-      if (item.type in agentSections) {
-        // An agent section's images must be the brand's (or this site's). Its links — props named
-        // …Href — must reach real pages.
-        const walk = (value: unknown, where: string, key: string) => {
-          if (typeof value === "string") {
-            if (/^surface$|Surface$/.test(key) && !surfaceNames.includes(value)) {
-              errors.push(surfaceError(where, value));
-              return;
-            }
-            if (/^cardLook$|CardLook$/.test(key)) {
-              if (value && !cardNames.includes(value)) {
-                errors.push(`${where}: "${value}" is not one of this brand's card styles; its styles are ${cardNames.join(", ")}, or leave it out for the standard card (brand/brand.md, Cards)`);
-              }
-              return;
-            }
-            if (/^look$|Look$/.test(key)) {
-              if (value && !lookNames.includes(value)) errors.push(lookError(where, value));
-              return;
-            }
-            if (IMAGE_PATH.test(value)) {
-              if (!imageAllowed(value)) errors.push(imageError(where, value));
-            } else if (/href$/i.test(key)) {
-              addWritten(value, where);
-            }
-          } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`, key));
-          else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
-        };
-        walk(withoutEdits(item.props), at, "");
-      }
-    });
+    (page.content ?? []).forEach((item, index) => checkItem(item, `${file}.content.${index}(${String(item.props?.id ?? "?")})`, null));
   }
-
-  addEditsProblems(shell.header, "shell.header", true);
-  addEditsProblems(shell.footer, "shell.footer", true);
-  const accountLogo = shell.header?.accountLogo;
-  if (accountLogo && !imageAllowed(accountLogo) && !accountLogos.has(String(accountLogo))) {
-    errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);
-  }
-  const ctaLook = shell.header?.ctaLook;
-  if (typeof ctaLook === "string" && ctaLook && !lookNames.includes(ctaLook)) errors.push(lookError("shell.header.ctaLook", ctaLook));
-  addWritten(shell.header?.ctaHref, "shell.header.ctaHref");
-  checkRich(shell.header?.ctaLabel, "shell.header.ctaLabel", false);
-  ((shell.header?.nav as { href?: string }[] | undefined) ?? []).forEach((item, i) => addWritten(item?.href, `shell.header.nav.${i}.href`));
-  addWritten(shell.footer?.privacyHref, "shell.footer.privacyHref");
-  addWritten(shell.footer?.termsHref, "shell.footer.termsHref");
+  if (shellEntries) for (const part of SHELL_IDS) checkItem(shell[part]!, `shell.${part}`, part);
 
   // A link to another page of this site must go to a page that exists.
   const routes = new Set(pages.map((p) => p.route));

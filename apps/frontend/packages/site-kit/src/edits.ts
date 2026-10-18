@@ -46,8 +46,8 @@ const corner = z.number().min(0).max(200);
 /** A child's key in an `order`: an element, never a styled span. */
 const OrderKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/);
 
-/** Properties only the shell's header and footer may set. */
-export const SHELL_ONLY_PROPS = ["hidden"] as const;
+/** Properties only the shell's header and footer may set (sticky and overlay: the header's root only). */
+export const SHELL_ONLY_PROPS = ["hidden", "sticky", "overlay"] as const;
 
 /** One element's manual styling. Every property is optional; bold is fontWeight 700. */
 export const StyleOverrideSchema = z
@@ -98,6 +98,10 @@ export const StyleOverrideSchema = z
     hidden: z.literal(true).optional(),
     /** Plan 5, an image: "fill" covers its box (may crop), "fit" shows it whole inside it. */
     imageFit: z.enum(["fill", "fit"]).optional(),
+    /** Plan 6 (ruling R10), the header's root only: it stays at the top while the page scrolls. */
+    sticky: z.literal(true).optional(),
+    /** Plan 6 (ruling R10), the header's root only: it takes no height, so the first section starts under it. */
+    overlay: z.literal(true).optional(),
   })
   .strict();
 

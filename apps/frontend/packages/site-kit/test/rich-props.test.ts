@@ -11,8 +11,8 @@ import { validateSite, type AgentSectionSchemas } from "../src/validate";
 import { garner } from "./fixtures/garner";
 
 const shell = (extra: { header?: object; footer?: object } = {}) => ({
-  header: { preparedFor: "Carmel", accountLogo: "", ctaLabel: "Book", ctaHref: "https://garner.example/book", nav: [], ...extra.header },
-  footer: { legal: "© 2026", privacyHref: "", termsHref: "", ...extra.footer },
+  header: { type: "SiteHeader", props: { id: "header", accountLine: "Prepared for Carmel", accountLogo: "", ctaLabel: "Book", ctaHref: "https://garner.example/book", ...extra.header } },
+  footer: { type: "SiteFooter", props: { id: "footer", legal: "© 2026", privacyHref: "", termsHref: "", ...extra.footer } },
 });
 const page = (content: object[]) => ({ root: { props: {} }, content });
 const proof = (props: object) => ({
@@ -30,6 +30,7 @@ test("our sections' in-place text is rich, except link and button labels", () =>
     FeatureSplit: ["eyebrow", "heading", "body"],
     ProofCard: ["kicker", "metric", "metricLabel", "heading", "body", "source"],
     CtaBand: ["heading", "body"],
+    SiteFooter: ["legal"],
   });
 });
 
@@ -50,7 +51,7 @@ test("a link inside rich text must reach a page of this site, like every other l
 test("the new 'open in a new tab' props are accepted where links live, and only as true or false", () => {
   assert.deepEqual(errorsOf({ "/": page([proof({ linkLabel: "Read", linkHref: "/", linkNewTab: true })]) }), []);
   assert.deepEqual(
-    errorsOf({ "/": page([]) }, {}, { header: { nav: [{ label: "Home", href: "/", newTab: true }] }, footer: { privacyHref: "https://x.com/p", privacyNewTab: true, termsNewTab: false } }),
+    errorsOf({ "/": page([]) }, {}, { header: { menuExtra: [{ label: "Home", href: "/", newTab: true }] }, footer: { privacyHref: "https://x.com/p", privacyNewTab: true, termsNewTab: false } }),
     [],
   );
   const errors = errorsOf({ "/": page([proof({ linkNewTab: "yes" })]) });
@@ -116,7 +117,12 @@ test("the catalog names rich fields as rich text", () => {
 import { RICH_PROPS_NO_LINKS } from "../src/schemas";
 
 test("button labels take rich text without links, in our sections, the header and a clone's link", () => {
-  assert.deepEqual(RICH_PROPS_NO_LINKS, { FeatureSplit: ["buttonLabel"], CtaBand: ["buttonLabel"] });
+  assert.deepEqual(RICH_PROPS_NO_LINKS, {
+    FeatureSplit: ["buttonLabel"],
+    CtaBand: ["buttonLabel"],
+    SiteHeader: ["accountLine", "ctaLabel"],
+    SiteFooter: ["privacyLabel", "termsLabel"],
+  });
   const cta = (props: object) => ({ type: "CtaBand", props: { id: "cta", surface: "brand", heading: "H", buttonLabel: "Go", buttonHref: "/", ...props } });
   assert.deepEqual(errorsOf({ "/": page([cta({ buttonLabel: "Book <strong>now</strong>", buttonNewTab: true })]) }), []);
   assert.deepEqual(errorsOf({ "/": page([cta({ buttonLabel: 'Book <a href="/">now</a>' })]) }), ["page.content.0(cta).buttonLabel: a button's words may not hold a link"]);

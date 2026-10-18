@@ -1,7 +1,7 @@
 // The edits both sides of the editor protocol make, as pure functions over Contract 1's site
 // document. The app (which saves) and the editor frame (which renders) call the SAME functions,
 // so an edit can never mean two different things on the two sides of the boundary.
-import { SHELL_TARGET, type SiteDocument, type SitePage, type SiteTarget } from "./site-document";
+import { SHELL_TARGET, isShellId, type SiteDocument, type SitePage, type SiteTarget } from "./site-document";
 
 /** JSON with object keys sorted, so two equal sites compare equal whatever their key order. */
 export function canonicalJson(value: unknown): string {
@@ -53,8 +53,18 @@ export function withPage(site: SiteDocument, route: string, page: SitePage): Sit
   return { ...site, pages: { ...site.pages, [route]: page } };
 }
 
-const isShellPart = (componentId: string): componentId is "header" | "footer" =>
-  componentId === "header" || componentId === "footer";
+/** A component as stored: a page section by its `props.id`, or the shell's header or footer entry
+ * (plan 6: both are sections, `{type, props}`). */
+export function componentEntry(
+  site: SiteDocument,
+  target: SiteTarget,
+  componentId: string,
+): { type: string; props: Record<string, unknown> } | null {
+  if (target === SHELL_TARGET) {
+    return site.shell && isShellId(componentId) ? site.shell[componentId] : null;
+  }
+  return pageFor(site, target)?.content.find((entry) => entry.props.id === componentId) ?? null;
+}
 
 /** A component's props: a page section by its `props.id`, or the shell's header/footer. */
 export function componentProps(
@@ -62,15 +72,11 @@ export function componentProps(
   target: SiteTarget,
   componentId: string,
 ): Record<string, unknown> | null {
-  if (target === SHELL_TARGET) {
-    return site.shell && isShellPart(componentId) ? site.shell[componentId] : null;
-  }
-  const item = pageFor(site, target)?.content.find((entry) => entry.props.id === componentId);
-  return item ? item.props : null;
+  return componentEntry(site, target, componentId)?.props ?? null;
 }
 
-/** Replace a component's props. The id is always kept; an unknown component changes nothing
- * (the same object comes back, so callers can tell). */
+/** Replace a component's props. The id is always kept (and a shell entry's type); an unknown
+ * component changes nothing (the same object comes back, so callers can tell). */
 export function withComponentProps(
   site: SiteDocument,
   target: SiteTarget,
@@ -78,8 +84,9 @@ export function withComponentProps(
   props: Record<string, unknown>,
 ): SiteDocument {
   if (target === SHELL_TARGET) {
-    if (!site.shell || !isShellPart(componentId)) return site;
-    return { ...site, shell: { ...site.shell, [componentId]: { ...props, id: componentId } } };
+    if (!site.shell || !isShellId(componentId)) return site;
+    const entry = site.shell[componentId];
+    return { ...site, shell: { ...site.shell, [componentId]: { ...entry, props: { ...props, id: componentId } } } };
   }
   const page = pageFor(site, target);
   if (!page) return site;

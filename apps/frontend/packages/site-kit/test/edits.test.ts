@@ -19,7 +19,7 @@ import {
   withStyleOverride,
   withoutEdits,
 } from "../src/edits";
-import { PageSchema, ShellSchema, pageSchemaWith } from "../src/schemas";
+import { PageSchema, pageSchemaWith, shellSchemaWith } from "../src/schemas";
 import { validateSite } from "../src/validate";
 import { garner, site as readSite } from "./fixtures/garner";
 import { kitBrand } from "./fixtures/kits";
@@ -103,11 +103,18 @@ test("our own strict sections accept _edits too", () => {
 
 test("the shell's header and footer accept _edits", () => {
   const shell = structuredClone(readSite("garner-syracuse").shell);
-  shell.header._edits = { preparedFor: { italic: true } };
-  shell.footer._edits = { legal: { fontSize: 12, color: { hex: "#000000", opacity: 60 } } };
-  assert.ok(ShellSchema.safeParse(shell).success);
-  shell.footer._edits = { legal: { fontSize: 2 } };
-  assert.equal(ShellSchema.safeParse(shell).success, false);
+  shell.header.props._edits = { accountLine: { italic: true } };
+  shell.footer.props._edits = { legal: { fontSize: 12, color: { hex: "#000000", opacity: 60 } } };
+  assert.ok(shellSchemaWith().safeParse(shell).success);
+  shell.footer.props._edits = { legal: { fontSize: 2 } };
+  assert.equal(shellSchemaWith().safeParse(shell).success, false);
+});
+
+// Plan 6 (ruling R10): the header's own placement.
+test("sticky and overlay parse only as true", () => {
+  assert.ok(StyleOverrideSchema.safeParse({ sticky: true, overlay: true }).success);
+  assert.equal(StyleOverrideSchema.safeParse({ sticky: false }).success, false);
+  assert.equal(StyleOverrideSchema.safeParse({ overlay: "yes" }).success, false);
 });
 
 test("an entry for a key no element has is valid (the agent may have rewritten the section)", () => {
@@ -153,12 +160,12 @@ test("validateSite reports _edits brand problems with their place", () => {
   const id = home.content[0].props.id;
   home.content[0].props._edits = { heading: { color: { token: "no.such" } } };
   const shell = structuredClone(s.shell);
-  shell.header._edits = { preparedFor: { fontFamily: "Comic Sans" } };
+  shell.header.props._edits = { accountLine: { fontFamily: "Comic Sans" } };
   const result = validateSite({ pages: { "/": home, "/analysis": s.pages["/analysis"] }, shell }, brand, {});
   assert.equal(result.valid, false);
   assert.equal(result.errors.length, 2, result.errors.join("\n"));
   assert.ok(result.errors[0].startsWith(`page.content.0(${id})._edits.heading: `), result.errors[0]);
-  assert.ok(result.errors[1].startsWith("shell.header._edits.preparedFor: "), result.errors[1]);
+  assert.ok(result.errors[1].startsWith("shell.header._edits.accountLine: "), result.errors[1]);
 });
 
 test("validateSite reports a malformed _edits once, at its place", () => {
@@ -340,8 +347,8 @@ test("hidden is refused on a page section and accepted on the shell", () => {
   const id = home.content[0].props.id;
   home.content[0].props._edits = { logo: { hidden: true } };
   const shell = structuredClone(s.shell);
-  shell.header._edits = { logo: { hidden: true } };
-  shell.footer._edits = { privacy: { hidden: true } };
+  shell.header.props._edits = { logo: { hidden: true } };
+  shell.footer.props._edits = { privacy: { hidden: true } };
   const result = validateSite({ pages: { "/": home, "/analysis": s.pages["/analysis"] }, shell }, brand, {});
   assert.equal(result.errors.length, 1, result.errors.join("\n"));
   assert.equal(

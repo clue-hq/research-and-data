@@ -31,12 +31,12 @@ test("a link to a page that exists is fine; a link to a missing page names the p
   assert.ok(result.errors.some((e) => e.includes("links to /analysis, which is not a page of this site") && e.includes("its pages are /")));
 });
 
-test("nav links are part of the shell and must go to real pages", () => {
+test("the header's extra menu links are part of the shell and must go to real pages", () => {
   const shell = structuredClone(site.shell);
-  shell.header.nav = [{ label: "The analysis", href: "/analysis" }, { label: "Pricing", href: "/pricing" }];
+  shell.header.props.menuExtra = [{ label: "The analysis", href: "/analysis" }, { label: "Pricing", href: "/pricing" }];
   const result = validate({ "/": site.pages["/"], "/analysis": site.pages["/analysis"] }, shell);
   assert.deepEqual(result.errors.filter((e) => e.includes("/pricing")).length, 1);
-  assert.ok(result.errors[0].startsWith("shell.header.nav.1.href"), result.errors.join("\n"));
+  assert.ok(result.errors[0].startsWith("shell.header.menuExtra.1.href"), result.errors.join("\n"));
 });
 
 test("a page name uses lowercase letters, digits and dashes", () => {

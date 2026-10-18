@@ -33,6 +33,9 @@ type ClonedSectionProps = {
   newTab?: string[];
   /** Plan 5: alt texts of its images, by element key. */
   alts?: Record<string, string>;
+  /** Plan 6: a template's menu labels by page, and links after the pages. */
+  menuLabels?: Record<string, string>;
+  menuExtra?: { label: string; href: string; newTab?: boolean }[];
 };
 
 const SLOT_FIELD = {
@@ -310,6 +313,9 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           newTab: { type: "custom", label: "Links opening in a new tab", render: () => <span /> },
           // Set from the image panel (plan 5), never typed in a field.
           alts: { type: "custom", label: "Image alt texts", render: () => <span /> },
+          // Plan 6: a template's menu, written in place on the canvas or by the agent.
+          menuLabels: { type: "custom", label: "Menu labels", render: () => <span /> },
+          menuExtra: { type: "custom", label: "Extra menu links", render: () => <span /> },
         },
         resolveFields: (data, { fields }) => {
           const clone = brand.clones[data.props.fragmentId];

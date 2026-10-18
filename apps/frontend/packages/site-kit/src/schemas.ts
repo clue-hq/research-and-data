@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { EDITS_PROP, EditsSchema, ElementKeySchema, withoutEdits } from "./edits";
 import { isRichLink } from "./rich";
-import { ComponentIdSchema } from "./site-document";
+import { ComponentIdSchema, SHELL_IDS, isShellId } from "./site-document";
 
 export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
 export const SURFACE_LABELS: Record<(typeof SURFACES)[number], string> = {
@@ -113,6 +113,17 @@ export const CtaBandSchema = z
   })
   .strict();
 
+/** Plan 6 (ruling R8): a menu label is named by its page: `_home` for "/", the page's name otherwise
+ * (page names never start with "_"). Labels are plain text. */
+export const MENU_PAGE_KEY = /^(_home|[a-z0-9][a-z0-9-]*)$/;
+export const MenuLabelsSchema = z.record(
+  z.string().regex(MENU_PAGE_KEY, 'a menu label is named by its page: "_home" for /, or the page\'s name'),
+  text.min(1).max(60),
+);
+/** Links drawn after the site's pages in the header's menu (the seller's own, on a one-to-few or
+ * one-to-many site: the agent's judgement). */
+export const MenuExtraSchema = z.array(z.object({ label: text.min(1).max(60), href: link, newTab: z.boolean().optional() }).strict()).max(6);
+
 export const ClonedSectionSchema = z
   .object({
     id,
@@ -126,8 +137,49 @@ export const ClonedSectionSchema = z
     newTab: z.array(ElementKeySchema).default([]),
     /** Plan 5: alt texts of its images, by element key. */
     alts: z.record(AltKeySchema, AltTextSchema).optional(),
+    /** Plan 6: a template's menu (the site's pages, filled when drawn). */
+    menuLabels: MenuLabelsSchema.optional(),
+    menuExtra: MenuExtraSchema.optional(),
   })
   .strict();
+
+/** Plan 6 (ruling R7): today's header and footer, every word theirs. Shell only. */
+export const SiteHeaderSchema = z
+  .object({
+    id,
+    accountLine: text.min(1),
+    accountLogo: optionalText,
+    accountLogoAlt: altText,
+    /** Empty: the kit's logo. */
+    logo: optionalText,
+    logoAlt: altText,
+    ctaLabel: text.min(1),
+    ctaHref: link,
+    ctaNewTab: z.boolean().optional(),
+    ctaLook: buttonLook,
+    menuLabels: MenuLabelsSchema.optional(),
+    menuExtra: MenuExtraSchema.optional(),
+  })
+  .strict();
+
+export const SiteFooterSchema = z
+  .object({
+    id,
+    legal: text.min(1),
+    logo: optionalText,
+    logoAlt: altText,
+    /** Empty: "Privacy policy" / "Terms". */
+    privacyLabel: optionalText,
+    privacyHref: optionalLink,
+    privacyNewTab: z.boolean().optional(),
+    termsLabel: optionalText,
+    termsHref: optionalLink,
+    termsNewTab: z.boolean().optional(),
+  })
+  .strict();
+
+/** The header's and footer's own components; never on a page. */
+export const SHELL_SCHEMAS = { SiteHeader: SiteHeaderSchema, SiteFooter: SiteFooterSchema } as const;
 
 /** The text our sections draw as RICH text (plan 2, spec §4.4; ruling R4): every field edited in
  * place except link and button labels (a link label is the link itself; buttons are plan 3). The
@@ -137,13 +189,17 @@ export const RICH_PROPS = {
   FeatureSplit: ["eyebrow", "heading", "body"],
   ProofCard: ["kicker", "metric", "metricLabel", "heading", "body", "source"],
   CtaBand: ["heading", "body"],
+  SiteFooter: ["legal"],
 } as const satisfies Record<string, readonly string[]>;
 
 /** Our sections' button words (plan 3, ruling R3): rich text without links, since the button is the
- * link. The header's `ctaLabel` is the same. */
+ * link. The header's `ctaLabel` is the same; so are its account line and the footer's link words
+ * (plan 6: a link label is the link itself, and the account line sits beside the logos). */
 export const RICH_PROPS_NO_LINKS = {
   FeatureSplit: ["buttonLabel"],
   CtaBand: ["buttonLabel"],
+  SiteHeader: ["accountLine", "ctaLabel"],
+  SiteFooter: ["privacyLabel", "termsLabel"],
 } as const satisfies Record<string, readonly string[]>;
 
 /** Every component a page may use. Anything else is refused. */
@@ -192,6 +248,17 @@ export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
           message: `a section id may use only letters, digits, "-" and "_" (up to 200 characters); "${sectionId}" does not`,
         });
       }
+      if (typeof sectionId === "string" && isShellId(sectionId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: '"header" and "footer" are the header\'s and footer\'s ids; use another id',
+        });
+      }
+      if (entry.type in SHELL_SCHEMAS) {
+        ctx.addIssue({ code: "custom", path: ["content", index, "type"], message: "SiteHeader and SiteFooter belong in shell.json" });
+        return;
+      }
       const schema = schemas[entry.type];
       if (!schema) {
         ctx.addIssue({
@@ -228,37 +295,44 @@ export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
 
 export const PageSchema = pageSchemaWith();
 
-export const ShellSchema = z
-  .object({
-    header: z
-      .object({
-        id: z.string().optional(),
-        preparedFor: text.min(1),
-        accountLogo: optionalText,
-        logoAlt: altText,
-        accountLogoAlt: altText,
-        ctaLabel: text.min(1),
-        ctaHref: link,
-        ctaNewTab: z.boolean().optional(),
-        ctaLook: buttonLook,
-        nav: z.array(z.object({ label: text.min(1), href: link, newTab: z.boolean().optional() }).strict()).max(6).default([]),
-        _edits: EditsSchema.optional(),
-      })
-      .strict(),
-    footer: z
-      .object({
-        id: z.string().optional(),
-        legal: text.min(1),
-        logoAlt: altText,
-        privacyHref: optionalLink,
-        privacyNewTab: z.boolean().optional(),
-        termsHref: optionalLink,
-        termsNewTab: z.boolean().optional(),
-        _edits: EditsSchema.optional(),
-      })
-      .strict(),
-  })
-  .strict();
+/** Plan 6 (rulings R1, R7): the header and footer, each a section entry whose id is its place. The
+ * header is SiteHeader, a ClonedSection or one of the site's agent sections; the footer the same with
+ * SiteFooter. Every entry's props are checked by its type's schema, `_edits` by the edits schema. */
+export function shellSchemaWith(extra: Record<string, z.ZodType> = {}) {
+  const shared: Record<string, z.ZodType> = { ClonedSection: ClonedSectionSchema, ...extra };
+  const own = { header: "SiteHeader", footer: "SiteFooter" } as const;
+  const entry = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
+  return z
+    .object({ header: entry, footer: entry })
+    .strict()
+    .superRefine((shell, ctx) => {
+      for (const part of SHELL_IDS) {
+        const { type, props } = shell[part];
+        const other = part === "header" ? "footer" : "header";
+        if (props.id !== part) ctx.addIssue({ code: "custom", path: [part, "props", "id"], message: `must be "${part}"` });
+        const schema = type === own[part] ? SHELL_SCHEMAS[own[part]] : shared[type];
+        if (!schema) {
+          const theirs = type === own[other] ? `${type} is the ${other}'s; ` : `"${type}" cannot be the ${part}; `;
+          ctx.addIssue({
+            code: "custom",
+            path: [part, "type"],
+            message: `${theirs}the ${part} is ${own[part]}, a ClonedSection or one of this site's sections`,
+          });
+          continue;
+        }
+        const result = schema.safeParse(withoutEdits(props));
+        if (!result.success) {
+          for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: [part, "props", ...issue.path] } as never);
+        }
+        if (props[EDITS_PROP] !== undefined) {
+          const edits = EditsSchema.safeParse(props[EDITS_PROP]);
+          if (!edits.success) {
+            for (const issue of edits.error.issues) ctx.addIssue({ ...issue, path: [part, "props", EDITS_PROP, ...issue.path] } as never);
+          }
+        }
+      }
+    });
+}
 
 /** One line per issue: where it is and what is wrong, in words the agent can act on. */
 export function formatIssues(error: z.ZodError): string {

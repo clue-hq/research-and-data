@@ -2,15 +2,23 @@
   "brand": "conduit",
   "shell": {
     "header": {
-      "preparedFor": "Atrium Hospitality",
-      "accountLogo": "",
-      "ctaLabel": "Book a demo",
-      "ctaHref": "https://www.conduit.ai/book-demo"
+      "type": "SiteHeader",
+      "props": {
+        "id": "header",
+        "accountLine": "Prepared for Atrium Hospitality",
+        "accountLogo": "",
+        "ctaLabel": "Book a demo",
+        "ctaHref": "https://www.conduit.ai/book-demo"
+      }
     },
     "footer": {
-      "legal": "\u00a9 2026 Conduit. Prepared for Atrium Hospitality.",
-      "privacyHref": "https://www.conduit.ai/privacy",
-      "termsHref": "https://www.conduit.ai/terms"
+      "type": "SiteFooter",
+      "props": {
+        "id": "footer",
+        "legal": "© 2026 Conduit. Prepared for Atrium Hospitality.",
+        "privacyHref": "https://www.conduit.ai/privacy",
+        "termsHref": "https://www.conduit.ai/terms"
+      }
     }
   },
   "pages": {
