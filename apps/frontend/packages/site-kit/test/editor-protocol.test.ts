@@ -267,3 +267,24 @@ test("a selected box carries its container look and its arrange; the section box
   assert.equal(refused({ container: { ...container, layout: "column" } }), null);
   assert.equal(refused({ container: { ...container, name: "x".repeat(41) } }), null);
 });
+
+// Plan 5: an image selection carries how it is drawn and where its file and alt text are written.
+test("an image selection round-trips; a src over 2048 or an alt over 300 is refused", () => {
+  const box = { fill: "", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 400 };
+  const element = {
+    key: "image", kind: "image" as const, label: "Image", computed: ELEMENT.computed,
+    image: { media: "img" as const, box, fit: "fill" as const, fitMatters: true, alt: "A room", src: "/brands/x.png" },
+    imageSource: { kind: "prop" as const, prop: "image", uses: 1 },
+    altSource: { kind: "prop" as const, prop: "imageAlt" },
+  };
+  const payload = { route: "/", componentId: "f", componentType: "FeatureSplit", fields: [], props: {}, element };
+  const parsed = parseFrameToApp(frameToApp("selected", payload, ctx));
+  assert.deepEqual(parsed?.type === "selected" ? parsed.payload.element : null, element);
+  const refused = (change: object) => parseFrameToApp(frameToApp("selected", { ...payload, element: { ...element, image: { ...element.image, ...change } } } as never, ctx));
+  assert.equal(refused({ src: "x".repeat(2049) }), null);
+  assert.equal(refused({ alt: "x".repeat(301) }), null);
+  for (const source of [{ kind: "slot", slot: "hero", uses: 2 }, { kind: "fixed", reason: "ask" }]) {
+    assert.equal(parseFrameToApp(frameToApp("selected", { ...payload, element: { ...element, imageSource: source } } as never, ctx))?.type, "selected");
+  }
+  assert.equal(parseFrameToApp(frameToApp("selected", { ...payload, element: { ...element, altSource: { kind: "clone", key: "0.1" } } } as never, ctx))?.type, "selected");
+});

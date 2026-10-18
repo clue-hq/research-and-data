@@ -517,3 +517,29 @@ test("a background image covering nearly all of the section leaves blank clicks 
   assert.equal(elementKeyAt(scope, scope, { x: 200, y: 400 }, view), "0.2", "a smaller image is still a target");
   assert.ok(inspectableElementsIn(scope, view).some(({ element }) => element.id === "bg"), "the background stays in Layers");
 });
+
+// Plan 5: an image as drawn (ruling R3: Fill and Fit only differ when the box's shape differs).
+import { computedImage } from "../src/client/dom";
+
+test("an image's fit, shape and alt as drawn; a picture is a wrapper; a video and an icon", () => {
+  const doc = new JSDOM(`<div id="is"><img id="small" data-clue-el="a" src="/brands/a.jpg" alt="A room"><img id="hero" data-clue-el="b" src="/brands/b.jpg"><picture id="pic" data-clue-el="c"><img id="inpic" data-clue-el="c.0" src="/brands/c.jpg"></picture><video id="vid" data-clue-el="d"></video><svg id="ico" data-clue-el="e"></svg></div>`).window.document;
+  const scope = doc.getElementById("is")!;
+  stubBoxes(scope, { small: [0, 0, 400, 300], hero: [0, 300, 1000, 700], pic: [0, 700, 400, 1000], inpic: [0, 700, 400, 1000], vid: [0, 1000, 640, 1360], ico: [0, 1400, 20, 1420] });
+  const natural = (id: string, width: number, height: number, w = "naturalWidth", h = "naturalHeight") => {
+    Object.defineProperty(doc.getElementById(id)!, w, { value: width });
+    Object.defineProperty(doc.getElementById(id)!, h, { value: height });
+  };
+  natural("small", 4000, 3000);
+  natural("hero", 4000, 3000);
+  natural("vid", 1920, 1080, "videoWidth", "videoHeight");
+  const view = fakeView({ hero: { objectFit: "cover" }, vid: { objectFit: "contain" }, pic: { display: "inline" } }) as unknown as Window;
+  const small = computedImage(doc.getElementById("small")!, view, cssColorToHex);
+  assert.deepEqual([small.media, small.fitMatters, small.alt, small.src], ["img", false, "A room", "/brands/a.jpg"]);
+  const hero = computedImage(doc.getElementById("hero")!, view, cssColorToHex);
+  assert.deepEqual([hero.fit, hero.fitMatters], ["fill", true]);
+  const video = computedImage(doc.getElementById("vid")!, view, cssColorToHex);
+  assert.deepEqual([video.media, video.fit, video.fitMatters], ["video", "fit", false]);
+  assert.equal(computedImage(doc.getElementById("ico")!, view, cssColorToHex).media, "svg");
+  assert.equal(isImageElement(doc.getElementById("pic")!), false, "a picture is a wrapper");
+  assert.equal(isImageElement(doc.getElementById("inpic")!), true);
+});

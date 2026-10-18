@@ -28,3 +28,4 @@ export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type H
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";
 export { normalizeRichIn, ownLinkSource, richSourceOf, richValuesOfItem, type PropsSchemaOf } from "./rich-props";
+export { imageSourcesOf } from "./image-sources";

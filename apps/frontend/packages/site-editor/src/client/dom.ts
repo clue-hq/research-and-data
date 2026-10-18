@@ -1,5 +1,5 @@
 import { ELEMENT_KEY_ATTR, ElementKeySchema, ROOT_INNER_KEY, ROOT_KEY, sizeScaleFrom } from "@clue/site-kit/edits";
-import type { Arrange, ComputedBox, ComputedContainer, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
+import type { Arrange, ComputedBox, ComputedContainer, ComputedImage, ComputedTypography, EditorMode, ElementSelection, ElementSummary, SiteGeometry } from "@clue/site-kit/editor-protocol";
 import type { BrandData } from "@clue/site-kit";
 
 export type ClickAction =
@@ -405,7 +405,8 @@ export function listedSummary(item: InspectableElement, view: Pick<Window, "getC
 // a button or an image; the section's own box is `root` / `root.inner` (ours, the agent's kit.Shell,
 // the shell) or a copied section's one top element.
 
-const IMAGE_TAGS = new Set(["img", "picture", "video", "svg"]);
+/** A <picture> is a wrapper; its <img> is the image (plan 5, ruling R4). */
+const IMAGE_TAGS = new Set(["img", "video", "svg"]);
 const NO_WORDS = new Set(["script", "style", "noscript", "template"]);
 
 /** A keyed image or icon. */
@@ -508,6 +509,32 @@ function alignRoomOf(element: Element, style: CSSStyleDeclaration, layout: Compu
   if (!children.length) return false;
   if (layout === "stack") return children.some((width) => width < inner - 1);
   return inner - (children.reduce((sum, width) => sum + width, 0) + gap * (children.length - 1)) > 1;
+}
+
+const FIT: Record<string, ComputedImage["fit"]> = { cover: "fill", contain: "fit", "scale-down": "fit" };
+
+/** An image as drawn (plan 5): what it is, its box, its fit, whether its box's shape differs from the
+ * picture's own by more than 1% (only then do Fill and Fit look different, ruling R3; unknown counts
+ * as no), its alt text and its file. */
+export function computedImage(element: Element, view: Pick<Window, "getComputedStyle">, toHex: (color: string) => string | null): ComputedImage {
+  const tag = element.tagName.toLowerCase();
+  const media: ComputedImage["media"] = tag === "video" ? "video" : tag === "svg" ? "svg" : "img";
+  const style = view.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const sized = element as Partial<HTMLImageElement & HTMLVideoElement>;
+  const naturalWidth = media === "video" ? sized.videoWidth : sized.naturalWidth;
+  const naturalHeight = media === "video" ? sized.videoHeight : sized.naturalHeight;
+  const known = Boolean(naturalWidth && naturalHeight && rect.width > 0 && rect.height > 0);
+  const fitMatters = known && Math.abs(rect.width / rect.height / (naturalWidth! / naturalHeight!) - 1) > 0.01;
+  const src = element.getAttribute("src") ?? (sized.currentSrc || "");
+  return {
+    alt: (element.getAttribute("alt") ?? "").slice(0, 300),
+    box: computedBox(element, view, toHex),
+    fit: FIT[style.objectFit] ?? null,
+    fitMatters: media !== "svg" && fitMatters,
+    media,
+    src: src.slice(0, 2048),
+  };
 }
 
 /** The section's own box (ruling R2): `root` and its `root.inner` (ours, an agent's kit.Shell, the

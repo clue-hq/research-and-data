@@ -189,6 +189,32 @@ export const SectionBoxSchema = z.object({
   inner: z.object({ key: ElementKeySchema, container: ComputedContainerSchema }),
 });
 export type SectionBox = z.infer<typeof SectionBoxSchema>;
+/** Plan 5: an image as drawn: what it is (an <img>, a <video>, an inline icon), its box, its fit
+ * (object-fit cover = "fill", contain = "fit", anything else none), whether its box's shape differs from
+ * the picture's own (so Fill and Fit look different), its alt text and its file. */
+export const ComputedImageSchema = z.object({
+  media: z.enum(["img", "video", "svg"]),
+  box: ComputedBoxSchema,
+  fit: z.enum(["fill", "fit"]).nullable(),
+  fitMatters: z.boolean(),
+  alt: z.string().max(300),
+  src: z.string().max(2048),
+});
+export type ComputedImage = z.infer<typeof ComputedImageSchema>;
+/** Plan 5 (ruling R1): where an image's file is written, and how many images on the section it draws. */
+export const ImageSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("prop"), prop: PropPathSchema, uses: z.number().int().positive().max(1000) }),
+  z.object({ kind: z.literal("slot"), slot: z.string().min(1).max(200), uses: z.number().int().positive().max(1000) }),
+  z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
+]);
+export type ImageSource = z.infer<typeof ImageSourceSchema>;
+/** Plan 5 (ruling R2): where an image's alt text is written. */
+export const AltSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("prop"), prop: PropPathSchema }),
+  z.object({ kind: z.literal("clone"), key: ElementKeySchema }),
+  z.object({ kind: z.literal("fixed"), reason: z.string().max(300) }),
+]);
+export type AltSource = z.infer<typeof AltSourceSchema>;
 export type LabelSource = z.infer<typeof LabelSourceSchema>;
 export type RichSource = z.infer<typeof RichSourceSchema>;
 export type Words = z.infer<typeof WordsSchema>;
@@ -208,6 +234,10 @@ export const ElementSelectionSchema = ElementSummarySchema.extend({
   container: ComputedContainerSchema.nullable().optional(),
   /** Plan 4: where it moves among its neighbours; absent when it has none. */
   arrange: ArrangeSchema.nullable().optional(),
+  /** Plan 5, an image: how it is drawn, and where its file and its alt text are written. */
+  image: ComputedImageSchema.nullable().optional(),
+  imageSource: ImageSourceSchema.nullable().optional(),
+  altSource: AltSourceSchema.nullable().optional(),
 });
 export type ElementSelection = z.infer<typeof ElementSelectionSchema>;
 

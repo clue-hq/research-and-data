@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
-import { RICH_PROPS, cloneButtonAt, cloneLinkAt, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
+import { RICH_PROPS, cloneButtonAt, cloneLinkAt, imageSourcesOf, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
 import { richFromDom } from "@clue/site-kit/editor";
 import { normalizeRich } from "@clue/site-kit/rich";
 import type { ElementSelection, LabelSource, LinkSource, RichSource } from "@clue/site-kit/editor-protocol";
@@ -16,6 +16,7 @@ import {
   clickIntent,
   computedBox,
   computedContainer,
+  computedImage,
   listedSummary,
   sectionBoxOf,
   computedTypography,
@@ -187,13 +188,36 @@ function hiddenParts(controller: FrameController, target: string, componentId: s
 }
 
 /** A chosen box or image (plan 4): its summary, its typography (what it passes to its text), and for a
- * box its look as drawn. */
-function describeBox(element: Element, item: Parameters<typeof listedSummary>[0]): ElementSelection {
-  return {
+ * box its look as drawn; for an image (plan 5) how it is drawn and where its file and its alt text are
+ * written (site-kit's imageSourcesOf, from the stored site). */
+function describeBox(
+  controller: FrameController,
+  target: string,
+  componentId: string,
+  element: Element,
+  item: Parameters<typeof listedSummary>[0],
+): ElementSelection {
+  const described: ElementSelection = {
     ...listedSummary(item, window),
     computed: computedTypography(element, window, toHex),
     ...(item.kind === "container" ? { container: computedContainer(element, window, toHex) } : {}),
   };
+  if (item.kind !== "image") return described;
+  const image = computedImage(element, window, toHex);
+  const state = controller.getState();
+  let type = componentId === "header" ? "SiteHeader" : "SiteFooter";
+  let props: Record<string, unknown> = {};
+  let clone = null;
+  if (target === SHELL_TARGET) {
+    props = ((state.site?.shell as Record<string, unknown> | null | undefined)?.[componentId] as Record<string, unknown> | undefined) ?? {};
+  } else {
+    const entry = state.site ? pageFor(state.site, target)?.content.find((candidate) => candidate.props.id === componentId) : undefined;
+    type = entry?.type ?? "";
+    props = (entry?.props ?? {}) as Record<string, unknown>;
+    clone = type === "ClonedSection" && state.brand ? (state.brand.clones[String(props.fragmentId ?? "")] ?? null) : null;
+  }
+  const sources = imageSourcesOf({ clone, key: described.key, media: image.media, props, type });
+  return { ...described, altSource: sources.alt, image, imageSource: sources.image };
 }
 
 /** Responsive brand type (review finding 3): every typography in the selection carries the brand's
@@ -271,7 +295,7 @@ export function EditorApp({ boot }: { boot: BootContext }) {
           isButtonElement(found, window)
             ? describeButton(controller, target, componentId, found)
             : kind === "container" || kind === "image"
-              ? describeBox(found, listed.find((item) => item.element === found)!)
+              ? describeBox(controller, target, componentId, found, listed.find((item) => item.element === found)!)
               : describeElement(controller, target, componentId, found);
         const arrange = arrangeOf(found, scope);
         element = withSizeScale({ ...described, ...(arrange ? { arrange } : {}) }, found, controller.getState().brand);
