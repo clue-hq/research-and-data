@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { componentProps } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
-import { commitHeaderPlacement, headerPlacementState } from "./site-shell";
+import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState, showsSectionPanel } from "./site-shell";
 
 const site = {
   id: "doc", title: "A", theme: {}, agent_sections: {},
@@ -32,4 +32,34 @@ test("sticky and overlay are written on the header's root and removed exactly", 
   const off = commitHeaderPlacement(commitHeaderPlacement(both.site, "overlay", false)!.site, "sticky", false)!;
   assert.deepEqual(componentProps(off.site, "shell", "header"), componentProps(site, "shell", "header"));
   assert.equal(commitHeaderPlacement(site, "sticky", false), null, "nothing changes");
+});
+
+
+// Founder 2026-10-19: the header and footer are treated like every other part of the page. The whole
+// header, the whole footer and a whole copied section show nothing of their own (only Layers, plus the
+// header's own settings); every part is edited by clicking it.
+test("the whole-section panel is shown only for our own sections", () => {
+  assert.equal(showsSectionPanel({ target: "shell", componentType: "ClonedSection" }), false);
+  assert.equal(showsSectionPanel({ target: "shell", componentType: "SiteHeader" }), false);
+  assert.equal(showsSectionPanel({ target: "/", componentType: "ClonedSection" }), false);
+  assert.equal(showsSectionPanel({ target: "/", componentType: "FeatureSplit" }), true);
+  assert.equal(showsSectionPanel(null), false);
+});
+
+// The account logo's own Visibility is the template's "Account shown" (the logo and the thin line
+// before it hide together).
+const templated = {
+  ...site,
+  shell: { ...site.shell, header: { type: "ClonedSection", props: { id: "header", fragmentId: "frag_1", slots: { account_line: "Prepared for C" }, replacements: [], links: [] } } },
+} as unknown as SiteDocument;
+const accountLogo = { target: "shell", componentId: "header", element: { key: "0.0.1.1", imageSource: { kind: "slot", slot: "account_logo", uses: 1 } } };
+
+test("hiding the account logo turns the template's account_shown off, and showing removes it", () => {
+  assert.deepEqual(accountShownState(templated, accountLogo), { hidden: false, part: "header" });
+  const hidden = commitAccountShown(templated, accountLogo, true)!;
+  assert.equal((componentProps(hidden.site, "shell", "header")!.slots as Record<string, unknown>).account_shown, false);
+  assert.deepEqual(accountShownState(hidden.site, accountLogo), { hidden: true, part: "header" });
+  const shown = commitAccountShown(hidden.site, accountLogo, false)!;
+  assert.deepEqual(componentProps(shown.site, "shell", "header"), componentProps(templated, "shell", "header"));
+  assert.equal(accountShownState(templated, { ...accountLogo, element: { key: "0.0.0", imageSource: { kind: "slot", slot: "image", uses: 1 } } }), null, "another image is not the account logo");
 });

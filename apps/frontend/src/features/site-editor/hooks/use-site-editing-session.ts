@@ -22,7 +22,7 @@ import {
 } from "../model/site-frame-sync";
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { arrangeState, commitHidden, commitMove, hideState } from "../model/site-arrange";
-import { commitHeaderPlacement, headerPlacementState } from "../model/site-shell";
+import { accountShownState, commitAccountShown, commitHeaderPlacement, headerPlacementState, showsSectionPanel } from "../model/site-shell";
 import { commitImageAlt, imageAltOf, imageReplaceTarget } from "../model/site-image";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
@@ -503,7 +503,10 @@ export function useSiteEditingSession({
       const current = copy.get();
       const key = activeSelection?.element?.key;
       if (!activeSelection || !key || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
-      const edit = commitHidden(current.site, activeSelection, key, hidden);
+      // A header template's account logo hides through its own `account_shown` (the logo and its line).
+      const edit = accountShownState(current.site, activeSelection)
+        ? commitAccountShown(current.site, activeSelection, hidden)
+        : commitHidden(current.site, activeSelection, key, hidden);
       if (!edit) return;
       const rev = copy.edit(current.documentId, edit.site);
       if (rev === null) return;
@@ -706,7 +709,9 @@ export function useSiteEditingSession({
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
-    fields: activeSelection?.fields ?? null,
+    // Founder 2026-10-19: a whole copied section, header or footer shows only Layers (and the header's
+    // own settings); its parts are edited by clicking them.
+    fields: showsSectionPanel(activeSelection) ? (activeSelection?.fields ?? null) : null,
     layers,
     // The lock's own sentence while it holds (the Edit pill carries the same words).
     note: saves.note ?? (locked ? AGENT_RUN_LOCK_NOTE : null),
@@ -736,11 +741,11 @@ export function useSiteEditingSession({
     onLinkCommit: commitLink,
     arrange: arrangeState(currentSite?.site ?? null, activeSelection),
     onMove: commitMoveCb,
-    hide: hideState(currentSite?.site ?? null, activeSelection),
+    hide: accountShownState(currentSite?.site ?? null, activeSelection) ?? hideState(currentSite?.site ?? null, activeSelection),
     onHideCommit: commitHide,
     headerPlacement: headerPlacementState(currentSite?.site ?? null, activeSelection),
     onHeaderPlacementCommit: commitPlacement,
-    sectionBox: activeSelection && !activeSelection.element ? (activeSelection.sectionBox ?? null) : null,
+    sectionBox: activeSelection && !activeSelection.element && showsSectionPanel(activeSelection) ? (activeSelection.sectionBox ?? null) : null,
     sectionBoxOverrides: sectionBoxOverridesOf(currentSite?.site ?? null, activeSelection),
     imageAlt: imageAltOf(currentSite?.site ?? null, activeSelection, load.brand),
     onImageAltCommit: commitAlt,
