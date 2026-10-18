@@ -19,13 +19,8 @@ from lumen_agent.materialize import materialize_agent_workspace
 from lumen_agent.workspace import initial_turn_state
 from test_scene_catalog_runtime import ScriptedModel
 
-# Pointers the I10 topic (T8) removes together with the rest of its text.md / layout.md changes.
-# T8 empties this set; it must never grow.
-KNOWN_UNTIL_T8 = {
-    "knowledge/design/foundations",
-    "knowledge/design/typography-and-composition",
-    "knowledge/images/placement",
-}
+# Emptied by the I10 topic (T8), which removed the last three pointers; it must stay empty.
+KNOWN_UNTIL_T8: set[str] = set()
 
 # Files the agent writes or receives per turn, named in the guides without being delivered guides.
 WORKSPACE_FILES = {

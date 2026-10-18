@@ -343,3 +343,14 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   an `origin`), and `place` cannot register a kit asset; its description therefore names both calls
   ("library" → `asset(action='place', …)`, "brand_kit" → `asset(action='use_brand_asset', …)`) instead
   of only `place` as first proposed.
+- **T8 decisions (founder, 2026-10-17):** after run evidence (text.md opened in 45 of 109 local scene
+  turns; 0 scrims in 568 compiled blocks; "Book a demo" CTA twice), R10.1–R10.3 STAND — a guide that is
+  read but contradicts a pinned rule is aligned to it. R10.5 SMALLER FORM: drop only the nested
+  `card al(…)` line from the layout and artboard starters, "Preferred generated structure" → "A common
+  starting structure", keep the auto-layout root and the layout guide's opening (evidence: 54 of 83 turns
+  use a plain root, 29 an auto-layout root; self-acceptance 37% vs 62% — weak, circular signal); root
+  structure goes to a step-5 side-by-side comparison. R10.4 label: new `brief_label` parameter, scene
+  executor passes `SCENE_ASSIGNMENT_LABEL`; website legs keep the default label.
+- **Owed DB-backed tests (run on a throwaway migrated DB before merge):** test_scene_copy_review_profile.py,
+  test_scene_copy_review.py (T6), test_scene_turn_persist.py's two leg-prompt tests and test_web_turns.py
+  (T8).

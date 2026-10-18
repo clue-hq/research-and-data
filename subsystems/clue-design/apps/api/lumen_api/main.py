@@ -243,7 +243,7 @@ from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
 from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
-from clue_design.leg_context import render_leg_turn_prompt
+from clue_design.leg_context import SCENE_ASSIGNMENT_LABEL, render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.sessions import design_session_id, render_document_drift_note
 from clue_design.storage import location_digest
@@ -10717,6 +10717,8 @@ def _execute_agent_turn_job(
             history=history_block if isinstance(history_block, list) else None,
             prompt=composed_prompt,
             drift_note=drift_note,
+            # Harness alignment I10: an ad leg's brief is labelled as the agent's assignment.
+            brief_label=SCENE_ASSIGNMENT_LABEL,
         )
     if composed_prompt != payload.prompt:
         payload = payload.model_copy(update={"prompt": composed_prompt})
