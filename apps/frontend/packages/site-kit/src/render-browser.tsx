@@ -10,6 +10,11 @@
 // on window.__clueRender — frozen once written, and only trusted by Python when it carries the
 // render's nonce (which no section can read: the input is gone before any section loads).
 //
+// Review S3-1: a section's code runs in this page before it answers, so the answer never goes through
+// a built-in a section could replace: the built-ins it needs are captured here, before any section
+// loads, every field is written in one place, and the result travels as ONE string (serialised with
+// the captured JSON.stringify) whose length Python reads before it reads the string itself.
+//
 // In live mode (publishing live sites) each page is drawn into #clue-site with its page data, and
 // then taken over right here the way the published page's runtime takes it over (hydrateSite): every
 // mismatch or failure becomes a warning "hydration on <route>: <message>" (a minified hydration error
@@ -33,11 +38,12 @@ type Input = {
   live?: boolean;
   sections: { name: string; moduleJs: string }[];
 };
-type Channel = { done: boolean; nonce: string; size: number; code: string | null; error: string | null; result: unknown };
+type Channel = { done: boolean; nonce: string; code: string | null; error: string | null; json: string | null };
 
 const HOST = hostModules();
 const freeze = Object.freeze;
-const channel: Channel = Object.seal({ done: false, nonce: "", size: 0, code: null, error: null, result: null });
+const stringify = JSON.stringify;
+const channel: Channel = Object.seal({ done: false, nonce: "", code: null, error: null, json: null });
 Object.defineProperty(window, "__clueRender", { value: channel, writable: false, configurable: false });
 
 const dataUrl = (source: string) => "data:text/javascript;charset=utf-8," + encodeURIComponent(source);
@@ -56,8 +62,24 @@ async function loadSection(moduleJs: string, shims: Record<string, string>): Pro
   return (await import(dataUrl(source))) as Record<string, unknown>;
 }
 
-function finish(nonce: string, fields: Partial<Channel>): void {
-  Object.assign(channel, fields);
+function finish(nonce: string, outcome: { result: unknown } | { code: string; error: string }): void {
+  let code: string | null = null;
+  let error: string | null = null;
+  let json: string | null = null;
+  if ("result" in outcome) {
+    try {
+      json = stringify(outcome.result);
+    } catch (failure) {
+      code = "render.failed";
+      error = `the render's answer could not be written: ${failure instanceof Error ? failure.message : String(failure)}`;
+    }
+  } else {
+    code = outcome.code;
+    error = outcome.error;
+  }
+  channel.code = code;
+  channel.error = error;
+  channel.json = json;
   channel.nonce = nonce;
   channel.done = true;
   freeze(channel);
@@ -83,7 +105,7 @@ async function main(): Promise<void> {
     for (const section of input.sections) loaded[section.name] = await loadSection(section.moduleJs, shims);
     if (input.mode === "schema") {
       const result = sectionPropsSchema(Object.values(loaded)[0] ?? {});
-      finish(nonce, { size: JSON.stringify(result).length, result });
+      finish(nonce, { result });
       return;
     }
     const agentSections = Object.fromEntries(Object.entries(loaded).map(([name, module]) => [name, module as unknown as AgentSectionModule]));
@@ -114,7 +136,7 @@ async function main(): Promise<void> {
         for (const message of reports) rendered.warnings.push(`hydration on ${page.route}: ${hydrationNote(message)}`);
       }
     }
-    finish(nonce, { size: rendered.size, result: { pages: rendered.pages, tailwindTheme: rendered.tailwindTheme, warnings: rendered.warnings } });
+    finish(nonce, { result: { pages: rendered.pages, tailwindTheme: rendered.tailwindTheme, warnings: rendered.warnings } });
   } catch (error) {
     finish(nonce, {
       code: error instanceof RenderRefusal ? error.code : "render.failed",

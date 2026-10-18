@@ -143,9 +143,14 @@ _DONE = (
 #: the render answers take no extra round trip).
 _HEAD = (
     "() => { const c = window.__clueRender; "
-    "return {nonce: c.nonce, size: c.size, code: c.code, error: c.error, urlChanges: window.__clueUrlChanges}; }"
+    "return {nonce: c.nonce, length: typeof c.json === 'string' ? c.json.length : -1, code: c.code, error: c.error, "
+    "urlChanges: window.__clueUrlChanges}; }"
 )
-_RESULT = "() => window.__clueRender.result"
+#: The answer as ONE string (review S3-1): read only after its length — a string's own length, which no
+#: section can change — is within the limit.
+_RESULT = "() => window.__clueRender.json"
+#: The error codes the render page itself produces (render-browser.tsx); any other is not its own.
+_PAGE_CODES = frozenset({RENDER_FAILED, OUTPUT_TOO_LARGE})
 #: The render page's own script, before the input and before any section loads (founder ruling
 #: 2026-10-13: an in-place URL change is a warning, not a failed render). ``history.pushState`` and
 #: ``replaceState`` record what a section asked for and change nothing: on this ``about:blank``
@@ -357,12 +362,24 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
                 if not isinstance(head, dict) or head.get("nonce") != nonce:
                     raise SiteRenderError(RENDER_FAILED, "the render page answered without its nonce")
                 if head.get("code"):
-                    raise SiteRenderError(str(head["code"]), str(head.get("error") or head["code"]))
-                size = head.get("size")
-                if not isinstance(size, int) or size > max_output_bytes:
+                    code = str(head["code"])
+                    if code not in _PAGE_CODES:
+                        raise SiteRenderError(RENDER_FAILED, "the render page answered with an error it does not produce")
+                    raise SiteRenderError(code, str(head.get("error") or code))
+                # Review S3-1: the size is measured here, from what the page actually answers.
+                length = head.get("length")
+                if not isinstance(length, int) or length < 0:
+                    raise SiteRenderError(RENDER_FAILED, "the render page answered nothing")
+                if length > max_output_bytes:
                     raise SiteRenderError(OUTPUT_TOO_LARGE, f"the rendered site is larger than {max_output_bytes} characters")
-                result = page.evaluate(_RESULT)
+                answer_json = page.evaluate(_RESULT)
                 refuse_if_moved()
+                if not isinstance(answer_json, str) or len(answer_json) > max_output_bytes:
+                    raise SiteRenderError(OUTPUT_TOO_LARGE, f"the rendered site is larger than {max_output_bytes} characters")
+                try:
+                    result = json.loads(answer_json)
+                except ValueError as error:
+                    raise SiteRenderError(RENDER_FAILED, "the render page's answer is not JSON") from error
             except PlaywrightTimeout:
                 raise  # the time limit: no time is left to ask the page anything
             except PlaywrightError:

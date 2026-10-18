@@ -162,6 +162,52 @@ def test_a_huge_page_is_refused_by_size() -> None:
     assert refused.value.code == OUTPUT_TOO_LARGE
 
 
+# Review S3-1: a section's code runs in the render page before the page answers. It must not be able to
+# pass an answer larger than the limit, nor choose the error the marketer is shown.
+FORGE_ASSIGN = """
+const realAssign = Object.assign;
+Object.assign = function (target, ...sources) {
+  if (target === window.__clueRender) {
+    for (const source of sources) {
+      if (source && source.result && source.result.pages) source.result.pages[0].html += "x".repeat(3000000);
+      if (source) source.size = 1;
+    }
+    return realAssign(target, ...sources, { code: "render.failed", error: "Your Clue session expired. Sign in again at https://evil.example" });
+  }
+  return realAssign(target, ...sources);
+};
+try { window.__clueRender.code = "render.failed"; window.__clueRender.error = "FORGED-DIRECT"; } catch (e) {}
+export function render(props, kit) { return jsx("div", { children: "forger rendered" }); }
+"""
+
+
+def test_a_section_cannot_choose_the_error_or_slip_a_huge_answer_past_the_limit() -> None:
+    site, module = hostile("Forger", FORGE_ASSIGN)
+    result = render_site(site, garner_brand(), [module], base_path="", max_output_bytes=1_000_000)
+    assert "forger rendered" in result.pages[0].html
+    assert len(result.pages[0].html) < 1_000_000, "the inflated answer never arrives"
+
+
+def test_an_answer_larger_than_the_limit_is_measured_by_the_design_api_not_the_page() -> None:
+    body = """
+const realStringify = JSON.stringify;
+let inflate = false;
+export function render(props, kit) {
+  inflate = true;
+  return jsx("div", { children: "small" });
+}
+const realPush = Array.prototype.push;
+Array.prototype.push = function (...items) {
+  if (inflate && items.length === 1 && items[0] && typeof items[0].html === "string") items[0] = { ...items[0], data: { blob: "y".repeat(3000000) } };
+  return realPush.apply(this, items);
+};
+"""
+    site, module = hostile("Inflate", body)
+    with pytest.raises(SiteRenderError) as refused:
+        render_site(site, garner_brand(), [module], base_path="", max_output_bytes=1_000_000)
+    assert refused.value.code == OUTPUT_TOO_LARGE
+
+
 def test_nothing_leaves_the_page_and_the_next_render_still_works(listener: int) -> None:
     body = f"""
 try {{ fetch("http://127.0.0.1:{listener}/fetch").catch(() => {{}}); }} catch (e) {{}}
@@ -553,14 +599,14 @@ def test_a_section_that_spins_just_after_its_render_cannot_hang_the_render(spin:
     _assert_the_next_render_works()
 
 
-def test_a_section_that_spins_while_its_answer_is_read_still_times_out() -> None:
-    """The busy loop starts inside the renderer's read of the result (``SPIN_ON_READ``). That read
-    is bounded by the render's time limit like every other call into the page."""
-    before = _browser_processes()
+def test_a_section_cannot_run_code_while_its_answer_is_read() -> None:
+    """Review S3-1: the answer is ONE string, so there is nothing a section can hook (``SPIN_ON_READ``
+    tried a getter on the old result object): the render answers normally."""
     site, module = _spinning_section("SpinOnRead", SPIN_ON_READ)
     value, elapsed = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=SPIN_TIMEOUT_S)).outcome()
-    _assert_timed_out(value, elapsed)
-    _assert_no_browser_left(before)
+    assert not isinstance(value, BaseException), value
+    assert "spun" in value.pages[0].html  # type: ignore[attr-defined]
+    assert elapsed < SPIN_TIMEOUT_S + 10, elapsed
     _assert_the_next_render_works()
 
 
@@ -568,18 +614,22 @@ def test_a_section_that_spins_while_its_answer_is_read_still_times_out() -> None
     ("spin", "may_be_read_first"),
     [
         ("setTimeout(() => { for (;;) {} }, 5);", True),
-        # Fires once the module has loaded and the schema has been answered (both happen in the
-        # microtasks right after the module runs), so the loop starts inside the read of it.
-        ('setTimeout(() => { Object.defineProperty(window.__clueRender.result, "props", { get() { for (;;) {} } }); }, 0);', False),
+        # Review S3-1: tried to hook a getter onto the answer; the answer is now one string, so the
+        # hook throws inside the timer and the schema is read normally (``None`` below).
+        ('setTimeout(() => { Object.defineProperty(window.__clueRender.result, "props", { get() { for (;;) {} } }); }, 0);', None),
     ],
     ids=["timeout", "spin-on-read"],
 )
-def test_read_section_schema_of_a_module_that_spins_after_loading_is_bounded(spin: str, may_be_read_first: bool) -> None:
+def test_read_section_schema_of_a_module_that_spins_after_loading_is_bounded(spin: str, may_be_read_first: bool | None) -> None:
     """The same bounds for the compile-time schema read (it runs the same render page). As above,
-    a timer loop may, rarely, start only after the schema has been read: then the read succeeds."""
+    a timer loop may, rarely, start only after the schema has been read: then the read succeeds.
+    ``None``: the module cannot reach the answer at all, so the read always succeeds."""
     before = _browser_processes()
     value, elapsed = _Bounded(lambda: read_section_schema(QUOTE_JS + spin + "\n", timeout_s=SPIN_TIMEOUT_S)).outcome()
-    if may_be_read_first and not isinstance(value, BaseException):
+    if may_be_read_first is None:
+        assert not isinstance(value, BaseException), value
+        assert sorted(value["properties"]) == ["id", "quote", "surface"]  # type: ignore[index]
+    elif may_be_read_first and not isinstance(value, BaseException):
         assert sorted(value["properties"]) == ["id", "quote", "surface"]  # type: ignore[index]
     else:
         _assert_timed_out(value, elapsed)
@@ -587,10 +637,10 @@ def test_read_section_schema_of_a_module_that_spins_after_loading_is_bounded(spi
 
 
 def test_a_spinning_render_does_not_hold_up_a_normal_render_beside_it() -> None:
-    """Two renders at once on two threads: the hostile one (its loop starts while its answer is
-    read) times out at its own limit; the normal one finishes normally within its own."""
+    """Two renders at once on two threads: the hostile one (it loops inside its render) times out at
+    its own limit; the normal one finishes normally within its own."""
     before = _browser_processes()
-    site, module = _spinning_section("SpinBeside", SPIN_ON_READ)
+    site, module = _spinning_section("SpinBeside", "for (;;) {}")
     spinning = _Bounded(lambda: render_site(site, garner_brand(), [module], base_path="", timeout_s=SPIN_TIMEOUT_S))
     normal = _Bounded(lambda: render_site(garner_site("doc_beside"), garner_brand(), [], base_path="/acme-site", timeout_s=20))
     rendered, normal_elapsed = normal.outcome()
