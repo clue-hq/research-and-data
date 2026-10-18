@@ -292,7 +292,7 @@ footer.
 | 1 | Click any text and style the whole text box | Finished 2026-10-17; live-checked on Garner (Carmel Clay) and Conduit (Oliver Hotels) 2026-10-17; Clue has no microsite in the lane yet | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-1-foundations-and-text.md` |
 | 2 | Style and link highlighted words; more fonts | Finished 2026-10-17: built, reviewed, live-checked on Conduit (Oliver Hotels) and Garner (Carmel Clay); skill text approved and written; Clue has no microsite in the lane yet | `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-2-words-links-fonts.md` |
 | 3 | Click a button and edit everything about it | Built 2026-10-18 (Tasks 1–7, 9 and the site.md part of 8); live-checked on Garner (Carmel Clay: header and CTA band buttons) and Conduit (Oliver Hotels: a copied hero button), both restored to their starting content; end-of-plan review done 2026-10-18 and all 11 findings fixed; skill text approved and written 2026-10-18; frontend `build` owed with the lane stack down |  `docs/superpowers/plans/2026-10-17-site-element-inspector-plan-3-buttons.md` |
-| 4 | Click any box (section, card, row, div) and style or move it | Not written | — |
+| 4 | Click any box (section, card, row, div) and style or move it | Plan written 2026-10-18; not started (rulings R1–R11 await the founder's check) | `docs/superpowers/plans/2026-10-18-site-element-inspector-plan-4-containers.md` |
 | 5 | Click an image and set its fit, alt text and corners | Not written | — |
 | 6 | Headers and footers as editable templates, changed by the marketer and the agent like any section | Not written (founder 2026-10-17: build it as plan 6) | — |
 
@@ -352,10 +352,14 @@ footer.
 - `edits` properties added: `gap`, `order`, `hidden`; the plan-3 box properties extended to containers.
 - Layers becomes the full nested tree of the section. The agent: `site.md` and skill text for containers,
   ordering and hiding (founder review first).
+- Added when plan 4 was written (2026-10-18, pending the founder's check): `edits` also gains `contentAlign`
+  (`{along, to}`, the CSS it set kept with it); Arrange is offered for text, buttons and images too; images
+  become selectable here (keys on images, `kit.Image` takes `el`) with Arrange, Hide and a Layers row only
+  (R8); a click on blank section space still selects the section, whose panel adds its box's Fill, Stroke
+  and Layout (R1, R2).
 
 **Plan 5: images.**
-- Clicking an image selects it, including the header and footer logos (keys on images; `kit.Image` takes
-  `el`).
+- (Selecting images, their keys and `kit.Image`'s `el` move to plan 4 if the founder accepts plan 4's R8.)
 - The image panel: Replace (the existing asset picker), fit (fill or fit), alt text, stroke with corner
   radius.
 - `edits` property added: `imageFit`; stroke and radius extended to images.
@@ -377,7 +381,7 @@ site document, the editor and publishing treat the header and footer.)
 | Requirement (section of this doc) | Plan |
 |---|---|
 | Element names and selection, for text (§4.1, §4.2) | 1 |
-| ... for buttons / containers / images | 3 / 4 / 5 |
+| ... for buttons / containers / images | 3 / 4 / 4 (plan 4's R8, pending the founder's check; was 5) |
 | `edits` storage, validation and stylesheet (§4.3, §4.5) | 1 (later plans add properties) |
 | Whole-box text typography, brand fonts | 1 |
 | Header and footer as editable templates (any words, any styling, agent-rewritable, placeholders for logo and account name) | 6 |
@@ -427,6 +431,7 @@ Never leave a plan's scope only in a plan file or a chat; it belongs here.
 
 ### 7.7 Change log
 
+- 2026-10-18: plan 4 written (boxes and Arrange). Its rulings R1–R11 await the founder's check: blank section space still selects the section, whose panel adds its box's controls; a section's box is two keys (`root` outer, `root.inner` holding the brand's padding); content alignment stored with the CSS it set; gap live only for rows and grids; how a move is written (prop array with `_edits` keys remapped, else `order`, else fixed); Arrange on every element kind; panel names; images selectable in plan 4 (R8, moves a §7.3 row); hidden parts stay hidden in the editor; pass-through wrappers not listed; the new properties' shapes.
 - 2026-10-17: design approved by the founder; split into five plans; plan 1 written.
 - 2026-10-17: plan 6 (a structurally different, agent-written header) proposed; founder deferred it. Plan 1 started.
 - 2026-10-17: plan 1 finished. Live checks found and fixed: re-picking the shown font made a no-op save; Bold on a font with no 700 weight never showed as pressed (Bold now follows the font's own boldest weight, and is disabled with a note when there is none); the Theme tab listed palette ramps (hidden, ruling F3).
