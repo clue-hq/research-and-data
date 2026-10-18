@@ -100,7 +100,7 @@ def test_an_agent_section_renders_from_its_module_with_its_own_css() -> None:
     site = site_with_section("doc_quote", "Quote", module.digest, {"id": "q", "surface": "brand", "quote": "Fewer surprises."})
     result = render_site(site, garner_brand(), [module], base_path="")
     html = result.pages[0].html
-    assert '<div data-agent-section="Quote"><section class="bg-surface-brand text-on-surface-brand">' in html
+    assert '<div data-agent-section="Quote"><section class="bg-surface-brand text-on-surface-brand" data-clue-el="root">' in html
     assert "Fewer surprises." in html
     assert ".quote-extra{color:inherit}" in result.css
 
