@@ -119,7 +119,7 @@ test("the old shell shape is refused with how to fix it", () => {
 
 test("shell ids and types are checked", () => {
   const wrongId = check({ header: headerClone({ id: "top" }), footer: siteFooter() });
-  assert.ok(wrongId.errors.includes('shell.header.props.id: must be "header"'), wrongId.errors.join("\n"));
+  assert.ok(wrongId.errors.includes('shell.header.id: must be "header"'), wrongId.errors.join("\n"));
   const wrongType = check({ header: { type: "SiteFooter", props: { id: "header", legal: "x" } }, footer: siteFooter() });
   assert.ok(
     wrongType.errors.includes("shell.header.type: SiteFooter is the footer's; the header is SiteHeader, a ClonedSection or one of this site's sections"),

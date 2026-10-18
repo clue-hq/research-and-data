@@ -269,3 +269,16 @@ test("the header's menu lists the site's pages, static and live", () => {
     }
   }
 });
+
+// Plan 6: the header's and footer's own `order` reaches them through their section box (review of the
+// published render: the box strips `_edits` before a section draws, and passes them as the edits).
+test("the header's and footer's order applies on the published page", () => {
+  const shell = structuredClone(stored.shell);
+  shell.header.props._edits = { actions: { order: ["ctaArea", "menu"] }, menu: { order: ["menu.analysis", "menu._home"] } };
+  shell.footer.props._edits = { links: { order: ["terms", "privacy"] } };
+  const html = renderSitePages({ site: { ...site, shell }, brand, basePath: "", routes: ["/"], agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
+  const at = (needle: string) => html.indexOf(needle);
+  assert.ok(at('data-clue-el="ctaArea"') < at('data-clue-el="menu"'), "the button before the menu");
+  assert.ok(at('data-clue-el="menu.analysis"') < at('data-clue-el="menu._home"'), "the menu in its order");
+  assert.ok(at('data-clue-el="terms"') < at('data-clue-el="privacy"'), "the footer's links in their order");
+});

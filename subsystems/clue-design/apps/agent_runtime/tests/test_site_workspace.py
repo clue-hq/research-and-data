@@ -172,7 +172,7 @@ def test_the_site_summary_names_pages_sections_images_and_saved_versions(tmp_pat
     versions = FakeVersions(sites={3: {}, 4: {}}).list_versions(10)
     text = ws.site_summary(workspace, garner_brand(), versions)
     assert "## / (page.json)" in text and "## /analysis (pages/analysis.json)" in text
-    assert "Lower medical spend for SCSD" in text and "Prepared for: Syracuse City School District" in text
+    assert "Lower medical spend for SCSD" in text and '   - accountLine: "Prepared for Syracuse City School District"' in text
     assert "StatsBand on the brandSubtle surface" in text
     assert "## Saved versions" in text
     assert '- version 4: "request 4" (by the agent, 2026-10-11 14:02 UTC)' in text
@@ -250,7 +250,7 @@ def test_no_selection_means_no_block_and_an_odd_id_is_named_as_written() -> None
 
 def test_a_dotted_section_id_on_the_site_is_one_id_and_its_field_splits_at_the_last_dot() -> None:
     site = {"pages": {"/": {"content": [{"type": "Hero", "props": {"id": "hero.v2", "title": "Hi"}}]}},
-            "shell": {"header": {"id": "header"}, "footer": {"id": "footer"}}}
+            "shell": {"header": {"type": "SiteHeader", "props": {"id": "header"}}, "footer": {"type": "SiteFooter", "props": {"id": "footer"}}}}
     block = targets_block([{"object_id": "site:/#hero.v2", "note": None},
                            {"object_id": "site:/#hero.v2.title", "note": "Shorter"}], site=site)
     assert '- Page /, the section with id "hero.v2". (No note.)' in block
@@ -268,7 +268,7 @@ def test_the_site_summary_says_what_was_styled_by_hand(tmp_path: Path) -> None:
                         "fontWeight": 600, "italic": True, "textAlign": "center"},
             "body": {"color": {"hex": "#0F59B0", "opacity": 80}, "underline": False},
         }}})
-    site["shell"]["header"]["_edits"] = {"preparedFor": {"fontWeight": 700}}
+    site["shell"]["header"]["props"]["_edits"] = {"accountLine": {"fontWeight": 700}}
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     ws.write_site_files(workspace, site)
@@ -276,7 +276,7 @@ def test_the_site_summary_says_what_was_styled_by_hand(tmp_path: Path) -> None:
     assert ("   - styled by hand: heading — colour text.heading, Garner Serif, 48 px, Semi Bold, italic, "
             "centred") in text
     assert "   - styled by hand: body — colour #0F59B0 80%, not underlined" in text
-    assert "- Header styled by hand: preparedFor — Bold" in text
+    assert "   - styled by hand: accountLine — Bold" in _header_block(text)
 
 
 def test_the_site_summary_reads_rich_text_and_links_in_plain_words(tmp_path: Path) -> None:
@@ -289,7 +289,7 @@ def test_the_site_summary_reads_rich_text_and_links_in_plain_words(tmp_path: Pat
         "body": 'See <a href="/analysis" data-new-tab="">the analysis</a> &amp; more',
         "linkLabel": "Read", "linkHref": "/analysis", "linkNewTab": True,
         "_edits": {"heading~1": {"fontWeight": 700}}}})
-    site["shell"]["header"]["nav"] = [{"label": "Analysis", "href": "/analysis", "newTab": True}]
+    site["shell"]["header"]["props"]["menuExtra"] = [{"label": "Analysis", "href": "/analysis", "newTab": True}]
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     ws.write_site_files(workspace, site)
@@ -298,7 +298,7 @@ def test_the_site_summary_reads_rich_text_and_links_in_plain_words(tmp_path: Pat
     assert '   - body: "See the analysis & more" (link "the analysis" → /analysis, new tab)' in text
     assert '   - link "Read" → /analysis, new tab' in text
     assert "   - styled by hand: heading~1 — Bold" in text
-    assert "- Nav links: Analysis → /analysis (new tab)" in text
+    assert "- Menu: Overview → /, Analysis → /analysis; extra: Analysis → /analysis (new tab)" in text
 
 
 def test_the_site_summary_reads_a_buttons_hand_set_look(tmp_path: Path) -> None:
@@ -331,7 +331,7 @@ def test_the_site_summary_reads_box_edits(tmp_path: Path) -> None:
             "0.2": {"order": ["0.2.1", "0.2.0"]},
             "column": {"contentAlign": {"along": "stack", "to": "end"}},
         }}})
-    site["shell"]["header"]["_edits"] = {"logo": {"hidden": True}}
+    site["shell"]["header"]["props"]["_edits"] = {"logo": {"hidden": True}}
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     ws.write_site_files(workspace, site)
@@ -339,7 +339,7 @@ def test_the_site_summary_reads_box_edits(tmp_path: Path) -> None:
     assert "   - styled by hand: stats.1 — gap 12 px, contents centred along the row" in text
     assert "   - styled by hand: 0.2 — children in the order 0.2.1, 0.2.0" in text
     assert "   - styled by hand: column — contents to the end in the stack" in text
-    assert "- Header styled by hand: logo — hidden" in text
+    assert "   - styled by hand: logo — hidden" in _header_block(text)
 
 
 def test_the_site_summary_reads_image_fit_and_alt_texts(tmp_path: Path) -> None:
@@ -353,7 +353,7 @@ def test_the_site_summary_reads_image_fit_and_alt_texts(tmp_path: Path) -> None:
     clone = next(item for item in page if item["type"] == "ClonedSection")
     clone["props"]["alts"] = {"0.2.1": "Hotel lobby"}
     clone["props"]["_edits"] = {"0.2.1": {"imageFit": "fit"}}
-    site["shell"]["header"]["accountLogoAlt"] = "Carmel Clay Schools"
+    site["shell"]["header"]["props"]["accountLogoAlt"] = "Carmel Clay Schools"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     ws.write_site_files(workspace, site)
@@ -362,7 +362,7 @@ def test_the_site_summary_reads_image_fit_and_alt_texts(tmp_path: Path) -> None:
     assert "   - styled by hand: image — image fills its box" in text
     assert '   - alt text 0.2.1: "Hotel lobby"' in text
     assert "   - styled by hand: 0.2.1 — image fits inside its box" in text
-    assert '- Account logo alt text: "Carmel Clay Schools"' in text
+    assert '   - accountLogo alt text: "Carmel Clay Schools"' in _header_block(text)
 
 
 def test_the_site_summary_reads_one_sided_padding(tmp_path: Path) -> None:
@@ -385,8 +385,8 @@ def test_the_site_summary_reads_a_buttons_words_and_new_tab(tmp_path: Path) -> N
     site["pages"]["/"]["content"].append({"type": "CtaBand", "props": {
         "id": "tab_cta", "surface": "brand", "heading": "H", "buttonLabel": 'Book <strong>a demo</strong>',
         "buttonHref": "https://garnerhealth.com/demo", "buttonNewTab": True}})
-    site["shell"]["header"]["ctaLabel"] = 'Request <span data-s="cta.label~1">the analysis</span>'
-    site["shell"]["header"]["ctaNewTab"] = True
+    site["shell"]["header"]["props"]["ctaLabel"] = 'Request <span data-s="cta.label~1">the analysis</span>'
+    site["shell"]["header"]["props"]["ctaNewTab"] = True
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     ws.write_site_files(workspace, site)
@@ -423,3 +423,41 @@ def test_a_shell_target_reads_its_entry() -> None:
     site = garner_site()
     assert ws._is_site_part(site, "shell", "header")
     assert not ws._is_site_part({**site, "shell": {"header": {"preparedFor": "x"}, "footer": {}}}, "shell", "header")
+
+
+def _header_block(text: str) -> str:
+    """site.md's header and footer part."""
+    return text.split("## Header and footer (shell.json)", 1)[1].split("\n## ", 1)[0]
+
+
+# Site element inspector, plan 6 (ruling R1, R8, R10): the header and footer read like page sections.
+def test_site_md_describes_header_and_footer_as_sections(tmp_path: Path) -> None:
+    brand = garner_brand()
+    template = "frag_00000000000000ae"
+    brand["clones"][template] = {
+        "id": template, "role": "site_header", "label": "Header template — Garner", "page_url": "https://garnerhealth.com/",
+        "section_index": None, "wrapper_class": "w", "css": "",
+        "html": '<header><a href="/"><svg></svg></a><span data-lumen-slot="account_line">Prepared for you</span><nav data-clue-menu=""><a data-clue-menu-item="" href="/x">X</a></nav></header>',
+        "slots": {"account_line": {"kind": "text", "fallback": "Prepared for you"}},
+    }
+    site = garner_site()
+    site["pages"] = {"/": site["pages"]["/"], "/team": site["pages"]["/analysis"]}
+    site["shell"] = {
+        "header": {"type": "ClonedSection", "props": {
+            "id": "header", "fragmentId": template, "slots": {"account_line": "Built for <strong>Syracuse</strong>"},
+            "replacements": [], "links": [], "menuExtra": [{"label": "Pricing", "href": "https://garnerhealth.com/pricing"}],
+            "_edits": {"root": {"sticky": True, "overlay": True}}}},
+        "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "© 2026 Garner Health.", "privacyHref": "https://garnerhealth.com/privacy"}},
+    }
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ws.write_site_files(workspace, site)
+    block = _header_block(ws.site_summary(workspace, brand))
+    lines = block.splitlines()
+    assert lines[1] == f'- Header: ClonedSection {template} "Header template — Garner"'
+    assert '   - account_line: "Built for Syracuse" (bold "Syracuse")' in lines
+    assert "- Header stays at the top while scrolling; sits over the first section" in lines
+    assert "- Menu: Overview → /, Team → /team; extra: Pricing → https://garnerhealth.com/pricing" in lines
+    assert "- Footer: SiteFooter" in lines
+    assert '   - legal: "© 2026 Garner Health."' in lines
+    assert '   - link "Privacy policy" → https://garnerhealth.com/privacy' in lines

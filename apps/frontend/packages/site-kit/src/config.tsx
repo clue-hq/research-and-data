@@ -201,8 +201,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         menuLabels: fromPanel("Menu labels"),
         menuExtra: fromPanel("Extra menu links"),
       },
-      render: (props: Record<string, unknown> & { puck?: { isEditing?: boolean } }) => {
-        const drawn = <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} menu={menuOf(props as MenuProps)} />;
+      // The section box hands the edits over beside the props (it strips `_edits` from them): the
+      // header applies its own `order`, so they go back in.
+      render: (props: Record<string, unknown> & { puck?: { isEditing?: boolean } }, context?: { edits: Edits }) => {
+        const header = { ...props, _edits: context?.edits } as unknown as HeaderProps;
+        const drawn = <SiteHeader brand={brand} header={header} href={href} menu={menuOf(props as MenuProps)} />;
         const Labels = options.editor?.MenuLabels;
         return props.puck?.isEditing && Labels ? <Labels itemId={String(props.id ?? "")}>{drawn}</Labels> : drawn;
       },
@@ -220,7 +223,9 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         termsHref: { type: "text" as const, label: "Terms link" },
         termsNewTab: yesNo("Open the terms link in a new tab"),
       },
-      render: (props: Record<string, unknown>) => <SiteFooter brand={brand} footer={props as unknown as FooterProps} href={href} />,
+      render: (props: Record<string, unknown>, context?: { edits: Edits }) => (
+        <SiteFooter brand={brand} footer={{ ...props, _edits: context?.edits } as unknown as FooterProps} href={href} />
+      ),
     },
   };
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit

@@ -114,7 +114,8 @@ export function validateSite(
     errors.push('shell.json: the header and footer are sections: {"header": {"type": …, "props": {"id": "header", …}}, "footer": {…}} (building-with-puck skill)');
   } else {
     const shellResult = shellSchemaWith(agentSchemaMap).safeParse(shell);
-    if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e}`));
+    // Named like every other header and footer error: `shell.header.<field>` (the props level is implied).
+    if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e.replace(/^(header|footer)\.props\./, "$1.")}`));
   }
 
   const allowedImages = new Set([...Object.values(brand.assets).map((asset) => asset.file), ...images.siteImages]);

@@ -593,25 +593,79 @@ def site_summary(
 
     out = ["# The site as it is now", "",
            "Written for you at the start of this request. The page files are the truth; this is a summary.", ""]
-    # From here to the end of the pages loop: the spike's lines 312-355 unchanged.
+    def item_lines(item: Mapping[str, Any]) -> list[str]:
+        """A section's lines under its heading, the same on a page and in the header or footer."""
+        props = item.get("props", {})
+        lines: list[str] = []
+        if item.get("type") == "ClonedSection":
+            clone = clones.get(props.get("fragmentId"), {})
+            slots = props.get("slots") or {}
+            for key, slot in (clone.get("slots") or {}).items():
+                value = slots.get(key)
+                if slot.get("kind") == "text" and value not in (None, "", slot.get("fallback")):
+                    lines.append(f"   - {key}: {_rich_words(value)}")
+                elif slot.get("kind") == "image" and value:
+                    lines.append(f"   - {key}: {image(value)}")
+                elif slot.get("kind") == "href" and value:
+                    lines.append(f"   - {key} → {value}")
+                elif slot.get("kind") == "visibility" and value is False:
+                    lines.append(f"   - {'hidden' if key == 'visible' else f'{key}: hidden'}")
+            for r in props.get("replacements") or []:
+                lines.append(f"   - \"{_short(r.get('find'), 60)}\" now reads \"{_short(r.get('replace'), 80)}\"")
+            for link in props.get("links") or []:
+                lines.append(f"   - link {link.get('find')} → {link.get('replace')}")
+            if props.get("newTab"):
+                lines.append(f"   - links opening in a new tab: {', '.join(str(key) for key in props['newTab'])}")
+            for key, alt in (props.get("alts") or {}).items():
+                lines.append(f'   - alt text {key}: "{_short(str(alt), 120)}"')
+        else:
+            for key in ("accountLine", "eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source", "legal"):
+                if props.get(key):
+                    lines.append(f"   - {key}: {_rich_words(props[key])}")
+            for stat in props.get("stats") or []:
+                lines.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
+            for key in ("image", "logo", "accountLogo"):
+                if props.get(key):
+                    lines.append(f"   - {key}: {image(props[key])}")
+            for key in ("imageAlt", "logoAlt", "accountLogoAlt"):
+                if props.get(key):
+                    lines.append(f'   - {key.removesuffix("Alt")} alt text: "{_short(str(props[key]), 120)}"')
+            for words, href, tab in (("buttonLabel", "buttonHref", "buttonNewTab"), ("ctaLabel", "ctaHref", "ctaNewTab")):
+                if props.get(words):
+                    lines.append(f"   - button {_rich_words(props[words])} → {props.get(href)}{', new tab' if props.get(tab) else ''}")
+            for words, href, tab in (("linkLabel", "linkHref", "linkNewTab"), ("privacyLabel", "privacyHref", "privacyNewTab"), ("termsLabel", "termsHref", "termsNewTab")):
+                label = props.get(words) or {"privacyLabel": "Privacy policy", "termsLabel": "Terms"}.get(words, "")
+                if props.get(href) and label:
+                    lines.append(f"   - link {_rich_words(label)} → {props.get(href)}{', new tab' if props.get(tab) else ''}")
+        lines += [f"   - styled by hand: {line}" for line in _styled_by_hand(props.get("_edits"))]
+        return lines
+
+    # Plan 6: the header and footer are sections, described like the page's own.
     if (workspace / "shell.json").exists():
         shell = json.loads((workspace / "shell.json").read_text())
-        header = shell.get("header", {})
-        nav = ", ".join(
-            f"{n.get('label')} → {n.get('href')}" + (" (new tab)" if n.get("newTab") else "") for n in header.get("nav") or []
-        ) or "none"
-        out += ["## Header and footer",
-                f"- Prepared for: {header.get('preparedFor')}; button {_rich_words(header.get('ctaLabel') or '')} → {header.get('ctaHref')}"
-                + (", new tab" if header.get("ctaNewTab") else ""),
-                f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}"]
-        # Plan 5: the logos' alt texts.
-        for label, value in (("Logo alt text", header.get("logoAlt")), ("Account logo alt text", header.get("accountLogoAlt")),
-                             ("Footer logo alt text", shell.get("footer", {}).get("logoAlt"))):
-            if value:
-                out.append(f'- {label}: "{_short(str(value), 120)}"')
-        for part in ("header", "footer"):
-            styled = _styled_by_hand(shell.get(part, {}).get("_edits"))
-            out += [f"- {part.capitalize()} styled by hand: {line}" for line in styled]
+        out += ["## Header and footer (shell.json)"]
+        for part in _SHELL_PARTS:
+            entry = shell_entry(shell, part)
+            if entry is None:
+                out.append(f"- {part.capitalize()}: not a section yet (rewrite shell.json: building-with-puck skill)")
+                continue
+            props = entry.get("props") or {}
+            kind = str(entry.get("type"))
+            if kind == "ClonedSection":
+                clone = clones.get(props.get("fragmentId"), {})
+                kind = f"ClonedSection {props.get('fragmentId')} \"{_short(clone.get('label', ''), 70)}\""
+            elif props.get("surface"):
+                kind = f"{kind} on the {props.get('surface')} surface"
+            out.append(f"- {part.capitalize()}: {kind}")
+            out += item_lines(entry)
+            if part == "header":
+                root = ((props.get("_edits") or {}).get("root") or {}) if isinstance(props.get("_edits"), dict) else {}
+                placed = [words for flag, words in (("sticky", "stays at the top while scrolling"), ("overlay", "sits over the first section")) if root.get(flag)]
+                if placed:
+                    out.append(f"- Header {'; '.join(placed)}")
+                menu = _menu_line(workspace, entry, clones)
+                if menu:
+                    out.append(f"- Menu: {menu}")
         out.append("")
     for route, page in site_pages(workspace).items():
         file = "page.json" if route == "/" else f"pages/{route[1:]}.json"
@@ -621,43 +675,9 @@ def site_summary(
             if item.get("type") == "ClonedSection":
                 clone = clones.get(props.get("fragmentId"), {})
                 out.append(f"{n}. {props.get('id')}: the seller's section \"{_short(clone.get('label', ''), 70)}\" ({props.get('fragmentId')})")
-                slots = props.get("slots") or {}
-                for key, slot in (clone.get("slots") or {}).items():
-                    value = slots.get(key)
-                    if slot.get("kind") == "text" and value not in (None, "", slot.get("fallback")):
-                        out.append(f"   - {key}: {_rich_words(value)}")
-                    elif slot.get("kind") == "image" and value:
-                        out.append(f"   - {key}: {image(value)}")
-                    elif slot.get("kind") == "href" and value:
-                        out.append(f"   - {key} → {value}")
-                    elif slot.get("kind") == "visibility" and value is False:
-                        out.append("   - hidden")
-                for r in props.get("replacements") or []:
-                    out.append(f"   - \"{_short(r.get('find'), 60)}\" now reads \"{_short(r.get('replace'), 80)}\"")
-                for link in props.get("links") or []:
-                    out.append(f"   - link {link.get('find')} → {link.get('replace')}")
-                if props.get("newTab"):
-                    out.append(f"   - links opening in a new tab: {', '.join(str(key) for key in props['newTab'])}")
-                for key, alt in (props.get("alts") or {}).items():
-                    out.append(f'   - alt text {key}: "{_short(str(alt), 120)}"')
             else:
                 out.append(f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface")
-                for key in ("eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source"):
-                    if props.get(key):
-                        out.append(f"   - {key}: {_rich_words(props[key])}")
-                for stat in props.get("stats") or []:
-                    out.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
-                if props.get("image"):
-                    out.append(f"   - image: {image(props['image'])}")
-                if props.get("imageAlt"):
-                    out.append(f'   - image alt text: "{_short(str(props["imageAlt"]), 120)}"')
-                if props.get("buttonLabel"):
-                    tab = ", new tab" if props.get("buttonNewTab") else ""
-                    out.append(f"   - button {_rich_words(props['buttonLabel'])} → {props.get('buttonHref')}{tab}")
-                if props.get("linkLabel"):
-                    tab = ", new tab" if props.get("linkNewTab") else ""
-                    out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}{tab}")
-            out += [f"   - styled by hand: {line}" for line in _styled_by_hand(props.get("_edits"))]
+            out += item_lines(item)
         out.append("")
     if versions:
         out += ["## Saved versions",
@@ -669,6 +689,27 @@ def site_summary(
             )
         out.append("")
     return "\n".join(out)
+
+
+def _menu_line(workspace: Path, header: Mapping[str, Any], clones: Mapping[str, Any]) -> str:
+    """The header's menu as the page draws it (site-kit's site-menu.ts): the site's pages, "/" first,
+    renamed by ``menuLabels``, then ``menuExtra``. Empty when the header draws no menu of ours."""
+    props = header.get("props") or {}
+    kind = header.get("type")
+    clone = clones.get(props.get("fragmentId"), {}) if kind == "ClonedSection" else {}
+    if kind != "SiteHeader" and "data-clue-menu" not in str(clone.get("html") or ""):
+        return ""
+    routes = sorted(site_pages(workspace), key=lambda route: (route != "/", route))
+    labels = props.get("menuLabels") or {}
+    pages = []
+    if len(routes) > 1:
+        for route in routes:
+            key = "_home" if route == "/" else route[1:]
+            default = "Overview" if route == "/" else route[1:].replace("-", " ").capitalize()
+            pages.append(f"{labels.get(key) or default} → {route}")
+    extra = [f"{item.get('label')} → {item.get('href')}" + (" (new tab)" if item.get("newTab") else "") for item in props.get("menuExtra") or []]
+    line = ", ".join(pages) or "no pages (a one-page site)"
+    return line + (f"; extra: {', '.join(extra)}" if extra else "")
 
 
 def site_changes(before: dict[str, dict], after: dict[str, dict]) -> list[str]:
