@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import { getAtPath } from "@clue/site-kit/editor-site";
 import { richText } from "@clue/site-kit/rich";
@@ -21,7 +21,7 @@ import { SiteButtonPanel } from "./site-button-panel";
 import { SiteImagePanel } from "./site-image-panel";
 import { SiteLinkRow } from "./site-link-row";
 import { SiteTextPanel } from "./site-text-panel";
-import { useLayerListFill } from "./use-layer-list-fill";
+import { LayerList } from "./layer-list";
 import styles from "./chat-shell.module.css";
 
 export type SiteImageFieldRenderer = (field: FieldDescription, path: string, value: string) => ReactNode;
@@ -43,8 +43,6 @@ export function SiteInspector({
 }) {
   const [contentOpen, setContentOpen] = useState(true);
   const [layersOpen, setLayersOpen] = useState(true);
-  const layerListRef = useRef<HTMLDivElement>(null);
-  useLayerListFill(layerListRef);
   return (
     <aside aria-label="Website inspector" className={styles.inspector}>
       <div className={styles.inspectorRail}>
@@ -115,7 +113,7 @@ export function SiteInspector({
             whole header shows only this and Layers: founder 2026-10-19). */}
         {!binding.element ? <SiteHeaderPlacement binding={binding} key="header" /> : null}
         <InspectorSection label="Layers" onOpenChange={setLayersOpen} open={layersOpen}>
-          <div className={styles.layerList} ref={layerListRef}>
+          <LayerList>
             {binding.layers.map((row) => (
               <InspectorLayerRow
                 active={row.active}
@@ -126,7 +124,7 @@ export function SiteInspector({
                 onClick={() => binding.onSelectLayer(row)}
               />
             ))}
-          </div>
+          </LayerList>
         </InspectorSection>
       </div>
     </aside>

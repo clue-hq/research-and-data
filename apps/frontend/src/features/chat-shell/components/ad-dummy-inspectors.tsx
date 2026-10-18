@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ZOrderAction } from "@/features/design-editor/adapter/scene-arrange";
 import type { SceneInspectorState } from "@/features/design-editor/adapter/scene-hydrate";
 import type { SceneLayerRow } from "@/features/design-editor/adapter/scene-layers";
@@ -35,7 +35,7 @@ import styles from "./chat-shell.module.css";
 // exactly. The provider still wraps the whole panel from `image-inspector.tsx`,
 // so these schemas inherit the palette through context with no new props.
 import { useAdColorRow, useScenePaletteOptions } from "./inspector-color-row";
-import { useLayerListFill } from "./use-layer-list-fill";
+import { LayerList } from "./layer-list";
 
 export const AD_DUMMY_INSPECTOR_SELECTIONS = [
   "auto-layout",
@@ -792,10 +792,8 @@ export function AdSceneLayers({
   selectedIds = [],
 }: AdLayersBinding) {
   // Founder 2026-10-19: Layers fills the panel to its bottom (or the chat box), like the site editor.
-  const listRef = useRef<HTMLDivElement>(null);
-  useLayerListFill(listRef);
   return (
-    <div className={styles.layerList} ref={listRef}>
+    <LayerList>
       {layers.map((row) => {
         const active = selectedIds.includes(row.nodeId);
         const clickable = row.selectable || row.expandable;
@@ -825,7 +823,7 @@ export function AdSceneLayers({
           />
         );
       })}
-    </div>
+    </LayerList>
   );
 }
 
