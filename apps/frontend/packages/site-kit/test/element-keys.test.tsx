@@ -153,7 +153,8 @@ test("keys are unchanged for text and buttons when boxes are keyed", () => {
 
 test("wrapper divs, images, pictures and svgs are keyed by path; scripts, styles, noscripts and templates are not", () => {
   const html = fillClone(clone('<div><div><p>One</p></div><img src="/x.png"><svg><path d="M0"/></svg><script>x</script><picture><img src="/y.png"></picture><noscript>n</noscript><span></span></div>'));
-  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.1", "0.2", "0.4", "0.6"]);
+  // Plan 5 (ruling R4): a picture is walked into; its img is the image (0.4.0).
+  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.1", "0.2", "0.4", "0.4.0", "0.6"]);
 });
 
 // Plan 3: every button is a box key and a label key.
@@ -211,4 +212,10 @@ test("in the editor a button whose stored words are empty is not drawn, as on th
 test("review I2: the header draws its two groups in their order too", () => {
   const at = keys(draw(<SiteHeader brand={brand} header={{ ...header, _edits: { "root.inner": { order: ["actions", "brand"] } } }} href={href} />));
   assert.ok(at.indexOf("actions") < at.indexOf("brand"), at.join(","));
+});
+
+// Plan 5 (ruling R4): a picture's img is the image; keys inside the picture are new, none moves.
+test("a picture's img is keyed inside it and no other key moves", () => {
+  const html = fillClone(clone('<div><picture><source srcset="/a.webp"><img src="/a.jpg"></picture><p>x</p></div>'));
+  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.0.1", "0.1"]);
 });

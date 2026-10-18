@@ -185,12 +185,13 @@ export function makeSections(
 
   const FeatureSplit: ComponentConfig<{
     surface: AnySurface; eyebrow: Text; heading: Text; headingRole: HeadingRole; body: Text;
-    image: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string; buttonLook: string; buttonNewTab?: boolean;
+    image: string; imageAlt?: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string; buttonLook: string; buttonNewTab?: boolean;
   }> = {
     label: "Feature split",
     fields: {
       surface: surfaceField, eyebrow: richText("Eyebrow"), heading: richText("Heading"),
       headingRole: headingRoleField, body: richArea("Body"), image: imageField,
+      imageAlt: { type: "text", label: "Image alt text" },
       imageSide: { type: "radio", label: "Image side", options: [{ label: "Left", value: "left" }, { label: "Right", value: "right" }] },
       buttonLabel: buttonText("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
       buttonNewTab: newTabField("Open the button's link in a new tab"),
@@ -199,13 +200,13 @@ export function makeSections(
       surface: "page", eyebrow: "", heading: "What this does for them", headingRole: "title",
       body: "One or two plain sentences.", image: "", imageSide: "left", buttonLabel: "", buttonHref: "", buttonLook: "",
     },
-    render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
+    render: ({ surface, eyebrow, heading, headingRole, body, image, imageAlt, imageSide, buttonLabel, buttonHref, buttonLook, buttonNewTab }) => (
       <Shell surface={surface}>
         {/* No image: one text column, not an empty frame beside the words. */}
         <div className={image ? "grid items-center gap-stack-loose md:grid-cols-2" : "max-w-[60ch]"} data-clue-el="row">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} data-clue-el="image" />
+            <img src={image} alt={imageAlt ?? ""} className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} data-clue-el="image" />
           ) : null}
           <div data-clue-el="column">
             <Eyebrow el="eyebrow">{rich(eyebrow, href)}</Eyebrow>

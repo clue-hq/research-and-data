@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Config } from "@puckeditor/core";
 import type { ReactElement } from "react";
 import { parse } from "node-html-parser";
-import { cloneOrderOf, fillClone, type Clone } from "../src/clone";
+import { cloneImageAt, cloneOrderOf, fillClone, type Clone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { garner, site } from "./fixtures/garner";
 
@@ -88,4 +88,27 @@ test("cloneOrderOf gives a parent's keyed children in their captured order", () 
   const clone = box("<ul><li>A</li><li>B</li></ul>");
   assert.deepEqual(cloneOrderOf(clone, "0"), ["0.0", "0.1"]);
   assert.equal(cloneOrderOf(clone, "7"), null);
+});
+
+// Plan 5: alt texts by element key, and images through their slots.
+const pictured = (): Clone => box(
+  '<div><picture><source srcset="/brands/a.webp 1x"><img data-lumen-slot="hero" src="/brands/a.jpg" srcset="/brands/a2.jpg 2x" alt="Old"></picture><img data-lumen-slot="hero" src="/brands/a.jpg" alt="Twin"></div>',
+  { hero: { kind: "image", fallback: "/brands/a.jpg" } },
+);
+const NEW_IMAGE = `/asset-store/${"a".repeat(64)}`;
+
+test("alts set alt text by element key, escaped, and survive an image slot fill that drops stale sources", () => {
+  const html = fillClone(pictured(), { hero: NEW_IMAGE }, [], [], { alts: { "0.0.1": 'Dr. "Smith" & <team>' } });
+  const img = parse(html).querySelectorAll("img")[0];
+  assert.equal(img.getAttribute("src"), NEW_IMAGE);
+  assert.equal(img.getAttribute("srcset"), undefined, "no stale srcset");
+  assert.ok(!html.includes("<source"), "a picture's sources would win over the new image; they go");
+  assert.ok(html.includes('alt="Dr. &quot;Smith&quot; &amp; &lt;team&gt;"'), html);
+  assert.equal(parse(html).querySelectorAll("img")[1].getAttribute("alt"), "Twin", "only the keyed image's alt changes");
+});
+
+test("cloneImageAt reports the slot, how many images use it, and the captured alt", () => {
+  assert.deepEqual(cloneImageAt(pictured(), "0.0.1"), { slot: "hero", uses: 2, alt: "Old" });
+  assert.deepEqual(cloneImageAt(box('<div><img src="/brands/x.png"></div>'), "0.0"), { slot: null, uses: 1, alt: "" });
+  assert.equal(cloneImageAt(pictured(), "0.0"), null, "the picture itself is no image");
 });

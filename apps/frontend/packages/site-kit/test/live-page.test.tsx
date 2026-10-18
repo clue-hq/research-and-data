@@ -161,3 +161,14 @@ test("a live page and the static render draw a copied section's children in its 
   assert.deepEqual(inOrder(still.html), order);
   assert.ok(live.data!.cloneHtml[String(item.props.id)].indexOf(`data-clue-el="${order[0]}"`) < live.data!.cloneHtml[String(item.props.id)].indexOf(`data-clue-el="${order[order.length - 1]}"`));
 });
+
+test("a live page draws a copied section's alt texts as the static render does", () => {
+  const stored = structuredClone(site);
+  const item = (stored.pages["/"].content as { type: string; props: Record<string, unknown> }[]).find((c) => c.type === "ClonedSection" && /<img/.test(brand.clones[String(c.props.fragmentId)]?.html ?? ""))!;
+  const img = parse(fillClone(brand.clones[String(item.props.fragmentId)])).querySelectorAll("img[data-clue-el]")[0];
+  const key = img.getAttribute("data-clue-el")!;
+  item.props.alts = { [key]: "Students at lunch" };
+  const live = renderSitePages({ site: stored, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, live: true, routes: ["/"] }).pages[0];
+  const still = renderSitePages({ site: stored, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, routes: ["/"] }).pages[0];
+  for (const html of [live.html, still.html]) assert.match(html, new RegExp(`data-clue-el="${key.replace(/\./g, "\\.")}"[^>]*alt="Students at lunch"|alt="Students at lunch"[^>]*data-clue-el="${key.replace(/\./g, "\\.")}"`));
+});

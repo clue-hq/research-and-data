@@ -57,3 +57,17 @@ test("the validator holds surfaces and looks to this brand's", () => {
   assert.ok(errors.some((e) => e.endsWith(`.buttonLook: "solid.9" is not one of this brand's button styles; its styles are outline.1, ghost.1, solid.1, solid.2, solid.3, solid.4, or leave it empty for the standard button (brand/brand.md, Buttons)`)), errors.join("\n"));
   assert.ok(errors.some((e) => e.includes('.surface: "green" is not one of this brand\'s surfaces; its surfaces are page, card, muted, brandSubtle, brand, inverse, canvas,')), errors.join("\n"));
 });
+
+// Plan 5 (ruling R2): alt texts drawn on our image and the shell's logos.
+test("FeatureSplit draws its image alt; the header and footer draw their logo alts", async () => {
+  const brand = garner();
+  const sections = makeSections(brand, (v) => v);
+  const html = renderToStaticMarkup(<>{sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "/brands/x.png", imageAlt: 'A "quiet" room', imageSide: "left", buttonLabel: "", buttonHref: "", buttonLook: "" } as never)}</>);
+  assert.match(html, /<img src="\/brands\/x.png" alt="A &quot;quiet&quot; room"/);
+  const { SiteHeader, SiteFooter } = await import("../src/shell");
+  const header = renderToStaticMarkup(<SiteHeader brand={brand} header={{ preparedFor: "C", accountLogo: "/brands/c.png", accountLogoAlt: "Carmel Clay", logoAlt: "Garner", ctaLabel: "Go", ctaHref: "/" }} href={(v) => v} />);
+  assert.match(header, /alt="Garner"[^>]*data-clue-el="logo"/);
+  assert.match(header, /alt="Carmel Clay"[^>]*data-clue-el="accountLogo"/);
+  const footer = renderToStaticMarkup(<SiteFooter brand={brand} footer={{ legal: "©", privacyHref: "", termsHref: "", logoAlt: "Garner Health" }} href={(v) => v} />);
+  assert.match(footer, /alt="Garner Health"[^>]*data-clue-el="logo"/);
+});

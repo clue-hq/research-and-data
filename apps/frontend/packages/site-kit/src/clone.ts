@@ -50,6 +50,8 @@ export type CloneExtras = {
   newTab?: readonly string[];
   /** Plan 4: the order of a box's children, by the box's key (the section's `_edits` orders). */
   order?: Readonly<Record<string, readonly string[]>>;
+  /** Plan 5: alt texts of the section's images, by element key. */
+  alts?: Readonly<Record<string, string>>;
 };
 
 export function fillClone(
@@ -110,6 +112,13 @@ export function fillClone(
     }
   }
 
+  // Plan 5: alt texts by element key, on images only. The parser escapes only quotes in an attribute,
+  // so &, < and > are escaped here: alt text is text, never markup.
+  for (const [key, alt] of Object.entries(extras.alts ?? {})) {
+    const image = byKey(root, key);
+    if (image?.tagName === "IMG") image.setAttribute("alt", alt.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+  }
+
   // Links that open in a new tab, named by element key: the key is on the link, or on the text inside it.
   for (const key of extras.newTab ?? []) {
     const element = root.querySelector(`[${ELEMENT_KEY_ATTR}="${key.replace(/["\\]/g, "")}"]`);
@@ -139,8 +148,9 @@ export function fillClone(
 const NOT_TEXT = new Set(["script", "style", "svg", "noscript", "template"]);
 /** Elements that are never keyed (plan 4): not part of what a visitor sees. */
 const NEVER_KEYED = new Set(["script", "style", "noscript", "template"]);
-/** Elements keyed as a whole and never walked into (plan 4): images and icons. */
-const WHOLE = new Set(["svg", "img", "picture", "video"]);
+/** Elements keyed as a whole and never walked into (plan 4): images and icons. A <picture> is walked
+ * into (plan 5, ruling R4): its <img> is the image. */
+const WHOLE = new Set(["svg", "img", "video"]);
 
 /** Tags that make an element a block (a link holding one is a card, not a button). */
 const BLOCKS = new Set([
@@ -225,6 +235,23 @@ function applyOrder(root: HTMLElement, order: Readonly<Record<string, readonly s
   }
 }
 
+/** A copied image found by its element key in the captured markup (plan 5): the image slot that fills
+ * it (on the <img> or its <picture>), how many images that slot fills, and its captured alt text.
+ * Null when the key is no <img> or <video>. */
+export function cloneImageAt(clone: Clone, key: string): { slot: string | null; uses: number; alt: string } | null {
+  const root = parse(clone.html, { comment: false });
+  keyElements(root, clone.slots);
+  const image = byKey(root, key);
+  const tag = image?.tagName.toLowerCase();
+  if (!image || (tag !== "img" && tag !== "video")) return null;
+  const parent = image.parentNode as HTMLElement | null;
+  const named = [image.getAttribute("data-lumen-slot"), parent?.tagName === "PICTURE" ? parent.getAttribute("data-lumen-slot") : undefined].find(
+    (slot): slot is string => Boolean(slot) && clone.slots[slot as string]?.kind === "image",
+  );
+  const uses = named ? root.querySelectorAll(`[data-lumen-slot="${named.replace(/["\\]/g, "")}"]`).length : 1;
+  return { alt: image.getAttribute("alt") ?? "", slot: named ?? null, uses };
+}
+
 /** A box's keyed children in their captured order, or null when the key is no element (plan 4). */
 export function cloneOrderOf(clone: Clone, parentKey: string): string[] | null {
   const root = parse(clone.html, { comment: false });
@@ -243,6 +270,9 @@ function applySlot(element: HTMLElement, kind: SlotKind, value: string | boolean
   } else if (kind === "image") {
     element.setAttribute("src", String(value));
     element.removeAttribute("srcset");
+    // A <picture>'s sources would be chosen over the new image (plan 5, review focus 1).
+    const picture = element.parentNode as HTMLElement | null;
+    if (picture?.tagName === "PICTURE") for (const source of picture.querySelectorAll("source")) source.remove();
   } else if (kind === "visibility" && (value === false || value === "false")) {
     element.remove();
   }

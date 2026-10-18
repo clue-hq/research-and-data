@@ -16,6 +16,9 @@ export type HeaderProps = {
   ctaNewTab?: boolean;
   /** A button style of the brand's (brand.md, Buttons); empty is the standard button. */
   ctaLook?: string;
+  /** Plan 5: the logos' alt texts (empty: decorative). */
+  logoAlt?: string;
+  accountLogoAlt?: string;
   /** Links to the site's other pages; shown on wider screens beside the button. */
   nav?: { label: string; href: string; newTab?: boolean }[];
   /** Manual styling of the header's elements (edits.ts). */
@@ -23,6 +26,7 @@ export type HeaderProps = {
 };
 export type FooterProps = {
   legal: string;
+  logoAlt?: string;
   privacyHref: string;
   privacyNewTab?: boolean;
   termsHref: string;
@@ -91,13 +95,13 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
                 {inOrder(
                   [
                     // eslint-disable-next-line @next/next/no-img-element
-                    ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
+                    ["logo", logo ? <img key="logo" src={logo} alt={header.logoAlt ?? ""} className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
                     ["divider", <span key="divider" aria-hidden className="brand-rule-v shrink-0" data-clue-el="divider" />],
                     [
                       "accountLogo",
                       header.accountLogo ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img key="accountLogo" src={header.accountLogo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
+                        <img key="accountLogo" src={header.accountLogo} alt={header.accountLogoAlt ?? ""} className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
                       ) : null,
                     ],
                     [
@@ -161,7 +165,7 @@ export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: 
         {inOrder(
           [
             // eslint-disable-next-line @next/next/no-img-element
-            ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-footer w-auto self-start" data-clue-el="logo" /> : null],
+            ["logo", logo ? <img key="logo" src={logo} alt={footer.logoAlt ?? ""} className="brand-logo-footer w-auto self-start" data-clue-el="logo" /> : null],
             ["legal", <p key="legal" className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>],
             [
               "links",

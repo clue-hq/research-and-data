@@ -31,6 +31,8 @@ type ClonedSectionProps = {
   links: LinkReplacement[];
   /** Element keys of the links that open in a new tab. */
   newTab?: string[];
+  /** Plan 5: alt texts of its images, by element key. */
+  alts?: Record<string, string>;
 };
 
 const SLOT_FIELD = {
@@ -306,6 +308,8 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           },
           // Set from the link panel (site element inspector, plan 2), never typed in a field.
           newTab: { type: "custom", label: "Links opening in a new tab", render: () => <span /> },
+          // Set from the image panel (plan 5), never typed in a field.
+          alts: { type: "custom", label: "Image alt texts", render: () => <span /> },
         },
         resolveFields: (data, { fields }) => {
           const clone = brand.clones[data.props.fragmentId];
@@ -324,7 +328,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         // writes its slots itself, and the dock never changes `fragmentId`.
         // The second argument comes from the section wrapper below: the edits of the section, for `order`.
         render: ((
-          { id, fragmentId, slots, replacements, links, newTab, puck }: ClonedSectionProps & { id: string; puck?: { isEditing?: boolean } },
+          { id, fragmentId, slots, replacements, links, newTab, alts, puck }: ClonedSectionProps & { id: string; puck?: { isEditing?: boolean } },
           context?: { edits: Edits },
         ) => {
           const clone = brand.clones[fragmentId];
@@ -347,7 +351,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             ]),
           );
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
-          const extras = { id, newTab: newTab ?? [], order: orderOf(context?.edits ?? {}) };
+          const extras = { id, newTab: newTab ?? [], order: orderOf(context?.edits ?? {}), alts: alts ?? {} };
           const html = fill(clone, resolvedSlots, replacements, resolvedLinks, extras);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {
