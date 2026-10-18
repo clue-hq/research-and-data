@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from html import escape
+from urllib.parse import urlsplit
 
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
@@ -137,7 +138,8 @@ def derive_site_template(role: str, source_html: str, *, placeholder_src: str) -
             ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0}"
             ".clue-account-rule{align-self:stretch;width:1px;background-color:currentColor;opacity:0.3}"
             f".clue-account-logo{{display:block;height:{height};width:auto}}"
-            ".clue-account-line{white-space:nowrap}"
+            # On a narrow window the line gives way (an ellipsis) rather than pushing the header wide.
+            ".clue-account-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex-shrink:1}"
         )
     else:
         copyright_line = _find_copyright(body)
@@ -189,11 +191,19 @@ def _prune(root: LexborNode, keep: list[LexborNode]) -> None:
 
 
 def _find_logo(body: LexborNode) -> LexborNode | None:
-    """The first link to the site's root holding an image or icon, else the first image or icon."""
+    """The first link to the site's root (``/``, or the seller's full address) holding an image or icon;
+    else the first image or icon, as the link around it when it has one, so the account parts are
+    placed after the link and never inside it."""
     for anchor in body.css("a"):
-        if (anchor.attributes.get("href") or "") in {"/", "", "#"} and anchor.css_first("img, svg") is not None:
+        href = anchor.attributes.get("href") or ""
+        root = href in {"", "#"} or (urlsplit(href).path in {"", "/"} and not urlsplit(href).query)
+        if root and anchor.css_first("img, svg") is not None:
             return anchor
-    return body.css_first("img, svg")
+    image = body.css_first("img, svg")
+    current = image
+    while current is not None and (current.tag or "") != "a":
+        current = current.parent
+    return current if current is not None else image
 
 
 def _link_items(container: LexborNode) -> list[LexborNode]:
@@ -212,7 +222,7 @@ def _find_menu(body: LexborNode, logo: LexborNode) -> LexborNode | None:
     one higher, so the seller's menu wins over a row of buttons."""
     best, best_score = None, 0
     for node in body.traverse(include_text=False):
-        if _contains(node, logo) or _contains(logo, node):
+        if _contains(node, logo) or _contains(logo, node) or _hidden_on_desktop(node):
             continue
         items = len(_link_items(node))
         if items < 2:
@@ -221,6 +231,20 @@ def _find_menu(body: LexborNode, logo: LexborNode) -> LexborNode | None:
         if score > best_score:
             best, best_score = node, score
     return best
+
+
+_DESKTOP_HIDDEN = re.compile(r"^(sm|md|lg|xl|2xl):hidden$")
+
+
+def _hidden_on_desktop(node: LexborNode) -> bool:
+    """Whether the element (or one around it) is hidden on wider screens by its classes (``lg:hidden``):
+    a phone drawer, never the menu a visitor sees on a desktop."""
+    current: LexborNode | None = node
+    while current is not None:
+        if any(_DESKTOP_HIDDEN.match(token) for token in (current.attributes.get("class") or "").split()):
+            return True
+        current = current.parent
+    return False
 
 
 def _find_cta(body: LexborNode, logo: LexborNode, menu: LexborNode | None) -> tuple[LexborNode, LexborNode] | None:

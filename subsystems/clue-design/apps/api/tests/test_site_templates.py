@@ -142,3 +142,37 @@ def test_footer_not_derivable_without_legal_or_logo() -> None:
 def test_derivation_is_deterministic(name: str, role: str) -> None:
     first, second = _derive(name, role), _derive(name, role)
     assert first.html == second.html and first.slots == second.slots and first.css_addition == second.css_addition
+
+
+# Final review I1: a logo link to the seller's full address is still the logo link; the account parts
+# go after it, never inside it (the account line must not link to the seller's homepage).
+def test_the_account_goes_after_a_logo_link_to_the_sellers_full_address() -> None:
+    html = (
+        '<header><a class="brand" href="https://seller.example/"><img src="' + PLACEHOLDER + '" height="24"></a>'
+        '<nav><a class="nl" href="/a">A</a><a class="nl" href="/b">B</a></nav><a class="btn" href="/demo">Book a demo</a></header>'
+    )
+    tree = _annotated(derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER))
+    brand = tree.css_first("a.brand")
+    assert brand.css_first(".clue-account, .clue-account-line") is None, brand.html
+    assert brand.next is not None and "clue-account" in (brand.next.attributes.get("class") or "")
+
+
+# Final review I2: a menu hidden on desktop by its classes (a phone drawer) is never the menu.
+def test_a_drawer_hidden_on_desktop_is_not_the_menu() -> None:
+    html = (
+        '<header><a href="/"><svg viewBox="0 0 4 4"></svg></a>'
+        '<nav class="hidden lg:flex"><a class="nl" href="/a">Desk A</a><a class="nl" href="/b">Desk B</a></nav>'
+        '<div class="lg:hidden"><a href="/1">Phone 1</a><a href="/2">Phone 2</a><a href="/3">Phone 3</a><a href="/4">Phone 4</a></div>'
+        '<a class="btn" href="/demo">Book a demo</a></header>'
+    )
+    tree = _annotated(derive_site_template(SITE_HEADER_ROLE, html, placeholder_src=PLACEHOLDER))
+    assert "Desk A" in tree.css_first(f"[{MENU_ATTR}]").html
+    assert "Phone" not in (tree.body.text() or "")
+
+
+# Final review I4: on a phone the account line shrinks (ellipsis) rather than pushing the header wide.
+def test_the_account_line_shrinks_rather_than_overflowing() -> None:
+    css = _derive("tailwind_header", SITE_HEADER_ROLE).css_addition
+    rule = css.split(".clue-account-line{", 1)[1].split("}", 1)[0]
+    for declaration in ("min-width:0", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"):
+        assert declaration in rule, rule

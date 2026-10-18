@@ -148,3 +148,20 @@ def test_menu_label_and_hide(app: Any, browser_page: Any, editor_origin: str) ->
         arg=f'{HEADER} [data-clue-el="menu._home"]',
         timeout=10000,
     )
+
+
+# Final review I5: a template header's extra menu link is edited where it lives, in menuExtra.
+def test_a_template_menu_extra_link_is_written_in_menu_extra(app: Any, browser_page: Any, editor_origin: str) -> None:
+    init = shell_init()
+    init["site"]["shell"]["header"]["props"]["menuExtra"] = [{"label": "Pricing", "href": "https://garnerhealth.com/pricing"}]
+    page, frame = open_shell(app, browser_page, editor_origin, init)
+    mark = len(received(page))
+    frame.locator(f'{HEADER} [data-clue-el="menu._0"]').first.click(force=True)
+    page.wait_for_function(
+        """(start) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element
+          && String(m.payload.element.key).startsWith('menu._0'))""",
+        arg=mark,
+        timeout=10000,
+    )
+    element = [m for m in received(page)[mark:] if m["type"] == "selected"][-1]["payload"]["element"]
+    assert element["link"]["source"] == {"kind": "prop", "href": "menuExtra.0.href", "newTab": "menuExtra.0.newTab"}, element["link"]

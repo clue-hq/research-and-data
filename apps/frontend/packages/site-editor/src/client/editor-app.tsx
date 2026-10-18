@@ -97,8 +97,14 @@ function describeElement(controller: FrameController, target: string, componentI
   const pageItem = menuItem?.getAttribute("data-clue-menu-source")?.startsWith("page:") ? menuItem : null;
   if (state.site && state.brand) {
     const item = componentEntry(state.site, target, componentId);
+    // An extra menu link (`menu._<n>`) is written in the header's `menuExtra`, whatever the header's
+    // type (a template's menu is drawn by the renderer, not captured: final review I5).
+    const menuKey = menuItem?.getAttribute("data-clue-el") ?? null;
+    const extraLink = item && menuItem && !pageItem && menuKey ? ownLinkSource(item.type, menuKey) : null;
     if (pageItem) {
       link = { kind: "fixed", reason: pageMenuLink((pageItem.textContent ?? "").trim()) };
+    } else if (extraLink) {
+      link = extraLink;
     } else if (item) {
       const props = item.props as Record<string, unknown>;
       if (item.type === "ClonedSection") {
