@@ -8,6 +8,7 @@ import { Fragment, type ReactNode } from "react";
 import { editsOf, orderOf, type Edits } from "./edits";
 import { newTabAttrs, rich } from "./rich-node";
 import { Button } from "./sections";
+import { menuSource, type MenuItem } from "./site-menu";
 
 export type HeaderProps = {
   /** The line addressing the account (rich text without links): the agent writes it, never fixed words. */
@@ -80,7 +81,18 @@ function inOrder(parts: [key: string, node: ReactNode][], order: readonly string
     .map(([key, node]) => <Fragment key={key}>{node}</Fragment>);
 }
 
-export function SiteHeader({ brand, header, href }: { brand: BrandData; header: HeaderProps; href: (v: string) => string }) {
+export function SiteHeader({
+  brand,
+  header,
+  href,
+  menu = [],
+}: {
+  brand: BrandData;
+  header: HeaderProps;
+  href: (v: string) => string;
+  /** The site's pages and extra links (site-menu.ts), hrefs already under the base path. */
+  menu?: MenuItem[];
+}) {
   const logo = header.logo || sellerLogo(brand);
   const order = orderOf(editsOf(header));
   return (
@@ -120,6 +132,24 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
               <div key="actions" className="flex shrink-0 items-center gap-stack-default" data-clue-el="actions">
                 {inOrder(
                   [
+                    [
+                      "menu",
+                      // Plan 6 (ruling R8): the site's pages, then the agent's extra links; shown on wider
+                      // screens beside the button (ruling R9).
+                      menu.length ? (
+                        <nav key="menu" className="hidden items-center gap-stack-default md:flex" data-clue-el="menu">
+                          {inOrder(
+                            menu.map((item) => [
+                              item.key,
+                              <a key={item.key} href={item.href} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={item.key} data-clue-menu-label="" data-clue-menu-source={menuSource(item)}>
+                                {item.label}
+                              </a>,
+                            ]),
+                            order.menu,
+                          )}
+                        </nav>
+                      ) : null,
+                    ],
                     [
                       "ctaArea",
                       // On phones the hero carries the same action, so the account line gets the room.

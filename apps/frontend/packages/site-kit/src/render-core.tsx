@@ -14,6 +14,7 @@ import { fillClone } from "./clone";
 import { makeConfig, type CloneHtml } from "./config";
 import { SiteRoot, brandForPage, liveConfig, type LivePageData } from "./live-page";
 import { pageWithShell } from "./shell-entries";
+import { siteMenuPages } from "./site-menu";
 import type { SitePage, SiteShell } from "./site-document";
 import { pageCanvasCss, tailwindThemeCss } from "./theme";
 
@@ -52,8 +53,11 @@ export function renderSitePages(input: {
    * browser hydrates, and comes back with its page data. Without it, static HTML as before. */
   live?: boolean;
 }): { pages: RenderedSitePage[]; tailwindTheme: string; size: number; warnings: string[] } {
+  // The header's menu lists every page of the site, whichever routes this call renders (plan 6).
+  const menu = siteMenuPages(input.site.pages);
   const config = makeConfig(input.brand, {
     basePath: input.basePath || undefined,
+    menu,
     agentSections: input.agentSections,
     cloneHtml: fillClone,
   }) as Config;
@@ -79,6 +83,7 @@ export function renderSitePages(input: {
         basePath: input.basePath,
         title,
         page: data,
+        menu,
         brand: brandForPage(input.brand, data),
         sections: {},
         cloneHtml: {},

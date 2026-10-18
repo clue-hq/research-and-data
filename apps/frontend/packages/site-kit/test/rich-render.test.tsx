@@ -106,6 +106,7 @@ test("an unchanged clone slot keeps the captured markup; a plain value is writte
 
 test("the header's and footer's links open in a new tab when set", () => {
   const html = render().pages[0].html;
+  assert.match(html, /<a href="\/acme\/analysis" target="_blank" rel="noopener" class="brand-navlink" data-clue-el="menu._0"[^>]*>Analysis<\/a>/);
   assert.match(html, /<a href="https:\/\/garner.example\/privacy" target="_blank" rel="noopener" class="brand-link" data-clue-el="privacy">/);
 });
 

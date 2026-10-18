@@ -25,7 +25,7 @@ test("a clone's link is found by its element key, with its captured address and 
 
 test("our sections' and the shell's own links are written in a prop beside a new-tab prop", () => {
   assert.deepEqual(ownLinkSource("ProofCard", "linkLabel"), { kind: "prop", href: "linkHref", newTab: "linkNewTab" });
-  assert.deepEqual(ownLinkSource("SiteHeader", "nav.2"), { kind: "prop", href: "nav.2.href", newTab: "nav.2.newTab" });
+  assert.deepEqual(ownLinkSource("SiteHeader", "menu._2"), { kind: "prop", href: "menuExtra.2.href", newTab: "menuExtra.2.newTab" });
   assert.deepEqual(ownLinkSource("SiteFooter", "privacy"), { kind: "prop", href: "privacyHref", newTab: "privacyNewTab" });
   assert.deepEqual(ownLinkSource("SiteFooter", "terms"), { kind: "prop", href: "termsHref", newTab: "termsNewTab" });
   assert.equal(ownLinkSource("ProofCard", "heading"), null);

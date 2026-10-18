@@ -2,7 +2,8 @@ import { Component, type ReactNode } from "react";
 import { z } from "zod";
 import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "./brand";
-import type { Clone, LinkReplacement, SlotValues, TextReplacement } from "./clone";
+import { MENU_ATTR, type Clone, type LinkReplacement, type SlotValues, type TextReplacement } from "./clone";
+import { menuItems, type MenuPage, type MenuProps } from "./site-menu";
 
 /** A cloned section's markup from its clone and props. `fillClone` (./clone) is one; a live page
  * passes its own (live-page's liveConfig). `id` is the section's component id. */
@@ -74,6 +75,8 @@ export type ConfigOptions = {
    * Without one, internal links stay as written (a site served at its domain's root). */
   basePath?: string;
   editor?: EditorParts;
+  /** Plan 6 (ruling R8): the site's pages, for the header's menu (siteMenuPages). */
+  menu?: MenuPage[];
   /** The site's agent-written sections (E5), by section name; they join its pages. */
   agentSections?: Record<string, AgentSectionModule>;
   /** How a cloned section gets its markup: `fillClone` (./clone) in the editor and the server
@@ -196,7 +199,9 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         menuLabels: fromPanel("Menu labels"),
         menuExtra: fromPanel("Extra menu links"),
       },
-      render: (props: Record<string, unknown>) => <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} />,
+      render: (props: Record<string, unknown>) => (
+        <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} menu={menuOf(props as MenuProps)} />
+      ),
     },
     SiteFooter: {
       label: "Footer",
@@ -216,7 +221,10 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   };
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit
   // fields (the editor gives them fields from their props schema).
-  const kit = makeKit(href, brand);
+  const kit = makeKit(href, brand, options.menu);
+  // The menu items of a header (plan 6, ruling R8): the pages of the site, renamed by the menu labels
+  // of the section, then its extra links; every href under the base path.
+  const menuOf = (props: MenuProps) => menuItems(options.menu ?? [], props).map((item) => ({ ...item, href: href(item.href) }));
   const useRawProps = options.editor?.useRawProps ?? noRawProps;
   const agentSections = Object.fromEntries(
     Object.entries(options.agentSections ?? {}).map(([name, module]) => {
@@ -330,7 +338,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         // writes its slots itself, and the dock never changes `fragmentId`.
         // The second argument comes from the section wrapper below: the edits of the section, for `order`.
         render: ((
-          { id, fragmentId, slots, replacements, links, newTab, alts, puck }: ClonedSectionProps & { id: string; puck?: { isEditing?: boolean } },
+          { id, fragmentId, slots, replacements, links, newTab, alts, menuLabels, menuExtra, puck }: ClonedSectionProps & { id: string; puck?: { isEditing?: boolean } },
           context?: { edits: Edits },
         ) => {
           const clone = brand.clones[fragmentId];
@@ -353,7 +361,13 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             ]),
           );
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
-          const extras = { id, newTab: newTab ?? [], order: orderOf(context?.edits ?? {}), alts: alts ?? {} };
+          const extras = {
+            id,
+            newTab: newTab ?? [],
+            order: orderOf(context?.edits ?? {}),
+            alts: alts ?? {},
+            ...(clone.html.includes(MENU_ATTR) ? { menu: menuOf({ menuLabels, menuExtra }) } : {}),
+          };
           const html = fill(clone, resolvedSlots, replacements, resolvedLinks, extras);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {

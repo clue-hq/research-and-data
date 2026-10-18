@@ -12,6 +12,7 @@ import { Render } from "@puckeditor/core/rsc";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import { makeConfig, SectionBoundary, type CloneHtml } from "./config";
+import type { MenuPage } from "./site-menu";
 
 export type LivePageData = {
   route: string;
@@ -19,6 +20,8 @@ export type LivePageData = {
   title: string;
   /** The page with the header first and the footer last (plan 6: shell-entries.ts). */
   page: Data;
+  /** The site's pages for the header's menu (site-menu.ts). */
+  menu: MenuPage[];
   /** Trimmed by brandForPage. */
   brand: BrandData;
   /** Agent section name -> module URL; {} from the renderer, filled by the publisher. */
@@ -59,6 +62,7 @@ export function SiteRoot({ config, data, onReady }: { config: Config; data: Data
 export function liveConfig(data: LivePageData, agentSections: Record<string, AgentSectionModule>, cloneHtml: CloneHtml): Config {
   return makeConfig(data.brand, {
     basePath: data.basePath || undefined,
+    menu: data.menu,
     agentSections,
     cloneHtml,
     cloneCss: "page",

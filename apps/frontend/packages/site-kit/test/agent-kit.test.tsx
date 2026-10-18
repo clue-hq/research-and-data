@@ -98,3 +98,12 @@ test("a section learns from kit.editing whether the marketer is editing it", () 
   renderToStaticMarkup(render({ id: "p", surface: "page" }));
   assert.deepEqual(seen, [true, false, false]);
 });
+
+// Plan 6 (ruling R8): an agent's header gets the site's pages to draw its menu.
+test("kit.menu lists the site's pages", async () => {
+  const { makeKit } = await import("../src/agent-kit");
+  const { siteMenuPages } = await import("../src/site-menu");
+  const kit = makeKit((v) => v, garner(), siteMenuPages({ "/": {}, "/team": {} }));
+  assert.deepEqual(kit.menu.map((item) => [item.key, item.label, item.href]), [["menu._home", "Overview", "/"], ["menu.team", "Team", "/team"]]);
+  assert.deepEqual(makeKit((v) => v, garner()).menu, []);
+});

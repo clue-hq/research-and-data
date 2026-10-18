@@ -9,6 +9,7 @@ import { lookNamed } from "./looks";
 import { ElementKeySchema } from "./edits";
 import { Button as BrandButton, Eyebrow, Shell, type AnySurface, type Href } from "./sections";
 import { logoFiles } from "./shell";
+import { menuItems, type MenuItem, type MenuPage } from "./site-menu";
 
 /** A prop the section marks `.meta({ edit: "inline" })` (S2a-2): text on the published page and in
  * Preview, but while the marketer edits the page an editable piece of it. Put it into the page as it
@@ -41,6 +42,8 @@ export type Kit = {
   /** True while the marketer edits this page in the editor's Edit mode: show the section's first
    * state and start nothing (no timers, no autoplay), so a click selects it instead of driving it. */
   editing: boolean;
+  /** Plan 6: the site's pages for a header's menu, in order, with their keys (site-menu.ts). */
+  menu: MenuItem[];
 };
 
 export type AgentSectionModule = {
@@ -57,9 +60,10 @@ const IMAGE_CLASS = {
 /** The agent's name for an element, when it is one the inspector can address; otherwise none. */
 const elementKey = (el: string | undefined) => (el !== undefined && ElementKeySchema.safeParse(el).success ? el : undefined);
 
-export function makeKit(href: Href, brand: BrandData): Kit {
+export function makeKit(href: Href, brand: BrandData, pages: readonly MenuPage[] = []): Kit {
   const logos = logoFiles(brand);
   return {
+    menu: menuItems(pages, {}).map((item) => ({ ...item, href: href(item.href) })),
     Shell,
     Button: ({ label, href: target, surface, look, disabled, el }) => (
       // Words stored in the prop the button is named after (R6), so the editor hides it when they are empty.

@@ -27,6 +27,7 @@ export { makeKit, type AgentSectionModule, type EditableText, type Kit } from ".
 export { EDIT_INLINE, IMAGE_PROP, LINK_PROP, brandChoice, notInlineReason, type BrandChoice } from "./agent-props";
 export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps } from "./shell";
 export { isShellEntry, pageWithShell, withEditedShellPage } from "./shell-entries";
+export { menuItems, menuKey, menuSource, siteMenuPages, type MenuItem, type MenuPage, type MenuProps } from "./site-menu";
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";
 export { normalizeRichIn, ownLinkSource, richSourceOf, richValuesOfItem, type PropsSchemaOf } from "./rich-props";

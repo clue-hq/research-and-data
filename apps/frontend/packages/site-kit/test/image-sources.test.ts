@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Clone } from "../src/clone";
-import { AGENT_ALT, AGENT_IMAGE, CLONE_IMAGE, ICON_NOTE, SELLER_LOGO, VIDEO_ALT, VIDEO_REPLACE, imageSourcesOf } from "../src/image-sources";
+import { AGENT_ALT, AGENT_IMAGE, CLONE_IMAGE, ICON_NOTE, VIDEO_ALT, VIDEO_REPLACE, imageSourcesOf } from "../src/image-sources";
 
 const clone: Clone = {
   id: "frag_0000000000000000", role: "section", label: "T", page_url: "https://seller.example/", section_index: 0, wrapper_class: "w", css: "",
@@ -15,9 +15,9 @@ const of = (type: string, key: string, props: Record<string, unknown> = {}, medi
 test("our image, the header's account logo and the seller's logo", () => {
   assert.deepEqual(of("FeatureSplit", "image"), { alt: { kind: "prop", prop: "imageAlt" }, image: { kind: "prop", prop: "image", uses: 1 } });
   assert.deepEqual(of("SiteHeader", "accountLogo"), { alt: { kind: "prop", prop: "accountLogoAlt" }, image: { kind: "prop", prop: "accountLogo", uses: 1 } });
-  assert.deepEqual(of("SiteHeader", "logo"), { alt: { kind: "prop", prop: "logoAlt" }, image: { kind: "fixed", reason: SELLER_LOGO } });
-  assert.deepEqual(of("SiteFooter", "logo"), { alt: { kind: "prop", prop: "logoAlt" }, image: { kind: "fixed", reason: SELLER_LOGO } });
-  assert.equal(SELLER_LOGO, "The seller's logo comes from the brand kit.");
+  // Plan 6 (ruling R11): the seller's logo in the header and footer is replaced through its prop.
+  assert.deepEqual(of("SiteHeader", "logo"), { alt: { kind: "prop", prop: "logoAlt" }, image: { kind: "prop", prop: "logo", uses: 1 } });
+  assert.deepEqual(of("SiteFooter", "logo"), { alt: { kind: "prop", prop: "logoAlt" }, image: { kind: "prop", prop: "logo", uses: 1 } });
 });
 
 test("a copied image through its slot (with how many images it fills), else fixed; its alt by key", () => {

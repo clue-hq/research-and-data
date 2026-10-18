@@ -14,6 +14,7 @@
 import { parse, TextNode, type HTMLElement } from "node-html-parser";
 import { ELEMENT_KEY_ATTR } from "./edits";
 import { richHtml } from "./rich";
+import { menuSource, type MenuItem } from "./site-menu";
 
 export type SlotKind = "text" | "href" | "image" | "visibility";
 export type CloneSlot = { kind: SlotKind; fallback: unknown };
@@ -52,6 +53,8 @@ export type CloneExtras = {
   order?: Readonly<Record<string, readonly string[]>>;
   /** Plan 5: alt texts of the section's images, by element key. */
   alts?: Readonly<Record<string, string>>;
+  /** Plan 6: a template's menu items (site-menu.ts), drawn in its marked menu. */
+  menu?: readonly MenuItem[];
 };
 
 export function fillClone(
@@ -63,9 +66,12 @@ export function fillClone(
 ): string {
   const root = parse(clone.html, { comment: false });
   keyElements(root, clone.slots);
+  // A template's menu is repeated after keying, so every other key stays its captured place's, and
+  // before ordering, so its items can be put in order (plan 6, ruling R8).
+  const menuLinks = expandMenu(root, extras.menu);
   // Keyed first, then moved: a moved element keeps the key of its captured place (spec §4.8).
   applyOrder(root, extras.order ?? {});
-  const linksWeSet = new Set<HTMLElement>();
+  const linksWeSet = new Set<HTMLElement>(menuLinks);
 
   for (const [key, slot] of Object.entries(clone.slots)) {
     const value = values[key];
@@ -145,6 +151,49 @@ export function fillClone(
   }
 
   return root.toString();
+}
+
+/** The attributes a site template marks its menu with (lumen_api/fragments/site_templates.py). */
+export const MENU_ATTR = "data-clue-menu";
+export const MENU_ITEM_ATTR = "data-clue-menu-item";
+export const MENU_LABEL_ATTR = "data-clue-menu-label";
+/** On each drawn item: the page (`page:/team`) or extra link (`extra:0`) it is. */
+export const MENU_SOURCE_ATTR = "data-clue-menu-source";
+
+/** Plan 6 (ruling R8): a template's marked menu pattern repeated once per item, in place of the
+ * pattern. Each copy is keyed by its item (its label element by `<key>.label` when that is another
+ * element), links where the item does, and drops the captured keys inside it. With no items the menu
+ * is left empty. Returns the links it set, which are this site's, not the seller's. */
+function expandMenu(root: HTMLElement, items: readonly MenuItem[] | undefined): HTMLElement[] {
+  const container = root.querySelector(`[${MENU_ATTR}]`);
+  const pattern = container?.querySelector(`[${MENU_ITEM_ATTR}]`);
+  if (!items || !container || !pattern) return [];
+  const copies = items.map((item) => {
+    const copy = parse(pattern.outerHTML, { comment: false }).firstChild as HTMLElement;
+    for (const keyed of copy.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`)) keyed.removeAttribute(ELEMENT_KEY_ATTR);
+    copy.setAttribute(ELEMENT_KEY_ATTR, item.key);
+    copy.setAttribute(MENU_SOURCE_ATTR, menuSource(item));
+    const anchor = copy.tagName === "A" ? copy : copy.querySelector("a");
+    if (anchor) {
+      anchor.setAttribute("href", item.href);
+      if (item.newTab) {
+        anchor.setAttribute("target", "_blank");
+        anchor.setAttribute("rel", "noopener");
+      } else {
+        anchor.removeAttribute("target");
+        anchor.removeAttribute("rel");
+      }
+    }
+    const label = copy.hasAttribute(MENU_LABEL_ATTR) ? copy : (copy.querySelector(`[${MENU_LABEL_ATTR}]`) ?? anchor ?? copy);
+    label.set_content(escapeText(item.label));
+    if (label !== copy) label.setAttribute(ELEMENT_KEY_ATTR, `${item.key}.label`);
+    return copy.toString();
+  });
+  pattern.replaceWith(copies.join(""));
+  return container.querySelectorAll(`[${MENU_SOURCE_ATTR}]`).flatMap((item) => {
+    const anchor = item.tagName === "A" ? item : item.querySelector("a");
+    return anchor ? [anchor] : [];
+  });
 }
 
 /** Elements whose text is never the page's words. */

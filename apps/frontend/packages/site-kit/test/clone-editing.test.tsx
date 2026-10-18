@@ -117,3 +117,31 @@ test("review M1: a backslash in a copied image's alt text survives (the parser d
   const html = fillClone(pictured(), {}, [], [], { alts: { "0.1": "AC\\DC" } });
   assert.ok(html.includes('alt="AC&#92;DC"'), html);
 });
+
+// Plan 6 (ruling R8): a template's menu is its marked pattern, repeated once per item.
+test("a template's menu repeats its pattern per page", async () => {
+  const { fillClone: fill } = await import("../src/clone");
+  const { menuItems, siteMenuPages } = await import("../src/site-menu");
+  const template = {
+    id: "frag_00000000000000ac", role: "site_header", label: "Header template", page_url: "https://seller.example/", section_index: 0,
+    wrapper_class: "w", css: "",
+    html: '<header><a href="/"><img src="/asset-store/aa"></a><ul data-clue-menu=""><li data-clue-menu-item=""><a href="/old"><span data-clue-menu-label="">Old</span></a></li></ul><a class="btn" href="/demo">Book</a></header>',
+    slots: {},
+  };
+  const keysOf = (html: string) => [...html.matchAll(/data-clue-el="([^"]*)"/g)].map((m) => m[1]);
+  const plain = fill(template as never);
+  const items = menuItems(siteMenuPages({ "/": {}, "/roi-analysis": {}, "/team": {} }), { menuLabels: { team: "A & <b>" } });
+  const html = fill(template as never, {}, [], [], { menu: items });
+  const menu = html.slice(html.indexOf("data-clue-menu"), html.indexOf("</ul>"));
+  assert.deepEqual([...menu.matchAll(/data-clue-el="(menu\.[^".]+)"/g)].map((m) => m[1]), ["menu._home", "menu.roi-analysis", "menu.team"]);
+  assert.match(menu, /href="\/roi-analysis"/);
+  assert.match(menu, /Roi analysis/);
+  assert.match(menu, /A &amp; &lt;b&gt;/);
+  assert.doesNotMatch(menu, /Old/);
+  assert.deepEqual(keysOf(html).filter((k) => !k.startsWith("menu.")).slice(-1), keysOf(plain).slice(-1), "the key after the menu is unchanged");
+  const containerKey = "0.1";
+  assert.ok(keysOf(plain).includes(containerKey), keysOf(plain).join(","));
+  const reordered = fill(template as never, {}, [], [], { menu: items, order: { [containerKey]: ["menu.team", "menu._home"] } });
+  const order = [...reordered.matchAll(/data-clue-el="(menu\.[^".]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["menu.team", "menu.roi-analysis", "menu._home"]);
+});

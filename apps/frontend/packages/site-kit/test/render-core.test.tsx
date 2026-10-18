@@ -259,3 +259,13 @@ test("in the editor the section's styling comes from its stored props, whatever 
   const html = draw(<>{config.components.CtaBand.render(drawn)}</>);
   assert.match(html, /\[data-clue-el="heading"\]\{font-size:48px !important\}/);
 });
+
+// Plan 6 (ruling R8): the menu lists the site's pages on every page, in both render modes.
+test("the header's menu lists the site's pages, static and live", () => {
+  for (const live of [false, true]) {
+    for (const page of renderSitePages({ site, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, live }).pages) {
+      assert.match(page.html, /<a href="\/acme" class="brand-navlink" data-clue-el="menu\._home"[^>]*>Overview<\/a>/, `${page.route} live=${live}`);
+      assert.match(page.html, /<a href="\/acme\/analysis" class="brand-navlink" data-clue-el="menu\.analysis"[^>]*>Analysis<\/a>/, `${page.route} live=${live}`);
+    }
+  }
+});

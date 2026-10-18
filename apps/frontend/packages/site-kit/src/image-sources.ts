@@ -4,7 +4,6 @@
 import { cloneImageAt, type Clone } from "./clone";
 import type { AltSource, ComputedImage, ImageSource } from "./editor-protocol";
 
-export const SELLER_LOGO = "The seller's logo comes from the brand kit.";
 export const CLONE_IMAGE = "This image is copied from the seller's page and has no slot; ask the agent to change it.";
 export const AGENT_IMAGE = "The agent's section sets this image; ask the agent to change it.";
 export const AGENT_ALT = "The agent's section sets this image's alt text; ask the agent to change it.";
@@ -18,7 +17,7 @@ const IMAGE_FILE = /^\/(asset-store|brands)\//;
 const fixed = (reason: string) => ({ kind: "fixed" as const, reason });
 
 /** Where an image's file and alt text are written: our image prop (FeatureSplit `image` / `imageAlt`),
- * the header's account logo, the seller's logo (its file is the brand kit's), a copied image's slot
+ * the header's account logo, the header's and footer's seller logo (`logo`), a copied image's slot
  * (and its alt by element key), or an agent's image named after the prop holding its file. */
 export function imageSourcesOf(input: {
   type: string;
@@ -36,7 +35,8 @@ export function imageSourcesOf(input: {
   if (type === "SiteHeader" && key === "accountLogo") {
     return { alt: { kind: "prop", prop: "accountLogoAlt" }, image: { kind: "prop", prop: "accountLogo", uses: 1 } };
   }
-  if ((type === "SiteHeader" || type === "SiteFooter") && key === "logo") return { alt: { kind: "prop", prop: "logoAlt" }, image: fixed(SELLER_LOGO) };
+  // Plan 6 (ruling R11): the seller's logo is replaced through `logo` (empty: the kit's).
+  if ((type === "SiteHeader" || type === "SiteFooter") && key === "logo") return { alt: { kind: "prop", prop: "logoAlt" }, image: { kind: "prop", prop: "logo", uses: 1 } };
   if (type === "FeatureSplit" && key === "image") return { alt: { kind: "prop", prop: "imageAlt" }, image: { kind: "prop", prop: "image", uses: 1 } };
   if (type === "ClonedSection") {
     const found = clone ? cloneImageAt(clone, key) : null;

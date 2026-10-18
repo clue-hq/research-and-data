@@ -134,3 +134,19 @@ test("button labels take rich text without links, in our sections, the header an
   const cloned = { type: "ClonedSection", props: { id: "c", fragmentId: inLink.id, slots: { label: 'Book <a href="/">now</a>' }, replacements: [], links: [] } };
   assert.deepEqual(errorsOf({ "/": page([cloned]) }, {}, undefined, brand), ["page.content.0(c).slots.label: a button's words may not hold a link"]);
 });
+
+// Plan 6 (rulings R8, R11): the header's extra menu links and its rich words have sources.
+test("menuExtra links and SiteHeader rich props have sources", async () => {
+  const { ownLinkSource, richSourceOf, PAGE_MENU_LINK, pageMenuLink } = await import("../src/rich-props");
+  assert.deepEqual(ownLinkSource("SiteHeader", "menu._1"), { kind: "prop", href: "menuExtra.1.href", newTab: "menuExtra.1.newTab" });
+  assert.deepEqual(ownLinkSource("ClonedSection", "menu._0"), { kind: "prop", href: "menuExtra.0.href", newTab: "menuExtra.0.newTab" });
+  assert.equal(ownLinkSource("SiteHeader", "menu.team"), null);
+  assert.equal(PAGE_MENU_LINK, "This link opens the site's <label> page; the menu follows the site's pages.");
+  assert.equal(pageMenuLink("Team"), "This link opens the site's Team page; the menu follows the site's pages.");
+  const header = { type: "SiteHeader", props: { accountLine: "x" } };
+  assert.deepEqual(richSourceOf(header, "accountLine", garner(), () => undefined), { prop: "accountLine" });
+  const footer = { type: "SiteFooter", props: {} };
+  assert.deepEqual(richSourceOf(footer, "legal", garner(), () => undefined), { prop: "legal" });
+  assert.deepEqual(richSourceOf(footer, "privacy", garner(), () => undefined), { prop: "privacyLabel" });
+  assert.deepEqual(richSourceOf(footer, "terms", garner(), () => undefined), { prop: "termsLabel" });
+});

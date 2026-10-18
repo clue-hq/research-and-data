@@ -232,3 +232,14 @@ test("a picture's img is keyed inside it and no other key moves", () => {
   const html = fillClone(clone('<div><picture><source srcset="/a.webp"><img src="/a.jpg"></picture><p>x</p></div>'));
   assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.0.1", "0.1"]);
 });
+
+// Plan 6 (ruling R8): the fallback header's menu, keyed by page, in its order.
+test("the header's menu is keyed by page and drawn in its order", async () => {
+  const { menuItems, siteMenuPages } = await import("../src/site-menu");
+  const menu = menuItems(siteMenuPages({ "/": {}, "/team": {} }), {});
+  const at = keys(draw(<SiteHeader brand={brand} header={header} href={href} menu={menu} />));
+  assert.deepEqual(at.slice(at.indexOf("actions")), ["actions", "menu", "menu._home", "menu.team", "ctaArea", "cta", "cta.label"]);
+  const ordered = keys(draw(<SiteHeader brand={brand} header={{ ...header, _edits: { actions: { order: ["ctaArea", "menu"] }, menu: { order: ["menu.team", "menu._home"] } } }} href={href} menu={menu} />));
+  assert.ok(ordered.indexOf("ctaArea") < ordered.indexOf("menu"), ordered.join(","));
+  assert.ok(ordered.indexOf("menu.team") < ordered.indexOf("menu._home"), ordered.join(","));
+});

@@ -76,16 +76,24 @@ export function ownLinkSource(type: string, key: string): { kind: "prop"; href: 
   // Plan 3: our buttons and the header's.
   if ((type === "FeatureSplit" || type === "CtaBand") && key === "button") return { kind: "prop", href: "buttonHref", newTab: "buttonNewTab" };
   if (type === "SiteHeader" && key === "cta") return { kind: "prop", href: "ctaHref", newTab: "ctaNewTab" };
-  const nav = type === "SiteHeader" ? /^nav\.(\d+)$/.exec(key) : null;
-  if (nav) return { kind: "prop", href: `nav.${nav[1]}.href`, newTab: `nav.${nav[1]}.newTab` };
-  if (type === "SiteFooter" && (key === "privacy" || key === "terms")) return { kind: "prop", href: `${key}Href`, newTab: `${key}NewTab` };
+    if (type === "SiteFooter" && (key === "privacy" || key === "terms")) return { kind: "prop", href: `${key}Href`, newTab: `${key}NewTab` };
+  // Plan 6 (ruling R8): a link the agent keeps after the site's pages in a menu.
+  const extra = type === "SiteHeader" || type === "ClonedSection" ? /^menu\._(\d+)$/.exec(key) : null;
+  if (extra) return { kind: "prop", href: `menuExtra.${extra[1]}.href`, newTab: `menuExtra.${extra[1]}.newTab` };
   return null;
 }
 
+/** Plan 6 (ruling R11): what the link panel says for a menu item that is one of the site's pages. */
+export const PAGE_MENU_LINK = "This link opens the site's <label> page; the menu follows the site's pages.";
+export const pageMenuLink = (label: string): string => PAGE_MENU_LINK.replace("<label>", label);
+
+/** The footer's link words are stored apart from the link's key (plan 6, ruling R7). */
+const SHELL_WORDS: Record<string, Record<string, string>> = { SiteFooter: { privacy: "privacyLabel", terms: "termsLabel" } };
+
 /** Where an element's words are stored when they are rich text (ruling R4): our section's rich prop
  * the element draws (its key is the prop's name), or an agent's inline prop the element is named after
- * (`cards.*.body` names `cards.1.body`). A clone's slot is read from the canvas (its slot attribute);
- * the header's and footer's words are not rich until plan 6. */
+ * (`cards.*.body` names `cards.1.body`). A clone's slot is read from the canvas (its slot attribute).
+ * The header's and footer's words are ours too (plan 6), the footer's link words by SHELL_WORDS. */
 export function richSourceOf(
   item: { type: string; props: Record<string, unknown> },
   key: string,
@@ -93,7 +101,11 @@ export function richSourceOf(
   propsSchemaOf: PropsSchemaOf,
 ): { prop: string } | null {
   const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
-  if (ours) return ours.includes(key) ? { prop: key } : null;
+  const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type];
+  if (ours || noLinks) {
+    const prop = SHELL_WORDS[item.type]?.[key] ?? key;
+    return [...(ours ?? []), ...(noLinks ?? [])].includes(prop) ? { prop } : null;
+  }
   if (item.type === "ClonedSection") return null;
   const schema = propsSchemaOf(item.type);
   if (!schema) return null;
