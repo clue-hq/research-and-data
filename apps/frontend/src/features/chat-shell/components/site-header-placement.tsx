@@ -2,15 +2,10 @@
 
 import { useState } from "react";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
-import { InspectorField, InspectorSection, SegmentedControl } from "./inspector-primitives";
+import { InspectorSection } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 
 export const HEADER_OVERLAY_NOTE = "The first section now starts under the header. If its words sit under the header, give it more top padding.";
-
-const ON_OFF = [
-  { label: "Off", value: "off" },
-  { label: "On", value: "on" },
-];
 
 /** Plan 6 (rulings R10, R12): the header's own placement, shown when the header itself is selected:
  * it stays at the top while the page scrolls, and/or sits over the first section. Each change is one save. */
@@ -20,24 +15,15 @@ export function SiteHeaderPlacement({ binding }: { binding: SiteInspectorBinding
   if (!placement) return null;
   return (
     <InspectorSection label="Header" onOpenChange={setOpen} open={open}>
-      <InspectorField label="Stays at the top while scrolling">
-        <SegmentedControl
-          ariaLabel="Stays at the top while scrolling"
-          disabled={binding.disabled}
-          onChange={(value) => binding.onHeaderPlacementCommit("sticky", value === "on")}
-          options={ON_OFF}
-          value={placement.sticky ? "on" : "off"}
-        />
-      </InspectorField>
-      <InspectorField label="Sits over the first section">
-        <SegmentedControl
-          ariaLabel="Sits over the first section"
-          disabled={binding.disabled}
-          onChange={(value) => binding.onHeaderPlacementCommit("overlay", value === "on")}
-          options={ON_OFF}
-          value={placement.overlay ? "on" : "off"}
-        />
-      </InspectorField>
+      {/* Founder 2026-10-19: checkboxes, checked when on. */}
+      <label className={styles.checkboxRow}>
+        <input checked={placement.sticky} disabled={binding.disabled} onChange={(event) => binding.onHeaderPlacementCommit("sticky", event.target.checked)} type="checkbox" />
+        <span>Stays at the top while scrolling</span>
+      </label>
+      <label className={styles.checkboxRow}>
+        <input checked={placement.overlay} disabled={binding.disabled} onChange={(event) => binding.onHeaderPlacementCommit("overlay", event.target.checked)} type="checkbox" />
+        <span>Sits over the first section</span>
+      </label>
       {placement.overlay ? (
         <p className={styles.inspectorStatusNote} role="status">
           {HEADER_OVERLAY_NOTE}

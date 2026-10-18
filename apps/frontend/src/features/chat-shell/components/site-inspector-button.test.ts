@@ -202,3 +202,11 @@ test("Arrange's Order row is the ad editor's icon row: Move up and Move down as 
   assert.match(html, /aria-label="Move down"[^>]*disabled=""[^>]*>.*?layer-down/s);
   assert.match(html, /grid-template-columns:repeat\(2, minmax\(0, 1fr\)\)/);
 });
+
+// Founder 2026-10-19: the header's placement is two checkboxes, checked when on.
+test("the whole header's placement is two checkboxes", () => {
+  const html = renderedModule.exports.render(buttonBinding({ ...plan4, element: null, headerPlacement: { sticky: true, overlay: false }, title: "Header" }));
+  assert.match(html, /<input type="checkbox" checked=""\/><span>Stays at the top while scrolling<\/span>/);
+  assert.match(html, /<input type="checkbox"\/><span>Sits over the first section<\/span>/);
+  assert.doesNotMatch(html, />Off<|>On</);
+});
