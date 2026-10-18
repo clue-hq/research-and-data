@@ -50,6 +50,8 @@ MENU_LABEL_ATTR = "data-clue-menu-label"
 
 #: What the account line says before the agent writes it for the account.
 ACCOUNT_LINE_FALLBACK = "Prepared for you"
+#: site-kit's phone width (``FALLBACKS.phoneMaxWidth``): below it the menu is hidden.
+PHONE_MAX_WIDTH = "767px"
 #: The account's logo when the seller's logo carries no height of its own.
 ACCOUNT_LOGO_HEIGHT = "1.75em"
 
@@ -144,14 +146,20 @@ def derive_site_template(
             f"{escape(ACCOUNT_LINE_FALLBACK)}</span>",
         ]
         css_addition += (
-            ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0}"
+            # Above the header's own background layers (Garner's absolutely placed `.nav_bg` covered
+            # the account parts on phones; the seller's logo is stacked above it, these were not).
+            ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0;position:relative;z-index:10}"
             ".clue-account-rule{align-self:stretch;width:1px;background-color:currentColor;opacity:0.3}"
             f".clue-account-logo{{display:block;height:{height};width:auto;max-width:30vw;object-fit:contain}}"
             # The line borrows the menu link's class for its type, never its box: a seller's menu link
             # can turn into a full-width padded drawer row on phones. It keeps its own width, up to
-            # 40% of the window, then gives way with an ellipsis rather than pushing the header wide.
-            ".clue-account-line{flex:0 0 auto;width:auto;max-width:40vw;padding:0;border:0;margin:0;"
+            # 40% of the window, then gives way with an ellipsis rather than pushing the header wide. On a
+            # wide window it never shrinks (a seller's menu box gives way instead); on a phone, where the
+            # menu is hidden (site-kit's phone width), it shrinks to fit.
+            ".clue-account-line{display:block;flex:0 0 auto;width:auto;max-width:40vw;padding:0;border:0;margin:0;"
+            "position:relative;z-index:10;"
             "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+            f"@media (max-width:{PHONE_MAX_WIDTH}){{.clue-account-line{{flex-shrink:1;min-width:0}}}}"
         )
     else:
         copyright_line = _find_copyright(body)

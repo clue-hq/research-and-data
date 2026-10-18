@@ -236,11 +236,24 @@ def test_the_account_line_keeps_its_width_and_drops_the_menu_links_drawer_look()
     window and none of the drawer row's box."""
     css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
     rule = css[css.index(".clue-account-line{"):].split("}", 1)[0]
-    for part in ("flex:0 0 auto", "max-width:40vw", "width:auto", "padding:0", "border:0", "text-overflow:ellipsis"):
+    # display:block: an ellipsis needs a block box, and a borrowed menu link class can make it a flex
+    # box (Conduit: the line was cut mid-word on phones).
+    for part in ("display:block", "flex:0 0 auto", "max-width:40vw", "width:auto", "padding:0", "border:0", "text-overflow:ellipsis"):
         assert part in rule, part
+    # On a phone (site-kit's phone width, where the menu is hidden) the line shrinks to fit the window.
+    assert "@media (max-width:767px){.clue-account-line{flex-shrink:1;min-width:0}}" in css
 
 
 def test_a_very_wide_account_logo_cannot_push_the_header_wide() -> None:
     css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
     rule = css[css.index(".clue-account-logo{"):].split("}", 1)[0]
     assert "max-width:" in rule and "object-fit:contain" in rule
+
+
+def test_the_account_parts_sit_above_the_headers_own_background_layer() -> None:
+    """Live check, plan 6 (Garner): on phones the header's absolutely placed white background layer
+    (`.nav_bg`, z-index 1) covered the account parts, which sat in the plain flow under it."""
+    css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
+    for name in (".clue-account{", ".clue-account-line{"):
+        rule = css[css.index(name):].split("}", 1)[0]
+        assert "position:relative" in rule and "z-index:10" in rule, rule
