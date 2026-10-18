@@ -143,7 +143,9 @@ def test_every_website_a_leg_births_is_noindex_tagged_account_or_not(
                 ],
             )
             tagged, generic = [
-                await get_document(conn, workspace_id=seeds["workspace_id"], document_id=str(document_id))
+                await get_document(
+                    conn, workspace_id=seeds["workspace_id"], document_id=str(document_id)
+                )
                 for document_id in result.references["document_ids"]
             ]
             assert tagged["doc_kind"] == generic["doc_kind"] == ("site" if listed else "web")

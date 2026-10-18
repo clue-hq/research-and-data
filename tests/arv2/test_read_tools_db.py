@@ -849,27 +849,42 @@ def test_with_verification_off_findings_and_narratives_are_served_and_real_rules
             account = await _seed_account(conn, project, "Alpha Health")
             claims: dict[str, str] = {}
             await _seed_claim(
-                conn, claims, project, account, label="finding",
+                conn,
+                claims,
+                project,
+                account,
+                label="finding",
                 field_key="account.research_finding",
                 value={"topic": "Budget", "finding": "Healthcare up $4.2 million", "notes": []},
                 outreach_safe=False,
             )
             await _seed_claim(
-                conn, claims, project, account, label="narrative",
+                conn,
+                claims,
+                project,
+                account,
+                label="narrative",
                 field_key="account.value_narrative",
                 value={"persona": "economic_buyer", "argument": "Cut specialty waste in network"},
                 outreach_safe=False,
             )
             await _seed_claim(
-                conn, claims, project, account, label="risk",
+                conn,
+                claims,
+                project,
+                account,
+                label="risk",
                 field_key="account.reputation_risk",
                 value={"what": "An unresolved customer dispute"},
                 outreach_safe=False,
             )
 
             permissive = await read_account_research(
-                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
-                section="claims", settings=PERMISSIVE,
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=PERMISSIVE,
             )
             unverified_only = {claims["finding"], claims["narrative"]}
             assert {c.claim_id for c in permissive.claims} == unverified_only
@@ -888,8 +903,11 @@ def test_with_verification_off_findings_and_narratives_are_served_and_real_rules
             assert {c.claim_id for c in query.claims} == unverified_only
 
             verifying = await read_account_research(
-                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
-                section="claims", settings=VERIFYING,
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
             )
             assert verifying.claims == ()
             assert verifying.excluded == {
@@ -2710,7 +2728,9 @@ def test_overview_and_insights_read_the_current_lane_page(monkeypatch: pytest.Mo
         text_by_page = {"overview": "They run 40 schools.", "insights": "A levy vote in May."}
         return {
             "display_block": {
-                "sections": [{"key": f"{page}-one", "h1": page, "intro": [{"text": text_by_page[page]}]}]
+                "sections": [
+                    {"key": f"{page}-one", "h1": page, "intro": [{"text": text_by_page[page]}]}
+                ]
             }
         }
 
@@ -2721,7 +2741,10 @@ def test_overview_and_insights_read_the_current_lane_page(monkeypatch: pytest.Mo
         async with rollback_conn(seed_pack=False) as conn:
             project = await seed_project(conn, WORKSPACE, name="Read tools")
             account = await _seed_account(conn, project, "Alpha Health")
-            for section, words in (("overview", "They run 40 schools."), ("insights", "A levy vote in May.")):
+            for section, words in (
+                ("overview", "They run 40 schools."),
+                ("insights", "A levy vote in May."),
+            ):
                 research = await read_account_research(
                     conn,
                     workspace_id=project.workspace_id,
@@ -2765,9 +2788,17 @@ def test_current_lane_contacts_carry_the_committee_card_title(
         return _Selection()
 
     async def fake_read_page(_conn: object, _scope: object, *, context_id: UUID, page: str):
-        return {"display_block": {"sections": [
-            {"key": "why-this-person", "h1": "Why this person", "intro": [{"text": "Owns the budget."}]}
-        ]}}
+        return {
+            "display_block": {
+                "sections": [
+                    {
+                        "key": "why-this-person",
+                        "h1": "Why this person",
+                        "intro": [{"text": "Owns the budget."}],
+                    }
+                ]
+            }
+        }
 
     monkeypatch.setattr(quality_read, "select_quality_context", fake_select)
     monkeypatch.setattr(quality_pages, "read_page", fake_read_page)
@@ -2781,14 +2812,24 @@ def test_current_lane_contacts_carry_the_committee_card_title(
                 conn, account, name="Nick Fisher", linkedin="https://www.linkedin.com/in/nfisher"
             )
             await _seed_contact_claim(
-                conn, {}, project, contact, label="t1",
-                field_key="contact.current_title", value="VP of Marketing",
+                conn,
+                {},
+                project,
+                contact,
+                label="t1",
+                field_key="contact.current_title",
+                value="VP of Marketing",
             )
-            members.append({
-                "contact_id": str(contact), "assessment_claim_id": str(uuid4()),
-                "persona_key": "champion", "proposed_role": "champion", "state": "supported",
-                "employment_claim_ids": [],
-            })
+            members.append(
+                {
+                    "contact_id": str(contact),
+                    "assessment_claim_id": str(uuid4()),
+                    "persona_key": "champion",
+                    "proposed_role": "champion",
+                    "state": "supported",
+                    "employment_claim_ids": [],
+                }
+            )
             research = await read_account_research(
                 conn,
                 workspace_id=project.workspace_id,
@@ -2799,7 +2840,9 @@ def test_current_lane_contacts_carry_the_committee_card_title(
             )
             (person,) = research.contacts
             assert (person.name, person.committee_role, person.title) == (
-                "Nick Fisher", "champion", "VP of Marketing"
+                "Nick Fisher",
+                "champion",
+                "VP of Marketing",
             )
             assert [s.section_key for s in person.sections] == ["why-this-person"]
 

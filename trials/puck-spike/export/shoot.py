@@ -1,4 +1,5 @@
 """Full-page screenshots of spike pages at 1440 and 375 wide, plus a few runtime checks."""
+
 import asyncio
 import json
 import sys
@@ -40,8 +41,17 @@ async def main(urls: list[str]) -> None:
                 }""")
                 path = OUT / f"{name}-{width}.png"
                 await page.screenshot(path=str(path), full_page=True)
-                print(json.dumps({"page": name, "width": width, "height": height, **checks,
-                                  "errors": errors[:5]}))
+                print(
+                    json.dumps(
+                        {
+                            "page": name,
+                            "width": width,
+                            "height": height,
+                            **checks,
+                            "errors": errors[:5],
+                        }
+                    )
+                )
                 await page.close()
         await browser.close()
 

@@ -10,6 +10,7 @@ Needs the spike's dev server running (it renders /s/<brand>-v0, whose first sect
 Usage (repo root):
     .venv/bin/python trials/puck-spike/export/measure_brand.py garner conduit
 """
+
 import asyncio
 import json
 import sys
@@ -74,9 +75,14 @@ async def main(brands: list[str]) -> None:
             await page.wait_for_timeout(2000)
             button = await page.evaluate(FIND_CTA)
             heading = await page.evaluate(FIND_HEADING)
-            out = {"primary_button": button, "heading_on_light": heading,
-                   "measured_from": f"{brand} clones on /s/{brand}-v0 at 1440"}
-            (SPIKE / "data" / "brands" / brand / "measured.json").write_text(json.dumps(out, indent=2))
+            out = {
+                "primary_button": button,
+                "heading_on_light": heading,
+                "measured_from": f"{brand} clones on /s/{brand}-v0 at 1440",
+            }
+            (SPIKE / "data" / "brands" / brand / "measured.json").write_text(
+                json.dumps(out, indent=2)
+            )
             print(brand, json.dumps(button))
         await browser.close()
 

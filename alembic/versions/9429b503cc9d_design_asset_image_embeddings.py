@@ -30,8 +30,8 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '9429b503cc9d'
-down_revision: str | None = '4a94970221e9'
+revision: str = "9429b503cc9d"
+down_revision: str | None = "4a94970221e9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

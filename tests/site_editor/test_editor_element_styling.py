@@ -45,14 +45,22 @@ def wait_selected(page: Any, start: int, key: str | None, component: str) -> dic
         )
     except Exception as error:  # noqa: BLE001 - re-raised with what was received
         seen = [
-            (m["type"], m["payload"].get("componentId"), (m["payload"].get("element") or {}).get("key"))
+            (
+                m["type"],
+                m["payload"].get("componentId"),
+                (m["payload"].get("element") or {}).get("key"),
+            )
             for m in received(page)[start:]
         ]
-        raise AssertionError(f"no selected for {component}#{key}; the frame posted {seen}") from error
+        raise AssertionError(
+            f"no selected for {component}#{key}; the frame posted {seen}"
+        ) from error
     return [p for p in selected_after(page, start) if p["componentId"] == component][-1]
 
 
-def open_site(app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]) -> tuple[Any, Any]:
+def open_site(
+    app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]
+) -> tuple[Any, Any]:
     page, _ = browser_page
     app.init_payload = init
     page.goto(app.origin + "/")
@@ -73,7 +81,9 @@ def computed(frame: Any, selector: str, prop: str) -> str:
     return str(frame.locator(selector).first.evaluate(f"(el) => getComputedStyle(el).{prop}"))
 
 
-def test_a_click_on_text_selects_that_element_with_its_typography(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_click_on_text_selects_that_element_with_its_typography(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     mark = len(received(page))
     frame.locator('[data-puck-component="proof"] [data-clue-el="heading"]').click(force=True)
@@ -84,7 +94,11 @@ def test_a_click_on_text_selects_that_element_with_its_typography(app: Any, brow
     assert payload["element"]["computed"]["fontSize"] > 0
     # Plan 4 lists the section's boxes too; its texts keep their order.
     keys = [element["key"] for element in payload["elements"] if element["kind"] == "text"]
-    assert keys[:3] == ["eyebrow", "heading", "intro"] and "stats.0.value" in keys and "stats.0.label" in keys, keys
+    assert (
+        keys[:3] == ["eyebrow", "heading", "intro"]
+        and "stats.0.value" in keys
+        and "stats.0.label" in keys
+    ), keys
 
     mark = len(received(page))
     frame.locator('[data-puck-component="proof"] [data-clue-el="stats.0.value"]').click(force=True)
@@ -92,18 +106,25 @@ def test_a_click_on_text_selects_that_element_with_its_typography(app: Any, brow
     assert frame.locator('[data-clue-el="stats.0.value"][data-clue-el-selected]').count() == 1
 
 
-def test_the_apps_select_names_an_element_and_set_props_restyles_it(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_apps_select_names_an_element_and_set_props_restyles_it(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = garner_init(mode="edit")
     page, frame = open_site(app, browser_page, editor_origin, init)
     mark = len(received(page))
-    page.evaluate("() => window.__send('select', { route: '/', componentId: 'proof', elementKey: 'heading' })")
+    page.evaluate(
+        "() => window.__send('select', { route: '/', componentId: 'proof', elementKey: 'heading' })"
+    )
     wait_selected(page, mark, "heading", "proof")
     heading = '[data-puck-component="proof"] [data-clue-el="heading"]'
     frame.locator(f"{heading}[data-clue-el-selected]").wait_for(timeout=5000)
 
     props = props_of(init, "proof")
     props["_edits"] = {"heading": {"fontSize": 48, "italic": True, "textAlign": "center"}}
-    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'proof', props, rev: 2 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'proof', props, rev: 2 })",
+        props,
+    )
     frame.wait_for_function(
         """(sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).fontSize === '48px'; }""",
         arg=heading,
@@ -111,7 +132,9 @@ def test_the_apps_select_names_an_element_and_set_props_restyles_it(app: Any, br
     )
     assert computed(frame, heading, "fontStyle") == "italic"
     assert computed(frame, heading, "textAlign") == "center"
-    assert frame.locator(f"{heading}[data-clue-el-selected]").count() == 1, "the outline survives the redraw"
+    assert frame.locator(f"{heading}[data-clue-el-selected]").count() == 1, (
+        "the outline survives the redraw"
+    )
 
 
 def test_a_cloned_sections_text_is_selectable_and_its_styling_never_rebuilds_the_clone(
@@ -120,7 +143,11 @@ def test_a_cloned_sections_text_is_selectable_and_its_styling_never_rebuilds_the
     init = garner_init(mode="edit")
     page, frame = open_site(app, browser_page, editor_origin, init)
     # The first text: plan 4 keys the clone's boxes too, so the innermost keyed element with words.
-    target = frame.locator('[data-puck-component="hero"] [data-clue-el]:not(:has([data-clue-el]))').filter(has_text=re.compile(r"\w")).first
+    target = (
+        frame.locator('[data-puck-component="hero"] [data-clue-el]:not(:has([data-clue-el]))')
+        .filter(has_text=re.compile(r"\w"))
+        .first
+    )
     key = target.get_attribute("data-clue-el")
     assert key, "the clone's text carries a structural key"
     markup = frame.locator('[data-puck-component="hero"] [data-lumen-fragment]').first
@@ -133,18 +160,28 @@ def test_a_cloned_sections_text_is_selectable_and_its_styling_never_rebuilds_the
 
     props = props_of(init, "hero")
     props["_edits"] = {key: {"italic": True}}
-    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'hero', props, rev: 2 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'hero', props, rev: 2 })",
+        props,
+    )
     selector = f'[data-puck-component="hero"] [data-clue-el="{key}"]'
     frame.wait_for_function(
         """(sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).fontStyle === 'italic'; }""",
         arg=selector,
         timeout=10000,
     )
-    assert markup.evaluate("(el) => el.__planOneTag") == "kept", "the clone's markup is the same node"
-    assert frame.locator('[data-puck-component="hero"] [contenteditable="true"]').count() == editable_before
+    assert markup.evaluate("(el) => el.__planOneTag") == "kept", (
+        "the clone's markup is the same node"
+    )
+    assert (
+        frame.locator('[data-puck-component="hero"] [contenteditable="true"]').count()
+        == editable_before
+    )
 
 
-def test_the_headers_account_line_is_selected_through_the_shell(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_headers_account_line_is_selected_through_the_shell(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     mark = len(received(page))
     frame.locator('header [data-clue-el="accountLine"]').click(force=True)
@@ -194,9 +231,19 @@ def test_an_agent_sections_named_text_is_selectable_and_a_hostile_name_is_not(
     init = garner_init(mode="edit")
     init["site"]["agent_sections"] = {"NamedProbe": digest}
     init["site"]["pages"]["/"]["content"].append(
-        {"type": "NamedProbe", "props": {"id": "named", "surface": "page", "headline": "Agent headline"}}
+        {
+            "type": "NamedProbe",
+            "props": {"id": "named", "surface": "page", "headline": "Agent headline"},
+        }
     )
-    init["sections"] = [{"name": "NamedProbe", "digest": digest, "token": TOKEN, "propsSchema": named_section["schema"]}]
+    init["sections"] = [
+        {
+            "name": "NamedProbe",
+            "digest": digest,
+            "token": TOKEN,
+            "propsSchema": named_section["schema"],
+        }
+    ]
     page, frame = open_site(app, browser_page, editor_origin, init)
     frame.get_by_text("Agent headline").first.wait_for(timeout=20000)
 
@@ -210,18 +257,44 @@ def test_an_agent_sections_named_text_is_selectable_and_a_hostile_name_is_not(
     wait_selected(page, mark, None, "named")
 
 
-TWELVE = ["display", "headline", "title", "subtitle", "body", "body.small", "caption", "eyebrow", "label", "cta", "stat", "legal"]
+TWELVE = [
+    "display",
+    "headline",
+    "title",
+    "subtitle",
+    "body",
+    "body.small",
+    "caption",
+    "eyebrow",
+    "label",
+    "cta",
+    "stat",
+    "legal",
+]
 
 
-def test_a_hand_set_size_shrinks_on_a_phone_with_the_brand(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_hand_set_size_shrinks_on_a_phone_with_the_brand(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     """Responsive brand type (founder 2026-10-18): in a kit that measured how its type changes with the
     window, a size set in the inspector is exact on desktop and shrinks with the headline's steps on a
     phone. The app's device preview narrows the editor's frame; the test narrows it the same way."""
     init = garner_init(mode="edit")
     roles = {f"type.{role}": [] for role in TWELVE}
-    roles["type.headline"] = [{"max_width": 991, "font_size": 62}, {"max_width": 767, "font_size": 44}]
-    init["brand"]["kit"]["responsive_type"] = {"version": 1, "measured_from": 1440, "widths": [991, 767], "source": {}, "roles": roles}
-    proof = next(item for item in init["site"]["pages"]["/"]["content"] if item["props"]["id"] == "proof")
+    roles["type.headline"] = [
+        {"max_width": 991, "font_size": 62},
+        {"max_width": 767, "font_size": 44},
+    ]
+    init["brand"]["kit"]["responsive_type"] = {
+        "version": 1,
+        "measured_from": 1440,
+        "widths": [991, 767],
+        "source": {},
+        "roles": roles,
+    }
+    proof = next(
+        item for item in init["site"]["pages"]["/"]["content"] if item["props"]["id"] == "proof"
+    )
     proof["props"]["_edits"] = {"heading": {"fontSize": 60}}
     page, frame = open_site(app, browser_page, editor_origin, init)
     heading = '[data-puck-component="proof"] [data-clue-el="heading"]'
@@ -234,6 +307,10 @@ def test_a_hand_set_size_shrinks_on_a_phone_with_the_brand(app: Any, browser_pag
     # Review finding 3: selected here, the heading reports the brand's scale at this width, so the
     # panel shows "30.3" (not the stored 60) and a typed size converts back to desktop.
     mark = len(received(page))
-    page.evaluate("() => window.__send('select', { route: '/', componentId: 'proof', elementKey: 'heading' })")
+    page.evaluate(
+        "() => window.__send('select', { route: '/', componentId: 'proof', elementKey: 'heading' })"
+    )
     scale = wait_selected(page, mark, "heading", "proof")["element"]["computed"]["sizeScale"]
-    assert abs(scale["headline"] - 44 / 87) < 0.001 and scale["body"] == 1 and scale["title"] == 56, scale
+    assert (
+        abs(scale["headline"] - 44 / 87) < 0.001 and scale["body"] == 1 and scale["title"] == 56
+    ), scale

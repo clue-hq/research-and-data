@@ -48,10 +48,21 @@ SKIP_ROLES = {"nav", "footer"}
 SKIP_LABELS = ("Iframe is blocked", "Preferences Manage Consent", "Sign up for our newsletter")
 ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
 EXTENSIONS = {
-    "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/avif": "avif",
-    "image/gif": "gif", "image/svg+xml": "svg", "video/mp4": "mp4", "video/webm": "webm",
-    "font/ttf": "ttf", "font/otf": "otf", "font/woff": "woff", "font/woff2": "woff2",
-    "font/sfnt": "ttf", "application/font-sfnt": "ttf", "application/x-font-ttf": "ttf",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/avif": "avif",
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "font/ttf": "ttf",
+    "font/otf": "otf",
+    "font/woff": "woff",
+    "font/woff2": "woff2",
+    "font/sfnt": "ttf",
+    "application/font-sfnt": "ttf",
+    "application/x-font-ttf": "ttf",
 }
 
 
@@ -146,12 +157,14 @@ def main() -> int:
     for face in font_spec.get("faces") or []:
         url = copy_bytes(face["digest"], "fonts")
         if url:
-            fonts.append({
-                "family": face["family"],
-                "weight": face.get("weight"),
-                "style": face.get("style") or "normal",
-                "file": url,
-            })
+            fonts.append(
+                {
+                    "family": face["family"],
+                    "weight": face.get("weight"),
+                    "style": face.get("style") or "normal",
+                    "file": url,
+                }
+            )
     (data_dir / "fonts.json").write_text(json.dumps(fonts, indent=2))
 
     # Kit logos and images.
@@ -179,7 +192,8 @@ def main() -> int:
 
     # Clones: approved originals of this kit version, captured from the seller's site.
     rows = [
-        row for row in repo.list_web_fragments()
+        row
+        for row in repo.list_web_fragments()
         if row.get("status") == "approved"
         and not row.get("derived_from")
         and row.get("source_kit_version") == spec["kit_version"]
@@ -195,32 +209,42 @@ def main() -> int:
     clones = []
     for row in sorted(rows, key=order):
         fragment_id = str(row["fragment_id"])
-        loaded = read_web_fragment(blobs.storage, workspace_id=workspace_id, fragment_id=fragment_id)
-        provenance = loaded.row.get("provenance") if isinstance(loaded.row.get("provenance"), dict) else {}
+        loaded = read_web_fragment(
+            blobs.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+        provenance = (
+            loaded.row.get("provenance") if isinstance(loaded.row.get("provenance"), dict) else {}
+        )
         slots = {
             key: {"kind": entry.get("kind"), "fallback": entry.get("fallback")}
             for key, entry in (loaded.slot_manifest or {}).items()
             if isinstance(entry, dict)
         }
-        clones.append({
-            "id": fragment_id,
-            "role": row.get("section_role"),
-            "label": row.get("label"),
-            "page_url": row.get("source_url"),
-            "section_index": provenance.get("section_index"),
-            "wrapper_class": fragment_wrapper_class(fragment_id),
-            "html": rewrite(loaded.html),
-            "css": rewrite(loaded.css),
-            "slots": slots,
-            "native_dependencies": loaded.payload.get("native_dependencies"),
-            "viewport_width": provenance.get("viewport_width"),
-        })
-        print(f"  clone {fragment_id} {row.get('section_role'):12} slots={len(slots):2} "
-              f"html={len(loaded.html):6} css={len(loaded.css):7} {str(row.get('label'))[:50]}")
+        clones.append(
+            {
+                "id": fragment_id,
+                "role": row.get("section_role"),
+                "label": row.get("label"),
+                "page_url": row.get("source_url"),
+                "section_index": provenance.get("section_index"),
+                "wrapper_class": fragment_wrapper_class(fragment_id),
+                "html": rewrite(loaded.html),
+                "css": rewrite(loaded.css),
+                "slots": slots,
+                "native_dependencies": loaded.payload.get("native_dependencies"),
+                "viewport_width": provenance.get("viewport_width"),
+            }
+        )
+        print(
+            f"  clone {fragment_id} {row.get('section_role'):12} slots={len(slots):2} "
+            f"html={len(loaded.html):6} css={len(loaded.css):7} {str(row.get('label'))[:50]}"
+        )
     (data_dir / "clones.json").write_text(json.dumps(clones, indent=2))
 
-    print(f"{brand}: {len(clones)} clones, {len(fonts)} font faces, {len(assets)} kit assets, "
-          f"{len(copied)} files copied")
+    print(
+        f"{brand}: {len(clones)} clones, {len(fonts)} font faces, {len(assets)} kit assets, "
+        f"{len(copied)} files copied"
+    )
     return 0
 
 

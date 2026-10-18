@@ -98,7 +98,9 @@ def clone_catalog(registry: Any, *, kit_version: int | None) -> str:
             continue
         slots = source.get("slots") or []
         slot_names = [
-            str(slot.get("key") or slot.get("name") or slot) if isinstance(slot, dict) else str(slot)
+            str(slot.get("key") or slot.get("name") or slot)
+            if isinstance(slot, dict)
+            else str(slot)
             for slot in slots
         ]
         text = _text_of(source.get("html") or "")
@@ -187,7 +189,9 @@ def run_copy_stage(
     from lumen_agent.llm import init_model
 
     @tool
-    def web_search(query: str, include_domains: list[str] | None = None, num_results: int = 8) -> str:
+    def web_search(
+        query: str, include_domains: list[str] | None = None, num_results: int = 8
+    ) -> str:
         """Search the web. Set include_domains to the seller's domain to find its own published
         case studies, customer stories and studies. Returns titles, URLs and passages."""
         result = reads.web_search(
@@ -201,7 +205,9 @@ def run_copy_stage(
     @tool
     def read_seller_file(path: str) -> str:
         """Read one of the seller's files by its path, for example company/overview.md."""
-        return documents.get(path.lstrip("/"), f"no seller file at {path}; known: {sorted(documents)}")
+        return documents.get(
+            path.lstrip("/"), f"no seller file at {path}; known: {sorted(documents)}"
+        )
 
     @tool
     def fetch_page(url: str) -> str:
@@ -230,7 +236,9 @@ def run_copy_stage(
         role="copy_stage",
         chat_completions=config.agent_chat_completions,
     )
-    agent = create_agent(model, tools=[web_search, fetch_page, read_seller_file], system_prompt=SYSTEM + skill_text)
+    agent = create_agent(
+        model, tools=[web_search, fetch_page, read_seller_file], system_prompt=SYSTEM + skill_text
+    )
     result = agent.invoke(
         {"messages": [{"role": "user", "content": inputs}]}, {"recursion_limit": 30}
     )
@@ -244,7 +252,9 @@ def run_copy_stage(
     transcript = [
         {
             "type": message.type,
-            "content": message.content if isinstance(message.content, str) else str(message.content),
+            "content": message.content
+            if isinstance(message.content, str)
+            else str(message.content),
             "tool_calls": getattr(message, "tool_calls", None),
         }
         for message in messages

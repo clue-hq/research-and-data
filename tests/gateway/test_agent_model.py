@@ -1584,17 +1584,23 @@ def test_a_refused_model_request_is_logged_with_the_providers_own_words() -> Non
                     }
                 },
             )
-        return httpx.Response(200, json={
-            "id": "gen-1", "object": "chat.completion", "created": 0, "model": "x-ai/grok-4.6",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "ok"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
-        })
+        return httpx.Response(
+            200,
+            json={
+                "id": "gen-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "x-ai/grok-4.6",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+            },
+        )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     config = GatewayConfig(
@@ -1617,4 +1623,3 @@ def test_a_refused_model_request_is_logged_with_the_providers_own_words() -> Non
     assert refusal["status"] == 400 and refusal["should_retry"] == "true"
     assert "image exceeds 20 MB" in refusal["error"] and "xAI" in refusal["error"]
     assert "test-openrouter-key" not in str(refusal)
-

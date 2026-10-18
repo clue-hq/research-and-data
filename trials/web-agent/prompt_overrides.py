@@ -48,7 +48,9 @@ def apply() -> None:
     from lumen_agent import harness_web, prompts_web
 
     prompts_web.WEB_ACCOUNT_EVIDENCE = _replace_once(
-        prompts_web.WEB_ACCOUNT_EVIDENCE, ACCOUNT_EVIDENCE_OLD, ACCOUNT_EVIDENCE_NEW,
+        prompts_web.WEB_ACCOUNT_EVIDENCE,
+        ACCOUNT_EVIDENCE_OLD,
+        ACCOUNT_EVIDENCE_NEW,
         "WEB_ACCOUNT_EVIDENCE",
     )
     prompts_web.WEB_SKILL_ROUTING = _replace_once(

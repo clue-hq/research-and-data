@@ -39,8 +39,14 @@ def _person(name: str, sizes: dict[str, int]) -> AccountContactView:
     )
 
 
-_PAGE = {"why-this-person": 3000, "problem-right-now": 3000, "openers": 3000, "angles": 3000,
-         "do-not-mention": 2500, "miscellaneous": 6000}
+_PAGE = {
+    "why-this-person": 3000,
+    "problem-right-now": 3000,
+    "openers": 3000,
+    "angles": 3000,
+    "do-not-mention": 2500,
+    "miscellaneous": 6000,
+}
 
 
 def _read_all(people: list[AccountContactView]) -> list[tuple[AccountContactView, ...]]:

@@ -230,7 +230,10 @@ def _site_doc() -> dict[str, object]:
             },
         },
         "shell": {
-            "header": {"type": "SiteHeader", "props": {"id": "header", "accountLine": "For SCSD", "ctaLabel": "Go"}},
+            "header": {
+                "type": "SiteHeader",
+                "props": {"id": "header", "accountLine": "For SCSD", "ctaLabel": "Go"},
+            },
             "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "©"}},
         },
     }

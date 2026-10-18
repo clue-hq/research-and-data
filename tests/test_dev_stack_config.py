@@ -45,12 +45,23 @@ def _top_level(tmp_path: Path, env_file: str | None, extra_env: dict[str, str]) 
     (tmp_path / "scripts").mkdir()
     if env_file is not None:
         (tmp_path / ".env").write_text(env_file)
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("CLUE_", "DEV_STACK_"))}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("CLUE_", "DEV_STACK_"))
+    }
     env.update(extra_env)
     result = subprocess.run(
-        ["bash", "-c", definitions + '\nprintf "%s\\n" "$PAGES_PORT" "${PLATFORM_ENV[@]}"\n',
-         str(tmp_path / "scripts" / "dev_stack.sh")],
-        env=env, text=True, capture_output=True, check=True,
+        [
+            "bash",
+            "-c",
+            definitions + '\nprintf "%s\\n" "$PAGES_PORT" "${PLATFORM_ENV[@]}"\n',
+            str(tmp_path / "scripts" / "dev_stack.sh"),
+        ],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
     )
     return result.stdout.splitlines()
 
@@ -62,7 +73,11 @@ def _top_level(tmp_path: Path, env_file: str | None, extra_env: dict[str, str]) 
         ('CLUE_PAGES_ORIGIN_PORT="8049"\n', {}, "8049"),
         ("CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai\n", {}, "8040"),  # no key: the runbook port
         (None, {}, "8040"),
-        ("CLUE_PAGES_ORIGIN_PORT=8049\n", {"DEV_STACK_PAGES_PORT": "8177"}, "8177"),  # the knob wins
+        (
+            "CLUE_PAGES_ORIGIN_PORT=8049\n",
+            {"DEV_STACK_PAGES_PORT": "8177"},
+            "8177",
+        ),  # the knob wins
     ],
 )
 def test_the_page_origin_runs_on_the_checkouts_own_port(tmp_path, env_file, extra_env, expected):
@@ -77,5 +92,7 @@ def test_the_page_origin_runs_on_the_checkouts_own_port(tmp_path, env_file, extr
 def test_no_page_origin_command_hard_codes_8040():
     """Start, status and the restart wait all use $PAGES_PORT; 8040 survives only as the default."""
     script = (Path(__file__).resolve().parents[1] / "scripts/dev_stack.sh").read_text()
-    code_lines = [line for line in script.splitlines() if "8040" in line and not line.lstrip().startswith("#")]
+    code_lines = [
+        line for line in script.splitlines() if "8040" in line and not line.lstrip().startswith("#")
+    ]
     assert code_lines == ['PAGES_PORT="${PAGES_PORT:-8040}"'], code_lines

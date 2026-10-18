@@ -718,11 +718,12 @@ def test_the_reaper_loop_deletes_expired_site_turn_conversations_with_the_config
     monkeypatch.setattr(fleet_reaper, "prune_expired_site_turn_checkpoints", fake_prune)
     monkeypatch.setattr(fleet_reaper, "run_reaper_pass", fake_pass)
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(fleet_reaper.reaper_loop(
-            interval_s=1,
-            conn_factory=fake_conn,
-            sleep=fake_sleep,
-            conversation_retention_s=345_600.0,
-        ))
+        asyncio.run(
+            fleet_reaper.reaper_loop(
+                interval_s=1,
+                conn_factory=fake_conn,
+                sleep=fake_sleep,
+                conversation_retention_s=345_600.0,
+            )
+        )
     assert seen == [345_600.0, 345_600.0]
-

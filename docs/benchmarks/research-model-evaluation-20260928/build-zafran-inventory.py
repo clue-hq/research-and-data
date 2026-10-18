@@ -1,37 +1,318 @@
-import csv,json,re
+import csv, json, re
 from pathlib import Path
 from decimal import Decimal
 from datetime import datetime
-BASE=Path.cwd(); ROOT=BASE/'.artifacts/zafran-three-model-medium-20260928'; OUT=BASE/'.artifacts/research-model-evaluation-20260928'
-SLUGS=['grok46','grok47','glm53','glm53-untouched-02','deepseek4pro-high','muse-max']
-MODELS=['x-ai/grok-4.6','x-ai/grok-4.7','z-ai/glm-5.3','z-ai/glm-5.3','deepseek/deepseek-v4-pro-0813','meta/muse-spark-1.3']
-EFFORTS=['medium','medium','medium','medium','high','max']
-def read(p,default=None):return json.loads(p.read_text()) if p.exists() else default
-def link(p):return str(p.resolve()) if p.exists() else None
-def dt(t):return datetime.fromisoformat(t) if t else None
-def number(x):return Decimal(str(x or 0))
-def sec(a,b):return (dt(b)-dt(a)).total_seconds() if a and b else None
-allruns=[]
-for slug,model,effort in zip(SLUGS,MODELS,EFFORTS):
- p=ROOT/slug; audit=read(p/'review/audit.json'); rawjobs=read(p/'review/arv2_research_job.json'); timings=read(p/'timing.json',[]); timingmap={x['job_id']:x for x in timings}; rows=read(p/'review/agent_model_call.json',[]); led=[x for x in read(p/'review/provider_call_ledger.json',[]) if x['phase']=='result']; recs=read(p/'review/arv2_narrative_reconciliation.json',[]); manifest=read(p/'manifest.json'); pre=read(p/'model-preflight.json',{})
- execmap={x['job_id']:x['execution_id'] for x in read(p/'execution-costs.json',[])}
- csvp=OUT/(slug+'-model-calls.csv'); cols=['id','execution_id','role','sequence','requested_model','answering_model','status','started_at','completed_at','latency_ms','input_tokens','cache_read_input_tokens','output_tokens','cost_usd','error_code','langfuse_trace_id','langfuse_observation_id']
- with csvp.open('w') as f:
-  w=csv.DictWriter(f,cols,extrasaction='ignore');w.writeheader();w.writerows(rows)
- jobs=[]
- for j in rawjobs:
-  aj=next(x for x in audit['jobs'] if x['job_id']==j['job_id']);t=timingmap.get(j['job_id'],{});mr=[x for x in rows if x['execution_id']==execmap.get(j['job_id'])];jp=p/'review'/j['job_id'];narr=p/('account' if j['subject_type']=='account' else 'person-'+j['subject_entity_id']);dossier=aj.get('dossier') or {}; provider=[x for x in led if x.get('entity_research_job_id')==j['job_id']]; traces=sorted(set(x['langfuse_trace_id'] for x in mr if x.get('langfuse_trace_id')))
-  jobs.append({'job_id':j['job_id'],'subject':j['subject_type'],'name':aj.get('name') or ('Zafran Security' if j['subject_type']=='account' else None),'entity_id':j['subject_entity_id'],'status':j['status'],'failure_code':j['failure_code'],'start':j['started_at'],'end':j['finished_at'],'wall_seconds':sec(j['started_at'],j['finished_at']),'formation_start':t.get('formation_model_start'),'import_completed':t.get('import_completed'),'narrative_stored':t.get('narrative_stored'),'pre_formation_seconds':sec(j['started_at'],t.get('formation_model_start')),'formation_to_import_seconds':sec(t.get('formation_model_start'),t.get('import_completed')),'import_to_narrative_seconds':sec(t.get('import_completed'),t.get('narrative_stored')),'model_calls':len(mr),'model_failed_calls':sum(x['status']!='completed' for x in mr),'model_unpriced_calls':sum(x['cost_usd'] is None for x in mr),'model_usd':float(sum(number(x['cost_usd']) for x in mr)),'model_seconds_sum':t.get('model_seconds_sum'),'input_tokens':sum(x.get('input_tokens') or 0 for x in mr),'cache_read_input_tokens':sum(x.get('cache_read_input_tokens') or 0 for x in mr),'output_tokens':sum(x.get('output_tokens') or 0 for x in mr),'provider_recorded_usd':float(sum(number(x['cost_usd']) for x in provider)),'ai_ark_credits':float(sum(number(x['credits']) for x in provider if x['provider']=='ai_ark')),'tool_counts':t.get('tool_counts',{}),'dossier':dossier,'links':{'dossier_json':link(jp/'dossier.json'),'dossier_readable':link(jp/'dossier.md'),'narrative_markdown':link(narr/'page.md'),'narrative_html':link(narr/'page.html'),'narrative_blocks':link(narr/'display-blocks.json'),'uncommitted_narrative_json':link(jp/'narrative-payload.json'),'langfuse_traces':['https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/'+v for v in traces]}})
- comps={'researcher_model':float(sum(number(x['cost_usd']) for x in rows)),'exa':0.,'deepgram':0.,'embeddings':0.,'common_muse_reconciliation':0.,'other_providers':0.,'preflight':float(number(pre.get('response_metadata',{}).get('token_usage',{}).get('cost')))}
- for x in led:
-  k='common_muse_reconciliation' if x['label']=='account-reconciliation-v1' else 'embeddings' if x['operation']=='embeddings' else x['provider'] if x['provider'] in ['exa','deepgram'] else 'other_providers';comps[k]+=float(number(x['cost_usd']))
- comps={k:round(v,12) for k,v in comps.items()}
- started=[j['start'] for j in jobs if j['start']]; finished=[j['end'] for j in jobs if j['end']];start=min(started,key=dt);research_end=max(finished,key=dt);gen=audit['generations'][0];settled=gen['input_revision']==gen['reconciled_revision'];end=max([research_end]+[x['completed_at'] for x in recs if x.get('completed_at')],key=dt)
- trace_urls=sorted(set(re.findall(r'https://us\.cloud\.langfuse\.com/[^)\s]+',(p/'REPORT.md').read_text())))
- out={'id':slug,'model':model,'reasoning_effort':effort,'effort_verified_in_actual_requests':True,'scenario':'Clue → Zafran; fixed intended Nick Fisher + Vari Kaur','start':start,'end':end,'research_end':research_end,'wall_seconds':sec(start,end),'research_wall_seconds':sec(start,research_end),'end_semantics':'last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions','status':gen['state'],'generation_settled':settled,'input_revision':gen['input_revision'],'reconciled_revision':gen['reconciled_revision'],'persons_requested':2,'persons_nominated':sum(j['subject']=='person' for j in jobs),'persons_started':sum(j['subject']=='person' and j['start'] is not None for j in jobs),'persons_with_imported_dossier':sum(j['subject']=='person' and bool(j['dossier'].get('receipt_complete')) for j in jobs),'authored_findings':sum((j['dossier'].get('findings') or 0) for j in jobs),'imported_findings':sum((j['dossier'].get('stored') or 0) for j in jobs),'cost_components_usd':comps,'known_total_usd':round(sum(comps.values()),12),'ai_ark_credits':float(sum(number(x['credits']) for x in led if x['provider']=='ai_ark')),'unpriced_researcher_calls':sum(x['cost_usd'] is None for x in rows),'reconciliation':{'model':'meta/muse-spark-1.3','effort':'separately configured; not inferred from researcher effort','paid_calls':sum(x['label']=='account-reconciliation-v1' for x in led),'records':[{'input_revision':x['input_revision'],'status':x['state'],'start':x['created_at'],'end':x.get('completed_at'),'wall_seconds':sec(x['created_at'],x.get('completed_at')),'block_versions_count':len(x.get('block_versions') or {})} for x in recs]},'jobs':jobs,'links':{'report':link(p/'REPORT.md'),'initial_account_dossier_json':link(p/'account-initial/dossier.json'),'initial_account_dossier_readable':link(p/'account-initial/dossier.md'),'initial_account_narrative':link(p/'account-initial/page.md'),'current_account_narrative':link(p/'account/page.md'),'intermediate_exa_dossier':link(p/'account-exa-dossier.md'),'raw_sources_manifest':link(p/'all-raw/manifest.json'),'model_calls_csv':link(csvp),'original_model_calls_csv':link(p/'model-calls.csv'),'tool_activity':next((link(p/v) for v in ['final-tool-activity.md','tool-activity.md','tool-activity.json','activity-latest.json'] if (p/v).exists()),None),'database_audit':link(p/'review/audit.json'),'job_snapshot':link(p/'review/arv2_research_job.json'),'model_call_snapshot':link(p/'review/agent_model_call.json'),'provider_ledger':link(p/'review/provider_call_ledger.json'),'reconciliation_snapshot':link(p/'review/arv2_narrative_reconciliation.json'),'timing':link(p/'timing.json'),'trace_verification':link(p/'trace-verification.json'),'skill_reads':link(p/'skill-read-evidence.json'),'langfuse_traces':trace_urls,'working_tree_diff':link(p/'working-tree.diff')},'trace_verification':read(p/'trace-verification.json'),'comparability':{'resource_revision':manifest.get('quality_resource_revision'),'implementation_commit_at_setup':manifest.get('implementation_commit'),'context_shas':[x['sha256'] for x in manifest['context']],'same_resource_pin_and_context_do_not_prove_identical_runtime':True},'extra_probes':[],'operator_actions':[]}
- if slug=='grok47':out['extra_probes'].append({'kind':'post-failure availability recheck','at':'2026-09-28T09:30:51.251472+00:00','model':model,'effort':'medium','outcome':'502 provider_unavailable capacity','cost_usd':None,'included_in_known_total':False,'note':'No metered price retained; not assumed free; separate from initial preflight and failed account model call. No research rerun.','evidence':link(p/'availability-recheck.json')})
- if slug=='glm53':out['operator_actions'].append({'kind':'worker stopped then same queue restored','stop_at_utc':'2026-09-28T08:44:44Z','account_failed_at':research_end,'caused_account_failure':False,'person_jobs_started':False,'note':'Account naturally failed approximately 27 seconds before operator stop. Subsequent fresh run is separate glm53-untouched-02.','evidence':link(p/'operator-stop.json')})
- allruns.append(out)
-report={'schema':'research-model-run-inventory-v1','generated_at':'2026-09-28','scope':'Six isolated Zafran runs; no additional research purchased for this inventory','definitions':{'research_wall_seconds':'Earliest research job start through latest actual research job finish; overlapping person jobs are not added. Includes dossier/import/narrative/finalization.','wall_seconds':'Same start through last finished reconciliation where present; otherwise latest research finish. Blocked, never-started person jobs do not have invented end times.','pre_formation_seconds':'Observable first formation-model-request boundary, not exclusive provider research time.','costs':'Researcher model ledger plus only result-phase provider rows plus one preflight. No estimate/result double count. AI Ark credits stay separate. Failed unpriced calls and external availability probe remain unknown.','null_link':'Artifact not produced or absent; not a broken link.','authored_vs_imported':'Grok47 authored draft has 30 findings but zero imported; typed enrichment claims excluded from authored counts.'},'runs':allruns}
-(OUT/'zafran-runs.json').write_text(json.dumps(report,indent=2)+'\n')
-print([(x['id'],x['known_total_usd'],x['wall_seconds'],x['authored_findings'],x['imported_findings']) for x in allruns])
+
+BASE = Path.cwd()
+ROOT = BASE / ".artifacts/zafran-three-model-medium-20260928"
+OUT = BASE / ".artifacts/research-model-evaluation-20260928"
+SLUGS = ["grok46", "grok47", "glm53", "glm53-untouched-02", "deepseek4pro-high", "muse-max"]
+MODELS = [
+    "x-ai/grok-4.6",
+    "x-ai/grok-4.7",
+    "z-ai/glm-5.3",
+    "z-ai/glm-5.3",
+    "deepseek/deepseek-v4-pro-0813",
+    "meta/muse-spark-1.3",
+]
+EFFORTS = ["medium", "medium", "medium", "medium", "high", "max"]
+
+
+def read(p, default=None):
+    return json.loads(p.read_text()) if p.exists() else default
+
+
+def link(p):
+    return str(p.resolve()) if p.exists() else None
+
+
+def dt(t):
+    return datetime.fromisoformat(t) if t else None
+
+
+def number(x):
+    return Decimal(str(x or 0))
+
+
+def sec(a, b):
+    return (dt(b) - dt(a)).total_seconds() if a and b else None
+
+
+allruns = []
+for slug, model, effort in zip(SLUGS, MODELS, EFFORTS):
+    p = ROOT / slug
+    audit = read(p / "review/audit.json")
+    rawjobs = read(p / "review/arv2_research_job.json")
+    timings = read(p / "timing.json", [])
+    timingmap = {x["job_id"]: x for x in timings}
+    rows = read(p / "review/agent_model_call.json", [])
+    led = [x for x in read(p / "review/provider_call_ledger.json", []) if x["phase"] == "result"]
+    recs = read(p / "review/arv2_narrative_reconciliation.json", [])
+    manifest = read(p / "manifest.json")
+    pre = read(p / "model-preflight.json", {})
+    execmap = {x["job_id"]: x["execution_id"] for x in read(p / "execution-costs.json", [])}
+    csvp = OUT / (slug + "-model-calls.csv")
+    cols = [
+        "id",
+        "execution_id",
+        "role",
+        "sequence",
+        "requested_model",
+        "answering_model",
+        "status",
+        "started_at",
+        "completed_at",
+        "latency_ms",
+        "input_tokens",
+        "cache_read_input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "error_code",
+        "langfuse_trace_id",
+        "langfuse_observation_id",
+    ]
+    with csvp.open("w") as f:
+        w = csv.DictWriter(f, cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    jobs = []
+    for j in rawjobs:
+        aj = next(x for x in audit["jobs"] if x["job_id"] == j["job_id"])
+        t = timingmap.get(j["job_id"], {})
+        mr = [x for x in rows if x["execution_id"] == execmap.get(j["job_id"])]
+        jp = p / "review" / j["job_id"]
+        narr = p / (
+            "account" if j["subject_type"] == "account" else "person-" + j["subject_entity_id"]
+        )
+        dossier = aj.get("dossier") or {}
+        provider = [x for x in led if x.get("entity_research_job_id") == j["job_id"]]
+        traces = sorted(set(x["langfuse_trace_id"] for x in mr if x.get("langfuse_trace_id")))
+        jobs.append(
+            {
+                "job_id": j["job_id"],
+                "subject": j["subject_type"],
+                "name": aj.get("name")
+                or ("Zafran Security" if j["subject_type"] == "account" else None),
+                "entity_id": j["subject_entity_id"],
+                "status": j["status"],
+                "failure_code": j["failure_code"],
+                "start": j["started_at"],
+                "end": j["finished_at"],
+                "wall_seconds": sec(j["started_at"], j["finished_at"]),
+                "formation_start": t.get("formation_model_start"),
+                "import_completed": t.get("import_completed"),
+                "narrative_stored": t.get("narrative_stored"),
+                "pre_formation_seconds": sec(j["started_at"], t.get("formation_model_start")),
+                "formation_to_import_seconds": sec(
+                    t.get("formation_model_start"), t.get("import_completed")
+                ),
+                "import_to_narrative_seconds": sec(
+                    t.get("import_completed"), t.get("narrative_stored")
+                ),
+                "model_calls": len(mr),
+                "model_failed_calls": sum(x["status"] != "completed" for x in mr),
+                "model_unpriced_calls": sum(x["cost_usd"] is None for x in mr),
+                "model_usd": float(sum(number(x["cost_usd"]) for x in mr)),
+                "model_seconds_sum": t.get("model_seconds_sum"),
+                "input_tokens": sum(x.get("input_tokens") or 0 for x in mr),
+                "cache_read_input_tokens": sum(x.get("cache_read_input_tokens") or 0 for x in mr),
+                "output_tokens": sum(x.get("output_tokens") or 0 for x in mr),
+                "provider_recorded_usd": float(sum(number(x["cost_usd"]) for x in provider)),
+                "ai_ark_credits": float(
+                    sum(number(x["credits"]) for x in provider if x["provider"] == "ai_ark")
+                ),
+                "tool_counts": t.get("tool_counts", {}),
+                "dossier": dossier,
+                "links": {
+                    "dossier_json": link(jp / "dossier.json"),
+                    "dossier_readable": link(jp / "dossier.md"),
+                    "narrative_markdown": link(narr / "page.md"),
+                    "narrative_html": link(narr / "page.html"),
+                    "narrative_blocks": link(narr / "display-blocks.json"),
+                    "uncommitted_narrative_json": link(jp / "narrative-payload.json"),
+                    "langfuse_traces": [
+                        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/"
+                        + v
+                        for v in traces
+                    ],
+                },
+            }
+        )
+    comps = {
+        "researcher_model": float(sum(number(x["cost_usd"]) for x in rows)),
+        "exa": 0.0,
+        "deepgram": 0.0,
+        "embeddings": 0.0,
+        "common_muse_reconciliation": 0.0,
+        "other_providers": 0.0,
+        "preflight": float(
+            number(pre.get("response_metadata", {}).get("token_usage", {}).get("cost"))
+        ),
+    }
+    for x in led:
+        k = (
+            "common_muse_reconciliation"
+            if x["label"] == "account-reconciliation-v1"
+            else "embeddings"
+            if x["operation"] == "embeddings"
+            else x["provider"]
+            if x["provider"] in ["exa", "deepgram"]
+            else "other_providers"
+        )
+        comps[k] += float(number(x["cost_usd"]))
+    comps = {k: round(v, 12) for k, v in comps.items()}
+    started = [j["start"] for j in jobs if j["start"]]
+    finished = [j["end"] for j in jobs if j["end"]]
+    start = min(started, key=dt)
+    research_end = max(finished, key=dt)
+    gen = audit["generations"][0]
+    settled = gen["input_revision"] == gen["reconciled_revision"]
+    end = max([research_end] + [x["completed_at"] for x in recs if x.get("completed_at")], key=dt)
+    trace_urls = sorted(
+        set(re.findall(r"https://us\.cloud\.langfuse\.com/[^)\s]+", (p / "REPORT.md").read_text()))
+    )
+    out = {
+        "id": slug,
+        "model": model,
+        "reasoning_effort": effort,
+        "effort_verified_in_actual_requests": True,
+        "scenario": "Clue → Zafran; fixed intended Nick Fisher + Vari Kaur",
+        "start": start,
+        "end": end,
+        "research_end": research_end,
+        "wall_seconds": sec(start, end),
+        "research_wall_seconds": sec(start, research_end),
+        "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+        "status": gen["state"],
+        "generation_settled": settled,
+        "input_revision": gen["input_revision"],
+        "reconciled_revision": gen["reconciled_revision"],
+        "persons_requested": 2,
+        "persons_nominated": sum(j["subject"] == "person" for j in jobs),
+        "persons_started": sum(j["subject"] == "person" and j["start"] is not None for j in jobs),
+        "persons_with_imported_dossier": sum(
+            j["subject"] == "person" and bool(j["dossier"].get("receipt_complete")) for j in jobs
+        ),
+        "authored_findings": sum((j["dossier"].get("findings") or 0) for j in jobs),
+        "imported_findings": sum((j["dossier"].get("stored") or 0) for j in jobs),
+        "cost_components_usd": comps,
+        "known_total_usd": round(sum(comps.values()), 12),
+        "ai_ark_credits": float(
+            sum(number(x["credits"]) for x in led if x["provider"] == "ai_ark")
+        ),
+        "unpriced_researcher_calls": sum(x["cost_usd"] is None for x in rows),
+        "reconciliation": {
+            "model": "meta/muse-spark-1.3",
+            "effort": "separately configured; not inferred from researcher effort",
+            "paid_calls": sum(x["label"] == "account-reconciliation-v1" for x in led),
+            "records": [
+                {
+                    "input_revision": x["input_revision"],
+                    "status": x["state"],
+                    "start": x["created_at"],
+                    "end": x.get("completed_at"),
+                    "wall_seconds": sec(x["created_at"], x.get("completed_at")),
+                    "block_versions_count": len(x.get("block_versions") or {}),
+                }
+                for x in recs
+            ],
+        },
+        "jobs": jobs,
+        "links": {
+            "report": link(p / "REPORT.md"),
+            "initial_account_dossier_json": link(p / "account-initial/dossier.json"),
+            "initial_account_dossier_readable": link(p / "account-initial/dossier.md"),
+            "initial_account_narrative": link(p / "account-initial/page.md"),
+            "current_account_narrative": link(p / "account/page.md"),
+            "intermediate_exa_dossier": link(p / "account-exa-dossier.md"),
+            "raw_sources_manifest": link(p / "all-raw/manifest.json"),
+            "model_calls_csv": link(csvp),
+            "original_model_calls_csv": link(p / "model-calls.csv"),
+            "tool_activity": next(
+                (
+                    link(p / v)
+                    for v in [
+                        "final-tool-activity.md",
+                        "tool-activity.md",
+                        "tool-activity.json",
+                        "activity-latest.json",
+                    ]
+                    if (p / v).exists()
+                ),
+                None,
+            ),
+            "database_audit": link(p / "review/audit.json"),
+            "job_snapshot": link(p / "review/arv2_research_job.json"),
+            "model_call_snapshot": link(p / "review/agent_model_call.json"),
+            "provider_ledger": link(p / "review/provider_call_ledger.json"),
+            "reconciliation_snapshot": link(p / "review/arv2_narrative_reconciliation.json"),
+            "timing": link(p / "timing.json"),
+            "trace_verification": link(p / "trace-verification.json"),
+            "skill_reads": link(p / "skill-read-evidence.json"),
+            "langfuse_traces": trace_urls,
+            "working_tree_diff": link(p / "working-tree.diff"),
+        },
+        "trace_verification": read(p / "trace-verification.json"),
+        "comparability": {
+            "resource_revision": manifest.get("quality_resource_revision"),
+            "implementation_commit_at_setup": manifest.get("implementation_commit"),
+            "context_shas": [x["sha256"] for x in manifest["context"]],
+            "same_resource_pin_and_context_do_not_prove_identical_runtime": True,
+        },
+        "extra_probes": [],
+        "operator_actions": [],
+    }
+    if slug == "grok47":
+        out["extra_probes"].append(
+            {
+                "kind": "post-failure availability recheck",
+                "at": "2026-09-28T09:30:51.251472+00:00",
+                "model": model,
+                "effort": "medium",
+                "outcome": "502 provider_unavailable capacity",
+                "cost_usd": None,
+                "included_in_known_total": False,
+                "note": "No metered price retained; not assumed free; separate from initial preflight and failed account model call. No research rerun.",
+                "evidence": link(p / "availability-recheck.json"),
+            }
+        )
+    if slug == "glm53":
+        out["operator_actions"].append(
+            {
+                "kind": "worker stopped then same queue restored",
+                "stop_at_utc": "2026-09-28T08:44:44Z",
+                "account_failed_at": research_end,
+                "caused_account_failure": False,
+                "person_jobs_started": False,
+                "note": "Account naturally failed approximately 27 seconds before operator stop. Subsequent fresh run is separate glm53-untouched-02.",
+                "evidence": link(p / "operator-stop.json"),
+            }
+        )
+    allruns.append(out)
+report = {
+    "schema": "research-model-run-inventory-v1",
+    "generated_at": "2026-09-28",
+    "scope": "Six isolated Zafran runs; no additional research purchased for this inventory",
+    "definitions": {
+        "research_wall_seconds": "Earliest research job start through latest actual research job finish; overlapping person jobs are not added. Includes dossier/import/narrative/finalization.",
+        "wall_seconds": "Same start through last finished reconciliation where present; otherwise latest research finish. Blocked, never-started person jobs do not have invented end times.",
+        "pre_formation_seconds": "Observable first formation-model-request boundary, not exclusive provider research time.",
+        "costs": "Researcher model ledger plus only result-phase provider rows plus one preflight. No estimate/result double count. AI Ark credits stay separate. Failed unpriced calls and external availability probe remain unknown.",
+        "null_link": "Artifact not produced or absent; not a broken link.",
+        "authored_vs_imported": "Grok47 authored draft has 30 findings but zero imported; typed enrichment claims excluded from authored counts.",
+    },
+    "runs": allruns,
+}
+(OUT / "zafran-runs.json").write_text(json.dumps(report, indent=2) + "\n")
+print(
+    [
+        (
+            x["id"],
+            x["known_total_usd"],
+            x["wall_seconds"],
+            x["authored_findings"],
+            x["imported_findings"],
+        )
+        for x in allruns
+    ]
+)

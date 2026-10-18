@@ -1,5 +1,6 @@
 """T7 + rest of T9: one shell edit reaches every route; image swap through the asset picker;
 reorder sections with the keyboard (dnd-kit's accessible drag)."""
+
 import asyncio
 import json
 from pathlib import Path
@@ -25,7 +26,9 @@ async def main() -> None:
         await page.goto(f"{BASE}/edit/edit-test/_shell", wait_until="load", timeout=60000)
         await page.wait_for_timeout(4000)
         frame = page.frame_locator("iframe").first
-        await frame.locator("[data-puck-component='site-header']").first.click(position={"x": 10, "y": 10})
+        await frame.locator("[data-puck-component='site-header']").first.click(
+            position={"x": 10, "y": 10}
+        )
         await page.wait_for_timeout(600)
         field = page.locator("input[title='Prepared for']:visible").first
         await field.fill("SCSD Benefits Office")

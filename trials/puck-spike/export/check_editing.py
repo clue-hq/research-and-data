@@ -1,4 +1,5 @@
 """T9: drive the Puck editor like a person and check every edit lands in the saved page."""
+
 import asyncio
 import json
 from pathlib import Path
@@ -36,11 +37,15 @@ async def main() -> None:
         await page.wait_for_timeout(500)
 
         # 2. Inline edit of a clone's text slot (hero headline).
-        await type_into(frame, "[data-fragment-id=frag_95041c54da629d99] h1", "Inline edit inside a clone.")
+        await type_into(
+            frame, "[data-fragment-id=frag_95041c54da629d99] h1", "Inline edit inside a clone."
+        )
         await page.wait_for_timeout(500)
 
         # 3. Variant change from the field panel: select the stats band, set Surface to Brand.
-        await frame.locator("[data-puck-component='proof']").first.click(position={"x": 20, "y": 20})
+        await frame.locator("[data-puck-component='proof']").first.click(
+            position={"x": 20, "y": 20}
+        )
         await page.wait_for_timeout(800)
         surface = page.locator("select[title='Surface']:visible").first
         await surface.select_option(label="Brand")
@@ -56,8 +61,12 @@ async def main() -> None:
         data = saved()
         stats = next(i for i in data["content"] if i["type"] == "StatsBand")["props"]
         hero = next(i for i in data["content"] if i["props"].get("id") == "hero")["props"]
-        results["own_section_inline_edit_saved"] = stats["heading"] == "Inline edit in our own section."
-        results["clone_inline_edit_saved"] = hero["slots"].get("headline") == "Inline edit inside a clone."
+        results["own_section_inline_edit_saved"] = (
+            stats["heading"] == "Inline edit in our own section."
+        )
+        results["clone_inline_edit_saved"] = (
+            hero["slots"].get("headline") == "Inline edit inside a clone."
+        )
         results["undo_restored_surface"] = stats["surface"] == "brandSubtle"
 
         pub = await browser.new_page(viewport={"width": 1440, "height": 900})

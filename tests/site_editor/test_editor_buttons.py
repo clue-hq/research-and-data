@@ -24,7 +24,16 @@ from .test_editor_agent_sections import compile_section, recorded_schema
 from .test_editor_element_styling import computed, wait_selected
 
 pytestmark = BROWSER_OPT_IN
-KITS = Path(__file__).resolve().parents[2] / "apps" / "frontend" / "packages" / "site-kit" / "test" / "fixtures" / "kits"
+KITS = (
+    Path(__file__).resolve().parents[2]
+    / "apps"
+    / "frontend"
+    / "packages"
+    / "site-kit"
+    / "test"
+    / "fixtures"
+    / "kits"
+)
 WHAT = '[data-puck-component="what"]'
 CLOSE_ID = "frag_00000000000000c1"
 CLOSE = {
@@ -54,12 +63,23 @@ def analysis_init() -> dict[str, Any]:
     init["route"] = "/analysis"
     init["brand"]["clones"][CLOSE_ID] = CLOSE
     init["site"]["pages"]["/analysis"]["content"].append(
-        {"type": "ClonedSection", "props": {"id": "close", "fragmentId": CLOSE_ID, "slots": {}, "replacements": [], "links": []}}
+        {
+            "type": "ClonedSection",
+            "props": {
+                "id": "close",
+                "fragmentId": CLOSE_ID,
+                "slots": {},
+                "replacements": [],
+                "links": [],
+            },
+        }
     )
     return init
 
 
-def open_analysis(app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]) -> tuple[Any, Any]:
+def open_analysis(
+    app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]
+) -> tuple[Any, Any]:
     page, _ = browser_page
     app.init_payload = init
     page.goto(app.origin + "/")
@@ -70,10 +90,18 @@ def open_analysis(app: Any, browser_page: Any, editor_origin: str, init: dict[st
 
 
 def what_props(init: dict[str, Any]) -> dict[str, Any]:
-    return copy.deepcopy(next(item["props"] for item in init["site"]["pages"]["/analysis"]["content"] if item["props"]["id"] == "what"))
+    return copy.deepcopy(
+        next(
+            item["props"]
+            for item in init["site"]["pages"]["/analysis"]["content"]
+            if item["props"]["id"] == "what"
+        )
+    )
 
 
-def test_a_click_on_a_brand_button_selects_the_button_with_its_box_and_words(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_click_on_a_brand_button_selects_the_button_with_its_box_and_words(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_analysis(app, browser_page, editor_origin, analysis_init())
     mark = len(received(page))
     frame.locator(f'{WHAT} [data-clue-el="button.label"]').click(force=True)
@@ -82,12 +110,18 @@ def test_a_click_on_a_brand_button_selects_the_button_with_its_box_and_words(app
     assert element["labelElement"]["key"] == "button.label"
     assert element["labelElement"]["rich"]["prop"] == "buttonLabel"
     assert element["labelSource"] == {"kind": "prop", "prop": "buttonLabel"}
-    assert element["link"]["source"] == {"kind": "prop", "href": "buttonHref", "newTab": "buttonNewTab"}
+    assert element["link"]["source"] == {
+        "kind": "prop",
+        "href": "buttonHref",
+        "newTab": "buttonNewTab",
+    }
     box = element["box"]
     assert box["fill"].startswith("#") and box["width"] > 0 and len(box["radius"]) == 4, box
 
 
-def test_a_copied_button_with_an_icon_and_the_headers_button_are_buttons(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_copied_button_with_an_icon_and_the_headers_button_are_buttons(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_analysis(app, browser_page, editor_origin, analysis_init())
     mark = len(received(page))
     frame.locator('[data-puck-component="close"] a.btn svg').click(force=True)
@@ -97,10 +131,18 @@ def test_a_copied_button_with_an_icon_and_the_headers_button_are_buttons(app: An
         arg=mark,
         timeout=10000,
     )
-    element = [m["payload"]["element"] for m in received(page)[mark:] if m["type"] == "selected" and m["payload"]["componentId"] == "close"][-1]
+    element = [
+        m["payload"]["element"]
+        for m in received(page)[mark:]
+        if m["type"] == "selected" and m["payload"]["componentId"] == "close"
+    ][-1]
     assert element["label"] == "Book a demo", element
     assert element["box"]["fill"] == "#0F59B0" and element["box"]["paddingX"] == 20, element["box"]
-    assert element["labelSource"] == {"kind": "replacement", "find": "Book a demo", "shared": False}, element["labelSource"]
+    assert element["labelSource"] == {
+        "kind": "replacement",
+        "find": "Book a demo",
+        "shared": False,
+    }, element["labelSource"]
     assert element["link"]["source"]["kind"] == "slot", element["link"]
 
     mark = len(received(page))
@@ -110,12 +152,18 @@ def test_a_copied_button_with_an_icon_and_the_headers_button_are_buttons(app: An
     assert header["link"]["source"] == {"kind": "prop", "href": "ctaHref", "newTab": "ctaNewTab"}
 
 
-def test_the_boxs_edits_redraw_the_button_and_a_hand_set_fill_holds_on_hover(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_boxs_edits_redraw_the_button_and_a_hand_set_fill_holds_on_hover(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = analysis_init()
     # A kit whose filled buttons change fill on hover (the fixture's default kit has no hover look),
     # and the section's button in one of those looks.
     init["brand"]["kit"] = json.loads((KITS / "probe.minted.json").read_text())
-    what = next(item["props"] for item in init["site"]["pages"]["/analysis"]["content"] if item["props"]["id"] == "what")
+    what = next(
+        item["props"]
+        for item in init["site"]["pages"]["/analysis"]["content"]
+        if item["props"]["id"] == "what"
+    )
     what["buttonLook"] = "solid.0a4a8a"
     page, frame = open_analysis(app, browser_page, editor_origin, init)
     button = f'{WHAT} [data-clue-el="button"]'
@@ -124,35 +172,57 @@ def test_the_boxs_edits_redraw_the_button_and_a_hand_set_fill_holds_on_hover(app
     resting = computed(frame, button, "backgroundColor")
     frame.locator(button).first.evaluate("(el) => { el.style.pointerEvents = 'auto'; }")
     frame.locator(button).first.hover(force=True)
-    frame.wait_for_function("(sel) => document.querySelector(sel).matches(':hover')", arg=button, timeout=5000)
+    frame.wait_for_function(
+        "(sel) => document.querySelector(sel).matches(':hover')", arg=button, timeout=5000
+    )
     page.wait_for_timeout(400)  # the brand's hover transition
     assert computed(frame, button, "backgroundColor") != resting, "the brand's own hover look"
     page.mouse.move(0, 0)
     props = what_props(init)
     props["buttonLabel"] = 'Request <span data-s="button.label~1">the analysis</span>'
     props["_edits"] = {
-        "button": {"fill": {"hex": "#FF0000", "opacity": 100}, "radius": "pill", "width": "fill", "padding": {"y": 10, "x": 30}},
+        "button": {
+            "fill": {"hex": "#FF0000", "opacity": 100},
+            "radius": "pill",
+            "width": "fill",
+            "padding": {"y": 10, "x": 30},
+        },
         "button.label~1": {"fontWeight": 700, "italic": True},
     }
-    page.evaluate("(props) => window.__send('set_props', { route: '/analysis', componentId: 'what', props, rev: 2 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/analysis', componentId: 'what', props, rev: 2 })",
+        props,
+    )
     frame.wait_for_function(
         """(sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).backgroundColor === 'rgb(255, 0, 0)'; }""",
         arg=button,
         timeout=10000,
     )
     assert computed(frame, button, "borderTopLeftRadius") == "9999px"
-    assert computed(frame, button, "paddingLeft") == "30px" and computed(frame, button, "paddingTop") == "10px"
+    assert (
+        computed(frame, button, "paddingLeft") == "30px"
+        and computed(frame, button, "paddingTop") == "10px"
+    )
     width = frame.locator(button).first.evaluate("(el) => el.getBoundingClientRect().width")
-    parent = frame.locator(button).first.evaluate("(el) => el.parentElement.getBoundingClientRect().width")
+    parent = frame.locator(button).first.evaluate(
+        "(el) => el.parentElement.getBoundingClientRect().width"
+    )
     assert abs(width - parent) < 1, (width, parent)
     word = f'{WHAT} [data-s="button.label~1"]'
-    assert computed(frame, word, "fontWeight") == "700" and computed(frame, word, "fontStyle") == "italic"
+    assert (
+        computed(frame, word, "fontWeight") == "700"
+        and computed(frame, word, "fontStyle") == "italic"
+    )
 
     frame.locator(button).first.evaluate("(el) => { el.style.pointerEvents = 'auto'; }")
     frame.locator(button).first.hover(force=True)
     page.wait_for_timeout(400)
-    assert frame.locator(button).first.evaluate("(el) => el.matches(':hover')"), "the pointer rests on the button"
-    assert computed(frame, button, "backgroundColor") == "rgb(255, 0, 0)", "the hand-set fill holds on hover"
+    assert frame.locator(button).first.evaluate("(el) => el.matches(':hover')"), (
+        "the pointer rests on the button"
+    )
+    assert computed(frame, button, "backgroundColor") == "rgb(255, 0, 0)", (
+        "the hand-set fill holds on hover"
+    )
 
 
 AGENT_BUTTON = """import { z } from "zod";
@@ -176,7 +246,9 @@ export function render(props: z.infer<typeof schema>, kit: Kit) {
 """
 
 
-def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: Any, browser_page: Any, editor_origin: str, design_api: Any) -> None:
+def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(
+    app: Any, browser_page: Any, editor_origin: str, design_api: Any
+) -> None:
     """Review finding 8 (ruling R6): an agent button named after the marked prop holding its words
     gets that prop as its words' source (so highlighted words can be styled and the Text row writes
     it); one named otherwise keeps "ask the agent"."""
@@ -188,9 +260,24 @@ def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: 
     init = analysis_init()
     init["site"]["agent_sections"] = {"AgentButton": digest}
     init["site"]["pages"]["/analysis"]["content"].append(
-        {"type": "AgentButton", "props": {"id": "agentbtn", "surface": "page", "cta": "Talk to us", "other": "Other words"}}
+        {
+            "type": "AgentButton",
+            "props": {
+                "id": "agentbtn",
+                "surface": "page",
+                "cta": "Talk to us",
+                "other": "Other words",
+            },
+        }
     )
-    init["sections"] = [{"name": "AgentButton", "digest": digest, "token": TOKEN, "propsSchema": recorded_schema(module)}]
+    init["sections"] = [
+        {
+            "name": "AgentButton",
+            "digest": digest,
+            "token": TOKEN,
+            "propsSchema": recorded_schema(module),
+        }
+    ]
     page, frame = open_analysis(app, browser_page, editor_origin, init)
     named = frame.locator('[data-puck-component="agentbtn"] [data-clue-el="cta"]').first
     named.wait_for(timeout=20000)
@@ -198,7 +285,9 @@ def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: 
     mark = len(received(page))
     named.click(force=True)
     element = wait_selected(page, mark, "cta", "agentbtn")["element"]
-    assert element["kind"] == "button" and element["labelElement"]["rich"] == {"prop": "cta"}, element
+    assert element["kind"] == "button" and element["labelElement"]["rich"] == {"prop": "cta"}, (
+        element
+    )
     assert element["labelSource"] == {"kind": "prop", "prop": "cta"}
 
     mark = len(received(page))
@@ -207,10 +296,12 @@ def test_an_agent_button_named_after_its_words_prop_writes_its_words_there(app: 
     assert loose["labelSource"]["kind"] == "fixed" and not loose["labelElement"].get("rich"), loose
 
 
-def test_a_button_with_no_words_is_not_drawn_in_the_editor(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_button_with_no_words_is_not_drawn_in_the_editor(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     """As on the published page: the analysis page's second feature split stores no button words, so
     the editor draws no button for it (its in-place editor would otherwise show an empty pill)."""
     page, frame = open_analysis(app, browser_page, editor_origin, analysis_init())
     frame.locator('[data-puck-component="after"]').first.wait_for(timeout=20000)
     assert frame.locator('[data-puck-component="after"] .brand-btn').count() == 0
-    assert frame.locator(f'{WHAT} .brand-btn').count() == 1, "a button with words is drawn"
+    assert frame.locator(f"{WHAT} .brand-btn").count() == 1, "a button with words is drawn"

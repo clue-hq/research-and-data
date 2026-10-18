@@ -285,12 +285,18 @@ def test_a_finished_site_turns_conversation_is_deleted_only_after_its_retention(
             run_id = await _site_run(conn, ws, kind=kind, thread=thread)
             await _checkpoint(conn, thread or run_id)
             await design_runs.set_run_result(
-                conn, workspace_id=ws, run_id=run_id, status="succeeded", result={},
+                conn,
+                workspace_id=ws,
+                run_id=run_id,
+                status="succeeded",
+                result={},
                 expected_generation=1,
             )
             await conn.execute(
-                text("UPDATE design_agent_run SET updated_at = now() - make_interval(secs => :a)"
-                     " WHERE run_id = :r"),
+                text(
+                    "UPDATE design_agent_run SET updated_at = now() - make_interval(secs => :a)"
+                    " WHERE run_id = :r"
+                ),
                 {"a": age_s, "r": run_id},
             )
             return run_id

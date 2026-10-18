@@ -497,16 +497,24 @@ def test_an_agent_sections_module_saved_by_the_section_tool_is_served_after_a_li
         async with rollback_conn(seed_pack=False) as conn:
             ws, host = await _workspace(conn)
             storage = FsStorage(tmp_path / "blobs")
-            module = b'export function render() { return null; }\n'
+            module = b"export function render() { return null; }\n"
             digest = hashlib.sha256(module).hexdigest()
             # The order a real turn and publish use: the section tool, then the publish.
             await register_design_bytes(
-                conn, storage, workspace_id=ws, data=module,
-                media_type="text/javascript", source_key=SOURCE_KEY_SITE_SECTION,
+                conn,
+                storage,
+                workspace_id=ws,
+                data=module,
+                media_type="text/javascript",
+                source_key=SOURCE_KEY_SITE_SECTION,
             )
             await register_design_bytes(
-                conn, storage, workspace_id=ws, data=module,
-                media_type=PUBLISH_ASSET_MEDIA_TYPES["js"], source_key=SOURCE_KEY_PUBLISH_ASSET,
+                conn,
+                storage,
+                workspace_id=ws,
+                data=module,
+                media_type=PUBLISH_ASSET_MEDIA_TYPES["js"],
+                source_key=SOURCE_KEY_PUBLISH_ASSET,
             )
             app = _origin(conn, tmp_path)
 

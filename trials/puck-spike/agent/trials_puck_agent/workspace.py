@@ -52,7 +52,10 @@ def _section_body(section: dict) -> dict | None:
 
 
 def research_markdown(
-    title: str, sections: list[dict], labels: dict[str, str] | None = None, held: set[str] | None = None
+    title: str,
+    sections: list[dict],
+    labels: dict[str, str] | None = None,
+    held: set[str] | None = None,
 ) -> str:
     """One research page (overview or insights) as markdown: headings and statements, each statement
     with its type and notes, and ending with the short labels of its claims when `labels` is given
@@ -62,7 +65,11 @@ def research_markdown(
     for section in sections:
         body = _section_body(section)
         if body is None:
-            out += ["", f"## {section.get('section_key', 'Section')}", str(section.get("body_text", ""))]
+            out += [
+                "",
+                f"## {section.get('section_key', 'Section')}",
+                str(section.get("body_text", "")),
+            ]
             continue
         heading = body.get("h1") or section.get("section_key")
         if body.get("restricted"):
@@ -127,8 +134,11 @@ def _claim_lines(claim: dict) -> list[str]:
         return lines
     if "argument" in value:
         lines = [f"Says: {_plain(value['argument'])}"]
-        lines += [f"{label}: {_plain(value[key])}" for key, label in (("persona", "For"), ("angle_label", "Angle"))
-                  if value.get(key)]
+        lines += [
+            f"{label}: {_plain(value[key])}"
+            for key, label in (("persona", "For"), ("angle_label", "Angle"))
+            if value.get(key)
+        ]
         return lines
     return [f"Says: {_plain(value)}"]
 
@@ -136,9 +146,12 @@ def _claim_lines(claim: dict) -> list[str]:
 def claims_markdown(account_name: str, labels: dict[str, str], claims: list[dict]) -> str:
     """research/claims.md: each label's claim with what it says, its source link and any notes."""
     by_id = {str(c.get("claim_id")): c for c in claims}
-    out = [f"# {account_name}: the claims behind the research", "",
-           "Each label in the research files (like [c4]) is one claim below: what it says, its source link,",
-           "and any notes. A shortened quote is only the opening of the source's words."]
+    out = [
+        f"# {account_name}: the claims behind the research",
+        "",
+        "Each label in the research files (like [c4]) is one claim below: what it says, its source link,",
+        "and any notes. A shortened quote is only the opening of the source's words.",
+    ]
     for claim_id, label in labels.items():
         claim = by_id[claim_id]
         out += ["", f"## {label}", *_claim_lines(claim)]
@@ -183,8 +196,14 @@ def write_seller_files(knowledge: Any, dest: Path) -> int:
         target = dest / doc.path.lstrip("/")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(doc.body_text)
-        mark = " (the confirmed ICP)" if doc.path == getattr(knowledge, "confirmed_icp_path", None) else ""
-        index.append(f"- seller/{doc.path.lstrip('/')} ({doc.kind}, {len(doc.body_text)} characters){mark}")
+        mark = (
+            " (the confirmed ICP)"
+            if doc.path == getattr(knowledge, "confirmed_icp_path", None)
+            else ""
+        )
+        index.append(
+            f"- seller/{doc.path.lstrip('/')} ({doc.kind}, {len(doc.body_text)} characters){mark}"
+        )
     (dest / "index.md").write_text("\n".join(index) + "\n")
     return len(knowledge.documents)
 
@@ -192,7 +211,11 @@ def write_seller_files(knowledge: Any, dest: Path) -> int:
 def build_catalog(spike_root: Path, brand: str, dest: Path, seller: str) -> None:
     subprocess.run(
         ["npx", "tsx", "scripts/build-catalog.ts", brand, str(dest), seller],
-        cwd=spike_root, check=True, capture_output=True, text=True, timeout=180,
+        cwd=spike_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
 
 
@@ -202,7 +225,12 @@ LOGO_CELLS = {
     "light_mark": "the symbol only, for light backgrounds",
     "dark_mark": "the symbol only, for dark backgrounds",
 }
-LOGO_EXTENSIONS = {"image/svg+xml": ".svg", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+LOGO_EXTENSIONS = {
+    "image/svg+xml": ".svg",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
 
 
 def account_logo_section(spike_root: Path, site: str, logos: list[dict] | None) -> str:
@@ -221,11 +249,16 @@ def account_logo_section(spike_root: Path, site: str, logos: list[dict] | None) 
         (folder / name).write_bytes(logo["body"])
         out.append(f"- `/accounts/{site}/{name}`: {LOGO_CELLS.get(logo['cell'], logo['cell'])}")
     if others:
-        out += ["", "Other logos found for the account. Use one only when none of the above fits the header:"]
+        out += [
+            "",
+            "Other logos found for the account. Use one only when none of the above fits the header:",
+        ]
         for number, logo in enumerate(others, start=1):
             name = f"other-{number}" + LOGO_EXTENSIONS.get(logo["content_type"], ".png")
             (folder / name).write_bytes(logo["body"])
-            out.append(f"- `/accounts/{site}/{name}`: {logo.get('label') or 'another logo of the account'}")
+            out.append(
+                f"- `/accounts/{site}/{name}`: {logo.get('label') or 'another logo of the account'}"
+            )
     return "\n".join(out + [""])
 
 
@@ -255,8 +288,12 @@ def assemble(
     labels = claim_labels(overview + insights, {str(c.get("claim_id")) for c in claims or []})
     if overview or insights:
         held = held_claim_ids or set()
-        (research / "overview.md").write_text(research_markdown(f"{account_name}: overview", overview, labels, held))
-        (research / "insights.md").write_text(research_markdown(f"{account_name}: insights", insights, labels, held))
+        (research / "overview.md").write_text(
+            research_markdown(f"{account_name}: overview", overview, labels, held)
+        )
+        (research / "insights.md").write_text(
+            research_markdown(f"{account_name}: insights", insights, labels, held)
+        )
         if labels:
             (research / "claims.md").write_text(claims_markdown(account_name, labels, claims or []))
     else:
@@ -266,7 +303,11 @@ def assemble(
     seller_files = write_seller_files(knowledge, workspace / "seller") if knowledge else 0
     build_catalog(spike_root, brand, workspace, seller)
     brand_file = workspace / "brand" / "brand.md"
-    brand_file.write_text(brand_file.read_text().rstrip() + "\n" + account_logo_section(spike_root, site, account_logo))
+    brand_file.write_text(
+        brand_file.read_text().rstrip()
+        + "\n"
+        + account_logo_section(spike_root, site, account_logo)
+    )
     shutil.copytree(SKILLS_DIR, workspace / "skills")
     (workspace / "fetched").mkdir()
     (workspace / ".run.json").write_text(json.dumps({"brand": brand, "site": site, "route": "/"}))
@@ -281,9 +322,16 @@ def assemble(
 
 # --- memory for a fresh session: written by code, read by the agent ---------------------------------
 
+
 def _site_pages(workspace: Path) -> dict[str, dict]:
-    pages = {"/": json.loads((workspace / "page.json").read_text())} if (workspace / "page.json").exists() else {}
-    for file in sorted((workspace / "pages").glob("*.json")) if (workspace / "pages").exists() else []:
+    pages = (
+        {"/": json.loads((workspace / "page.json").read_text())}
+        if (workspace / "page.json").exists()
+        else {}
+    )
+    for file in (
+        sorted((workspace / "pages").glob("*.json")) if (workspace / "pages").exists() else []
+    ):
         pages[f"/{file.stem}"] = json.loads(file.read_text())
     return pages
 
@@ -298,24 +346,45 @@ def site_summary(workspace: Path, spike_root: Path) -> str:
     brand = json.loads((workspace / ".run.json").read_text())["brand"]
     data = spike_root / "data" / "brands" / brand
     clones = {c["id"]: c for c in json.loads((data / "clones.json").read_text())}
-    described = {a["file"]: a.get("description") or "" for a in json.loads((data / "assets.json").read_text()).values()}
+    described = {
+        a["file"]: a.get("description") or ""
+        for a in json.loads((data / "assets.json").read_text()).values()
+    }
     site = json.loads((workspace / ".run.json").read_text()).get("site", "")
     generated = spike_root / "public" / "generated" / site / "index.json"
     if site and generated.exists():
-        described.update({f: f"generated: {e.get('prompt', '')}" for f, e in json.loads(generated.read_text()).items()})
+        described.update(
+            {
+                f: f"generated: {e.get('prompt', '')}"
+                for f, e in json.loads(generated.read_text()).items()
+            }
+        )
 
     def image(file: object) -> str:
-        return f"{file}" + (f" ({_short(described.get(str(file), ''), 120)})" if described.get(str(file)) else "")
+        return f"{file}" + (
+            f" ({_short(described.get(str(file), ''), 120)})" if described.get(str(file)) else ""
+        )
 
-    out = ["# The site as it is now", "",
-           "Written for you at the start of this request. The page files are the truth; this is a summary.", ""]
+    out = [
+        "# The site as it is now",
+        "",
+        "Written for you at the start of this request. The page files are the truth; this is a summary.",
+        "",
+    ]
     if (workspace / "shell.json").exists():
         shell = json.loads((workspace / "shell.json").read_text())
         header = shell.get("header", {})
-        nav = ", ".join(f"{n.get('label')} → {n.get('href')}" for n in header.get("nav") or []) or "none"
-        out += ["## Header and footer",
-                f"- Prepared for: {header.get('preparedFor')}; button \"{header.get('ctaLabel')}\" → {header.get('ctaHref')}",
-                f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}", ""]
+        nav = (
+            ", ".join(f"{n.get('label')} → {n.get('href')}" for n in header.get("nav") or [])
+            or "none"
+        )
+        out += [
+            "## Header and footer",
+            f'- Prepared for: {header.get("preparedFor")}; button "{header.get("ctaLabel")}" → {header.get("ctaHref")}',
+            f"- Nav links: {nav}",
+            f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}",
+            "",
+        ]
     for route, page in _site_pages(workspace).items():
         file = "page.json" if route == "/" else f"pages/{route[1:]}.json"
         out += [f"## {route} ({file})"]
@@ -323,12 +392,14 @@ def site_summary(workspace: Path, spike_root: Path) -> str:
             props = item.get("props", {})
             if item.get("type") == "ClonedSection":
                 clone = clones.get(props.get("fragmentId"), {})
-                out.append(f"{n}. {props.get('id')}: the seller's section \"{_short(clone.get('label', ''), 70)}\" ({props.get('fragmentId')})")
+                out.append(
+                    f'{n}. {props.get("id")}: the seller\'s section "{_short(clone.get("label", ""), 70)}" ({props.get("fragmentId")})'
+                )
                 slots = props.get("slots") or {}
                 for key, slot in (clone.get("slots") or {}).items():
                     value = slots.get(key)
                     if slot.get("kind") == "text" and value not in (None, "", slot.get("fallback")):
-                        out.append(f"   - {key}: \"{_short(value)}\"")
+                        out.append(f'   - {key}: "{_short(value)}"')
                     elif slot.get("kind") == "image" and value:
                         out.append(f"   - {key}: {image(value)}")
                     elif slot.get("kind") == "href" and value:
@@ -336,22 +407,37 @@ def site_summary(workspace: Path, spike_root: Path) -> str:
                     elif slot.get("kind") == "visibility" and value is False:
                         out.append("   - hidden")
                 for r in props.get("replacements") or []:
-                    out.append(f"   - \"{_short(r.get('find'), 60)}\" now reads \"{_short(r.get('replace'), 80)}\"")
+                    out.append(
+                        f'   - "{_short(r.get("find"), 60)}" now reads "{_short(r.get("replace"), 80)}"'
+                    )
                 for link in props.get("links") or []:
                     out.append(f"   - link {link.get('find')} → {link.get('replace')}")
             else:
-                out.append(f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface")
-                for key in ("eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source"):
+                out.append(
+                    f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface"
+                )
+                for key in (
+                    "eyebrow",
+                    "kicker",
+                    "heading",
+                    "metric",
+                    "metricLabel",
+                    "intro",
+                    "body",
+                    "source",
+                ):
                     if props.get(key):
-                        out.append(f"   - {key}: \"{_short(props[key])}\"")
+                        out.append(f'   - {key}: "{_short(props[key])}"')
                 for stat in props.get("stats") or []:
-                    out.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
+                    out.append(
+                        f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}"
+                    )
                 if props.get("image"):
                     out.append(f"   - image: {image(props['image'])}")
                 if props.get("buttonLabel"):
-                    out.append(f"   - button \"{props['buttonLabel']}\" → {props.get('buttonHref')}")
+                    out.append(f'   - button "{props["buttonLabel"]}" → {props.get("buttonHref")}')
                 if props.get("linkLabel"):
-                    out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}")
+                    out.append(f'   - link "{props["linkLabel"]}" → {props.get("linkHref")}')
         out.append("")
     return "\n".join(out)
 
@@ -369,8 +455,11 @@ def site_changes(before: dict[str, dict], after: dict[str, dict]) -> list[str]:
             if sid not in old:
                 notes.append(f"{route}: added the section {sid} ({new[sid].get('type')})")
             elif old[sid] != new[sid]:
-                fields = sorted(k for k in set(old[sid]["props"]) | set(new[sid]["props"])
-                                if old[sid]["props"].get(k) != new[sid]["props"].get(k))
+                fields = sorted(
+                    k
+                    for k in set(old[sid]["props"]) | set(new[sid]["props"])
+                    if old[sid]["props"].get(k) != new[sid]["props"].get(k)
+                )
                 notes.append(f"{route}: changed {sid} ({', '.join(fields)})")
         notes += [f"{route}: removed the section {sid}" for sid in old if sid not in new]
         kept_old = [s for s in old if s in new]
@@ -381,9 +470,23 @@ def site_changes(before: dict[str, dict], after: dict[str, dict]) -> list[str]:
     return notes
 
 
-def append_history(workspace: Path, number: int, request: str, changes: list[str], shell_changed: bool, reply: str | None) -> None:
+def append_history(
+    workspace: Path,
+    number: int,
+    request: str,
+    changes: list[str],
+    shell_changed: bool,
+    reply: str | None,
+) -> None:
     path = workspace / "history.md"
-    text = path.read_text() if path.exists() else "# Earlier requests in this project\n\nOldest first. Written after each request.\n"
-    what = "; ".join(changes + (["changed the header or footer"] if shell_changed else [])) or "nothing changed"
+    text = (
+        path.read_text()
+        if path.exists()
+        else "# Earlier requests in this project\n\nOldest first. Written after each request.\n"
+    )
+    what = (
+        "; ".join(changes + (["changed the header or footer"] if shell_changed else []))
+        or "nothing changed"
+    )
     text += f"\n## {number}. {request}\n- What changed: {what}\n- The reply: {_short(reply or '', 500)}\n"
     path.write_text(text)

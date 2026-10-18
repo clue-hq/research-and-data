@@ -12,23 +12,45 @@ SPIKE = Path(__file__).resolve().parents[2]
 
 WHY_NOW = {
     "section_key": "why-now",
-    "body_text": json.dumps({
-        "h1": "Why now",
-        "intro": [{"claimIds": ["61ba3351-157f-53c9-a6e4-7ee89856b693"], "kind": "inference",
-                   "text": "A new CHCO and cost testimony make a first call timely."}],
-        "items": [{
-            "h2": "Healthcare cost is on the record",
-            "body": [{"claimIds": ["87b908a3-e799-5ee6-8b39-175a98e55ea9"], "kind": "quote",
-                      "text": "Costs “will rise 8% in the coming school year.”"},
-                     {"claimIds": ["cc0805bc-da90-57c5-b90b-785e98bee92a"], "kind": "fact",
-                      "text": "The budget added $4.2 million for healthcare."}],
-            "contactRefs": [{"contactId": "e78569d2", "name": "Nalisa Clark"},
-                            {"contactId": "fbde4757", "name": "Michael Puntschenko"}],
-        }],
-    }),
+    "body_text": json.dumps(
+        {
+            "h1": "Why now",
+            "intro": [
+                {
+                    "claimIds": ["61ba3351-157f-53c9-a6e4-7ee89856b693"],
+                    "kind": "inference",
+                    "text": "A new CHCO and cost testimony make a first call timely.",
+                }
+            ],
+            "items": [
+                {
+                    "h2": "Healthcare cost is on the record",
+                    "body": [
+                        {
+                            "claimIds": ["87b908a3-e799-5ee6-8b39-175a98e55ea9"],
+                            "kind": "quote",
+                            "text": "Costs “will rise 8% in the coming school year.”",
+                        },
+                        {
+                            "claimIds": ["cc0805bc-da90-57c5-b90b-785e98bee92a"],
+                            "kind": "fact",
+                            "text": "The budget added $4.2 million for healthcare.",
+                        },
+                    ],
+                    "contactRefs": [
+                        {"contactId": "e78569d2", "name": "Nalisa Clark"},
+                        {"contactId": "fbde4757", "name": "Michael Puntschenko"},
+                    ],
+                }
+            ],
+        }
+    ),
     "cited_claim_ids": ["61ba3351-157f-53c9-a6e4-7ee89856b693"],
 }
-RESTRICTED = {"section_key": "private", "body_text": json.dumps({"h1": "Private", "restricted": True})}
+RESTRICTED = {
+    "section_key": "private",
+    "body_text": json.dumps({"h1": "Private", "restricted": True}),
+}
 TRUNCATED = {"section_key": "long", "body_text": '{"h1": "Long", "intro": [{"text": "cut off'}
 
 
@@ -51,15 +73,29 @@ def test_research_becomes_plain_markdown_without_claim_ids() -> None:
     assert "- (inference) A new CHCO" in text and "- (quote) Costs" in text
     assert "- The budget added $4.2 million for healthcare." in text
     assert "61ba3351" not in text and "claimIds" not in text
-    assert "## Private (background only, never on the page)" in text  # held back from outreach, kept
+    assert (
+        "## Private (background only, never on the page)" in text
+    )  # held back from outreach, kept
     assert "cut off" in text  # a block that is not valid JSON is kept as text, not dropped
 
 
 def test_every_statement_type_and_its_notes_are_shown() -> None:
-    section = {"section_key": "fit", "body_text": json.dumps({"h1": "Fit", "intro": [
-        {"kind": "qualified", "text": "Autonomy is 80%.", "qualifications": ["Profile-authored, not measured."]},
-        {"kind": "gap", "text": "Their PMS is not known."},
-    ]})}
+    section = {
+        "section_key": "fit",
+        "body_text": json.dumps(
+            {
+                "h1": "Fit",
+                "intro": [
+                    {
+                        "kind": "qualified",
+                        "text": "Autonomy is 80%.",
+                        "qualifications": ["Profile-authored, not measured."],
+                    },
+                    {"kind": "gap", "text": "Their PMS is not known."},
+                ],
+            }
+        ),
+    }
     text = ws.research_markdown("Dana.AI: overview", [section])
     assert "- (qualified) Autonomy is 80%. (note: Profile-authored, not measured.)" in text
     assert "- (gap) Their PMS is not known." in text
@@ -71,32 +107,61 @@ def test_people_come_from_the_contact_references() -> None:
 
 def test_assemble_writes_the_workspace_the_prompt_describes(tmp_path: Path) -> None:
     knowledge = Knowledge(
-        documents=[Doc("product/garner-core.md", "product", "Garner Core"),
-                   Doc("icp/mid-market.md", "icp", "US mid-market employers")],
+        documents=[
+            Doc("product/garner-core.md", "product", "Garner Core"),
+            Doc("icp/mid-market.md", "icp", "US mid-market employers"),
+        ],
         confirmed_icp_path="icp/mid-market.md",
     )
     workspace = tmp_path / "workspace"
     summary = ws.assemble(
-        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
-        account_name="Syracuse City School District", overview=[WHY_NOW], insights=[],
+        workspace,
+        spike_root=SPIKE,
+        brand="garner",
+        seller="Garner Health",
+        site="agent-test",
+        brief="For the page\n",
+        account_name="Syracuse City School District",
+        overview=[WHY_NOW],
+        insights=[],
         knowledge=knowledge,
     )
-    for path in ["brief.md", "research/overview.md", "research/insights.md",
-                 "seller/index.md", "seller/product/garner-core.md", "catalog/index.md",
-                 "catalog/sections.md", "brand/brand.md", "skills/building-with-puck/SKILL.md",
-                 ".run.json"]:
+    for path in [
+        "brief.md",
+        "research/overview.md",
+        "research/insights.md",
+        "seller/index.md",
+        "seller/product/garner-core.md",
+        "catalog/index.md",
+        "catalog/sections.md",
+        "brand/brand.md",
+        "skills/building-with-puck/SKILL.md",
+        ".run.json",
+    ]:
         assert (workspace / path).exists(), path
     assert not (workspace / "page.json").exists() and not (workspace / "shell.json").exists()
     assert "(the confirmed ICP)" in (workspace / "seller/index.md").read_text()
     assert (workspace / "brand/brand.md").read_text().startswith("# Brand: Garner Health")
-    assert summary["people_in_research"] == 2 and summary["seller_files"] == 2 and summary["clones"] > 0
+    assert (
+        summary["people_in_research"] == 2
+        and summary["seller_files"] == 2
+        and summary["clones"] > 0
+    )
 
 
 def test_an_account_with_no_written_research_says_so(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     ws.assemble(
-        workspace, spike_root=SPIKE, brand="conduit", seller="Conduit", site="agent-test", brief="For the page\n",
-        account_name="Atrium Hospitality", overview=[], insights=[], knowledge=None,
+        workspace,
+        spike_root=SPIKE,
+        brand="conduit",
+        seller="Conduit",
+        site="agent-test",
+        brief="For the page\n",
+        account_name="Atrium Hospitality",
+        overview=[],
+        insights=[],
+        knowledge=None,
     )
     assert "no written research" in (workspace / "research/README.md").read_text()
 
@@ -111,14 +176,31 @@ def test_the_site_summary_names_every_page_section_and_image(tmp_path: Path) -> 
     (workspace / "shell.json").write_text(json.dumps(site["shell"]))
     text = ws.site_summary(workspace, SPIKE)
     assert "## / (page.json)" in text and "## /analysis (pages/analysis.json)" in text
-    assert "Lower medical spend for SCSD" in text and "Prepared for: Syracuse City School District" in text
+    assert (
+        "Lower medical spend for SCSD" in text
+        and "Prepared for: Syracuse City School District" in text
+    )
     assert "StatsBand on the brandSubtle surface" in text
 
 
 def test_site_changes_say_what_moved_changed_and_appeared() -> None:
-    before = {"/": {"content": [{"type": "A", "props": {"id": "hero", "x": 1}}, {"type": "B", "props": {"id": "proof"}}]}}
-    after = {"/": {"content": [{"type": "B", "props": {"id": "proof"}}, {"type": "A", "props": {"id": "hero", "x": 2}}]},
-             "/analysis": {"content": []}}
+    before = {
+        "/": {
+            "content": [
+                {"type": "A", "props": {"id": "hero", "x": 1}},
+                {"type": "B", "props": {"id": "proof"}},
+            ]
+        }
+    }
+    after = {
+        "/": {
+            "content": [
+                {"type": "B", "props": {"id": "proof"}},
+                {"type": "A", "props": {"id": "hero", "x": 2}},
+            ]
+        },
+        "/analysis": {"content": []},
+    }
     notes = ws.site_changes(before, after)
     assert "added the page /analysis" in notes
     assert "/: changed hero (x)" in notes and "/: new order proof, hero" in notes
@@ -130,22 +212,46 @@ QUOTE_ID = "87b908a3-e799-5ee6-8b39-175a98e55ea9"
 BUDGET_ID = "cc0805bc-da90-57c5-b90b-785e98bee92a"
 INFERENCE_ID = "61ba3351-157f-53c9-a6e4-7ee89856b693"
 CLAIMS = [
-    {"claim_id": BUDGET_ID, "field_key": "account.research_finding",
-     "value": {"topic": "Budget", "finding": "Healthcare up $4.2 million", "notes": ["The reporter's estimate."],
-               "review": {"status": "supported"}},
-     "source_url": "https://example.org/budget.pdf", "evidence": "", "evidence_truncated": False},
-    {"claim_id": QUOTE_ID, "field_key": "account.employee_count", "value": 4108,
-     "source_url": "https://example.org/nces", "evidence": "Total staff FTE 4,108.72 for the district",
-     "evidence_truncated": True},
-    {"claim_id": "aa000000-0000-0000-0000-000000000001", "field_key": "account.value_narrative",
-     "value": {"persona": "economic_buyer", "argument": "Cut specialty waste in network", "angle_label": "Cost",
-               "icp_key": "x"}},
+    {
+        "claim_id": BUDGET_ID,
+        "field_key": "account.research_finding",
+        "value": {
+            "topic": "Budget",
+            "finding": "Healthcare up $4.2 million",
+            "notes": ["The reporter's estimate."],
+            "review": {"status": "supported"},
+        },
+        "source_url": "https://example.org/budget.pdf",
+        "evidence": "",
+        "evidence_truncated": False,
+    },
+    {
+        "claim_id": QUOTE_ID,
+        "field_key": "account.employee_count",
+        "value": 4108,
+        "source_url": "https://example.org/nces",
+        "evidence": "Total staff FTE 4,108.72 for the district",
+        "evidence_truncated": True,
+    },
+    {
+        "claim_id": "aa000000-0000-0000-0000-000000000001",
+        "field_key": "account.value_narrative",
+        "value": {
+            "persona": "economic_buyer",
+            "argument": "Cut specialty waste in network",
+            "angle_label": "Cost",
+            "icp_key": "x",
+        },
+    },
 ]
 
 
 def test_claim_labels_follow_first_appearance_and_skip_claims_not_served() -> None:
     labels = ws.claim_labels([WHY_NOW], served={QUOTE_ID, BUDGET_ID})
-    assert labels == {QUOTE_ID: "c1", BUDGET_ID: "c2"}  # the inference's claim is not served: no label
+    assert labels == {
+        QUOTE_ID: "c1",
+        BUDGET_ID: "c2",
+    }  # the inference's claim is not served: no label
 
 
 def test_research_carries_the_short_labels_and_never_the_ids() -> None:
@@ -159,12 +265,18 @@ def test_research_carries_the_short_labels_and_never_the_ids() -> None:
 
 def test_the_claims_file_says_what_each_claim_says_with_its_source_and_notes() -> None:
     narrative = "aa000000-0000-0000-0000-000000000001"
-    text = ws.claims_markdown("Syracuse City School District",
-                              {QUOTE_ID: "c1", BUDGET_ID: "c2", narrative: "c3"}, CLAIMS)
+    text = ws.claims_markdown(
+        "Syracuse City School District", {QUOTE_ID: "c1", BUDGET_ID: "c2", narrative: "c3"}, CLAIMS
+    )
     assert text.index("## c1") < text.index("## c2") < text.index("## c3")
-    assert "Says: Healthcare up $4.2 million\nTopic: Budget\nNotes: The reporter's estimate.\n" in text
+    assert (
+        "Says: Healthcare up $4.2 million\nTopic: Budget\nNotes: The reporter's estimate.\n" in text
+    )
     assert "Source: https://example.org/budget.pdf" in text and "review" not in text
-    assert "Says: 4108" in text and "Quote (shortened): “Total staff FTE 4,108.72 for the district”" in text
+    assert (
+        "Says: 4108" in text
+        and "Quote (shortened): “Total staff FTE 4,108.72 for the district”" in text
+    )
     assert "Says: Cut specialty waste in network\nFor: economic_buyer\nAngle: Cost" in text
     assert "icp_key" not in text and QUOTE_ID not in text
 
@@ -172,8 +284,16 @@ def test_the_claims_file_says_what_each_claim_says_with_its_source_and_notes() -
 def test_assemble_with_claims_writes_the_labels_and_the_claims_file(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     summary = ws.assemble(
-        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
-        account_name="Syracuse City School District", overview=[WHY_NOW], insights=[], knowledge=None,
+        workspace,
+        spike_root=SPIKE,
+        brand="garner",
+        seller="Garner Health",
+        site="agent-test",
+        brief="For the page\n",
+        account_name="Syracuse City School District",
+        overview=[WHY_NOW],
+        insights=[],
+        knowledge=None,
         claims=CLAIMS,
     )
     assert "[c1]" in (workspace / "research/overview.md").read_text()
@@ -184,8 +304,16 @@ def test_assemble_with_claims_writes_the_labels_and_the_claims_file(tmp_path: Pa
 def test_assemble_without_claims_writes_no_claims_file(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     summary = ws.assemble(
-        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
-        account_name="Syracuse City School District", overview=[WHY_NOW], insights=[], knowledge=None,
+        workspace,
+        spike_root=SPIKE,
+        brand="garner",
+        seller="Garner Health",
+        site="agent-test",
+        brief="For the page\n",
+        account_name="Syracuse City School District",
+        overview=[WHY_NOW],
+        insights=[],
+        knowledge=None,
     )
     assert not (workspace / "research/claims.md").exists()
     assert "[c" not in (workspace / "research/overview.md").read_text()
@@ -193,9 +321,27 @@ def test_assemble_without_claims_writes_no_claims_file(tmp_path: Path) -> None:
 
 
 def test_cited_claim_ids_cover_every_section_held_back_ones_included() -> None:
-    held_back = {"section_key": "watch-outs", "body_text": json.dumps({"h1": "Watch-outs", "restricted": True, "items": [
-        {"h2": "Careful", "body": [{"kind": "inference", "text": "Do not lean on the deficit.", "claimIds": ["d1"]}]},
-    ]})}
+    held_back = {
+        "section_key": "watch-outs",
+        "body_text": json.dumps(
+            {
+                "h1": "Watch-outs",
+                "restricted": True,
+                "items": [
+                    {
+                        "h2": "Careful",
+                        "body": [
+                            {
+                                "kind": "inference",
+                                "text": "Do not lean on the deficit.",
+                                "claimIds": ["d1"],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ),
+    }
     assert ws.cited_claim_ids([WHY_NOW, held_back]) == [INFERENCE_ID, QUOTE_ID, BUDGET_ID, "d1"]
 
 
@@ -207,6 +353,7 @@ def test_a_statement_resting_on_a_claim_held_back_by_a_real_rule_is_left_out() -
 
 # --- R3: the account's logo, listed in brand.md for the header ------------------------------------
 
+
 def test_assemble_saves_the_account_logo_and_lists_it_in_brand_md(tmp_path: Path) -> None:
     import shutil as _shutil
     import uuid
@@ -215,10 +362,20 @@ def test_assemble_saves_the_account_logo_and_lists_it_in_brand_md(tmp_path: Path
     workspace = tmp_path / "workspace"
     try:
         ws.assemble(
-            workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site=site, brief="For the page\n",
-            account_name="Syracuse City School District", overview=[], insights=[], knowledge=None,
-            account_logo=[{"cell": "light_lockup", "body": b"<svg/>", "content_type": "image/svg+xml"},
-                          {"cell": "dark_mark", "body": b"\x89PNG", "content_type": "image/png"}],
+            workspace,
+            spike_root=SPIKE,
+            brand="garner",
+            seller="Garner Health",
+            site=site,
+            brief="For the page\n",
+            account_name="Syracuse City School District",
+            overview=[],
+            insights=[],
+            knowledge=None,
+            account_logo=[
+                {"cell": "light_lockup", "body": b"<svg/>", "content_type": "image/svg+xml"},
+                {"cell": "dark_mark", "body": b"\x89PNG", "content_type": "image/png"},
+            ],
         )
         brand = (workspace / "brand/brand.md").read_text()
         assert "## The account's logo (header only)" in brand
@@ -232,11 +389,21 @@ def test_assemble_saves_the_account_logo_and_lists_it_in_brand_md(tmp_path: Path
 def test_assemble_without_an_account_logo_says_none_was_found(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     ws.assemble(
-        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
-        account_name="Syracuse City School District", overview=[], insights=[], knowledge=None,
+        workspace,
+        spike_root=SPIKE,
+        brand="garner",
+        seller="Garner Health",
+        site="agent-test",
+        brief="For the page\n",
+        account_name="Syracuse City School District",
+        overview=[],
+        insights=[],
+        knowledge=None,
     )
     brand = (workspace / "brand/brand.md").read_text()
-    assert "## The account's logo (header only)\n\nNone was found. Leave `accountLogo` empty." in brand
+    assert (
+        "## The account's logo (header only)\n\nNone was found. Leave `accountLogo` empty." in brand
+    )
 
 
 def test_the_site_summary_describes_a_generated_image_by_its_prompt(tmp_path: Path) -> None:
@@ -251,11 +418,23 @@ def test_the_site_summary_describes_a_generated_image_by_its_prompt(tmp_path: Pa
         (generated / "index.json").write_text(json.dumps({file: {"prompt": "A calm school scene"}}))
         site = json.loads((SPIKE / "data" / "sites" / "garner-syracuse.json").read_text())
         page = site["pages"]["/"]
-        page["content"].append({"type": "FeatureSplit", "props": {"id": "gen", "surface": "page", "heading": "H",
-                                                                 "body": "B", "image": file}})
+        page["content"].append(
+            {
+                "type": "FeatureSplit",
+                "props": {
+                    "id": "gen",
+                    "surface": "page",
+                    "heading": "H",
+                    "body": "B",
+                    "image": file,
+                },
+            }
+        )
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site_name, "route": "/"}))
+        (workspace / ".run.json").write_text(
+            json.dumps({"brand": "garner", "site": site_name, "route": "/"})
+        )
         (workspace / "page.json").write_text(json.dumps(page))
         (workspace / "shell.json").write_text(json.dumps(site["shell"]))
         assert f"{file} (generated: A calm school scene)" in ws.site_summary(workspace, SPIKE)
@@ -271,17 +450,34 @@ def test_the_other_logos_found_are_listed_after_the_recommended_ones(tmp_path: P
     workspace = tmp_path / "workspace"
     try:
         ws.assemble(
-            workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site=site, brief="For the page\n",
-            account_name="Dana.AI", overview=[], insights=[], knowledge=None,
+            workspace,
+            spike_root=SPIKE,
+            brand="garner",
+            seller="Garner Health",
+            site=site,
+            brief="For the page\n",
+            account_name="Dana.AI",
+            overview=[],
+            insights=[],
+            knowledge=None,
             account_logo=[
                 {"cell": "light_mark", "body": b"\x89PNG1", "content_type": "image/png"},
-                {"cell": "unclassified", "body": b"<svg/>", "content_type": "image/svg+xml", "alternative": True,
-                 "label": "Dana.AI logo (site: light lockup, header)"},
+                {
+                    "cell": "unclassified",
+                    "body": b"<svg/>",
+                    "content_type": "image/svg+xml",
+                    "alternative": True,
+                    "label": "Dana.AI logo (site: light lockup, header)",
+                },
             ],
         )
         brand = (workspace / "brand/brand.md").read_text()
-        assert brand.index(f"/accounts/{site}/light_mark.png") < brand.index("Other logos found for the account")
-        assert f"- `/accounts/{site}/other-1.svg`: Dana.AI logo (site: light lockup, header)" in brand
+        assert brand.index(f"/accounts/{site}/light_mark.png") < brand.index(
+            "Other logos found for the account"
+        )
+        assert (
+            f"- `/accounts/{site}/other-1.svg`: Dana.AI logo (site: light lockup, header)" in brand
+        )
         assert (SPIKE / "public" / "accounts" / site / "other-1.svg").read_bytes() == b"<svg/>"
     finally:
         _shutil.rmtree(SPIKE / "public" / "accounts" / site, ignore_errors=True)

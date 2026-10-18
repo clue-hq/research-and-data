@@ -54,7 +54,19 @@ AZURE = (1, 88, 173)
 def layered_init() -> dict[str, Any]:
     init = boxes_init()
     init["brand"]["clones"][LAYERED_ID] = LAYERED_CLONE
-    init["site"]["pages"]["/"]["content"].insert(2, {"type": "ClonedSection", "props": {"id": "layered", "fragmentId": LAYERED_ID, "slots": {}, "replacements": [], "links": []}})
+    init["site"]["pages"]["/"]["content"].insert(
+        2,
+        {
+            "type": "ClonedSection",
+            "props": {
+                "id": "layered",
+                "fragmentId": LAYERED_ID,
+                "slots": {},
+                "replacements": [],
+                "links": [],
+            },
+        },
+    )
     return init
 
 
@@ -62,8 +74,18 @@ def azure_at_left_edge(page: Any, frame: Any, selector: str) -> bool:
     """Whether the outline's colour is painted just inside the element's left edge, halfway down."""
     box = frame.locator(selector).first.bounding_box()
     assert box
-    shot = Image.open(io.BytesIO(page.screenshot(clip={"x": box["x"], "y": box["y"] + box["height"] / 2 - 2, "width": 6, "height": 4}))).convert("RGB")
-    return any(all(abs(a - b) <= 40 for a, b in zip(shot.getpixel((x, y)), AZURE)) for x in range(shot.width) for y in range(shot.height))
+    shot = Image.open(
+        io.BytesIO(
+            page.screenshot(
+                clip={"x": box["x"], "y": box["y"] + box["height"] / 2 - 2, "width": 6, "height": 4}
+            )
+        )
+    ).convert("RGB")
+    return any(
+        all(abs(a - b) <= 40 for a, b in zip(shot.getpixel((x, y)), AZURE))
+        for x in range(shot.width)
+        for y in range(shot.height)
+    )
 
 
 def drawn(frame: Any, wrapper: str, pseudo: str) -> dict[str, Any]:
@@ -92,7 +114,11 @@ def wait_background(page: Any, start: int, component: str) -> dict[str, Any]:
         arg=[start, component],
         timeout=10000,
     )
-    return [m["payload"] for m in received(page)[start:] if m["type"] == "selected" and m["payload"]["componentId"] == component][-1]
+    return [
+        m["payload"]
+        for m in received(page)[start:]
+        if m["type"] == "selected" and m["payload"]["componentId"] == component
+    ][-1]
 
 
 def blank_of_proof(page: Any, frame: Any) -> None:
@@ -104,7 +130,9 @@ def blank_of_proof(page: Any, frame: Any) -> None:
     page.mouse.click(root["x"] + 2, root["y"] + root["height"] - 2)
 
 
-def test_first_blank_click_selects_the_section_and_a_second_its_background(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_first_blank_click_selects_the_section_and_a_second_its_background(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
     mark = len(received(page))
     blank_of_proof(page, frame)
@@ -112,19 +140,32 @@ def test_first_blank_click_selects_the_section_and_a_second_its_background(app: 
     assert not payload.get("sectionBox"), "the whole section carries no box (Layers only)"
     assert payload["backgroundKey"] == "root", payload.get("backgroundKey")
     frame.locator(f"{PROOF}[data-clue-el-selected]").wait_for(timeout=5000)
-    assert drawn(frame, PROOF, "::after") == {"style": "solid", "box": box_in(frame, PROOF, PROOF)}, "the selected section is outlined"
+    assert drawn(frame, PROOF, "::after") == {
+        "style": "solid",
+        "box": box_in(frame, PROOF, PROOF),
+    }, "the selected section is outlined"
 
     mark = len(received(page))
     blank_of_proof(page, frame)
     payload = wait_background(page, mark, "proof")
-    assert payload["sectionBox"]["outer"]["key"] == "root" and payload["sectionBox"]["inner"]["key"] == "root.inner", payload["sectionBox"]
+    assert (
+        payload["sectionBox"]["outer"]["key"] == "root"
+        and payload["sectionBox"]["inner"]["key"] == "root.inner"
+    ), payload["sectionBox"]
     root = f'{PROOF} [data-clue-el="root"]'
     page.wait_for_timeout(300)
-    assert drawn(frame, PROOF, "::after") == {"style": "solid", "box": box_in(frame, PROOF, root)}, "now around the background"
-    assert frame.locator("[data-clue-el-selected]").count() == 1, "only the background is selected now"
+    assert drawn(frame, PROOF, "::after") == {
+        "style": "solid",
+        "box": box_in(frame, PROOF, root),
+    }, "now around the background"
+    assert frame.locator("[data-clue-el-selected]").count() == 1, (
+        "only the background is selected now"
+    )
 
 
-def test_a_copied_sections_background_is_its_one_top_element(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_copied_sections_background_is_its_one_top_element(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
     section = f"{WRAPPED} section.wr"
     key = frame.locator(section).first.get_attribute("data-clue-el")
@@ -134,21 +175,30 @@ def test_a_copied_sections_background_is_its_one_top_element(app: Any, browser_p
     mark = len(received(page))
     click_at(page, frame, section, 4, 4)
     payload = wait_background(page, mark, "wrapped")
-    assert payload["sectionBox"]["outer"]["key"] == key == payload["sectionBox"]["inner"]["key"], payload["sectionBox"]
+    assert payload["sectionBox"]["outer"]["key"] == key == payload["sectionBox"]["inner"]["key"], (
+        payload["sectionBox"]
+    )
     assert payload["sectionBox"]["inner"]["container"]["paddingY"] == 40, payload["sectionBox"]
 
 
-def test_the_dashed_outline_over_blank_space_previews_the_next_click(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_dashed_outline_over_blank_space_previews_the_next_click(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, layered_init())
     section = f"{LAYERED} section.lh"
     frame.locator(section).first.scroll_into_view_if_needed()
     page.wait_for_timeout(200)
     box = frame.locator(section).first.bounding_box()
     assert box
-    assert box_in(frame, LAYERED, section) != box_in(frame, LAYERED, LAYERED), "the background is smaller than the section"
+    assert box_in(frame, LAYERED, section) != box_in(frame, LAYERED, LAYERED), (
+        "the background is smaller than the section"
+    )
     page.mouse.move(box["x"] + 20, box["y"] + 20)
     frame.locator(f"{LAYERED}[data-clue-el-hovered]").wait_for(timeout=5000)
-    assert drawn(frame, LAYERED, "::before") == {"style": "dashed", "box": box_in(frame, LAYERED, LAYERED)}, "an unselected section: the section"
+    assert drawn(frame, LAYERED, "::before") == {
+        "style": "dashed",
+        "box": box_in(frame, LAYERED, LAYERED),
+    }, "an unselected section: the section"
 
     mark = len(received(page))
     page.mouse.click(box["x"] + 20, box["y"] + 20)
@@ -160,11 +210,15 @@ def test_the_dashed_outline_over_blank_space_previews_the_next_click(app: Any, b
         arg=[LAYERED, expected[0]],
         timeout=5000,
     )
-    assert drawn(frame, LAYERED, "::before") == {"style": "dashed", "box": expected}, "the selected section: its background"
+    assert drawn(frame, LAYERED, "::before") == {"style": "dashed", "box": expected}, (
+        "the selected section: its background"
+    )
     assert frame.locator("[data-clue-el-hovered]").count() == 1
 
 
-def test_puck_draws_no_section_outline_or_hover_tint_of_its_own(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_puck_draws_no_section_outline_or_hover_tint_of_its_own(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
     mark = len(received(page))
     blank_of_proof(page, frame)
@@ -176,10 +230,15 @@ def test_puck_draws_no_section_outline_or_hover_tint_of_its_own(app: Any, browse
         })"""
     )
     assert overlays, "Puck draws its overlay for the selected section"
-    assert all(o["outline"] == "none" and o["background"] in ("rgba(0, 0, 0, 0)", "transparent") for o in overlays), overlays
+    assert all(
+        o["outline"] == "none" and o["background"] in ("rgba(0, 0, 0, 0)", "transparent")
+        for o in overlays
+    ), overlays
 
 
-def test_the_outline_of_a_copied_section_is_painted_above_its_own_layers(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_the_outline_of_a_copied_section_is_painted_above_its_own_layers(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, layered_init())
     inner = f"{LAYERED} .lh-in"
     frame.locator(LAYERED).first.scroll_into_view_if_needed()
@@ -191,11 +250,15 @@ def test_the_outline_of_a_copied_section_is_painted_above_its_own_layers(app: An
     wait_selected(page, mark, None, "layered")
     page.mouse.move(2, 2)
     page.wait_for_timeout(400)
-    assert azure_at_left_edge(page, frame, LAYERED), "the selected section's outline is visible over its colour layer"
+    assert azure_at_left_edge(page, frame, LAYERED), (
+        "the selected section's outline is visible over its colour layer"
+    )
     mark = len(received(page))
     page.mouse.click(section["x"] + 20, section["y"] + 20)
     wait_background(page, mark, "layered")
     page.mouse.move(2, 2)
     page.wait_for_timeout(400)
-    assert azure_at_left_edge(page, frame, f"{LAYERED} section.lh"), "the background's outline is visible too"
+    assert azure_at_left_edge(page, frame, f"{LAYERED} section.lh"), (
+        "the background's outline is visible too"
+    )
     assert frame.locator(inner).count() == 1

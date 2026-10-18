@@ -21,7 +21,9 @@ HEADING = '[data-puck-component="proof"] [data-clue-el="heading"] .ProseMirror'
 HERO_SLOT = '[data-puck-component="hero"] [data-lumen-slot="headline"][contenteditable="true"]'
 
 
-def open_site(app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any], shown: str = PROOF) -> tuple[Any, Any]:
+def open_site(
+    app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any], shown: str = PROOF
+) -> tuple[Any, Any]:
     page, _ = browser_page
     app.init_payload = init
     page.goto(app.origin + "/")
@@ -42,15 +44,25 @@ def saved_value(page: Any, start: int, component: str, prop: str, needle: str) -
         )
     except Exception as error:  # noqa: BLE001 - re-raised with what was sent
         sent = [
-            next(c for c in m["payload"]["site"]["pages"]["/"]["content"] if c["props"]["id"] == component)["props"]
+            next(
+                c
+                for c in m["payload"]["site"]["pages"]["/"]["content"]
+                if c["props"]["id"] == component
+            )["props"]
             for m in received(page)[start:]
             if m["type"] == "changed"
         ]
-        raise AssertionError(f"no save of {component}.{prop} holding {needle!r}; sent {sent}") from error
+        raise AssertionError(
+            f"no save of {component}.{prop} holding {needle!r}; sent {sent}"
+        ) from error
     for message in received(page)[start:]:
         if message["type"] != "changed":
             continue
-        props = next(c for c in message["payload"]["site"]["pages"]["/"]["content"] if c["props"]["id"] == component)["props"]
+        props = next(
+            c
+            for c in message["payload"]["site"]["pages"]["/"]["content"]
+            if c["props"]["id"] == component
+        )["props"]
         value = props
         for part in prop.split("."):
             value = value[part]
@@ -66,7 +78,9 @@ def focus_heading(frame: Any) -> Any:
     editor.click(force=True)
     # TipTap takes the keyboard only once it has focus (it mounts a moment after Puck draws it).
     frame.wait_for_function(
-        "(sel) => document.activeElement && document.activeElement.matches(sel)", arg=HEADING, timeout=10000
+        "(sel) => document.activeElement && document.activeElement.matches(sel)",
+        arg=HEADING,
+        timeout=10000,
     )
     return editor
 
@@ -94,7 +108,9 @@ def select_word(frame: Any, selector: str, word: str) -> None:
     frame.page.wait_for_timeout(300)
 
 
-def test_bold_and_italic_typed_in_a_heading_are_saved_as_rich_text(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_bold_and_italic_typed_in_a_heading_are_saved_as_rich_text(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     focus_heading(frame)
     select_word(frame, HEADING, "lower")
@@ -110,10 +126,14 @@ def test_bold_and_italic_typed_in_a_heading_are_saved_as_rich_text(app: Any, bro
     saved_value(page, mark, "proof", "heading", "<em>medical</em>")
 
 
-def test_a_stored_styled_span_and_link_survive_typing(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_stored_styled_span_and_link_survive_typing(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = garner_init(mode="edit")
     proof = next(c for c in init["site"]["pages"]["/"]["content"] if c["props"]["id"] == "proof")
-    proof["props"]["heading"] = '7.4% <span data-s="heading~1">lower</span> spend. <a href="/analysis" data-new-tab="">See how</a>'
+    proof["props"]["heading"] = (
+        '7.4% <span data-s="heading~1">lower</span> spend. <a href="/analysis" data-new-tab="">See how</a>'
+    )
     proof["props"]["_edits"] = {"heading~1": {"fontWeight": 700}}
     page, frame = open_site(app, browser_page, editor_origin, init, shown="See how")
     frame.locator(f'{HEADING} [data-s="heading~1"]').wait_for(timeout=10000)
@@ -125,11 +145,15 @@ def test_a_stored_styled_span_and_link_survive_typing(app: Any, browser_page: An
     value = saved_value(page, mark, "proof", "heading", "Now")
     assert '<span data-s="heading~1">lower</span>' in value, value
     assert '<a href="/analysis" data-new-tab="">See how</a>' in value, value
-    weight = frame.locator(f'{HEADING} [data-s="heading~1"]').evaluate("(el) => getComputedStyle(el).fontWeight")
+    weight = frame.locator(f'{HEADING} [data-s="heading~1"]').evaluate(
+        "(el) => getComputedStyle(el).fontWeight"
+    )
     assert weight == "700", "the span's _edits rule styles it on the canvas"
 
 
-def test_a_paste_with_styles_the_grammar_has_not_saves_cleanly(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_paste_with_styles_the_grammar_has_not_saves_cleanly(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     editor = focus_heading(frame)
     select_word(frame, HEADING, "No plan changes.")
@@ -147,7 +171,9 @@ def test_a_paste_with_styles_the_grammar_has_not_saves_cleanly(app: Any, browser
     assert value.endswith("Pasted words<br>two"), value
 
 
-def test_bold_typed_in_a_clone_slot_is_saved_as_rich_text(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_bold_typed_in_a_clone_slot_is_saved_as_rich_text(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_site(app, browser_page, editor_origin, garner_init(mode="edit"))
     slot = frame.locator(HERO_SLOT).first
     slot.wait_for(timeout=10000)

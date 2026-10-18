@@ -48,8 +48,19 @@ CLEAR_FROM_TOKENS = 60_000
 FINISH_REMINDERS = 2
 
 READ_ONLY = [
-    "/.run.json", "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/catalog/**", "/brand/**", "/research/**",
-    "/seller/**", "/fetched/**", "/versions/**", "/renders/**",
+    "/.run.json",
+    "/brief.md",
+    "/site.md",
+    "/history.md",
+    "/skills/**",
+    "/skills-e5/**",
+    "/catalog/**",
+    "/brand/**",
+    "/research/**",
+    "/seller/**",
+    "/fetched/**",
+    "/versions/**",
+    "/renders/**",
 ]
 
 
@@ -63,7 +74,13 @@ READ_ONLY = [
 
 #: Planning reads: once plan.md records the decisions and building has started, they leave the
 #: request. Skills, the brief, brand.md and sections.md stay (they are needed while building).
-_PLANNING_PREFIXES = ("/catalog/clones/", "/catalog/index.md", "/research/", "/seller/", "/fetched/")
+_PLANNING_PREFIXES = (
+    "/catalog/clones/",
+    "/catalog/index.md",
+    "/research/",
+    "/seller/",
+    "/fetched/",
+)
 _PLANNING_TOOLS = ("fetch_page", "web_search", "ls", "glob", "grep")
 _SITE_FILES = ("/page.json", "/shell.json", "/plan.md")
 _WRITERS = ("write_file", "edit_file")
@@ -72,13 +89,17 @@ _WRITERS = ("write_file", "edit_file")
 def _calls_by_id(messages: list) -> dict[str, dict]:
     return {
         call["id"]: call
-        for message in messages if isinstance(message, AIMessage)
-        for call in (message.tool_calls or []) if call.get("id")
+        for message in messages
+        if isinstance(message, AIMessage)
+        for call in (message.tool_calls or [])
+        if call.get("id")
     }
 
 
 def _is_site_file(path: object) -> bool:
-    return isinstance(path, str) and (path in _SITE_FILES or (path.startswith("/pages/") and path.endswith(".json")))
+    return isinstance(path, str) and (
+        path in _SITE_FILES or (path.startswith("/pages/") and path.endswith(".json"))
+    )
 
 
 def _stub(message: ToolMessage, text: str) -> ToolMessage:
@@ -104,9 +125,16 @@ def clear_superseded_results(messages: list) -> list:
             last_compare = index
         elif message.name in _WRITERS and path == "/plan.md" and plan_written < 0:
             plan_written = index
-        elif message.name in _WRITERS and _is_site_file(path) and path != "/plan.md" and build_started < 0:
+        elif (
+            message.name in _WRITERS
+            and _is_site_file(path)
+            and path != "/plan.md"
+            and build_started < 0
+        ):
             build_started = index
-    planning_over = max(plan_written, build_started) if plan_written >= 0 and build_started >= 0 else -1
+    planning_over = (
+        max(plan_written, build_started) if plan_written >= 0 and build_started >= 0 else -1
+    )
 
     # Site files written before the last render: earlier reads of them are out of date.
     written_before_render: dict[str, int] = {}
@@ -126,35 +154,64 @@ def clear_superseded_results(messages: list) -> list:
         path = args.get("file_path")
         if name == "render_page" and isinstance(message.content, list) and index < last_render:
             facts = " | ".join(
-                block.get("text", "") for block in message.content
+                block.get("text", "")
+                for block in message.content
                 if isinstance(block, dict) and block.get("type") == "text"
             )
-            out[index] = _stub(message, "[cleared to save context: screenshots from an earlier render_page; "
-                                        f"a newer render replaced them. Facts then: {facts}]")
-        elif name in ("compare_section", "view_clone") and isinstance(message.content, list) and index < last_compare:
+            out[index] = _stub(
+                message,
+                "[cleared to save context: screenshots from an earlier render_page; "
+                f"a newer render replaced them. Facts then: {facts}]",
+            )
+        elif (
+            name in ("compare_section", "view_clone")
+            and isinstance(message.content, list)
+            and index < last_compare
+        ):
             facts = " | ".join(
-                block.get("text", "") for block in message.content
+                block.get("text", "")
+                for block in message.content
                 if isinstance(block, dict) and block.get("type") == "text"
             )
-            out[index] = _stub(message, f"[cleared to save context: pictures from an earlier {name}; a newer "
-                                        f"comparison replaced them. Text then: {facts[:1500]}]")
+            out[index] = _stub(
+                message,
+                f"[cleared to save context: pictures from an earlier {name}; a newer "
+                f"comparison replaced them. Text then: {facts[:1500]}]",
+            )
         elif name == "view_asset" and index < last_render:
             files = ", ".join(args.get("files") or [])
-            out[index] = _stub(message, f"[cleared to save context: images you looked at earlier ({files}). "
-                                        "Call view_asset again to see them.]")
-        elif name == "read_file" and _is_site_file(path) and written_before_render.get(path, -1) > index:
-            out[index] = _stub(message, f"[cleared to save context: an older read of {path}; it has changed "
-                                        "since. Read it again for the current version.]")
+            out[index] = _stub(
+                message,
+                f"[cleared to save context: images you looked at earlier ({files}). "
+                "Call view_asset again to see them.]",
+            )
+        elif (
+            name == "read_file"
+            and _is_site_file(path)
+            and written_before_render.get(path, -1) > index
+        ):
+            out[index] = _stub(
+                message,
+                f"[cleared to save context: an older read of {path}; it has changed "
+                "since. Read it again for the current version.]",
+            )
         elif index < planning_over and (
             (name == "read_file" and isinstance(path, str) and path.startswith(_PLANNING_PREFIXES))
             or name in _PLANNING_TOOLS
         ):
             what = f"{name}({path or args.get('url') or args.get('query') or args.get('pattern') or args.get('path') or ''})"
             saved = ""
-            if name == "fetch_page" and isinstance(message.content, str) and message.content.startswith("Saved to "):
+            if (
+                name == "fetch_page"
+                and isinstance(message.content, str)
+                and message.content.startswith("Saved to ")
+            ):
                 saved = " " + message.content.split(" (status")[0] + "."
-            out[index] = _stub(message, f"[cleared to save context: {what} from planning; your decisions are "
-                                        f"in plan.md.{saved} Call it again if you need the details.]")
+            out[index] = _stub(
+                message,
+                f"[cleared to save context: {what} from planning; your decisions are "
+                f"in plan.md.{saved} Call it again if you need the details.]",
+            )
     return out
 
 
@@ -173,6 +230,7 @@ class SupersededResults:
 
 # --- tool calls in order -------------------------------------------------------------------------
 
+
 class OrderedToolCalls(AgentMiddleware):
     """One response's tool calls run one at a time, in the order the model wrote them, so a
     write is never validated before it lands."""
@@ -190,7 +248,9 @@ class OrderedToolCalls(AgentMiddleware):
         mine = request.tool_call.get("id")
         earlier = order[: order.index(mine)] if mine in order else []
         with self._turnstile:
-            self._turnstile.wait_for(lambda: not self._busy and all(i in self._done for i in earlier))
+            self._turnstile.wait_for(
+                lambda: not self._busy and all(i in self._done for i in earlier)
+            )
             self._busy = True
         try:
             return handler(request)
@@ -202,6 +262,7 @@ class OrderedToolCalls(AgentMiddleware):
 
 
 # --- live trace ----------------------------------------------------------------------------------
+
 
 def _short(text: str, limit: int = 300) -> str:
     text = " ".join(str(text).split())
@@ -233,8 +294,12 @@ class LiveTrace(AgentMiddleware):
         result = handler(request)
         content = getattr(result, "content", result)
         if isinstance(content, list):
-            content = " | ".join(b.get("text", "[image]") if isinstance(b, dict) and b.get("type") == "text"
-                                 else "[image]" for b in content)
+            content = " | ".join(
+                b.get("text", "[image]")
+                if isinstance(b, dict) and b.get("type") == "text"
+                else "[image]"
+                for b in content
+            )
         self.trace(f"    <- {describe_call(request.tool_call)}: {_short(content)}")
         return result
 
@@ -252,6 +317,7 @@ class WholeFileReads(AgentMiddleware):
 
 # --- the run record ------------------------------------------------------------------------------
 
+
 @dataclass
 class TurnRecord:
     prompt: str
@@ -265,7 +331,9 @@ class TurnRecord:
 class RunRecorder(AgentMiddleware):
     """Usage and cost per model call, the safety stop and the finish guard."""
 
-    def __init__(self, page_tools: PageTools, *, safety_stop: int = SAFETY_STOP_CALLS, trace=None) -> None:
+    def __init__(
+        self, page_tools: PageTools, *, safety_stop: int = SAFETY_STOP_CALLS, trace=None
+    ) -> None:
         super().__init__()
         self.page_tools = page_tools
         self.trace = trace or (lambda line: None)
@@ -286,7 +354,11 @@ class RunRecorder(AgentMiddleware):
             self.turn.status = "stopped by the safety stop"
             self.trace(f"    !! safety stop at {self.safety_stop} model calls")
             return {
-                "messages": [AIMessage(content=f"Stopped: {self.safety_stop} model calls in one turn (safety stop).")],
+                "messages": [
+                    AIMessage(
+                        content=f"Stopped: {self.safety_stop} model calls in one turn (safety stop)."
+                    )
+                ],
                 "jump_to": "end",
             }
         return None
@@ -308,16 +380,18 @@ class RunRecorder(AgentMiddleware):
         message = next((m for m in response.result if isinstance(m, AIMessage)), None)
         usage = (message.usage_metadata if message else None) or {}
         metadata = (message.response_metadata if message else None) or {}
-        self.turn.calls.append({
-            "seconds": round(time.monotonic() - started, 2),
-            "input_tokens": usage.get("input_tokens", 0),
-            "output_tokens": usage.get("output_tokens", 0),
-            "cached_tokens": (usage.get("input_token_details") or {}).get("cache_read", 0),
-            "cost_cents": float(metadata.get("clue_cost_cents") or 0),
-            "model": metadata.get("clue_answering_model") or metadata.get("model_name"),
-            "tool_calls": [call["name"] for call in (message.tool_calls if message else [])],
-            "messages_sent": len(request.messages),
-        })
+        self.turn.calls.append(
+            {
+                "seconds": round(time.monotonic() - started, 2),
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "cached_tokens": (usage.get("input_token_details") or {}).get("cache_read", 0),
+                "cost_cents": float(metadata.get("clue_cost_cents") or 0),
+                "model": metadata.get("clue_answering_model") or metadata.get("model_name"),
+                "tool_calls": [call["name"] for call in (message.tool_calls if message else [])],
+                "messages_sent": len(request.messages),
+            }
+        )
         record = self.turn.calls[-1]
         self.trace(
             f"[call {len(self.turn.calls)} · {record['seconds']}s · in {record['input_tokens']:,} "
@@ -326,7 +400,7 @@ class RunRecorder(AgentMiddleware):
         )
         if message is not None and message.text:
             self.trace(f"    says: {_short(message.text, 600)}")
-        for call in (message.tool_calls if message else []):
+        for call in message.tool_calls if message else []:
             self.trace(f"    -> {describe_call(call)}")
         return response
 
@@ -350,11 +424,16 @@ class RunRecorder(AgentMiddleware):
         self.turn.reminders.append(errors)
         self.trace(f"    !! finish guard: the page is invalid, reminder {len(self.turn.reminders)}")
         return {
-            "messages": [HumanMessage(content=(
-                "The page is still invalid, so this turn cannot finish yet:\n" + errors
-                + "\nFix these and validate again. If one cannot be fixed, leave that part out and "
-                "say why in plan.md and in your report."
-            ))],
+            "messages": [
+                HumanMessage(
+                    content=(
+                        "The page is still invalid, so this turn cannot finish yet:\n"
+                        + errors
+                        + "\nFix these and validate again. If one cannot be fixed, leave that part out and "
+                        "say why in plan.md and in your report."
+                    )
+                )
+            ],
             "jump_to": "model",
         }
 
@@ -370,15 +449,25 @@ class SummaryUsage:
                 message = getattr(response.generations[0][0], "message", None)
                 usage = (getattr(message, "usage_metadata", None) or {}) if message else {}
                 metadata = (getattr(message, "response_metadata", None) or {}) if message else {}
-                recorder.turn.calls.append({
-                    "seconds": 0.0, "summary": True,
-                    "input_tokens": usage.get("input_tokens", 0), "output_tokens": usage.get("output_tokens", 0),
-                    "cached_tokens": (usage.get("input_token_details") or {}).get("cache_read", 0),
-                    "cost_cents": float(metadata.get("clue_cost_cents") or 0),
-                    "model": metadata.get("clue_answering_model"), "tool_calls": [], "messages_sent": 0,
-                })
-                recorder.trace(f"    !! compacted the conversation (summary: in {usage.get('input_tokens', 0):,}, "
-                               f"${float(metadata.get('clue_cost_cents') or 0) / 100:.4f})")
+                recorder.turn.calls.append(
+                    {
+                        "seconds": 0.0,
+                        "summary": True,
+                        "input_tokens": usage.get("input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                        "cached_tokens": (usage.get("input_token_details") or {}).get(
+                            "cache_read", 0
+                        ),
+                        "cost_cents": float(metadata.get("clue_cost_cents") or 0),
+                        "model": metadata.get("clue_answering_model"),
+                        "tool_calls": [],
+                        "messages_sent": 0,
+                    }
+                )
+                recorder.trace(
+                    f"    !! compacted the conversation (summary: in {usage.get('input_tokens', 0):,}, "
+                    f"${float(metadata.get('clue_cost_cents') or 0) / 100:.4f})"
+                )
 
         return _Handler()
 
@@ -390,12 +479,12 @@ class SummaryUsage:
 CLAIMS_RESEARCH_LINE = (
     "- `research/`: what we know about the account (its overview and insights). Each statement ends\n"
     "  with the claims behind it, like `[c4, c9]`. `research/claims.md` lists each claim with what it\n"
-    "  says, its source link and any notes. The \"Watch-outs\" and \"Context only\" sections are background\n"
+    '  says, its source link and any notes. The "Watch-outs" and "Context only" sections are background\n'
     "  for your judgement: never put them on the page.\n"
 )
 PLAIN_RESEARCH_LINE = (
-    "- `research/`: what we know about the account (its overview and insights). The \"Watch-outs\" and\n"
-    "  \"Context only\" sections are background for your judgement: never put them on the page.\n"
+    '- `research/`: what we know about the account (its overview and insights). The "Watch-outs" and\n'
+    '  "Context only" sections are background for your judgement: never put them on the page.\n'
 )
 CLAIMS_RULE = (
     "- For a number or a quote from the research, check its claim in `research/claims.md`. Use the\n"
@@ -407,7 +496,9 @@ def _base_prompt(workspace: Path) -> str:
     text = (AGENT_DIR / "system_prompt.md").read_text()
     if (workspace / "research" / "claims.md").exists():
         return text
-    assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, "system_prompt.md drifted from harness.py"
+    assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, (
+        "system_prompt.md drifted from harness.py"
+    )
     return text.replace(CLAIMS_RESEARCH_LINE, PLAIN_RESEARCH_LINE).replace(CLAIMS_RULE, "")
 
 
@@ -417,7 +508,8 @@ def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = Fal
     folders = ["skills", *(["skills-e5"] if allow_new_sections else [])]
     skills = [
         f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
-        for folder in folders for path in sorted((workspace / folder).glob("*/SKILL.md"))
+        for folder in folders
+        for path in sorted((workspace / folder).glob("*/SKILL.md"))
     ]
     return _base_prompt(workspace).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
 
@@ -444,70 +536,92 @@ def build_model() -> Any:
 def page_tool_set(page_tools: PageTools, *, allow_new_sections: bool = False) -> list:
     from langchain_core.tools import StructuredTool
 
-    extra = [
-        StructuredTool.from_function(
-            page_tools.write_section, name="write_section",
-            description="Write a new section as one React file (see the writing-a-section skill). It is "
-            "checked for brand tokens and types; if it passes, place it in a page by its name.",
-        ),
-        StructuredTool.from_function(
-            page_tools.view_clone, name="view_clone",
-            description="Look at one of the seller's captured sections on its own: a desktop (1440 wide) "
-            "and a mobile (375 wide) picture, plus its catalog card (words, images, links).",
-        ),
-        StructuredTool.from_function(
-            page_tools.compare_section, name="compare_section",
-            description="Show a seller's section (fragment_id) and your component (name, filled with "
-            "props) side by side at 1440 and 375 wide, with the share of the area that differs, both "
-            "heights, and the original's words that yours is missing.",
-        ),
-    ] if allow_new_sections else []
+    extra = (
+        [
+            StructuredTool.from_function(
+                page_tools.write_section,
+                name="write_section",
+                description="Write a new section as one React file (see the writing-a-section skill). It is "
+                "checked for brand tokens and types; if it passes, place it in a page by its name.",
+            ),
+            StructuredTool.from_function(
+                page_tools.view_clone,
+                name="view_clone",
+                description="Look at one of the seller's captured sections on its own: a desktop (1440 wide) "
+                "and a mobile (375 wide) picture, plus its catalog card (words, images, links).",
+            ),
+            StructuredTool.from_function(
+                page_tools.compare_section,
+                name="compare_section",
+                description="Show a seller's section (fragment_id) and your component (name, filled with "
+                "props) side by side at 1440 and 375 wide, with the share of the area that differs, both "
+                "heights, and the original's words that yours is missing.",
+            ),
+        ]
+        if allow_new_sections
+        else []
+    )
     return extra + [
         StructuredTool.from_function(
-            page_tools.validate_page, name="validate_page",
+            page_tools.validate_page,
+            name="validate_page",
             description="Check page.json and shell.json against the components, the catalog, the brand "
             "and the evidence. Returns VALID (and saves a version) or INVALID with each error and its fix.",
         ),
         StructuredTool.from_function(
-            page_tools.render_page, name="render_page",
+            page_tools.render_page,
+            name="render_page",
             description="Publish the site and return a desktop (1440 wide) and a mobile (375 wide) "
             "full-page screenshot of one page, with facts about broken images, overflow and console "
-            "errors. route is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Refuses while "
+            'errors. route is "/" for page.json or "/<name>" for pages/<name>.json. Refuses while '
             "the site is invalid.",
         ),
         StructuredTool.from_function(
-            page_tools.restore_version, name="restore_version",
+            page_tools.restore_version,
+            name="restore_version",
             description="Bring back a version saved by validate_page into page.json, shell.json and pages/.",
         ),
         StructuredTool.from_function(
-            page_tools.view_asset, name="view_asset",
+            page_tools.view_asset,
+            name="view_asset",
             description="Look at up to four images (files from brand/brand.md, or images you generated), "
             "each with its description, before you choose one for a section.",
         ),
         StructuredTool.from_function(
-            page_tools.generate_image, name="generate_image",
+            page_tools.generate_image,
+            name="generate_image",
             description="Make a new image for this site in the brand's style (see the images-and-logos "
-            "skill). prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", "
-            "\"4:3\" or \"1:1\"; style_references are one to three of the brand's own photos from "
+            'skill). prompt says what it shows; aspect_ratio is the section\'s shape, such as "16:9", '
+            '"4:3" or "1:1"; style_references are one to three of the brand\'s own photos from '
             "brand/brand.md. Returns the image's path and shows it to you.",
         ),
         StructuredTool.from_function(
-            page_tools.web_search, name="web_search",
+            page_tools.web_search,
+            name="web_search",
             description="Search the web. Set include_domains to the seller's domain to find its own "
             "published case studies and customer stories.",
         ),
         StructuredTool.from_function(
-            page_tools.fetch_page, name="fetch_page",
+            page_tools.fetch_page,
+            name="fetch_page",
             description="Open a page and save its text under fetched/ as evidence. Use it before you put "
             "a number or a quote from that page on the page.",
         ),
     ]
 
 
-def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
-                safety_stop: int = SAFETY_STOP_CALLS, trace=None, clear_context: bool = True,
-                compact_at_tokens: int | None = COMPACT_AT_TOKENS, summary_model: Any = None,
-                allow_new_sections: bool = False):
+def build_agent(
+    page_tools: PageTools,
+    *,
+    model: Any,
+    checkpointer: Any = None,
+    safety_stop: int = SAFETY_STOP_CALLS,
+    trace=None,
+    clear_context: bool = True,
+    compact_at_tokens: int | None = COMPACT_AT_TOKENS,
+    summary_model: Any = None,
+    allow_new_sections: bool = False,
+):
     """Returns (agent, recorder)."""
     from deepagents import FilesystemPermission
     from deepagents.backends import FilesystemBackend
@@ -528,9 +642,17 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
         ),
         PatchToolCallsMiddleware(),
-        *([SummarizationMiddleware(summary_model or model, trigger=("tokens", compact_at_tokens),
-                                   keep=("tokens", COMPACT_KEEP_TOKENS))]
-          if compact_at_tokens else []),
+        *(
+            [
+                SummarizationMiddleware(
+                    summary_model or model,
+                    trigger=("tokens", compact_at_tokens),
+                    keep=("tokens", COMPACT_KEEP_TOKENS),
+                )
+            ]
+            if compact_at_tokens
+            else []
+        ),
         *([ContextEditingMiddleware(edits=[SupersededResults()])] if clear_context else []),
         WholeFileReads(),
         OrderedToolCalls(),
@@ -540,7 +662,9 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
     agent = create_agent(
         model,
         tools=page_tool_set(page_tools, allow_new_sections=allow_new_sections),
-        system_prompt=system_prompt_with_skills(page_tools.workspace, allow_new_sections=allow_new_sections),
+        system_prompt=system_prompt_with_skills(
+            page_tools.workspace, allow_new_sections=allow_new_sections
+        ),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         name="puck-page-agent",

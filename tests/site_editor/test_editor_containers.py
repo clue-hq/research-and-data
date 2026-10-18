@@ -62,11 +62,25 @@ def boxes_init() -> dict[str, Any]:
     init["brand"]["clones"][WRAPPED_ID] = WRAPPED
     content = init["site"]["pages"]["/"]["content"]
     content.insert(0, {"type": "ProofCard", "props": dict(PROOF)})
-    content.insert(1, {"type": "ClonedSection", "props": {"id": "wrapped", "fragmentId": WRAPPED_ID, "slots": {}, "replacements": [], "links": []}})
+    content.insert(
+        1,
+        {
+            "type": "ClonedSection",
+            "props": {
+                "id": "wrapped",
+                "fragmentId": WRAPPED_ID,
+                "slots": {},
+                "replacements": [],
+                "links": [],
+            },
+        },
+    )
     return init
 
 
-def open_boxes(app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]) -> tuple[Any, Any]:
+def open_boxes(
+    app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]
+) -> tuple[Any, Any]:
     page, _ = browser_page
     app.init_payload = init
     page.goto(app.origin + "/")
@@ -86,25 +100,41 @@ def click_at(page: Any, frame: Any, selector: str, dx: float, dy: float) -> None
 
 
 def last_selected(page: Any, component: str) -> dict[str, Any]:
-    return [m["payload"] for m in received(page) if m["type"] == "selected" and m["payload"]["componentId"] == component][-1]
+    return [
+        m["payload"]
+        for m in received(page)
+        if m["type"] == "selected" and m["payload"]["componentId"] == component
+    ][-1]
 
 
-def test_a_click_on_a_card_selects_the_box_with_its_look(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_click_on_a_card_selects_the_box_with_its_look(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
     mark = len(received(page))
     click_at(page, frame, CARD, 6, 6)  # the card's padding, outside its texts
     element = wait_selected(page, mark, "card", "card_proof")["element"]
     assert element["kind"] == "container" and element["label"] == "Card", element
     container = element["container"]
-    assert container["layout"] == "grid" and container["name"] == "Card" and container["paddingY"] > 0, container
+    assert (
+        container["layout"] == "grid" and container["name"] == "Card" and container["paddingY"] > 0
+    ), container
 
 
-def test_between_stats_the_grid_and_blank_section_space_the_section_with_its_box(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_between_stats_the_grid_and_blank_section_space_the_section_with_its_box(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
-    frame.locator('[data-puck-component="proof"] [data-clue-el="stats"]').first.scroll_into_view_if_needed()
+    frame.locator(
+        '[data-puck-component="proof"] [data-clue-el="stats"]'
+    ).first.scroll_into_view_if_needed()
     page.wait_for_timeout(300)
-    first = frame.locator('[data-puck-component="proof"] [data-clue-el="stats.0"]').first.bounding_box()
-    second = frame.locator('[data-puck-component="proof"] [data-clue-el="stats.1"]').first.bounding_box()
+    first = frame.locator(
+        '[data-puck-component="proof"] [data-clue-el="stats.0"]'
+    ).first.bounding_box()
+    second = frame.locator(
+        '[data-puck-component="proof"] [data-clue-el="stats.1"]'
+    ).first.bounding_box()
     assert first and second
     mark = len(received(page))
     page.mouse.click((first["x"] + first["width"] + second["x"]) / 2, first["y"] + 10)
@@ -113,7 +143,9 @@ def test_between_stats_the_grid_and_blank_section_space_the_section_with_its_box
     parents = {element["key"]: element.get("parent") for element in payload["elements"]}
     assert parents["stats.0"] == "stats" and parents["stats.0.value"] == "stats.0", parents
 
-    root = frame.locator('[data-puck-component="proof"] [data-clue-el="root.inner"]').first.bounding_box()
+    root = frame.locator(
+        '[data-puck-component="proof"] [data-clue-el="root.inner"]'
+    ).first.bounding_box()
     assert root
     mark = len(received(page))
     page.mouse.click(root["x"] + 2, root["y"] + root["height"] - 2)  # the section's own padding
@@ -123,7 +155,9 @@ def test_between_stats_the_grid_and_blank_section_space_the_section_with_its_box
     assert payload["backgroundKey"] == "root" and not payload.get("sectionBox"), payload
 
 
-def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wrappers(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wrappers(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_boxes(app, browser_page, editor_origin, boxes_init())
     card = '[data-puck-component="wrapped"] .card'
     mark = len(received(page))
@@ -135,12 +169,24 @@ def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wr
     )
     payload = last_selected(page, "wrapped")
     key = frame.locator(card).first.get_attribute("data-clue-el")
-    assert payload["element"]["key"] == key and payload["element"]["label"] == "Card", payload["element"]
-    assert payload["element"]["arrange"]["siblings"] == [key, frame.locator(card).nth(1).get_attribute("data-clue-el")], payload["element"]["arrange"]
+    assert payload["element"]["key"] == key and payload["element"]["label"] == "Card", payload[
+        "element"
+    ]
+    assert payload["element"]["arrange"]["siblings"] == [
+        key,
+        frame.locator(card).nth(1).get_attribute("data-clue-el"),
+    ], payload["element"]["arrange"]
     listed = [element["key"] for element in payload["elements"]]
-    section_key = frame.locator('[data-puck-component="wrapped"] section.wr').first.get_attribute("data-clue-el")
+    section_key = frame.locator('[data-puck-component="wrapped"] section.wr').first.get_attribute(
+        "data-clue-el"
+    )
     for wrapper in (".w1", ".w2", "ls-h", "ls-b", "section.wr"):
-        assert frame.locator(f'[data-puck-component="wrapped"] {wrapper}').first.get_attribute("data-clue-el") not in listed, (wrapper, listed)
+        assert (
+            frame.locator(f'[data-puck-component="wrapped"] {wrapper}').first.get_attribute(
+                "data-clue-el"
+            )
+            not in listed
+        ), (wrapper, listed)
 
     # Blank space in the copied section (its own padding) selects the section, whose background is the
     # <section> under ingestion's display:contents wrappers (review C1; founder 2026-10-19).
@@ -155,10 +201,18 @@ def test_a_boxs_edits_redraw_it(app: Any, browser_page: Any, editor_origin: str)
     page, frame = open_boxes(app, browser_page, editor_origin, init)
     props = copy.deepcopy(PROOF)
     props["_edits"] = {
-        "card": {"fill": {"hex": "#FF0000", "opacity": 100}, "radius": 20, "gap": 40, "contentAlign": {"along": "grid", "to": "center"}},
+        "card": {
+            "fill": {"hex": "#FF0000", "opacity": 100},
+            "radius": 20,
+            "gap": 40,
+            "contentAlign": {"along": "grid", "to": "center"},
+        },
         "root": {"fill": {"hex": "#00FF00", "opacity": 100}},
     }
-    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 2 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 2 })",
+        props,
+    )
     frame.wait_for_function(
         """(sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).backgroundColor === 'rgb(255, 0, 0)'; }""",
         arg=CARD,
@@ -167,14 +221,23 @@ def test_a_boxs_edits_redraw_it(app: Any, browser_page: Any, editor_origin: str)
     assert computed(frame, CARD, "borderTopLeftRadius") == "20px"
     assert computed(frame, CARD, "columnGap") == "40px"
     assert computed(frame, CARD, "justifyItems") == "center"
-    assert computed(frame, '[data-puck-component="card_proof"] [data-clue-el="root"]', "backgroundColor") == "rgb(0, 255, 0)"
+    assert (
+        computed(
+            frame, '[data-puck-component="card_proof"] [data-clue-el="root"]', "backgroundColor"
+        )
+        == "rgb(0, 255, 0)"
+    )
 
 
-def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_listed(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_listed(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = boxes_init()
     page, frame = open_boxes(app, browser_page, editor_origin, init)
     shell = copy.deepcopy(init["site"]["shell"])
-    shell["footer"]["props"]["_edits"] = {"root.inner": {"contentAlign": {"along": "row", "to": "center"}}}
+    shell["footer"]["props"]["_edits"] = {
+        "root.inner": {"contentAlign": {"along": "row", "to": "center"}}
+    }
     shell["header"]["props"]["_edits"] = {"logo": {"hidden": True}}
     site = copy.deepcopy(init["site"])
     site["shell"] = shell
@@ -188,10 +251,18 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
     assert computed(frame, inner, "flexDirection") == "row"
     desktop = page.evaluate("() => document.querySelector('iframe').style.width")
     page.evaluate("() => { document.querySelector('iframe').style.width = '390px'; }")
-    frame.wait_for_function("(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'column'", arg=inner, timeout=10000)
+    frame.wait_for_function(
+        "(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'column'",
+        arg=inner,
+        timeout=10000,
+    )
     assert computed(frame, inner, "justifyContent") == "center", "the same property on a phone"
     page.evaluate("(width) => { document.querySelector('iframe').style.width = width; }", desktop)
-    frame.wait_for_function("(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'row'", arg=inner, timeout=10000)
+    frame.wait_for_function(
+        "(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'row'",
+        arg=inner,
+        timeout=10000,
+    )
 
     # The footer's link group is only as wide as its links on desktop: no room to line them up
     # (review I5); the panel greys the control out with a note.
@@ -201,7 +272,9 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
     terms = frame.locator('footer [data-clue-el="terms"]').first.bounding_box()
     assert privacy and terms
     mark = len(received(page))
-    page.mouse.click((privacy["x"] + privacy["width"] + terms["x"]) / 2, privacy["y"] + privacy["height"] / 2)
+    page.mouse.click(
+        (privacy["x"] + privacy["width"] + terms["x"]) / 2, privacy["y"] + privacy["height"] / 2
+    )
     links = wait_selected(page, mark, "links", "footer")["element"]
     assert links["kind"] == "container" and links["container"]["alignRoom"] is False, links
 
@@ -213,11 +286,15 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
         arg=mark,
         timeout=10000,
     )
-    logo = [element for element in last_selected(page, "header")["elements"] if element["key"] == "logo"]
+    logo = [
+        element for element in last_selected(page, "header")["elements"] if element["key"] == "logo"
+    ]
     assert logo and logo[0].get("hidden") is True and logo[0]["kind"] == "image", logo
 
 
-def test_after_an_undo_the_panel_gets_the_drawn_look_again(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_after_an_undo_the_panel_gets_the_drawn_look_again(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     """Plan 4 live check: after an undo (the app's new copy of the site) the panel kept showing the
     undone padding. The frame re-sends the selection once the redraw shows a different look."""
     init = boxes_init()
@@ -227,14 +304,20 @@ def test_after_an_undo_the_panel_gets_the_drawn_look_again(app: Any, browser_pag
     drawn = wait_selected(page, mark, "card", "card_proof")["element"]["container"]["paddingY"]
     props = copy.deepcopy(PROOF)
     props["_edits"] = {"card": {"padding": {"y": 90}}}
-    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 2 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 2 })",
+        props,
+    )
     page.wait_for_function(
         """(start) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element && m.payload.element.container && m.payload.element.container.paddingY === 90)""",
         arg=mark,
         timeout=10000,
     )
     mark = len(received(page))
-    page.evaluate("(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 3 })", copy.deepcopy(PROOF))
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'card_proof', props, rev: 3 })",
+        copy.deepcopy(PROOF),
+    )
     page.wait_for_function(
         """([start, drawn]) => window.__received.slice(start).some((m) => m.type === 'selected' && m.payload.element && m.payload.element.container && m.payload.element.container.paddingY === drawn)""",
         arg=[mark, drawn],

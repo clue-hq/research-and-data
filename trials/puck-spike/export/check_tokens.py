@@ -1,4 +1,5 @@
 """Gate G3: computed styles of the token probe must equal the brand kit's values (1440 wide)."""
+
 import asyncio
 import json
 import sys
@@ -18,16 +19,28 @@ def expected(brand: str) -> dict:
     kit = json.loads((SPIKE / "data" / "brands" / brand / "kit.json").read_text())
     t = kit["tokens"]
     color = lambda role: hex_rgb(t["colors"][role]["value"]["default"]["value"])
+
     def typ(role):
         s = t["typography"][f"type.{role}"]["value"]["default"]
         size = s["font_size"]
-        return {"family": s["font_family"], "size": f"{size:g}px", "weight": str(s["font_weight"]),
-                "lineHeight": f"{size * s['line_height']:g}px",
-                "letterSpacing": "normal" if s["letter_spacing"] == 0 else f"{size * s['letter_spacing']:g}px"}
+        return {
+            "family": s["font_family"],
+            "size": f"{size:g}px",
+            "weight": str(s["font_weight"]),
+            "lineHeight": f"{size * s['line_height']:g}px",
+            "letterSpacing": "normal"
+            if s["letter_spacing"] == 0
+            else f"{size * s['letter_spacing']:g}px",
+        }
+
     radius = t["radii"]["radius.button"]["value"]["default"]["value"]
-    return {"headline": {**typ("headline"), "color": color("text.inverse")},
-            "body": typ("body"), "cta": {**typ("cta"), "color": color("text.primary")},
-            "surfaceBrand": color("surface.brand"), "buttonRadius": f"{radius:g}px"}
+    return {
+        "headline": {**typ("headline"), "color": color("text.inverse")},
+        "body": typ("body"),
+        "cta": {**typ("cta"), "color": color("text.primary")},
+        "surfaceBrand": color("surface.brand"),
+        "buttonRadius": f"{radius:g}px",
+    }
 
 
 JS = """(root) => {
@@ -80,7 +93,9 @@ async def main(brands: list[str]) -> int:
                     got = await page.evaluate(f"({JS})(document)")
                 bad = compare(want, got)
                 failures += len(bad)
-                print(f"{brand:8} {where:9} {'PASS' if not bad else 'FAIL'}  fonts={got['fontsLoaded']}")
+                print(
+                    f"{brand:8} {where:9} {'PASS' if not bad else 'FAIL'}  fonts={got['fontsLoaded']}"
+                )
                 for line in bad:
                     print("    ", line)
         await browser.close()

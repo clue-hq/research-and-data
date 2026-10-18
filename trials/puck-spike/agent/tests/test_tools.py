@@ -50,7 +50,9 @@ def workspace(tmp_path: Path) -> Path:
     (ws / "shell.json").write_text(json.dumps(SITE["shell"], indent=2))
     (ws / "brief.md").write_text(BRIEF)
     (ws / "research" / "evidence.md").write_text(EVIDENCE)
-    (ws / ".run.json").write_text(json.dumps({"brand": "garner", "site": "agent-test", "route": "/"}))
+    (ws / ".run.json").write_text(
+        json.dumps({"brand": "garner", "site": "agent-test", "route": "/"})
+    )
     return ws
 
 
@@ -91,7 +93,9 @@ def test_an_unknown_slot_is_refused_listing_the_clone_slots(workspace: Path) -> 
 def test_a_replacement_must_match_text_in_the_clone(workspace: Path) -> None:
     edit_page(
         workspace,
-        lambda p: section(p, "hero")["props"]["replacements"].append({"find": "Book now", "replace": "x"}),
+        lambda p: section(p, "hero")["props"]["replacements"].append(
+            {"find": "Book now", "replace": "x"}
+        ),
     )
     result = tools_for(workspace).validate_page()
     assert "Book now" in result and "catalog/clones/frag_95041c54da629d99.md" in result
@@ -99,11 +103,19 @@ def test_a_replacement_must_match_text_in_the_clone(workspace: Path) -> None:
 
 def test_an_image_must_come_from_the_brand_assets(workspace: Path) -> None:
     def change(page: dict) -> None:
-        page["content"].append({
-            "type": "FeatureSplit",
-            "props": {"id": "extra", "surface": "page", "heading": "H", "body": "B",
-                      "image": "https://example.com/stock.jpg"},
-        })
+        page["content"].append(
+            {
+                "type": "FeatureSplit",
+                "props": {
+                    "id": "extra",
+                    "surface": "page",
+                    "heading": "H",
+                    "body": "B",
+                    "image": "https://example.com/stock.jpg",
+                },
+            }
+        )
+
     edit_page(workspace, change)
     result = tools_for(workspace).validate_page()
     assert "stock.jpg" in result and "brand/brand.md" in result
@@ -112,22 +124,32 @@ def test_an_image_must_come_from_the_brand_assets(workspace: Path) -> None:
 def test_judgement_is_not_a_blocking_check(workspace: Path) -> None:
     """Founder ruling 2026-10-08: numbers, named people and wording from the brief's notes are the
     agent's judgement (prompt and skills), never validator errors."""
+
     def change(page: dict) -> None:
         proof = section(page, "proof")["props"]
         proof["stats"][0]["value"] = "9.9%"
         proof["intro"] = "This is not independent causal proof of anything."
         proof["eyebrow"] = "For Nalisa Clark"
+
     edit_page(workspace, change)
     assert tools_for(workspace).validate_page().startswith("VALID")
 
 
 def test_only_one_primary_destination(workspace: Path) -> None:
     def change(page: dict) -> None:
-        page["content"].append({
-            "type": "CtaBand",
-            "props": {"id": "cta2", "surface": "brand", "heading": "Other", "buttonLabel": "Go",
-                      "buttonHref": "https://example.com/other-offer"},
-        })
+        page["content"].append(
+            {
+                "type": "CtaBand",
+                "props": {
+                    "id": "cta2",
+                    "surface": "brand",
+                    "heading": "Other",
+                    "buttonLabel": "Go",
+                    "buttonHref": "https://example.com/other-offer",
+                },
+            }
+        )
+
     edit_page(workspace, change)
     result = tools_for(workspace).validate_page()
     assert "one primary destination" in result
@@ -179,7 +201,10 @@ def _server_up() -> bool:
 def test_render_page_renders_a_named_page(workspace: Path) -> None:
     blocks = tools_for(workspace).render_page("/analysis")
     assert not isinstance(blocks, str), blocks
-    assert sorted(p.name for p in (workspace / "renders").glob("*.png")) == ["1-analysis-1440.png", "1-analysis-375.png"]
+    assert sorted(p.name for p in (workspace / "renders").glob("*.png")) == [
+        "1-analysis-1440.png",
+        "1-analysis-375.png",
+    ]
 
 
 @pytest.mark.skipif(not _server_up(), reason="spike dev server not running on :3047")
@@ -197,7 +222,9 @@ def test_render_page_returns_desktop_and_mobile_screenshots(workspace: Path) -> 
 def test_fetch_page_saves_the_text_as_evidence(workspace: Path, tmp_path: Path) -> None:
     site = tmp_path / "site"
     site.mkdir()
-    (site / "story.html").write_text("<html><body><h1>Case study</h1><p>Saved 12% in year one.</p></body></html>")
+    (site / "story.html").write_text(
+        "<html><body><h1>Case study</h1><p>Saved 12% in year one.</p></body></html>"
+    )
     handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(site), **k)  # noqa: E731
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -221,8 +248,13 @@ def test_web_search_retries_a_transient_failure(workspace: Path) -> None:
                 raise RuntimeError("timeout")
             return {"results": [{"title": "Aon study", "url": "https://garnerhealth.com/blog/aon"}]}
 
-    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047",
-                      reads=FlakyReads(), retry_delay_s=0)
+    tools = PageTools(
+        workspace=workspace,
+        spike_root=SPIKE,
+        base_url="http://localhost:3047",
+        reads=FlakyReads(),
+        retry_delay_s=0,
+    )
     result = tools.web_search("Aon study", include_domains=["garnerhealth.com"])
     assert "Aon study" in result and FlakyReads.calls == 2
 
@@ -233,11 +265,15 @@ def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
     skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
     example = skill.split("```tsx")[1].split("```")[0]
     site = "agent-test-e5"
-    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    (workspace / ".run.json").write_text(
+        json.dumps({"brand": "garner", "site": site, "route": "/"})
+    )
     tools = tools_for(workspace)
     root = SPIKE / "puck" / "agent-sections"
     try:
-        refused = tools.write_section("BadQuote", example.replace("text-ink-secondary", "text-emerald-600"))
+        refused = tools.write_section(
+            "BadQuote", example.replace("text-ink-secondary", "text-emerald-600")
+        )
         assert refused.startswith("NOT WRITTEN") and "palette colour" in refused
         assert not (root / site / "BadQuote.tsx").exists()
 
@@ -247,10 +283,24 @@ def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
         components = (workspace / "catalog" / "seller-components.md").read_text()
         assert "## QuoteBand" in components and '"attribution"' in components
 
-        edit_page(workspace, lambda p: p["content"].append({
-            "type": "QuoteBand", "props": {"id": "q", "surface": "muted", "quote": "A line.", "attribution": "Someone"}}))
+        edit_page(
+            workspace,
+            lambda p: p["content"].append(
+                {
+                    "type": "QuoteBand",
+                    "props": {
+                        "id": "q",
+                        "surface": "muted",
+                        "quote": "A line.",
+                        "attribution": "Someone",
+                    },
+                }
+            ),
+        )
         assert tools.validate_page().startswith("VALID")
-        (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": "another-site", "route": "/"}))
+        (workspace / ".run.json").write_text(
+            json.dumps({"brand": "garner", "site": "another-site", "route": "/"})
+        )
         assert 'unknown component "QuoteBand"' in tools.validate_page()
     finally:
         shutil.rmtree(root / site, ignore_errors=True)
@@ -269,7 +319,10 @@ def _png(colour: str, size: tuple[int, int]) -> bytes:
 
 def test_the_difference_score_compares_at_one_width_and_pads_heights() -> None:
     same, _, heights = _difference(_png("white", (200, 100)), _png("white", (100, 50)))
-    assert same == 0 and heights == (100, 100)  # the rebuilt picture is scaled to the original's width
+    assert same == 0 and heights == (
+        100,
+        100,
+    )  # the rebuilt picture is scaled to the original's width
     taller, pair, heights = _difference(_png("white", (200, 100)), _png("white", (200, 150)))
     assert heights == (100, 150) and taller == 0  # padding is white, like the page
     different, _, _ = _difference(_png("white", (200, 100)), _png("black", (200, 100)))
@@ -278,7 +331,10 @@ def test_the_difference_score_compares_at_one_width_and_pads_heights() -> None:
 
 
 def test_missing_words_lists_the_originals_words_once_in_order() -> None:
-    assert _missing_words("Find the right doctors. Find savings!", "the right doctors") == ["find", "savings"]
+    assert _missing_words("Find the right doctors. Find savings!", "the right doctors") == [
+        "find",
+        "savings",
+    ]
     assert _missing_words("Short a an", "") == ["short"]  # words under four letters are ignored
 
 
@@ -287,7 +343,9 @@ def test_view_clone_refuses_an_unknown_clone(workspace: Path) -> None:
 
 
 def test_compare_section_needs_the_component_first(workspace: Path) -> None:
-    assert "write it with write_section first" in tools_for(workspace).compare_section("Missing", "x", {})
+    assert "write it with write_section first" in tools_for(workspace).compare_section(
+        "Missing", "x", {}
+    )
 
 
 PANELS = """import { z } from "zod";
@@ -320,7 +378,9 @@ def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(worksp
     skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
     example = skill.split("```tsx")[1].split("```")[0]
     site = "agent-test-cmp"
-    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    (workspace / ".run.json").write_text(
+        json.dumps({"brand": "garner", "site": site, "route": "/"})
+    )
     tools = tools_for(workspace)
     root = SPIKE / "puck" / "agent-sections"
     clone = json.loads((SPIKE / "data" / "brands" / "garner" / "clones.json").read_text())[0]["id"]
@@ -328,17 +388,26 @@ def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(worksp
         seen = tools.view_clone(clone)
         assert isinstance(seen, list) and sum(b["type"] == "image" for b in seen) >= 2, seen
         assert tools.write_section("QuoteBand", example).startswith("WRITTEN")
-        compared = tools.compare_section("QuoteBand", clone, {"quote": "A line.", "attribution": "Someone"})
+        compared = tools.compare_section(
+            "QuoteBand", clone, {"quote": "A line.", "attribution": "Someone"}
+        )
         assert isinstance(compared, list), compared
-        assert "of the area differs" in compared[0]["text"] and "missing from yours" in compared[0]["text"]
+        assert (
+            "of the area differs" in compared[0]["text"]
+            and "missing from yours" in compared[0]["text"]
+        )
         assert sum(b["type"] == "image" for b in compared) >= 2
 
         # Edge-to-edge panels without Shell, with a background photo: written, and found by the compare.
         image = json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text())
-        photo = next(a["file"] for a in image.values() if a["file"].endswith((".avif", ".png", ".jpg")))
+        photo = next(
+            a["file"] for a in image.values() if a["file"].endswith((".avif", ".png", ".jpg"))
+        )
         panels = PANELS.replace("PHOTO", photo)
         assert tools.write_section("PhotoPanels", panels).startswith("WRITTEN")
-        compared = tools.compare_section("PhotoPanels", clone, {"heading": "A line.", "photo": photo})
+        compared = tools.compare_section(
+            "PhotoPanels", clone, {"heading": "A line.", "photo": photo}
+        )
         assert isinstance(compared, list), compared
     finally:
         shutil.rmtree(root / site, ignore_errors=True)
@@ -353,14 +422,25 @@ def test_a_class_used_only_in_a_written_section_reaches_the_page(workspace: Path
     from playwright.sync_api import sync_playwright
 
     site = "agent-test-css"
-    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    (workspace / ".run.json").write_text(
+        json.dumps({"brand": "garner", "site": site, "route": "/"})
+    )
     tools = tools_for(workspace)
     root = SPIKE / "puck" / "agent-sections"
-    value = ".".join(["41", "5"])  # assembled here so the class appears in no source file Tailwind scans
+    value = ".".join(
+        ["41", "5"]
+    )  # assembled here so the class appears in no source file Tailwind scans
     code = PANELS.replace('"relative min-h-80 ', f'"relative h-[{value}rem] ').replace("PHOTO", "")
     try:
         assert tools.write_section("TallPanels", code).startswith("WRITTEN")
-        url = tools._scratch_url([{"type": "TallPanels", "props": {"id": "t", "surface": "page", "heading": "x", "photo": ""}}])
+        url = tools._scratch_url(
+            [
+                {
+                    "type": "TallPanels",
+                    "props": {"id": "t", "surface": "page", "heading": "x", "photo": ""},
+                }
+            ]
+        )
         height = None
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
@@ -368,7 +448,9 @@ def test_a_class_used_only_in_a_written_section_reaches_the_page(workspace: Path
             for _ in range(8):  # the dev server recompiles the CSS after the file lands
                 page.goto(url, wait_until="load")
                 page.wait_for_timeout(1500)
-                height = page.evaluate("getComputedStyle(document.querySelector('[data-agent-section] .relative')).height")
+                height = page.evaluate(
+                    "getComputedStyle(document.querySelector('[data-agent-section] .relative')).height"
+                )
                 if height == "664px":
                     break
             browser.close()
@@ -381,6 +463,7 @@ def test_a_class_used_only_in_a_written_section_reaches_the_page(workspace: Path
 
 
 # --- R3: generated images (founder-approved 2026-10-09) ------------------------------------------
+
 
 def _tiny_png(width: int = 32, height: int = 18) -> bytes:
     import io
@@ -403,8 +486,13 @@ class FakeImages:
         self.calls.append(kwargs)
         if self.fail:
             raise RuntimeError("provider down")
-        return SimpleNamespace(image_bytes=_tiny_png(), mime_type="image/png", width=32, height=18,
-                               model="test-image-model")
+        return SimpleNamespace(
+            image_bytes=_tiny_png(),
+            mime_type="image/png",
+            width=32,
+            height=18,
+            model="test-image-model",
+        )
 
 
 @pytest.fixture()
@@ -412,7 +500,9 @@ def image_site(workspace: Path):
     import uuid
 
     site = f"agent-test-{uuid.uuid4().hex[:8]}"
-    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    (workspace / ".run.json").write_text(
+        json.dumps({"brand": "garner", "site": site, "route": "/"})
+    )
     yield site
     shutil.rmtree(SPIKE / "public" / "generated" / site, ignore_errors=True)
 
@@ -422,9 +512,13 @@ def _brand_photo() -> str:
     return next(a["file"] for a in assets.values() if a["file"].endswith((".png", ".avif", ".jpg")))
 
 
-def test_generate_image_saves_it_for_this_site_and_shows_it(workspace: Path, image_site: str) -> None:
+def test_generate_image_saves_it_for_this_site_and_shows_it(
+    workspace: Path, image_site: str
+) -> None:
     fake = FakeImages()
-    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=fake)
+    tools = PageTools(
+        workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=fake
+    )
     reference = _brand_photo()
     blocks = tools.generate_image("A calm school-district scene at dusk", "16:9", [reference])
     text = blocks[0]["text"]
@@ -432,27 +526,54 @@ def test_generate_image_saves_it_for_this_site_and_shows_it(workspace: Path, ima
     path = SPIKE / "public" / text.split()[0].lstrip("/")
     assert path.is_file() and blocks[1]["type"] == "image"
     call = fake.calls[0]
-    assert call["prompt"] == "A calm school-district scene at dusk" and call["aspect_ratio"] == "16:9"
+    assert (
+        call["prompt"] == "A calm school-district scene at dusk" and call["aspect_ratio"] == "16:9"
+    )
     assert len(call["reference_images"]) == 1 and call["reference_images"][0][1] == "image/png"
     index = json.loads((SPIKE / "public" / "generated" / image_site / "index.json").read_text())
     assert index[text.split()[0]]["prompt"] == "A calm school-district scene at dusk"
 
 
-def test_generate_image_refuses_bad_references_and_reports_a_failure(workspace: Path, image_site: str) -> None:
-    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=FakeImages())
+def test_generate_image_refuses_bad_references_and_reports_a_failure(
+    workspace: Path, image_site: str
+) -> None:
+    tools = PageTools(
+        workspace=workspace,
+        spike_root=SPIKE,
+        base_url="http://localhost:3047",
+        image_generate=FakeImages(),
+    )
     photo = _brand_photo()
     assert "at most three" in tools.generate_image("x", "16:9", [photo] * 4)
-    assert "not one of this brand's images" in tools.generate_image("x", "16:9", ["/brands/conduit/a.png"])
-    svg = next(a["file"] for a in json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text()).values()
-               if a["file"].endswith(".svg"))
+    assert "not one of this brand's images" in tools.generate_image(
+        "x", "16:9", ["/brands/conduit/a.png"]
+    )
+    svg = next(
+        a["file"]
+        for a in json.loads(
+            (SPIKE / "data" / "brands" / "garner" / "assets.json").read_text()
+        ).values()
+        if a["file"].endswith(".svg")
+    )
     assert "a photo or picture" in tools.generate_image("x", "16:9", [svg])
-    failing = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047",
-                        image_generate=FakeImages(fail=True))
+    failing = PageTools(
+        workspace=workspace,
+        spike_root=SPIKE,
+        base_url="http://localhost:3047",
+        image_generate=FakeImages(fail=True),
+    )
     assert "could not make the image" in failing.generate_image("x", "16:9", [])
 
 
-def test_view_asset_shows_this_site_s_generated_image_but_not_another_site_s(workspace: Path, image_site: str) -> None:
-    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=FakeImages())
+def test_view_asset_shows_this_site_s_generated_image_but_not_another_site_s(
+    workspace: Path, image_site: str
+) -> None:
+    tools = PageTools(
+        workspace=workspace,
+        spike_root=SPIKE,
+        base_url="http://localhost:3047",
+        image_generate=FakeImages(),
+    )
     made = tools.generate_image("Abstract green waves", "1:1", [])[0]["text"].split()[0]
     blocks = tools.view_asset([made, "/generated/other-site/x.png"])
     assert blocks[0]["text"].startswith(made) and "Abstract green waves" in blocks[0]["text"]

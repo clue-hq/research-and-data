@@ -29,8 +29,17 @@ async def main() -> None:
             "(element) => [...element.querySelectorAll('button')].map((b) => b.outerHTML.slice(0, 160))"
         )
         await page.screenshot(path="shots/r5-richtext.png")
-        print(json.dumps({"menu_visible": await menu.is_visible(), "menu_border": border,
-                          "buttons": active, "stored_body": stored.get("body")}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "menu_visible": await menu.is_visible(),
+                    "menu_border": border,
+                    "buttons": active,
+                    "stored_body": stored.get("body"),
+                },
+                indent=2,
+            )
+        )
         await browser.close()
 
 

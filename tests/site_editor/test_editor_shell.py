@@ -53,12 +53,20 @@ def shell_init() -> dict[str, Any]:
     init["brand"]["clones"][TEMPLATE_ID] = TEMPLATE
     init["site"]["shell"]["header"] = {
         "type": "ClonedSection",
-        "props": {"id": "header", "fragmentId": TEMPLATE_ID, "slots": {"account_line": "Built for Carmel"}, "replacements": [], "links": []},
+        "props": {
+            "id": "header",
+            "fragmentId": TEMPLATE_ID,
+            "slots": {"account_line": "Built for Carmel"},
+            "replacements": [],
+            "links": [],
+        },
     }
     return init
 
 
-def open_shell(app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]) -> tuple[Any, Any]:
+def open_shell(
+    app: Any, browser_page: Any, editor_origin: str, init: dict[str, Any]
+) -> tuple[Any, Any]:
     page, _ = browser_page
     app.init_payload = init
     page.goto(app.origin + "/")
@@ -69,7 +77,11 @@ def open_shell(app: Any, browser_page: Any, editor_origin: str, init: dict[str, 
 
 
 def changed_headers(page: Any, start: int) -> list[dict[str, Any]]:
-    return [m["payload"]["site"]["shell"]["header"] for m in received(page)[start:] if m["type"] == "changed"]
+    return [
+        m["payload"]["site"]["shell"]["header"]
+        for m in received(page)[start:]
+        if m["type"] == "changed"
+    ]
 
 
 def with_header_edits(init: dict[str, Any], edits: dict[str, Any]) -> dict[str, Any]:
@@ -79,10 +91,14 @@ def with_header_edits(init: dict[str, Any], edits: dict[str, Any]) -> dict[str, 
 
 
 def top_of(frame: Any, selector: str) -> float:
-    return frame.evaluate("(sel) => document.querySelector(sel).getBoundingClientRect().top", selector)
+    return frame.evaluate(
+        "(sel) => document.querySelector(sel).getBoundingClientRect().top", selector
+    )
 
 
-def test_header_template_words_edit_in_place(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_header_template_words_edit_in_place(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     page, frame = open_shell(app, browser_page, editor_origin, shell_init())
     mark = len(received(page))
     frame.locator(f"{HEADER} .clue-account-line").first.click(force=True)
@@ -100,29 +116,56 @@ def test_header_template_words_edit_in_place(app: Any, browser_page: Any, editor
     assert header["type"] == "ClonedSection" and header["props"]["id"] == "header"
 
 
-def test_sticky_header_stays_while_canvas_scrolls(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_sticky_header_stays_while_canvas_scrolls(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = shell_init()
     page, frame = open_shell(app, browser_page, editor_origin, init)
     props = with_header_edits(init, {"root": {"sticky": True}})
-    page.evaluate("(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 2 })", props)
-    frame.wait_for_function("(sel) => !!document.querySelector(sel + ' > .clue-section[data-clue-sticky]')", arg=HEADER, timeout=10000)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 2 })",
+        props,
+    )
+    frame.wait_for_function(
+        "(sel) => !!document.querySelector(sel + ' > .clue-section[data-clue-sticky]')",
+        arg=HEADER,
+        timeout=10000,
+    )
     frame.evaluate("() => { document.getElementById('root').scrollTop = 800; }")
     page.wait_for_timeout(300)
-    assert frame.evaluate("() => document.getElementById('root').scrollTop") > 0, "the canvas scrolled"
-    assert abs(top_of(frame, HEADER) - top_of(frame, "#root")) < 2, "the header stays at the top of the canvas"
+    assert frame.evaluate("() => document.getElementById('root').scrollTop") > 0, (
+        "the canvas scrolled"
+    )
+    assert abs(top_of(frame, HEADER) - top_of(frame, "#root")) < 2, (
+        "the header stays at the top of the canvas"
+    )
 
 
-def test_overlay_starts_first_section_under_header(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_overlay_starts_first_section_under_header(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = shell_init()
     page, frame = open_shell(app, browser_page, editor_origin, init)
     first = init["site"]["pages"]["/"]["content"][0]["props"]["id"]
     before = top_of(frame, f'[data-puck-component="{first}"]')
     props = with_header_edits(init, {"root": {"overlay": True}})
-    page.evaluate("(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 2 })", props)
-    frame.wait_for_function("(sel) => !!document.querySelector(sel + ' > .clue-section[data-clue-overlay]')", arg=HEADER, timeout=10000)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 2 })",
+        props,
+    )
+    frame.wait_for_function(
+        "(sel) => !!document.querySelector(sel + ' > .clue-section[data-clue-overlay]')",
+        arg=HEADER,
+        timeout=10000,
+    )
     page.wait_for_timeout(300)
-    assert top_of(frame, f'[data-puck-component="{first}"]') < before, "the first section moved up under the header"
-    assert abs(top_of(frame, f'[data-puck-component="{first}"]') - top_of(frame, f"{HEADER} header")) < 2
+    assert top_of(frame, f'[data-puck-component="{first}"]') < before, (
+        "the first section moved up under the header"
+    )
+    assert (
+        abs(top_of(frame, f'[data-puck-component="{first}"]') - top_of(frame, f"{HEADER} header"))
+        < 2
+    )
 
 
 def test_menu_label_and_hide(app: Any, browser_page: Any, editor_origin: str) -> None:
@@ -142,7 +185,10 @@ def test_menu_label_and_hide(app: Any, browser_page: Any, editor_origin: str) ->
         timeout=10000,
     )
     props = with_header_edits(init, {"menu._home": {"hidden": True}})
-    page.evaluate("(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 3 })", props)
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: 'shell', componentId: 'header', props, rev: 3 })",
+        props,
+    )
     frame.wait_for_function(
         """(sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).display === 'none'; }""",
         arg=f'{HEADER} [data-clue-el="menu._home"]',
@@ -151,9 +197,13 @@ def test_menu_label_and_hide(app: Any, browser_page: Any, editor_origin: str) ->
 
 
 # Final review I5: a template header's extra menu link is edited where it lives, in menuExtra.
-def test_a_template_menu_extra_link_is_written_in_menu_extra(app: Any, browser_page: Any, editor_origin: str) -> None:
+def test_a_template_menu_extra_link_is_written_in_menu_extra(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
     init = shell_init()
-    init["site"]["shell"]["header"]["props"]["menuExtra"] = [{"label": "Pricing", "href": "https://garnerhealth.com/pricing"}]
+    init["site"]["shell"]["header"]["props"]["menuExtra"] = [
+        {"label": "Pricing", "href": "https://garnerhealth.com/pricing"}
+    ]
     page, frame = open_shell(app, browser_page, editor_origin, init)
     mark = len(received(page))
     frame.locator(f'{HEADER} [data-clue-el="menu._0"]').first.click(force=True)
@@ -163,5 +213,11 @@ def test_a_template_menu_extra_link_is_written_in_menu_extra(app: Any, browser_p
         arg=mark,
         timeout=10000,
     )
-    element = [m for m in received(page)[mark:] if m["type"] == "selected"][-1]["payload"]["element"]
-    assert element["link"]["source"] == {"kind": "prop", "href": "menuExtra.0.href", "newTab": "menuExtra.0.newTab"}, element["link"]
+    element = [m for m in received(page)[mark:] if m["type"] == "selected"][-1]["payload"][
+        "element"
+    ]
+    assert element["link"]["source"] == {
+        "kind": "prop",
+        "href": "menuExtra.0.href",
+        "newTab": "menuExtra.0.newTab",
+    }, element["link"]

@@ -22,8 +22,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'c8c3d99be272'
-down_revision: str | None = ('1ecc7437e5bc', 'abf95e465478')
+revision: str = "c8c3d99be272"
+down_revision: str | None = ("1ecc7437e5bc", "abf95e465478")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

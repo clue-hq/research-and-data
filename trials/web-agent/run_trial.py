@@ -44,13 +44,30 @@ DEFAULT_SOURCE_RUN = "run_d71298e8df7c54c79631623b9f460ce4"  # Syracuse, Run 3 (
 
 #: Staged mode, build stage: tools a build from a finished copy plan never needs. Dropping them
 #: also drops their definitions from every model call.
-STAGED_BUILD_DROPPED_TOOLS = frozenset({
-    "fetch_page", "search_assets", "list_custom_components", "inspect_custom_component",
-    "list_pages", "add_page", "remove_page", "switch_page",
-    "read_project_accounts", "read_account_research", "read_claims", "web_search",
-    "author_web_page", "author_web_subtree", "recreate_cloned_page", "release_repair", "asset",
-    "write_custom_component_source", "compile_custom_component", "place_custom_component",
-})
+STAGED_BUILD_DROPPED_TOOLS = frozenset(
+    {
+        "fetch_page",
+        "search_assets",
+        "list_custom_components",
+        "inspect_custom_component",
+        "list_pages",
+        "add_page",
+        "remove_page",
+        "switch_page",
+        "read_project_accounts",
+        "read_account_research",
+        "read_claims",
+        "web_search",
+        "author_web_page",
+        "author_web_subtree",
+        "recreate_cloned_page",
+        "release_repair",
+        "asset",
+        "write_custom_component_source",
+        "compile_custom_component",
+        "place_custom_component",
+    }
+)
 
 STAGED_BUILD_INSTRUCTION = """
 
@@ -138,20 +155,22 @@ async def read_source_run(run_id: str) -> dict[str, Any]:
 
     async with transaction() as conn:
         row = (
-            await conn.execute(
-                text(
-                    "select workspace_id, payload, asset_context_snapshot "
-                    "from design_agent_run where run_id = :run_id"
-                ),
-                {"run_id": run_id},
+            (
+                await conn.execute(
+                    text(
+                        "select workspace_id, payload, asset_context_snapshot "
+                        "from design_agent_run where run_id = :run_id"
+                    ),
+                    {"run_id": run_id},
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
     return dict(row)
 
 
-async def build_platform_reads(
-    platform: PlatformLoop, *, envelope: Any
-) -> Any:
+async def build_platform_reads(platform: PlatformLoop, *, envelope: Any) -> Any:
     """The same governed reads a design leg turn gets, composed as fleet_main composes them."""
     from clue_api.arv2.read_tools import DbArv2ReadService
     from clue_api.design_loop_bridge import PlatformLoopBridge
@@ -193,15 +212,19 @@ def main() -> int:
     parser.add_argument("--label", required=True, help="Name of this trial run (folder name).")
     parser.add_argument("--source-run", default=DEFAULT_SOURCE_RUN)
     parser.add_argument(
-        "--brief-file", type=Path, default=None,
+        "--brief-file",
+        type=Path,
+        default=None,
         help="Replace the source run's brief (the 'For the page' / 'Notes' text) with this file.",
     )
     parser.add_argument(
-        "--staged", action="store_true",
+        "--staged",
+        action="store_true",
         help="Copy stage in text first, then a narrowed build stage that applies its plan.",
     )
     parser.add_argument(
-        "--with-example", action="store_true",
+        "--with-example",
+        action="store_true",
         help="Include the Syracuse worked example. Leave it out when the trial is Syracuse itself.",
     )
     args = parser.parse_args()
@@ -325,17 +348,22 @@ def main() -> int:
 
         (out / "prompt.md").write_text(prompt)
         (out / "skill-set-changes.txt").write_text("\n".join(changed) + "\n")
-        (out / "trial.json").write_text(json.dumps({
-            "label": args.label,
-            "source_run": args.source_run,
-            "run_id": run_id,
-            "session_id": session_id,
-            "document_id": document_id,
-            "workspace_id": workspace_id,
-            "brief_file": str(args.brief_file) if args.brief_file else None,
-            "with_example": args.with_example,
-            "staged": args.staged,
-        }, indent=2))
+        (out / "trial.json").write_text(
+            json.dumps(
+                {
+                    "label": args.label,
+                    "source_run": args.source_run,
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "document_id": document_id,
+                    "workspace_id": workspace_id,
+                    "brief_file": str(args.brief_file) if args.brief_file else None,
+                    "with_example": args.with_example,
+                    "staged": args.staged,
+                },
+                indent=2,
+            )
+        )
         print(f"trial {args.label}: run {run_id}, session {session_id}", flush=True)
         print(f"agent workspace: {workspace / 'sessions' / session_id}", flush=True)
 
@@ -369,12 +397,17 @@ def main() -> int:
         target = out / "previews" / preview.parent.name / preview.name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(preview, target)
-    print(json.dumps({
-        "status": response.get("status"),
-        "summary": (response.get("summary") or "")[:400],
-        "minutes": round(elapsed / 60, 1),
-        "output": str(out),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "status": response.get("status"),
+                "summary": (response.get("summary") or "")[:400],
+                "minutes": round(elapsed / 60, 1),
+                "output": str(out),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
