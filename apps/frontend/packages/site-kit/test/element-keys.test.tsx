@@ -2,6 +2,8 @@
 // key (data-clue-el), the same in the editor and on the published page.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { parse } from "node-html-parser";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { makeKit } from "../src/agent-kit";
@@ -110,15 +112,16 @@ const clone = (html: string, slots: Clone["slots"] = {}): Clone => ({
 
 test("a clone's text elements are keyed by their place in the captured markup; inline children are not", () => {
   const html = fillClone(clone("<div><p>One</p><p>Two <b>bold</b></p><img src=\"/x.png\"><div><span>Three</span></div></div>"));
-  assert.deepEqual(keys(html), ["0.0", "0.1", "0.3.0"]);
+  // Plan 4: the boxes and the image are keyed too, by the same paths.
+  assert.deepEqual(keys(html), ["0", "0.0", "0.1", "0.2", "0.3", "0.3.0"]);
   assert.ok(html.includes("<b>bold</b>"), "the inline child stays unkeyed");
 });
 
 test("hiding a slot never shifts another element's key", () => {
   const captured = "<div><p data-lumen-slot=\"lead\">One</p><p>Two</p></div>";
   const slots = { lead: { kind: "visibility" as const, fallback: true } };
-  assert.deepEqual(keys(fillClone(clone(captured, slots))), ["0.0", "0.1"]);
-  assert.deepEqual(keys(fillClone(clone(captured, slots), { lead: false })), ["0.1"]);
+  assert.deepEqual(keys(fillClone(clone(captured, slots))), ["0", "0.0", "0.1"]);
+  assert.deepEqual(keys(fillClone(clone(captured, slots), { lead: false })), ["0", "0.1"]);
 });
 
 test("a text slot keeps its key when its words are replaced, even when they sat inside inline tags", () => {
@@ -130,8 +133,27 @@ test("a text slot keeps its key when its words are replaced, even when they sat 
   assert.ok(filled.includes(">New words</h1>"), filled);
 });
 
-test("script, style and svg text is never keyed", () => {
-  assert.deepEqual(keys(fillClone(clone("<div><style>p{}</style><svg><text>x</text></svg><p>Shown</p></div>"))), ["0.2"]);
+test("script, style and svg text is never keyed; an svg is keyed as a whole (plan 4)", () => {
+  assert.deepEqual(keys(fillClone(clone("<div><style>p{}</style><svg><text>x</text></svg><p>Shown</p></div>"))), ["0", "0.1", "0.2"]);
+});
+
+// Plan 4: every element of a copied section is keyed, so its boxes can be styled and moved.
+test("keys are unchanged for text and buttons when boxes are keyed", () => {
+  const before = JSON.parse(readFileSync(new URL("./fixtures/clone-text-keys.json", import.meta.url), "utf8")) as Record<string, [string, string, string][]>;
+  for (const [id, entries] of Object.entries(before)) {
+    const root = parse(fillClone(brand.clones[id]));
+    for (const [key, tag, words] of entries) {
+      const element = root.querySelectorAll("[data-clue-el]").find((el) => el.getAttribute("data-clue-el") === key);
+      assert.ok(element, `${id}: ${key} is still keyed`);
+      assert.equal(element.tagName.toLowerCase(), tag, `${id}: ${key} is the same element`);
+      assert.equal(element.text.replace(/\s+/g, " ").trim().slice(0, 60), words, `${id}: ${key} holds the same words`);
+    }
+  }
+});
+
+test("wrapper divs, images, pictures and svgs are keyed by path; scripts, styles, noscripts and templates are not", () => {
+  const html = fillClone(clone('<div><div><p>One</p></div><img src="/x.png"><svg><path d="M0"/></svg><script>x</script><picture><img src="/y.png"></picture><noscript>n</noscript><span></span></div>'));
+  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.1", "0.2", "0.4", "0.6"]);
 });
 
 // Plan 3: every button is a box key and a label key.
@@ -150,12 +172,16 @@ test("kit.Button takes the agent's name for its box and label, and only a valid 
 
 test("a clone's button is keyed by its place, and its words keep their own key", () => {
   const html = fillClone(clone('<div><a class="btn" href="/demo"><svg><path d="M0"/></svg><span>Book</span></a><p>Text</p><a href="/x">Plain words</a><a class="card" href="/c"><div><h3>Card</h3></div></a></div>'));
-  assert.deepEqual(keys(html), ["0.0", "0.0.1", "0.1", "0.2", "0.3.0.0"], "the card link is no button; its heading is text");
+  // Plan 4: every element is keyed (the icon whole, the card link as a box); which keyed link is a
+  // button is the frame's call (dom.ts isButtonElement), and the card link holds a block, so it is none.
+  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.0.1", "0.1", "0.2", "0.3", "0.3.0", "0.3.0.0"]);
 });
 
 test("a link holding an image, or more than one text, is no button: its texts keep their own keys (review 5)", () => {
   const html = fillClone(clone('<div><a class="card" href="/c"><img src="/x.png"><span>Card title</span><span>Desc</span></a><a class="btn" href="/d"><span>Book</span><span>now</span></a></div>'));
-  assert.deepEqual(keys(html), ["0.0.1", "0.0.2", "0.1.0", "0.1.1"], "neither link is keyed as a box");
+  // Plan 4: both links are keyed as boxes; neither is a button (an image; two texts), so each text
+  // keeps its own key and the frame selects them as texts.
+  assert.deepEqual(keys(html), ["0", "0.0", "0.0.0", "0.0.1", "0.0.2", "0.1", "0.1.0", "0.1.1"]);
 });
 
 import { rich } from "../src/rich-node";

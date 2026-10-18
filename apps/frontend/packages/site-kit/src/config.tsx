@@ -17,7 +17,7 @@ import { CloneMarkup } from "./clone-markup";
 import { richPropPaths, richValuesAt } from "./agent-props";
 import { hasMarkup, mapRichLinks } from "./rich";
 import { rich } from "./rich-node";
-import { editsCss, editsOf, withoutEdits } from "./edits";
+import { editsCss, editsOf, orderOf, withoutEdits, type Edits } from "./edits";
 import { themeCss } from "./theme";
 import { makeSections, StoredProps } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
@@ -322,7 +322,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         // a rule that pre-filled the slots when the clone changed reset the agent's copy to the seller's wording on
         // a page switch, and the frame saved it. Nothing swaps a clone through this path: the agent
         // writes its slots itself, and the dock never changes `fragmentId`.
-        render: ({ id, fragmentId, slots, replacements, links, newTab, puck }) => {
+        // The second argument comes from the section wrapper below: the edits of the section, for `order`.
+        render: ((
+          { id, fragmentId, slots, replacements, links, newTab, puck }: ClonedSectionProps & { id: string; puck?: { isEditing?: boolean } },
+          context?: { edits: Edits },
+        ) => {
           const clone = brand.clones[fragmentId];
           if (!clone) {
             return (
@@ -343,7 +347,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             ]),
           );
           const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
-          const extras = { id, newTab: newTab ?? [] };
+          const extras = { id, newTab: newTab ?? [], order: orderOf(context?.edits ?? {}) };
           const html = fill(clone, resolvedSlots, replacements, resolvedLinks, extras);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) {
@@ -352,7 +356,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             return <Editor itemId={id} clone={clone} html={html} htmlFor={htmlFor} />;
           }
           return <CloneMarkup clone={clone} html={html} inlineCss={options.cloneCss !== "page"} />;
-        },
+        }) as never,
       },
     },
   };
@@ -366,20 +370,22 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   // In the editor `_edits` is read from the section AS STORED (useRawProps): Puck's text transforms
   // match props by key name at any depth, so a section with a rich `heading` field receives
   // `_edits.heading` as Puck's widget, not the override. Elsewhere the drawn props are the stored ones.
-  const SectionScope = ({ id, drawn, children }: { id: string; drawn: Record<string, unknown>; children: ReactNode }) => {
+  // The section is drawn from its edits too (plan 4: a copied section's `order` rearranges its markup).
+  const SectionScope = ({ id, drawn, children }: { id: string; drawn: Record<string, unknown>; children: (edits: Edits) => ReactNode }) => {
     // Anywhere in the editor: Puck puts its widgets in the drawn props in Edit mode, and its read-only
     // rich text widget in preview too (plan 2). A published page has no raw props to read.
     const rawProps = useRawProps();
     const stored = rawProps(id);
-    const css = editsCss(id, editsOf(stored ?? drawn), brand);
+    const edits = editsOf(stored ?? drawn);
+    const css = editsCss(id, edits, brand);
     return (
       <div data-clue-section={id} className="clue-section">
         {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
-        <StoredProps.Provider value={stored ?? null}>{children}</StoredProps.Provider>
+        <StoredProps.Provider value={stored ?? null}>{children(edits)}</StoredProps.Provider>
       </div>
     );
   };
-  type Render = (props: Record<string, unknown>) => ReactNode;
+  type Render = (props: Record<string, unknown>, context?: { edits: Edits }) => ReactNode;
   const components = config.components as unknown as Record<string, { render: Render }>;
   for (const [type, component] of Object.entries(components)) {
     const render = component.render;
@@ -387,7 +393,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       ...component,
       render: (props) => (
         <SectionScope drawn={props} id={String(props.id ?? "")}>
-          {render(withoutEdits(props))}
+          {(edits) => render(withoutEdits(props), { edits })}
         </SectionScope>
       ),
     };

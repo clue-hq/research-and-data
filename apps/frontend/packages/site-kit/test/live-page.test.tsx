@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { brandForPage, hydrateSite, type LivePageData } from "../src/live-page";
+import { parse } from "node-html-parser";
 import { renderSitePages } from "../src/render-core";
+import { fillClone } from "../src/clone";
 import { garner, site as readSite } from "./fixtures/garner";
 import { render as quoteRender, schema as quoteSchema } from "./fixtures/section-example";
 
@@ -130,4 +132,32 @@ test("Review focus 1: a section that throws only in the browser is lost alone, a
   expected.innerHTML = serverHtml.replace('<div data-agent-section="Fragile"></div>', '<div data-agent-section="Fragile"><div data-agent-section-failed="Fragile"></div></div>');
   assert.ok(expected.content.firstElementChild!.isEqualNode(container.querySelector(".brand-root")), "the rest of the page is intact");
   run.unmount();
+});
+
+// Plan 4: a copied section's `order` is applied the same way in the static render and on a live page.
+test("a live page and the static render draw a copied section's children in its order", () => {
+  const stored = structuredClone(site);
+  const home = stored.pages["/"];
+  const item = (home.content as { type: string; props: Record<string, unknown> }[]).find((c) => c.type === "ClonedSection")!;
+  const drawn = parse(fillClone(brand.clones[String(item.props.fragmentId)]));
+  const parent = drawn.querySelectorAll("[data-clue-el]").find((el) => el.childNodes.filter((n) => (n as { getAttribute?: unknown }).getAttribute && (n as unknown as { getAttribute: (a: string) => string | undefined }).getAttribute("data-clue-el")).length >= 2)!;
+  const key = parent.getAttribute("data-clue-el")!;
+  const children = parent.childNodes.flatMap((n) => {
+    const k = (n as unknown as { getAttribute?: (a: string) => string | undefined }).getAttribute?.("data-clue-el");
+    return k ? [k] : [];
+  });
+  const order = [...children].reverse();
+  item.props._edits = { [key]: { order } };
+  const inOrder = (html: string) => {
+    const box = parse(html).querySelectorAll("[data-clue-el]").find((el) => el.getAttribute("data-clue-el") === key && el.closest(`[data-clue-section="${item.props.id}"]`))!;
+    return box.childNodes.flatMap((n) => {
+      const k = (n as unknown as { getAttribute?: (a: string) => string | undefined }).getAttribute?.("data-clue-el");
+      return k ? [k] : [];
+    });
+  };
+  const live = renderSitePages({ site: stored, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, live: true, routes: ["/"] }).pages[0];
+  const still = renderSitePages({ site: stored, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, routes: ["/"] }).pages[0];
+  assert.deepEqual(inOrder(live.html), order);
+  assert.deepEqual(inOrder(still.html), order);
+  assert.ok(live.data!.cloneHtml[String(item.props.id)].indexOf(`data-clue-el="${order[0]}"`) < live.data!.cloneHtml[String(item.props.id)].indexOf(`data-clue-el="${order[order.length - 1]}"`));
 });

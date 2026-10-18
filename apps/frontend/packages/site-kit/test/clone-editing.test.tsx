@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Config } from "@puckeditor/core";
 import type { ReactElement } from "react";
-import { fillClone } from "../src/clone";
+import { parse } from "node-html-parser";
+import { cloneOrderOf, fillClone, type Clone } from "../src/clone";
 import { makeConfig } from "../src/config";
 import { garner, site } from "./fixtures/garner";
 
@@ -24,7 +25,8 @@ test("the editor's clone view is handed the markup a slot write would produce", 
   const hero = stored.pages["/"].content.find((item: { props: { id: string } }) => item.props.id === "hero")!;
   const scoped = config.components.ClonedSection.render as (props: Record<string, unknown>) => ReactElement;
   // Every section draws inside the box that scopes its manual styling; the section is its child.
-  const render = (props: Record<string, unknown>) => (scoped(props).props as { children: ReactElement }).children;
+  // Its child is drawn from the section's edits (plan 4: a copied section's `order`).
+  const render = (props: Record<string, unknown>) => (scoped(props).props as { children: (edits: object) => ReactElement }).children({});
   const element = render({ ...hero.props, puck: { isEditing: true } });
   assert.equal(element.type, CloneEditor);
   const { html, htmlFor } = element.props as { html: string; htmlFor: (key: string, value: string) => string };
@@ -55,5 +57,35 @@ test("a captured video loads its metadata only, shows its poster and plays the s
   assert.match(kept, /preload="metadata"/);
   // Nothing known about a video: preload only.
   const bare = fillClone({ ...base, videos: undefined, html: `<video><source src="/asset-store/${video}"></video>` });
-  assert.match(bare, /<video preload="metadata"><source src="\/asset-store\/1{64}"><\/video>/);
+  assert.match(bare, /<video data-clue-el="0" preload="metadata"><source src="\/asset-store\/1{64}"><\/video>/);
+});
+
+// Plan 4: the order of a copied box's children, by their keys in the captured markup.
+const box = (html: string, slots: Clone["slots"] = {}): Clone => ({
+  id: "frag_0000000000000000", role: "section", label: "Test", page_url: "https://seller.example/", section_index: 0,
+  wrapper_class: "lumen-frag-test", html, css: "", slots,
+});
+const childKeys = (html: string, parent: string) =>
+  parse(html).querySelectorAll("[data-clue-el]").find((el) => el.getAttribute("data-clue-el") === parent)!.childNodes
+    .filter((node) => (node as { tagName?: string }).tagName)
+    .map((node) => (node as unknown as { getAttribute: (name: string) => string }).getAttribute("data-clue-el"));
+
+test("order rearranges a parent's children before slots apply, and keys travel with their elements", () => {
+  const clone = box('<div><div><p data-lumen-slot="headline">Old</p><p>B</p><p>C</p></div></div>', { headline: { kind: "text", fallback: "Old" } });
+  const html = fillClone(clone, { headline: "New" }, [], [], { order: { "0.0": ["0.0.2", "0.0.0", "0.0.1"] } });
+  assert.deepEqual(childKeys(html, "0.0"), ["0.0.2", "0.0.0", "0.0.1"]);
+  assert.match(html, /<p data-clue-el="0\.0\.2">C<\/p><p data-lumen-slot="headline" data-clue-el="0\.0\.0">New<\/p><p data-clue-el="0\.0\.1">B<\/p>/);
+});
+
+test("an order naming gone keys or leaving children out keeps the others in place", () => {
+  const clone = box("<ul><li>A</li><li>B</li><li>C</li><li>D</li></ul>");
+  assert.deepEqual(childKeys(fillClone(clone, {}, [], [], { order: { "0": ["0.3", "ghost", "0.0"] } }), "0"), ["0.3", "0.1", "0.2", "0.0"]);
+  assert.deepEqual(childKeys(fillClone(clone, {}, [], [], { order: { "0": ["ghost"] } }), "0"), ["0.0", "0.1", "0.2", "0.3"]);
+  assert.deepEqual(childKeys(fillClone(clone, {}, [], [], { order: { "9.9": ["0.1", "0.0"] } }), "0"), ["0.0", "0.1", "0.2", "0.3"]);
+});
+
+test("cloneOrderOf gives a parent's keyed children in their captured order", () => {
+  const clone = box("<ul><li>A</li><li>B</li></ul>");
+  assert.deepEqual(cloneOrderOf(clone, "0"), ["0.0", "0.1"]);
+  assert.equal(cloneOrderOf(clone, "7"), null);
 });

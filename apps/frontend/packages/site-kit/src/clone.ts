@@ -45,7 +45,12 @@ export type LinkReplacement = { find: string; replace: string };
 
 /** What a section adds beside its slots and replacements: the links that open in a new tab, by element
  * key (plan 2). `id` is the section's (CloneHtml passes it; the filler itself does not need it). */
-export type CloneExtras = { id?: string; newTab?: readonly string[] };
+export type CloneExtras = {
+  id?: string;
+  newTab?: readonly string[];
+  /** Plan 4: the order of a box's children, by the box's key (the section's `_edits` orders). */
+  order?: Readonly<Record<string, readonly string[]>>;
+};
 
 export function fillClone(
   clone: Clone,
@@ -55,7 +60,9 @@ export function fillClone(
   extras: CloneExtras = {},
 ): string {
   const root = parse(clone.html, { comment: false });
-  keyTextElements(root, clone.slots);
+  keyElements(root, clone.slots);
+  // Keyed first, then moved: a moved element keeps the key of its captured place (spec §4.8).
+  applyOrder(root, extras.order ?? {});
   const linksWeSet = new Set<HTMLElement>();
 
   for (const [key, slot] of Object.entries(clone.slots)) {
@@ -130,6 +137,10 @@ export function fillClone(
 
 /** Elements whose text is never the page's words. */
 const NOT_TEXT = new Set(["script", "style", "svg", "noscript", "template"]);
+/** Elements that are never keyed (plan 4): not part of what a visitor sees. */
+const NEVER_KEYED = new Set(["script", "style", "noscript", "template"]);
+/** Elements keyed as a whole and never walked into (plan 4): images and icons. */
+const WHOLE = new Set(["svg", "img", "picture", "video"]);
 
 /** Tags that make an element a block (a link holding one is a card, not a button). */
 const BLOCKS = new Set([
@@ -160,13 +171,14 @@ function isInlineControl(element: HTMLElement, isText: (element: HTMLElement) =>
   return texts.filter((text) => !texts.some((other) => other !== text && other.querySelectorAll("*").includes(text))).length <= 1;
 }
 
-/** Key every text element by its child-index path from the fragment root ("0.2.1", element children
+/** Key every element by its child-index path from the fragment root ("0.2.1", element children
  * only). A text element holds words of its own (a non-blank text child), or is a text slot (whose
- * words may sit in inline tags, and which the slot's fill replaces whole). Inside a text element
- * nothing more is keyed: its inline children are part of its one text box. A link or button with
- * inline-only content is keyed too (plan 3: a button's box), and its words inside it keep their own
- * key. */
-function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): void {
+ * words may sit in inline tags, and which the slot's fill replaces whole): inside it nothing more is
+ * keyed, its inline children are part of its one text box. A link or button with inline-only content
+ * is keyed and walked into, so its words keep their own key (plan 3). Every other element is a box
+ * (plan 4), keyed and walked into; images and icons are keyed whole; scripts, styles, noscripts and
+ * templates never. The paths count every element child, so keying more elements never moves a key. */
+function keyElements(root: HTMLElement, slots: Record<string, CloneSlot>): void {
   const isText = textTest(slots);
   const walk = (node: HTMLElement, path: string) => {
     let index = 0;
@@ -175,16 +187,50 @@ function keyTextElements(root: HTMLElement, slots: Record<string, CloneSlot>): v
       const element = child as HTMLElement;
       const place = path ? `${path}.${index}` : String(index);
       index += 1;
-      if (NOT_TEXT.has(element.tagName.toLowerCase())) continue;
-      if (isText(element)) {
-        element.setAttribute(ELEMENT_KEY_ATTR, place);
-        continue;
-      }
-      if (isInlineControl(element, isText)) element.setAttribute(ELEMENT_KEY_ATTR, place);
+      const tag = element.tagName.toLowerCase();
+      if (NEVER_KEYED.has(tag)) continue;
+      element.setAttribute(ELEMENT_KEY_ATTR, place);
+      if (WHOLE.has(tag) || isText(element)) continue;
       walk(element, place);
     }
   };
   walk(root, "");
+}
+
+/** An element's keyed element children, in their order. */
+const keyedChildren = (element: HTMLElement): HTMLElement[] =>
+  element.childNodes.filter((child): child is HTMLElement => !(child instanceof TextNode) && Boolean((child as HTMLElement).getAttribute?.(ELEMENT_KEY_ATTR)));
+
+const byKey = (root: HTMLElement, key: string): HTMLElement | undefined =>
+  root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`).find((element) => element.getAttribute(ELEMENT_KEY_ATTR) === key);
+
+/** Each box's children in its order: the children it names go into the places those children hold,
+ * in its order; a key that is not a child is ignored, and children it does not name keep their places. */
+function applyOrder(root: HTMLElement, order: Readonly<Record<string, readonly string[]>>): void {
+  for (const [parentKey, keys] of Object.entries(order)) {
+    const parent = byKey(root, parentKey);
+    if (!parent) continue;
+    const children = keyedChildren(parent);
+    const listed = children
+      .filter((child) => keys.includes(child.getAttribute(ELEMENT_KEY_ATTR)!))
+      .sort((a, b) => keys.indexOf(a.getAttribute(ELEMENT_KEY_ATTR)!) - keys.indexOf(b.getAttribute(ELEMENT_KEY_ATTR)!));
+    if (listed.length < 2) continue;
+    // Placeholders keep each listed child's place while the children are swapped.
+    const spots = children.filter((child) => listed.includes(child)).map((child) => {
+      const spot = parse("<i></i>").firstChild as HTMLElement;
+      child.replaceWith(spot);
+      return spot;
+    });
+    spots.forEach((spot, index) => spot.replaceWith(listed[index]));
+  }
+}
+
+/** A box's keyed children in their captured order, or null when the key is no element (plan 4). */
+export function cloneOrderOf(clone: Clone, parentKey: string): string[] | null {
+  const root = parse(clone.html, { comment: false });
+  keyElements(root, clone.slots);
+  const parent = byKey(root, parentKey);
+  return parent ? keyedChildren(parent).map((child) => child.getAttribute(ELEMENT_KEY_ATTR)!) : null;
 }
 
 function applySlot(element: HTMLElement, kind: SlotKind, value: string | boolean): void {
@@ -298,7 +344,7 @@ export function slotDefaults(clone: Clone): SlotValues {
  * same address (a link replacement then changes both). Null when the element is no link (plan 2). */
 export function cloneLinkAt(clone: Clone, key: string): { href: string; slot: string | null; shared: boolean } | null {
   const root = parse(clone.html, { comment: false });
-  keyTextElements(root, clone.slots);
+  keyElements(root, clone.slots);
   const element = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`).find((candidate) => candidate.getAttribute(ELEMENT_KEY_ATTR) === key);
   if (!element) return null;
   const anchor = element.tagName === "A" ? element : (element.closest("a") as HTMLElement | null);
@@ -335,12 +381,14 @@ export function cloneButtonAt(
   key: string,
 ): { labelKey: string; labelSlot: string | null; labelText: string | null; labelShared: boolean; href: string | null; hrefSlot: string | null; shared: boolean } | null {
   const root = parse(clone.html, { comment: false });
-  keyTextElements(root, clone.slots);
+  keyElements(root, clone.slots);
   const keyed = root.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`);
   const button = keyed.find((element) => element.getAttribute(ELEMENT_KEY_ATTR) === key);
-  if (!button || !isInlineControl(button, textTest(clone.slots))) return null;
+  const isText = textTest(clone.slots);
+  if (!button || !isInlineControl(button, isText)) return null;
   const ownWords = button.childNodes.some((child) => child instanceof TextNode && child.rawText.trim() !== "");
-  const label = ownWords ? button : (button.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`)[0] ?? button);
+  // Its words, not its icon (an icon is keyed too since plan 4).
+  const label = ownWords ? button : (button.querySelectorAll(`[${ELEMENT_KEY_ATTR}]`).find((element) => isText(element)) ?? button);
   const slotOf = (element: HTMLElement) => {
     const slot = element.getAttribute("data-lumen-slot");
     return slot && clone.slots[slot]?.kind === "text" ? slot : null;
