@@ -43,7 +43,7 @@ test("every surface the dock offers paints on the editor canvas in the brand's c
   // A minted kit: besides the six built-in surfaces it has canvas, elevated, accent and two bands
   // measured from the seller's site, whose classes site-kit names at runtime.
   const brand = kitBrand("garner.minted");
-  const Root = buildPageConfig(brand, null, []).root!.render as unknown as ComponentType;
+  const Root = buildPageConfig(brand, [], []).root!.render as unknown as ComponentType;
   const styles = [...renderToStaticMarkup(createElement(Root)).matchAll(/<style[^>]*>([^<]*)<\/style>/g)];
   const pageCss = (await compileStyles()) + styles.map((match) => match[1]).join("\n");
   const choices = surfaceChoices(brand);

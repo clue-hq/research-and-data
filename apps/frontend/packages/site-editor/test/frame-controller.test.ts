@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { BrandData } from "@clue/site-kit";
 import { appToFrame, type FrameToAppType } from "@clue/site-kit/editor-protocol";
 import { pageFor } from "@clue/site-kit/editor-site";
+import { pageWithShell } from "@clue/site-kit";
 import { SiteDocumentSchema, type SiteDocument, type SitePage } from "@clue/site-kit/site-document";
 import { FrameController, type PuckHandle } from "../src/client/frame-controller";
 import type { LoadedSection } from "../src/client/sections";
@@ -18,9 +19,14 @@ const site = SiteDocumentSchema.parse({
   title: "S",
   theme: {},
   pages: { "/": page("Hello"), "/analysis": { root: { props: { title: "Analysis" } }, content: [] } },
-  shell: { header: { id: "header", preparedFor: "SCSD" }, footer: { id: "footer", legal: "©" } },
+  shell: {
+    header: { type: "SiteHeader", props: { id: "header", accountLine: "SCSD", ctaLabel: "Go", ctaHref: "/" } },
+    footer: { type: "SiteFooter", props: { id: "footer", legal: "©" } },
+  },
   agent_sections: {},
 });
+/** A page as Puck reports it: the header first and the footer last (plan 6). */
+const reported = (shown: SitePage): SitePage => pageWithShell(shown, site.shell);
 const init = (overrides: Record<string, unknown> = {}) =>
   appToFrame(
     "init",
@@ -32,6 +38,7 @@ function harness(loadSections: () => Promise<LoadedSection[]> = async () => []) 
   const posts: { type: FrameToAppType; payload: unknown; documentId: string }[] = [];
   const timers: (() => void)[] = [];
   const puckCalls: string[] = [];
+  const shown: SitePage[] = [];
   const controller = new FrameController({
     cancel: () => undefined,
     loadSections,
@@ -44,12 +51,14 @@ function harness(loadSections: () => Promise<LoadedSection[]> = async () => []) 
   const puck: PuckHandle = {
     select: (id, options) => puckCalls.push(options?.scroll === false ? `select-quiet:${id}` : `select:${id}`),
     setMode: (mode) => puckCalls.push(`mode:${mode}`),
-    showPage: (shown) => puckCalls.push(`show:${String(shown.content[0]?.props.heading ?? "")}`),
+    showPage: (page) => {
+      shown.push(page);
+      puckCalls.push(`show:${String(page.content.find((item) => item.props.heading !== undefined)?.props.heading ?? "")}`);
+    },
   };
   controller.attachPuck(puck);
-  controller.setShellFields({ footer: [{ kind: "text", label: "Legal", name: "legal" }], header: [{ kind: "text", label: "Prepared for", name: "preparedFor" }] });
   const types = () => posts.map((post) => post.type);
-  return { controller, posts, puckCalls, timers, types };
+  return { controller, posts, puckCalls, shown, timers, types };
 }
 
 test("boot says ready with no document; init loads, renders and says navigated for that document", async () => {
@@ -95,7 +104,7 @@ test("a user edit is posted once, after the debounce, with the whole site", asyn
 test("a page reported back with the same rich text spelled differently (& for &amp;, the editor's <p>) posts nothing", async () => {
   const h = harness();
   await h.controller.receive(init({ site: { ...site, pages: { ...site.pages, "/": page("Tom & Jerry") } } }));
-  h.controller.pageEdited("/", page("<p>Tom &amp; Jerry</p>"));
+  h.controller.pageEdited("/", reported(page("<p>Tom &amp; Jerry</p>")));
   assert.equal(h.timers.length, 0, "no save of the same words");
 });
 
@@ -107,14 +116,14 @@ test("rich text the editor or a paste wrote is saved in the grammar's form; its 
   const sent = (h.posts.filter((post) => post.type === "changed")[0].payload as { site: typeof site }).site;
   assert.equal(sent.pages["/"].content[0].props.heading, "Hello <strong>there</strong><br>again");
   const before = h.timers.length;
-  h.controller.pageEdited("/", page("<p>Hello <strong>there</strong><br>again</p>"));
+  h.controller.pageEdited("/", reported(page("<p>Hello <strong>there</strong><br>again</p>")));
   assert.equal(h.timers.length, before, "the editor's own wrapper around the saved text is the same text");
 });
 
 test("an echo of the page as it already is posts nothing; preview mode never posts edits", async () => {
   const h = harness();
   await h.controller.receive(init());
-  h.controller.pageEdited("/", page("Hello"));
+  h.controller.pageEdited("/", reported(page("Hello")));
   assert.equal(h.timers.length, 0);
   await h.controller.receive(appToFrame("set_mode", { mode: "preview" }, { documentId: "doc_1", nonce: NONCE }));
   h.controller.pageEdited("/", page("Typed in preview"));
@@ -151,21 +160,45 @@ test("an agent reload replaces the site, drops an unsent edit, and keeps the pag
   assert.equal(h.puckCalls.at(-1), "show:Agent wrote this");
 });
 
-test("the header is selected through the shell target with its own fields", async () => {
+// Plan 6 (ruling R3): the header and footer are Puck items, addressed as the shell.
+test("a header item's selection is the shell target", async () => {
   const h = harness();
   await h.controller.receive(init());
-  h.controller.shellSelected("header");
+  const fields = [{ kind: "text", label: "Account line", name: "accountLine" }] as never;
+  h.controller.componentSelected("header", "SiteHeader", fields, site.shell!.header.props);
   assert.deepEqual(h.posts.at(-1)?.payload, {
     componentId: "header",
     componentType: "SiteHeader",
     element: null,
     elements: [],
-    fields: [{ kind: "text", label: "Prepared for", name: "preparedFor" }],
-    props: { id: "header", preparedFor: "SCSD" },
+    fields,
+    props: site.shell!.header.props,
     route: "shell",
   });
+  assert.deepEqual(h.controller.getState().selection, { componentId: "header", elementKey: null, target: "shell" });
   h.controller.componentDeselected();
-  assert.equal(h.types().at(-1), "selected", "Puck clearing its own selection does not clear the shell's");
+  assert.equal(h.types().at(-1), "deselected", "Puck owns the header's selection now");
+});
+
+test("Puck's onChange splits the shell back", async () => {
+  const h = harness();
+  await h.controller.receive(init());
+  const header = { ...site.shell!.header, props: { ...site.shell!.header.props, accountLine: "Built for SCSD" } };
+  h.controller.pageEdited("/", { ...page("Hello"), content: [header, ...page("Hello").content, site.shell!.footer] } as SitePage);
+  h.timers.at(-1)!();
+  const proposal = h.posts.find((post) => post.type === "changed")!.payload as { site: SiteDocument };
+  assert.equal((proposal.site.shell!.header.props as unknown as { accountLine: string }).accountLine, "Built for SCSD");
+  assert.deepEqual(proposal.site.pages["/"], page("Hello"));
+});
+
+test("an outside shell edit refreshes Puck's data with the header and footer in it", async () => {
+  const h = harness();
+  await h.controller.receive(init({ rev: 7 }));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { accountLine: "From the dock" }, route: "shell", rev: 8 }, ctx));
+  const last = h.shown.at(-1)!;
+  assert.equal(last.content[0].props.id, "header");
+  assert.equal(last.content[0].props.accountLine, "From the dock");
+  assert.equal(last.content.at(-1)!.props.id, "footer");
 });
 
 test("a site link in preview switches page; an outside link never navigates the frame", async () => {
@@ -218,12 +251,12 @@ test("a dock patch to another part keeps the marketer's unsent typing, and the n
   const h = harness();
   await h.controller.receive(init({ rev: 7 }));
   h.controller.pageEdited("/", page("typed"));
-  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "From the dock" }, route: "shell", rev: 8 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { accountLine: "From the dock" }, route: "shell", rev: 8 }, ctx));
   h.timers.at(-1)!();
   const proposal = h.posts.find((post) => post.type === "changed")!.payload as { site: SiteDocument; baseRev: number };
   assert.equal(proposal.baseRev, 8);
   assert.equal(headingOf(proposal.site), "typed");
-  assert.equal(proposal.site.shell!.header.preparedFor, "From the dock");
+  assert.equal((proposal.site.shell!.header.props as unknown as { accountLine: string }).accountLine, "From the dock");
 });
 
 test("a different whole copy wins over unsent typing; the copy the frame already shows only moves the revision", async () => {
@@ -289,24 +322,24 @@ test("review F2: a patch that overtakes a sent proposal makes the frame propose 
   await h.controller.receive(init({ rev: 7 }));
   h.controller.pageEdited("/", page("typed and flushed"));
   h.timers.at(-1)!();
-  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "From the dock" }, route: "shell", rev: 8 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { accountLine: "From the dock" }, route: "shell", rev: 8 }, ctx));
   assert.ok(h.timers.length >= 2, "a re-proposal is scheduled");
   h.timers.at(-1)!();
   const proposals = h.posts.filter((post) => post.type === "changed").map((post) => post.payload as { site: SiteDocument; baseRev: number });
   assert.deepEqual(proposals.map((proposal) => proposal.baseRev), [7, 8]);
   assert.equal(headingOf(proposals[1].site), "typed and flushed");
-  assert.equal(proposals[1].site.shell!.header.preparedFor, "From the dock");
+  assert.equal((proposals[1].site.shell!.header.props as unknown as { accountLine: string }).accountLine, "From the dock");
 });
 
 test("a patch with no proposal outstanding, or one already re-based, proposes nothing", async () => {
   const h = harness();
   await h.controller.receive(init({ rev: 7 }));
-  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "Dock" }, route: "shell", rev: 8 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { accountLine: "Dock" }, route: "shell", rev: 8 }, ctx));
   assert.equal(h.timers.length, 0);
   h.controller.pageEdited("/", page("typed"));
   h.timers.at(-1)!();
   await h.controller.receive(appToFrame("replace_site", { site: withHeading("from the server"), rev: 9 }, ctx));
-  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { preparedFor: "Dock again" }, route: "shell", rev: 10 }, ctx));
+  await h.controller.receive(appToFrame("set_props", { componentId: "header", props: { accountLine: "Dock again" }, route: "shell", rev: 10 }, ctx));
   h.timers.forEach((run) => run());
   assert.equal(h.posts.filter((post) => post.type === "changed").length, 1, "a replaced copy ended the outstanding proposal");
 });
@@ -465,16 +498,17 @@ test("the app's select may name an element: in the selected section at once, in 
   assert.equal(h.selectedPayloads().at(-1)?.element?.key, "heading");
 });
 
-test("a header element is selected through the shell target", async () => {
-  const h = elementHarness(["preparedFor"]);
+test("a click in the footer names the shell part", async () => {
+  const h = elementHarness(["legal"]);
   await h.controller.receive(init());
-  h.controller.elementClicked("shell", "header", "preparedFor");
-  h.controller.shellSelected("header");
-  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "preparedFor");
-  assert.deepEqual(h.controller.getState().selection, { componentId: "header", elementKey: "preparedFor", target: "shell" });
+  // The canvas reports a click on an item by its route; the controller knows "footer" is the shell's.
+  h.controller.elementClicked("/", "footer", "legal");
+  assert.ok(h.puckCalls.includes("select-quiet:footer"), h.puckCalls.join(","));
+  h.controller.componentSelected("footer", "SiteFooter", [], site.shell!.footer.props);
+  assert.equal(h.selectedPayloads().at(-1)?.element?.key, "legal");
+  assert.deepEqual(h.controller.getState().selection, { componentId: "footer", elementKey: "legal", target: "shell" });
   const count = h.selectedPayloads().length;
-  h.controller.elementClicked("shell", "header", "preparedFor");
-  h.controller.shellSelected("header");
+  h.controller.elementClicked("/", "footer", "legal");
   assert.equal(h.selectedPayloads().length, count, "the same element again posts nothing");
 });
 

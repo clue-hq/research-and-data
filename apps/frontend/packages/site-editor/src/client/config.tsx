@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import { useGetPuck, type Config, type Fields } from "@puckeditor/core";
-import { SURFACES, fillClone, makeConfig, surfaceChoices, type BrandData, type ShellData } from "@clue/site-kit";
-import { AssetPicker, CloneEditor, richTextField } from "@clue/site-kit/editor";
-import type { FieldDescription } from "@clue/site-kit/editor-protocol";
-import type { SiteShell } from "@clue/site-kit/site-document";
-import { describeFields, puckFieldsFromJsonSchema } from "./fields";
+import { SURFACES, fillClone, makeConfig, surfaceChoices, type BrandData, type MenuPage } from "@clue/site-kit";
+import { AssetPicker, CloneEditor, MenuLabels, richTextField } from "@clue/site-kit/editor";
+import { puckFieldsFromJsonSchema } from "./fields";
 import type { LoadedSection } from "./sections";
 
 type RenderFn = (props: Record<string, unknown>) => ReactNode;
@@ -44,19 +42,18 @@ function useRawProps(): (id: string) => Record<string, unknown> | undefined {
   };
 }
 
-/** The page config: site-kit's sections, the seller's clones, the shell drawn around every page,
- * and this site's agent sections with fields from their own props schema. Each agent section sits
+/** The page config: site-kit's sections, the seller's clones, the header and footer (the page's first
+ * and last sections: plan 6), and this site's agent sections with fields from their own props schema. Each agent section sits
  * behind site-kit's own error boundary (its `SectionBoundary`): one that throws is left out on its
  * own as a `data-agent-section-failed` marker and never takes the page or the editor down. No
  * basePath: internal links stay "/analysis", and the editor intercepts them and switches pages
  * itself. */
-export function buildPageConfig(brand: BrandData, shell: SiteShell | null, sections: readonly LoadedSection[]): Config {
+export function buildPageConfig(brand: BrandData, sections: readonly LoadedSection[], menu: MenuPage[]): Config {
   const config = makeConfig(brand, {
     agentSections: Object.fromEntries(sections.map((section) => [section.name, section.module])),
-    editor: { AssetPicker, CloneEditor, richField: richTextField, useRawProps },
+    editor: { AssetPicker, CloneEditor, MenuLabels, richField: richTextField, useRawProps },
     cloneHtml: fillClone,
-    mode: "page",
-    shell: (shell ?? undefined) as ShellData | undefined,
+    menu,
   }) as MutableConfig;
   const surfaceCss = surfaceUtilityCss(brand);
   const rootRender = config.root?.render as RenderFn | undefined;
@@ -76,13 +73,4 @@ export function buildPageConfig(brand: BrandData, shell: SiteShell | null, secti
     component.fields = puckFieldsFromJsonSchema(section.propsSchema, brand, richTextField);
   }
   return config;
-}
-
-/** The header's and footer's fields, from site-kit's shell config. */
-export function shellFieldDescriptions(brand: BrandData): { footer: FieldDescription[]; header: FieldDescription[] } {
-  const config = makeConfig(brand, { mode: "shell", cloneHtml: fillClone }) as MutableConfig;
-  return {
-    footer: describeFields(config.components.SiteFooter?.fields ?? {}),
-    header: describeFields(config.components.SiteHeader?.fields ?? {}),
-  };
 }

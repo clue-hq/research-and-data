@@ -30,5 +30,5 @@ export { isShellEntry, pageWithShell, withEditedShellPage } from "./shell-entrie
 export { menuItems, menuKey, menuSource, siteMenuPages, type MenuItem, type MenuPage, type MenuProps } from "./site-menu";
 export { surfaceClass, type AnySurface } from "./sections";
 export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";
-export { normalizeRichIn, ownLinkSource, richSourceOf, richValuesOfItem, type PropsSchemaOf } from "./rich-props";
+export { PAGE_MENU_LINK, normalizeRichIn, ownLinkSource, pageMenuLink, richSourceOf, richValuesOfItem, type PropsSchemaOf } from "./rich-props";
 export { imageSourcesOf } from "./image-sources";

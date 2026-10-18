@@ -66,6 +66,8 @@ export type EditorParts = {
   /** A hook, called while an agent section draws in the editor: reads a section's props as stored
    * (plain strings, before Puck puts its in-place widgets in), by its id (S2a-2 §2.5). */
   useRawProps?: () => (id: string) => Record<string, unknown> | undefined;
+  /** Plan 6: the fallback header's menu labels typed in place (site-kit/editor's MenuLabels). */
+  MenuLabels?: (props: { itemId: string; children: ReactNode }) => ReactNode;
   /** The rich text field (site-kit/editor's richTextField): our rich props edit as rich text (plan 2). */
   richField?: (label: string, options?: { links?: boolean }) => object;
 };
@@ -199,9 +201,11 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         menuLabels: fromPanel("Menu labels"),
         menuExtra: fromPanel("Extra menu links"),
       },
-      render: (props: Record<string, unknown>) => (
-        <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} menu={menuOf(props as MenuProps)} />
-      ),
+      render: (props: Record<string, unknown> & { puck?: { isEditing?: boolean } }) => {
+        const drawn = <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} menu={menuOf(props as MenuProps)} />;
+        const Labels = options.editor?.MenuLabels;
+        return props.puck?.isEditing && Labels ? <Labels itemId={String(props.id ?? "")}>{drawn}</Labels> : drawn;
+      },
     },
     SiteFooter: {
       label: "Footer",

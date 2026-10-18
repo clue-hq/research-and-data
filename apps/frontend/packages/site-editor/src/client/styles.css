@@ -14,9 +14,14 @@
 html, body, #root { height: 100%; margin: 0; }
 #root { overflow: auto; }
 
-/* DESIGN REVIEW (DR5): the selected header or footer. The shell is drawn by the page root, not
-   by a Puck component, so Puck draws no outline for it. */
-[data-site-shell-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: -2px; }
+/* Plan 6 (ruling R10): the header's own placement on the canvas. Puck wraps each section in its own
+   item box, so a sticky or see-through header is that box (the section box inside it goes static), and
+   it sticks inside #root, the canvas's scroller. */
+[data-puck-component]:has(> .clue-section[data-clue-sticky]) { position: sticky; top: 0; z-index: 40; }
+[data-puck-component]:has(> .clue-section[data-clue-overlay]) { height: 0; overflow: visible; position: relative; z-index: 40; }
+[data-puck-component]:has(> .clue-section[data-clue-sticky][data-clue-overlay]) { position: sticky; }
+[data-puck-component] > .clue-section[data-clue-sticky],
+[data-puck-component] > .clue-section[data-clue-overlay] { position: static; height: auto; }
 
 /* Site element inspector: the selected text element inside its section. Drawn by the frame (an
    attribute set on the element), never by re-rendering Puck, which would rebuild clone markup. */

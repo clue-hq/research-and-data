@@ -22,7 +22,12 @@ import type { FieldDescription, FieldKind, FieldOption } from "@clue/site-kit/ed
  */
 const LONG_TEXT = /(body|intro|statement|description|quote|summary)$/i;
 const SLOT_KINDS: Record<string, FieldKind> = { href: "link", image: "image", text: "richtext", visibility: "boolean" };
-const HIDDEN: Record<string, readonly string[]> = { ClonedSection: ["fragmentId", "slots", "replacements", "links", "newTab"] };
+const HIDDEN: Record<string, readonly string[]> = {
+  ClonedSection: ["fragmentId", "slots", "replacements", "links", "newTab"],
+  // Plan 6: written from the panels (alt texts) or on the canvas (menu labels), never in the dock.
+  SiteHeader: ["accountLogoAlt", "logoAlt", "menuLabels", "menuExtra"],
+  SiteFooter: ["logoAlt"],
+};
 
 type JsonSchema = {
   type?: string | string[];

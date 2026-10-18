@@ -4,7 +4,6 @@ import type { BrandData } from "@clue/site-kit";
 
 export type ClickAction =
   | { kind: "navigate"; href: string }
-  | { kind: "shell"; part: "header" | "footer"; element: Element }
   | { kind: "component"; componentId: string; element: Element }
   | { kind: "none" };
 
@@ -17,8 +16,8 @@ function asElement(target: EventTarget | null): Element | null {
 
 /**
  * What one click on the canvas means. Preview: a link switches page (the frame never navigates
- * itself — `preventDefault` — except to an in-page "#anchor"). Edit: a click on the header/footer
- * selects the shell, a click on a section reports it for the comment box, and no link is followed.
+ * itself — `preventDefault` — except to an in-page "#anchor"). Edit: a click on a section (the header
+ * and footer are sections too: plan 6) reports it for the comment box, and no link is followed.
  */
 export function clickIntent(target: EventTarget | null, mode: EditorMode): { action: ClickAction; preventDefault: boolean } {
   const element = asElement(target);
@@ -29,13 +28,6 @@ export function clickIntent(target: EventTarget | null, mode: EditorMode): { act
   const preventDefault = anchor !== null && (mode === "edit" || !inPage);
   if (mode !== "edit") {
     return { action: href !== null && !inPage ? { href, kind: "navigate" } : { kind: "none" }, preventDefault };
-  }
-  const shell = element.closest(".brand-root > header, .brand-root > footer");
-  if (shell) {
-    return {
-      action: { element: shell, kind: "shell", part: shell.tagName.toLowerCase() === "header" ? "header" : "footer" },
-      preventDefault,
-    };
   }
   const component = element.closest("[data-puck-component]");
   if (component) {

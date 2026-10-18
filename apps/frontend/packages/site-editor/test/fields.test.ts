@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buttonLookOptions, cardLooks, surfaceChoices } from "@clue/site-kit";
 import { garner } from "../../site-kit/test/fixtures/garner";
-import { buildPageConfig, shellFieldDescriptions } from "../src/client/config";
+import { buildPageConfig } from "../src/client/config";
 import { describeFields, fieldsForComponent, humanize, puckFieldsFromJsonSchema } from "../src/client/fields";
 
 const brand = garner();
-const config = buildPageConfig(brand, null, []);
+const config = buildPageConfig(brand, [], []);
 const byName = <T extends { name: string }>(items: T[]) => Object.fromEntries(items.map((item) => [item.name, item]));
 
 test("labels read like words", () => {
@@ -50,26 +50,29 @@ test("a cloned section shows its slots by name and kind, never the clone machine
   assert.deepEqual(fieldsForComponent(config, brand, "ClonedSection", { fragmentId: "frag_missing", id: "x" }), []);
 });
 
+// Plan 6 (ruling R7): the header and footer are page components with their own fields.
 test("the header and footer describe their own fields", () => {
-  const shell = shellFieldDescriptions(brand);
-  const header = byName(shell.header);
-  assert.equal(header.preparedFor.kind, "text");
+  const header = byName(fieldsForComponent(config, brand, "SiteHeader", { id: "header" }));
+  assert.equal(header.accountLine.kind, "richtext");
   assert.equal(header.accountLogo.kind, "image");
+  assert.equal(header.logo.kind, "image");
   assert.equal(header.ctaHref.kind, "link");
   assert.equal(header.ctaLabel.kind, "richtext", "the header button's words are rich text, edited on the page (plan 3 review 4)");
-  assert.deepEqual(header.nav.item?.map((item) => [item.name, item.kind]), [
-    ["label", "text"],
-    ["href", "link"],
-    ["newTab", "boolean"],
-  ]);
-  assert.deepEqual(shell.footer.map((field) => [field.name, field.kind]), [
-    ["legal", "text"],
+  assert.equal(header.menuLabels, undefined, "menu labels are typed on the canvas, never in the dock");
+  assert.equal(header.logoAlt, undefined);
+  const footer = fieldsForComponent(config, brand, "SiteFooter", { id: "footer" });
+  assert.deepEqual(footer.map((field) => [field.name, field.kind]), [
+    ["legal", "richtext"],
+    ["logo", "image"],
+    ["privacyLabel", "richtext"],
     ["privacyHref", "link"],
     ["privacyNewTab", "boolean"],
+    ["termsLabel", "richtext"],
     ["termsHref", "link"],
     ["termsNewTab", "boolean"],
   ]);
 });
+
 
 test("an agent section's props schema becomes Puck fields and dock fields; only marked prose edits in place", () => {
   const puck = puckFieldsFromJsonSchema(
@@ -152,7 +155,7 @@ test("the page config gives an agent section its fields with this brand's choice
     module: { schema: { safeParse: () => ({ success: true }) }, render: () => null },
     propsSchema: { type: "object", properties: { id: { type: "string" }, surface: { type: "string" }, quote: { type: "string", edit: "inline" } } },
   };
-  const withSection = buildPageConfig(brand, null, [section as never]);
+  const withSection = buildPageConfig(brand, [section as never], []);
   const fields = byName(fieldsForComponent(withSection, brand, "QuoteBlock", { id: "q" }));
   assert.equal(fields.surface.kind, "select");
   assert.deepEqual(fields.surface.options, surfaceChoices(brand).map((choice) => ({ label: choice.label, value: choice.value })));

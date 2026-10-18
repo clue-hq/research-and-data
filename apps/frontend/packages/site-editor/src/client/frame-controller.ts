@@ -1,4 +1,4 @@
-import { normalizeRichIn, type BrandData } from "@clue/site-kit";
+import { normalizeRichIn, pageWithShell, withEditedShellPage, type BrandData } from "@clue/site-kit";
 import { ExternalHrefSchema } from "@clue/site-kit/editor-protocol";
 import type { AppToFrameMessage, AppToFramePayloads, EditorMode, ElementSelection, ElementSummary, FieldDescription, FrameToAppPayloads, FrameToAppType, SectionBox, SiteGeometry, Words } from "@clue/site-kit/editor-protocol";
 import {
@@ -10,7 +10,7 @@ import {
   withComponentProps,
   withPage,
 } from "@clue/site-kit/editor-site";
-import { SHELL_TARGET, type SectionLink, type SiteDocument, type SitePage, type SiteTarget } from "@clue/site-kit/site-document";
+import { SHELL_TARGET, isShellId, type SectionLink, type SiteDocument, type SitePage, type SiteTarget } from "@clue/site-kit/site-document";
 import type { LoadedSection } from "./sections";
 
 /** The pause after the last keystroke before an edit is sent (blur, a mode change, a page switch
@@ -97,9 +97,10 @@ export interface FrameControllerDeps {
   schedule?: (run: () => void, ms: number) => unknown;
 }
 
-export interface ShellFields {
-  footer: FieldDescription[];
-  header: FieldDescription[];
+/** The page as the canvas edits it: the header first and the footer last (plan 6, ruling R2). */
+export function editorPage(site: SiteDocument, route: string): SitePage | null {
+  const page = pageFor(site, route);
+  return page ? pageWithShell(page, site.shell) : null;
 }
 
 const INITIAL: FrameState = {
@@ -144,7 +145,6 @@ export class FrameController {
   private kept: KeptWords | null = null;
   /** A pointer or key press in the frame since the words were last seen. */
   private acted = false;
-  private shellFields: ShellFields | null = null;
   private timer: unknown = null;
   private changePending = false;
   private initGeneration = 0;
@@ -177,10 +177,6 @@ export class FrameController {
 
   attachPuck(handle: PuckHandle | null): void {
     this.puck = handle;
-  }
-
-  setShellFields(fields: ShellFields | null): void {
-    this.shellFields = fields;
   }
 
   async receive(message: AppToFrameMessage): Promise<void> {
@@ -231,17 +227,17 @@ export class FrameController {
   /** Puck reports a page section as selected (a click on the canvas, or the app's `select`). */
   componentSelected(componentId: string, componentType: string, fields: FieldDescription[], props: Record<string, unknown>): void {
     if (this.state.mode !== "edit") return;
-    const target = this.state.route;
+    const target = this.targetOf(componentId);
     const key = this.takePendingElement(target, componentId);
     const current = this.state.selection;
     if (current && current.target === target && current.componentId === componentId && current.elementKey === key) return;
     this.postSelected(target, componentId, componentType, fields, props, key);
   }
 
-  /** Puck reports nothing selected. The shell's selection is not Puck's to clear. */
+  /** Puck reports nothing selected (the header and footer are Puck items too: plan 6). */
   componentDeselected(): void {
     const current = this.state.selection;
-    if (!current || current.target === SHELL_TARGET) return;
+    if (!current) return;
     this.set({ selection: null });
     this.described = null;
     this.post("deselected", {});
@@ -253,27 +249,23 @@ export class FrameController {
   reselected(componentId: string, componentType: string, fields: FieldDescription[], props: Record<string, unknown>): void {
     if (this.state.mode !== "edit") return;
     const current = this.state.selection;
-    const key = current && current.target === this.state.route && current.componentId === componentId ? current.elementKey : null;
-    this.postSelected(this.state.route, componentId, componentType, fields, props, key);
+    const target = this.targetOf(componentId);
+    const key = current && current.target === target && current.componentId === componentId ? current.elementKey : null;
+    this.postSelected(target, componentId, componentType, fields, props, key);
   }
 
-  shellSelected(part: "header" | "footer"): void {
-    const site = this.state.site;
-    if (this.state.mode !== "edit" || !site?.shell || !this.shellFields) return;
-    const current = this.state.selection;
-    const samePart = current?.target === SHELL_TARGET && current.componentId === part;
-    const pending = this.pendingElement;
-    const key = pending ? this.takePendingElement(SHELL_TARGET, part) : samePart ? current!.elementKey : null;
-    if (samePart && current!.elementKey === key) return;
-    this.puck?.select(null);
-    this.postSelected(SHELL_TARGET, part, part === "header" ? "SiteHeader" : "SiteFooter", this.shellFields[part], site.shell[part], key);
+  /** Where a canvas item lives: the header and footer are the shell's, everything else the page's. */
+  private targetOf(componentId: string): SiteTarget {
+    return isShellId(componentId) ? SHELL_TARGET : this.state.route;
   }
 
   /** A click on the canvas named this text element (or none) of this section or shell part. In the
    * section already selected it is posted at once; otherwise it waits for Puck (or the shell click)
    * to select the section, which then carries it. */
-  elementClicked(target: SiteTarget, componentId: string, key: string | null): void {
+  elementClicked(clicked: SiteTarget, componentId: string, key: string | null): void {
     if (this.state.mode !== "edit") return;
+    // The canvas names a header or footer item by the page it is on; it is the shell's (plan 6).
+    const target = isShellId(componentId) ? SHELL_TARGET : clicked;
     const current = this.state.selection;
     if (current && current.target === target && current.componentId === componentId && this.described) {
       this.pendingElement = null;
@@ -285,8 +277,8 @@ export class FrameController {
     this.pendingElement = { componentId, key, target };
     // Puck does not select a section for a click on its own editable text (a clone's text slot takes
     // its pointer events), so the section is selected here; on an ordinary click this repeats what
-    // Puck does anyway. The shell's selection is the click handler's (shellSelected).
-    if (target === this.state.route) this.puck?.select(componentId, { scroll: false });
+    // Puck does anyway. The header and footer are Puck items like the rest (plan 6).
+    if (target === this.state.route || target === SHELL_TARGET) this.puck?.select(componentId, { scroll: false });
   }
 
   /** One `selected`, with the element as the canvas has it now: a key the section no longer has is
@@ -446,12 +438,13 @@ export class FrameController {
     const site = this.state.site;
     if (!site || this.state.mode !== "edit" || route !== this.state.route) return;
     const brand = this.state.brand;
+    // The page Puck edits carries the header and footer (plan 6): compared and saved as one, then split.
+    const current = editorPage(site, route);
     const page = brand
-      ? normalizeRichIn(edited, brand, (type) => this.state.sections.find((section) => section.name === type)?.propsSchema, pageFor(site, route))
+      ? normalizeRichIn(edited, brand, (type) => this.state.sections.find((section) => section.name === type)?.propsSchema, current)
       : edited;
-    const current = pageFor(site, route);
     if (current && canonicalJson(withoutEmptyZones(current)) === canonicalJson(withoutEmptyZones(page))) return;
-    this.set({ site: withPage(site, route, page) });
+    this.set({ site: withEditedShellPage(site, route, page) });
     this.scheduleChange();
   }
 
@@ -520,7 +513,7 @@ export class FrameController {
       this.post("navigated", { route });
     } else {
       this.set({ rev, selection, site });
-      const page = pageFor(site, route);
+      const page = editorPage(site, route);
       if (page) this.puck?.showPage(page, this.selectedPageSection());
     }
     if (previous && !selection) this.post("deselected", {});
@@ -566,11 +559,7 @@ export class FrameController {
     // The element rides the click path: in the section already selected it is posted at once,
     // otherwise the section's selection (Puck's, or the shell's) carries it.
     this.elementClicked(target, componentId, elementKey);
-    if (target === SHELL_TARGET) {
-      if (componentId === "header" || componentId === "footer") this.shellSelected(componentId);
-      return;
-    }
-    if (target === this.state.route) this.puck?.select(componentId);
+    if (target === this.state.route || target === SHELL_TARGET) this.puck?.select(componentId);
   }
 
   /** A dock patch: applied over the copy on screen, so the marketer's unsent typing is kept and
@@ -583,8 +572,9 @@ export class FrameController {
       return;
     }
     this.set({ rev, site });
-    if (target === this.state.route) {
-      const page = pageFor(site, target);
+    // A change to the header or footer is a change to every page's Puck data (plan 6).
+    if (target === this.state.route || target === SHELL_TARGET) {
+      const page = editorPage(site, this.state.route);
       if (page) this.puck?.showPage(page, this.selectedPageSection());
     }
   }
@@ -601,7 +591,7 @@ export class FrameController {
 
   private selectedPageSection(): string | null {
     const selection = this.state.selection;
-    return selection && selection.target !== SHELL_TARGET ? selection.componentId : null;
+    return selection ? selection.componentId : null;
   }
 
   private scheduleChange(): void {

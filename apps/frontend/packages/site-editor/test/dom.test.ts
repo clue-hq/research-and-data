@@ -5,17 +5,16 @@ import { clickIntent, rangeAt, rectOf, selectionOffsets, wordCount } from "../sr
 
 const dom = new JSDOM(`
   <div class="brand-root">
-    <header><a id="nav" href="/analysis">Analysis</a></header>
+    <div data-puck-component="header"><div class="clue-section" data-clue-section="header"><header><a id="nav" href="/analysis">Analysis</a></header></div></div>
     <div data-puck-component="proof"><h2 id="heading">Stats</h2><a id="cta" href="https://garnerhealth.com">Go</a></div>
     <a id="anchor" href="#top">Top</a>
-    <footer><span id="legal">©</span></footer>
+    <div data-puck-component="footer"><div class="clue-section" data-clue-section="footer"><footer><span id="legal">©</span></footer></div></div>
   </div>`);
 const byId = (id: string) => dom.window.document.getElementById(id);
 
 function summary(intent: ReturnType<typeof clickIntent>) {
   const { action, preventDefault } = intent;
   if (action.kind === "navigate") return { href: action.href, kind: action.kind, preventDefault };
-  if (action.kind === "shell") return { kind: action.kind, part: action.part, preventDefault };
   if (action.kind === "component") return { componentId: action.componentId, kind: action.kind, preventDefault };
   return { kind: action.kind, preventDefault };
 }
@@ -31,9 +30,10 @@ test("preview mode follows links and leaves in-page anchors to the browser", () 
   assert.deepEqual(summary(clickIntent(byId("heading"), "preview")), { kind: "none", preventDefault: false });
 });
 
+// Plan 6 (ruling R3): the header and footer are Puck items; a click on them is a component click.
 test("edit mode selects the header, the footer or a section, and never follows a link", () => {
-  assert.deepEqual(summary(clickIntent(byId("nav"), "edit")), { kind: "shell", part: "header", preventDefault: true });
-  assert.deepEqual(summary(clickIntent(byId("legal"), "edit")), { kind: "shell", part: "footer", preventDefault: false });
+  assert.deepEqual(summary(clickIntent(byId("nav"), "edit")), { componentId: "header", kind: "component", preventDefault: true });
+  assert.deepEqual(summary(clickIntent(byId("legal"), "edit")), { componentId: "footer", kind: "component", preventDefault: false });
   assert.deepEqual(summary(clickIntent(byId("heading"), "edit")), { componentId: "proof", kind: "component", preventDefault: false });
   assert.deepEqual(summary(clickIntent(byId("cta"), "edit")), { componentId: "proof", kind: "component", preventDefault: true });
   assert.deepEqual(summary(clickIntent(byId("heading")?.firstChild ?? null, "edit")), {

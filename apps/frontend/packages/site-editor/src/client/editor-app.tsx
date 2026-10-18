@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
-import { RICH_PROPS, cloneButtonAt, cloneLinkAt, imageSourcesOf, ownLinkSource, richSourceOf, type BrandData } from "@clue/site-kit";
+import { RICH_PROPS, RICH_PROPS_NO_LINKS, cloneButtonAt, cloneLinkAt, imageSourcesOf, ownLinkSource, pageMenuLink, richSourceOf, siteMenuPages, type BrandData } from "@clue/site-kit";
 import { richFromDom } from "@clue/site-kit/editor";
 import { normalizeRich } from "@clue/site-kit/rich";
 import type { ElementSelection, LabelSource, LinkSource, RichSource } from "@clue/site-kit/editor-protocol";
 import { acceptAppMessage, frameToApp } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, pageFor } from "@clue/site-kit/editor-site";
-import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
+import { canonicalJson, componentEntry, componentProps } from "@clue/site-kit/editor-site";
+import { SHELL_TARGET, isShellId } from "@clue/site-kit/site-document";
 import type { BootContext } from "./boot";
-import { buildPageConfig, shellFieldDescriptions } from "./config";
+import { buildPageConfig } from "./config";
 import {
   arrangeOf,
   buttonAround,
@@ -33,7 +33,7 @@ import {
   wordCount, sizeScaleAt,
 } from "./dom";
 import { fieldsForComponent } from "./fields";
-import { FrameController } from "./frame-controller";
+import { FrameController, editorPage } from "./frame-controller";
 import { frameKeyAction } from "./keys";
 import { browserSectionDeps, loadSections } from "./sections";
 
@@ -41,14 +41,11 @@ const usePuck = createUsePuck();
 // Insert, delete, duplicate and drag wait for the founder's designs (C13); in-place editing stays on.
 const PERMISSIONS: Partial<Permissions> = { delete: false, drag: false, duplicate: false, edit: true, insert: false };
 const VIEWPORTS: Viewports = [{ height: "auto", label: "Page", width: "100%" }];
-const SHELL_SELECTED = "data-site-shell-selected";
 const ELEMENT_SELECTED = "data-clue-el-selected";
 
-/** Where a selection's elements live on the canvas: the header/footer, or a page section. */
-function selectionScope(target: string, componentId: string): Element | null {
-  if (target === SHELL_TARGET) {
-    return componentId === "header" || componentId === "footer" ? document.querySelector(`.brand-root > ${componentId}`) : null;
-  }
+/** Where a selection's elements live on the canvas: its Puck item (the header and footer are items
+ * too: plan 6). */
+function selectionScope(_target: string, componentId: string): Element | null {
   return document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`);
 }
 
@@ -68,13 +65,22 @@ function toHex(color: string): string | null {
   return cssColorToHex(`rgb(${r}, ${g}, ${b})`);
 }
 
-/** Which section or shell part an element on the canvas belongs to. */
+/** Which section (or the header or footer, the shell's) an element on the canvas belongs to. */
 function placeOf(element: Element): { target: string; componentId: string } | null {
-  const shell = element.closest(".brand-root > header, .brand-root > footer");
-  if (shell) return { componentId: shell.tagName.toLowerCase(), target: SHELL_TARGET };
   const component = element.closest("[data-puck-component]")?.getAttribute("data-puck-component");
-  return component ? { componentId: component, target: "page" } : null;
+  if (!component) return null;
+  return { componentId: component, target: isShellId(component) ? SHELL_TARGET : "page" };
 }
+
+/** Our buttons: the button's key, and the prop its words are stored in (plan 3; the header's: plan 6). */
+const OUR_BUTTONS: Record<string, { key: string; words: string }> = {
+  FeatureSplit: { key: "button", words: "buttonLabel" },
+  CtaBand: { key: "button", words: "buttonLabel" },
+  SiteHeader: { key: "cta", words: "ctaLabel" },
+};
+
+/** Our components (their rich words are named by RICH_PROPS / RICH_PROPS_NO_LINKS), as opposed to an agent's. */
+const isOurs = (type: string) => type in RICH_PROPS || type in RICH_PROPS_NO_LINKS;
 
 const AGENT_LINK = "The agent's section sets this link; ask the agent to change it.";
 
@@ -86,11 +92,14 @@ function describeElement(controller: FrameController, target: string, componentI
   let rich: RichSource | null = null;
   let link: LinkSource | null = null;
   const anchored = element.tagName === "A" || element.closest("a") !== null;
-  if (target === SHELL_TARGET) {
-    link = ownLinkSource(componentId === "header" ? "SiteHeader" : "SiteFooter", key);
-  } else if (state.site && state.brand) {
-    const item = pageFor(state.site, target)?.content.find((entry) => entry.props.id === componentId);
-    if (item) {
+  // A menu item that is one of the site's pages links where its page is (plan 6, ruling R11).
+  const menuItem = element.closest("[data-clue-menu-source]");
+  const pageItem = menuItem?.getAttribute("data-clue-menu-source")?.startsWith("page:") ? menuItem : null;
+  if (state.site && state.brand) {
+    const item = componentEntry(state.site, target, componentId);
+    if (pageItem) {
+      link = { kind: "fixed", reason: pageMenuLink((pageItem.textContent ?? "").trim()) };
+    } else if (item) {
       const props = item.props as Record<string, unknown>;
       if (item.type === "ClonedSection") {
         const clone = state.brand.clones[String(props.fragmentId ?? "")];
@@ -105,7 +114,7 @@ function describeElement(controller: FrameController, target: string, componentI
         const propsSchemaOf = (type: string) => state.sections.find((section) => section.name === type)?.propsSchema;
         rich = richSourceOf({ props, type: item.type }, key, state.brand, propsSchemaOf);
         // An agent's link is a prop of its own the editor cannot name from the element.
-        const agent = !(item.type in RICH_PROPS);
+        const agent = !isOurs(item.type);
         link = ownLinkSource(item.type, key) ?? (anchored && agent ? { kind: "fixed", reason: AGENT_LINK } : null);
       }
     }
@@ -130,14 +139,8 @@ function describeButton(controller: FrameController, target: string, componentId
   let rich: RichSource | null = null;
   let labelSource: LabelSource | null = null;
   let link: LinkSource | null = null;
-  if (target === SHELL_TARGET) {
-    if (componentId === "header" && key === "cta") {
-      rich = { prop: "ctaLabel" };
-      labelSource = { kind: "prop", prop: "ctaLabel" };
-      link = ownLinkSource("SiteHeader", key);
-    }
-  } else if (state.site && state.brand) {
-    const item = pageFor(state.site, target)?.content.find((entry) => entry.props.id === componentId);
+  if (state.site && state.brand) {
+    const item = componentEntry(state.site, target, componentId);
     const props = (item?.props ?? {}) as Record<string, unknown>;
     if (item?.type === "ClonedSection") {
       const clone = state.brand.clones[String(props.fragmentId ?? "")];
@@ -151,10 +154,11 @@ function describeButton(controller: FrameController, target: string, componentId
       }
       if (found?.hrefSlot) link = { kind: "slot", slot: found.hrefSlot };
       else if (found?.href) link = { find: found.href, kind: "replacement", shared: found.shared };
-    } else if (item && item.type in RICH_PROPS) {
-      if (key === "button") {
-        rich = { prop: "buttonLabel" };
-        labelSource = { kind: "prop", prop: "buttonLabel" };
+    } else if (item && isOurs(item.type)) {
+      const button = OUR_BUTTONS[item.type];
+      if (button && key === button.key) {
+        rich = { prop: button.words };
+        labelSource = { kind: "prop", prop: button.words };
       }
       link = ownLinkSource(item.type, key);
     } else if (item) {
@@ -183,7 +187,8 @@ function describeButton(controller: FrameController, target: string, componentId
  * on the canvas, so the canvas cannot tell). */
 function hiddenParts(controller: FrameController, target: string, componentId: string): Set<string> {
   if (target !== SHELL_TARGET || (componentId !== "header" && componentId !== "footer")) return new Set();
-  const edits = (controller.getState().site?.shell?.[componentId] as { _edits?: Record<string, { hidden?: boolean }> } | undefined)?._edits ?? {};
+  const site = controller.getState().site;
+  const edits = ((site ? componentProps(site, target, componentId) : null)?._edits as Record<string, { hidden?: boolean }> | undefined) ?? {};
   return new Set(Object.entries(edits).flatMap(([key, override]) => (override?.hidden === true ? [key] : [])));
 }
 
@@ -205,17 +210,10 @@ function describeBox(
   if (item.kind !== "image") return described;
   const image = computedImage(element, window, toHex);
   const state = controller.getState();
-  let type = componentId === "header" ? "SiteHeader" : "SiteFooter";
-  let props: Record<string, unknown> = {};
-  let clone = null;
-  if (target === SHELL_TARGET) {
-    props = ((state.site?.shell as Record<string, unknown> | null | undefined)?.[componentId] as Record<string, unknown> | undefined) ?? {};
-  } else {
-    const entry = state.site ? pageFor(state.site, target)?.content.find((candidate) => candidate.props.id === componentId) : undefined;
-    type = entry?.type ?? "";
-    props = (entry?.props ?? {}) as Record<string, unknown>;
-    clone = type === "ClonedSection" && state.brand ? (state.brand.clones[String(props.fragmentId ?? "")] ?? null) : null;
-  }
+  const entry = state.site ? componentEntry(state.site, target, componentId) : null;
+  const type = entry?.type ?? "";
+  const props = (entry?.props ?? {}) as Record<string, unknown>;
+  const clone = type === "ClonedSection" && state.brand ? (state.brand.clones[String(props.fragmentId ?? "")] ?? null) : null;
   const sources = imageSourcesOf({ clone, key: described.key, media: image.media, props, src: image.src, type });
   return { ...described, altSource: sources.alt, image, imageSource: sources.image };
 }
@@ -373,15 +371,11 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       // The text element the click meant (null: the section itself), named before the section's
       // selection is reported, which then carries it.
       const point = { x: event.clientX, y: event.clientY };
-      if (action.kind === "shell") {
-        event.stopPropagation();
-        controller.elementClicked(SHELL_TARGET, action.part, elementKeyAt(action.element, event.target, point, window));
-        controller.shellSelected(action.part);
-        controller.annotate(SHELL_TARGET, action.part, rectOf(action.element, scroll));
-      }
       if (action.kind === "component" && action.componentId) {
-        controller.elementClicked(controller.getState().route, action.componentId, elementKeyAt(action.element, event.target, point, window));
-        controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
+        // The header and footer are Puck items addressed as the shell (plan 6, ruling R3).
+        const target = isShellId(action.componentId) ? SHELL_TARGET : controller.getState().route;
+        controller.elementClicked(target, action.componentId, elementKeyAt(action.element, event.target, point, window));
+        controller.annotate(target, action.componentId, rectOf(action.element, scroll));
       }
     };
     // Plan 5 (review I2): an image whose file loads after it was described is described again.
@@ -417,11 +411,12 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const component = image?.closest("[data-puck-component]");
       const componentId = component?.getAttribute("data-puck-component");
       if (!image || !componentId) return;
-      const props = state.site.pages[state.route]?.content.find((entry) => entry.props.id === componentId)?.props;
+      const target = isShellId(componentId) ? SHELL_TARGET : state.route;
+      const props = componentProps(state.site, target, componentId);
       const src = image.getAttribute("src") ?? "";
       // The field whose value IS this picture; a picture no field holds (a clone's own art) asks nothing.
       const prop = props ? Object.keys(props).find((key) => props[key] === src && src.startsWith("/asset-store/")) : undefined;
-      if (prop) controller.requestAsset(state.route, componentId, prop);
+      if (prop) controller.requestAsset(target, componentId, prop);
     };
     document.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKeyDown, true);
@@ -440,15 +435,6 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       document.removeEventListener("loadeddata", onLoad, true);
     };
   }, [controller]);
-
-  // The shell is drawn by the page root, not by a Puck component, so its outline is ours (DR5).
-  useEffect(() => {
-    for (const element of document.querySelectorAll(`[${SHELL_SELECTED}]`)) element.removeAttribute(SHELL_SELECTED);
-    const selection = state.selection;
-    if (selection?.target === SHELL_TARGET) {
-      document.querySelector(`.brand-root > ${selection.componentId}`)?.setAttribute(SHELL_SELECTED, "true");
-    }
-  }, [state.selection, state.mountKey]);
 
   // The selected text element's outline: an attribute, re-applied after every redraw of the page
   // (Puck draws an outside copy a frame later, and may replace the element). A frame later the
@@ -478,15 +464,16 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     };
   }, [controller, state.selection, state.mountKey, state.site]);
 
-  const shellJson = state.site?.shell ? canonicalJson(state.site.shell) : "";
-  const shell = useMemo<SiteShell | null>(() => (shellJson ? (JSON.parse(shellJson) as SiteShell) : null), [shellJson]);
-  const config = useMemo(
-    () => (state.brand ? buildPageConfig(state.brand, shell, state.sections) : null),
-    [state.brand, shell, state.sections],
+  // The header's menu lists the site's pages (plan 6): the config changes only when the pages do.
+  const routesJson = state.site ? canonicalJson(Object.keys(state.site.pages).sort()) : "[]";
+  const menu = useMemo(
+    () => siteMenuPages(Object.fromEntries((JSON.parse(routesJson) as string[]).map((route) => [route, {}]))),
+    [routesJson],
   );
-  useEffect(() => {
-    controller.setShellFields(state.brand ? shellFieldDescriptions(state.brand) : null);
-  }, [controller, state.brand]);
+  const config = useMemo(
+    () => (state.brand ? buildPageConfig(state.brand, state.sections, menu) : null),
+    [state.brand, menu, state.sections],
+  );
 
   // Built once per change of the values it reads, never on a selection: re-rendering <Puck>
   // re-renders every section, and React 19 re-sets a clone's dangerouslySetInnerHTML on every render
@@ -494,7 +481,9 @@ export function EditorApp({ boot }: { boot: BootContext }) {
   // and the text slots CloneEditor made editable in place stop being editable.
   const ready = state.status === "ready";
   const brand = ready ? state.brand : null;
-  const page = ready && state.site ? pageFor(state.site, state.route) : null;
+  // The page with the header first and the footer last (plan 6, ruling R2).
+  const site = ready ? state.site : null;
+  const page = useMemo(() => (site ? editorPage(site, state.route) : null), [site, state.route]);
   const route = state.route;
   const mode = state.mode;
   const mountKey = state.mountKey;
@@ -506,7 +495,7 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         data={page as unknown as Data}
         iframe={{ enabled: false }}
         key={mountKey}
-        onChange={(data) => controller.pageEdited(route, data as unknown as SitePage)}
+        onChange={(data) => controller.pageEdited(route, data as unknown as NonNullable<typeof page>)}
         permissions={PERMISSIONS}
         ui={{
           previewMode: mode === "edit" ? "edit" : "interactive",

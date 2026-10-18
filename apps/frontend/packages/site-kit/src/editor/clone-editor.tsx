@@ -10,6 +10,8 @@ import type { Clone } from "../clone";
 import { CloneMarkup } from "../clone-markup";
 import { normalizeRich, richText } from "../rich";
 import { richFromDom } from "./rich-text";
+import { markMenuLabels } from "./menu-labels";
+import { writeItemMenuLabel } from "./menu-editor";
 
 /** The pause after the last keystroke in a cloned text slot before its wording is written. Without
  * it, typing reached the page only when the slot lost focus, and a reload while still typing lost it
@@ -54,6 +56,8 @@ export function CloneEditor({
     const view = root.ownerDocument.defaultView;
     const cleanups: (() => void)[] = [];
     const markSlots = () => {
+      // A template's menu labels (plan 6): typed in place, written when the marketer leaves one.
+      cleanups.push(markMenuLabels(root, (source, label) => writeItemMenuLabel(getPuck, itemId, source, label)));
       for (const element of root.querySelectorAll<HTMLElement>("[data-lumen-slot]")) {
         const key = element.getAttribute("data-lumen-slot") ?? "";
         if (clone.slots[key]?.kind !== "text") continue;
