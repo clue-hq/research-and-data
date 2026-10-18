@@ -40,8 +40,7 @@ export function moveWrite(site: SiteDocument, section: Section, arrange: Arrange
  * parts and its styled spans, and inside any `order`) and in the styled spans (`data-s`) of every text
  * in the two items. A key that merely starts the same (`stats.10` for `stats.1`) is never touched. */
 export function remapItemKeys(props: Record<string, unknown>, prop: string, a: number, b: number): Record<string, unknown> {
-  const pattern = new RegExp(`^${escape(prop)}\\.(${a}|${b})(?=$|[.~])`);
-  const rename = (key: string) => key.replace(pattern, (_, index: string) => `${prop}.${Number(index) === a ? b : a}`);
+  const rename = (key: string) => renameItemKey(key, prop, a, b);
   const next: Record<string, unknown> = { ...props };
   const edits = editsOf(props);
   if (Object.keys(edits).length) {
@@ -63,23 +62,28 @@ export function remapItemKeys(props: Record<string, unknown>, prop: string, a: n
 }
 
 /** One move of the selected element up or down among its neighbours: the edited site, the
- * component's whole new props, and the element's key where it now is (an array item's key follows its
- * place; a copied or shell element keeps its own). Null at the ends, for a fixed layout, or when
- * nothing changes. `brand`: to drop a copied section's `order` that is back to the captured one. */
+ * component's whole new props, the selected element's key where it now is (`selectedKey`, by default
+ * the moving item: inside an array item its key follows the item's place; a copied or shell element,
+ * and an element moved through the wrapper around it, keeps its own, review I1), and where the item
+ * now sits among its neighbours (so a second press before the canvas reports back builds on this
+ * one, review I6). Null at the ends, for a fixed layout, or when nothing changes. `brand`: to drop a
+ * copied section's `order` that is back to the captured one. */
 export function commitMove(
   site: SiteDocument,
   section: Section,
   arrange: Arrange,
   direction: "up" | "down",
   brand?: Pick<BrandData, "clones"> | null,
-): { props: Record<string, unknown>; site: SiteDocument; key: string } | null {
+  selectedKey: string = arrange.item,
+): { props: Record<string, unknown>; site: SiteDocument; key: string; arrange: Arrange } | null {
   const props = componentProps(site, section.target, section.componentId);
   const at = arrange.siblings.indexOf(arrange.item);
   const to = at + (direction === "up" ? -1 : 1);
   if (!props || at < 0 || to < 0 || to >= arrange.siblings.length) return null;
   const write = moveWrite(site, section, arrange);
   let next: Record<string, unknown>;
-  let key = arrange.item;
+  let key = selectedKey;
+  let after: Arrange;
   if (write.kind === "fixed") return null;
   if (write.kind === "array") {
     const a = Number(ITEM.exec(arrange.item)![2]);
@@ -87,10 +91,12 @@ export function commitMove(
     const list = [...(getAtPath(props, write.prop) as unknown[])];
     [list[a], list[b]] = [list[b], list[a]];
     next = remapItemKeys(setAtPath(props, write.prop, list), write.prop, a, b);
-    key = `${write.prop}.${b}`;
+    key = renameItemKey(selectedKey, write.prop, a, b);
+    after = { ...arrange, item: `${write.prop}.${b}` };
   } else {
     const order = [...arrange.siblings];
     [order[at], order[to]] = [order[to], order[at]];
+    after = { ...arrange, siblings: order };
     const edits = editsOf(props);
     const clone = section.componentType === "ClonedSection" ? brand?.clones[String(props.fragmentId ?? "")] : undefined;
     const captured = clone ? cloneOrderOf(clone, arrange.parent) : null;
@@ -104,7 +110,12 @@ export function commitMove(
   if (canonicalJson(next) === canonicalJson(props)) return null;
   const edited = withComponentProps(site, section.target, section.componentId, next);
   const nextProps = componentProps(edited, section.target, section.componentId);
-  return nextProps ? { key, props: nextProps, site: edited } : null;
+  return nextProps ? { arrange: after, key, props: nextProps, site: edited } : null;
+}
+
+/** A key under `<prop>.<a>` renamed to `<prop>.<b>` and back (remapItemKeys' rule for one key). */
+function renameItemKey(key: string, prop: string, a: number, b: number): string {
+  return key.replace(new RegExp(`^${escape(prop)}\\.(${a}|${b})(?=$|[.~])`), (_, index: string) => `${prop}.${Number(index) === a ? b : a}`);
 }
 
 /** What the Arrange section shows for the selection: whether each move can be made, and why not when

@@ -82,58 +82,70 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
     <header data-clue-section={SHELL_SCOPE.header} data-clue-el="root" className="brand-rule-b bg-surface-page text-on-surface-page">
       <ShellEdits brand={brand} scope={SHELL_SCOPE.header} props={header} />
       <div className="brand-content flex items-center justify-between gap-stack-default px-page-margin py-stack-tight" data-clue-el="root.inner">
-        <div className="flex min-w-0 items-center gap-stack-tight" data-clue-el="brand">
-          {inOrder(
+        {/* The two groups, in their order too (plan 4 review I2). */}
+        {inOrder(
+          [
             [
-              // eslint-disable-next-line @next/next/no-img-element
-              ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
-              ["divider", <span key="divider" aria-hidden className="brand-rule-v shrink-0" data-clue-el="divider" />],
-              [
-                "accountLogo",
-                header.accountLogo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key="accountLogo" src={header.accountLogo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
-                ) : null,
-              ],
-              [
-                "prepared",
-                <span key="prepared" className="min-w-0 truncate font-body text-body text-ink-secondary" data-clue-el="prepared">
-                  <span className="hidden sm:inline">Prepared for </span>
-                  {/* The account's name is the styleable text: it carries its own colour, so a style set on
-                      the line around it would not reach it. */}
-                  <span className="text-ink-primary" data-clue-el="preparedFor">{header.preparedFor}</span>
-                </span>,
-              ],
+              "brand",
+              <div key="brand" className="flex min-w-0 items-center gap-stack-tight" data-clue-el="brand">
+                {inOrder(
+                  [
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
+                    ["divider", <span key="divider" aria-hidden className="brand-rule-v shrink-0" data-clue-el="divider" />],
+                    [
+                      "accountLogo",
+                      header.accountLogo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key="accountLogo" src={header.accountLogo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
+                      ) : null,
+                    ],
+                    [
+                      "prepared",
+                      <span key="prepared" className="min-w-0 truncate font-body text-body text-ink-secondary" data-clue-el="prepared">
+                        <span className="hidden sm:inline">Prepared for </span>
+                        {/* The account's name is the styleable text: it carries its own colour, so a style set on
+                            the line around it would not reach it. */}
+                        <span className="text-ink-primary" data-clue-el="preparedFor">{header.preparedFor}</span>
+                      </span>,
+                    ],
+                  ],
+                  order.brand,
+                )}
+              </div>,
             ],
-            order.brand,
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-stack-default" data-clue-el="actions">
-          {inOrder(
             [
-              [
-                "nav",
-                header.nav?.length ? (
-                  <nav key="nav" className="hidden items-center gap-stack-default md:flex" data-clue-el="nav">
-                    {header.nav.map((item, index) => (
-                      <a key={item.href + item.label} href={href(item.href)} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={`nav.${index}`}>
-                        {item.label}
-                      </a>
-                    ))}
-                  </nav>
-                ) : null,
-              ],
-              [
-                "ctaArea",
-                // On phones the hero carries the same action, so the account name gets the room.
-                <span key="ctaArea" className="hidden shrink-0 sm:inline-flex" data-clue-el="ctaArea">
-                  <Button brand={brand} label={rich(header.ctaLabel, href)} href={href(header.ctaHref)} surface="page" look={header.ctaLook} el="cta" newTab={header.ctaNewTab} />
-                </span>,
-              ],
+              "actions",
+              <div key="actions" className="flex shrink-0 items-center gap-stack-default" data-clue-el="actions">
+                {inOrder(
+                  [
+                    [
+                      "nav",
+                      header.nav?.length ? (
+                        <nav key="nav" className="hidden items-center gap-stack-default md:flex" data-clue-el="nav">
+                          {header.nav.map((item, index) => (
+                            <a key={item.href + item.label} href={href(item.href)} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={`nav.${index}`}>
+                              {item.label}
+                            </a>
+                          ))}
+                        </nav>
+                      ) : null,
+                    ],
+                    [
+                      "ctaArea",
+                      // On phones the hero carries the same action, so the account name gets the room.
+                      <span key="ctaArea" className="hidden shrink-0 sm:inline-flex" data-clue-el="ctaArea">
+                        <Button brand={brand} label={rich(header.ctaLabel, href)} href={href(header.ctaHref)} surface="page" look={header.ctaLook} el="cta" newTab={header.ctaNewTab} />
+                      </span>,
+                    ],
+                  ],
+                  order.actions,
+                )}
+              </div>,
             ],
-            order.actions,
-          )}
-        </div>
+          ],
+          order["root.inner"],
+        )}
       </div>
     </header>
   );

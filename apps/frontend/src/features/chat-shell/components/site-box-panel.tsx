@@ -5,7 +5,7 @@ import type { StyleOverride } from "@clue/site-kit/edits";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
 import { ColorControl, InspectorField, InspectorInput, InspectorSection, RadiusControls, SegmentedControl, TextAlignment } from "./inspector-primitives";
 import { BOX_RANGE, WIDTH_RANGE, type RadiusMode, type WidthMode } from "./site-button-panel.logic";
-import { BOX_GAP_NOTE, boxPanelPatch, boxPanelValues, boxTargets, type BoxPanelChange, type BoxTarget } from "./site-box-panel.logic";
+import { ALIGN_ROOM_NOTE, BOX_GAP_NOTE, boxPanelPatch, boxPanelValues, boxTargets, type BoxPanelChange, type BoxTarget } from "./site-box-panel.logic";
 import { SiteArrangeSection } from "./site-arrange-section";
 import styles from "./chat-shell.module.css";
 
@@ -283,7 +283,7 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
         <SiteArrangeSection binding={binding} order={mode === "box"}>
           <InspectorField label="Content alignment">
             <TextAlignment
-              disabled={binding.disabled}
+              disabled={binding.disabled || !layoutValues.alignLive}
               horizontal={ALIGN_FROM[layoutValues.contentAlign]}
               onHorizontalChange={(value) => {
                 if (value !== "justify") commit({ kind: "contentAlign", to: ALIGN_TO[value] }, layout);
@@ -291,6 +291,11 @@ export function SiteBoxPanel({ binding, mode }: { binding: SiteInspectorBinding;
               options="three"
             />
           </InspectorField>
+          {layoutValues.alignLive ? null : (
+            <p className={styles.inspectorStatusNote} role="status">
+              {ALIGN_ROOM_NOTE}
+            </p>
+          )}
           <Note note={note} section="arrange" />
         </SiteArrangeSection>
       ) : null}

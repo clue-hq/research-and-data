@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { brandColorChoices, brandFontFamilies, libraryFontFamilies, type StyleOverride } from "@clue/site-kit/edits";
-import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
+import type { Arrange, FrameToAppMessage } from "@clue/site-kit/editor-protocol";
 import { linkPatch, linkRowState, sitePages, type LinkChange } from "@/features/chat-shell/components/site-link-row.logic";
 import { componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
@@ -165,6 +165,9 @@ export function useSiteEditingSession({
   // Whether the frame holds work it has not sent yet (its `pending` message). Forgotten whenever the
   // frame reboots or is given a document, which drops whatever it held.
   const framePending = useRef(false);
+  // Plan 4 review I6: a move made since the frame last described the selection, so a second quick
+  // press builds on it (cleared by the next `selected`).
+  const lastMove = useRef<{ from: string; key: string; arrange: Arrange } | null>(null);
   // Publish waiting for that unsent work to be sent (K6-2): released when the frame stops holding
   // it, or forgets it (a reboot or a fresh document).
   const framePendingWaiters = useRef<(() => void)[]>([]);
@@ -213,6 +216,7 @@ export function useSiteEditingSession({
         setFrameError({ documentId: message.documentId, message: message.payload.message || message.payload.code });
         return;
       case "selected":
+        lastMove.current = null;
         setSelection({
           componentId: message.payload.componentId,
           componentType: message.payload.componentType,
@@ -454,16 +458,21 @@ export function useSiteEditingSession({
   const commitMoveCb = useCallback(
     (direction: "up" | "down") => {
       const current = copy.get();
-      const arrange = activeSelection?.element?.arrange;
-      if (!activeSelection || !arrange || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
-      const edit = commitMove(current.site, activeSelection, arrange, direction, load.brand);
+      const element = activeSelection?.element;
+      if (!activeSelection || !element?.arrange || !current || current.documentId !== activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      // The selected element and its neighbours as the last move left them, until the frame reports.
+      const pending = lastMove.current?.from === element.key ? lastMove.current : null;
+      const arrange = pending?.arrange ?? element.arrange;
+      const selectedKey = pending?.key ?? element.key;
+      const edit = commitMove(current.site, activeSelection, arrange, direction, load.brand, selectedKey);
       if (!edit) return;
       const rev = copy.edit(current.documentId, edit.site);
       if (rev === null) return;
       sent.current = { ...sent.current, rev };
+      lastMove.current = { arrange: edit.arrange, from: element.key, key: edit.key };
       post("set_props", { componentId: activeSelection.componentId, props: edit.props, rev, route: activeSelection.target }, current.documentId);
       save(edit.site, `inspector: move ${arrange.item} ${direction}`);
-      if (edit.key !== activeSelection.element?.key) {
+      if (edit.key !== selectedKey) {
         post("select", { componentId: activeSelection.componentId, elementKey: edit.key, route: activeSelection.target }, current.documentId);
       }
     },

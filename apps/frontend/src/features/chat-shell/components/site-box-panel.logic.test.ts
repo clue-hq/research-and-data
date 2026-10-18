@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ComputedContainer } from "@clue/site-kit/editor-protocol";
-import { BOX_GAP_NOTE, SECTION_WIDTH_NOTE, boxPanelPatch, boxPanelValues, boxTargets } from "./site-box-panel.logic";
+import { ALIGN_ROOM_NOTE, BOX_GAP_NOTE, SECTION_WIDTH_NOTE, boxPanelPatch, boxPanelValues, boxTargets } from "./site-box-panel.logic";
 
 const card: ComputedContainer = {
   fill: "#FFFFFF", fillOpacity: 100, borderColor: "", borderWidth: 0, radius: [12, 12, 12, 12], paddingY: 24, paddingX: 32, width: 480, height: 200,
@@ -53,4 +53,13 @@ test("which keys each part writes: a box both on itself; a section's fill and st
   assert.deepEqual([forSection?.paint.key, forSection?.paint.override, forSection?.layout.key, forSection?.layout.override, forSection?.layout.widthNote], ["root", { fill: { token: "x" } }, "root.inner", { padding: 40 }, SECTION_WIDTH_NOTE]);
   assert.equal(SECTION_WIDTH_NOTE, "A section always spans the page.");
   assert.equal(boxTargets({ element: { ...element, kind: "image", container: null }, elementOverride: null, sectionBox: null, sectionBoxOverrides: { inner: null, outer: null } }), null);
+});
+
+test("review I5: a box as wide as its contents offers no content alignment, and says why", () => {
+  const hugging = { ...card, layout: "row" as const, alignRoom: false };
+  assert.equal(boxPanelValues(null, hugging, []).alignLive, false);
+  assert.equal(boxPanelValues(null, { ...card, alignRoom: true }, []).alignLive, true);
+  assert.equal(boxPanelValues(null, card, []).alignLive, true, "unknown room counts as room");
+  assert.equal(boxPanelPatch(null, { kind: "contentAlign", to: "center" }, hugging), null);
+  assert.equal(ALIGN_ROOM_NOTE, "This box is only as wide as its contents, so they have no room to line up. Set its width to Fill first.");
 });

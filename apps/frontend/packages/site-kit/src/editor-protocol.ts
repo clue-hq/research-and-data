@@ -169,6 +169,8 @@ export const ComputedContainerSchema = ComputedBoxSchema.extend({
   layout: z.enum(["row", "stack", "grid", "text"]),
   contentAlign: z.enum(["start", "center", "end"]),
   name: z.string().min(1).max(40),
+  /** Whether its contents have room to line up across it (a box as wide as its contents has none). */
+  alignRoom: z.boolean().optional(),
 });
 export type ComputedContainer = z.infer<typeof ComputedContainerSchema>;
 /** An element's key in a list of siblings: never a styled span's. */

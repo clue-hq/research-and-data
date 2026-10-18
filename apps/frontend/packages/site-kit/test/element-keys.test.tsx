@@ -207,3 +207,8 @@ test("in the editor a button whose stored words are empty is not drawn, as on th
   assert.doesNotMatch(inEditor({ id: "c" }, ours), /brand-btn/, "our section with no button words at all");
   assert.match(draw(kit.Button({ label: "Book", href: "/", surface: "page", el: "cta" })), /brand-btn/, "a published page draws from its props");
 });
+
+test("review I2: the header draws its two groups in their order too", () => {
+  const at = keys(draw(<SiteHeader brand={brand} header={{ ...header, _edits: { "root.inner": { order: ["actions", "brand"] } } }} href={href} />));
+  assert.ok(at.indexOf("actions") < at.indexOf("brand"), at.join(","));
+});

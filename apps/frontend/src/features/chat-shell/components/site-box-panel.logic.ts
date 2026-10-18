@@ -7,6 +7,7 @@ import { BOX_RANGE, buttonPanelPatch, buttonPanelValues, size, type ButtonPanelC
 
 export const BOX_GAP_NOTE = "This box stacks its contents with the brand's spacing; gap applies to rows and grids.";
 export const SECTION_WIDTH_NOTE = "A section always spans the page.";
+export const ALIGN_ROOM_NOTE = "This box is only as wide as its contents, so they have no room to line up. Set its width to Fill first.";
 
 type Align = ComputedContainer["contentAlign"];
 
@@ -16,6 +17,8 @@ export interface BoxPanelValues extends ButtonPanelValues {
   gapLive: boolean;
   layout: ComputedContainer["layout"];
   contentAlign: Align;
+  /** Whether its contents have room to line up across it (review I5); unknown counts as room. */
+  alignLive: boolean;
 }
 
 export type BoxPanelChange = ButtonPanelChange | { kind: "gap"; value: string } | { kind: "contentAlign"; to: Align };
@@ -32,6 +35,7 @@ export function boxPanelValues(override: StyleOverride | null, box: ComputedBox 
     contentAlign: override?.contentAlign?.to ?? container?.contentAlign ?? "start",
     gap: String(Math.round(gap * 10) / 10),
     gapLive: layout !== "text",
+    alignLive: container?.alignRoom !== false,
     layout,
   };
 }
@@ -47,6 +51,7 @@ export function boxPanelPatch(override: StyleOverride | null, change: BoxPanelCh
     return String(value) === shown.gap && base.gap !== undefined ? base : { ...base, gap: value };
   }
   if (change.kind === "contentAlign") {
+    if (!shown.alignLive) return null;
     // Stored with the CSS it sets: the box's layout as drawn now (ruling R3).
     if (base.contentAlign?.along === shown.layout && base.contentAlign.to === change.to) return base;
     return { ...base, contentAlign: { along: shown.layout, to: change.to } };

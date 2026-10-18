@@ -419,3 +419,64 @@ test("a hidden header part is listed hidden even with no box; an inline span is 
   assert.ok(!found.some(({ element }) => element.id === "area"), "the button's area is a pass-through wrapper (moving the button moves it)");
   assert.ok(found.some(({ element, kind }) => element.id === "cta" && kind === "button"));
 });
+
+// End-of-plan review fixes (plan 4).
+const realDom = new JSDOM(`
+  <div data-puck-component="hero" id="rscope"><div class="clue-section"><div data-lumen-fragment="true">
+    <ls-h id="lsh" data-clue-el="0"><ls-b id="lsb" data-clue-el="0.0"><section id="sec" data-clue-el="0.0.0">
+      <div id="bgov" data-clue-el="0.0.0.0"></div>
+      <div id="rcard" data-clue-el="0.0.0.1"><h3 id="rct" data-clue-el="0.0.0.1.0">Card</h3><a id="overlay" data-clue-el="0.0.0.1.1" href="/x"></a></div>
+      <div id="agentcard" class="brand-card" data-clue-el="cards.0"><h3>Unnamed title</h3><p>Unnamed words</p></div>
+      <div id="hug" data-clue-el="0.0.0.3"><a id="h0" data-clue-el="0.0.0.3.0" href="/a">A</a><a id="h1" data-clue-el="0.0.0.3.1" href="/b">B</a></div>
+      <div id="roomy" data-clue-el="0.0.0.4"><a id="r0" data-clue-el="0.0.0.4.0" href="/a">A</a></div>
+    </section></ls-b></ls-h>
+  </div></div></div>`);
+const rx = (id: string) => realDom.window.document.getElementById(id)!;
+const realScope = rx("rscope");
+stubBoxes(realScope, {
+  rscope: [0, 0, 1000, 600], sec: [0, 0, 1000, 600], bgov: [0, 0, 1000, 600],
+  rcard: [40, 40, 440, 240], rct: [64, 64, 300, 100], overlay: [40, 40, 440, 240],
+  agentcard: [500, 40, 900, 240],
+  hug: [40, 300, 200, 340], h0: [40, 300, 110, 340], h1: [130, 300, 200, 340],
+  roomy: [40, 400, 900, 440], r0: [40, 400, 110, 440],
+});
+const realView = fakeView({
+  lsh: { display: "contents" }, lsb: { display: "contents" }, bgov: { position: "absolute" },
+  rcard: { backgroundColor: "rgb(255, 255, 255)" }, overlay: { display: "block", position: "absolute" },
+  hug: { display: "flex", columnGap: "20px" }, roomy: { display: "flex" }, h0: { display: "block" }, h1: { display: "block" }, r0: { display: "block" },
+}) as unknown as Window;
+
+test("review C1: a copied section's box is its first element that draws one, under display:contents wrappers", () => {
+  const box = sectionBoxOf(realScope, realView);
+  assert.deepEqual([box?.outer.id, box?.inner.id], ["sec", "sec"]);
+  const listed = inspectableElementsIn(realScope, realView).map(({ element }) => element.id);
+  assert.ok(!listed.includes("sec") && !listed.includes("lsh") && !listed.includes("lsb"), listed.join(","));
+  assert.equal(elementKeyAt(realScope, realScope, { x: 950, y: 580 }, realView), null, "blank section space is the section");
+});
+
+test("review I3: an empty overlay or decoration with no fill or stroke is no box and never takes a click", () => {
+  const listed = inspectableElementsIn(realScope, realView).map(({ element }) => element.id);
+  assert.ok(!listed.includes("bgov") && !listed.includes("overlay"), listed.join(","));
+  assert.equal(elementKeyAt(realScope, realScope, { x: 420, y: 220 }, realView), "0.0.0.1", "the card's padding selects the card");
+  const filled = fakeView({ bgov: { backgroundColor: "rgb(0, 0, 0)" }, lsh: { display: "contents" }, lsb: { display: "contents" } }) as unknown as Window;
+  assert.ok(inspectableElementsIn(realScope, filled).some(({ element }) => element.id === "bgov"), "a visible decoration is a box");
+});
+
+test("review I4: a named box holding unnamed blocks (an agent's kit.Card) is a box, not text", () => {
+  const card = inspectableElementsIn(realScope, realView).find(({ element }) => element.id === "agentcard");
+  assert.equal(card?.kind, "container");
+  assert.equal(isContainerElement(rx("agentcard"), realView), true);
+});
+
+test("review I5: a box as wide as its contents has no room to line them up; one with room does", () => {
+  assert.equal(computedContainer(rx("hug"), realView, cssColorToHex).alignRoom, false);
+  assert.equal(computedContainer(rx("roomy"), realView, cssColorToHex).alignRoom, true);
+});
+
+test("review I4 follow-up: a heading holding Puck's in-place editor (its own blocks) is still text", () => {
+  const editing = new JSDOM(`<div id="s" data-puck-component="p"><h2 id="h" data-clue-el="heading"><div data-puck-overlay-portal="true"><div class="ProseMirror" contenteditable="true"><p>Words</p></div></div></h2><div id="q" data-clue-el="quote"><div contenteditable="true"><p>Agent words</p></div></div></div>`).window.document;
+  const scope = editing.getElementById("s")!;
+  stubBoxes(scope, { s: [0, 0, 500, 300], h: [0, 0, 500, 60], q: [0, 100, 500, 160] });
+  const kinds = Object.fromEntries(inspectableElementsIn(scope, fakeView({}) as unknown as Window).map(({ element, kind }) => [element.id, kind]));
+  assert.deepEqual(kinds, { h: "text", q: "text" });
+});

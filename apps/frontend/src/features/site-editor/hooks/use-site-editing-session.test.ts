@@ -564,3 +564,28 @@ test("moving a stat is one save and one undo step, and the selection follows it"
   assert.equal(mounted.latest().inspector.element?.key, "stats.0", "the selection follows the moved stat");
   await mounted.unmount();
 });
+
+test("review I6: two quick presses of Move up take the third stat to the top", async () => {
+  const start = startSite();
+  const cta = start.pages["/"].content.find((item) => item.props.id === "cta")!;
+  cta.props = { ...cta.props, stats: [{ value: "a" }, { value: "b" }, { value: "c" }] };
+  const server = fakeServer(start);
+  const mounted = await mountSiteSession(server);
+  const BOX = { fill: "", borderColor: "", borderWidth: 0, radius: [0, 0, 0, 0], paddingY: 0, paddingX: 0, width: 400 };
+  mounted.frame.attachDescriber((_target, _componentId, key) => ({
+    element: key?.startsWith("stats.")
+      ? { key, kind: "container", label: "Card", computed: TYPO, container: { ...BOX, gap: 0, layout: "text", contentAlign: "start", name: "Card" }, arrange: { item: key, parent: "stats", siblings: ["stats.0", "stats.1", "stats.2"] } }
+      : null,
+    elements: ["stats.0", "stats.1", "stats.2"].map((k) => ({ key: k, kind: "container" as const, label: "Card", parent: null })),
+  }));
+  mounted.frame.elementClicked("/", "cta", "stats.2");
+  await selectCta(mounted);
+  const inspector = mounted.latest().inspector;
+  inspector.onMove("up");
+  inspector.onMove("up"); // before the canvas reports the first move back
+  await mounted.settle(12);
+  const stored = server.site.pages["/"].content.find((item) => item.props.id === "cta")!;
+  assert.deepEqual(stored.props.stats, [{ value: "c" }, { value: "a" }, { value: "b" }]);
+  assert.equal(mounted.latest().inspector.element?.key, "stats.0");
+  await mounted.unmount();
+});

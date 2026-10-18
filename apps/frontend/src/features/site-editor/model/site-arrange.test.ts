@@ -98,3 +98,28 @@ test("hide and show a header logo; showing restores the stored header exactly; a
   assert.deepEqual(componentProps(shown.site, "shell", "header"), componentProps(start, "shell", "header"));
   assert.equal(hideState(stats(), { componentId: "proof", target: "/", element: { key: "stats.0" } as never }), null);
 });
+
+// End-of-plan review I1 and I6: the selection stays on the element the marketer selected (not the
+// wrapper the move climbed to), and a second quick press builds on the first.
+test("review I1: a move through a wrapper keeps the selected element's own key; an array move renames it", () => {
+  const shell = site([], { header: { id: "header", preparedFor: "C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" }, footer: { id: "footer", legal: "", privacyHref: "", termsHref: "" } });
+  const header = { componentId: "header", componentType: "SiteHeader", target: "shell" };
+  const moved = commitMove(shell, header, { item: "ctaArea", parent: "actions", siblings: ["nav", "ctaArea"] }, "up", null, "cta")!;
+  assert.equal(moved.key, "cta", "still the button, not its area");
+  const inside = commitMove(stats(), proof, statArrange, "up", null, "stats.1.value")!;
+  assert.equal(inside.key, "stats.0.value");
+});
+
+test("review I6: commitMove returns where the element now sits among its neighbours, so a second press builds on it", () => {
+  const three = site([{ type: "StatsBand", props: { id: "proof", surface: "page", stats: [{ value: "a" }, { value: "b" }, { value: "c" }] } }]);
+  const first = commitMove(three, proof, { item: "stats.2", parent: "stats", siblings: ["stats.0", "stats.1", "stats.2"] }, "up")!;
+  assert.deepEqual(first.arrange, { item: "stats.1", parent: "stats", siblings: ["stats.0", "stats.1", "stats.2"] });
+  const second = commitMove(first.site, proof, first.arrange, "up")!;
+  assert.deepEqual(componentProps(second.site, "/", "proof")!.stats, [{ value: "c" }, { value: "a" }, { value: "b" }]);
+  const copied = site([{ type: "ClonedSection", props: { id: "cards", fragmentId: clone.id, slots: {}, replacements: [], links: [] } }]);
+  const sel = { componentId: "cards", componentType: "ClonedSection", target: "/" };
+  const once = commitMove(copied, sel, { item: "0.2", parent: "0", siblings: ["0.0", "0.1", "0.2"] }, "up", brand)!;
+  assert.deepEqual(once.arrange.siblings, ["0.0", "0.2", "0.1"]);
+  const twice = commitMove(once.site, sel, once.arrange, "up", brand)!;
+  assert.deepEqual(componentProps(twice.site, "/", "cards")!._edits, { "0": { order: ["0.2", "0.0", "0.1"] } });
+});

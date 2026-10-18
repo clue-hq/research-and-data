@@ -87,11 +87,25 @@ function validKey(element: Element): string | null {
   return key !== null && ElementKeySchema.safeParse(key).success ? key : null;
 }
 
+const BLOCK_SET = new Set(["div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "section", "article", "header", "footer", "figure", "blockquote", "table", "form", "nav", "aside", "main"]);
+
+/** Words of its own: a non-blank text child (a copied section's text test, clone.ts). */
+const ownWords = (element: Element) => [...element.childNodes].some((child) => child.nodeType === 3 && (child.nodeValue ?? "").trim() !== "");
+
 function isTextElement(element: Element): boolean {
   if (validKey(element) === null) return false;
   if (NOT_TEXT_TAGS.has(element.tagName.toLowerCase()) || element.classList.contains("brand-btn")) return false;
-  return element.querySelector(KEYED) === null;
+  // A card is a box (plan 4 review I4), and so is a named element of unnamed blocks (an agent's
+  // kit.Card around its own heading and paragraph); words of its own keep an element text.
+  if (element.classList.contains("brand-card")) return false;
+  if (element.querySelector(KEYED) !== null) return false;
+  // Words being edited in place: Puck's editor puts its own blocks inside the text element.
+  if (element.querySelector(IN_PLACE_EDITOR) !== null) return true;
+  return ownWords(element) || ![...element.children].some((child) => BLOCK_SET.has(child.tagName.toLowerCase()));
 }
+
+/** Puck's in-place editors (its overlay portal, rich text's ProseMirror, a plain editable field). */
+const IN_PLACE_EDITOR = "[data-puck-overlay-portal], .ProseMirror, [contenteditable]";
 
 /** The scope's text elements in document order; a key repeated later in the scope is skipped (the
  * first element with a key owns it, as a section's `_edits` rule would style both). */
@@ -311,7 +325,7 @@ export function inspectableElementsIn(
   const seen = new Set<string>();
   const found: { element: Element; kind: ElementSummary["kind"]; hidden?: true }[] = [];
   const buttons: Element[] = [];
-  const box = sectionBoxOf(scope);
+  const box = sectionBoxOf(scope, view);
   const own = box ? new Set([box.outer, box.inner]) : new Set<Element>();
   const all = [...(scope.matches(KEYED) ? [scope] : []), ...scope.querySelectorAll(KEYED)];
   for (const element of all) {
@@ -416,8 +430,12 @@ function isPassThrough(element: Element, view: Pick<Window, "getComputedStyle">)
 export function isContainerElement(element: Element, view: Pick<Window, "getComputedStyle">): boolean {
   if (validKey(element) === null || isImageElement(element) || isButtonElement(element, view)) return false;
   if (isTextElement(element) && visibleWords(element)) return false;
-  const display = view.getComputedStyle(element).display;
-  if (display === "inline" || display === "contents" || display === "none") return false;
+  const style = view.getComputedStyle(element);
+  if (style.display === "inline" || style.display === "contents" || style.display === "none") return false;
+  // An empty overlay or decoration (a copied button's overlay link, a background layer) draws nothing
+  // a marketer could style unless it has a fill or a stroke (review I3).
+  const empty = ![...element.children].some((child) => !NO_WORDS.has(child.tagName.toLowerCase())) && !visibleWords(element);
+  if (empty && !visible(style)) return false;
   return hasBox(element) && !isPassThrough(element, view);
 }
 
@@ -457,14 +475,29 @@ export function computedContainer(element: Element, view: Pick<Window, "getCompu
     layout,
     contentAlign: LINE_UP[lineUp] ?? "start",
     name: containerName(element, view),
+    alignRoom: alignRoomOf(element, style, layout, gap),
   };
+}
+
+/** Whether the box has room to line its contents up across it (review I5): a row whose children and
+ * gaps fill it has none, nor a stack whose children are all as wide as it, nor a box drawn as wide as
+ * its contents. A grid's cells are not read, so a grid counts as having room. */
+function alignRoomOf(element: Element, style: CSSStyleDeclaration, layout: ComputedContainer["layout"], gap: number): boolean {
+  if (layout === "grid") return true;
+  if (layout === "text") return !style.display.startsWith("inline");
+  const rect = element.getBoundingClientRect();
+  const inner = rect.width - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
+  const children = [...element.children].map((child) => child.getBoundingClientRect().width).filter((width) => width > 0);
+  if (!children.length) return false;
+  if (layout === "stack") return children.some((width) => width < inner - 1);
+  return inner - (children.reduce((sum, width) => sum + width, 0) + gap * (children.length - 1)) > 1;
 }
 
 /** The section's own box (ruling R2): `root` and its `root.inner` (ours, an agent's kit.Shell, the
  * header and footer, whose scope element is the box itself), or a copied section's one top element.
  * Null when the section has none (an agent section that draws no kit.Shell, a copied section with
  * several top elements). */
-export function sectionBoxOf(scope: Element): { outer: Element; inner: Element } | null {
+export function sectionBoxOf(scope: Element, view?: Pick<Window, "getComputedStyle">): { outer: Element; inner: Element } | null {
   const outer = validKey(scope) === ROOT_KEY ? scope : [...scope.querySelectorAll(KEYED)].find((element) => validKey(element) === ROOT_KEY);
   if (outer) {
     const inner = [...outer.querySelectorAll(KEYED)].find((element) => validKey(element) === ROOT_INNER_KEY) ?? outer;
@@ -472,7 +505,16 @@ export function sectionBoxOf(scope: Element): { outer: Element; inner: Element }
   }
   const fragment = scope.querySelector(COPIED_SECTION);
   const tops = fragment ? [...fragment.children].filter((child) => validKey(child) !== null) : [];
-  return tops.length === 1 ? { inner: tops[0], outer: tops[0] } : null;
+  if (tops.length !== 1) return null;
+  // Captured sections sit in display:contents wrappers (ingestion's ls-h / ls-b, review C1): the box is
+  // the first element under them that draws one.
+  let top = tops[0];
+  while (view && view.getComputedStyle(top).display === "contents") {
+    const inside = [...top.children].filter((child) => validKey(child) !== null);
+    if (inside.length !== 1) return null;
+    top = inside[0];
+  }
+  return { inner: top, outer: top };
 }
 
 /** Where the element moves among its neighbours (spec §4.8): the element (or a wrapper that only

@@ -41,11 +41,13 @@ WRAPPED = {
     "page_url": "https://garnerhealth.com/",
     "section_index": 0,
     "wrapper_class": "lumen-frag-wrapped",
-    # A Webflow-like section: three wrappers around a row of cards.
+    # A Webflow-like section, in the display:contents wrappers ingestion puts around every captured
+    # section (review C1): three wrappers around a row of cards.
     "html": (
+        '<ls-h style="display:contents!important"><ls-b style="display:contents!important">'
         '<section class="wr"><div class="w1"><div class="w2"><div class="row">'
         '<div class="card"><h3>Alpha</h3><p>One</p></div><div class="card"><h3>Beta</h3><p>Two</p></div>'
-        "</div></div></div></section>"
+        "</div></div></div></section></ls-b></ls-h>"
     ),
     "css": (
         ".wr{padding:40px}.row{display:flex;gap:24px}"
@@ -134,8 +136,17 @@ def test_a_copied_card_through_three_wrappers_is_selected_and_layers_skip_the_wr
     assert payload["element"]["key"] == key and payload["element"]["label"] == "Card", payload["element"]
     assert payload["element"]["arrange"]["siblings"] == [key, frame.locator(card).nth(1).get_attribute("data-clue-el")], payload["element"]["arrange"]
     listed = [element["key"] for element in payload["elements"]]
-    for wrapper in (".w1", ".w2"):
+    section_key = frame.locator('[data-puck-component="wrapped"] section.wr').first.get_attribute("data-clue-el")
+    for wrapper in (".w1", ".w2", "ls-h", "ls-b", "section.wr"):
         assert frame.locator(f'[data-puck-component="wrapped"] {wrapper}').first.get_attribute("data-clue-el") not in listed, (wrapper, listed)
+
+    # Blank space in the copied section (its own padding) selects the section, whose box is the
+    # <section> under ingestion's display:contents wrappers (review C1).
+    mark = len(received(page))
+    click_at(page, frame, '[data-puck-component="wrapped"] section.wr', 4, 4)
+    payload = wait_selected(page, mark, None, "wrapped")
+    assert payload["sectionBox"]["outer"]["key"] == section_key == payload["sectionBox"]["inner"]["key"], payload.get("sectionBox")
+    assert payload["sectionBox"]["inner"]["container"]["paddingY"] == 40, payload["sectionBox"]
 
 
 def test_a_boxs_edits_redraw_it(app: Any, browser_page: Any, editor_origin: str) -> None:
@@ -174,10 +185,24 @@ def test_footer_alignment_keeps_its_property_on_a_phone_and_a_hidden_logo_is_lis
         timeout=10000,
     )
     assert computed(frame, inner, "flexDirection") == "row"
+    desktop = page.evaluate("() => document.querySelector('iframe').style.width")
     page.evaluate("() => { document.querySelector('iframe').style.width = '390px'; }")
     frame.wait_for_function("(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'column'", arg=inner, timeout=10000)
     assert computed(frame, inner, "justifyContent") == "center", "the same property on a phone"
-    page.evaluate("() => { document.querySelector('iframe').style.width = ''; }")
+    page.evaluate("(width) => { document.querySelector('iframe').style.width = width; }", desktop)
+    frame.wait_for_function("(sel) => getComputedStyle(document.querySelector(sel)).flexDirection === 'row'", arg=inner, timeout=10000)
+
+    # The footer's link group is only as wide as its links on desktop: no room to line them up
+    # (review I5); the panel greys the control out with a note.
+    frame.locator('footer [data-clue-el="links"]').first.scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    privacy = frame.locator('footer [data-clue-el="privacy"]').first.bounding_box()
+    terms = frame.locator('footer [data-clue-el="terms"]').first.bounding_box()
+    assert privacy and terms
+    mark = len(received(page))
+    page.mouse.click((privacy["x"] + privacy["width"] + terms["x"]) / 2, privacy["y"] + privacy["height"] / 2)
+    links = wait_selected(page, mark, "links", "footer")["element"]
+    assert links["kind"] == "container" and links["container"]["alignRoom"] is False, links
 
     assert computed(frame, 'header [data-clue-el="logo"]', "display") == "none"
     mark = len(received(page))

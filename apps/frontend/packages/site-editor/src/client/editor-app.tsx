@@ -260,8 +260,11 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       const scope = selectionScope(target, componentId);
       if (!scope) return { element: null, elements: [] };
       const listed = inspectableElementsIn(scope, window, hiddenParts(controller, target, componentId));
-      const found = key ? findKeyedElement(scope, key) : null;
-      const kind = found ? listed.find((item) => item.element === found)?.kind : undefined;
+      const keyed = key ? findKeyedElement(scope, key) : null;
+      const kind = keyed ? listed.find((item) => item.element === keyed)?.kind : undefined;
+      // A keyed element Layers does not list (a pass-through wrapper, an empty overlay) is not
+      // selectable: the selection is then the section, never a wrapper described as text (review I1).
+      const found = keyed && (kind || isButtonElement(keyed, window)) ? keyed : null;
       let element: ElementSelection | null = null;
       if (found) {
         const described =
@@ -273,7 +276,7 @@ export function EditorApp({ boot }: { boot: BootContext }) {
         const arrange = arrangeOf(found, scope);
         element = withSizeScale({ ...described, ...(arrange ? { arrange } : {}) }, found, controller.getState().brand);
       }
-      const box = key ? null : sectionBoxOf(scope);
+      const box = key ? null : sectionBoxOf(scope, window);
       return {
         element,
         elements: listed.map((item) => listedSummary(item, window)),
