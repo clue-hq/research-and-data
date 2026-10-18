@@ -86,18 +86,18 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
           {inOrder(
             [
               // eslint-disable-next-line @next/next/no-img-element
-              ["logo", logo ? <img src={logo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
-              ["divider", <span aria-hidden className="brand-rule-v shrink-0" data-clue-el="divider" />],
+              ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="logo" /> : null],
+              ["divider", <span key="divider" aria-hidden className="brand-rule-v shrink-0" data-clue-el="divider" />],
               [
                 "accountLogo",
                 header.accountLogo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={header.accountLogo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
+                  <img key="accountLogo" src={header.accountLogo} alt="" className="brand-logo-header w-auto shrink-0" data-clue-el="accountLogo" />
                 ) : null,
               ],
               [
                 "prepared",
-                <span className="min-w-0 truncate font-body text-body text-ink-secondary" data-clue-el="prepared">
+                <span key="prepared" className="min-w-0 truncate font-body text-body text-ink-secondary" data-clue-el="prepared">
                   <span className="hidden sm:inline">Prepared for </span>
                   {/* The account's name is the styleable text: it carries its own colour, so a style set on
                       the line around it would not reach it. */}
@@ -114,7 +114,7 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
               [
                 "nav",
                 header.nav?.length ? (
-                  <nav className="hidden items-center gap-stack-default md:flex" data-clue-el="nav">
+                  <nav key="nav" className="hidden items-center gap-stack-default md:flex" data-clue-el="nav">
                     {header.nav.map((item, index) => (
                       <a key={item.href + item.label} href={href(item.href)} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={`nav.${index}`}>
                         {item.label}
@@ -126,7 +126,7 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
               [
                 "ctaArea",
                 // On phones the hero carries the same action, so the account name gets the room.
-                <span className="hidden shrink-0 sm:inline-flex" data-clue-el="ctaArea">
+                <span key="ctaArea" className="hidden shrink-0 sm:inline-flex" data-clue-el="ctaArea">
                   <Button brand={brand} label={rich(header.ctaLabel, href)} href={href(header.ctaHref)} surface="page" look={header.ctaLook} el="cta" newTab={header.ctaNewTab} />
                 </span>,
               ],
@@ -149,15 +149,15 @@ export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: 
         {inOrder(
           [
             // eslint-disable-next-line @next/next/no-img-element
-            ["logo", logo ? <img src={logo} alt="" className="brand-logo-footer w-auto self-start" data-clue-el="logo" /> : null],
-            ["legal", <p className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>],
+            ["logo", logo ? <img key="logo" src={logo} alt="" className="brand-logo-footer w-auto self-start" data-clue-el="logo" /> : null],
+            ["legal", <p key="legal" className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>],
             [
               "links",
-              <div className="flex gap-stack-default font-caption text-caption" data-clue-el="links">
+              <div key="links" className="flex gap-stack-default font-caption text-caption" data-clue-el="links">
                 {inOrder(
                   [
-                    ["privacy", footer.privacyHref ? <a href={href(footer.privacyHref)} {...newTabAttrs(footer.privacyNewTab)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null],
-                    ["terms", footer.termsHref ? <a href={href(footer.termsHref)} {...newTabAttrs(footer.termsNewTab)} className="brand-link" data-clue-el="terms">Terms</a> : null],
+                    ["privacy", footer.privacyHref ? <a key="privacy" href={href(footer.privacyHref)} {...newTabAttrs(footer.privacyNewTab)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null],
+                    ["terms", footer.termsHref ? <a key="terms" href={href(footer.termsHref)} {...newTabAttrs(footer.termsNewTab)} className="brand-link" data-clue-el="terms">Terms</a> : null],
                   ],
                   order.links,
                 )}
