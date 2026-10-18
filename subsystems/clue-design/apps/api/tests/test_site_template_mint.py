@@ -127,3 +127,33 @@ def test_a_header_whose_logo_is_drawn_in_code_takes_the_kits_primary_logo(worksp
                if c["id"] == row["fragment_id"]]
     assert f"/asset-store/{primary}" in clone["html"] and "<svg" not in clone["html"]
     assert f"/asset-store/{mark}" not in clone["html"]
+
+
+def test_a_template_leaves_its_source_band_offered(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
+    """Live check, plan 6: a template is made FROM a band, it does not repair it. The seller's own nav
+    and footer stay in the catalog (founder answer 2026-10-12: every role is offered)."""
+    _kit(workspace_id)
+    source = _band(workspace_id, design_storage, role="nav", html=_header(), page="/")
+    registry = _registry(workspace_id, design_storage, tmp_path)
+    minted = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=source)
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+    assert rows[source]["superseded_by"] is None
+    offered = {clone["id"] for clone in list_site_clones(registry.blobs, tmp_path / "cache")}
+    assert {source, minted["fragment_id"]} <= offered
+
+
+def test_a_template_made_again_replaces_the_one_before(workspace_id: str, design_storage: FsStorage, tmp_path) -> None:
+    """Live check, plan 6: deriving a kit's header again (after a derivation fix, or from a newer
+    capture) leaves one header template on offer, not two."""
+    _kit(workspace_id)
+    home = _band(workspace_id, design_storage, role="nav", html=_header("Home"), page="/")
+    registry = _registry(workspace_id, design_storage, tmp_path)
+    first = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=home)
+    about = _band(workspace_id, design_storage, role="nav", html=_header("About"), page="/about")
+    second = registry.mint_site_template(role=SITE_HEADER_ROLE, source_fragment_id=about)
+    assert second["fragment_id"] != first["fragment_id"]
+    rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
+    assert rows[first["fragment_id"]]["superseded_by"] == second["fragment_id"]
+    headers = [c["id"] for c in list_site_clones(registry.blobs, tmp_path / "cache") if c["role"] == SITE_HEADER_ROLE]
+    assert headers == [second["fragment_id"]]
+    assert {home, about} <= {c["id"] for c in list_site_clones(registry.blobs, tmp_path / "cache")}, "both bands stay offered"

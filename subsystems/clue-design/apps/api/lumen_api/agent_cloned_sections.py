@@ -302,12 +302,22 @@ def _resolve_lineages(
         reason = row.get("derived_reason")
         return isinstance(reason, str) and "campaign variant" in reason.lower()
 
+    def is_site_template(row: Any) -> bool:
+        return isinstance(row, dict) and row.get("section_role") in ("site_header", "site_footer")
+
     def lineage_parent(row: JsonObject) -> str | None:
-        """The parent for RESOLUTION purposes: a variant's link is provenance only."""
+        """The parent for RESOLUTION purposes: a variant's link is provenance only. So is a site
+        template's link to the band it was made from (plan 6 live check): the seller's nav and footer
+        stay offered as they are. A template made again replaces the template before it, which is
+        its parent."""
         if is_campaign_variant(row):
             return None
         parent = row.get("derived_from")
-        return parent if isinstance(parent, str) and parent in by_id else None
+        if not isinstance(parent, str) or parent not in by_id:
+            return None
+        if is_site_template(row) and not is_site_template(by_id[parent]):
+            return None
+        return parent
 
     def root_of(fragment_id: str) -> str:
         seen: set = set()
@@ -1796,6 +1806,9 @@ class DurableAgentClonedSectionRegistry:
                 reference=source_fragment_id,
             )
         loaded = read_web_fragment(self.blobs.storage, workspace_id=self.workspace_id, fragment_id=source_fragment_id)
+        # A template made again replaces the kit's current template of this role (its lineage
+        # parent); the band it is made from stays provenance (`source_fragment_id`).
+        previous = self._current_site_template(role, original.get("source_kit_id"))
         placeholder = self.campaign_shell_placeholder()
         seller_logo = self._kit_logo_file(original.get("source_kit_id"), original.get("source_kit_version"))
         derived = derive_site_template(
@@ -1828,7 +1841,7 @@ class DurableAgentClonedSectionRegistry:
                 "slots": [spec.key for spec in derived.slots],
             },
             prelude_reference=PRELUDE_REFERENCE_STRIP,
-            derived_from=source_fragment_id,
+            derived_from=previous or source_fragment_id,
             derived_reason="site template",
             source_fragment_id=source_fragment_id,
         )
@@ -1845,8 +1858,23 @@ class DurableAgentClonedSectionRegistry:
             "label": row.get("label") or label,
             "slot_keys": [spec.key for spec in derived.slots],
             "notes": list(derived.notes) + list(sanitized.notes),
-            "converged": row.get("derived_from") == source_fragment_id and status == "approved",
+            "converged": row.get("derived_from") == (previous or source_fragment_id) and status == "approved",
         }
+
+    def _current_site_template(self, role: str, kit_id: Any) -> Optional[str]:
+        """The template of ``role`` from this kit that is on offer now (released, not replaced), or
+        None when the kit has none yet."""
+        if not kit_id:
+            return None
+        for row in self.list_sections().get("sections") or []:
+            if (
+                row.get("section_role") == role
+                and row.get("source_kit_id") == kit_id
+                and row.get("status") == "approved"
+                and not row.get("superseded_by")
+            ):
+                return str(row["fragment_id"])
+        return None
 
     #: Which of the kit's logos stands in for a seller's logo drawn in the page's code, first match wins.
     KIT_LOGO_ORDER = ("primary", "wordmark")

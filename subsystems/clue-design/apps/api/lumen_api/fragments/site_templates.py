@@ -146,9 +146,12 @@ def derive_site_template(
         css_addition += (
             ".clue-account{display:inline-flex;align-items:center;gap:0.75em;flex-shrink:0}"
             ".clue-account-rule{align-self:stretch;width:1px;background-color:currentColor;opacity:0.3}"
-            f".clue-account-logo{{display:block;height:{height};width:auto}}"
-            # On a narrow window the line gives way (an ellipsis) rather than pushing the header wide.
-            ".clue-account-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex-shrink:1}"
+            f".clue-account-logo{{display:block;height:{height};width:auto;max-width:30vw;object-fit:contain}}"
+            # The line borrows the menu link's class for its type, never its box: a seller's menu link
+            # can turn into a full-width padded drawer row on phones. It keeps its own width, up to
+            # 40% of the window, then gives way with an ellipsis rather than pushing the header wide.
+            ".clue-account-line{flex:0 0 auto;width:auto;max-width:40vw;padding:0;border:0;margin:0;"
+            "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
         )
     else:
         copyright_line = _find_copyright(body)

@@ -174,7 +174,8 @@ def test_a_drawer_hidden_on_desktop_is_not_the_menu() -> None:
 def test_the_account_line_shrinks_rather_than_overflowing() -> None:
     css = _derive("tailwind_header", SITE_HEADER_ROLE).css_addition
     rule = css.split(".clue-account-line{", 1)[1].split("}", 1)[0]
-    for declaration in ("min-width:0", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"):
+    # Capped, not shrinking (live check: a shrinking line was squeezed by an empty menu box on desktop).
+    for declaration in ("max-width:40vw", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"):
         assert declaration in rule, rule
 
 
@@ -226,3 +227,20 @@ def test_a_logo_that_is_already_an_image_is_kept() -> None:
     image = _annotated(derived).css_first("a[href='/'] img")
     assert image.attributes["src"] == "/asset-store/" + "e" * 64
     assert not any("kit's logo file" in note for note in derived.notes)
+
+
+def test_the_account_line_keeps_its_width_and_drops_the_menu_links_drawer_look() -> None:
+    """Live check, plan 6 (Garner): the account line borrows the menu link's class for its type, and
+    Garner's menu link turns into a full-width padded drawer row on phones; and on a wide window an
+    empty menu box squeezed the line to an ellipsis. The line keeps its own width up to 40% of the
+    window and none of the drawer row's box."""
+    css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
+    rule = css[css.index(".clue-account-line{"):].split("}", 1)[0]
+    for part in ("flex:0 0 auto", "max-width:40vw", "width:auto", "padding:0", "border:0", "text-overflow:ellipsis"):
+        assert part in rule, part
+
+
+def test_a_very_wide_account_logo_cannot_push_the_header_wide() -> None:
+    css = _derive("webflow_header", SITE_HEADER_ROLE).css_addition
+    rule = css[css.index(".clue-account-logo{"):].split("}", 1)[0]
+    assert "max-width:" in rule and "object-fit:contain" in rule
