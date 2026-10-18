@@ -126,3 +126,8 @@ fails without it).
   (gap, contentAlign), `order` (cloned sections and the shell), `hidden` (header and footer parts);
   the agent may restyle, reorder and hide header and footer parts. Written with the feature: plan 4
   made boxes styleable and movable, and an unnamed box cannot be selected.
+- 2026-10-18 · writing-a-section and building-with-puck (founder-approved, site element inspector
+  plan 5): name images (`kit.Image el`, named after the prop holding the file so it can be replaced)
+  and write plain alt text; an image's `_edits` (stroke, corners, `imageFit`); a new "Alt text"
+  section (`imageAlt`, `logoAlt`, `accountLogoAlt`, a cloned section's `alts`). Written with the
+  feature: plan 5 made images replaceable and styleable, and alt text editable.

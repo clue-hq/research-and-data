@@ -51,7 +51,10 @@ The kit gives you these pieces, with exactly these props:
 - `<kit.Image src="…" alt="…" el="…" />`: an image from brand/brand.md, by its file path. Add
   `fit="fill"` to make it cover a box you position, for a background photo, or `fit="contain"` to
   show the whole image. A logo is always shown whole. Give it a name with `el` so the marketer can
-  select it and move it.
+  select it, move it, and change its fit, stroke and corners. Name it after the prop that holds its
+  file (`el="photo"` with `src={props.photo}`) and the marketer can replace the picture too.
+  Write `alt` as a few plain words saying what the picture shows; leave it empty (`alt=""`) for a
+  picture that is only decoration.
 - Motion: add a class from brand/brand.md (Motion) to an element, for example
   `className="brand-motion-pulse"`. Write no transition or animation of your own.
 

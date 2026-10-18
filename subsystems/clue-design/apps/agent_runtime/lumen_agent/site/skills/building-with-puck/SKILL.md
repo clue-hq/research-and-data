@@ -152,12 +152,25 @@ Two more, for cloned sections and the header and footer only:
   (`accountLogo`), the divider (`divider`), a menu link (`nav.0`), the button (`ctaArea`), a footer
   link (`privacy`, `terms`). It is refused on a page section; rewrite the section instead.
 
+An image's name (`image` in a feature split; `logo` and `accountLogo` in the header, `logo` in the
+footer; the `el` you gave `kit.Image`; a number path in a cloned section) takes the stroke and corner
+properties above (`borderColor`, `borderWidth`, `radius`) and:
+- `imageFit`: `"fill"` (the picture fills its box and may be cropped) or `"fit"` (the whole picture
+  shows inside its box).
+
 Three rules go with it:
 - When you rewrite a section, keep its `_edits` unless the request asks for a different look; you
   may change or remove them when it does.
 - When you add styling yourself, use the brand's colours and fonts by name first.
 - `validate_page` checks the names and values; an entry for text no longer in the section does
   nothing.
+
+## Alt text
+
+Alt text says what a picture shows, for people who cannot see it: plain text, at most 300
+characters, no line breaks; empty for a picture that is only decoration. It is written in
+`imageAlt` (feature split), `logoAlt` and `accountLogoAlt` (header), `logoAlt` (footer), and for a
+cloned section's pictures in its `alts`, by the picture's name (`"alts": { "0.2.1": "Hotel lobby" }`).
 
 ## Rich text
 
