@@ -60,7 +60,9 @@ test("the corner radius shows Pill chosen; Link takes the R8 layout with the pag
   assert.match(html, /aria-label="Corner radius"/);
   assert.match(html, /aria-pressed="true"[^>]*>Pill</);
   assert.match(html, /aria-pressed="true"[^>]*>Page on this site</);
-  assert.match(html, /aria-pressed="true"[^>]*>New tab</);
+  // Founder 2026-10-19: one checkbox, "Open in a new tab" (the web inspector's), checked for a new tab.
+  assert.match(html, /<input type="checkbox" checked=""\/><span>Open in a new tab<\/span>/);
+  assert.doesNotMatch(html, />Same tab</);
   assert.match(html, /The analysis \(\/analysis\)/);
 });
 
@@ -102,7 +104,7 @@ test("a box shows Fill, Stroke, Layout with its gap, and Arrange with Move up/do
   assert.doesNotMatch(html, /hovered or focused/);
 });
 
-test("a fixed part says why it does not move; a hidden header part offers Shown / Hidden", () => {
+test("a fixed part says why it does not move; a hidden header part offers an unchecked Show in the header", () => {
   const html = renderedModule.exports.render(
     buttonBinding({
       ...plan4,
@@ -116,8 +118,9 @@ test("a fixed part says why it does not move; a hidden header part offers Shown 
   assert.match(html, /The seller&#x27;s logo comes from the brand kit\./);
   assert.match(html, /aria-label="Alt text"/);
   assert.match(html, /This part&#x27;s place is set by the section&#x27;s design/);
-  assert.match(html, /aria-label="Show in the header"/);
-  assert.match(html, />Hidden</);
+  // Founder 2026-10-19: a checkbox, checked while the part is shown.
+  assert.match(html, /<input type="checkbox"\/><span>Show in the header<\/span>/);
+  assert.doesNotMatch(html, />Hidden</);
 });
 
 // Founder 2026-10-19: a whole section shows only Layers; its background shows the section's own box.

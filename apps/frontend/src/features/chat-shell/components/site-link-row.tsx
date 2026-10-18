@@ -10,10 +10,6 @@ const DESTINATIONS: { label: string; value: "web" | "page" }[] = [
   { label: "Web address", value: "web" },
   { label: "Page on this site", value: "page" },
 ];
-const OPEN_IN: { label: string; value: "same" | "new" }[] = [
-  { label: "Same tab", value: "same" },
-  { label: "New tab", value: "new" },
-];
 
 /**
  * The site element inspector's Link row (plan 2, spec §2): where the selected text links to — a page
@@ -90,15 +86,16 @@ export function SiteLinkRow({ binding }: { binding: SiteInspectorBinding }) {
             />
           </InspectorField>
         )}
-        <InspectorField label="Open in">
-          <SegmentedControl
-            ariaLabel="Link opens in"
+        {/* Founder 2026-10-19: one checkbox, as in the web inspector's link section. */}
+        <label className={styles.checkboxRow}>
+          <input
+            checked={state.newTab}
             disabled={binding.disabled || !state.href}
-            onChange={(value) => commit({ href: state.href, newTab: value === "new" })}
-            options={OPEN_IN}
-            value={state.newTab ? "new" : "same"}
+            onChange={(event) => commit({ href: state.href, newTab: event.target.checked })}
+            type="checkbox"
           />
-        </InspectorField>
+          <span>Open in a new tab</span>
+        </label>
         {state.removable ? (
           <button className={styles.inspectorControl} disabled={binding.disabled} onClick={() => commit(null)} type="button">
             Remove link

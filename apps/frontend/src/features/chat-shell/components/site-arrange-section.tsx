@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { SiteInspectorBinding } from "@/features/site-editor/model/site-selection";
-import { InspectorField, InspectorIcon, InspectorSection, SegmentedControl } from "./inspector-primitives";
+import { InspectorField, InspectorIcon, InspectorSection } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 
 const MOVES = [
@@ -54,18 +54,11 @@ export function SiteHideSection({ binding }: { binding: SiteInspectorBinding }) 
   const part = binding.hide.part;
   return (
     <InspectorSection label="Visibility" onOpenChange={setOpen} open={open}>
-      <InspectorField label={`In the ${part}`}>
-        <SegmentedControl
-          ariaLabel={`Show in the ${part}`}
-          disabled={binding.disabled}
-          onChange={(value) => binding.onHideCommit(value === "hidden")}
-          options={[
-            { label: "Shown", value: "shown" },
-            { label: "Hidden", value: "hidden" },
-          ]}
-          value={binding.hide.hidden ? "hidden" : "shown"}
-        />
-      </InspectorField>
+      {/* Founder 2026-10-19: a checkbox, checked while the part is shown. */}
+      <label className={styles.checkboxRow}>
+        <input checked={!binding.hide.hidden} disabled={binding.disabled} onChange={(event) => binding.onHideCommit(!event.target.checked)} type="checkbox" />
+        <span>{`Show in the ${part}`}</span>
+      </label>
     </InspectorSection>
   );
 }
