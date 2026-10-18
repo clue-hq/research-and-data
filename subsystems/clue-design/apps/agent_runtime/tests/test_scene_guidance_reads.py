@@ -248,7 +248,7 @@ def test_selected_guidance_continuation_reaches_model_without_loading_other_bodi
     monkeypatch.setattr(harness, "attach_budget_callback", lambda model, *a: model)
     review_path = "/knowledge_docs/knowledge/scene/review.md"
     responses = [
-        call("read_file", {"file_path": "/.deepagent/skills/visual-review/SKILL.md"}, "skill"),
+        call("read_file", {"file_path": "/.deepagent/skills/repair-design/SKILL.md"}, "skill"),
         call("read_file", {"file_path": review_path, "limit": 80}, "first"),
         call("read_file", {"file_path": review_path, "offset": 80, "limit": 1000}, "tail"),
         AIMessage(content="The requested excerpts were returned."),

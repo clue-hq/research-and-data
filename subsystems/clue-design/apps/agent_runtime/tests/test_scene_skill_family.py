@@ -122,17 +122,21 @@ def test_view_switch_and_override_changes_invalidate_stamp(tmp_path):
     )
     scene = stamp_path.read_text()
     assert scene != old
-    override = source / "views/scene/AGENT.md"
+    override = source / "views/scene/knowledge/scene/review.md"
     override.write_text(override.read_text() + "\nA new scene rule.\n")
     materialize.materialize_agent_workspace(
         config, source_knowledge_docs=source, knowledge_view="scene"
     )
     assert stamp_path.read_text() != scene
     assert (
-        (config.workspace_root / ".deepagent/AGENTS.md").read_text().endswith("A new scene rule.\n")
+        (config.workspace_root / "knowledge_docs/knowledge/scene/review.md")
+        .read_text().endswith("A new scene rule.\n")
     )
+    # Harness alignment S1: the scene view delivers no operating note.
+    assert not (config.workspace_root / ".deepagent/AGENTS.md").exists()
     materialize.materialize_agent_workspace(config, source_knowledge_docs=source)
     assert stamp_path.read_text() == old
+    assert (config.workspace_root / ".deepagent/AGENTS.md").is_file()  # the legacy view keeps it
     assert "scene-brief-copy" not in dict(harness._materialized_skill_index(config))
 
 

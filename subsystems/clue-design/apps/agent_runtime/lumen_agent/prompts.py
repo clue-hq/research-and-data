@@ -1038,6 +1038,8 @@ def _fast_loop_skill_index(skills: list[tuple[str, str]] | None) -> str:
     return "\n".join(lines)
 
 
+# Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16).
+# Kept for a separate cleanup; do not tune or extend.
 def build_orchestrator_prompt(
     workspace: str,
     has_references: bool = False,
@@ -1150,6 +1152,8 @@ def build_orchestrator_prompt(
     )
 
 
+# Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16).
+# Kept for a separate cleanup; do not tune or extend.
 def build_author_prompt(
     workspace: str,
     has_references: bool = False,
@@ -1218,6 +1222,8 @@ _SCENE_GUIDANCE_READING = (
 )
 
 
+# Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16).
+# Kept for a separate cleanup; do not tune or extend.
 def build_reviewer_prompt(
     workspace: str, has_references: bool = False, *, scene_skill_bundle: str = "legacy"
 ) -> str:
@@ -1258,6 +1264,8 @@ Use virtual workspace paths at {workspace}, /knowledge_docs and /.deepagent/skil
     )
 
 
+# Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16).
+# Kept for a separate cleanup; do not tune or extend.
 def _scene_orchestrator_prompt(
     workspace: str, *, has_references: bool, has_ad_assets: bool,
     scene_reviewer: bool, skills: list[tuple[str, str]] | None,
@@ -1545,7 +1553,35 @@ guides below are already here. Read a skill or guide in one call with
 limit=1000; read more only if the note on the result says it was cut. You can
 come back to any skill or guide later in the turn when a decision needs it.
 Your workspace is {workspace}; guides are under /knowledge_docs and skills under
-/.deepagent/skills.""",
+/.deepagent/skills.
+
+The request, the current scene, the brand kit, authentic assets and evidence
+govern the work. Keep claims tied to supplied or retrieved evidence. Missing
+evidence means omit or qualify the claim and record the gap. Never invent logos,
+product UI, attributions, statistics or source IDs. Use what actually exists:
+- your brand's logos and images: the brand card and the asset index (place them
+  with use_brand_asset); another company's logo: fetch_logo;
+- product screenshots and photos: source_assets.json, search_assets and any
+  attached references, placed as independent images;
+- quotes, statistics and attributions: the seller's files under seller/, the
+  account research (read_account_research, read_claims) or the person's own
+  message, recorded in creative-direction.json's evidence;
+- asset and source IDs: only IDs a tool returned, or that the asset index or
+  source_assets.json lists.
+If something you need isn't there, leave it out or qualify it, and say what was
+missing.
+
+The shared guides, under /knowledge_docs/knowledge:
+- scene/direction-contract.md: the shape of creative-direction.json.
+- scene/components.md: native copy and geometry, and authentic image layers
+  (already in this prompt).
+- scene/references.md: source roles, what to preserve or vary, and image
+  generation.
+- scene/review.md: judging the current scene, and honest gaps.
+- scene/placement.md: canvas sizes, crops and placement overlays.
+- lumen-dsl/*: syntax, supported operations and diagnostics (the grammar and
+  directives are already in this prompt).
+- design-systems/*: brand-kit tokens and governance.""",
         _SCENE_SURFACE_CONTRACT, _SCENE_BATCHING_RULE,
     ]
     if has_ad_assets:
@@ -1563,6 +1599,8 @@ Your workspace is {workspace}; guides are under /knowledge_docs and skills under
     return "\n\n".join(sections)
 
 
+# Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16).
+# Kept for a separate cleanup; do not tune or extend.
 def _scene_author_prompt(
     workspace: str, *, has_references: bool, fast_loop: bool,
     frame_payload: str | None, inner_iterations: int,

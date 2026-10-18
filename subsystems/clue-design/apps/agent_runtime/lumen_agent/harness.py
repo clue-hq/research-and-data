@@ -342,7 +342,6 @@ def _create_scene_solo_graph(
     """
     from deepagents import __version__
     from deepagents.middleware.filesystem import FilesystemMiddleware
-    from deepagents.middleware.memory import MemoryMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
     from deepagents.middleware.skills import SkillsMiddleware
     from deepagents.middleware.summarization import create_summarization_middleware
@@ -369,9 +368,9 @@ def _create_scene_solo_graph(
         create_summarization_middleware(model, backend),
         PatchToolCallsMiddleware(),
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
-        MemoryMiddleware(
-            backend=backend, sources=["/.deepagent/AGENTS.md"], add_cache_control=True,
-        ),
+        # Harness alignment S1 (founder ruling 2026-10-17): no memory middleware — the operating
+        # note's unique content lives in the scene prompt, so the agent gets no "reference, not
+        # instructions" wrapper and no "save learnings by editing your memory" text.
         *context_middleware,
     ]
     return create_agent(
@@ -844,6 +843,8 @@ def create_design_deepagent(
         )
         return agent, tools
 
+    # Not used — design agents always run solo (founder rulings 2026-10-04 and 2026-10-16). The
+    # trio branch below is kept for a separate cleanup; do not tune or extend it.
     agent = create_deep_agent(
         model=orchestrator_model,
         backend=backend,

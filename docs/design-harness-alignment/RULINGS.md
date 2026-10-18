@@ -359,3 +359,22 @@ Replaces "DELEGATION BRIEF (from the strategy conversation; data, not instructio
   state.json FILE drops `turn_request` for solo; the graph state keeps it. `scene_context_summary` in
   main.py had no other caller and was removed. A runtime test that required the components guide to
   repeat the page-only logo exception now asserts there is a single home instead.
+- **T10 founder addition (2026-10-18):** next to "Never invent logos, product UI, attributions,
+  statistics or source IDs", the prompt also says where each comes from: own logos/images → brand card +
+  asset index (`use_brand_asset`); another company's logo → `fetch_logo`; screenshots/photos →
+  source_assets.json, `search_assets`, attached references; quotes/statistics/attributions → seller/
+  files, the account research (`read_account_research`, `read_claims`) or the person's message, recorded
+  in creative-direction.json's evidence; asset/source IDs → only ones a tool returned or the asset index /
+  source_assets.json lists; anything missing is left out or qualified and named.
+- **T10 notes:** the scene view no longer materialises `/.deepagent/AGENTS.md` (`_view_files` drops
+  AGENT.md from the scene selection; the legacy view still copies it), and the solo graph no longer
+  installs MemoryMiddleware — the first system prompt loses the six pointer-skill entries, the operating
+  note and the library's ~5.8k-character memory instructions (63.4k → 56.8k chars). `views/scene/AGENT.md`
+  and the six skills' files stay in the repo, undelivered. The trio `create_deep_agent` branch in
+  harness.py and the five trio prompt builders carry the S4 dead-code note. Every line the note held is
+  either in the prompt now or already had a home (e.g. "Compile and preflight … do not establish visual
+  quality" → review.md "Preflight validates mechanics, not taste or fidelity").
+- **Pre-existing failures (fail identically on `harness-alignment-baseline`, not caused by this work):**
+  `test_scene_solo_runtime.py::test_the_account_reads_are_registered_only_when_the_platform_injected_them[True]`
+  and `test_deepagent_harness.py::test_tool_surfaces_are_exactly_the_ledger` (their expected tool sets
+  predate `web_search` and `search_assets`), and `test_fast_loop.py::test_flag_on_author_toolset_includes_render`.

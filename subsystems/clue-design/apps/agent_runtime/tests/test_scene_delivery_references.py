@@ -25,7 +25,7 @@ KNOWN_UNTIL_T8: set[str] = set()
 # Files the agent writes or receives per turn, named in the guides without being delivered guides.
 WORKSPACE_FILES = {
     "brief.md", "references.md", "ad-assets.md", "direction.md", "index.md", "SKILL.md",
-    "AGENTS.md", "catalog.md",
+    "catalog.md",
 }
 
 # Tools other agents have; the scene agent must never be told to call them.
@@ -52,7 +52,7 @@ def _delivery(tmp_path, monkeypatch):
                  {"configurable": {"thread_id": "references"}})
     workspace = materialize_agent_workspace(tools.config, knowledge_view="scene")
     files = [*(workspace / "knowledge_docs").rglob("*.md"),
-             *(workspace / ".deepagent/skills").rglob("*.md"), workspace / ".deepagent/AGENTS.md"]
+             *(workspace / ".deepagent/skills").rglob("*.md")]
     texts = {path.relative_to(workspace).as_posix(): path.read_text() for path in files}
     texts["<system prompt>"] = built[0].seen[0][0].text
     tool_names = set(built[0].bound_names)

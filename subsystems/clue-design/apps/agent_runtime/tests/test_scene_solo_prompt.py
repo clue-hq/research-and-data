@@ -175,7 +175,7 @@ def test_leftovers_are_gone_and_the_minimum_text_size_comes_from_the_active_prof
     scene = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs/views/scene"
     delivered = "\n".join(
         (scene / rel).read_text() for rel in (
-            "AGENT.md", "skills/scene-brief-copy/SKILL.md", "skills/tools/SKILL.md",
+            "skills/scene-brief-copy/SKILL.md", "skills/tools/SKILL.md",
             "knowledge/scene/review.md", "knowledge/scene/components.md",
             "knowledge/scene/placement.md", "skills/account-identity-composition/SKILL.md",
             "knowledge/loop/layout-cluster-repair.md", "knowledge/export/preview-quality.md",
@@ -271,9 +271,6 @@ def test_each_duplicated_rule_has_one_home():
     def flat(rel):
         return " ".join((scene / rel).read_text().split())
 
-    agent = flat("AGENT.md")
-    assert "creative-direction.json" not in agent and "CTA" not in agent
-    assert "Page-only preparation" not in agent
     assert "pageless" not in flat("knowledge/scene/direction-contract.md")
     components = flat("knowledge/scene/components.md")
     assert "Page before spend" not in components
@@ -289,3 +286,39 @@ def test_each_duplicated_rule_has_one_home():
     imagery = flat("skills/brand-imagery/SKILL.md")
     assert "Existing imagery, a flat token fill" not in imagery
     assert "Preserve the inspected reference's material" in imagery
+
+
+def test_operating_note_and_pointer_skills_are_gone_and_their_content_lives_in_the_prompt(
+    tmp_path, monkeypatch
+):
+    """Harness alignment S1, S2, S4 (founder ruling 2026-10-17)."""
+    import json
+    from pathlib import Path
+
+    from test_scene_delivery_references import _delivery
+
+    workspace, texts, tool_names = _delivery(tmp_path, monkeypatch)
+    system = texts["<system prompt>"]
+    flat = " ".join(system.split())
+    # S1: no memory middleware, so no wrapper that calls the note "reference, not instructions".
+    assert not (workspace / ".deepagent/AGENTS.md").exists()
+    assert "<agent_memory>" not in system and "AGENTS.md" not in system
+    assert "<memory_guidelines>" not in system and "persist new knowledge" not in flat
+    # The note's unique content now has one home: the scene prompt.
+    assert "Never invent logos, product UI, attributions, statistics or source IDs." in flat
+    assert "another company's logo: fetch_logo" in flat
+    assert "only IDs a tool returned, or that the asset index or source_assets.json lists" in flat
+    assert "- scene/review.md: judging the current scene, and honest gaps." in flat
+    # S2: the six pointer skills are no longer delivered, but their files stay in the repo.
+    removed = ("create-design", "plan-design", "visual-review", "reference-image-direction",
+               "reference-conditioned-ads", "generative-imagery")
+    root = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs"
+    manifest = json.loads((root / "views/scene/manifest.json").read_text())
+    for name in removed:
+        assert name not in manifest["skills"]
+        assert not (workspace / ".deepagent/skills" / name).exists()
+        assert (root / "skills" / name / "SKILL.md").is_file()
+    # The one unique sentence of reference-conditioned-ads moved to the references guide.
+    references = " ".join(texts["knowledge_docs/knowledge/scene/references.md"].split())
+    assert ("Exact reproduction follows the user's request; otherwise preserve the defining "
+            "properties intentionally.") in references
