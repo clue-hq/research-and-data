@@ -12,14 +12,13 @@ import { Render } from "@puckeditor/core/rsc";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import { makeConfig, SectionBoundary, type CloneHtml } from "./config";
-import type { ShellData } from "./shell";
 
 export type LivePageData = {
   route: string;
   basePath: string;
   title: string;
+  /** The page with the header first and the footer last (plan 6: shell-entries.ts). */
   page: Data;
-  shell: ShellData | null;
   /** Trimmed by brandForPage. */
   brand: BrandData;
   /** Agent section name -> module URL; {} from the renderer, filled by the publisher. */
@@ -31,7 +30,8 @@ export type LivePageData = {
 
 /** The brand the browser needs for a page: only the clones the page uses, and those without their
  * captured HTML and CSS, the bulk of a brand — the browser draws each clone from the page data's
- * `cloneHtml`, and their CSS is one stylesheet outside the tree. The shell draws no clone. */
+ * `cloneHtml`, and their CSS is one stylesheet outside the tree. The page's data includes the header
+ * and footer, so a template header's clone is among them. */
 export function brandForPage(brand: BrandData, page: Data): BrandData {
   const used = new Set(
     (page.content ?? [])
@@ -59,7 +59,6 @@ export function SiteRoot({ config, data, onReady }: { config: Config; data: Data
 export function liveConfig(data: LivePageData, agentSections: Record<string, AgentSectionModule>, cloneHtml: CloneHtml): Config {
   return makeConfig(data.brand, {
     basePath: data.basePath || undefined,
-    shell: data.shell ?? undefined,
     agentSections,
     cloneHtml,
     cloneCss: "page",

@@ -13,10 +13,11 @@ import type { BrandData } from "./brand";
 import { fillClone } from "./clone";
 import { makeConfig, type CloneHtml } from "./config";
 import { SiteRoot, brandForPage, liveConfig, type LivePageData } from "./live-page";
-import type { ShellData } from "./shell";
+import { pageWithShell } from "./shell-entries";
+import type { SitePage, SiteShell } from "./site-document";
 import { pageCanvasCss, tailwindThemeCss } from "./theme";
 
-export type StoredSite = { title?: string; pages: Record<string, unknown>; shell: ShellData | null };
+export type StoredSite = { title?: string; pages: Record<string, unknown>; shell: SiteShell | null };
 /** `data` is the live page's data (live mode only): what the browser takes the page over with. */
 export type RenderedSitePage = { route: string; html: string; data?: LivePageData };
 
@@ -53,7 +54,6 @@ export function renderSitePages(input: {
 }): { pages: RenderedSitePage[]; tailwindTheme: string; size: number; warnings: string[] } {
   const config = makeConfig(input.brand, {
     basePath: input.basePath || undefined,
-    shell: input.site.shell ?? undefined,
     agentSections: input.agentSections,
     cloneHtml: fillClone,
   }) as Config;
@@ -61,8 +61,10 @@ export function renderSitePages(input: {
   const warnings: string[] = [];
   let size = 0;
   for (const route of input.routes ?? siteRoutes(input.site)) {
-    const data = input.site.pages[route] as Data | undefined;
-    if (!data) throw new RenderRefusal("render.failed", `the site has no page ${route}`);
+    const stored = input.site.pages[route] as Data | undefined;
+    if (!stored) throw new RenderRefusal("render.failed", `the site has no page ${route}`);
+    // The header and footer are the page's first and last sections (plan 6, ruling R2).
+    const data = pageWithShell(stored as unknown as SitePage, input.site.shell) as unknown as Data;
     for (const item of (data.content ?? []) as { type: string; props: Record<string, unknown> }[]) {
       if (item.type === "ClonedSection" && !input.brand.clones[String(item.props?.fragmentId ?? "")]) {
         warnings.push(`${route}: cloned section ${String(item.props?.fragmentId)} is not one of the brand's clones`);
@@ -77,7 +79,6 @@ export function renderSitePages(input: {
         basePath: input.basePath,
         title,
         page: data,
-        shell: input.site.shell ?? null,
         brand: brandForPage(input.brand, data),
         sections: {},
         cloneHtml: {},

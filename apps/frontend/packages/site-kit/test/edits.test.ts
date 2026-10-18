@@ -8,7 +8,6 @@ import {
   ELEMENT_KEY_ATTR,
   ElementKeySchema,
   SECTION_SCOPE_ATTR,
-  SHELL_SCOPE,
   StyleOverrideSchema,
   brandColorChoices,
   brandFontFamilies,
@@ -30,7 +29,6 @@ test("the names every later step shares", () => {
   assert.equal(EDITS_PROP, "_edits");
   assert.equal(ELEMENT_KEY_ATTR, "data-clue-el");
   assert.equal(SECTION_SCOPE_ATTR, "data-clue-section");
-  assert.deepEqual(SHELL_SCOPE, { header: "shell-header", footer: "shell-footer" });
 });
 
 test("a valid override parses and an unknown property is refused", () => {

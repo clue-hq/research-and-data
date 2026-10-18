@@ -40,7 +40,7 @@ test("a FeatureSplit draws the look it names", () => {
 });
 
 test("the shell header's button takes a look too", () => {
-  const config = makeConfig(kitBrand("garner"), { cloneHtml: fillClone, mode: "shell" }) as unknown as { components: { SiteHeader: { fields: Record<string, Field> } } };
+  const config = makeConfig(kitBrand("garner"), { cloneHtml: fillClone }) as unknown as { components: { SiteHeader: { fields: Record<string, Field> } } };
   assert.equal(config.components.SiteHeader.fields.ctaLook.label, "Button style");
 });
 
@@ -65,9 +65,19 @@ test("FeatureSplit draws its image alt; the header and footer draw their logo al
   const html = renderToStaticMarkup(<>{sections.FeatureSplit.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "/brands/x.png", imageAlt: 'A "quiet" room', imageSide: "left", buttonLabel: "", buttonHref: "", buttonLook: "" } as never)}</>);
   assert.match(html, /<img src="\/brands\/x.png" alt="A &quot;quiet&quot; room"/);
   const { SiteHeader, SiteFooter } = await import("../src/shell");
-  const header = renderToStaticMarkup(<SiteHeader brand={brand} header={{ preparedFor: "C", accountLogo: "/brands/c.png", accountLogoAlt: "Carmel Clay", logoAlt: "Garner", ctaLabel: "Go", ctaHref: "/" }} href={(v) => v} />);
+  const header = renderToStaticMarkup(<SiteHeader brand={brand} header={{ accountLine: "For C", accountLogo: "/brands/c.png", accountLogoAlt: "Carmel Clay", logoAlt: "Garner", ctaLabel: "Go", ctaHref: "/" }} href={(v) => v} />);
   assert.match(header, /alt="Garner"[^>]*data-clue-el="logo"/);
   assert.match(header, /alt="Carmel Clay"[^>]*data-clue-el="accountLogo"/);
   const footer = renderToStaticMarkup(<SiteFooter brand={brand} footer={{ legal: "©", privacyHref: "", termsHref: "", logoAlt: "Garner Health" }} href={(v) => v} />);
   assert.match(footer, /alt="Garner Health"[^>]*data-clue-el="logo"/);
+});
+
+// Plan 6 (ruling R10): the header's own placement marks its section box.
+test("sticky and overlay set the section box's attributes", () => {
+  const config = makeConfig(garner(), { cloneHtml: fillClone }) as unknown as { components: Record<string, { render: (props: object) => React.ReactNode }> };
+  const header = { id: "header", accountLine: "For C", accountLogo: "", ctaLabel: "Go", ctaHref: "/" };
+  const plain = renderToStaticMarkup(<>{config.components.SiteHeader.render(header)}</>);
+  assert.match(plain, /<div data-clue-section="header" class="clue-section"><header/);
+  const placed = renderToStaticMarkup(<>{config.components.SiteHeader.render({ ...header, _edits: { root: { sticky: true, overlay: true } } })}</>);
+  assert.match(placed, /<div data-clue-section="header" class="clue-section" data-clue-sticky="" data-clue-overlay=""><header/);
 });

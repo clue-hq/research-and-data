@@ -42,7 +42,8 @@ test("a role missing from the section draws as today", () => {
 });
 
 test("a kit without the section draws exactly as today", () => {
-  assert.equal(createHash("sha256").update(themeCss(garner())).digest("hex"), "c1f03b053951403c5c3ebbe66ecda130729e1a1e0ddab7d62bace864993d1ebe");
+  // Re-pinned for plan 6's placement and phone-menu rules (the same for every kit, responsive or not).
+  assert.equal(createHash("sha256").update(themeCss(garner())).digest("hex"), "9233544d196278f92c813607829b6c02743797472d52ea1bbe52f0a1dfef30a9");
   assert.equal(typeSteps(garner()), null);
 });
 

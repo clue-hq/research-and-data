@@ -172,3 +172,29 @@ test("a live page draws a copied section's alt texts as the static render does",
   const still = renderSitePages({ site: stored, brand, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, routes: ["/"] }).pages[0];
   for (const html of [live.html, still.html]) assert.match(html, new RegExp(`data-clue-el="${key.replace(/\./g, "\\.")}"[^>]*alt="Students at lunch"|alt="Students at lunch"[^>]*data-clue-el="${key.replace(/\./g, "\\.")}"`));
 });
+
+// Plan 6 (ruling R2): a template header is drawn the same on both sides.
+test("a live page with a template header hydrates with no mismatch", async () => {
+  const dom = jsdom();
+  const TEMPLATE = "frag_00000000000000ab";
+  const b = garner();
+  b.clones[TEMPLATE] = {
+    id: TEMPLATE, role: "site_header", label: "Header template", page_url: "https://garnerhealth.com/", section_index: 0,
+    wrapper_class: `lumen-frag-${TEMPLATE}`, html: '<header><span data-lumen-slot="account_line">Prepared for you</span></header>',
+    css: "", slots: { account_line: { kind: "text", fallback: "Prepared for you" } },
+  } as never;
+  const shell = { header: { type: "ClonedSection", props: { id: "header" as const, fragmentId: TEMPLATE, slots: { account_line: "Built for Syracuse" }, replacements: [], links: [] } }, footer: stored.shell.footer };
+  const live = renderSitePages({ site: { ...site, shell }, brand: b, basePath: "/acme", agentSections: {}, maxOutputBytes: 10_000_000, live: true });
+  for (const page of live.pages) {
+    assert.ok((page.data as LivePageData).brand.clones[TEMPLATE], "the page's brand carries the header's clone");
+    const container = dom.window.document.createElement("div");
+    container.innerHTML = bodyOf(page.html);
+    dom.window.document.body.appendChild(container);
+    const reports: string[] = [];
+    const run = hydrateSite({ container, data: page.data as LivePageData, agentSections: {}, report: (m) => reports.push(m) });
+    await run.ready;
+    assert.deepEqual(reports, [], page.route);
+    assert.ok(container.innerHTML.includes("Built for Syracuse"));
+    run.unmount();
+  }
+});

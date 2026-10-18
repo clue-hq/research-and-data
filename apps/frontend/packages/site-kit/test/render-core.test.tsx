@@ -184,11 +184,47 @@ test("a live render carries the same stylesheet the browser will draw", () => {
 
 test("the header's edits are scoped to the header", () => {
   const shell = structuredClone(stored.shell);
-  shell.header._edits = { preparedFor: { fontWeight: 700 } };
-  shell.footer._edits = { legal: { underline: true } };
+  shell.header.props._edits = { accountLine: { fontWeight: 700 } };
+  shell.footer.props._edits = { legal: { underline: true } };
   const html = renderSitePages({ site: { ...site, shell }, brand, basePath: "", routes: ["/"], agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
-  assert.match(html, /<header data-clue-section="shell-header" data-clue-el="root" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-header"\] \[data-clue-el="preparedFor"\]\{font-weight:700 !important\}<\/style>/);
-  assert.match(html, /<footer data-clue-section="shell-footer" data-clue-el="root" class="[^"]*"><style data-clue-edits="">\[data-clue-section="shell-footer"\] \[data-clue-el="legal"\]\{text-decoration-line:underline !important\}<\/style>/);
+  assert.match(html, /<div data-clue-section="header" class="clue-section"><style data-clue-edits="">\[data-clue-section="header"\] \[data-clue-el="accountLine"\]\{font-weight:700 !important\}<\/style><header data-clue-el="root"/);
+  assert.match(html, /<div data-clue-section="footer" class="clue-section"><style data-clue-edits="">\[data-clue-section="footer"\] \[data-clue-el="legal"\]\{text-decoration-line:underline !important\}<\/style><footer data-clue-el="root"/);
+});
+
+// Plan 6 (ruling R2): one drawing path for the header and footer.
+const TEMPLATE = "frag_00000000000000aa";
+const withTemplate = () => {
+  const b = garner();
+  b.clones[TEMPLATE] = {
+    id: TEMPLATE, role: "site_header", label: "Header template", page_url: "https://garnerhealth.com/", section_index: 0,
+    wrapper_class: `lumen-frag-${TEMPLATE}`, html: '<header><span data-lumen-slot="account_line">Prepared for you</span></header>',
+    css: `.lumen-frag-${TEMPLATE} header{color:#123456}`, slots: { account_line: { kind: "text", fallback: "Prepared for you" } },
+  } as never;
+  return b;
+};
+const templateShell = () => ({
+  header: { type: "ClonedSection", props: { id: "header" as const, fragmentId: TEMPLATE, slots: { account_line: "Built for Syracuse" }, replacements: [], links: [] } },
+  footer: stored.shell.footer,
+});
+
+test("the header and footer are the page's first and last sections", () => {
+  for (const live of [false, true]) {
+    for (const page of renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000, live }).pages) {
+      const sections = [...page.html.matchAll(/data-clue-section="([^"]+)"/g)].map((m) => m[1]);
+      assert.equal(sections[0], "header", `${page.route} live=${live}`);
+      assert.equal(sections.at(-1), "footer", `${page.route} live=${live}`);
+    }
+  }
+  const live = renderSitePages({ site: { ...site, shell: templateShell() }, brand: withTemplate(), basePath: "", routes: ["/analysis"], agentSections: {}, maxOutputBytes: 10_000_000, live: true }).pages[0].html;
+  assert.match(live, /<style data-clue-clones="">[^<]*#123456/, "a template header's CSS is drawn with the clones'");
+  assert.ok(live.includes("Built for Syracuse"));
+});
+
+test("an old-shape shell draws neither header nor footer", () => {
+  const old = { header: { preparedFor: "SCSD", ctaLabel: "Go", ctaHref: "/" }, footer: { legal: "©" } };
+  const html = renderSitePages({ site: { ...site, shell: old as never }, brand, basePath: "", routes: ["/"], agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
+  assert.ok(!html.includes('data-clue-section="header"') && !html.includes('data-clue-section="footer"'));
+  assert.ok(!html.includes("<header") || !html.includes("SCSD"));
 });
 
 test("a section with no _edits has no style element", () => {
@@ -196,7 +232,7 @@ test("a section with no _edits has no style element", () => {
     const html = renderSitePages({ site, brand, basePath: "", agentSections: {}, maxOutputBytes: 10_000_000, live }).pages[0].html;
     assert.ok(!html.includes("data-clue-edits"), "no stylesheet without edits");
     assert.ok(html.includes('<div data-clue-section="hero" class="clue-section">'), "every section still has its scope");
-    assert.ok(html.includes('<header data-clue-section="shell-header"'), "the header still has its scope");
+    assert.ok(html.includes('<div data-clue-section="header" class="clue-section"><header data-clue-el="root"'), "the header still has its scope");
   }
 });
 

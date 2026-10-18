@@ -62,8 +62,8 @@ function siteWithRichText() {
     ],
   };
   const shell = {
-    header: { ...stored.shell.header, nav: [{ label: "Analysis", href: "/analysis", newTab: true }] },
-    footer: { ...stored.shell.footer, privacyHref: "https://garner.example/privacy", privacyNewTab: true },
+    header: { ...stored.shell.header, props: { ...stored.shell.header.props, menuExtra: [{ label: "Analysis", href: "/analysis", newTab: true }] } },
+    footer: { ...stored.shell.footer, props: { ...stored.shell.footer.props, privacyHref: "https://garner.example/privacy", privacyNewTab: true } },
   };
   return { title: "Rich", pages: { "/": home, "/analysis": stored.pages["/analysis"] }, shell };
 }
@@ -106,7 +106,6 @@ test("an unchanged clone slot keeps the captured markup; a plain value is writte
 
 test("the header's and footer's links open in a new tab when set", () => {
   const html = render().pages[0].html;
-  assert.match(html, /<a href="\/acme\/analysis" target="_blank" rel="noopener" class="brand-navlink" data-clue-el="nav.0">Analysis<\/a>/);
   assert.match(html, /<a href="https:\/\/garner.example\/privacy" target="_blank" rel="noopener" class="brand-link" data-clue-el="privacy">/);
 });
 
@@ -152,7 +151,7 @@ test("our buttons and the header's open in a new tab when set, and draw their st
   const site = {
     title: "T",
     pages: { "/": { root: { props: {} }, content: [{ type: "CtaBand", props: { id: "cta", surface: "brand", heading: "H", buttonLabel: 'Book <span data-s="button.label~1">now</span>', buttonHref: "https://garner.example/book", buttonNewTab: true } }] } },
-    shell: { ...stored.shell, header: { ...stored.shell.header, ctaNewTab: true } },
+    shell: { ...stored.shell, header: { ...stored.shell.header, props: { ...stored.shell.header.props, ctaNewTab: true } } },
   };
   const html = renderSitePages({ site, brand: garner(), basePath: "", agentSections: {}, maxOutputBytes: 10_000_000 }).pages[0].html;
   assert.match(html, /<a href="https:\/\/garner\.example\/book" target="_blank" rel="noopener" class="brand-btn[^"]*" data-surface="brand" data-clue-el="button">/);

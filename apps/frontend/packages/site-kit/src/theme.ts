@@ -250,6 +250,14 @@ export function themeCss(brand: BrandData): string {
     ".brand-content{max-width:var(--brand-content-width);margin-inline:auto}",
     // The box around each page section that scopes its manual styling (config.tsx): no box of its own.
     ".clue-section{display:contents}",
+    // Plan 6 (ruling R10): the header's own placement takes the box back: it stays at the top while the
+    // page scrolls, and/or takes no height so the first section starts under it.
+    ".clue-section[data-clue-sticky]{display:block;position:sticky;top:0;z-index:40}",
+    ".clue-section[data-clue-overlay]{display:block;height:0;overflow:visible;position:relative;z-index:40}",
+    ".clue-section[data-clue-sticky][data-clue-overlay]{position:sticky}",
+    // Plan 6 (ruling R9): on phones a template's menu is hidden; the logos, the account line and the
+    // button stay. No drawer menu is drawn.
+    `@media (max-width:${FALLBACKS.phoneMaxWidth}){[data-clue-menu]{display:none!important}}`,
     `.brand-logo-header{height:${FALLBACKS.headerLogoHeight}}`,
     `.brand-logo-footer{height:${FALLBACKS.footerLogoHeight}}`,
   );

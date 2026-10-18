@@ -10,6 +10,7 @@ import { Render } from "@puckeditor/core/rsc";
 import type { Config, Data } from "@puckeditor/core";
 import { fillClone } from "../src/clone";
 import { makeConfig } from "../src/config";
+import { pageWithShell } from "../src/shell-entries";
 import { garner, site as readSite } from "./fixtures/garner";
 import { render as quoteRender, schema as quoteSchema } from "./fixtures/section-example";
 
@@ -24,9 +25,9 @@ test("spike: every Garner route hydrates with zero recoverable errors", async ()
   const { hydrateRoot } = await import("react-dom/client");
   const agentSections = { QuoteBand: { schema: quoteSchema, render: quoteRender as never } };
   for (const route of Object.keys(stored.pages)) {
-    const data = structuredClone(stored.pages[route]) as Data;
+    const data = pageWithShell(structuredClone(stored.pages[route]), stored.shell) as unknown as Data;
     if (route === "/") data.content.push({ type: "QuoteBand", props: { id: "quote", surface: "brand", quote: "Fewer surprises.", attribution: "A buyer" } } as never);
-    const config = makeConfig(brand, { cloneHtml: fillClone, basePath: "/acme", shell: stored.shell, agentSections }) as Config;
+    const config = makeConfig(brand, { cloneHtml: fillClone, basePath: "/acme", agentSections }) as Config;
     const html = renderToString(createElement(Render as never, { config, data } as never));
     const container = dom.window.document.createElement("div");
     container.innerHTML = html;

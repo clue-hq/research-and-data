@@ -48,7 +48,7 @@ function editorParts(raw: Record<string, Props>, calls: string[]): EditorParts {
 
 async function draw(editor: EditorParts | undefined, type: string, props: Props) {
   const dom = jsdom();
-  const config = makeConfig(brand, { agentSections: { Shouting, Broken, Picky }, editor, cloneHtml: fillClone, mode: "page" });
+  const config = makeConfig(brand, { agentSections: { Shouting, Broken, Picky }, editor, cloneHtml: fillClone });
   const render = (config.components as Record<string, { render: (props: Props) => ReactNode }>)[type].render;
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);

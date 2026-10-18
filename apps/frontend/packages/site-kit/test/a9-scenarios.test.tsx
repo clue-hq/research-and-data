@@ -100,26 +100,18 @@ function fullSite(brand: BrandData): Site {
 type Renderable = { render: (props: Record<string, unknown>) => ReactNode };
 type AnyConfig = { root: Renderable; components: Record<string, Renderable> };
 
-/** Every page through the published config's root (the shell around it), and the shell's own two
- * components through the shell-mode config. */
+/** Every page through the published config's root, the header first and the footer last (plan 6:
+ * they are the page's first and last sections). */
 function renderSite(brand: BrandData, site: Site): string {
-  const config = makeConfig(brand, { cloneHtml: fillClone, shell: { header: site.shell.header.props, footer: site.shell.footer.props } as never, basePath: "/s/a9" }) as unknown as AnyConfig;
-  const pages = Object.values(site.pages).map((page) => renderToStaticMarkup(
+  const config = makeConfig(brand, { cloneHtml: fillClone, basePath: "/s/a9" }) as unknown as AnyConfig;
+  return Object.values(site.pages).map((page) => renderToStaticMarkup(
     <>{config.root.render({
       title: page.root.props.title,
-      children: page.content.map((item, k) => (
+      children: [site.shell.header, ...page.content, site.shell.footer].map((item, k) => (
         <Fragment key={k}>{config.components[item.type].render({ ...item.props, puck: { isEditing: false } })}</Fragment>
       )),
     })}</>,
-  ));
-  const shellConfig = makeConfig(brand, { cloneHtml: fillClone, mode: "shell" }) as unknown as AnyConfig;
-  const shell = renderToStaticMarkup(
-    <>{shellConfig.root.render({ children: <>
-      {shellConfig.components.SiteHeader.render(site.shell.header.props)}
-      {shellConfig.components.SiteFooter.render(site.shell.footer.props)}
-    </> })}</>,
-  );
-  return [...pages, shell].join("\n");
+  )).join("\n");
 }
 
 /** Layout: the same list as test/style-literals.test.ts's STRUCTURE (where things go, never how the

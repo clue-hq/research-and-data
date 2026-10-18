@@ -29,6 +29,9 @@ export const FALLBACKS = {
   /** The kit records logos, not the size they are shown at in the header and footer. */
   headerLogoHeight: "1.75rem",
   footerLogoHeight: "1.25rem",
+  /** Plan 6 (ruling R9): the widest window that counts as a phone, where a template header hides its
+   * menu (Tailwind's md breakpoint less one pixel, as the fallback header's own menu uses). */
+  phoneMaxWidth: "767px",
   /** Used only when the kit has no stroke.width.divider. */
   ruleWidth: "1px",
   /** Sizes are exact at the width the kit measured at; above `fixedUpToPx` they shrink on smaller

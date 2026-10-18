@@ -14,14 +14,14 @@ import { garner, site } from "./fixtures/garner";
 // pinned in the browser harness (tests/site_editor/test_editor_clone_editing.py); this pins the cause.
 test("a cloned section has no load-time refill (no resolveData)", () => {
   const stored = site("garner-syracuse");
-  const config = makeConfig(garner(), { cloneHtml: fillClone, mode: "page", shell: stored.shell }) as Config;
+  const config = makeConfig(garner(), { cloneHtml: fillClone }) as Config;
   assert.equal(config.components.ClonedSection.resolveData, undefined);
 });
 
 test("the editor's clone view is handed the markup a slot write would produce", () => {
   const stored = site("garner-syracuse");
   const CloneEditor = () => null;
-  const config = makeConfig(garner(), { cloneHtml: fillClone, editor: { AssetPicker: () => null, CloneEditor }, mode: "page", shell: stored.shell }) as Config;
+  const config = makeConfig(garner(), { cloneHtml: fillClone, editor: { AssetPicker: () => null, CloneEditor } }) as Config;
   const hero = stored.pages["/"].content.find((item: { props: { id: string } }) => item.props.id === "hero")!;
   const scoped = config.components.ClonedSection.render as (props: Record<string, unknown>) => ReactElement;
   // Every section draws inside the box that scopes its manual styling; the section is its child.

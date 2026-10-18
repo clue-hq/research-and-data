@@ -1,39 +1,47 @@
-// The site shell: one campaign header and one footer, stored once per site and rendered around every
-// page. "Prepared for <account>" sits beside the seller's logo, not under it. Every value is the
-// kit's (theme.ts); the logo heights are site-kit's named fallbacks (the kit records logos, not the
-// size a header shows them at).
+// The site's header and footer (plan 6): the fallback templates, used when a kit has no header or
+// footer template of its own, and every word in them is the marketer's. They are sections: the page
+// draws them first and last inside their section scope (config.tsx), so their `_edits` are scoped by
+// that box, not here. Every value is the kit's (theme.ts); the logo heights are site-kit's named
+// fallbacks (the kit records logos, not the size a header shows them at).
 import type { BrandData } from "./brand";
 import { Fragment, type ReactNode } from "react";
-import { SHELL_SCOPE, editsCss, editsOf, orderOf, type Edits } from "./edits";
+import { editsOf, orderOf, type Edits } from "./edits";
 import { newTabAttrs, rich } from "./rich-node";
 import { Button } from "./sections";
 
 export type HeaderProps = {
-  preparedFor: string;
+  /** The line addressing the account (rich text without links): the agent writes it, never fixed words. */
+  accountLine: string;
   accountLogo: string;
   ctaLabel: string;
   ctaHref: string;
   ctaNewTab?: boolean;
   /** A button style of the brand's (brand.md, Buttons); empty is the standard button. */
   ctaLook?: string;
+  /** The seller's logo, replaced from the library; empty is the kit's. */
+  logo?: string;
   /** Plan 5: the logos' alt texts (empty: decorative). */
   logoAlt?: string;
   accountLogoAlt?: string;
-  /** Links to the site's other pages; shown on wider screens beside the button. */
-  nav?: { label: string; href: string; newTab?: boolean }[];
+  /** Plan 6: the menu's labels by page and links after the pages (site-menu.ts). */
+  menuLabels?: Record<string, string>;
+  menuExtra?: { label: string; href: string; newTab?: boolean }[];
   /** Manual styling of the header's elements (edits.ts). */
   _edits?: Edits;
 };
 export type FooterProps = {
   legal: string;
+  logo?: string;
   logoAlt?: string;
+  /** The links' words; empty is "Privacy policy" / "Terms". */
+  privacyLabel?: string;
   privacyHref: string;
   privacyNewTab?: boolean;
+  termsLabel?: string;
   termsHref: string;
   termsNewTab?: boolean;
   _edits?: Edits;
 };
-export type ShellData = { header: HeaderProps; footer: FooterProps };
 
 type Logos = Record<string, { variants: { name: string; asset_id: string }[] }>;
 
@@ -60,13 +68,6 @@ export function logoFiles(brand: BrandData): Set<string> {
   return files;
 }
 
-/** The shell's manual styling, drawn as the first child of its header or footer: they are not page
- * sections, so they scope their own edits (and stay the brand root's direct children). */
-function ShellEdits({ brand, scope, props }: { brand: BrandData; scope: string; props: Record<string, unknown> }) {
-  const css = editsCss(scope, editsOf(props), brand);
-  return css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null;
-}
-
 /** A group's parts in the group's `order` (plan 4): the parts it names go into the places those parts
  * hold, in its order; a key no part has is ignored, and parts it does not name keep their places. */
 function inOrder(parts: [key: string, node: ReactNode][], order: readonly string[] | undefined): ReactNode[] {
@@ -80,11 +81,10 @@ function inOrder(parts: [key: string, node: ReactNode][], order: readonly string
 }
 
 export function SiteHeader({ brand, header, href }: { brand: BrandData; header: HeaderProps; href: (v: string) => string }) {
-  const logo = sellerLogo(brand);
+  const logo = header.logo || sellerLogo(brand);
   const order = orderOf(editsOf(header));
   return (
-    <header data-clue-section={SHELL_SCOPE.header} data-clue-el="root" className="brand-rule-b bg-surface-page text-on-surface-page">
-      <ShellEdits brand={brand} scope={SHELL_SCOPE.header} props={header} />
+    <header data-clue-el="root" className="brand-rule-b bg-surface-page text-on-surface-page">
       <div className="brand-content flex items-center justify-between gap-stack-default px-page-margin py-stack-tight" data-clue-el="root.inner">
         {/* The two groups, in their order too (plan 4 review I2). */}
         {inOrder(
@@ -105,12 +105,9 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
                       ) : null,
                     ],
                     [
-                      "prepared",
-                      <span key="prepared" className="min-w-0 truncate font-body text-body text-ink-secondary" data-clue-el="prepared">
-                        <span className="hidden sm:inline">Prepared for </span>
-                        {/* The account's name is the styleable text: it carries its own colour, so a style set on
-                            the line around it would not reach it. */}
-                        <span className="text-ink-primary" data-clue-el="preparedFor">{header.preparedFor}</span>
+                      "accountLine",
+                      <span key="accountLine" className="min-w-0 truncate font-body text-body text-ink-primary" data-clue-el="accountLine">
+                        {rich(header.accountLine, href)}
                       </span>,
                     ],
                   ],
@@ -124,20 +121,8 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
                 {inOrder(
                   [
                     [
-                      "nav",
-                      header.nav?.length ? (
-                        <nav key="nav" className="hidden items-center gap-stack-default md:flex" data-clue-el="nav">
-                          {header.nav.map((item, index) => (
-                            <a key={item.href + item.label} href={href(item.href)} {...newTabAttrs(item.newTab)} className="brand-navlink" data-clue-el={`nav.${index}`}>
-                              {item.label}
-                            </a>
-                          ))}
-                        </nav>
-                      ) : null,
-                    ],
-                    [
                       "ctaArea",
-                      // On phones the hero carries the same action, so the account name gets the room.
+                      // On phones the hero carries the same action, so the account line gets the room.
                       <span key="ctaArea" className="hidden shrink-0 sm:inline-flex" data-clue-el="ctaArea">
                         <Button brand={brand} label={rich(header.ctaLabel, href)} href={href(header.ctaHref)} surface="page" look={header.ctaLook} el="cta" newTab={header.ctaNewTab} />
                       </span>,
@@ -156,24 +141,23 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
 }
 
 export function SiteFooter({ brand, footer, href }: { brand: BrandData; footer: FooterProps; href: (v: string) => string }) {
-  const logo = sellerLogo(brand);
+  const logo = footer.logo || sellerLogo(brand);
   const order = orderOf(editsOf(footer));
   return (
-    <footer data-clue-section={SHELL_SCOPE.footer} data-clue-el="root" className="brand-rule-t bg-surface-page text-on-surface-page">
-      <ShellEdits brand={brand} scope={SHELL_SCOPE.footer} props={footer} />
+    <footer data-clue-el="root" className="brand-rule-t bg-surface-page text-on-surface-page">
       <div className="brand-content flex flex-col gap-stack-default px-page-margin py-stack-loose md:flex-row md:items-center md:justify-between" data-clue-el="root.inner">
         {inOrder(
           [
             // eslint-disable-next-line @next/next/no-img-element
             ["logo", logo ? <img key="logo" src={logo} alt={footer.logoAlt ?? ""} className="brand-logo-footer w-auto self-start" data-clue-el="logo" /> : null],
-            ["legal", <p key="legal" className="font-caption text-caption text-ink-muted" data-clue-el="legal">{footer.legal}</p>],
+            ["legal", <p key="legal" className="font-caption text-caption text-ink-muted" data-clue-el="legal">{rich(footer.legal, href)}</p>],
             [
               "links",
               <div key="links" className="flex gap-stack-default font-caption text-caption" data-clue-el="links">
                 {inOrder(
                   [
-                    ["privacy", footer.privacyHref ? <a key="privacy" href={href(footer.privacyHref)} {...newTabAttrs(footer.privacyNewTab)} className="brand-link" data-clue-el="privacy">Privacy policy</a> : null],
-                    ["terms", footer.termsHref ? <a key="terms" href={href(footer.termsHref)} {...newTabAttrs(footer.termsNewTab)} className="brand-link" data-clue-el="terms">Terms</a> : null],
+                    ["privacy", footer.privacyHref ? <a key="privacy" href={href(footer.privacyHref)} {...newTabAttrs(footer.privacyNewTab)} className="brand-link" data-clue-el="privacy">{rich(footer.privacyLabel || "Privacy policy", href)}</a> : null],
+                    ["terms", footer.termsHref ? <a key="terms" href={href(footer.termsHref)} {...newTabAttrs(footer.termsNewTab)} className="brand-link" data-clue-el="terms">{rich(footer.termsLabel || "Terms", href)}</a> : null],
                   ],
                   order.links,
                 )}

@@ -17,12 +17,12 @@ import { CloneMarkup } from "./clone-markup";
 import { richPropPaths, richValuesAt } from "./agent-props";
 import { hasMarkup, mapRichLinks } from "./rich";
 import { rich } from "./rich-node";
-import { editsCss, editsOf, orderOf, withoutEdits, type Edits } from "./edits";
+import { ROOT_KEY, editsCss, editsOf, orderOf, withoutEdits, type Edits } from "./edits";
 import { themeCss } from "./theme";
 import { makeSections, StoredProps } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
 import { buttonLookOptions } from "./looks";
-import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
+import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps } from "./shell";
 
 type ClonedSectionProps = {
   fragmentId: string;
@@ -73,9 +73,6 @@ export type ConfigOptions = {
   /** Where this site is served, e.g. "/s/garner-syracuse"; internal links ("/analysis") resolve under it.
    * Without one, internal links stay as written (a site served at its domain's root). */
   basePath?: string;
-  shell?: ShellData;
-  /** "page" edits a route; "shell" edits the shared header and footer. */
-  mode?: "page" | "shell";
   editor?: EditorParts;
   /** The site's agent-written sections (E5), by section name; they join its pages. */
   agentSections?: Record<string, AgentSectionModule>;
@@ -159,57 +156,14 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
       ? `${options.basePath}${value === "/" ? "" : value}`
       : value;
   const brandCss = themeCss(brand);
-  const BrandRoot = ({ children, withShell }: { children: React.ReactNode; withShell: boolean }) => (
+  // The header and footer are the page's first and last sections (plan 6: shell-entries.ts), so the
+  // root draws only the brand's stylesheet around the page.
+  const BrandRoot = ({ children }: { children: React.ReactNode }) => (
     <div className="brand-root">
       <style dangerouslySetInnerHTML={{ __html: brandCss }} />
-      {withShell && options.shell ? <SiteHeader brand={brand} header={options.shell.header} href={href} /> : null}
       {children}
-      {withShell && options.shell ? <SiteFooter brand={brand} footer={options.shell.footer} href={href} /> : null}
     </div>
   );
-
-  if (options.mode === "shell") {
-    const shellConfig: Config<{ SiteHeader: HeaderProps; SiteFooter: FooterProps }> = {
-      root: { render: ({ children }) => <BrandRoot withShell={false}>{children}</BrandRoot> },
-      components: {
-        SiteHeader: {
-          label: "Site header",
-          fields: {
-            preparedFor: { type: "text", label: "Prepared for" },
-            accountLogo: { type: "text", label: "Account logo URL (optional)" },
-            // Rich text without links (plan 3): shown in the dock as its words, edited on the page.
-            ctaLabel: { type: "richtext", label: "Button label" },
-            ctaHref: { type: "text", label: "Button link" },
-            ctaNewTab: { type: "radio", label: "Open the button's link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
-            ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select", label: "Button style", options: buttonLookOptions(brand) } } : {}),
-            nav: {
-              type: "array",
-              label: "Navigation links",
-              arrayFields: {
-                label: { type: "text" },
-                href: { type: "text", label: "Link (/page or URL)" },
-                newTab: { type: "radio", label: "Open in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
-              },
-              getItemSummary: (item: { label?: string }) => item.label || "Link",
-            },
-          } as never,
-          render: (props) => <SiteHeader brand={brand} header={props} href={href} />,
-        },
-        SiteFooter: {
-          label: "Site footer",
-          fields: {
-            legal: { type: "text", label: "Legal line" },
-            privacyHref: { type: "text", label: "Privacy link" },
-            privacyNewTab: { type: "radio", label: "Open the privacy link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
-            termsHref: { type: "text", label: "Terms link" },
-            termsNewTab: { type: "radio", label: "Open the terms link in a new tab", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
-          },
-          render: (props) => <SiteFooter brand={brand} footer={props} href={href} />,
-        },
-      },
-    };
-    return shellConfig as unknown as Config;
-  }
 
   const cloneOptions = [
     { label: "Choose a section…", value: "" },
@@ -219,6 +173,47 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     })),
   ];
   const sections = makeSections(brand, href, options.editor?.AssetPicker, options.editor?.richField);
+  // Plan 6 (ruling R7): the fallback header and footer, sections of the page that only shell.json
+  // places (the save check refuses them on a page). Their words edit in place like our sections'.
+  const words = (label: string, links: boolean) =>
+    options.editor?.richField?.(label, { links }) ?? { type: "text" as const, label, contentEditable: true };
+  const yesNo = (label: string) => ({ type: "radio" as const, label, options: [{ label: "Yes", value: true }, { label: "No", value: false }] });
+  // Written from the panels (images, alt texts) or on the canvas (menu labels), never typed in a field.
+  const fromPanel = (label: string) => ({ type: "custom" as const, label, render: () => <span /> });
+  const shellComponents = {
+    SiteHeader: {
+      label: "Header",
+      fields: {
+        accountLine: words("Account line", false),
+        accountLogo: fromPanel("Account logo"),
+        accountLogoAlt: fromPanel("Account logo alt text"),
+        logo: fromPanel("Logo"),
+        logoAlt: fromPanel("Logo alt text"),
+        ctaLabel: words("Button label", false),
+        ctaHref: { type: "text" as const, label: "Button link" },
+        ctaNewTab: yesNo("Open the button's link in a new tab"),
+        ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select" as const, label: "Button style", options: buttonLookOptions(brand) } } : {}),
+        menuLabels: fromPanel("Menu labels"),
+        menuExtra: fromPanel("Extra menu links"),
+      },
+      render: (props: Record<string, unknown>) => <SiteHeader brand={brand} header={props as unknown as HeaderProps} href={href} />,
+    },
+    SiteFooter: {
+      label: "Footer",
+      fields: {
+        legal: words("Legal line", true),
+        logo: fromPanel("Logo"),
+        logoAlt: fromPanel("Logo alt text"),
+        privacyLabel: words("Privacy link words", false),
+        privacyHref: { type: "text" as const, label: "Privacy link" },
+        privacyNewTab: yesNo("Open the privacy link in a new tab"),
+        termsLabel: words("Terms link words", false),
+        termsHref: { type: "text" as const, label: "Terms link" },
+        termsNewTab: yesNo("Open the terms link in a new tab"),
+      },
+      render: (props: Record<string, unknown>) => <SiteFooter brand={brand} footer={props as unknown as FooterProps} href={href} />,
+    },
+  };
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit
   // fields (the editor gives them fields from their props schema).
   const kit = makeKit(href, brand);
@@ -280,7 +275,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     ProofCard: Record<string, unknown>;
     CtaBand: Record<string, unknown>;
   }> = {
-    root: { render: ({ children }) => <BrandRoot withShell>{children}</BrandRoot> },
+    root: { render: ({ children }) => <BrandRoot>{children}</BrandRoot> },
     categories: {
       clones: { title: "The seller's sections", components: ["ClonedSection"] },
       brand: { title: "Brand sections", components: ["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"] },
@@ -290,6 +285,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     },
     components: {
       ...(sections as unknown as Record<"StatsBand" | "FeatureSplit" | "ProofCard" | "CtaBand", never>),
+      ...(shellComponents as unknown as Record<string, never>),
       ...(agentSections as unknown as Record<string, never>),
       ClonedSection: {
         label: "Cloned section",
@@ -375,7 +371,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   // manual styling (site element inspector, spec §4.5): its `_edits` as a stylesheet first, then the
   // section, which never sees `_edits`. Done once, here, so the editor, the static render and both
   // sides of a live page draw the same tree. The box is display:contents (themeCss), so it takes no
-  // part in the page's layout. The shell's header and footer scope themselves (shell.tsx).
+  // part in the page's layout. The header and footer are sections too (plan 6), so they draw in it.
   //
   // In the editor `_edits` is read from the section AS STORED (useRawProps): Puck's text transforms
   // match props by key name at any depth, so a section with a rich `heading` field receives
@@ -388,8 +384,15 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     const stored = rawProps(id);
     const edits = editsOf(stored ?? drawn);
     const css = editsCss(id, edits, brand);
+    // Plan 6 (ruling R10): the header's own placement; the save check keeps these to its root.
+    const placement = edits[ROOT_KEY];
     return (
-      <div data-clue-section={id} className="clue-section">
+      <div
+        data-clue-section={id}
+        className="clue-section"
+        data-clue-sticky={placement?.sticky ? "" : undefined}
+        data-clue-overlay={placement?.overlay ? "" : undefined}
+      >
         {css ? <style data-clue-edits="" dangerouslySetInnerHTML={{ __html: css }} /> : null}
         <StoredProps.Provider value={stored ?? null}>{children(edits)}</StoredProps.Provider>
       </div>

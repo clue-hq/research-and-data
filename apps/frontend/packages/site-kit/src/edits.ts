@@ -19,8 +19,6 @@ export const SECTION_SCOPE_ATTR = "data-clue-section";
 /** The key of a section's own box, and of the box inside it that holds the brand's padding (plan 4). */
 export const ROOT_KEY = "root";
 export const ROOT_INNER_KEY = "root.inner";
-/** The scope names of the shell's header and footer. */
-export const SHELL_SCOPE = { header: "shell-header", footer: "shell-footer" } as const;
 
 /** An element key: letters, digits, "_", "." and "-", starting with a letter or digit; a styled span
  * of highlighted words (rich.ts) is its element's key plus "~<number>" ("heading~1"). Nothing that
