@@ -579,7 +579,9 @@ every workspace via `LUMEN_SITE_LIVE_WORKSPACES=*`) is on `main` and deployed.
     no cookies and accepts up to 1 MB of headers. What only the list (or a customer's own domain)
     gives: Google Safe Browsing judging each workspace address on its own, so one abusive page cannot
     get all of `cluehq.page` flagged. Until then, unpublish an abusive page quickly, and point
-    customers who run real campaigns at their own domain (Settings → Pages). Filing later needs: the
+    customers who run real campaigns at their own domain (Settings → Pages). A staff takedown tool
+    (suspend a page or a workspace's address, recorded, not republishable until cleared) is on the
+    backlog (`CLAUDE.md`, "[pages×abuse]"); today a takedown is a hand edit of `design_web_publish`. Filing later needs: the
     term from step 1, a role address (e.g. `security@cluehq.ai`), a public abuse-contact page, the PR,
     and `_psl.cluehq.page` TXT holding the PR's URL.
 
