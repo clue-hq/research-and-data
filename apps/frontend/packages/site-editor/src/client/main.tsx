@@ -1,4 +1,4 @@
-import "./jitless";
+import "@clue/site-kit/jitless";
 import { lockCookies } from "@clue/site-kit/cookie-lock";
 import { createRoot } from "react-dom/client";
 import { readBootContext } from "./boot";

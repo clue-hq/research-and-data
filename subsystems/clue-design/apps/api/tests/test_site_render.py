@@ -105,6 +105,21 @@ def test_an_agent_section_renders_from_its_module_with_its_own_css() -> None:
     assert ".quote-extra{color:inherit}" in result.css
 
 
+def test_an_agent_section_renders_beside_a_measured_kit_and_an_element_edit() -> None:
+    # Live 2026-10-19 (Oliver's site): the bundle runs through Playwright's add_script_tag, and Chromium
+    # lets eval through while that call runs. zod asked then whether eval works, heard yes, and later
+    # compiled its fast parsers with new Function after the section's import, where the page's policy
+    # blocks it. The measured type steps and an element edit are both parsed after that import.
+    module = section_module("Quote", QUOTE_JS)
+    site = site_with_section("doc_quote_kit", "Quote", module.digest, {"id": "q", "surface": "brand", "quote": "Fewer surprises."})
+    first = site["pages"]["/"]["content"][0]
+    first["props"]["_edits"] = {"root": {"paddingTop": 40}}
+    brand = garner_brand()
+    brand["kit"]["responsive_type"] = {"roles": {"type.headline": [{"max_width": 767, "font_size": 32}]}}
+    result = render_site(site, brand, [module], base_path="")
+    assert "Fewer surprises." in result.pages[0].html
+
+
 def test_a_missing_or_stale_module_is_a_typed_refusal() -> None:
     module = section_module("Quote", QUOTE_JS)
     site = site_with_section("doc_missing", "Quote", module.digest, {"id": "q", "surface": "page", "quote": "Q"})

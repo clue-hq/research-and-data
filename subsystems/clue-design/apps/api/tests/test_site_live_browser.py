@@ -98,6 +98,32 @@ def test_a_live_site_comes_alive_and_an_agent_section_with_state_answers_a_click
         server.shutdown()
 
 
+def test_the_published_page_never_asks_to_evaluate_a_string(blobs: DesignBlobStore) -> None:
+    # zod 4 compiles fast parsers with new Function when its probe says eval works. The published page's
+    # policy blocks eval, so the probe is refused (a policy violation) and zod falls back; the runtime
+    # switches zod's compiling off instead, as the editor and the render page do, so nothing depends on
+    # that probe telling the truth (live 2026-10-19: in the render page it did not).
+    playwright = pytest.importorskip("playwright.sync_api")
+    package = build_live_package_with_section(blobs, "Counter", COUNTER_JS)
+    origin, server = _serve(package)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            page.add_init_script(
+                "window.__evals = []; document.addEventListener('securitypolicyviolation',"
+                " (e) => { if (e.blockedURI === 'eval') window.__evals.push(e.sourceFile + ':' + e.lineNumber); }, true);"
+            )
+            page.goto(origin + "/acme", wait_until="load")
+            page.wait_for_function("() => window.__clueHydrated === true", timeout=10_000)
+            page.locator("#counter").click()
+            assert page.locator("#counter").inner_text() == "clicked 1"
+            assert page.evaluate("window.__evals") == []
+            browser.close()
+    finally:
+        server.shutdown()
+
+
 # Review K3-7, founder option 1 (2026-10-19): every workspace's published pages share `cluehq.page`,
 # which is not on the Public Suffix List, so a section's code must not be able to set a cookie there
 # (one workspace's cookies would reach every other workspace's pages in that visitor's browser).

@@ -2,6 +2,7 @@
 // into dist/site-runtime.js, one ES module with React, Puck's Render, zod and this kit inside. The
 // page loads it as <script type="module" src="/p-assets/<sha>.js">; its import map points react,
 // react/jsx-runtime and zod at /p-assets shims that hand over THIS module's copies.
+import "./jitless";
 import type { AgentSectionModule } from "./agent-kit";
 import { lockCookies } from "./cookie-lock";
 import { hydrateSite, type LivePageData } from "./live-page";

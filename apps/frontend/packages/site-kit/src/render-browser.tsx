@@ -20,6 +20,7 @@
 // mismatch or failure becomes a warning "hydration on <route>: <message>" (a minified hydration error
 // reads as a plain sentence: hydration-notes.ts), before the answer is written, so the render page's
 // deadline bounds it.
+import "./jitless";
 import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import { hydrationNote } from "./hydration-notes";

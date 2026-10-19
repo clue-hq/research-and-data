@@ -16,6 +16,7 @@
     "./editor-origin": "./src/editor-origin.ts",
     "./section-host": "./src/section-host.ts",
     "./cookie-lock": "./src/cookie-lock.ts",
+    "./jitless": "./src/jitless.ts",
     "./edits": "./src/edits.ts",
     "./rich": "./src/rich.ts"
   },
