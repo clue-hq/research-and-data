@@ -10,7 +10,9 @@ dependencies = [
     "clue-db",
     "clue-spine",
     "clue-design",
-    "clue-storage",
+    # The S3 SDK too: the origin reads every published asset from R2, and its image installs only
+    # this package (Dockerfile.railway), not the root's deploy group (live 2026-10-19).
+    "clue-storage[s3]",
     "clue-obs",
     "fastapi>=0.138.0",
     "uvicorn>=0.35.0",
