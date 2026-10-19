@@ -10,7 +10,8 @@ was sent), ``design_agent_run`` (the run and its per-call ``model_calls`` receip
 Run from the repo root:
 
     set -a; source .env; set +a
-    .venv/bin/python scripts/design_followup_timings.py --workspace ws_... [--since 2026-10-16T00:00Z]
+    .venv/bin/python scripts/design_followup_timings.py --workspace ws_... \
+        [--since 2026-10-16T00:00Z]
     .venv/bin/python scripts/design_followup_timings.py --document doc_...
 
 "first" is a document's first run; "follow-up" is any later run on the same document.
@@ -84,7 +85,8 @@ def main() -> None:
             f"{run_id[4:16]:<14} {doc[4:12]:<10} {'first' if n == 1 else 'follow-up':<9} "
             f"{status:<9} {seconds(requested, updated):>6} {seconds(created, updated):>5} "
             f"{seconds(created, changed):>8} {seconds(changed, updated):>7} {len(calls):>5} "
-            f"{int(first.get('input_tokens') or 0):>8} {int(first.get('cache_read_input_tokens') or 0):>11} "
+            f"{int(first.get('input_tokens') or 0):>8} "
+            f"{int(first.get('cache_read_input_tokens') or 0):>11} "
             f"{total_in:>9} {cost:>6.2f}  {summary[:70]}"
         )
 

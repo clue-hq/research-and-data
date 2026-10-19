@@ -55,7 +55,9 @@ src = ["subsystems", "platform", "tests", "libs"]
 # `trials/` holds throwaway spikes and trial runners (the Puck spike, the web-agent trials), and
 # `docs/benchmarks/` one-off report scripts kept beside their reports: outside the product and every
 # other gate.
-extend-exclude = ["subsystems/clue-design", ".context", "docs/superpowers/drafts", "trials", "docs/benchmarks"]
+# `docs/design-harness-alignment/` holds the alignment ledger's one-off helper scripts, kept beside
+# the ledger they render: the same kind as `docs/benchmarks/`.
+extend-exclude = ["subsystems/clue-design", ".context", "docs/superpowers/drafts", "trials", "docs/benchmarks", "docs/design-harness-alignment"]
 
 [tool.ruff.lint]
 # T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured
