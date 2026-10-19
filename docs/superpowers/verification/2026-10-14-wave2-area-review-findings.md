@@ -438,7 +438,7 @@ The six Critical findings across the whole review:
   not produce itself, and the page captures the built-ins it needs before any section loads.
 
 #### S3-2 — One agent section can stall publishing, the gallery thumbnail and the agent's screenshots for minutes
-- **Severity:** Important (availability). Status: open.
+- **Severity:** Important (availability). Status: **fixed 2026-10-19** (one pass: the targets are collected first, a target inside another goes with it; an 800 KB page now cleans in 0.04 s).
 - **Why it happens:** the page cleaner restarts from the top of the page after every element it removes,
   so its time grows with the square of the page.
 - **Where:** `lumen_api/site_sanitize.py:115-125`, used by publish, the thumbnail and the agent's render tool.

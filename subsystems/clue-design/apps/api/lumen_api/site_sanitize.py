@@ -130,18 +130,21 @@ def _reacts_image_preload(node: LexborNode) -> bool:
 
 
 def _drop_elements(root: LexborNode, removed: list[str], *, keep: Callable[[LexborNode], bool]) -> None:
-    # Re-scan after each removal: decomposing a node invalidates its descendants.
-    while True:
-        target = next(
-            (
-                node
-                for node in root.traverse(include_text=False)
-                if (node.tag or "").lower() in STRIPPED_ELEMENTS and not keep(node)
-            ),
-            None,
-        )
-        if target is None:
-            return
+    """Every stripped element goes with its content, in ONE pass (review S3-2: re-scanning from the top
+    after each removal made the time grow with the square of the page). The targets are collected
+    first; one inside another target goes with it and is not reported on its own."""
+    targets = [
+        node
+        for node in root.traverse(include_text=False)
+        if (node.tag or "").lower() in STRIPPED_ELEMENTS and not keep(node)
+    ]
+    marked = {node.mem_id for node in targets}
+    for target in targets:
+        parent = target.parent
+        while parent is not None and parent.mem_id not in marked:
+            parent = parent.parent
+        if parent is not None:
+            continue  # removed with the target around it
         removed.append(f"stripped <{(target.tag or '').lower()}> and its content")
         target.decompose()
 

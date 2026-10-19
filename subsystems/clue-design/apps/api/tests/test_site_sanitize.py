@@ -113,3 +113,22 @@ def test_a_preload_of_a_foreign_url_and_every_other_link_are_still_problems() ->
     assert foreign_candidate == ("stripped <link> and its content",)
     stylesheet = site_html_problems(f'<html><head><link rel="stylesheet" href="/asset-store/{DIGEST}"></head><body></body></html>')
     assert stylesheet == ("stripped <link> and its content",)
+
+
+def test_s3_2_a_page_with_thousands_of_stripped_elements_is_cleaned_in_one_pass() -> None:
+    """Review S3-2: the cleaner restarted from the top after every removal, so its time grew with the
+    square of the page (76 s for one 0.79 MB agent page; 11 s for this one). One pass now: 8,000 scripts, one nested
+    inside a stripped frame, are gone in well under two seconds, and each one removed with its parent
+    is not reported twice."""
+    import time
+
+    body = "".join(f"<div><p>keep {i}</p><script>s{i}()</script></div>" for i in range(8000))
+    nested = "<iframe><script>inner()</script></iframe>"
+    started = time.monotonic()
+    cleaned = sanitize_site_html(f"<html><body>{body}{nested}</body></html>")
+    elapsed = time.monotonic() - started
+    assert elapsed < 2.0, f"took {elapsed:.1f}s"
+    assert "<script" not in cleaned.html and "<iframe" not in cleaned.html
+    assert "keep 7999" in cleaned.html
+    assert cleaned.removed.count("stripped <script> and its content") == 8000
+    assert cleaned.removed.count("stripped <iframe> and its content") == 1
