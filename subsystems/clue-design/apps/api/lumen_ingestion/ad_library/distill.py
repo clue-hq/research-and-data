@@ -19,6 +19,15 @@ worse than an honest sentence. So the card is now:
   creatives. A group is a free-form name plus the creative ids that belong to it. Nothing
   reads a group's name for meaning except the selector, which matches it against the brief.
 
+**Every harvested creative is sorted (founder ruling 2026-10-19).** The call used to see only the
+first 12 creatives, so a brand with 50 harvested ads had 38 that no group could ever attach
+(Stripe: 12 of 50 grouped; Conduit: 6 of 16). Now every creative is shown, :data:`CREATIVES_PER_CALL`
+per vision call. Each call's answer must place every creative it was shown in exactly one group,
+and is asked once more, naming the gaps, when it does not. Several batches are combined by one
+text-only call that writes the single description and merges the batches' looks, held to the same
+rule for the looks. A creative still unplaced after the second ask is left out and named on
+``last_ungrouped`` — never a failed distillation.
+
 Versioning and provenance are unchanged: every card version is immutable, stamped with the
 model that wrote it, and pinned to the creatives it was distilled from (see
 ``clue_design.ad_assets``). The stored column is ``jsonb``, so this shape change needs no
@@ -45,8 +54,9 @@ from typing import Any, Protocol, runtime_checkable
 from py_lumen_config import settings
 
 __all__ = [
+    "CREATIVES_PER_CALL",
+    "MAX_DISTILLED_CREATIVES",
     "MAX_GROUP_NAME_CHARS",
-    "MAX_PREVIEW_CREATIVES",
     "MAX_PROSE_CHARS",
     "MAX_STYLE_GROUPS",
     "AdDnaCard",
@@ -70,9 +80,11 @@ MAX_PROSE_CHARS = 2400
 MAX_STYLE_GROUPS = 6
 #: A group's name is a label, not a sentence.
 MAX_GROUP_NAME_CHARS = 80
-#: How many creatives ride the vision call. Beyond this the context cost climbs while the
-#: marginal creative teaches the model nothing new about the brand's looks.
-MAX_PREVIEW_CREATIVES = 12
+#: How many creatives ride ONE vision call. Every creative is shown, in calls of this size; a
+#: larger call costs context faster than it teaches the model about each ad.
+CREATIVES_PER_CALL = 12
+#: The most creatives one distillation shows, which bounds its cost. The harvest asks for 50.
+MAX_DISTILLED_CREATIVES = 100
 
 #: The card's shape version, stamped into every card so a later reader can tell what it is
 #: looking at without inferring it from which keys happen to be present. Version 1 was the
@@ -138,6 +150,7 @@ class NullAdDnaDistiller:
     active: bool = False
     model: str = "null"
     last_failure_reason: str | None = None
+    last_ungrouped: tuple[str, ...] = ()
 
     def distil(self, previews: list[CreativePreview]) -> AdDnaCard | None:
         del previews
@@ -189,7 +202,7 @@ def bounded_card(payload: Any, *, model: str | None = None) -> AdDnaCard | None:
                 str(item)
                 for item in (raw_ids if isinstance(raw_ids, list) else [])
                 if isinstance(item, (str, int))
-            )[:MAX_PREVIEW_CREATIVES]
+            )[:MAX_DISTILLED_CREATIVES]
             groups.append(StyleGroup(name=name, creative_ids=ids))
     return AdDnaCard(prose=prose, style_groups=tuple(groups), model=model)
 
@@ -201,6 +214,8 @@ class OpenRouterAdDnaDistiller:
     active: bool = field(init=False, default=False)
     model: str = field(init=False, default="")
     last_failure_reason: str | None = field(init=False, default=None)
+    #: The creatives of the last distillation that no group holds, in the order they were shown.
+    last_ungrouped: tuple[str, ...] = field(init=False, default=())
 
     def __post_init__(self) -> None:
         self.model = settings.lumen_ad_dna_model
@@ -210,56 +225,124 @@ class OpenRouterAdDnaDistiller:
 
     def distil(self, previews: list[CreativePreview]) -> AdDnaCard | None:
         self.last_failure_reason = None
+        self.last_ungrouped = ()
         if not previews or not self.active:
             return None
-        payload = self._invoke(previews[:MAX_PREVIEW_CREATIVES])
-        if payload is None:
+        previews = previews[:MAX_DISTILLED_CREATIVES]
+        cards: list[AdDnaCard] = []
+        ungrouped: list[str] = []
+        for start in range(0, len(previews), CREATIVES_PER_CALL):
+            batch = previews[start : start + CREATIVES_PER_CALL]
+            card, left_out = self._sort_batch(batch)
+            if card is None:
+                ungrouped.extend(preview.creative_id for preview in batch)
+                continue
+            cards.append(card)
+            ungrouped.extend(left_out)
+        if not cards:
+            self.last_failure_reason = self.last_failure_reason or "the model described nothing"
             return None
-        card = bounded_card(payload, model=self.model)
-        if card is None:
-            self.last_failure_reason = "the model described nothing"
+        card = cards[0] if len(cards) == 1 else self._combine(cards, ungrouped)
+        self.last_failure_reason = None
+        self.last_ungrouped = tuple(ungrouped)
         return card
 
-    def _invoke(self, previews: list[CreativePreview]) -> Any:
+    def _sort_batch(self, batch: list[CreativePreview]) -> tuple[AdDnaCard | None, list[str]]:
+        """One batch described and grouped, asked once more when an ad is not placed once."""
+        shown = [preview.creative_id for preview in batch]
+        note: str | None = None
+        card: AdDnaCard | None = None
+        for _attempt in range(2):
+            payload = self._call(
+                messages=_batch_messages(batch, note),
+                schema_name="ad_dna_card",
+                schema=_CARD_SCHEMA,
+                label=f"ad_dna:{len(batch)} creatives",
+            )
+            if payload is None:
+                break  # the call itself failed and its own retries are spent
+            answer = bounded_card(payload, model=self.model)
+            if answer is None:
+                self.last_failure_reason = "the model described nothing"
+                break
+            card = answer
+            gaps = _placement_gaps([group.creative_ids for group in card.style_groups], shown)
+            if not any(gaps):
+                return card, []
+            note = _placement_note(*gaps, what="creative_id")
+        if card is None:
+            return None, shown
+        groups, placed = _each_placed_once(
+            [(group.name, group.creative_ids) for group in card.style_groups], shown
+        )
+        card = AdDnaCard(prose=card.prose, style_groups=groups, model=card.model)
+        return card, [creative_id for creative_id in shown if creative_id not in placed]
+
+    def _combine(self, cards: list[AdDnaCard], ungrouped: list[str]) -> AdDnaCard:
+        """Several batches into one description and at most MAX_STYLE_GROUPS looks."""
+        looks: dict[str, tuple[str, tuple[str, ...]]] = {}
+        lines: list[str] = []
+        for batch_number, card in enumerate(cards, start=1):
+            lines += [f"Batch {batch_number} description:", card.prose, "", f"Batch {batch_number} looks:"]
+            for look_number, group in enumerate(card.style_groups, start=1):
+                key = f"{batch_number}.{look_number}"
+                looks[key] = (group.name, group.creative_ids)
+                lines.append(f"- key {key}: {group.name} ({len(group.creative_ids)} ads)")
+            lines.append("")
+        notes = "\n".join(lines)
+        note: str | None = None
+        answer: tuple[str, list[tuple[str, list[str]]]] | None = None
+        for _attempt in range(2):
+            parsed = _merge_answer(
+                self._call(
+                    messages=[
+                        {"role": "system", "content": _MERGE_PROMPT},
+                        {"role": "user", "content": notes + (f"\n{note}" if note else "")},
+                    ],
+                    schema_name="ad_dna_merge",
+                    schema=_MERGE_SCHEMA,
+                    label=f"ad_dna merge:{len(looks)} looks",
+                )
+            )
+            if parsed is None:
+                break
+            answer = parsed
+            gaps = _placement_gaps([keys for _, keys in parsed[1]], list(looks))
+            if not any(gaps):
+                break
+            note = _placement_note(*gaps, what="batch look")
+        if answer is None:
+            return _union_of_batches(cards, ungrouped, model=self.model)
+        prose, merged = answer
+        named, placed = _each_placed_once(merged, list(looks))
+        groups: list[StyleGroup] = []
+        for group in named:
+            creative_ids = tuple(
+                creative_id for key in group.creative_ids for creative_id in looks[key][1]
+            )
+            if len(groups) < MAX_STYLE_GROUPS:
+                groups.append(StyleGroup(name=group.name, creative_ids=creative_ids))
+            else:
+                ungrouped.extend(creative_ids)
+        for key, (_, creative_ids) in looks.items():
+            if key not in placed:
+                ungrouped.extend(creative_ids)
+        return AdDnaCard(prose=prose, style_groups=tuple(groups), model=self.model)
+
+    def _call(self, *, messages: list[dict[str, Any]], schema_name: str, schema: dict, label: str) -> Any:
+        """One strict-JSON chat call; the parsed answer, or ``None`` with a recorded reason."""
         from clue_spend import ProviderHalted
         from lumen_api import spend  # lazy: only the real network path needs it
 
-        manifest = "\n".join(
-            f"{index}. creative_id={preview.creative_id}"
-            + (f" — {preview.caption}" if preview.caption else "")
-            for index, preview in enumerate(previews, start=1)
-        )
-        content: list[dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": (
-                    "These are the static ads one brand actually published. Describe what "
-                    "they look like, then group them.\n\n" + manifest
-                ),
-            }
-        ]
-        for preview in previews:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{preview.mime_type};base64,{preview.image_b64}"
-                    },
-                }
-            )
-
         body = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
+            "messages": messages,
             # The response ENVELOPE is still schema-pinned, because parsing has to be reliable.
             # What the schema no longer does is dictate the CONTENT: `prose` is one free-text
             # field, and the only structure asked for is the group→creative_ids link.
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"name": "ad_dna_card", "strict": True, "schema": _CARD_SCHEMA},
+                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
             },
         }
         # Two attempts, now the provider caller's, with an estimate row before the wire and a
@@ -269,7 +352,7 @@ class OpenRouterAdDnaDistiller:
             response = spend.openrouter_call(
                 operation="design.ingestion.ad_dna",
                 body=body,
-                label=f"ad_dna:{len(previews)} creatives",
+                label=label,
                 timeout_s=DEFAULT_TIMEOUT_S,
                 api_key=self._api_key,
                 base_url=self._base_url,
@@ -280,7 +363,6 @@ class OpenRouterAdDnaDistiller:
                 self.last_failure_reason = f"HTTP {response.status}: {excerpt}"
                 return None
             raw = json.loads(response.body)["choices"][0]["message"]["content"]
-            self.last_failure_reason = None
             return json.loads(raw)
         except ProviderHalted:
             raise
@@ -289,6 +371,112 @@ class OpenRouterAdDnaDistiller:
                 f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}"
             )
             return None
+
+
+def _batch_messages(batch: list[CreativePreview], note: str | None) -> list[dict[str, Any]]:
+    manifest = "\n".join(
+        f"{index}. creative_id={preview.creative_id}"
+        + (f" — {preview.caption}" if preview.caption else "")
+        for index, preview in enumerate(batch, start=1)
+    )
+    text = (
+        "These are the static ads one brand actually published. Describe what "
+        "they look like, then group them.\n\n" + manifest
+    )
+    if note:
+        text += "\n\n" + note
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for preview in batch:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{preview.mime_type};base64,{preview.image_b64}"},
+            }
+        )
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": content},
+    ]
+
+
+def _placement_gaps(
+    placed: list[tuple[str, ...]] | list[list[str]], expected: list[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """(left out, in more than one group, never shown) for one answer's grouping."""
+    counts: dict[str, int] = {}
+    for ids in placed:
+        for item in ids:
+            counts[item] = counts.get(item, 0) + 1
+    known = set(expected)
+    missing = [item for item in expected if item not in counts]
+    repeated = [item for item in expected if counts.get(item, 0) > 1]
+    unknown = [item for item in counts if item not in known]
+    return missing, repeated, unknown
+
+
+def _placement_note(missing: list[str], repeated: list[str], unknown: list[str], *, what: str) -> str:
+    parts = [f"Your previous answer did not place every {what} exactly once."]
+    if missing:
+        parts.append(f"Left out: {', '.join(missing)}.")
+    if repeated:
+        parts.append(f"In more than one group: {', '.join(repeated)}.")
+    if unknown:
+        parts.append(f"Not shown to you: {', '.join(unknown)}.")
+    parts.append(f"Answer again, with every {what} in exactly one group.")
+    return " ".join(parts)
+
+
+def _each_placed_once(
+    groups: list[tuple[str, Any]], expected: list[str]
+) -> tuple[tuple[StyleGroup, ...], set[str]]:
+    """Keep each expected item in the first group that names it; drop unknown items and empty groups."""
+    known = set(expected)
+    placed: set[str] = set()
+    kept: list[StyleGroup] = []
+    for name, items in groups:
+        own = []
+        for item in items:
+            if item in known and item not in placed:
+                placed.add(item)
+                own.append(item)
+        if own:
+            kept.append(StyleGroup(name=name, creative_ids=tuple(own)))
+    return tuple(kept), placed
+
+
+def _merge_answer(payload: Any) -> tuple[str, list[tuple[str, list[str]]]] | None:
+    """The combining call's prose and named looks, or ``None`` when it described nothing."""
+    if not isinstance(payload, dict):
+        return None
+    prose = str(payload.get("prose") or "").strip()[:MAX_PROSE_CHARS]
+    if not prose:
+        return None
+    looks: list[tuple[str, list[str]]] = []
+    for entry in payload.get("style_groups") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()[:MAX_GROUP_NAME_CHARS]
+        keys = entry.get("batch_looks") or []
+        if name and isinstance(keys, list):
+            looks.append((name, [str(key) for key in keys]))
+    return prose, looks
+
+
+def _union_of_batches(cards: list[AdDnaCard], ungrouped: list[str], *, model: str) -> AdDnaCard:
+    """The combining call failed: the first batch's description and every batch's own looks,
+    looks of the same name joined, at most MAX_STYLE_GROUPS of them."""
+    by_name: dict[str, tuple[str, list[str]]] = {}
+    for card in cards:
+        for group in card.style_groups:
+            name, ids = by_name.setdefault(group.name.lower(), (group.name, []))
+            ids.extend(group.creative_ids)
+    groups: list[StyleGroup] = []
+    for name, ids in by_name.values():
+        if len(groups) < MAX_STYLE_GROUPS:
+            groups.append(StyleGroup(name=name, creative_ids=tuple(ids)))
+        else:
+            ungrouped.extend(ids)
+    return AdDnaCard(prose=cards[0].prose, style_groups=tuple(groups), model=model)
 
 
 def previews_for(
@@ -306,7 +494,7 @@ def previews_for(
         from lumen_ingestion.describe import _downscale_preview as downscale
 
     previews: list[CreativePreview] = []
-    for creative in creatives[:MAX_PREVIEW_CREATIVES]:
+    for creative in creatives[:MAX_DISTILLED_CREATIVES]:
         encoded = downscale(creative.image_bytes)
         if encoded is None:
             # A preview that cannot be built is a creative the model simply does not see; the
@@ -340,8 +528,47 @@ _SYSTEM_PROMPT = (
     "language.\n\n"
     "Then group the creatives. Give each distinct look you described a short name a designer "
     "would recognise, and list the creative_ids that belong to it. The names are yours to "
-    "choose. If the ads are all one look, that is one group with every id in it."
+    "choose. If the ads are all one look, that is one group with every id in it.\n\n"
+    f"Put every creative_id in exactly one group, and use at most {MAX_STYLE_GROUPS} groups. "
+    "If there are more looks than that, put the closest ones together."
 )
+
+_MERGE_PROMPT = (
+    "You are reading notes about the static ads one brand actually published. The ads were "
+    "looked at in batches, so each batch has its own description and its own named looks.\n\n"
+    "Write one description of what this brand's ads look like, for a designer who is about to "
+    "make a new ad for this brand and has never seen these ones. Keep what the batch "
+    "descriptions say. Do not add anything they do not say. If the brand runs several looks "
+    "that are clearly different from each other, describe each one.\n\n"
+    "Write plainly. One idea per sentence. No jargon, no measurements, no marketing "
+    "language.\n\n"
+    "Then combine the batch looks into the brand's distinct looks. Batch looks that are the same "
+    "look become one. Give each combined look a short name a designer would recognise, and list "
+    "the keys of the batch looks it contains. Put every batch look in exactly one combined "
+    f"look, and use at most {MAX_STYLE_GROUPS} combined looks. If there are more than that, "
+    "put the closest ones together."
+)
+
+_MERGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "prose": {"type": "string"},
+        "style_groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "batch_looks": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["name", "batch_looks"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["prose", "style_groups"],
+    "additionalProperties": False,
+}
 
 _CARD_SCHEMA = {
     "type": "object",
