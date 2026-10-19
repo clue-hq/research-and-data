@@ -1158,3 +1158,109 @@ def test_a_large_raster_with_only_one_signal_is_still_a_hero(url: str, link: str
         _large_header_raster(url, link), "atriumhospitality.com", set()
     )
     assert any("hero/screenshot" in s for s in signals)
+
+
+# ---------------------------------------------------------------------------
+# preload hints — a header logo painted as a CSS background on an empty element
+# ---------------------------------------------------------------------------
+
+
+def test_a_header_logo_painted_as_a_background_is_found_through_its_preload_hint() -> None:
+    """tencentcloud.com (2026-10-19): the header logo is a CSS background on an empty
+    <i>, so the header holds no <img> and no inline <svg>. The page preloads the file
+    under a `topnav-logo` name, which names it directly whether or not the ladder reads
+    the stylesheet that paints it."""
+    html = (
+        "<head>"
+        '<link rel="preload" href="https://cdn.acme.com/VYt5270_qc-topnav-logo.svg" '
+        'as="image" type="image/svg+xml">'
+        '<link rel="preload" href="/hero.jpg" as="image">'
+        '<link rel="preload" href="/fonts/logo-sans.woff2" as="font" crossorigin>'
+        "</head>"
+        '<header><a class="qc-topnav__logo-a" href="javascript:void(0);">'
+        '<i class="qc-topnav__logo-text"></i></a></header>'
+    )
+    candidates = ladder.harvest(html, "https://acme.com/")
+
+    preloaded = [c for c in candidates if c.dom_role.startswith("preload hint")]
+    assert [c.url for c in preloaded] == ["https://cdn.acme.com/VYt5270_qc-topnav-logo.svg"]
+    assert preloaded[0].rung == "PAGE_LOGO_NAMED"
+    assert preloaded[0].preloaded_header_logo
+    assert "https://cdn.acme.com/VYt5270_qc-topnav-logo.svg" in ladder.candidate_asset_urls(
+        html, "https://acme.com/"
+    )
+
+
+def test_a_preloaded_header_lockup_takes_the_slot_from_a_square_share_image() -> None:
+    """The tencentcloud.com shape end to end: a square share image named after the
+    company against the header lockup the page only preloads."""
+    html = (
+        "<head>"
+        '<meta name="twitter:image" content="/cdn/wwCe116_acme.svg">'
+        '<link rel="preload" href="/cdn/VYt5270_qc-topnav-logo.svg" as="image">'
+        "</head>"
+        '<header><a href="javascript:void(0);"><i class="qc-topnav__logo-text"></i></a></header>'
+    )
+    fetched = {
+        "https://acme.com/cdn/wwCe116_acme.svg": (
+            _svg('<ellipse cx="100" cy="100" rx="90" ry="64" fill="#0052d9"/>', 200, 200),
+            "image/svg+xml",
+        ),
+        "https://acme.com/cdn/VYt5270_qc-topnav-logo.svg": (
+            _lockup_svg(fill="#0052d9"), "image/svg+xml"
+        ),
+    }
+    _, resolution = _resolve(html, fetched)
+
+    winner = resolution.slots["light"] or resolution.slots["dark"]
+    assert winner is not None
+    assert winner.candidate.url.endswith("qc-topnav-logo.svg")
+    assert winner.candidate.lockup == "full_lockup"
+
+
+def test_a_preloaded_header_lockup_competes_with_brand_named_logos() -> None:
+    """A wordmark named after the company has brand evidence and is not a square mark,
+    so it fills the first selection tier. A header/nav name on a preloaded file is the
+    same kind of evidence; without it the wordmark wins on the tier alone and the fuller
+    lockup never gets compared."""
+    html = (
+        "<head>"
+        '<meta property="og:image" content="/cdn/acme-wordmark.svg">'
+        '<link rel="preload" href="/cdn/VYt5270_qc-topnav-logo.svg" as="image">'
+        "</head>"
+        '<header><a href="javascript:void(0);"><i class="qc-topnav__logo-text"></i></a></header>'
+    )
+    fetched = {
+        "https://acme.com/cdn/acme-wordmark.svg": (_wordmark_svg(), "image/svg+xml"),
+        "https://acme.com/cdn/VYt5270_qc-topnav-logo.svg": (_lockup_svg(), "image/svg+xml"),
+    }
+    _, resolution = _resolve(html, fetched)
+
+    winner = resolution.slots["light"] or resolution.slots["dark"]
+    assert winner is not None
+    assert winner.candidate.url.endswith("qc-topnav-logo.svg")
+    assert resolution.counts["primary_selection_tier"] == "brand-evidenced"
+
+
+def test_a_preload_hint_alone_is_not_evidence_the_logo_is_ours() -> None:
+    """Only a header/nav name earns brand evidence. A partner lockup the page happens to
+    preload must not take the primary slot from the brand's own symbol (the workspan.com
+    lesson, re-pinned for the preload rung)."""
+    html = (
+        '<head><link rel="preload" href="/cdn/PaloAltoNetworks-Logo.svg" as="image"></head>'
+        '<header><a href="/"><img src="/acme-symbol.svg" alt="Acme" width="46" height="26">'
+        "</a></header>"
+    )
+    fetched = {
+        "https://acme.com/acme-symbol.svg": (
+            _svg('<rect width="46" height="26" fill="#123"/>', 46, 26), "image/svg+xml"
+        ),
+        "https://acme.com/cdn/PaloAltoNetworks-Logo.svg": (_lockup_svg(320, 60), "image/svg+xml"),
+    }
+    candidates, resolution = _resolve(html, fetched)
+
+    preloaded = next(c for c in candidates if c.url.endswith("PaloAltoNetworks-Logo.svg"))
+    assert not preloaded.preloaded_header_logo
+    winner = resolution.slots["light"] or resolution.slots["dark"]
+    assert winner is not None
+    assert "acme-symbol" in winner.candidate.url
