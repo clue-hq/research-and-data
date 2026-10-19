@@ -1110,3 +1110,26 @@ def test_without_an_api_key_the_default_describer_is_inert(
     assert result.logos[0].title is None
     assert sink == []
     assert _description_count("asset_inert") == 0
+
+
+# --- 2026-10-17: a captured section's images are described once and reach the site's brand ---
+
+
+def test_captured_section_images_are_described_once_and_named_by_digest_in_the_brand() -> None:
+    from lumen_api.site_brand import captured_asset_id, captured_image_descriptions
+
+    digests = [hashlib.sha256(f"captured image {n}".encode()).hexdigest() for n in (1, 2)]
+    ids = [captured_asset_id(digest) for digest in digests]
+    _register(*ids)
+    # The capture registers every captured image as an asset record and describes it (cache-first).
+    records = [{"id": asset_id, "media": {"mime_type": "image/png"}} for asset_id in ids]
+    describer = _ScriptedDescriber()
+    for _ in range(2):  # a re-capture of the same bytes
+        apply_descriptions(BrandEvidence(source={"kind": "website", "confidence": 0.9}), describer=describer,
+                           resolve_bytes=lambda aid: (_png_bytes(), "image/png"), reporter=_noop,
+                           asset_records=records)
+    assert sorted(describer.seen_ids) == sorted(ids)  # described once, never paid for twice
+    clones = [{"id": "frag_a", "label": "Hero",
+               "html": "".join(f'<img src="/asset-store/{digest}">' for digest in digests)}]
+    found = captured_image_descriptions(clones, workspace_id=DescriptionStore().workspace_id)
+    assert found == {digest: f"A caption for {asset_id}." for digest, asset_id in zip(digests, ids)}

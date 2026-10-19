@@ -11,12 +11,14 @@ from pathlib import Path
 import yaml
 
 from clue_api.arv2.calls import CallCost
+from clue_api.arv2.customer_domains import DomainCheck
 from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 from clue_api.arv2.onboarding_documents import (
     KnowledgeDocument,
     company_overview_document,
     customer_reviews_document,
     demote_headings,
+    existing_customers_document,
     product_catalog_document,
     product_research_document,
     render_markdown,
@@ -340,3 +342,140 @@ def test_the_catalog_mapper_attaches_grounding_per_product_and_drops_nameless_en
     assert fm["products"][1]["sources"][0]["url"].endswith("/ehr-partnership")
     assert fm["dropped"] == [{"index": 1, "reason": "missing name or short_description"}]
     assert "## Dropped by the mapper" in doc.body and "orphan" in doc.body
+
+
+def _customers_run(*, status: str = "completed") -> ExaAgentRun:
+    structured = {
+        "customers": [
+            {
+                "name": "Wynwood House",
+                "domains": ["wynwoodhouse.us"],
+                "relationship": "direct",
+                "via": None,
+                "evidence_kind": "case_study",
+                "quote": (
+                    "Wynwood House made the decision to move its guest communication to Conduit."
+                ),
+            },
+            {
+                "name": "Stripe",
+                "domains": ["stripe.com"],
+                "relationship": "through_coalition",
+                "via": "Frontier",
+                "evidence_kind": "press",
+                "quote": "The participating buyers are Stripe, Shopify, Google and Watershed.",
+            },
+        ],
+        "seller_domains": ["altcarbon.com", "alt-carbon.com"],
+    }
+    grounding = [
+        {
+            "field": "structured.customers[0].quote",
+            "citations": [{"url": "https://www.conduit.ai/customers/wynwood-house"}],
+            "confidence": "high",
+        },
+        {
+            "field": "structured.customers[1].quote",
+            "citations": [{"url": "https://altcarbon.com/press-releases/frontier"}],
+            "confidence": "high",
+        },
+    ]
+    completed = status == "completed"
+    return ExaAgentRun(
+        run_id="agent_run_customers",
+        status=status,
+        stop_reason="schema_satisfied" if completed else None,
+        output_text=None,
+        structured=structured if completed else None,
+        grounding=grounding if completed else [],
+        usage={"searches": 120},
+        cost_usd=Decimal("1"),
+        error_code=None if completed else "timeout",
+        error_message=None,
+        polls=4,
+        raw_refs=("raw/1",),
+        ledger_row_ids=("row-1",),
+        costs=(_cost("1"),),
+        cost=_cost("1"),
+    )
+
+
+_CHECKS = {
+    "wynwoodhouse.us": DomainCheck("unconfirmed", "Personal Care Communities | State College"),
+    "stripe.com": DomainCheck("confirmed", "Stripe | Financial Infrastructure"),
+}
+
+
+def test_the_customers_list_lives_in_the_body_only() -> None:
+    doc = existing_customers_document(
+        _customers_run(), company_domain="altcarbon.com", as_of=AS_OF, checks=_CHECKS
+    )
+    assert (doc.kind, doc.folder, doc.path) == (
+        "existing-customers",
+        "proof",
+        "proof/customers.md",
+    )
+    assert doc.front_matter["kind"] == "existing-customers"
+    assert "customers" not in doc.front_matter
+    assert "seller_domains" not in doc.front_matter
+    assert "sources" in doc.front_matter
+
+
+def test_the_table_shows_domains_with_their_check_how_they_buy_and_the_quote() -> None:
+    body = existing_customers_document(
+        _customers_run(), company_domain="altcarbon.com", as_of=AS_OF, checks=_CHECKS
+    ).body
+    assert "# Existing customers" in body
+    assert (
+        "| Customer | Domains | Domain check | How they buy | Evidence | Quote | Source |" in body
+    )
+    # The Domains cell holds only domains, so the Head of ABM can copy it into `exclude` as it is;
+    # the check's result has its own column (review finding, 2026-10-16).
+    assert "| Wynwood House | wynwoodhouse.us | wynwoodhouse.us: unconfirmed" in body
+    assert "Personal Care Communities \\| State College" in body
+    # Every answered page keeps its title, confirmed ones too (a same-name company shows there).
+    assert (
+        "| Stripe | stripe.com | stripe.com: confirmed (Stripe \\| Financial Infrastructure) |"
+        in body
+    )
+    assert "through_coalition via Frontier" in body
+    assert "move its guest communication to Conduit." in body
+    assert "https://www.conduit.ai/customers/wynwood-house" in body
+    # Sorted by name: Stripe before Wynwood House, each keeping its own source.
+    assert body.index("| Stripe |") < body.index("| Wynwood House |")
+
+
+def test_the_sellers_own_domains_have_their_own_line() -> None:
+    body = existing_customers_document(
+        _customers_run(), company_domain="altcarbon.com", as_of=AS_OF, checks=_CHECKS
+    ).body
+    assert "Seller's own domains: altcarbon.com, alt-carbon.com" in body
+
+
+def test_a_failed_customers_run_still_renders_with_its_failure_note() -> None:
+    body = existing_customers_document(
+        _customers_run(status="failed"), company_domain="altcarbon.com", as_of=AS_OF, checks={}
+    ).body
+    assert "_Not established._" in body
+    assert "Research run did not complete: `timeout`" in body
+
+
+def test_the_check_column_says_when_a_domain_was_not_checked_or_none_was_given() -> None:
+    run = _customers_run()
+    customers = run.structured["customers"]  # type: ignore[index]
+    customers.append(
+        {
+            "name": "Beachside",
+            "domains": [],
+            "relationship": "direct",
+            "via": None,
+            "evidence_kind": "logo_wall",
+            "quote": "Operators who run on Conduit",
+        }
+    )
+    checks = {**_CHECKS, "stripe.com": DomainCheck("unchecked", None)}
+    body = existing_customers_document(
+        run, company_domain="conduit.ai", as_of=AS_OF, checks=checks
+    ).body
+    assert "| Beachside |  | no domain given |" in body
+    assert "| Stripe | stripe.com | stripe.com: not checked (the site did not answer) |" in body

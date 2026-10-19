@@ -18,14 +18,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Sequence
 from datetime import datetime
 from itertools import count
 from typing import Literal
 
 import tldextract
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -64,6 +64,9 @@ RESERVED_LABELS: frozenset[str] = frozenset(
         "login",
         "auth",
         "mcp",
+        # Review finding K3-8: the site editor's own subdomain (edit.<domain>).
+        "edit",
+        "editor",
     }
 )
 
@@ -157,6 +160,18 @@ def public_origin(hostname: str, *, scheme: str, port: int | None) -> str:
     return f"{scheme}://{hostname}" + (f":{port}" if port else "")
 
 
+def system_label(hostname: str, suffixes: Sequence[str]) -> str | None:
+    """The label of a system address ``<label>.<s>`` for ``s`` in ``suffixes``; ``None`` when
+    ``hostname`` is not one — another domain, a bare suffix, or more than one label before the
+    suffix (labels never contain a dot)."""
+    for suffix in suffixes:
+        tail = "." + suffix.lower().strip(".")
+        label = hostname.removesuffix(tail) if hostname.endswith(tail) else ""
+        if label and "." not in label:
+            return label
+    return None
+
+
 # --- custom hostnames: validation (spec §7.3) --------------------------------
 _EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 _LABEL_SHAPE = re.compile(rf"^[a-z0-9](?:[a-z0-9-]{{{LABEL_MIN - 2},{LABEL_MAX - 2}}}[a-z0-9])$")
@@ -182,22 +197,38 @@ def registrable_domain(hostname: str) -> str:
     return ".".join(labels[-2:]) if len(labels) >= 2 else hostname
 
 
-def validate_custom_hostname(value: str, *, system_suffix: str) -> str:
+def parse_suffixes(raw: str) -> tuple[str, ...]:
+    """A comma-separated suffix list from the environment, lowercased, without empty entries."""
+    return tuple(
+        dict.fromkeys(
+            part.strip().lower().strip(".") for part in raw.split(",") if part.strip().strip(".")
+        )
+    )
+
+
+def validate_custom_hostname(
+    value: str, *, system_suffix: str, legacy_suffixes: Sequence[str] = ()
+) -> str:
     """Normalise and refuse with the spec §7.3 codes. Returns the normalised hostname.
 
-    Order is invalid → reserved → apex. The spec enumerates the rules invalid → apex → reserved,
-    but our own zone apex (``cluehq.ai``) matches BOTH the apex rule and the reserved rule, and it
-    must report ``hostname_reserved`` — "this is ours", not "pick a subdomain", since no subdomain
-    of it can be connected either. Reserved is therefore the narrower rule and is tested first.
-    Every other input refuses identically under either order.
+    Order is invalid → reserved → apex. Our own zone apexes match BOTH the apex rule and the
+    reserved rule, and must report ``hostname_reserved`` — "this is ours", not "pick a subdomain",
+    since no subdomain of them can be connected either. Reserved is the narrower rule and is tested
+    first. Wave 2 Contract 9: the registrable domain of the system suffix AND of every legacy
+    suffix is reserved, so ``cluehq.ai`` stays unconnectable after published pages move to their
+    own domain.
     """
     try:
         hostname = normalize_hostname(value)
     except ValueError as error:
         raise HostnameRefused("hostname_invalid", f"{value!r} is not a valid hostname") from error
-    ours = registrable_domain(system_suffix)
-    if hostname == ours or hostname.endswith("." + ours):
-        raise HostnameRefused("hostname_reserved", f"Hostnames under {ours} cannot be connected.")
+    for ours in dict.fromkeys(
+        registrable_domain(suffix) for suffix in (system_suffix, *legacy_suffixes) if suffix
+    ):
+        if hostname == ours or hostname.endswith("." + ours):
+            raise HostnameRefused(
+                "hostname_reserved", f"Hostnames under {ours} cannot be connected."
+            )
     registrable = registrable_domain(hostname)
     if hostname == registrable:
         raise HostnameRefused(
@@ -223,6 +254,15 @@ def validate_label(label: str) -> str:
 
 # --- DAL --------------------------------------------------------------------
 _ROW = "hostname, workspace_id, kind, status, created_at, activated_at, locked_at"
+#: The unique indexes a new system row can lose on because its LABEL is taken: the whole hostname
+#: (the primary key) and, since review finding S4-1, the label on any domain
+#: (``workspace_hostname_system_label_key``). Either moves the allocator to its next candidate.
+_LABEL_TAKEN = frozenset({"workspace_hostname_pkey", "workspace_hostname_system_label_key"})
+
+
+def _violated(error: IntegrityError) -> str | None:
+    """The constraint or unique index an ``IntegrityError`` names (asyncpg ``constraint_name``)."""
+    return getattr(getattr(error.orig, "__cause__", None), "constraint_name", None)
 
 
 async def _system_row(conn: AsyncConnection, workspace_id: str) -> WorkspaceHostname | None:
@@ -239,36 +279,36 @@ async def ensure_system_hostname(
 ) -> WorkspaceHostname:
     """The ONE allocator. Returns the workspace's system row, inserting it on first call.
 
-    Idempotent and race-safe: an existing row wins outright; a hostname collision moves to the
-    next candidate (``ON CONFLICT (hostname) DO NOTHING``); losing the one-system-per-workspace
-    race re-reads the winner. Each attempt runs in a savepoint so a conflict never poisons the
-    caller's transaction. Called by :func:`clue_spine.create_workspace`, the backfill command and
-    the design API's dev workspace scaffolding, so every creator gets a row without knowing about
-    it.
+    Idempotent and race-safe: an existing row wins outright; losing the one-system-per-workspace
+    race re-reads the winner; a label already held — under this suffix or, since review finding
+    S4-1, under ANY domain (a workspace not yet moved to the new pages domain, or one already
+    moved) — moves to the next candidate. Each attempt runs in a savepoint so a conflict never
+    poisons the caller's transaction. Called by :func:`clue_spine.create_workspace`, the backfill
+    command and the design API's dev workspace scaffolding, so every creator gets a row without
+    knowing about it.
     """
     existing = await _system_row(conn, workspace_id)
     if existing is not None:
         return existing
     for label in label_candidates(name, workspace_id):
-        hostname = f"{label}.{suffix}"
         try:
             async with conn.begin_nested():
                 result = await conn.execute(
                     text(
                         "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
-                        "activated_at) VALUES (:h, :w, 'system', 'active', now()) "
-                        f"ON CONFLICT (hostname) DO NOTHING RETURNING {_ROW}"
+                        f"activated_at) VALUES (:h, :w, 'system', 'active', now()) RETURNING {_ROW}"
                     ),
-                    {"h": hostname, "w": workspace_id},
+                    {"h": f"{label}.{suffix}", "w": workspace_id},
                 )
-                row = result.mappings().first()
-        except IntegrityError:
+                row = result.mappings().one()
+        except IntegrityError as error:
             winner = await _system_row(conn, workspace_id)
             if winner is not None:
                 return winner
+            if _violated(error) in _LABEL_TAKEN:
+                continue
             raise
-        if row is not None:
-            return WorkspaceHostname(**dict(row))
+        return WorkspaceHostname(**dict(row))
     raise AssertionError("unreachable: label_candidates is infinite")
 
 
@@ -289,14 +329,34 @@ async def active_custom_hostname(conn: AsyncConnection, workspace_id: str) -> st
     return str(row[0]) if row is not None else None
 
 
-async def resolve_active_hostname(conn: AsyncConnection, hostname: str) -> str | None:
-    """hostname → workspace_id, for ACTIVE rows only (a provisioning custom hostname is 404)."""
-    result = await conn.execute(
-        text(
-            "SELECT workspace_id FROM workspace_hostname WHERE hostname = :h AND status = 'active'"
-        ),
-        {"h": hostname},
-    )
+async def resolve_active_hostname(
+    conn: AsyncConnection, hostname: str, *, system_suffixes: Sequence[str] = ()
+) -> str | None:
+    """hostname → workspace_id, for ACTIVE rows only (a provisioning custom hostname is 404).
+
+    Review finding K3-6: a system address ``<label>.<s>``, for ``s`` in ``system_suffixes`` (the
+    page origin passes its system suffix and every legacy one), resolves by its LABEL to the
+    system row holding it, whatever domain that row names today. So while published pages move
+    domain, the old and the new address both serve before and after the rows move, and the edge's
+    301 can come last. A label names one workspace on every domain (S4-1's index), so this can
+    never pick between two. Every other hostname — a custom domain — is matched exactly."""
+    label = system_label(hostname, system_suffixes)
+    if label is not None:
+        result = await conn.execute(
+            text(
+                "SELECT workspace_id FROM workspace_hostname WHERE kind = 'system' "
+                "AND split_part(hostname, '.', 1) = :label AND status = 'active'"
+            ),
+            {"label": label},
+        )
+    else:
+        result = await conn.execute(
+            text(
+                "SELECT workspace_id FROM workspace_hostname "
+                "WHERE hostname = :h AND status = 'active'"
+            ),
+            {"h": hostname},
+        )
     row = result.first()
     return str(row[0]) if row is not None else None
 
@@ -337,6 +397,76 @@ async def backfill_system_hostnames(
             written += 1
     off_suffix = await system_hostnames_off_suffix(conn, suffix)
     return {"missing": len(missing), "written": written, "off_suffix": len(off_suffix)}
+
+
+class SystemHostnameMoveIncomplete(RuntimeError):
+    """Review finding S4-3: the move would leave a system row behind on the old suffix. Raised
+    before the caller commits, so the caller's transaction rolls back and nothing moves."""
+
+
+async def move_system_hostnames(
+    conn: AsyncConnection, *, from_suffix: str, to_suffix: str, apply: bool = False
+) -> dict[str, object]:
+    """Rewrite every system hostname under ``from_suffix`` to the same label under ``to_suffix``
+    (Wave 2 Contract 9). The label is kept, so ``locked_at`` keeps its promise; the old host keeps
+    answering (the page origin serves a system address by its label on either domain, and the
+    edge Worker's 301 comes last). A dry run unless ``apply``; it refuses to write when any new
+    hostname is already taken, and then nothing moves.
+
+    Review finding S4-3: the rows it moves are locked as they are read (``FOR UPDATE``: a
+    concurrent label change waits for this transaction), each update must change exactly one
+    row, and afterwards no system row may be left under ``from_suffix``. Any mismatch raises
+    :class:`SystemHostnameMoveIncomplete`, so the caller's transaction rolls back and nothing
+    moves — never "applied" with a row behind."""
+    old = from_suffix.lower().strip(".")
+    new = to_suffix.lower().strip(".")
+    if not old or not new or old == new:
+        raise ValueError("from_suffix and to_suffix must be non-empty and different")
+    under_old = (
+        "SELECT hostname FROM workspace_hostname WHERE kind = 'system' "
+        "AND right(hostname, :n) = :tail ORDER BY hostname"
+    )
+    tail = {"n": len(old) + 1, "tail": "." + old}
+    rows = await conn.execute(text(under_old + (" FOR UPDATE" if apply else "")), tail)
+    moves = [(str(row[0]), str(row[0])[: -len(old)] + new) for row in rows.all()]
+    collisions: list[str] = []
+    if moves:
+        taken = await conn.execute(
+            text("SELECT hostname FROM workspace_hostname WHERE hostname IN :targets").bindparams(
+                bindparam("targets", expanding=True)
+            ),
+            {"targets": [target for _old, target in moves]},
+        )
+        collisions = sorted(str(row[0]) for row in taken.all())
+    applied = bool(apply and moves and not collisions)
+    if applied:
+        for previous, target in moves:
+            updated = await conn.execute(
+                text(
+                    "UPDATE workspace_hostname SET hostname = :new, updated_at = now() "
+                    "WHERE hostname = :old AND kind = 'system'"
+                ),
+                {"new": target, "old": previous},
+            )
+            if updated.rowcount != 1:
+                raise SystemHostnameMoveIncomplete(
+                    f"{previous} changed while the move ran (its update matched "
+                    f"{updated.rowcount} rows), so the whole move is refused"
+                )
+        behind = [str(row[0]) for row in (await conn.execute(text(under_old), tail)).all()]
+        if behind:
+            raise SystemHostnameMoveIncomplete(
+                f"{len(behind)} system hostname(s) are still under {old} after the move "
+                f"({', '.join(behind[:5])}), so the whole move is refused"
+            )
+    return {
+        "from_suffix": old,
+        "to_suffix": new,
+        "rows": len(moves),
+        "collisions": collisions,
+        "applied": applied,
+        "sample": [{"from": previous, "to": target} for previous, target in moves[:5]],
+    }
 
 
 # --- custom hostnames: DAL (spec §4.1, §7) -----------------------------------
@@ -509,7 +639,10 @@ async def replace_system_label(
 ) -> WorkspaceHostname:
     """Label change (spec §4.1, A1): delete the old system row and insert the new one in ONE
     transaction. The old label is free immediately; there is no redirect. Refused with
-    ``label_locked`` once the workspace has published (:func:`lock_system_hostname`)."""
+    ``label_locked`` once the workspace has published (:func:`lock_system_hostname`), and with
+    ``label_taken`` when another workspace holds the label under ANY domain (review finding S4-1:
+    ``workspace_hostname_system_label_key`` — renaming to a published workspace's label on the
+    other side of a domain move would otherwise receive its old links through the edge's 301)."""
     validate_label(label)
     # FOR UPDATE: a concurrent first publish (lock_system_hostname) waits for this transaction or
     # this read waits for it — the label can never be swapped out from under a publish.

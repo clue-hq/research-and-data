@@ -645,6 +645,30 @@ def create_design_deepagent(
         budget,
         **cancel_kwargs,
     )
+
+    # Compaction (founder ruling 2026-10-04): the design agent compacts its conversation the way
+    # every governed platform agent does — `clue_agents.compaction`, sized from the orchestrator
+    # model's real context window, with the `compact_conversation` tool. Registering the governed
+    # harness profile drops deepagents' own summariser by exact class, so `create_deep_agent`
+    # never adds a second one. History stays at `/conversation_history/<session>.md`, the path
+    # this backend admits.
+    # The scene-ad agent (scene solo) is the exception (founder ruling 2026-10-20): it keeps
+    # deepagents' own summariser, so nothing is built for it here.
+    compaction_middleware: tuple = ()
+    if not scene_solo:
+        from clue_agents.compaction import (
+            build_compaction_middleware,
+            register_governed_harness_profile,
+        )
+        from clue_agents.compaction_config import compaction_for
+
+        register_governed_harness_profile()
+        compaction_middleware = build_compaction_middleware(
+            orchestrator_model,
+            backend,
+            compaction_for(runtime_config.orchestrator_model),
+            history_under_work=False,
+        )
     if not scene_solo:
         author_model = _instrument(
             runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
@@ -925,7 +949,10 @@ def create_design_deepagent(
             scene_skill_bundle=runtime_config.scene_skill_bundle,
         ),
         subagents=subagents,
-        **({"middleware": model_middleware("orchestrator")} if scene_candidate or scoped_preferences else {}),
+        middleware=[
+            *(model_middleware("orchestrator") if scene_candidate or scoped_preferences else []),
+            *compaction_middleware,
+        ],
         name="lumen-design-deepagent",
         checkpointer=checkpointer,
         **(

@@ -1,0 +1,12 @@
+{
+  "brand": "garner",
+  "pages": {
+    "/": {
+      "root": { "props": {} },
+      "content": [
+        { "type": "ClonedSection", "props": { "id": "hero", "fragmentId": "frag_95041c54da629d99", "slots": { "headline": "Lower medical spend for SCSD. Same plan, same network." }, "replacements": [ { "find": "Request a demo", "replace": "Request the analysis" } ] } },
+        { "type": "ClonedSection", "props": { "id": "features", "fragmentId": "frag_9a8550d2f42f1196", "slots": {}, "replacements": [] } }
+      ]
+    }
+  }
+}

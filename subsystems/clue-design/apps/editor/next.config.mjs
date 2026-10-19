@@ -2,6 +2,14 @@ const outputFileTracingRoot = new URL(".", import.meta.url).pathname;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The script runs in an opaque-origin sandboxed srcdoc. Anonymous CORS is
+  // required for its pinned SRI; this public file carries no user credentials.
+  async headers() {
+    return [{
+      source: "/vendor/tailwind-browser.js",
+      headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+    }];
+  },
   outputFileTracingRoot,
   eslint: {
     ignoreDuringBuilds: true

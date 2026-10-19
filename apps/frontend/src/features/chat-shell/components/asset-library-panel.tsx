@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import type { LogoSearchState, SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
+import type { AssetLibraryBinding, AssetLibraryLogoSearch, LogoSearchState } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { AssetLibraryItem } from "@/features/design-editor/adapter/scene-asset-library";
 import { InspectorSelect } from "./inspector-primitives";
 import {
   ASSET_LIBRARY_CATEGORIES,
   logoResultCaption,
   logoSearchHeading,
+  logoSearchOf,
   nextFocusIndex,
   shouldCloseOnKey,
   shouldCloseOnPointer,
@@ -26,7 +27,7 @@ import styles from "./chat-shell.module.css";
 const COLUMNS = 4;
 
 export function AssetLibraryPanel({ library, onUploadFile }: {
-  library: SceneAssetLibraryBinding;
+  library: AssetLibraryBinding;
   onUploadFile?: (file: File) => void | Promise<void>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -73,8 +74,10 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
     </button>
   );
 
-  const logoSearch = library.logoSearch;
-  const logoTile = (logo: LogoSearchState["results"][number]) => {
+  // The Logo search, when this editor's library has one (the site editor's has none: no tabs).
+  const logo = logoSearchOf(library);
+  const logoTile = (search: AssetLibraryLogoSearch, logo: LogoSearchState["results"][number]) => {
+    const logoSearch = search.logoSearch;
     const caption = logoResultCaption(logo);
     const saving = logoSearch.savingAssetId === logo.asset_id;
     return (
@@ -83,7 +86,7 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
         className={styles.logoSearchTile}
         disabled={logoSearch.savingAssetId !== null}
         key={logo.asset_id}
-        onClick={() => library.pickLogo(logo.asset_id)}
+        onClick={() => search.pickLogo(logo.asset_id)}
         type="button"
       >
         <span className={`${styles.logoSearchPreview} ${logo.background === "dark" ? styles.logoSearchPreviewDark : ""}`}>
@@ -103,47 +106,49 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
         <span>Asset library</span>
         <button aria-label="Close asset library" className={styles.assetLibraryClose} onClick={library.close} type="button">✕</button>
       </div>
-      <div className={styles.assetLibraryTabs} role="tablist">
-        <button aria-selected={library.tab === "library"} className={styles.assetLibraryTab} onClick={() => library.setTab("library")} role="tab" type="button">Library</button>
-        <button aria-selected={library.tab === "logo-search"} className={styles.assetLibraryTab} onClick={() => library.setTab("logo-search")} role="tab" type="button">Logo search</button>
-      </div>
-      {library.tab === "logo-search" ? (
+      {logo ? (
+        <div className={styles.assetLibraryTabs} role="tablist">
+          <button aria-selected={logo.tab === "library"} className={styles.assetLibraryTab} onClick={() => logo.setTab("library")} role="tab" type="button">Library</button>
+          <button aria-selected={logo.tab === "logo-search"} className={styles.assetLibraryTab} onClick={() => logo.setTab("logo-search")} role="tab" type="button">Logo search</button>
+        </div>
+      ) : null}
+      {logo?.tab === "logo-search" ? (
         <>
           <form
             className={styles.assetLibraryTools}
-            onSubmit={(event) => { event.preventDefault(); library.searchLogos(); }}
+            onSubmit={(event) => { event.preventDefault(); logo.searchLogos(); }}
           >
             <input
               aria-label="Company website"
               autoFocus
               className={styles.assetLibrarySearch}
-              onChange={(event) => library.setLogoQuery(event.target.value)}
+              onChange={(event) => logo.setLogoQuery(event.target.value)}
               placeholder="Company website, like stripe.com"
-              value={logoSearch.query}
+              value={logo.logoSearch.query}
             />
             <button
               className={styles.logoSearchButton}
-              disabled={logoSearch.status === "searching" || logoSearch.query.trim() === ""}
+              disabled={logo.logoSearch.status === "searching" || logo.logoSearch.query.trim() === ""}
               type="submit"
             >
               Search
             </button>
           </form>
-          {logoSearch.error ? <div className={styles.assetLibraryError} role="alert">{logoSearch.error}</div> : null}
+          {logo.logoSearch.error ? <div className={styles.assetLibraryError} role="alert">{logo.logoSearch.error}</div> : null}
           <div className={styles.assetLibraryBody}>
-            {logoSearch.status === "searching" ? (
+            {logo.logoSearch.status === "searching" ? (
               <p className={styles.logoSearchState} role="status">Searching for logos… this can take up to 20 seconds.</p>
             ) : null}
-            {logoSearch.status === "done" && logoSearch.results.length === 0 ? (
+            {logo.logoSearch.status === "done" && logo.logoSearch.results.length === 0 ? (
               <p className={styles.logoSearchState} role="status">
-                We couldn&rsquo;t confirm a logo for {logoSearch.searchedFor}.<br />
+                We couldn&rsquo;t confirm a logo for {logo.logoSearch.searchedFor}.<br />
                 Try the company&rsquo;s main website, or upload the file.
               </p>
             ) : null}
-            {logoSearch.status === "done" && logoSearch.results.length > 0 ? (
+            {logo.logoSearch.status === "done" && logo.logoSearch.results.length > 0 ? (
               <>
-                <div className={styles.assetLibrarySection}>{logoSearchHeading(logoSearch.name, logoSearch.results.length)}</div>
-                <div className={styles.logoSearchGrid}>{logoSearch.results.map(logoTile)}</div>
+                <div className={styles.assetLibrarySection}>{logoSearchHeading(logo.logoSearch.name, logo.logoSearch.results.length)}</div>
+                <div className={styles.logoSearchGrid}>{logo.logoSearch.results.map((result) => logoTile(logo, result))}</div>
               </>
             ) : null}
           </div>

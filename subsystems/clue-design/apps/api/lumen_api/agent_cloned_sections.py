@@ -39,11 +39,14 @@ fail-closed answer an absent one gets.
 from __future__ import annotations
 
 import hashlib
+from urllib.parse import urlsplit
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from clue_design import site_snapshots as snapshot_dal
+from clue_design.web_fragments import fragment_has_kit_binding
 from py_lumen_config import settings
 
 from .asset_custody import cache_blob_path, ensure_materialized
@@ -78,8 +81,12 @@ from .fragments import (
     set_web_fragment_degraded,
     set_web_fragment_status,
 )
-from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
+from .fragments.behavior import inspect_fragment_behavior
+from .fragments.native import native_render_fields
+from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
+from .fragments.isolation import IsolationFonts
 from .fragments.render import slot_kinds
+from .fragments.registry import create_href_repaired_fragment
 from .fragments.sanitize import sanitize_fragment_html
 
 # The SAME slot detector minting uses. Imported rather than reimplemented (and rather than
@@ -89,6 +96,8 @@ from .fragments.sanitize import sanitize_fragment_html
 # (`main.py`, `fleet_handler.py` do the same in the other direction) and `slotdetect` itself
 # pulls only `lumen_api.fragments`, so there is no cycle to be had here.
 from lumen_ingestion.sections.slotdetect import detect_slots
+from lumen_ingestion.sections.source_flow import SourceFlowUnavailable, compile_source_flow
+from lumen_ingestion.site_snapshot import read_site_snapshot
 
 JsonObject = Dict[str, Any]
 
@@ -293,12 +302,22 @@ def _resolve_lineages(
         reason = row.get("derived_reason")
         return isinstance(reason, str) and "campaign variant" in reason.lower()
 
+    def is_site_template(row: Any) -> bool:
+        return isinstance(row, dict) and row.get("section_role") in ("site_header", "site_footer")
+
     def lineage_parent(row: JsonObject) -> str | None:
-        """The parent for RESOLUTION purposes: a variant's link is provenance only."""
+        """The parent for RESOLUTION purposes: a variant's link is provenance only. So is a site
+        template's link to the band it was made from (plan 6 live check): the seller's nav and footer
+        stay offered as they are. A template made again replaces the template before it, which is
+        its parent."""
         if is_campaign_variant(row):
             return None
         parent = row.get("derived_from")
-        return parent if isinstance(parent, str) and parent in by_id else None
+        if not isinstance(parent, str) or parent not in by_id:
+            return None
+        if is_site_template(row) and not is_site_template(by_id[parent]):
+            return None
+        return parent
 
     def root_of(fragment_id: str) -> str:
         seen: set = set()
@@ -451,7 +470,13 @@ def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
 class DurableAgentClonedSectionRegistry:
     """The sole cloned-section capability exposed to one website-mode agent turn."""
 
-    def __init__(self, *, blobs: DesignBlobStore, cache_dir: str | Path) -> None:
+    def __init__(
+        self,
+        *,
+        blobs: DesignBlobStore,
+        cache_dir: str | Path,
+        isolation_fonts: Callable[[Mapping[str, Any]], IsolationFonts | None] | None = None,
+    ) -> None:
         # The byte store carries the tenant; the row store is built from it rather than
         # re-derived, so the two can never name different workspaces (the D4/D5 rule the
         # custom-component registry follows).
@@ -461,6 +486,7 @@ class DurableAgentClonedSectionRegistry:
         # own, and staging preview bytes in one tree while the runtime reads another would show
         # the agent nothing while every digest looked healthy.
         self.cache_dir = Path(cache_dir)
+        self._isolation_fonts = isolation_fonts
 
     def _repository(self) -> HybridRepository:
         return HybridRepository(self.workspace_id)
@@ -494,7 +520,15 @@ class DurableAgentClonedSectionRegistry:
         # bottom — nav, hero, proof, footer — and "newest first" scattered that into the order
         # the minter happened to write rows in, which carries no meaning a human can use. Page
         # first so a multi-page walk stays grouped, then the section's own index within it.
-        ordered = sorted(rows, key=self._document_order)
+        by_id = {str(row["fragment_id"]): row for row in all_rows}
+        # A repair keeps its family's captured source position, even if its own
+        # provenance intentionally lacks the original snapshot/layout identity.
+        def source_order(row):
+            verdict = lineages.get(str(row["fragment_id"]))
+            original = by_id.get(verdict.root, row) if verdict else row
+            return (*self._document_order(original)[:-1], str(row["fragment_id"]))
+
+        ordered = sorted(rows, key=source_order)
         sections = [
             self._section_row(row, repairs, lineages)
             for row in ordered[:CLONED_SECTION_LIST_MAX]
@@ -538,9 +572,24 @@ class DurableAgentClonedSectionRegistry:
         provenance = row.get("provenance")
         provenance = provenance if isinstance(provenance, dict) else {}
         index = provenance.get("section_index")
+        path: tuple = ()
+        recovery = provenance.get("recovery") or {}
+        parent = recovery.get("parent_dom_path")
+        member = provenance.get("dom_path")
+        recovered_index = recovery.get("parent_section_index")
+        if (
+            recovery.get("mode") == "authored-descendant-after-refusal"
+            and type(recovered_index) is int and recovered_index >= 0
+            and isinstance(parent, (list, tuple)) and isinstance(member, (list, tuple))
+            and parent and len(member) > len(parent)
+            and all(type(i) is int and i >= 0 for i in (*parent, *member))
+            and list(member[:len(parent)]) == list(parent)
+        ):
+            index, path = recovered_index, tuple(member[len(parent):])
         return (
             _page_url(row) or "",
-            int(index) if isinstance(index, int) else 1_000_000,
+            int(index) if type(index) is int else 1_000_000,
+            path,
             str(row.get("fragment_id") or ""),
         )
 
@@ -567,6 +616,7 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "source_kit_id": row.get("source_kit_id"),
             "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
             "preview_digest": row.get("preview_digest"),
             "slot_keys": [str(key) for key in slot_keys]
             if isinstance(slot_keys, list)
@@ -592,6 +642,8 @@ class DurableAgentClonedSectionRegistry:
                 else None
             ),
             "created_at": row.get("created_at"),
+            # Plan 6: a header template's layout (`one_page` / `with_menu`); None otherwise.
+            "template_layout": provenance.get("layout") if isinstance(provenance.get("layout"), str) else None,
             # --- D-F6: is this clone broken, is it a repair, and has it been repaired? --------
             "degraded": degraded,
             "degraded_reason": row.get("degraded_reason") if degraded else None,
@@ -696,6 +748,18 @@ class DurableAgentClonedSectionRegistry:
         )
         row = loaded.row
         payload = loaded.payload
+        provenance = row.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        # Only capture evidence, never arbitrary provider payloads or reconstructed facts.
+        # created_at is a registry timestamp, not a claim that the source was fetched then.
+        capture_evidence = {
+            key: provenance[key]
+            for key in (
+                "snapshot_id", "viewport_width", "preview_basis", "geometry",
+                "dead_height_check", "hidden_on_source", "recovery", "degraded",
+            )
+            if key in provenance
+        }
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),
@@ -703,6 +767,20 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "status": row.get("status"),
             "derived_from": row.get("derived_from"),
+            "source_kit_id": row.get("source_kit_id"),
+            "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
+            "page_url": _page_url(row),
+            "section_index": provenance.get("section_index"),
+            "created_at": row.get("created_at"),
+            "payload_digest": row.get("payload_digest"),
+            "degraded": bool(row.get("degraded")),
+            "degraded_reason": row.get("degraded_reason"),
+            "composed": provenance.get("composed"),
+            "capture_evidence": capture_evidence,
+            "behavior_evidence": inspect_fragment_behavior(
+                str(payload.get("html") or ""), payload.get("native_dependencies")
+            ),
             "slots": _slot_summary(loaded.slot_manifest),
             "html": str(payload.get("html") or ""),
             "css": str(payload.get("css") or ""),
@@ -793,6 +871,7 @@ class DurableAgentClonedSectionRegistry:
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.
             "render": {
+                **native_render_fields(loaded.payload),
                 "html": loaded.html,
                 "css": loaded.css,
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
@@ -934,7 +1013,145 @@ class DurableAgentClonedSectionRegistry:
             )
         )
 
+    def prepare_source_flows(self, fragment_ids: Sequence[str]) -> JsonObject:
+        """Read exact captured envelopes after the ordinary per-fragment release gate.
+
+        No artifact, release state, snapshot or asset is written. Each snapshot is
+        loaded once per call. Missing/unsupported source context is returned as an
+        explicit assembly gap, never replaced by measured or invented spacing.
+        """
+        if (
+            len(fragment_ids) > CLONED_SECTION_LIST_MAX
+            or len(set(fragment_ids)) != len(fragment_ids)
+        ):
+            raise SourceFlowUnavailable("bound", "assembly ids exceed the supported bound")
+        repository = self._repository()
+        rows = {}
+        buckets = {}
+        gaps = []
+
+        def read(fid):
+            if fid not in rows:
+                rows[fid] = repository.find_web_fragment(fid)
+            return rows[fid]
+
+        for fid in fragment_ids:
+            repository.validate_fragment_reference_changes(
+                before_web_doc={}, after_web_doc=_probe_web_doc(fid)
+            )
+            row = read(fid)
+            original = row
+            seen = set()
+            while original.get("derived_from"):
+                parent_id = str(original["derived_from"])
+                if parent_id in seen or len(seen) >= 40:
+                    raise SourceFlowUnavailable(
+                        "lineage", "source lineage is cyclic or exceeds bound"
+                    )
+                seen.add(parent_id)
+                original = read(parent_id)
+            p = original.get("provenance") or {}
+            recovery = p.get("recovery") or {}
+            if recovery.get("mode") != "authored-descendant-after-refusal":
+                continue
+            path = recovery.get("parent_dom_path")
+            if (
+                not isinstance(path, (list, tuple))
+                or not path
+                or any(type(i) is not int or i < 0 for i in path)
+            ):
+                gaps.append(
+                    {
+                        "code": "source_flow.source_mismatch",
+                        "member_ids": [fid],
+                        "message": "captured parent path is absent or invalid",
+                    }
+                )
+                continue
+            key = (str(p.get("snapshot_id") or ""), tuple(path))
+            buckets.setdefault(key, []).append(row)
+
+        snapshots = {}
+        groups = []
+        for (snapshot_id, _), members in buckets.items():
+            ids = [str(row["fragment_id"]) for row in members]
+            try:
+                if any(row.get("derived_from") for row in members):
+                    raise SourceFlowUnavailable(
+                        "incompatible_repair",
+                        "repaired member has no verified shared source layout",
+                    )
+                if not snapshot_id:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "recovery has no immutable snapshot id"
+                    )
+                if snapshot_id not in snapshots:
+                    try:
+                        snapshots[snapshot_id] = read_site_snapshot(
+                            self.blobs.storage,
+                            workspace_id=self.workspace_id,
+                            snapshot_id=snapshot_id,
+                        )
+                    except Exception:  # custody boundary; do not leak storage paths or row details
+                        snapshots[snapshot_id] = None
+                snapshot = snapshots[snapshot_id]
+                if snapshot is None:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "immutable captured source could not be read"
+                    )
+                groups.append(compile_source_flow(snapshot, members))
+            except SourceFlowUnavailable as error:
+                gaps.append({"code": error.code, "member_ids": ids, "message": str(error)[:500]})
+        return {"groups": groups, "gaps": gaps, "fidelity_verified": False}
+
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
+
+    def mint_href_repair(
+        self, *, replaces: str, replacements: Mapping[str, str] | None = None,
+        label_replacements: Mapping[str, str] | None = None, rung: int, note: str,
+        text_edits: list[dict[str, str]] | None = None,
+    ) -> JsonObject:
+        """Repair exact anchors/text from held source; preserve markup, assets and CSS."""
+        original = self._repository().find_web_fragment(replaces)
+        if original is None:
+            raise FragmentRefused("fragment.unresolved", "this workspace holds no such fragment")
+        reason = repair_reason(rung=rung, trigger=original.get("degraded_reason"), note=note)
+        provenance = _repair_provenance(original, rung=rung, note=note, replaces=replaces)
+        provenance["repair"]["source"] = (
+            "captured_text_repair" if text_edits is not None else
+            "captured_anchor_repair" if label_replacements is not None else "captured_href_repair"
+        )
+        row, repair, converged = create_href_repaired_fragment(
+            self.blobs.storage, workspace_id=self.workspace_id, replaces=replaces,
+            replacements=replacements, label=_repair_label(original), derived_reason=reason,
+            provenance=provenance, label_replacements=label_replacements, text_edits=text_edits,
+        )
+        fragment_id = repair.artifact.fragment_id
+        if row.get("status") == "draft":
+            try:
+                row = set_web_fragment_status(
+                    workspace_id=self.workspace_id, fragment_id=fragment_id, status="approved",
+                )
+            except Exception as error:
+                raise FragmentRefused(
+                    "repair.release_unconfirmed",
+                    f"repair {fragment_id} was minted, but release could not be confirmed; "
+                    "the page is unchanged",
+                    reference=fragment_id,
+                ) from error
+        return {
+            "fragment_id": fragment_id, "status": row.get("status"),
+            "derived_from": row.get("derived_from"), "match_counts": repair.match_counts,
+            "label_match_counts": repair.label_match_counts,
+            "text_match_paths": repair.text_match_paths,
+            "derived_reason": row.get("derived_reason"), "requested_derived_reason": reason,
+            "converged": converged,
+            "lineage_kept": (
+                row.get("derived_from") == replaces and row.get("derived_reason") == reason
+            ),
+            "slot_keys": list(repair.artifact.payload["slot_manifest"]),
+            "insertable": row.get("status") == "approved",
+        }
 
     def mint_repair(
         self,
@@ -945,6 +1162,7 @@ class DurableAgentClonedSectionRegistry:
         rung: int,
         note: str,
         release: bool = False,
+        native_dependencies: dict[str, Any] | None = None,
     ) -> JsonObject:
         """Mint the replacement for a broken clone as a NEW, lineage-carrying fragment.
 
@@ -1002,16 +1220,23 @@ class DurableAgentClonedSectionRegistry:
         else:
             slot_specs = list(detect_slots(sanitized.html).specs)
 
-        # What the original's markup literally is, for the "did this repair anything?" check
+        # The original's markup AND CSS, for the "did this repair anything?" check
         # below. Fail-SOFT on an unreadable original: a purged payload must not block repairing
         # the very fragment most in need of it, and nothing about preserving the original
         # depends on this read.
         try:
-            existing_html = read_web_fragment(
+            existing = read_web_fragment(
                 self.blobs.storage, workspace_id=self.workspace_id, fragment_id=replaces
-            ).html
+            )
         except (NotFoundError, FragmentRefused):
-            existing_html = None
+            existing = None
+
+        if existing is not None and existing.payload.get("native_dependencies") and native_dependencies is None:
+            raise FragmentRefused(
+                "fragment.native_dependency_unsupported",
+                "raw HTML/CSS repair of a native fragment cannot preserve its declared behavior; "
+                "use exact text/link edits or a checked vocabulary replacement",
+            )
 
         probe = build_fragment_artifact(
             html=sanitized.html,
@@ -1020,23 +1245,38 @@ class DurableAgentClonedSectionRegistry:
             slots=slot_specs,
             preview_digest=None,
             prelude_reference=PRELUDE_REFERENCE_STRIP,
+            source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         already = repository.find_web_fragment(probe.fragment_id)
-        if existing_html is not None and probe.payload["html"] == existing_html:
+        original_css = None
+        if existing is not None:
+            original_css = scope_fragment_css(
+                existing.css, fragment_id=probe.fragment_id, source_fragment_id=replaces,
+                rehosted={}, prelude_reference=PRELUDE_REFERENCE_STRIP,
+            ).css
+        if (
+            existing is not None and probe.payload["html"] == existing.html
+            and probe.payload["css"] == original_css
+            and probe.payload["slot_manifest"] == existing.slot_manifest
+            and probe.payload.get("native_dependencies") == existing.payload.get("native_dependencies")
+        ):
             # A "repair" that reproduces the broken band is not one. Without this it would mint
             # as a NEW fragment holding the same markup — and NOT degraded, because the marker is
             # a row-level judgement rather than part of the content, so it does not follow the
             # bytes. A clean-looking duplicate of a band the pipeline has already measured as
             # broken is the one outcome D-F6 exists to prevent.
             #
-            # Compared on the STORED form (sanitized and slot-annotated), because that is what a
-            # fragment's markup literally is. The error direction is toward allowing a mint: an
+            # Compare stored markup and CSS under one namespace: changing CSS alone can repair
+            # real geometry, while an identical band with a new namespace is still a no-op.
+            # The error direction is toward allowing a mint: an
             # original whose slots were stamped by something other than this detector annotates
             # differently and is not caught. That is the safe way round — the original survives
             # either way, and refusing a genuine repair would be the worse mistake.
             raise FragmentRefused(
                 "fragment.repair_unchanged",
-                f"this repair's markup is identical to {replaces}, so it repairs nothing. Walk "
+                f"this repair's markup and effective CSS are identical to {replaces}, "
+                "so it repairs nothing. Walk "
                 "the ladder: reproduce the experience with supported primitives, build an "
                 "equivalent interaction, or compose a compact static fallback with the "
                 "artificial height removed.",
@@ -1067,6 +1307,8 @@ class DurableAgentClonedSectionRegistry:
             prelude_reference=PRELUDE_REFERENCE_STRIP,
             derived_from=replaces,
             derived_reason=reason,
+            source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         converged = already is not None
         status = str(row.get("status") or "")
@@ -1090,6 +1332,12 @@ class DurableAgentClonedSectionRegistry:
             "requested_derived_reason": reason,
             "slot_keys": [spec.key for spec in slot_specs],
             "asset_digests": list(artifact.payload.get("asset_digests") or []),
+            # Private runtime fact: exact stored DOM equality preserves human override paths;
+            # identical keys alone would not. No second source read is needed at the swap.
+            "preserves_pin_content": bool(
+                existing is not None and artifact.payload["html"] == existing.html
+                and slot_kinds(artifact.payload["slot_manifest"]) == slot_kinds(existing.slot_manifest)
+            ),
             # The FIRST pass's notes are the real ones. `create_web_fragment` sanitizes again
             # (idempotently) over markup this method already cleaned, so the artifact's own notes
             # are silent about everything that was actually removed.
@@ -1239,12 +1487,12 @@ class DurableAgentClonedSectionRegistry:
         )
         if loaded.row.get("preview_digest"):
             return None
-        # No brand kit, for the route's own reason: a repair's artifact carries the stylesheet
-        # compiled against its kit at repair time, and handing one here would be a second opinion
-        # about how the section looks.
+        # Keep the sealed stylesheet; only its pinned kit's font-face declarations are supplied
+        # by the composition root, through the same font resolver the page render uses.
+        fonts = self._isolation_fonts(loaded.row) if self._isolation_fonts else None
         kwargs = {"shoot": shoot} if shoot is not None else {}
         png, page = render_isolation_preview(
-            core, loaded, read_blob=self.blobs.read_blob, **kwargs
+            core, loaded, read_blob=self.blobs.read_blob, fonts=fonts, **kwargs
         )
         row = attach_web_fragment_preview(
             self.blobs.storage,
@@ -1408,7 +1656,7 @@ class DurableAgentClonedSectionRegistry:
             for row in self._repository().list_web_fragments()
             if row.get("section_role") == "footer"
             and row.get("status") == "approved"
-            and (kit_id is None or row.get("source_kit_id") == kit_id)
+            and (kit_id is None or fragment_has_kit_binding(row, kit_id))
         ]
         evidence: List[tuple] = []
         for row in rows[: self.LEGAL_EVIDENCE_MAX]:
@@ -1531,6 +1779,199 @@ class DurableAgentClonedSectionRegistry:
             "converged": already is not None,
             "insertable": row.get("status") == "approved",
         }
+
+
+    # --- site header and footer templates (site element inspector, plan 6) ----------------------
+
+    #: Where each template role is derived from: the kit's captured bands of this role.
+    SITE_TEMPLATE_SOURCES = {"site_header": "nav", "site_footer": "footer"}
+
+    def mint_site_template(self, *, role: str, source_fragment_id: str, layout: Optional[str] = None) -> JsonObject:
+        """Mint one ABM header or footer template from a captured nav or footer band (rulings R4-R6).
+
+        The derivation (:func:`~lumen_api.fragments.site_templates.derive_site_template`) is
+        deterministic; the markup it returns goes through the identical fragment door every clone and
+        repair goes through (sanitize, annotate its slots, scope the CSS against the source's,
+        content-address, insert). **Released at once** (founder 2026-10-18: no approval gate), so the
+        agent is offered it as soon as it exists. Converges onto the row that already holds the same
+        template when it is minted again.
+        """
+        from .fragments.site_templates import (
+            COMPOSED_SITE_TEMPLATE,
+            HEADER_ONE_PAGE,
+            SITE_HEADER_ROLE,
+            SITE_TEMPLATE_ROLES,
+            derive_site_template,
+        )
+
+        if role not in SITE_TEMPLATE_ROLES:
+            raise ValueError(f"{role!r} is not a site template role")
+        layout = (layout or HEADER_ONE_PAGE) if role == SITE_HEADER_ROLE else None
+        original = self._repository().find_web_fragment(source_fragment_id)
+        if original is None:
+            raise FragmentRefused(
+                "fragment.unresolved",
+                f"cannot derive a template from {source_fragment_id!r}: this workspace holds no such fragment",
+                reference=source_fragment_id,
+            )
+        loaded = read_web_fragment(self.blobs.storage, workspace_id=self.workspace_id, fragment_id=source_fragment_id)
+        # A template made again replaces the kit's current template of this role (its lineage
+        # parent); the band it is made from stays provenance (`source_fragment_id`).
+        previous = self._current_site_template(role, original.get("source_kit_id"), layout)
+        placeholder = self.campaign_shell_placeholder()
+        seller_logo = self._kit_logo_file(original.get("source_kit_id"), original.get("source_kit_version"))
+        derived = derive_site_template(
+            role, loaded.html, placeholder_src=f"/asset-store/{placeholder['digest']}", seller_logo_src=seller_logo,
+            layout=layout,
+        )
+        sanitized = sanitize_fragment_html(derived.html, rehosted={})
+        source_url = str(original.get("source_url") or "")
+        seller = (urlsplit(source_url).hostname or "the seller").removeprefix("www.")
+        kind = {None: "Footer template", "one_page": "Header template, one page"}.get(layout, "Header template, with page menu")
+        label = f"{kind} — {seller}"
+        css = f"{loaded.css}\n{derived.css_addition}" if derived.css_addition else loaded.css
+        probe = build_fragment_artifact(
+            html=sanitized.html, css=css, rehosted={}, slots=list(derived.slots), preview_digest=None,
+            prelude_reference=PRELUDE_REFERENCE_STRIP, source_fragment_id=source_fragment_id,
+        )
+        # The same template made again settles on itself: no new lineage link.
+        parent = None if probe.fragment_id == previous else (previous or source_fragment_id)
+        row, artifact = create_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            html=sanitized.html,
+            css=css,
+            rehosted={},
+            slots=list(derived.slots),
+            source_url=source_url,
+            section_role=role,
+            label=label,
+            source_kit_id=original.get("source_kit_id"),
+            source_kit_version=original.get("source_kit_version"),
+            preview=None,
+            provenance={
+                "composed": COMPOSED_SITE_TEMPLATE,
+                "shell_role": role,
+                **({"layout": layout} if layout else {}),
+                "source_fragment_id": source_fragment_id,
+                "page_url": _page_url(original),
+                "section_index": None,
+                "section_role": role,
+                "slots": [spec.key for spec in derived.slots],
+            },
+            prelude_reference=PRELUDE_REFERENCE_STRIP,
+            derived_from=parent,
+            derived_reason="site template" if parent else None,
+            source_fragment_id=source_fragment_id,
+        )
+        status = str(row.get("status") or "")
+        if status == "draft":
+            status = str(
+                set_web_fragment_status(workspace_id=self.workspace_id, fragment_id=artifact.fragment_id, status="approved").get("status")
+                or "approved"
+            )
+        return {
+            "fragment_id": artifact.fragment_id,
+            "role": role,
+            **({"layout": layout} if layout else {}),
+            "status": status,
+            "label": row.get("label") or label,
+            "slot_keys": [spec.key for spec in derived.slots],
+            "notes": list(derived.notes) + list(sanitized.notes),
+            "converged": status == "approved" and (parent is None or row.get("derived_from") == parent),
+        }
+
+    def _current_site_template(self, role: str, kit_id: Any, layout: Optional[str] = None) -> Optional[str]:
+        """The template of ``role`` (and, for a header, ``layout``) from this kit that is on offer now
+        (released, not replaced), or None when the kit has none yet. A header minted before layouts
+        existed counts as the one with the page menu."""
+        if not kit_id:
+            return None
+        for row in self.list_sections().get("sections") or []:
+            row_layout = row.get("template_layout") or ("with_menu" if role == "site_header" else None)
+            if (
+                row.get("section_role") == role
+                and row.get("source_kit_id") == kit_id
+                and row_layout == layout
+                and row.get("status") == "approved"
+                and not row.get("superseded_by")
+            ):
+                return str(row["fragment_id"])
+        return None
+
+    #: Which of the kit's logos stands in for a seller's logo drawn in the page's code, first match wins.
+    KIT_LOGO_ORDER = ("primary", "wordmark")
+
+    def _kit_logo_file(self, kit_id: Any, kit_version: Any) -> Optional[str]:
+        """The kit's header logo as ``/asset-store/<sha256>``: its primary logo, else its wordmark,
+        else any other; None when the kit, the logo or its bytes cannot be read (the template then
+        keeps the drawn logo, noted as not replaceable)."""
+        if not kit_id:
+            return None
+        repository = self._repository()
+        try:
+            kit = repository.require_brand_kit(str(kit_id), int(kit_version) if kit_version is not None else None)
+        except Exception:  # noqa: BLE001 - no kit, no stand-in
+            return None
+        logos = (((kit.get("brand_kit") or {}).get("assets") or {}).get("logos") or {})
+        names = [*(name for name in self.KIT_LOGO_ORDER if name in logos), *(name for name in logos if name not in self.KIT_LOGO_ORDER)]
+        for name in names:
+            for variant in (logos.get(name) or {}).get("variants") or []:
+                asset_id = variant.get("asset_id") if isinstance(variant, dict) else None
+                if not asset_id:
+                    continue
+                try:
+                    record = repository.require_asset_record(str(asset_id))
+                except Exception:  # noqa: BLE001 - a missing record: try the next
+                    continue
+                record = record.get("asset") or record
+                digest = ((record.get("media") or {}).get("digest") or {}).get("value")
+                if isinstance(digest, str) and len(digest) == 64:
+                    return f"/asset-store/{digest}"
+        return None
+
+    def site_template_sources(self, *, kit_id: str, kit_version: int) -> Dict[str, Optional[JsonObject]]:
+        """Each template role's best captured band of one kit version (ruling R4): the home page's,
+        else the shortest page path, else document order; a degraded band is never used. None for a
+        role the kit captured no usable band for."""
+        rows = [
+            row
+            for row in self._repository().list_web_fragments()
+            if row.get("source_kit_id") == kit_id
+            and int(row.get("source_kit_version") or -1) == int(kit_version)
+            and not row.get("degraded")
+            and str(row.get("status") or "") in {"draft", "approved"}
+        ]
+
+        def rank(row: JsonObject) -> tuple:
+            path = urlsplit(_page_url(row) or "").path or "/"
+            return (path != "/", len(path), path, *self._document_order(row))
+
+        return {
+            role: min((row for row in rows if row.get("section_role") == band), key=rank, default=None)
+            for role, band in self.SITE_TEMPLATE_SOURCES.items()
+        }
+
+    def mint_site_templates(self, *, kit_id: str, kit_version: int) -> List[JsonObject]:
+        """Both templates of one kit version, each from its best captured band. A role with no usable
+        band, or whose band is not derivable, is skipped with the reason."""
+        from .fragments.site_templates import TemplateNotDerivable
+
+        from .fragments.site_templates import HEADER_LAYOUTS, SITE_HEADER_ROLE
+
+        results: List[JsonObject] = []
+        for role, source in self.site_template_sources(kit_id=kit_id, kit_version=kit_version).items():
+            # A header is minted in each layout the agent chooses between (founder 2026-10-19).
+            for layout in (HEADER_LAYOUTS if role == SITE_HEADER_ROLE else (None,)):
+                named = {"role": role, **({"layout": layout} if layout else {})}
+                if source is None:
+                    results.append({**named, "skipped": f"no captured {self.SITE_TEMPLATE_SOURCES[role]}"})
+                    continue
+                try:
+                    results.append(self.mint_site_template(role=role, source_fragment_id=str(source["fragment_id"]), layout=layout))
+                except (TemplateNotDerivable, FragmentRefused) as error:
+                    results.append({**named, "skipped": getattr(error, "reason", None) or str(error)})
+        return results
 
 
 #: What a repair's label says it is, before the clone's own words.

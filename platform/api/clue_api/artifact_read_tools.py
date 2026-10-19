@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.manual import tool_manual_link
 from clue_api.arv2.read_tools import READ_REFERENCES_BUDGET_BYTES
-from clue_api.design_leg_wiring import project_design_documents
+from clue_api.design_leg_wiring import head_of_abm_doc_kind, project_design_documents
 from clue_db import ConnFactory, transaction
 from clue_design.documents import get_document as get_design_document
 from clue_design.errors import DesignNotFoundError
@@ -167,7 +167,7 @@ async def read_artifact(
         )
     return ArtifactView(
         artifact_id=artifact_id,
-        kind="web" if document["doc_kind"] == "web" else "ad",
+        kind="web" if head_of_abm_doc_kind(str(document["doc_kind"])) == "web" else "ad",
         title=str(document["title"]),
         status=str(document["status"]),
         current_version_id=str(document["current_version"]),

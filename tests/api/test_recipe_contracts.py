@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 34
+    assert CONVERSATION_RECIPE_VERSION == 35
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -360,8 +360,10 @@ def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
     assert set(v22_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
     # `@1` stood in the standing set until recipe0-stage0@33 re-pinned the launch at `@2` (the
     # brief the agent writes); v23's own bytes are unchanged.
+    # recipe0-stage0@35 re-pins it again at `@3` (the brief's exclude list, spec 2026-10-16).
     assert "launch_arv2_discovery@1" not in RECIPE_0_TOOL_ADDRESSES
-    assert "launch_arv2_discovery@2" in RECIPE_0_TOOL_ADDRESSES
+    assert "launch_arv2_discovery@2" not in RECIPE_0_TOOL_ADDRESSES
+    assert "launch_arv2_discovery@3" in RECIPE_0_TOOL_ADDRESSES
     assert v22["version"] == 22
     assert v23["version"] == 23
     assert slot["dynamic_pin_kinds"] == v22_slot["dynamic_pin_kinds"]
@@ -884,7 +886,8 @@ def test_agent_authored_discovery_mints_recipe_v33_without_rewriting_v32() -> No
     }
     assert (v32_requirements - gone) | joined == slot_requirements
     assert (v32_compatibility - gone) | joined == node_compatibility
-    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    # recipe0-stage0@35 has since re-pinned the launch at `@3` (spec 2026-10-16).
+    assert added - {"launch_arv2_discovery@2"} <= set(RECIPE_0_TOOL_ADDRESSES)
     assert removed.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
     assert v32["version"] == 32
     assert v33["version"] == 33
@@ -921,6 +924,43 @@ def test_product_management_mints_recipe_v34_without_rewriting_v33() -> None:
     assert added in RECIPE_0_TOOL_ADDRESSES
     assert (v33["version"], v34["version"]) == (33, 34)
     assert slot["dynamic_pin_kinds"] == v33_slot["dynamic_pin_kinds"]
+
+
+def test_discovery_exclusions_mint_recipe_v35_without_rewriting_v34() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v34 = json.loads((root / "recipe0-stage0-v34.json").read_text())
+    v35 = json.loads((root / "recipe0-stage0-v35.json").read_text())
+    # One address is RE-PINNED and none joins (spec 2026-10-16): `launch_arv2_discovery` moves to
+    # `@3`, whose brief carries `exclude`; `@2` leaves (one version per (kind, key)).
+    v34_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v34.json")
+    assert SYSTEM_RECIPE_FILENAMES[v34_index : v34_index + 2] == (
+        "recipe0-stage0-v34.json",
+        "recipe0-stage0-v35.json",
+    )
+    swap = {"launch_arv2_discovery@2": "launch_arv2_discovery@3"}
+    assert {swap.get(a, a) for a in v34["graph"]["tool_allowlist"]} == set(
+        v35["graph"]["tool_allowlist"]
+    )
+    slot = next(node for node in v35["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v34_slot = next(
+        node for node in v34["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert {swap.get(a, a) for a in v34_slot["dynamic_tool_allowlist"]} == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    moved = {("launch_arv2_discovery", "2")}
+    joined = {("launch_arv2_discovery", "3")}
+    assert (tools(v34_slot["requirements"]) - moved) | joined == tools(slot["requirements"])
+    assert (tools(v34["compatibility"]["nodes"]["stage0_interactions"]) - moved) | joined == tools(
+        v35["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert "launch_arv2_discovery@3" in RECIPE_0_TOOL_ADDRESSES
+    assert (v34["version"], v35["version"]) == (34, 35)
+    assert slot["dynamic_pin_kinds"] == v34_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

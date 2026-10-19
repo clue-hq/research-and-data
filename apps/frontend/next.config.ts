@@ -8,6 +8,14 @@ const CANVASKIT_STUB = "./src/features/design-editor/engine/scene/empty-module.t
 const localInstance = localWorkspaceInstance();
 
 const nextConfig: NextConfig = {
+  // The script runs in an opaque-origin sandboxed srcdoc. Anonymous CORS is
+  // required for its pinned SRI; this public file carries no user credentials.
+  async headers() {
+    return [{
+      source: "/vendor/tailwind-browser.js",
+      headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+    }];
+  },
   // Parallel local instances must not share Next's compiler cache or dev lock.
   distDir: localInstance?.distDir ?? ".next",
   typescript: {
@@ -16,6 +24,9 @@ const nextConfig: NextConfig = {
   // Railway's runtime image copies only Next's traced production server rather
   // than the full dependency tree. `next start` remains available locally.
   output: "standalone",
+  // Lane C: the app imports TypeScript sources from the @clue/site-kit workspace package
+  // (site-document, editor-protocol, editor-site, editor-origin), so Next must compile them.
+  transpilePackages: ["@clue/site-kit"],
   // Keep local visual reviews faithful to the Figma canvas.
   devIndicators: false,
   // This monorepo checkout may live below an unrelated user-level package-lock.json. Without an

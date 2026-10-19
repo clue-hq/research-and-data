@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S6 probe: icons sized and stroked by CSS</title>
+<!-- S6 probe. How Tailwind/Heroicons, Font Awesome and many hand-built sites draw a CTA icon: the svg
+     carries a viewBox and its paths, and its SIZE (w-4 h-4 / height:1em) and often its stroke come from
+     CSS classes, not attributes. Plus a sprite whose outer svg has its own viewBox (24) while the symbol's
+     is 12. Each button has its own fill so each is its own measured style. Local file only. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+  .b { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; color: #fff; border: 0;
+       border-radius: 8px; font: 500 14px/1.4 Arial; cursor: pointer; text-decoration: none; }
+  .b1 { background: #00695c; }
+  .b2 { background: #ad1457; }
+  .b3 { background: #283593; }
+  .w-4 { width: 16px; } .h-4 { height: 16px; }
+  .stroke-icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>Icons drawn by CSS</h1>
+  <div class="wrap">
+    <a class="b b1" id="i-hero" href="#a">Heroicons solid <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd"></path></svg></a>
+    <a class="b b2" id="i-stroke" href="#b">Stroked by a class <svg class="w-4 h-4 stroke-icon" viewBox="0 0 24 24"><path d="M5 12h14M13 5l7 7-7 7"></path></svg></a>
+    <a class="b b3" id="i-sprite" href="#c">Sprite, two viewBoxes <svg width="16" height="16" viewBox="0 0 24 24"><use href="#arrow"></use></svg></a>
+  </div>
+  <svg width="0" height="0" style="position:absolute"><symbol id="arrow" viewBox="0 0 12 12"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none"></path></symbol></svg>
+</main>
+<section style="padding:60px 40px;background:#014036;color:#fff"><h2>Band</h2><p>Text.</p></section>
+</body></html>

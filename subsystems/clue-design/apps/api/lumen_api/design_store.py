@@ -122,6 +122,8 @@ from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import sessions as design_sessions
+from clue_design import site_sections as design_site_sections
+from clue_design import site_turn_workspace as design_site_turn_workspace
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -130,6 +132,7 @@ from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
     DesignNotFoundError,
+    DesignRunSaveFencedError,
     DesignSourceVersionConflictError,
     DesignVersionConflictError,
 )
@@ -399,6 +402,76 @@ class DesignStoreBridge:
             if str(sqlstate).startswith("22"):
                 raise sqlite3.IntegrityError(str(exc.orig)) from exc
             raise
+
+
+async def _hold_site_save(
+    conn: AsyncConnection, workspace_id: str, document_id: str, attempt: Any
+) -> None:
+    """The fence on an agent-run site save, inside the save's own transaction.
+
+    Two halves, both locked ``FOR SHARE`` until the save commits, so neither a takeover's claim
+    nor its lease acquire can slip in between this check and the write:
+
+    1. the run row (``clue_design.runs.hold_run_for_save``): ``running`` at exactly this
+       attempt's generation, and no version of this document saved by the run yet;
+    2. the platform ``work_lease`` row for the run's work id still names this attempt's worker
+       and generation. A lapsed lease nobody took is still held (Task 1's reclaim rule). Checked
+       only when the attempt names its worker — every fleet and inline-lane attempt does; a
+       direct executor call in a test that holds no lease names none.
+
+    Refusals raise :class:`DesignRunSaveFencedError` / :class:`DesignRunAlreadySavedError`;
+    nothing is written either way. The fleet import is local for the same reason as in
+    :meth:`HybridRepository.create_run_and_offer`.
+    """
+    work_id = await design_runs.hold_run_for_save(
+        conn,
+        workspace_id=workspace_id,
+        run_id=attempt.run_id,
+        document_id=document_id,
+        lease_generation=attempt.lease_generation,
+    )
+    await _hold_attempt_lease(conn, work_id, attempt)
+
+
+async def _hold_site_attempt(conn: AsyncConnection, workspace_id: str, attempt: Any) -> None:
+    """The fence on an attempt touching its site's session memory (site-turn durability,
+    2026-10-16, controller ruling S1): the same two halves as :func:`_hold_site_save` — the run
+    row ``running`` at exactly this attempt's generation, and its work lease — without the
+    one-save-per-run check (the session is saved after the run's own save landed)."""
+    work_id = await design_runs.hold_run(
+        conn,
+        workspace_id=workspace_id,
+        run_id=attempt.run_id,
+        lease_generation=attempt.lease_generation,
+    )
+    await _hold_attempt_lease(conn, work_id, attempt)
+
+
+async def _hold_attempt_lease(conn: AsyncConnection, work_id: Any, attempt: Any) -> None:
+    """The work-lease half of an attempt's fence; checked only when the attempt names its worker."""
+    if attempt.worker_id is None:
+        return
+    from clue_fleet.lease import (
+        LeaseGeneration,
+        WorkId,
+        get_work_lease,
+        hold_work_lease,
+    )
+
+    if await hold_work_lease(
+        conn,
+        work_id=WorkId(work_id),
+        worker_id=attempt.worker_id,
+        generation=LeaseGeneration(attempt.lease_generation),
+    ):
+        return
+    lease = await get_work_lease(conn, WorkId(work_id))
+    raise DesignRunSaveFencedError(
+        attempt.run_id,
+        attempt.lease_generation,
+        lease.generation if lease is not None else None,
+        reason="lease",
+    )
 
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
@@ -790,6 +863,58 @@ class HybridRepository:
                 expected_base_version=expected_base_version,
             )
         )
+
+    def update_site_document(
+        self,
+        document_id: str,
+        site: JsonObject,
+        *,
+        intent: Optional[str],
+        checkpoint_label: Optional[str],
+        operations: List[JsonObject],
+        inverse_operations: Optional[List[JsonObject]],
+        actor_kind: str,
+        source: str,
+        reverts_batch_id: Optional[str] = None,
+        reapplies_batch_id: Optional[str] = None,
+        expected_base_version: Optional[int] = None,
+        attempt: Any = None,
+    ) -> JsonObject:
+        """The Puck site state write (Wave 2 Contract 2).
+
+        The DAL's website write is kind-agnostic — it reads only the top-level title — so a site
+        reuses it, with the same row lock, CAS, stack moves and 50-step cap. Unlike
+        ``update_web_document`` it runs no WebDoc fragment or component validators: their page walk
+        is WebDoc-shaped (a list of node maps) and means nothing for a site's dict of routes. The
+        site's own checks (shape, custody, the site-kit validator) run in the tool before this.
+
+        ``attempt`` (site-turn durability, 2026-10-16) is the run attempt an agent-run save is made
+        by (``run_id``, ``lease_generation``, ``worker_id``). With one, the write lands only if, in
+        this SAME transaction, the attempt still holds its run — see :func:`_hold_site_save` — and
+        its history rows carry the run id. Without one (a human's save) nothing changes."""
+
+        async def write(conn: AsyncConnection) -> JsonObject:
+            if attempt is not None:
+                await _hold_site_save(conn, self.workspace_id, document_id, attempt)
+            return await design_documents.update_web_document(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                web_doc=site,
+                intent=intent,
+                checkpoint_label=checkpoint_label,
+                operations=operations,
+                inverse_operations=inverse_operations,
+                actor_kind=actor_kind,
+                source=source,
+                push_undo=True,
+                reverts_batch_id=reverts_batch_id,
+                reapplies_batch_id=reapplies_batch_id,
+                expected_base_version=expected_base_version,
+                actor_id=attempt.run_id if attempt is not None else None,
+            )
+
+        return self._bridge._run(write)
 
     def set_agent_instructions(self, document_id: str, instructions: Optional[str]) -> JsonObject:
         return self._bridge._run(
@@ -2043,6 +2168,64 @@ class HybridRepository:
             )
         )
 
+    def get_site_turn_workspace(self, run_id: str) -> Optional[JsonObject]:
+        """A running site turn's working copy (site-turn durability, Task 3), or ``None``."""
+        return self._bridge._run(
+            lambda conn: design_site_turn_workspace.get_site_turn_workspace(
+                conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def put_site_turn_workspace(
+        self,
+        run_id: str,
+        *,
+        checkpoint_id: str,
+        files: JsonObject,
+        turn_state: JsonObject,
+        files_sha256: str,
+        attempt_generation: Optional[int],
+    ) -> bool:
+        """Overwrite the run's working copy; ``False`` when the attempt no longer holds the run."""
+        return bool(
+            self._bridge._run(
+                lambda conn: design_site_turn_workspace.put_site_turn_workspace(
+                    conn,
+                    workspace_id=self.workspace_id,
+                    run_id=run_id,
+                    checkpoint_id=checkpoint_id,
+                    files=files,
+                    turn_state=turn_state,
+                    files_sha256=files_sha256,
+                    attempt_generation=attempt_generation,
+                )
+            )
+        )
+
+    def restamp_site_turn_workspace(
+        self,
+        run_id: str,
+        *,
+        checkpoint_id: str,
+        turn_state: JsonObject,
+        attempt_generation: Optional[int],
+    ) -> bool:
+        """Move the run's working copy on to a later checkpoint and turn state, keeping its files (a
+        round that changed no file); ``False`` when there is no copy or the attempt no longer holds
+        the run."""
+        return bool(
+            self._bridge._run(
+                lambda conn: design_site_turn_workspace.restamp_site_turn_workspace(
+                    conn,
+                    workspace_id=self.workspace_id,
+                    run_id=run_id,
+                    checkpoint_id=checkpoint_id,
+                    turn_state=turn_state,
+                    attempt_generation=attempt_generation,
+                )
+            )
+        )
+
     def request_run_cancellation(self, run_id: str) -> JsonObject:
         """Ask this run to stop (A3, defect R3-D). Idempotent; raises on an unknown/foreign run.
 
@@ -2163,6 +2346,52 @@ class HybridRepository:
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
         )
 
+    def get_site_session(self, document_id: str) -> Optional[JsonObject]:
+        """The website's session pointer (``version``, ``manifest_sha256``) or ``None`` when the
+        site has none yet. Sync twin of :func:`clue_design.sessions.get_site_session`."""
+        return self._bridge._run(
+            lambda conn: design_sessions.get_site_session(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def site_attempt_holds(self, attempt: Any) -> bool:
+        """Whether this attempt still holds its run (run row and work lease); see
+        :func:`_hold_site_attempt`. A read: it locks nothing past its own transaction."""
+        try:
+            self._bridge._run(lambda conn: _hold_site_attempt(conn, self.workspace_id, attempt))
+        except DesignRunSaveFencedError:
+            return False
+        return True
+
+    def save_site_session(
+        self,
+        document_id: str,
+        *,
+        expected_version: Optional[int],
+        manifest_sha256: str,
+        attempt: Any = None,
+    ) -> Optional[int]:
+        """Move the website's session pointer with compare-and-set (site-turn durability, K4-5).
+
+        Returns the new version, or ``None`` when someone saved a newer copy meanwhile (nothing
+        written). With an ``attempt``, the fence that it still holds its run is checked in the
+        SAME transaction first, so a zombie can never move the pointer: it raises
+        :class:`DesignRunSaveFencedError` and writes nothing."""
+
+        async def _save(conn: AsyncConnection) -> Optional[int]:
+            if attempt is not None:
+                await _hold_site_attempt(conn, self.workspace_id, attempt)
+            return await design_sessions.save_site_session(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                expected_version=expected_version,
+                manifest_sha256=manifest_sha256,
+            )
+
+        return self._bridge._run(_save)
+
     def latest_agent_written_version(self, document_id: str) -> int | None:
         """The version the DESIGN AGENT last committed to this document, or ``None``.
 
@@ -2179,18 +2408,19 @@ class HybridRepository:
             )
         )
 
-    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+    def latest_session_manifest_sha256(self, document_id: str, *, include_failed: bool = False) -> str | None:
         """The digest of the newest session-folder manifest this document's session stored, or
         ``None``.
 
         Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
         that lands anywhere else restores it from this manifest before the agent sees its
         workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
-        the same one-transaction bridge every other read here uses.
+        the same one-transaction bridge every other read here uses; ``include_failed`` is passed
+        through as it is documented there.
         """
         return self._bridge._run(
             lambda conn: design_sessions.latest_session_manifest_sha256(
-                conn, workspace_id=self.workspace_id, document_id=document_id
+                conn, workspace_id=self.workspace_id, document_id=document_id, include_failed=include_failed
             )
         )
 
@@ -2267,6 +2497,47 @@ class HybridRepository:
                 workspace_id=self.workspace_id,
                 document_id=document_id,
                 batch_id=batch_id,
+            )
+        )
+
+    def get_site_sections(self, digests: List[str]) -> List[JsonObject]:
+        """This workspace's agent-written sections for ``digests`` (Contract 4), in order."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.get_site_sections(
+                conn, workspace_id=self.workspace_id, digests=digests
+            )
+        )
+
+    def list_latest_site_sections(self) -> List[JsonObject]:
+        """The newest agent-written section of each name in this workspace."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.list_latest_site_sections(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def record_site_section(
+        self,
+        *,
+        digest: str,
+        name: str,
+        source_sha256: str,
+        css_sha256: str,
+        props_schema: JsonObject,
+        created_by_run_id: Optional[str],
+    ) -> JsonObject:
+        """Record one compiled agent section (Lane B, Contract 4). Governed: only
+        ``toolbelt/site_sections.py`` calls it (test_write_path_governance)."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.record_site_section(
+                conn,
+                workspace_id=self.workspace_id,
+                digest=digest,
+                name=name,
+                source_sha256=source_sha256,
+                css_sha256=css_sha256,
+                props_schema=props_schema,
+                created_by_run_id=created_by_run_id,
             )
         )
 

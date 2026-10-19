@@ -1,0 +1,44 @@
+{
+  "brand": "altcarbon",
+  "pages": {
+    "/": {
+      "root": {
+        "props": {
+          "title": "AltCarbon clones"
+        }
+      },
+      "content": [
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "c0",
+            "fragmentId": "frag_94d51bb25f69ee2c",
+            "slots": {},
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "c1",
+            "fragmentId": "frag_6c4a41affa4492cb",
+            "slots": {},
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "c2",
+            "fragmentId": "frag_d38bbf953fa79d3d",
+            "slots": {},
+            "replacements": [],
+            "links": []
+          }
+        }
+      ]
+    }
+  }
+}

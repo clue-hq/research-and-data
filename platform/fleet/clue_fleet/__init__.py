@@ -94,9 +94,11 @@ from clue_fleet.scheduler import (
 )
 from clue_fleet.work_worker import (
     CapabilityGated,
+    DrainAware,
     InFlightLimited,
     LeasedWorkWorker,
     WorkContext,
+    WorkDrained,
     WorkHandler,
     WorkResult,
     enqueue_work,
@@ -188,9 +190,11 @@ __all__ = [
     "RunDriver",
     "enqueue_drive",
     "CapabilityGated",
+    "DrainAware",
     "InFlightLimited",
     "LeasedWorkWorker",
     "WorkContext",
+    "WorkDrained",
     "WorkHandler",
     "WorkResult",
     "enqueue_work",

@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from clue_api.arv2.discovery_request import DiscoveryBrief2, apply_roles, verifier_gates
+from clue_api.arv2.discovery_request import (
+    DiscoveryBrief2,
+    apply_roles,
+    excluded_domains,
+    verifier_gates,
+)
 from clue_api.arv2.discovery_verifier import GateVerdict
 
 
@@ -109,3 +114,48 @@ def test_a_failed_prefer_is_shown_as_partial():
     )
     assert out.excluded_by is None and out.shown_disposition == "partial"
     assert out.fit == pytest.approx(0.5)
+
+
+def _entry(name, *domains):
+    return {"name": name, "domains": list(domains)}
+
+
+def test_exclude_entries_are_bounded_and_need_a_real_domain():
+    assert _brief(exclude=[_entry("Marriott", "marriott.com")]).exclude[0].name == "Marriott"
+    with pytest.raises(ValidationError):
+        _brief(exclude=[_entry(f"Co {i}", f"co{i}.com") for i in range(501)])
+    with pytest.raises(ValidationError):
+        _brief(exclude=[_entry("Acme", "not a domain")])
+    with pytest.raises(ValidationError):
+        _brief(exclude=[_entry("A" * 201, "acme.com")])
+    with pytest.raises(ValidationError):
+        _brief(exclude=[_entry("Acme")])
+    with pytest.raises(ValidationError):
+        _brief(exclude=[_entry("Acme", *[f"acme{i}.com" for i in range(11)])])
+
+
+def test_excluded_domains_fold_spellings_and_keep_the_first_name():
+    brief = _brief(
+        exclude=[_entry("Acme", "https://www.Acme.com/"), _entry("Acme Inc", "acme.com")]
+    )
+    assert excluded_domains(brief) == {"acme.com": "Acme"}
+
+
+def test_a_shared_host_entry_names_only_that_site():
+    found = excluded_domains(_brief(exclude=[_entry("Acme Shop", "acme.myshopify.com")]))
+    assert found == {"acme.myshopify.com": "Acme Shop"}
+    assert "other.myshopify.com" not in found
+
+
+def test_a_subdomain_is_matched_as_written():
+    found = excluded_domains(_brief(exclude=[_entry("Marriott", "marriott.com")]))
+    assert "blog.marriott.com" not in found
+
+
+def test_a_brief_without_exclusions_serializes_exactly_as_before():
+    """Old run rows and ``@2`` calls keep their stored brief and request hash byte for byte."""
+    dumped = _brief().model_dump(mode="json")
+    assert "exclude" not in dumped
+    assert DiscoveryBrief2.model_validate(dumped) == _brief()
+    with_list = _brief(exclude=[_entry("Marriott", "marriott.com")]).model_dump(mode="json")
+    assert with_list["exclude"] == [{"name": "Marriott", "domains": ["marriott.com"]}]

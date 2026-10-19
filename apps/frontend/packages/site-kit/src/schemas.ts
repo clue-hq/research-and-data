@@ -1,0 +1,345 @@
+// The contract for what a page may contain: one Zod schema per component. The editor's fields,
+// the validator the agent calls, and the catalog the agent reads all come from these.
+//
+// Brand theming is enforced here, by structure: style props are token choices only, and every
+// object is strict, so a className, style or colour prop cannot be written at all. The one place
+// for manual styling is each section's (and the shell's) `_edits` prop, itself a closed schema of
+// brand tokens and bounded values (edits.ts). Text has no length limits (founder ruling 2026-10-04:
+// code checks correctness, not prose length).
+import { z } from "zod";
+import { EDITS_PROP, EditsSchema, ElementKeySchema, withoutEdits } from "./edits";
+import { isRichLink } from "./rich";
+import { ComponentIdSchema, SHELL_IDS, isShellId } from "./site-document";
+
+export const SURFACES = ["page", "card", "muted", "brandSubtle", "brand", "inverse"] as const;
+export const SURFACE_LABELS: Record<(typeof SURFACES)[number], string> = {
+  page: "Page",
+  card: "Card",
+  muted: "Muted",
+  brandSubtle: "Brand, subtle",
+  brand: "Brand",
+  inverse: "Inverse",
+};
+export const HEADING_ROLES = ["display", "headline", "title"] as const;
+
+/** A surface by its choice name: one of our six, or one of this brand's other surfaces ("canvas",
+ * "band-014036"). The validator checks it against the brand (founder Q4 = (b)). */
+export const Surface = z.string().min(1);
+/** A button style by its recipe's name ("solid.047464"; a kit made before measurement says
+ * "outline.1"); empty is the kit's standard button. The validator checks it against the brand
+ * (founder ruling 4). */
+const buttonLook = z.string().default("");
+export const HeadingRole = z.enum(HEADING_ROLES);
+
+const id = z.string().min(1);
+const text = z.string();
+const optionalText = z.string().default("");
+const link = z
+  .string()
+  .refine((value) => value === "" || isRichLink(value), {
+    message: "must be empty, an https:// URL, a /route on this site, or a #anchor",
+  });
+const optionalLink = link.default("");
+/** An image is a file from the brand's asset list; the validator checks membership. */
+const image = z.string().default("");
+/** Plan 5 (ruling R2, R8): an image's alt text: plain text (drawn escaped, never markup), at most 300
+ * characters, no line breaks or control characters; empty is a decorative image. */
+export const ALT_TEXT_RULE = "alt text is plain text of at most 300 characters, with no line breaks or control characters";
+export const AltTextSchema = z
+  .string()
+  .max(300, ALT_TEXT_RULE)
+  .regex(/^[^\u0000-\u001F\u007F]*$/, ALT_TEXT_RULE);
+const altText = AltTextSchema.optional();
+/** A copied element's key in `alts`: an element, never a styled span. */
+const AltKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/, "an alt text is named by its image's element key");
+
+export const StatsBandSchema = z
+  .object({
+    id,
+    surface: Surface,
+    align: z.enum(["left", "center"]).default("left"),
+    eyebrow: optionalText,
+    heading: text.min(1),
+    intro: optionalText,
+    stats: z.array(z.object({ value: text.min(1), label: text }).strict()).min(1).max(4),
+    source: optionalText,
+  })
+  .strict();
+
+export const FeatureSplitSchema = z
+  .object({
+    id,
+    surface: Surface,
+    eyebrow: optionalText,
+    heading: text.min(1),
+    headingRole: HeadingRole.default("title"),
+    body: text.min(1),
+    image,
+    imageAlt: altText,
+    imageSide: z.enum(["left", "right"]).default("left"),
+    buttonLabel: optionalText,
+    buttonHref: optionalLink,
+    buttonLook,
+    buttonNewTab: z.boolean().optional(),
+  })
+  .strict();
+
+export const ProofCardSchema = z
+  .object({
+    id,
+    surface: Surface,
+    kicker: text.min(1),
+    metric: text.min(1),
+    metricLabel: text.min(1),
+    heading: text.min(1),
+    body: optionalText,
+    source: optionalText,
+    linkLabel: optionalText,
+    linkHref: optionalLink,
+    linkNewTab: z.boolean().optional(),
+  })
+  .strict();
+
+export const CtaBandSchema = z
+  .object({
+    id,
+    surface: Surface,
+    heading: text.min(1),
+    body: optionalText,
+    buttonLabel: text.min(1),
+    buttonHref: link,
+    buttonLook,
+    buttonNewTab: z.boolean().optional(),
+  })
+  .strict();
+
+/** Plan 6 (ruling R8): a menu label is named by its page: `_home` for "/", the page's name otherwise
+ * (page names never start with "_"). Labels are plain text. */
+export const MENU_PAGE_KEY = /^(_home|[a-z0-9][a-z0-9-]*)$/;
+export const MenuLabelsSchema = z.record(
+  z.string().regex(MENU_PAGE_KEY, 'a menu label is named by its page: "_home" for /, or the page\'s name'),
+  text.min(1).max(60),
+);
+/** Links drawn after the site's pages in the header's menu (the seller's own, on a one-to-few or
+ * one-to-many site: the agent's judgement). */
+export const MenuExtraSchema = z.array(z.object({ label: text.min(1).max(60), href: link, newTab: z.boolean().optional() }).strict()).max(6);
+
+export const ClonedSectionSchema = z
+  .object({
+    id,
+    fragmentId: z
+      .string()
+      .regex(/^frag_[0-9a-f]{16}$/, "must be a clone id from the catalog (frag_ and 16 hex characters)"),
+    slots: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
+    replacements: z.array(z.object({ find: text.min(1), replace: text }).strict()).default([]),
+    links: z.array(z.object({ find: text.min(1), replace: link }).strict()).default([]),
+    /** The section's links that open in a new tab, by their element key (data-clue-el). */
+    newTab: z.array(ElementKeySchema).default([]),
+    /** Plan 5: alt texts of its images, by element key. */
+    alts: z.record(AltKeySchema, AltTextSchema).optional(),
+    /** Plan 6: a template's menu (the site's pages, filled when drawn). */
+    menuLabels: MenuLabelsSchema.optional(),
+    menuExtra: MenuExtraSchema.optional(),
+  })
+  .strict();
+
+/** Plan 6 (ruling R7): today's header and footer, every word theirs. Shell only. */
+export const SiteHeaderSchema = z
+  .object({
+    id,
+    accountLine: text.min(1),
+    accountLogo: optionalText,
+    accountLogoAlt: altText,
+    /** Empty: the kit's logo. */
+    logo: optionalText,
+    logoAlt: altText,
+    ctaLabel: text.min(1),
+    ctaHref: link,
+    ctaNewTab: z.boolean().optional(),
+    ctaLook: buttonLook,
+    menuLabels: MenuLabelsSchema.optional(),
+    menuExtra: MenuExtraSchema.optional(),
+  })
+  .strict();
+
+export const SiteFooterSchema = z
+  .object({
+    id,
+    legal: text.min(1),
+    logo: optionalText,
+    logoAlt: altText,
+    /** Empty: "Privacy policy" / "Terms". */
+    privacyLabel: optionalText,
+    privacyHref: optionalLink,
+    privacyNewTab: z.boolean().optional(),
+    termsLabel: optionalText,
+    termsHref: optionalLink,
+    termsNewTab: z.boolean().optional(),
+  })
+  .strict();
+
+/** The header's and footer's own components; never on a page. */
+export const SHELL_SCHEMAS = { SiteHeader: SiteHeaderSchema, SiteFooter: SiteFooterSchema } as const;
+
+/** The text our sections draw as RICH text (plan 2, spec §4.4; ruling R4): every field edited in
+ * place except link and button labels (a link label is the link itself; buttons are plan 3). The
+ * save check checks these against the grammar (rich.ts); the editor makes them rich text fields. */
+export const RICH_PROPS = {
+  StatsBand: ["eyebrow", "heading", "intro", "source"],
+  FeatureSplit: ["eyebrow", "heading", "body"],
+  ProofCard: ["kicker", "metric", "metricLabel", "heading", "body", "source"],
+  CtaBand: ["heading", "body"],
+  SiteFooter: ["legal"],
+} as const satisfies Record<string, readonly string[]>;
+
+/** Our sections' button words (plan 3, ruling R3): rich text without links, since the button is the
+ * link. The header's `ctaLabel` is the same; so are its account line and the footer's link words
+ * (plan 6: a link label is the link itself, and the account line sits beside the logos). */
+export const RICH_PROPS_NO_LINKS = {
+  FeatureSplit: ["buttonLabel"],
+  CtaBand: ["buttonLabel"],
+  SiteHeader: ["accountLine", "ctaLabel"],
+  SiteFooter: ["privacyLabel", "termsLabel"],
+} as const satisfies Record<string, readonly string[]>;
+
+/** Every component a page may use. Anything else is refused. */
+export const COMPONENT_SCHEMAS = {
+  ClonedSection: ClonedSectionSchema,
+  StatsBand: StatsBandSchema,
+  FeatureSplit: FeatureSplitSchema,
+  ProofCard: ProofCardSchema,
+  CtaBand: CtaBandSchema,
+} as const;
+export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
+export const COMPONENT_TYPES = Object.keys(COMPONENT_SCHEMAS) as ComponentType[];
+
+const item = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
+
+
+/** The page schema, optionally with extra section types (a site's agent-written sections, E5). */
+export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
+  const schemas: Record<string, z.ZodType> = { ...COMPONENT_SCHEMAS, ...extra };
+  const allowed = Object.keys(schemas);
+  return z
+  .object({
+    root: z.object({ props: z.object({ title: text.optional() }).strict() }).strict(),
+    content: z.array(item),
+    zones: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    page.content.forEach((entry, index) => {
+      // Controller ruling R10: the editor and the composer address a section as
+      // site:<route>#<id>.<field>, so an id may never carry "#", "." or anything else. The rule is
+      // the editor's own (ComponentIdSchema), checked whatever the section's schema says: an agent
+      // section whose id is optional, a number or a default used to save and then fail to open in
+      // the editor (review finding K1-2).
+      const sectionId = entry.props.id;
+      if (typeof sectionId !== "string" || sectionId === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: 'every section needs an id: letters, digits, "-" and "_" (up to 200 characters)',
+        });
+      } else if (!ComponentIdSchema.safeParse(sectionId).success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: `a section id may use only letters, digits, "-" and "_" (up to 200 characters); "${sectionId}" does not`,
+        });
+      }
+      if (typeof sectionId === "string" && isShellId(sectionId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: '"header" and "footer" are the header\'s and footer\'s ids; use another id',
+        });
+      }
+      if (entry.type in SHELL_SCHEMAS) {
+        ctx.addIssue({ code: "custom", path: ["content", index, "type"], message: "SiteHeader and SiteFooter belong in shell.json" });
+        return;
+      }
+      const schema = schemas[entry.type];
+      if (!schema) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "type"],
+          message: `unknown component "${entry.type}"; allowed: ${allowed.join(", ")}`,
+        });
+        return;
+      }
+      // `_edits` is every section's, whatever its own schema (an agent section's is usually
+      // strict): the section's schema checks the props without it, and the edits schema checks it.
+      const result = schema.safeParse(withoutEdits(entry.props));
+      if (!result.success) {
+        for (const issue of result.error.issues) {
+          ctx.addIssue({ ...issue, path: ["content", index, "props", ...issue.path] } as never);
+        }
+      }
+      if (entry.props[EDITS_PROP] !== undefined) {
+        const edits = EditsSchema.safeParse(entry.props[EDITS_PROP]);
+        if (!edits.success) {
+          for (const issue of edits.error.issues) {
+            ctx.addIssue({ ...issue, path: ["content", index, "props", EDITS_PROP, ...issue.path] } as never);
+          }
+        }
+      }
+    });
+    const ids = page.content.map((entry) => entry.props.id);
+    const duplicate = ids.find((value, index) => ids.indexOf(value) !== index);
+    if (duplicate) {
+      ctx.addIssue({ code: "custom", path: ["content"], message: `duplicate section id "${String(duplicate)}"` });
+    }
+  });
+}
+
+export const PageSchema = pageSchemaWith();
+
+/** Plan 6 (rulings R1, R7): the header and footer, each a section entry whose id is its place. The
+ * header is SiteHeader, a ClonedSection or one of the site's agent sections; the footer the same with
+ * SiteFooter. Every entry's props are checked by its type's schema, `_edits` by the edits schema. */
+export function shellSchemaWith(extra: Record<string, z.ZodType> = {}) {
+  const shared: Record<string, z.ZodType> = { ClonedSection: ClonedSectionSchema, ...extra };
+  const own = { header: "SiteHeader", footer: "SiteFooter" } as const;
+  const entry = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
+  return z
+    .object({ header: entry, footer: entry })
+    .strict()
+    .superRefine((shell, ctx) => {
+      for (const part of SHELL_IDS) {
+        const { type, props } = shell[part];
+        const other = part === "header" ? "footer" : "header";
+        if (props.id !== part) ctx.addIssue({ code: "custom", path: [part, "props", "id"], message: `must be "${part}"` });
+        const schema = type === own[part] ? SHELL_SCHEMAS[own[part]] : shared[type];
+        if (!schema) {
+          const theirs = type === own[other] ? `${type} is the ${other}'s; ` : `"${type}" cannot be the ${part}; `;
+          ctx.addIssue({
+            code: "custom",
+            path: [part, "type"],
+            message: `${theirs}the ${part} is ${own[part]}, a ClonedSection or one of this site's sections`,
+          });
+          continue;
+        }
+        const result = schema.safeParse(withoutEdits(props));
+        if (!result.success) {
+          for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: [part, "props", ...issue.path] } as never);
+        }
+        if (props[EDITS_PROP] !== undefined) {
+          const edits = EditsSchema.safeParse(props[EDITS_PROP]);
+          if (!edits.success) {
+            for (const issue of edits.error.issues) ctx.addIssue({ ...issue, path: [part, "props", EDITS_PROP, ...issue.path] } as never);
+          }
+        }
+      }
+    });
+}
+
+/** One line per issue: where it is and what is wrong, in words the agent can act on. */
+export function formatIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const where = issue.path.length ? issue.path.join(".") : "(page)";
+      return `${where}: ${issue.message}`;
+    })
+    .join("\n");
+}

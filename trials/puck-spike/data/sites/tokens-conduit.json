@@ -1,0 +1,3 @@
+{ "brand": "conduit", "pages": { "/": { "root": { "props": {} }, "content": [
+  { "type": "TokenProbe", "props": { "id": "tp", "heading": "Brand token probe", "body": "Body text in the brand's body role." } },
+  { "type": "ClonedSection", "props": { "id": "hero", "fragmentId": "frag_459fcb8c5790a40a", "slots": {}, "replacements": [] } } ] } } }

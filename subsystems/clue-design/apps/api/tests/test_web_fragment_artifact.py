@@ -899,3 +899,45 @@ def test_refusing_is_still_the_default_for_every_caller_that_does_not_ask() -> N
             rehosted={"hero.png": HERO_DIGEST},
         )
     assert excinfo.value.code == "fragment.reference_in_prelude"
+
+
+@pytest.mark.parametrize(
+    "reference",
+    ['url("#icon_linear_gradient_q")', "url('#paint0_linear_3029_1053')", 'url(#gradient)'],
+)
+def test_svg_local_paint_references_survive_css_scoping(reference: str) -> None:
+    result = scope_fragment_css(
+        f'.art {{ fill: {reference}; filter: url("#soft-shadow"); }}',
+        fragment_id=FRAG_ID,
+        rehosted={},
+    )
+    assert reference.replace("'", '"') in result.css
+    assert 'url("#soft-shadow")' in result.css
+    assert not result.asset_digests
+
+
+def test_inline_svg_local_reference_and_external_asset_keep_separate_custody() -> None:
+    result = sanitize_fragment_html(
+        '<section><svg><defs><linearGradient id="paint">'
+        '<stop offset="0" stop-color="red" /></linearGradient></defs>'
+        '<path style="fill: url(&quot;#paint&quot;)" d="M0 0h20v20H0z" /></svg>'
+        f'<div style="background: url(&quot;{HERO_URL}&quot;)"></div></section>',
+        rehosted=REHOSTED,
+    )
+    assert '#paint' in result.html
+    assert 'linearGradient' in result.html or 'lineargradient' in result.html
+    assert f'/asset-store/{HERO_DIGEST}' in result.html
+    assert set(result.asset_digests) == {HERO_DIGEST}
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        'url("https://missing.example/a.svg#paint")',
+        'url("#paint" "https://missing.example/a.svg")',
+        'url("")',
+    ],
+)
+def test_quoted_svg_fix_does_not_allow_uncaptured_or_malformed_urls(reference: str) -> None:
+    with pytest.raises(FragmentRefused):
+        scope_fragment_css(f".art {{ fill: {reference}; }}", fragment_id=FRAG_ID, rehosted={})

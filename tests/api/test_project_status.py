@@ -8,6 +8,7 @@ stamped with the compile time — every timestamp in the file is a row's own.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +27,7 @@ from clue_api.project_status import (
     render_decisions_markdown,
     render_status_markdown,
 )
+from clue_core import OnboardingInputKind
 from clue_spine import ProjectProductSet
 
 _T = datetime(2026, 9, 12, 8, 30, tzinfo=UTC)
@@ -174,11 +176,58 @@ def test_decisions_render_one_bullet_per_statement_oldest_first_or_an_honest_emp
             DecisionItem("project.icp_boundary", "exclude academic medical centres"),
         )
     )
-    assert text == (
-        "# Project decisions\n\n"
-        '- **project.outcome** — "we want new logos in mid-market GI groups"\n'
-        '- **project.icp_boundary** — "exclude academic medical centres"\n'
+    assert text.index("we want new logos") < text.index("exclude academic")
+    provenance = [
+        json.loads(line.removeprefix("  - Provenance: "))
+        for line in text.splitlines()
+        if line.startswith("  - Provenance: ")
+    ]
+    assert len(provenance) == 2
+    assert all(item["input_actor"] is None for item in provenance)
+    assert all(item["statement_id"] is None for item in provenance)
+
+
+def test_decision_render_keeps_capture_author_separate_from_recorder() -> None:
+    rendered = render_decisions_markdown(
+        (
+            DecisionItem(
+                "preference.logo",
+                "Place the target logo above the hero.",
+                statement_id=UUID(int=11),
+                onboarding_input_id=UUID(int=12),
+                input_kind=OnboardingInputKind.USER_TURN,
+                input_actor="human",
+                recorded_by_actor="agent",
+                input_created_at=_T,
+                created_at=_T,
+                entity_id=UUID(int=13),
+                correction_of_id=UUID(int=14),
+                input_source_ref='thread:example\n"quoted reference"',
+            ),
+        )
     )
+    provenance = json.loads(
+        next(
+            line.removeprefix("  - Provenance: ")
+            for line in rendered.splitlines()
+            if line.startswith("  - Provenance: ")
+        )
+    )
+    scope = json.loads(
+        next(
+            line.removeprefix("  - Scope: ")
+            for line in rendered.splitlines()
+            if line.startswith("  - Scope: ")
+        )
+    )
+    assert provenance["input_actor"] == "human"
+    assert provenance["recorded_by_actor"] == "agent"
+    assert provenance["input_id"] == "00000000-0000-0000-0000-00000000000c"
+    assert provenance["statement_id"] == "00000000-0000-0000-0000-00000000000b"
+    assert scope["entity_id"] == "00000000-0000-0000-0000-00000000000d"
+    assert scope["correction_of_id"] == "00000000-0000-0000-0000-00000000000e"
+    assert scope["input_source_ref"] == 'thread:example\n"quoted reference"'
+    assert scope["route_ref"] is None
 
 
 def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() -> None:

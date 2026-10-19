@@ -78,3 +78,28 @@ Networking settings and create both DNS records Railway displays (CNAME and
 TXT). Add the same HTTPS origin to Clerk and to the local platform API's
 authorized-party list. Both ngrok tunnels and the local platform/design APIs
 must remain running for the hosted frontend to function.
+
+## Site editor service (Wave 2 Lane C)
+
+A second Railway service serves the Puck site editor on its own registrable domain (D2):
+`https://<label>.<CLUE_SITE_EDITOR_SUFFIX>`, one subdomain per workspace, where `<label>` is the
+first 32 hex characters of sha256("clue-site-editor-label:v1:" + workspace id). It holds no login,
+no secret and no database access.
+
+- Source: this repository; Root Directory unset (repository root); service variable
+  `RAILWAY_DOCKERFILE_PATH=/apps/frontend/packages/site-editor/Dockerfile.railway`.
+- Watch paths: `/apps/frontend/packages/site-kit/**`, `/apps/frontend/packages/site-editor/**`,
+  `/apps/frontend/package-lock.json`.
+- Health check: `GET /healthz` (answers on any host).
+- Variables: `PORT` (Railway sets it); `HOST=0.0.0.0` (the image sets it); `CLUE_APP_ORIGIN` — the
+  app's canonical origin, the only origin allowed to frame and message the editor; `LUMEN_API_BASE_URL`
+  — the design API's private URL (the token-checked section route and the public asset store);
+  `CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai` — the editor domain (founder's choice, 2026-10-12).
+- Domain: the wildcard custom domain `*.edit.deeppresence.ai`, a wildcard DNS record
+  (`*.edit.deeppresence.ai` CNAME to the service's Railway target) and a wildcard certificate.
+  Nothing is configured per workspace. Nothing with a login may ever run on `deeppresence.ai` or any
+  subdomain of it while the editor lives there: code in the editor frame can set cookies for the
+  whole registrable domain.
+- The app service sets the same `CLUE_SITE_EDITOR_SUFFIX`; with it empty, a site shows the canvas
+  error "The website editor is not configured for this environment."
+- Never give this service Clerk keys, a database URL or any workspace secret.

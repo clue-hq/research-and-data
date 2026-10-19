@@ -108,12 +108,13 @@ launch_arv2_discovery:
   afterwards: >-
     If you have not read section 7b of the stage0-interview skill ("Discover accounts for this
     project") in this conversation, read it before you call this tool. It says how to write the
-    query, the criteria and the gates.
-    A discovery run is queued with the brief you wrote. It checks every company against your
-    gates, adds the ones that pass to this project's accounts, and searches again with the same
-    brief for any shortfall, up to three more times. This conversation is busy until it ends;
-    you then get a turn that starts with its summary.
-  skill_section: stage0-interview v43 section 7b, "Discover accounts for this project".
+    query, the criteria, the gates and the exclude list.
+    A discovery run is queued with the brief you wrote. It leaves out every company on your
+    exclude list and the seller's own domain, checks every other company against your gates,
+    adds the ones that pass to this project's accounts, and searches again with the same brief
+    for any shortfall, up to three more times. This conversation is busy until it ends; you then
+    get a turn that starts with its summary.
+  skill_section: stage0-interview v45 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
@@ -155,9 +156,10 @@ launch_arv2_person_research:
 
 open_design_leg:
   afterwards: >-
-    A design leg is open on this thread and the design agent takes over the conversation. You do
-    not run again while it is open and you cannot close it; the human ends it by saying so. The
-    artifact it produces appears in the project's gallery.
+    A design leg is open on this thread, and its first design turn is already queued from the
+    human's own message, so nobody needs to say anything to start it. The design agent takes over
+    the conversation. You do not run again while it is open and you cannot close it; the human
+    ends it by saying so. The artifact it produces appears in the project's gallery.
   skill_section: Not taught by the current skill.
   see_also: [siblings, gates-authority]
   refusals:
@@ -261,10 +263,11 @@ read_account_research:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
     account_not_found: Take the account id from read_project_accounts and call again; a merged account is refused under its old id, so use the survivor.
     overview_not_written: Read again with section 'claims', and say the overview has not been written yet rather than that the account is unresearched.
+    insights_not_written: The insights page has not been written yet. Read the overview or the claims instead, and do not describe it as missing research.
+    context_required: The account was researched in more than one project and this read could not tell which. Read section 'claims' instead, or ask the human to open the account in the app.
     account_not_researched: Say plainly that nothing is known about this account yet, and offer to research it.
     no_claims_under_prefix: Pick one of the families the refusal lists and read again; never invent a prefix.
     offset_past_end: You have already read to the end. Stop paging and answer from what you have.
-    offset_not_paged: Drop offset; the overview is served whole.
 
 read_artifact:
   afterwards: >-

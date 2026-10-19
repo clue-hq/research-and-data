@@ -130,3 +130,20 @@ def test_a_tampered_blob_is_refused_rather_than_written(tmp_path: Path) -> None:
             history_file=None,
         )
     assert not (session / "workspace" / "brief.md").exists()
+
+
+def test_a_snapshot_can_leave_out_regenerated_folders(tmp_path: Path) -> None:
+    session = tmp_path / "sessions" / "dsess_site"
+    workspace = session / "workspace"
+    (workspace / "research").mkdir(parents=True)
+    (workspace / "fetched").mkdir()
+    (workspace / "plan.md").write_text("plan", encoding="utf-8")
+    (workspace / "page.json").write_text("{}", encoding="utf-8")
+    (workspace / "research" / "overview.md").write_text("old research", encoding="utf-8")
+    (workspace / "fetched" / "story.md").write_text("evidence", encoding="utf-8")
+    manifest = snapshot_session(session, register=_Blobs().register, history_file=None,
+                                exclude=frozenset({"research", "page.json"}))
+    assert set(manifest["files"]) == {"workspace/plan.md", "workspace/fetched/story.md"}
+    # The default leaves out nothing, byte-identical to the web and scene lanes.
+    everything = snapshot_session(session, register=_Blobs().register, history_file=None)
+    assert "workspace/research/overview.md" in everything["files"]

@@ -1,0 +1,11 @@
+/* Shared by typed tabs and declared native repairs. Captured class names
+   alone neither activate a controller nor acquire these platform styles. */
+:where([data-lumen-tabs]) > .lumen-tabs-list { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+:where([data-lumen-tabs] > .lumen-tabs-list) > .lumen-tab {
+  border: none; background: transparent; cursor: pointer;
+  padding: 0.5rem 1rem; border-radius: 9999px; font: inherit; color: inherit;
+  opacity: 0.65;
+}
+:where([data-lumen-tabs] > .lumen-tabs-list) > .lumen-tab[aria-selected="true"] {
+  opacity: 1; background: rgb(0 0 0 / 0.06);
+}

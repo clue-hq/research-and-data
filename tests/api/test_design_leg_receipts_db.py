@@ -69,7 +69,8 @@ def test_receipts_carry_the_design_role_and_the_gateway_cost(
 ) -> None:
     receipts = receipts_from_design_run(
         {"model_calls": [_collected(1), _collected(2, status="failed")]},
-        request=design_turn_request,
+        turn_id=design_turn_request.turn_id,
+        workspace_id=design_turn_request.constitution.workspace_id,
     )
     assert [r.sequence for r in receipts] == [1, 2]
     assert all(r.role is AgentRole.DESIGN for r in receipts)
@@ -86,7 +87,8 @@ def test_a_sequence_offset_lands_a_run_after_the_calls_before_it(
     on ``(turn_id, sequence)`` and every run of a batch lands on ONE turn."""
     receipts = receipts_from_design_run(
         {"model_calls": [_collected(1), _collected(2)]},
-        request=design_turn_request,
+        turn_id=design_turn_request.turn_id,
+        workspace_id=design_turn_request.constitution.workspace_id,
         sequence_offset=31,
     )
     assert [r.sequence for r in receipts] == [32, 33]
@@ -94,7 +96,9 @@ def test_a_sequence_offset_lands_a_run_after_the_calls_before_it(
     assert [
         r.sequence
         for r in receipts_from_design_run(
-            {"model_calls": [_collected(1)]}, request=design_turn_request
+            {"model_calls": [_collected(1)]},
+            turn_id=design_turn_request.turn_id,
+            workspace_id=design_turn_request.constitution.workspace_id,
         )
     ] == [1]
 
@@ -102,7 +106,14 @@ def test_a_sequence_offset_lands_a_run_after_the_calls_before_it(
 def test_a_run_without_model_calls_yields_no_receipts(
     design_turn_request: AgentTurnRequest,
 ) -> None:
-    assert receipts_from_design_run({}, request=design_turn_request) == ()
+    assert (
+        receipts_from_design_run(
+            {},
+            turn_id=design_turn_request.turn_id,
+            workspace_id=design_turn_request.constitution.workspace_id,
+        )
+        == ()
+    )
 
 
 # --- the re-join paths (ruling T5-1) -----------------------------------------------------------
@@ -308,3 +319,46 @@ def test_a_batch_run_with_no_calls_leaves_the_numbering_where_it_was(
         },
     )
     assert [r.sequence for r in journal.receipts] == [1, 2, 3]
+
+
+def test_a_stopped_turn_records_every_run_s_receipts_in_position_order(
+    monkeypatch: pytest.MonkeyPatch, design_turn_request: AgentTurnRequest
+) -> None:
+    """Live 2026-10-04: a design turn stopped after 75 metered calls ($3.81) left nothing on
+    ``agent_model_call``; only the dispatch path recorded receipts and a stop never returns there.
+    The stop path now lands every terminal run's calls, in position order, before the hand-back."""
+    from clue_api import design_leg_wiring as wiring
+
+    turn_id = design_turn_request.turn_id
+    workspace_id = design_turn_request.constitution.workspace_id
+    first = {**_terminal_run(sequences=(1, 2)), "run_id": wiring.design_leg_run_id(turn_id, 0)}
+    second = {**_terminal_run(sequences=(1,)), "run_id": wiring.design_leg_run_id(turn_id, 1)}
+
+    class _Runs:
+        @staticmethod
+        async def runs_for_execution(conn: Any, *, workspace_id: str, execution_id: Any):
+            assert execution_id == wiring.design_leg_execution_id(turn_id)
+            return [second, first]  # created_at order need not be position order
+
+    handed_back: list[Any] = []
+
+    async def _hand_back(self, *, workspace_id: str, turn_id: Any) -> None:
+        handed_back.append(turn_id)
+
+    monkeypatch.setattr(wiring, "design_runs", _Runs)
+    monkeypatch.setattr(wiring.DesignLegTurnRunner, "_hand_back_stopped_leg", _hand_back)
+    journal = _RecordingJournal()
+    runner = wiring.DesignLegTurnRunner(
+        profiles=None,
+        artifacts=None,
+        turns=journal,
+        history=None,
+        lane=_LaneThatMustNotDrive(),
+        conn_factory=_conn_factory(),
+    )
+    asyncio.run(runner.await_stopped_turn(workspace_id=workspace_id, turn_id=turn_id))
+
+    assert [r.sequence for r in journal.receipts] == [1, 2, 3]
+    assert [r.langfuse_observation_id for r in journal.receipts] == ["o1", "o2", "o1"]
+    assert all(r.execution_id == wiring.design_leg_execution_id(turn_id) for r in journal.receipts)
+    assert handed_back == [turn_id]

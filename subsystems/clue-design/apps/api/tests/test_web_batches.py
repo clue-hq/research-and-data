@@ -103,6 +103,25 @@ def test_batch_publishes_all_accounts(client: TestClient, workspace_id: str) -> 
     assert len(slugs) == 3  # distinct slugs
 
 
+def test_every_page_a_batch_derives_is_born_noindex(client: TestClient, workspace_id: str) -> None:
+    """Founder ruling 2026-10-16: a plain (non-ABM) batch asks for no noindex, but each page it
+    derives is a NEW web document, born with the durable flag — so each published page serves
+    the robots meta, and its manifest row says so."""
+    from conftest import published_html
+
+    document = create_web_document(client)
+    seed_template(client, document["id"])
+    body = client.post(
+        f"/documents/{document['id']}/web/batch",
+        json={"account_ids": [make_account(client, "Privia Health")], "publish": True},
+    ).json()
+    row = body["manifest"][0]
+    assert row["status"] == "published", row
+    assert HybridRepository().require_document(row["document_id"])["web_noindex"] is True
+    assert '<meta name="robots" content="noindex">' in published_html(workspace_id, row["slug"])
+    assert row["noindex"] is True
+
+
 def test_batch_derive_only_when_publish_false(client: TestClient) -> None:
     document = create_web_document(client)
     seed_template(client, document["id"])

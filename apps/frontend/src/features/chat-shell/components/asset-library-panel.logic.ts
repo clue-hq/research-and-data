@@ -1,4 +1,5 @@
 import type { AssetLibraryCategory, AssetLibraryItem } from "@/features/design-editor/adapter/scene-asset-library";
+import type { AssetLibraryLogoSearch } from "@/features/design-editor/hooks/use-scene-asset-library";
 
 /** The picker's rules, kept out of the panel so every one of them is tested (the lane's
  * presentation-components-carry-no-logic convention). */
@@ -75,4 +76,12 @@ export function logoResultCaption(logo: { kind: string; background: "light" | "d
 export function logoSearchHeading(name: string | null, count: number): string {
   const versions = count === 1 ? "1 version found" : `${count} versions found`;
   return name ? `${name} · ${versions}` : versions;
+}
+
+/** The library's Logo search when it provides every part of it, else null: the site editor's library
+ * has none, so its panel shows the library alone (no tabs). */
+export function logoSearchOf(library: Partial<AssetLibraryLogoSearch>): AssetLibraryLogoSearch | null {
+  const { tab, setTab, logoSearch, setLogoQuery, searchLogos, pickLogo } = library;
+  if (!tab || !setTab || !logoSearch || !setLogoQuery || !searchLogos || !pickLogo) return null;
+  return { tab, setTab, logoSearch, setLogoQuery, searchLogos, pickLogo };
 }

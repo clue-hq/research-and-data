@@ -154,6 +154,7 @@ from clue_fleet import (
     WorkId,
     acquire_work_lease,
     claim_next_task,
+    get_work_lease,
     release_work_lease,
 )
 from clue_research.adapters.exa_websets import ExaDiscoveryCompanyItem
@@ -2171,16 +2172,19 @@ def test_a_crashed_account_job_re_drives_after_a_supervisor_suspension_and_resum
     """The live 2026-08-19 defect: a resumed job refused itself as a replayed agent turn.
 
     A drive that dies inside a provider tool leaves an immutable R3 turn row keyed on
-    ``(job, lease_generation, current_state_sha256)``.  ``release_work_lease`` *deletes* the lease
-    row, so the resumed drive's lease starts again at generation 1 and — with the durable state
-    unchanged, because the crash bought nothing — every input to that key repeats.  The resumed
+    ``(job, lease_generation, current_state_sha256)``.  ``release_work_lease`` *deleted* the lease
+    row then, so the resumed drive's lease started again at generation 1 and — with the durable
+    state unchanged, because the crash bought nothing — every input to that key repeated.  The
+    resumed
     drive therefore re-minted the crashed drive's turn id, and because the fleet had meanwhile
     moved (a provider reservation resized, a concurrency default raised), the journal saw the same
     turn id under a different exact construction and failed closed with
     ``EntityResearchJournalConflict``.  Every one of the five live jobs died that way on resume.
 
     The attempt ordinal is now part of the turn key, so a resume is its own turn and the R3 guard
-    keeps its real meaning: one turn id, one immutable construction, still fail-closed.
+    keeps its real meaning: one turn id, one immutable construction, still fail-closed.  Since
+    2026-10-16 release also keeps the lease row, so the resumed drive's generation is 2: the turn
+    key is separated twice over, and the attempt ordinal stays in it.
     """
 
     async def scenario() -> None:
@@ -2259,8 +2263,9 @@ def test_a_crashed_account_job_re_drives_after_a_supervisor_suspension_and_resum
                 actor="human:account-owner",
             )
 
-            # The crash bought nothing and the released lease restarts at generation 1, so the
-            # old turn key repeats exactly. Only the attempt ordinal separates the two drives.
+            # The crash bought nothing. Until 2026-10-16 the released lease restarted at
+            # generation 1 and only the attempt ordinal separated the two drives; release now
+            # keeps the row, so the re-drive also holds generation 2 (asserted below).
             resumed = await _drive_launched_job(
                 conn,
                 fixture=fixture,
@@ -2281,6 +2286,9 @@ def test_a_crashed_account_job_re_drives_after_a_supervisor_suspension_and_resum
                 )
             ).scalar_one()
             assert after != crashed_state_sha  # the re-drive is the one that did the work
+            redrive_lease = await get_work_lease(conn, WorkId(job_id))
+            assert redrive_lease is not None
+            assert (redrive_lease.worker_id, redrive_lease.generation) == ("b8-resume-redrive", 2)
 
             turns = await _agent_turns(conn, job_id=job_id)
             assert len(turns) == 2

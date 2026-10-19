@@ -1,182 +1,95 @@
-"""Recurring measured band backgrounds → `surface.band.*` color tokens.
+"""Measured section backgrounds → `surface.band.<hex>` colour tokens (rewritten, Wave 2 A9).
 
 `capture/geometry.py` measures every page band's background into
-`BrandEvidence.geometry.background_sequence`, and `SectionBackground`'s own
-docstring is right that the *sequence* is the finding — a rhythm, not a token.
-But a color the page **stands on more than once** (Stripe's navy under two full
-sections; a single statement band swallowing a fifth of the scroll) is a brand
-surface by any honest reading, and until this module existed it reached the kit
-under no name at all. The brief agent could then only approximate it, and every
-generated page inherited the approximation.
+`BrandEvidence.geometry.background_sequence`, and the text colour on it (`ink`). Every flat, opaque
+band colour is a surface the seller's page stands on, so it reaches the kit as a surface token — and
+through it, site-kit's extra surfaces and the agent's surfaces table (founder, 2026-10-12).
 
-So: the rhythm stays the rhythm, and the recurring *members* of it earn names.
-Nothing here invents a color — every value is a hex read off the brand's own
-rendered page, which is why these tokens carry `MEASURED_CONFIDENCE` and a
-`website:` pointer rather than the 0.9 an atomic swatch gets.
+Rules, each a refusal or an exact match:
 
-Three rules keep the mint honest, and each one is a refusal:
-
-* a band whose background is a gradient, an image, or TRANSLUCENT is not a
-  flat opaque surface, so it names nothing — its hex is not what the page
-  shows. The translucent case is the sneaky one: the capture only discards a
-  *fully* transparent background, so a band painted `rgba(20, 40, 120, 0.04)`
-  arrives as `#1428780A`, and nothing downstream reads that alpha byte — it
-  would be minted as a near-black statement surface when the page renders it
-  as barely-tinted white, and the alpha would ride into the web theme;
-* a group already within merge distance of a color the kit carries names
-  nothing — Stripe's five white bands are `surface.page`/`text.inverse` doing
-  their job, not five new tokens;
-* a group that neither recurs nor commands real height names nothing (a 380px
-  footer tint is a footer tint).
-
-Clustering follows `cluster.py`'s idiom: accumulate while the running mean
-stays inside the same 0.03 OKLab merge distance, keep an OBSERVED hex as the
-representative (never a drifted mean), order deterministically. The one
-deviation is that the running mean here is unweighted: a band's weight is its
-height, heights can legitimately be 0 in a degenerate harvest, and height is
-already doing the load-bearing work of picking the representative and clearing
-the threshold.
+* a band whose background is a gradient, an image, or translucent names nothing: its hex is not
+  what the page shows (a band painted `rgba(20, 40, 120, 0.04)` reads as barely-tinted white but
+  arrives as `#1428780A`);
+* a band colour an existing `surface.*` token holds EXACTLY is that token, alpha included (a
+  translucent `#F5F5F580` does not hold a flat `#F5F5F5`). Surface tokens only: a band named after
+  an ink role (`text.inverse`) would teach the wrong vocabulary (the grammar audit's rule,
+  `grammar_audit._surface_token`); near misses are minted, never merged (no tolerance);
+* the name is the colour (`surface.band.014036`), so a band order that shifts between extractions
+  never renames a surface and the same site always yields the same names;
+* at most `MAX_BAND_SURFACES`, the most present first: each one adds a row to the agent's surfaces
+  table and an option to the marketer's Surface field.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..colorspace import hex_alpha, hex_to_oklab, oklab_distance, relative_luminance
+from ..colorspace import contrast_ratio, hex_alpha
 from ..evidence import SectionBackground
-from .cluster import MERGE_DISTANCE
 
-# `MERGE_DISTANCE` is `cluster.py`'s — two bands a human would call "the same
-# navy" must not become two tokens, and the dedupe below is only correct while
-# bands and evidence colors agree on what "the same color" means.
-#
-# A single band this share of the measured scroll is a statement surface, not a
-# one-off: one huge band still earns a name without needing to repeat.
-HEIGHT_SHARE = 0.20
-# …otherwise the color has to actually recur.
-MIN_BANDS = 2
-# Relative luminance below this reads as a dark statement band; above it, a tint.
+MAX_BAND_SURFACES = 12
+#: Relative luminance below this reads as a dark band. No longer part of a band's name; the grammar
+#: audit's dark/light band reading (`grammar_audit`) still uses it.
 DARK_LUMINANCE = 0.5
 
 
 @dataclass(frozen=True)
 class BandSurface:
-    """One minted band token: where it goes, what it is, and what measured it."""
+    """One minted band token: where it goes, what it is, what measured it, the text on it."""
 
     path: str
     hex: str
     provenance: str
     description: str
+    ink_hex: str | None
 
 
-@dataclass
-class _Group:
-    members: list[SectionBackground]
-    lab_sum: tuple[float, float, float]
+def band_path(hex_value: str) -> str:
+    return f"surface.band.{hex_value[1:7].lower()}"
 
-    @property
-    def mean(self) -> tuple[float, float, float]:
-        n = float(len(self.members))
-        return (self.lab_sum[0] / n, self.lab_sum[1] / n, self.lab_sum[2] / n)
 
-    @property
-    def height(self) -> float:
-        return sum(_height(band) for band in self.members)
-
-    @property
-    def representative(self) -> SectionBackground:
-        # Tallest wins; ties break on the earliest section, so the same harvest
-        # always names the same hex.
-        return min(self.members, key=lambda b: (-_height(b), b.index))
+def opaque_hex(value: str) -> str | None:
+    """`#RRGGBB` of an opaque hex colour (`#RRGGBB`, or `#RRGGBBFF`); None for a translucent one."""
+    text = value.upper()
+    if len(text) == 7 or (len(text) == 9 and text.endswith("FF")):
+        return text[:7]
+    return None
 
 
 def build_band_surfaces(
-    sequence: list[SectionBackground], kit_colors: list[str]
-) -> list[BandSurface]:
-    """The `surface.band.*` tokens this background sequence honestly supports.
+    sequence: list[SectionBackground], surface_colors: dict[str, str]
+) -> tuple[list[BandSurface], int]:
+    """The band surfaces this background sequence supports, and how many the cap left out.
 
-    `kit_colors` is every color value already emitted on the kit (the semantic
-    set, the ramps, the extras); a band group that matches one of them is that
-    token, and minting a second name for it would split the vocabulary.
-
-    Returns `[]` for evidence with no measured sequence. A brand whose every
-    section sits on one canvas has no band language, and that IS the finding.
+    `surface_colors` maps the kit's `surface.*` tokens to their hex.
     """
     usable = [
-        band
-        for band in sequence
-        if band.background
-        and not band.gradient
-        and not band.has_image
-        # Opaque only. A translucent band's stored hex describes the paint, not
-        # the pixels — and every reader downstream (OKLab, luminance, the web
-        # theme) ignores the alpha byte, so minting it would be a lie twice
-        # over. The band still shows in the rhythm; it just names nothing.
-        and hex_alpha(band.background) >= 1.0
+        band for band in sequence
+        if band.background and not band.gradient and not band.has_image and hex_alpha(band.background) >= 1.0
     ]
-    if not usable:
-        return []
-
-    total_height = sum(_height(band) for band in usable)
-    kit_labs = [hex_to_oklab(value) for value in kit_colors if value]
-
-    minted: list[_Group] = []
-    for group in _group(usable):
-        rep_lab = hex_to_oklab(group.representative.background or "")
-        if any(oklab_distance(rep_lab, lab) <= MERGE_DISTANCE for lab in kit_labs):
-            continue
-        recurs = len(group.members) >= MIN_BANDS
-        commands = total_height > 0 and group.height >= HEIGHT_SHARE * total_height
-        if recurs or commands:
-            minted.append(group)
-
-    # Deterministic emission order: the biggest presence on the page first.
-    minted.sort(key=lambda g: (-g.height, min(b.index for b in g.members)))
-
-    seen: dict[str, int] = {}
+    taken = {opaque for value in surface_colors.values() if value and (opaque := opaque_hex(value))}
+    by_hex: dict[str, list[SectionBackground]] = {}
+    for band in usable:
+        by_hex.setdefault((band.background or "")[:7].upper(), []).append(band)
+    ordered = sorted(
+        ((hex_value, members) for hex_value, members in by_hex.items() if hex_value not in taken),
+        key=lambda item: (-sum(_height(b) for b in item[1]), min(b.index for b in item[1])),
+    )
     surfaces: list[BandSurface] = []
-    for group in minted:
-        band = group.representative
-        hex_value = band.background or ""
-        kind = "statement" if relative_luminance(hex_value) < DARK_LUMINANCE else "tint"
-        rank = seen.get(kind, 0) + 1
-        seen[kind] = rank
-        suffix = "" if rank == 1 else f"-{rank}"
-        indices = sorted(member.index for member in group.members)
-        surfaces.append(
-            BandSurface(
-                path=f"surface.band.{kind}{suffix}",
-                hex=hex_value,
-                provenance=(
-                    f"{band.pointer.source}:{_page(band)} :: recurring band "
-                    f"background (sections {', '.join(str(i) for i in indices)})"
-                ),
-                description=(
-                    "recurring page band background "
-                    f"({len(group.members)} {'band' if len(group.members) == 1 else 'bands'}"
-                    f", {int(group.height)}px)"
-                ),
-            )
-        )
-    return surfaces
-
-
-def _group(bands: list[SectionBackground]) -> list[_Group]:
-    groups: list[_Group] = []
-    for band in bands:
-        lab = hex_to_oklab(band.background or "")
-        for group in groups:
-            if oklab_distance(group.mean, lab) <= MERGE_DISTANCE:
-                group.members.append(band)
-                group.lab_sum = (
-                    group.lab_sum[0] + lab[0],
-                    group.lab_sum[1] + lab[1],
-                    group.lab_sum[2] + lab[2],
-                )
-                break
-        else:
-            groups.append(_Group(members=[band], lab_sum=lab))
-    return groups
+    for hex_value, members in ordered[:MAX_BAND_SURFACES]:
+        tallest_first = sorted(members, key=lambda b: (-_height(b), b.index))
+        representative = tallest_first[0]
+        indices = ", ".join(str(i) for i in sorted(b.index for b in members))
+        inks = [b.ink for b in tallest_first if b.ink and hex_alpha(b.ink) >= 1.0]
+        count = len(members)
+        surfaces.append(BandSurface(
+            path=band_path(hex_value),
+            hex=hex_value,
+            provenance=f"{representative.pointer.source}:{_page(representative)} :: section background (sections {indices})",
+            description=f"section background ({count} {'band' if count == 1 else 'bands'}, {int(sum(_height(b) for b in members))}px)",
+            ink_hex=inks[0][:7].upper() if inks else None,
+        ))
+    return surfaces, max(0, len(ordered) - MAX_BAND_SURFACES)
 
 
 def _height(band: SectionBackground) -> float:
@@ -186,3 +99,23 @@ def _height(band: SectionBackground) -> float:
 def _page(band: SectionBackground) -> str:
     """The page URL out of the band's `<url> :: section N (tag)` locator."""
     return band.pointer.locator.split(" :: ", 1)[0]
+
+
+#: A band's text must read on it (WCAG 1.4.3), the normalizer's `_CONTRAST_MIN`.
+READABLE_RATIO = 4.5
+
+
+def readable_ink(band: BandSurface, candidates: list[str]) -> tuple[str, bool]:
+    """The text colour to store for a band, and whether it is the one measured there (S6-1, D4).
+
+    The measured colour when it reads on the band (4.5:1). Otherwise the brand's own text colour
+    wins whenever it reads: the best-reading of `candidates` (the kit's text.primary and
+    text.inverse) that reaches 4.5:1. Only when none does, black (#0B0F14) or white, whichever reads
+    better. `band.ink_hex` must be set."""
+    measured = str(band.ink_hex)
+    if contrast_ratio(measured, band.hex) >= READABLE_RATIO:
+        return measured, True
+    readable = [c[:7].upper() for c in candidates if c and contrast_ratio(c[:7], band.hex) >= READABLE_RATIO]
+    options = readable or ["#FFFFFF", "#0B0F14"]
+    best = max(options, key=lambda option: contrast_ratio(option, band.hex))
+    return best, False

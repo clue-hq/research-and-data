@@ -502,7 +502,8 @@ def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_
     keyed = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
     keyless = Secrets(_env_file=None)  # type: ignore[call-arg]
 
-    assert _build_arv2_discovery_handler(_settings(), keyed, storage=storage) is None
+    off = _settings(arv2_discovery_enabled=False)  # on by default since 2026-10-04
+    assert _build_arv2_discovery_handler(off, keyed, storage=storage) is None
 
     on = _settings(arv2_discovery_enabled=True)
     assert _build_arv2_discovery_handler(on, keyless, storage=storage) is None
@@ -923,6 +924,45 @@ def test_the_orphan_sweep_loop_checks_hourly_and_sweeps_only_when_the_fleet_is_d
         )
     assert slept == [3600.0, 3600.0, 3600.0]
     assert asked == [timedelta(hours=48), timedelta(hours=48)]
+
+
+def test_the_maintenance_loop_also_prunes_ended_work_leases_daily_even_if_the_storage_sweep_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Releasing a lease keeps its row so generations never repeat (2026-10-16); the fleet's
+    maintenance clock removes rows ended a month ago, once a day, in its own transaction, so a
+    storage-sweep fault never skips it."""
+    import clue_api.fleet_main as fleet_main
+
+    slept: list[float] = []
+    pruned: list[timedelta] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        if len(slept) > 2:
+            raise asyncio.CancelledError
+
+    async def broken_storage_sweep(conn: object, *, every: timedelta, storage: object = None):
+        raise RuntimeError("storage is down")
+
+    async def prune(conn: object, *, every: timedelta) -> int:
+        pruned.append(every)
+        return 0
+
+    @asynccontextmanager
+    async def connections() -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr(fleet_main, "run_orphan_blob_sweep_if_due", broken_storage_sweep)
+    monkeypatch.setattr(fleet_main, "prune_released_work_leases_if_due", prune)
+    settings = _settings(
+        storage_orphan_sweep_interval_s=172800.0, storage_orphan_sweep_check_interval_s=3600.0
+    )
+    with pytest.raises(asyncio.CancelledError):
+        run_async(
+            _orphan_sweep_loop(settings, FakeStorage(), conn_factory=connections, sleep=sleep)
+        )
+    assert pruned == [timedelta(days=1), timedelta(days=1)]
 
 
 # --- the background design reaper (Part II D5 Round C) -------------------------------------------

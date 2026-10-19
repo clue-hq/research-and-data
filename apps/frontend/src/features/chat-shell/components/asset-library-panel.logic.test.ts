@@ -79,3 +79,14 @@ it("logo search: the heading names the company and counts the versions", () => {
   assert.equal(logoSearchHeading("stripe.com", 1), "stripe.com · 1 version found");
   assert.equal(logoSearchHeading(null, 2), "2 versions found");
 });
+
+// The research-streaming merge (2026-10-19): the scene editor's library has Logo search; the site
+// editor's has none, and its panel draws no Logo search tab.
+it("finds the logo search only when the library provides every part of it", async () => {
+  const { logoSearchOf } = await import("./asset-library-panel.logic");
+  const noop = () => undefined;
+  const logo = { tab: "library" as const, setTab: noop, logoSearch: { query: "", status: "idle" as const, searchedFor: "", name: null, results: [], savingAssetId: null, error: null }, setLogoQuery: noop, searchLogos: noop, pickLogo: noop };
+  assert.equal(logoSearchOf({}), null);
+  assert.equal(logoSearchOf({ ...logo, pickLogo: undefined }), null);
+  assert.deepEqual(logoSearchOf(logo), logo);
+});

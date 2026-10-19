@@ -15,6 +15,7 @@ ENV_EXAMPLE = REPO / ".env.example"
 
 PAGES_SETTING_DEFAULTS: dict[str, object] = {
     "pages_system_suffix": "pages.cluehq.ai",
+    "pages_legacy_system_suffixes": "pages.cluehq.ai",
     "pages_public_scheme": "https",
     "pages_public_port": None,
     "pages_trust_host_header": False,

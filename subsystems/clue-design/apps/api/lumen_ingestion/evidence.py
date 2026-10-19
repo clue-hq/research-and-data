@@ -71,7 +71,19 @@ class TypeSample(BaseModel):
     size_px: float | None = None
     line_height: float | None = None
     letter_spacing: float | None = None
+    #: A rendered heading's own text colour, the colour behind it (composited up to the first
+    #: opaque background; None over an image) and its box area. The heading ink comes from these.
+    color: str | None = None
+    background: str | None = None
+    area: float | None = None
     pointer: EvidencePointer
+    #: Which rendered sample it came from (responsive brand type reads the same one at each width).
+    sample_index: int | None = None
+
+    @field_validator("color", "background")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
 
 
 class FontFaceEvidence(BaseModel):
@@ -284,13 +296,175 @@ class SectionBackground(BaseModel):
     background: str | None = None
     gradient: bool = False
     has_image: bool = False
+    ink: str | None = None
     height_px: float = 0.0
     pointer: EvidencePointer
 
-    @field_validator("background")
+    @field_validator("background", "ink")
     @classmethod
     def _bg(cls, value: str | None) -> str | None:
         return _normalize_hex(value) if value else value
+
+
+class StyleLook(BaseModel):
+    """One look of a measured element style (Wave 2 A9): what a browser computed for it.
+
+    The rest look carries everything measured; a state's look carries only what changed from rest,
+    with `"none"` for a shadow, transform or filter the state removes, and `#00000000` for a colour
+    the state clears. Colours are normalized hex.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    background: str | None = None
+    color: str | None = None
+    #: The colour of the element that paints the words, when it is not the element itself.
+    label_color: str | None = None
+    border_color: str | None = None
+    border_width: list[float] = []
+    border_style: str | None = None
+    radius: list[float] = []
+    pill: bool | None = None
+    padding: list[float] = []
+    height: float | None = None
+    gap: float | None = None
+    font_family: str | None = None
+    font_size: float | None = None
+    font_weight: float | None = None
+    #: px, as computed.
+    line_height: float | None = None
+    #: px, as computed.
+    letter_spacing: float | None = None
+    text_transform: str | None = None
+    decoration_line: str | None = None
+    decoration_thickness: str | None = None
+    underline_offset: str | None = None
+    box_shadow: str | None = None
+    opacity: float | None = None
+    transform: str | None = None
+    filter: str | None = None
+    cursor: str | None = None
+    outline_color: str | None = None
+    outline_width: float | None = None
+    outline_style: str | None = None
+    outline_offset: float | None = None
+    #: The browser's own focus ring showed: the site styles no focus look of its own.
+    browser_focus_ring: bool | None = None
+    icon_transform: str | None = None
+    icon_color: str | None = None
+    icon_opacity: float | None = None
+
+    @field_validator("background", "color", "label_color", "border_color", "outline_color", "icon_color")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
+class StyleTransition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: Literal["self", "label", "icon"]
+    property: str
+    duration_ms: float
+    easing: str = "ease"
+    delay_ms: float = 0.0
+
+
+class StyleIcon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["svg", "glyph", "img"]
+    position: Literal["start", "end"] = "end"
+    glyph: str | None = None
+    #: Cleaned to drawing elements only (`capture.motion.clean_icon_svg`).
+    svg: str | None = None
+    width: float | None = None
+    height: float | None = None
+
+
+class MeasuredStyle(BaseModel):
+    """One visual variant of an element class, in every state the capture could reach (Wave 2 A9).
+
+    `variant` is the same look-keyed `<fill>.<hex>` name (`solid.047464`) the shape records and the
+    brief's recipes use, so a recipe and its measurement join by `(surface, variant)`. `probed` says
+    how the hover was read: by a real pointer, forced through CSS (the element was covered), or not
+    at all (rest only, beyond the state pass's caps or time).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surface: Literal["button", "link", "nav_link", "card", "chip", "input", "image"]
+    variant: str
+    count: int = 1
+    probed: Literal["pointer", "forced", "rest-only"] = "rest-only"
+    rest: StyleLook = StyleLook()
+    hover: StyleLook | None = None
+    pressed: StyleLook | None = None
+    focus: StyleLook | None = None
+    disabled: StyleLook | None = None
+    transitions: list[StyleTransition] = []
+    icon: StyleIcon | None = None
+    pointer: EvidencePointer
+
+
+class KeyframeStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    offset: float
+    declarations: dict[str, str] = {}
+
+
+class MeasuredAnimation(BaseModel):
+    """A CSS animation running on the page, with its `@keyframes` from the captured stylesheets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    duration_ms: float
+    easing: str = "ease"
+    delay_ms: float = 0.0
+    iterations: str = "1"
+    direction: str = "normal"
+    fill_mode: str = "none"
+    count: int = 1
+    where: str = ""
+    frames: list[KeyframeStep] = []
+    pointer: EvidencePointer
+
+
+class MeasuredReveal(BaseModel):
+    """An entrance reveal whose motion is CSS (a script only adds the class that starts it)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    where: str
+    count: int = 1
+    from_opacity: float | None = None
+    from_transform: str | None = None
+    duration_ms: float = 0.0
+    easing: str = "ease"
+    delay_ms: float = 0.0
+    trigger: list[str] = []
+    pointer: EvidencePointer
+
+
+class ScriptedMotion(BaseModel):
+    """Motion only a script can make (a canvas, a playing video, inline styles rewritten every
+    frame): recorded so a page can say it exists, never reproduced."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["scripted", "canvas", "video"]
+    where: str
+    pointer: EvidencePointer
+
+
+class MotionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    animations: list[MeasuredAnimation] = []
+    reveals: list[MeasuredReveal] = []
+    scripted: list[ScriptedMotion] = []
 
 
 class GeometryEvidence(BaseModel):
@@ -304,6 +478,8 @@ class GeometryEvidence(BaseModel):
 
     surfaces: list[SurfaceShape] = []
     background_sequence: list[SectionBackground] = []
+    styles: list[MeasuredStyle] = []
+    motion: MotionEvidence = MotionEvidence()
 
 
 class RuleEvidence(BaseModel):
@@ -405,6 +581,24 @@ class RenderTruth(BaseModel):
     canvas_viewport_fraction: float = 0.0
 
 
+class TypeWidth(BaseModel):
+    """Responsive brand type: the type samples as drawn at one narrower window width."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    width: int
+    type_samples: list[TypeSample] = []
+
+
+class TypeWidths(BaseModel):
+    """The capture's own width and the type samples at each narrower width it read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capture_width: int
+    widths: list[TypeWidth] = []
+
+
 class BrandEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -426,6 +620,9 @@ class BrandEvidence(BaseModel):
     # and None for every pre-probe bundle and every non-website capture, so
     # `schema_version` stays 1 and old bundles keep the cluster election.
     render_truth: RenderTruth | None = None
+    # Responsive brand type: additive and None for every earlier bundle and every non-website
+    # capture, so `schema_version` stays 1.
+    type_widths: TypeWidths | None = None
     geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []

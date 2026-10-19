@@ -79,10 +79,13 @@ from .personalization import (
     UpsertBindingSetTool,
 )
 from .publishes import (
+    PublishSiteTool,
     PublishWebDocumentTool,
     RollbackWebPublishTool,
     UnpublishWebDocumentTool,
 )
+from .site_documents import RedoSiteTool, UndoSiteTool, WriteSiteTool
+from .site_sections import RecordSiteSectionTool
 from .turns import StartAgentTurnTool, StartWebTurnTool
 from .web_documents import (
     ApplyWebOperationsTool,
@@ -97,6 +100,7 @@ __all__ = ["DESIGN_TOOL_NAMES", "DESIGN_TOOL_TYPES", "build_design_tools"]
 DESIGN_TOOL_TYPES = (
     # Round A reference domain 1 — publishes.
     PublishWebDocumentTool,
+    PublishSiteTool,
     UnpublishWebDocumentTool,
     RollbackWebPublishTool,
     # Round A reference domain 2 — personalization accounts.
@@ -130,6 +134,12 @@ DESIGN_TOOL_TYPES = (
     ApplyWebOperationsTool,
     UndoWebDocumentTool,
     RedoWebDocumentTool,
+    # Wave 2 Lane A — Puck site documents (Contract 2).
+    WriteSiteTool,
+    UndoSiteTool,
+    RedoSiteTool,
+    # Wave 2 Lane B — agent-written Puck sections (Contract 4).
+    RecordSiteSectionTool,
     # Round B domain 3 — turn enqueues.
     StartAgentTurnTool,
     StartWebTurnTool,

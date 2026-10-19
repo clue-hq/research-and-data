@@ -29,6 +29,12 @@ test("artifact actions preserve the reviewed menu contract", () => {
  * the DOCUMENT. Nothing in the app listens to the selection, so choosing V2
  * changes no document, no session and no server state.
  *
+ * Wave 2 C9 (Lane C Task 13) binds real history for SITES only, through an
+ * explicit `versions` binding the artifact stage passes when the artifact is a
+ * site. Without that binding (web, ad) the flyout stays present-and-inert
+ * exactly as before, and the guards below hold that fallback: the four dummy
+ * rows, and a row click that reaches only the unlistened select.
+ *
  * A `.tsx` cannot be imported under this runner (`tsx --test`, no DOM), so the
  * component half is read off disk — the technique `scene-hydrate.test.ts` and
  * `inspector-commit-model.test.ts` already use.
@@ -91,7 +97,9 @@ test("§3: the version-select event has no listener anywhere in the app", () => 
 // ── Guard (b): the PRESENT half — the rows are still there, and still inert ──
 
 test("§1.12: the four version rows still render", () => {
-  const options = sliceBetween(MENU_SOURCE, "const versionOptions = [", "];");
+  // The FALLBACK list: the array literal used when no `versions` binding is
+  // passed (web, ad). A site's rows come from its binding instead.
+  const options = sliceBetween(MENU_SOURCE, "? versions.options", "];");
   for (const label of VERSION_ROW_LABELS) {
     assert.ok(
       options.includes(`"${label}"`),
@@ -100,11 +108,19 @@ test("§1.12: the four version rows still render", () => {
   }
 });
 
-test("§3: a version row's only click behaviour is the unlistened select", () => {
+test("§3: without a real version binding (web, ad) a row's only click behaviour is the unlistened select", () => {
   const rows = sliceBetween(MENU_SOURCE, "{versionOptions.map(", "</div>");
   assert.ok(
-    rows.includes("onClick={() => onSelectVersion(version.id)}"),
-    "the version row must call onSelectVersion and nothing else",
+    rows.includes("onClick={() => chooseVersion(version.id)}"),
+    "the version row must call chooseVersion and nothing else",
+  );
+  // `chooseVersion` reaches a binding's `select` only when a binding is
+  // present; with none (web, ad) it is the unlistened `onSelectVersion`.
+  const choose = sliceBetween(MENU_SOURCE, "const chooseVersion =", ";\n");
+  assert.match(
+    choose,
+    /versions\s*\?\s*versions\.select\(versionId\)\s*:\s*onSelectVersion\(versionId\)/,
+    "without a versions binding, chooseVersion must call onSelectVersion and nothing else",
   );
   // No SECOND handler smuggled onto the row — an `onPointerDown` that loaded a
   // revision would be exactly the fast-follow this guard is holding back.

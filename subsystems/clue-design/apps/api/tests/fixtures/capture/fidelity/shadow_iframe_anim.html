@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S6 probe: shadow DOM, iframe, two animations, quoted keyframes</title>
+<!-- S6 probe. The page's primary CTA is a web component (its styled <button> lives in an open shadow
+     root); a second CTA sits in a same-origin iframe; a badge carries two animations at once (an entrance
+     and an endless float); a dot animates with a keyframes rule named by a CSS string. Local file only. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; align-items: center; }
+  .plain { display: inline-flex; padding: 12px 24px; border: 0; border-radius: 8px; background: #6d4c41; color: #fff; }
+  .badge { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #ffe082;
+           animation: rise 0.6s ease-out 0s 1 normal both, float 3s ease-in-out 0s infinite alternate; }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes float { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  .dot { width: 24px; height: 24px; border-radius: 50%; background: #e53935; animation: "glow pulse" 2s linear infinite; }
+  @keyframes "glow pulse" { from { opacity: 1; } to { opacity: .3; } }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>Components and motion</h1>
+  <div class="wrap">
+    <brand-cta id="wc">Book a demo</brand-cta>
+    <button class="plain" id="b-plain">A plain button</button>
+    <iframe id="fr" style="border:0;width:220px;height:60px" srcdoc="<style>button{background:#1565c0;color:#fff;border:0;border-radius:8px;padding:12px 24px}button:hover{background:#0d47a1}</style><button>Iframe CTA</button>"></iframe>
+    <span class="badge" id="badge">New</span>
+    <div class="dot" id="dot"></div>
+  </div>
+</main>
+<section class="band"><h2>Band</h2><p>Text.</p></section>
+<script>
+  customElements.define('brand-cta', class extends HTMLElement {
+    constructor() {
+      super();
+      const root = this.attachShadow({ mode: 'open' });
+      root.innerHTML = '<style>button{background:#047464;color:#fff;border:0;border-radius:999px;padding:12px 28px;font:600 15px Arial;cursor:pointer;transition:background-color .2s}button:hover{background:#035a4e}</style><button part="button"><slot></slot></button>';
+    }
+  });
+</script>
+</body></html>

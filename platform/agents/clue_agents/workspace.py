@@ -128,6 +128,17 @@ def _is_under(path: str, prefixes: Sequence[str]) -> bool:
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in prefixes)
 
 
+def _matches_workspace_glob(path: str, pattern: str) -> bool:
+    """Keep flat fnmatch semantics, allowing leading recursive prefixes to be empty."""
+
+    while True:
+        if fnmatch.fnmatch(path, pattern):
+            return True
+        if not pattern.startswith("**/"):
+            return False
+        pattern = pattern[3:]
+
+
 def _read_all(file_fd: int) -> bytes:
     chunks: list[bytes] = []
     while True:
@@ -1301,7 +1312,7 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 matches.extend(
                     entry
                     for entry in self._mount_directory_entries()
-                    if fnmatch.fnmatch(entry["path"], pattern)
+                    if _matches_workspace_glob(entry["path"], pattern)
                 )
             for item in entries:
                 if logical and item.path == logical:
@@ -1309,7 +1320,7 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                     relative = logical.rsplit("/", 1)[-1]
                 else:
                     relative = item.path.removeprefix(f"{logical}/") if logical else item.path
-                if fnmatch.fnmatch(relative, pattern):
+                if _matches_workspace_glob(relative, pattern):
                     matches.append({"path": item.path, "is_dir": False, "size": item.byte_count})
             return GlobResult(matches=matches)
         except WorkspaceError as exc:

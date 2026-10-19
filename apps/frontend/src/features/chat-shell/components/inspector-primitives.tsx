@@ -15,10 +15,12 @@ import type {
 import type { ThemeColorOption } from "@/features/design-editor/adapter/theme-options";
 import {
   commitInspectorNumber,
+  type HorizontalAlignment,
   type InspectorBackgroundFill,
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
+import { ArtifactTitle } from "./artifact-title";
 import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
 import { REPLACE_IMAGE_MENU_ROWS, replaceImageMenuAction } from "./replace-image-menu.logic";
 import styles from "./chat-shell.module.css";
@@ -138,7 +140,9 @@ export function InspectorHeader({
 }) {
   return (
     <div className={styles.inspectorHeader}>
-      <span>{title}</span>
+      {/* One line, cut with an ellipsis, scrolling through on hover: the artifact header's title
+          (founder 2026-10-19). Keyed on the title so a new selection starts fresh. */}
+      <ArtifactTitle key={title} title={title} />
       <div className={styles.inspectorHeaderActions}>
         {elementActions ? (
           <>
@@ -169,16 +173,19 @@ export function InspectorHeader({
             ) : null}
           </>
         ) : null}
-        <button
-          aria-expanded={moreActionsExpanded}
-          aria-haspopup={moreActionsHasPopup ? "menu" : undefined}
-          aria-label={moreActionsHasPopup ? "Preview inspector element types" : "More inspector actions"}
-          className={styles.inspectorIconButton}
-          onClick={onMoreActions}
-          type="button"
-        >
-          <InspectorIcon name="ellipsis" size={12} />
-        </button>
+        {/* The "…" button only where it opens something (founder 2026-10-19: no empty button). */}
+        {onMoreActions || actionMenu ? (
+          <button
+            aria-expanded={moreActionsExpanded}
+            aria-haspopup={moreActionsHasPopup ? "menu" : undefined}
+            aria-label={moreActionsHasPopup ? "Preview inspector element types" : "More inspector actions"}
+            className={styles.inspectorIconButton}
+            onClick={onMoreActions}
+            type="button"
+          >
+            <InspectorIcon name="ellipsis" size={12} />
+          </button>
+        ) : null}
         {actionMenu}
       </div>
     </div>
@@ -202,21 +209,42 @@ export function InspectorSection({
   const regionRef = useRef<HTMLDivElement>(null);
   const regionInnerRef = useRef<HTMLDivElement>(null);
 
+  // Only a person opening or closing the section animates (founder 2026-10-19): a section that appears
+  // (a new selection) is simply there, and an open section follows its content's height directly, so
+  // the panel never replays when the selection changes.
+  // The open state this section last showed: only a change of it animates (a section that appears, or
+  // runs its effect again in development, is simply set).
+  const shownOpenRef = useRef<boolean | null>(null);
   useLayoutEffect(() => {
     const region = regionRef.current;
     const inner = regionInnerRef.current;
-
     if (!region || !inner) return;
+    const previous = shownOpenRef.current;
+    shownOpenRef.current = open;
 
-    const syncHeight = () => {
-      region.style.height = open ? `${inner.scrollHeight}px` : "0px";
-    };
+    if (previous === null || previous === open) {
+      const transition = region.style.transition;
+      region.style.transition = "none";
+      region.style.height = open ? "auto" : "0px";
+      void region.offsetHeight;
+      region.style.transition = transition;
+      return;
+    }
 
-    syncHeight();
-    const observer = new ResizeObserver(syncHeight);
-    observer.observe(inner);
-
-    return () => observer.disconnect();
+    if (open) {
+      region.style.height = `${inner.scrollHeight}px`;
+      // The fade ends before the height does: wait for the height, then follow the content.
+      const settle = (event: TransitionEvent) => {
+        if (event.target !== region || event.propertyName !== "height") return;
+        region.style.height = "auto";
+        region.removeEventListener("transitionend", settle);
+      };
+      region.addEventListener("transitionend", settle);
+      return () => region.removeEventListener("transitionend", settle);
+    }
+    region.style.height = `${region.scrollHeight}px`;
+    void region.offsetHeight;
+    region.style.height = "0px";
   }, [open]);
 
   return (
@@ -1848,5 +1876,137 @@ export function InspectorLayerRow({
         {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
       </span>
     </button>
+  );
+}
+
+/**
+ * Text alignment toggles, shared by the ad, web and site panels (it was two private copies). The ad
+ * panel offers four horizontal options and the vertical group; the web panel three, with its vertical
+ * group hidden; the site panel four and no vertical group (a web text box hugs its text). `vertical`
+ * absent means no vertical group.
+ */
+export function TextAlignment({
+  disabled = false,
+  horizontal,
+  onHorizontalChange,
+  onVerticalChange,
+  options,
+  vertical,
+}: {
+  /** G-H (AD4.R-10): these toggles write an alignment, so they go dark with the rest of the panel. */
+  disabled?: boolean;
+  horizontal: HorizontalAlignment;
+  onHorizontalChange: (value: HorizontalAlignment) => void;
+  onVerticalChange?: (value: "bottom" | "middle" | "top") => void;
+  options: "three" | "four";
+  vertical?: "bottom" | "middle" | "top";
+}) {
+  const horizontalOptions = (
+    [
+      ["left", "align-left"],
+      ["center", "align-center"],
+      ["right", "align-right"],
+      ["justify", "align-justify"],
+    ] as const
+  ).slice(0, options === "four" ? 4 : 3);
+  const verticalOptions = [
+    ["top", "align-top"],
+    ["middle", "align-middle"],
+    ["bottom", "align-bottom"],
+  ] as const;
+  const groupClass = (...names: (string | false)[]) =>
+    [...names, disabled && styles.inspectorControlDisabled].filter(Boolean).join(" ");
+
+  return (
+    <div className={styles.alignmentGroups}>
+      <div aria-label="Horizontal alignment" className={groupClass(styles.alignmentControl, options === "four" && styles.alignmentControlQuad)} role="group">
+        {horizontalOptions.map(([value, icon]) => (
+          <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onHorizontalChange(value)} type="button">
+            <InspectorIcon name={icon} size={12} />
+          </button>
+        ))}
+      </div>
+      {vertical === undefined ? null : (
+        <div aria-label="Vertical alignment" className={groupClass(styles.alignmentControl, styles.verticalAlignment)} role="group">
+          {verticalOptions.map(([value, icon]) => (
+            <button aria-label={`Align ${value}`} aria-pressed={vertical === value} className={vertical === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onVerticalChange?.(value)} type="button">
+              <InspectorIcon name={icon} size={12} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bold, italic and underline as three toggles in the alignment control's segmented style (the site
+ * element inspector's Style row). Each shows its letter in its own style and says whether it is on.
+ */
+export function TextStyleToggles({
+  bold,
+  boldDisabled = false,
+  disabled = false,
+  italic,
+  onBoldChange,
+  onItalicChange,
+  onUnderlineChange,
+  underline,
+}: {
+  bold: boolean;
+  /** Bold alone cannot act (a font with nothing heavier than regular); the panel says why. */
+  boldDisabled?: boolean;
+  disabled?: boolean;
+  italic: boolean;
+  onBoldChange: (on: boolean) => void;
+  onItalicChange: (on: boolean) => void;
+  onUnderlineChange: (on: boolean) => void;
+  underline: boolean;
+}) {
+  const toggles = [
+    { label: "Bold", on: bold, change: onBoldChange, glyph: <b>B</b>, off: boldDisabled },
+    { label: "Italic", on: italic, change: onItalicChange, glyph: <i>I</i>, off: false },
+    { label: "Underline", on: underline, change: onUnderlineChange, glyph: <u>U</u>, off: false },
+  ];
+  return (
+    <div aria-label="Text style" className={[styles.alignmentControl, disabled && styles.inspectorControlDisabled].filter(Boolean).join(" ")} role="group">
+      {toggles.map((toggle) => (
+        <button aria-label={toggle.label} aria-pressed={toggle.on} className={toggle.on ? styles.alignmentActive : ""} disabled={disabled || toggle.off} key={toggle.label} onClick={() => toggle.change(!toggle.on)} type="button">
+          {toggle.glyph}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A row of choices, one pressed (shared by the web inspector and the site inspector). */
+export function SegmentedControl<Value extends string>({
+  ariaLabel,
+  disabled = false,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  disabled?: boolean;
+  onChange: (value: Value) => void;
+  options: readonly { label: ReactNode; value: Value }[];
+  value: Value;
+}) {
+  return (
+    <div aria-label={ariaLabel} className={styles.inspectorSegmentedControl} role="group">
+      {options.map((option) => (
+        <button
+          aria-pressed={option.value === value}
+          className={option.value === value ? styles.inspectorSegmentActive : ""}
+          disabled={disabled}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }

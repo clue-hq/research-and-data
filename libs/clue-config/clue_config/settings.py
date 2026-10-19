@@ -231,11 +231,14 @@ class Settings(BaseSettings):
     # project. The client attaches to the process's tracer provider but exports only the agent
     # harness (2026-10-03: no HTTP or ``fleet.task`` spans; each fleet task is its own trace,
     # linked to its launcher). ``langfuse_environment`` names the
-    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only): ``production`` on
+    # the production deployment (deploy/check_prod_env.py requires it there) and Langfuse's own
+    # ``default`` everywhere else, so every development lane lands in one place (founder,
+    # 2026-10-04).
     # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
     langfuse_enabled: bool = True
     langfuse_host: str = "https://cloud.langfuse.com"
-    langfuse_environment: str = "lane-san-salvador"
+    langfuse_environment: str = "default"
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
@@ -263,6 +266,13 @@ class Settings(BaseSettings):
     # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
     # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
     fleet_task_stale_after_s: float = 60.0
+    # Drain on deploy (site-turn durability, 2026-10-16): after SIGTERM a worker takes no new tasks
+    # and lets running ones finish; once this many seconds have passed, it asks its still-running
+    # site turns to stop at their next step boundary (their working copy and checkpoint are saved,
+    # so the next worker continues them) and hands them back to the queue. Keep it below the
+    # container's stop_grace_period (deploy/vm/compose.yaml: 11m for chat and design).
+    # Env: ``CLUE_FLEET_DRAIN_BOUND_S``.
+    fleet_drain_bound_s: float = Field(default=600.0, ge=0)
     # The worker process's thread pool: every blocking provider call AND the event loop's DNS
     # lookups (a fresh DB connection, the lease heartbeat's included) share it. Python's default,
     # min(32, cpu + 4), is filled by a few research jobs; threads start only on demand.
@@ -558,9 +568,10 @@ class Settings(BaseSettings):
     arv2_person_media_max_items: int = Field(default=3, ge=0)
 
     # --- ARV2 R4 verified account discovery (master plan §9 R4; spec §2–§4) -------------------
-    # Off by default: a worker composes the discovery handler only when this is on AND
-    # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
-    arv2_discovery_enabled: bool = False
+    # On by default (2026-10-04: no shipped feature is blocked behind a default-off switch). A
+    # worker still composes the discovery handler only when ``CLUE_EXA_API_KEY`` is configured too,
+    # so a deployment without the key runs no discovery. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
+    arv2_discovery_enabled: bool = True
     #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).
@@ -579,6 +590,11 @@ class Settings(BaseSettings):
     #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
     #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
     arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
+    #: How long a discovery run waits for its Exa Import of excluded companies (the brief's
+    #: ``exclude`` list and the seller's own domain) to finish before its first webset goes ahead
+    #: without it; the domain skip still applies (spec 2026-10-16, §4.6).
+    #: Env: ``CLUE_ARV2_DISCOVERY_IMPORT_WAIT_S``.
+    arv2_discovery_import_wait_s: float = Field(default=120.0, ge=0)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
@@ -600,6 +616,10 @@ class Settings(BaseSettings):
     # ``high`` per deployment if the product files read thin).
     # Env: ``CLUE_ONBOARDING_PRODUCT_EFFORT``.
     onboarding_product_effort: str = "medium"
+    # Exa Agent effort for the existing-customers run (spec 2026-10-16-discovery-excludes-seller-
+    # customers §4.1: ``xhigh`` found 28 of 29 and 13 of 15 known customers in the live tests,
+    # where a one-shot search found 17 of 29). Env: ``CLUE_ONBOARDING_CUSTOMERS_EFFORT``.
+    onboarding_customers_effort: str = "xhigh"
     # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
     onboarding_reviews_phase: Literal["fast", "background"] = "fast"
     # Cap on concurrent background per-product Exa Agent runs.
@@ -706,6 +726,12 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Website agent on Puck (2026-10-09 plan): workspaces whose NEW websites are born as Puck
+    # `site` documents instead of WebDocs. Comma-separated workspace ids; empty = off everywhere,
+    # so every existing path is byte-identical. Head of ABM is unchanged: `open_design_leg`
+    # with doc_kind="web" births a site for listed workspaces.
+    # Env: CLUE_DESIGN_SITE_ENGINE_WORKSPACES.
+    design_site_engine_workspaces: str = ""
     # Staged until output-history erasure closure and explicit preference writes are validated.
     # Gates only production scene preference selection/resolution, not ordinary platform memory.
     # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
@@ -775,6 +801,7 @@ class Settings(BaseSettings):
         "x-ai/grok-4.6": 500_000,
         "x-ai/grok-4.7": 500_000,
         "meta/muse-spark-1.3": 1_048_576,
+        "openai/gpt-6.1-sol": 1_050_000,
     }
     # Seconds a streamed agent model call may wait for its FIRST chunk before the next model is
     # tried (production 2026-10-04: grok-4.6 sent nothing for 300 s). 0 = no first-chunk deadline;
@@ -1003,6 +1030,11 @@ class Settings(BaseSettings):
     # origin and the backfill warn loudly when they do not. Dev stack: `pages.localhost`.
     # Env: ``CLUE_PAGES_SYSTEM_SUFFIX``.
     pages_system_suffix: str = "pages.cluehq.ai"
+    # Wave 2 Contract 9: suffixes system hostnames USED to end in (comma-separated). Their
+    # registrable domains stay reserved, so no customer can connect `x.cluehq.ai` as a custom
+    # domain once published pages live on their own domain; the edge Worker 301s the old hosts
+    # (infra/cloudflare/pages-edge). Env: ``CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES``.
+    pages_legacy_system_suffixes: str = "pages.cluehq.ai"
     # Scheme and optional port for public page URLs the design API mints (og:image, publish `url`).
     # Production: https and no port; dev stack: http + 8040. Env: ``CLUE_PAGES_PUBLIC_SCHEME`` /
     # ``CLUE_PAGES_PUBLIC_PORT`` (empty string = unset).

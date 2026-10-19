@@ -1,0 +1,272 @@
+{
+  "accept": [
+    "<svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\"><path d=\"M1 6h9M7 2l4 4-4 4\" stroke=\"currentColor\" stroke-width=\"1.5\"></path></svg>",
+    "<svg viewBox=\"0 0 12 12\"><g><circle cx=\"6\" cy=\"6\" r=\"4\"></circle></g></svg>",
+    "<svg viewBox=\"0 0 24 24\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"20\" rx=\"4\"></rect><line x1=\"0\" y1=\"0\" x2=\"4\" y2=\"4\"></line></svg>",
+    "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#1B5E20\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-miterlimit=\"4\" opacity=\"0.9\"><g transform=\"translate(1, 1)\" fill-opacity=\"0.5\" stroke-opacity=\"0.5\"><ellipse cx=\"12\" cy=\"12\" rx=\"10\" ry=\"6\"></ellipse><polyline points=\"1,1 2,2 3,1\"></polyline><polygon points=\"4,4 8,4 6,8\" fill-rule=\"evenodd\" clip-rule=\"evenodd\"></polygon></g></svg>",
+    "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1h2\" fill=\"#ABCDEF\" transform=\"rotate(45, 6, 6) scale(150%) translate(-1 +1)\"></path></svg>",
+    "<svg viewBox=\"0 0 12 12\" fill=\"\"><path d=\"M1 1h2\"></path></svg>",
+    "<svg viewBox=\"0 0 12 12\"><svg x=\"1\" y=\"1\"><path d=\"M1 1h2\"></path></svg></svg>",
+    "<svg viewBox=\"0 0 12 12\"><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><path d=\"M1 1\"></path></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></svg>",
+    "<svg viewBox=\"0 0 12 12\"><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path></svg>",
+    "<svg viewBox=\"0 0 12 12\"><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1\"></path></svg>"
+  ],
+  "refuse": [
+    {
+      "markup": "<svg onload=\"x()\" viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an event handler after a space"
+    },
+    {
+      "markup": "<svg/onload=\"x()\" viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an event handler after a slash"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"onload=\"x()\"><path d=\"M1 1\"></path></svg>",
+      "why": "an event handler straight after a quoted value"
+    },
+    {
+      "markup": "<svg\tonload=\"x()\" viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an event handler after a tab"
+    },
+    {
+      "markup": "<svg\nonload=\"x()\" viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an event handler after a newline"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path onclick=\"x()\" d=\"M1 1\"></path></svg>",
+      "why": "an event handler on a child"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><script>alert(1)</script><path d=\"M1 1\"></path></svg>",
+      "why": "a script element"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><style>path{fill:red}</style><path d=\"M1 1\"></path></svg>",
+      "why": "a style element"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><foreignObject width=\"12\" height=\"12\"></foreignObject><path d=\"M1 1\"></path></svg>",
+      "why": "a foreignObject element"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><use href=\"#a\"></use><path d=\"M1 1\"></path></svg>",
+      "why": "a use element pointing elsewhere"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><image href=\"https://example.com/x.png\"></image><path d=\"M1 1\"></path></svg>",
+      "why": "an image element loading a remote file"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><a href=\"https://example.com/\"><path d=\"M1 1\"></path></a></svg>",
+      "why": "a link element"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><img src=\"https://example.com/x.png\"><path d=\"M1 1\"></path></svg>",
+      "why": "an HTML img breakout loading a remote file"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><embed src=\"https://example.com/x\"><path d=\"M1 1\"></path></svg>",
+      "why": "an HTML embed breakout loading a remote file"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><set attributeName=\"onclick\" to=\"x()\"></set><path d=\"M1 1\"></path></svg>",
+      "why": "a set element animating an event attribute"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"><animate attributeName=\"href\" to=\"javascript:x()\"></animate></path></svg>",
+      "why": "an animate element animating an href"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><defs></defs><path d=\"M1 1\"></path></svg>",
+      "why": "an element outside the nine (defs)"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><text x=\"1\" y=\"1\">A</text></svg>",
+      "why": "a text element with text inside"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"javascript:x()\"></path></svg>",
+      "why": "javascript: in a value"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\" fill=\"url(#g)\"></path></svg>",
+      "why": "url( in a value"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\" fill=\"URL(#g)\"></path></svg>",
+      "why": "URL( in a value, in capitals"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\" fill=\"&#x75;rl(#g)\"></path></svg>",
+      "why": "a character reference in a value (it decodes to url()"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1'\"></path></svg>",
+      "why": "a single quote in a value"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1<\"></path></svg>",
+      "why": "a < in a value"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\n\"></path></svg>",
+      "why": "a value ending in a newline"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1é\"></path></svg>",
+      "why": "a non-ASCII character in a value"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"/></svg>",
+      "why": "a self-closing tag"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\" /></svg>",
+      "why": "a self-closing tag after a space"
+    },
+    {
+      "markup": "<svg viewBox='0 0 12 12'><path d='M1 1'></path></svg>",
+      "why": "single-quoted attributes"
+    },
+    {
+      "markup": "<svg viewBox=0><path d=\"M1 1\"></path></svg>",
+      "why": "an unquoted attribute"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\" fill><path d=\"M1 1\"></path></svg>",
+      "why": "an attribute without a value"
+    },
+    {
+      "markup": "<SVG viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></SVG>",
+      "why": "an uppercase root"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><PATH d=\"M1 1\"></PATH></svg>",
+      "why": "an uppercase child"
+    },
+    {
+      "markup": "<svg viewbox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "viewbox not spelled as the cleaner spells it (viewBox)"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path D=\"M1 1\"></path></svg>",
+      "why": "an uppercase attribute name"
+    },
+    {
+      "markup": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an xmlns attribute (the cleaner drops it)"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\" class=\"icon\"><path d=\"M1 1\"></path></svg>",
+      "why": "a class attribute"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path style=\"fill:red\" d=\"M1 1\"></path></svg>",
+      "why": "a style attribute"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path xlink:href=\"#a\" d=\"M1 1\"></path></svg>",
+      "why": "an xlink:href attribute"
+    },
+    {
+      "markup": "<svg><path d=\"M1 1\"></path>hello</svg>",
+      "why": "text inside"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><!-- x --><path d=\"M1 1\"></path></svg>",
+      "why": "a comment"
+    },
+    {
+      "markup": "<?xml version=\"1.0\"?><svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "an XML declaration"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><![CDATA[x]]><path d=\"M1 1\"></path></svg>",
+      "why": "a CDATA section"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"> <path d=\"M1 1\"></path></svg>",
+      "why": "a space between elements"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\">\n<path d=\"M1 1\"></path>\n</svg>",
+      "why": "newlines between elements"
+    },
+    {
+      "markup": "<svg  viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "two spaces before an attribute"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\" ><path d=\"M1 1\"></path></svg>",
+      "why": "a space before >"
+    },
+    {
+      "markup": "<svg viewBox = \"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "spaces around ="
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path ></svg>",
+      "why": "a space inside a closing tag"
+    },
+    {
+      "markup": " <svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "leading whitespace"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>\n",
+      "why": "a trailing newline"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg><svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path></svg>",
+      "why": "anything after the root closes"
+    },
+    {
+      "markup": "<g><path d=\"M1 1\"></path></g>",
+      "why": "a root that is not svg"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"></svg>",
+      "why": "an icon that draws nothing"
+    },
+    {
+      "markup": "<svg><g></g></svg>",
+      "why": "an icon that draws nothing, in a group"
+    },
+    {
+      "markup": "<svg><path></g></svg>",
+      "why": "a mismatched closing tag"
+    },
+    {
+      "markup": "<svg><path d=\"M1 1\">",
+      "why": "unclosed tags"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M1 1\"></path>",
+      "why": "an unclosed root"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"",
+      "why": "markup that ends inside a tag"
+    },
+    {
+      "markup": "",
+      "why": "empty markup"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1\"></path><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path></svg>",
+      "why": "4097 bytes, one over the limit, of otherwise valid paths"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><path d=\"M0 0h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h1h10\"></path></svg>",
+      "why": "a value of 2001 characters, one over the limit"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><path d=\"M1 1\"></path></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></svg>",
+      "why": "nesting depth 33 (svg, 31 groups, a path), one over the limit"
+    },
+    {
+      "markup": "<svg viewBox=\"0 0 12 12\"><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><path d=\"M1 1\"></path></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></g></svg>",
+      "why": "nesting depth 35 (svg, 33 groups, a path)"
+    }
+  ]
+}

@@ -9,13 +9,12 @@ import { PAGELESS_SCENE_NOTICE } from "@/features/design-editor/adapter/scene-pa
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
 import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
-import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
+import type { AssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   dispatchInspectorEvent,
   useInspectorController,
   useInspectorLayerTree,
-  type HorizontalAlignment,
   type InspectorBackgroundFill,
 } from "../hooks/use-inspector-controller";
 import {
@@ -31,6 +30,7 @@ import {
   InspectorSection,
   InspectorSelect,
   RadiusControls,
+  TextAlignment,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 // AD4.B step 3: the §1.6 colour machinery this file used to declare, moved to
@@ -169,54 +169,6 @@ function AdLayers({
       <InspectorLayerRow active={tree.activeLayer === "image"} icon="image" label="Image" onClick={() => select("image", "image")} />
       <InspectorLayerRow active={tree.activeLayer === "image-secondary"} icon="image" label="Image" onClick={() => select("image-secondary", "image")} />
       <InspectorLayerRow active={tree.activeLayer === "button"} icon="rectangle" label="Button" onClick={() => select("button", "button")} />
-    </div>
-  );
-}
-
-function TextAlignment({
-  disabled = false,
-  horizontal,
-  onHorizontalChange,
-  onVerticalChange,
-  vertical,
-}: {
-  /** G-H (AD4.R-10): these seven toggles are value controls — each one writes an
-   * alignment — so they go dark with the rest of the panel. */
-  disabled?: boolean;
-  horizontal: HorizontalAlignment;
-  onHorizontalChange: (value: HorizontalAlignment) => void;
-  onVerticalChange: (value: "bottom" | "middle" | "top") => void;
-  vertical: "bottom" | "middle" | "top";
-}) {
-  // §2 delta (contract row 2): H-alignment gains a fourth Justify toggle.
-  const horizontalOptions = [
-    ["left", "align-left"],
-    ["center", "align-center"],
-    ["right", "align-right"],
-    ["justify", "align-justify"],
-  ] as const;
-  const verticalOptions = [
-    ["top", "align-top"],
-    ["middle", "align-middle"],
-    ["bottom", "align-bottom"],
-  ] as const;
-
-  return (
-    <div className={styles.alignmentGroups}>
-      <div aria-label="Horizontal alignment" className={`${styles.alignmentControl} ${styles.alignmentControlQuad} ${disabled ? styles.inspectorControlDisabled : ""}`} role="group">
-        {horizontalOptions.map(([value, icon]) => (
-          <button aria-label={`Align ${value}`} aria-pressed={horizontal === value} className={horizontal === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onHorizontalChange(value)} type="button">
-            <InspectorIcon name={icon} size={12} />
-          </button>
-        ))}
-      </div>
-      <div aria-label="Vertical alignment" className={`${styles.alignmentControl} ${styles.verticalAlignment} ${disabled ? styles.inspectorControlDisabled : ""}`} role="group">
-        {verticalOptions.map(([value, icon]) => (
-          <button aria-label={`Align ${value}`} aria-pressed={vertical === value} className={vertical === value ? styles.alignmentActive : ""} disabled={disabled} key={value} onClick={() => onVerticalChange(value)} type="button">
-            <InspectorIcon name={icon} size={12} />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -392,7 +344,7 @@ function AdTextInspector({
           <InspectorField label="Weight"><InspectorSelect disabled={typographyInert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={typographyUnavailable ? "" : state.fontWeight} /></InspectorField>
         </div>
         {typographyUnavailable ? <p className={styles.inspectorStatusNote} role="status">Brand typography is unavailable. If this persists, reload to try again.</p> : null}
-        <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
+        <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} options="four" vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
         <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
@@ -644,7 +596,7 @@ function AdCanvasInspector({
  * this component (in the session hook) because the panel remounts on every
  * reload, and a paid model result must not be thrown away by one.
  */
-function AdImageAiRows({
+export function AdImageAiRows({
   disabled,
   imageAi,
 }: {
@@ -903,7 +855,7 @@ function AdImageInspector({
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
-  assetLibrary?: SceneAssetLibraryBinding;
+  assetLibrary?: AssetLibraryBinding;
   imageAi?: SceneImageAiBinding;
   onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
@@ -1065,7 +1017,7 @@ export function ImageInspector({
    * the library as the pill's second source; the picker itself is the session's
    * surface. Absent (the dummy fixture path) leaves "Replace image" the plain
    * file-dialog button it shipped as. */
-  assetLibrary?: SceneAssetLibraryBinding;
+  assetLibrary?: AssetLibraryBinding;
   /** AD2.7: an inline write error. Same one-line floor the web branch renders
    * (the W3.3 founder gate forbids any new failure UI). */
   error?: string | null;

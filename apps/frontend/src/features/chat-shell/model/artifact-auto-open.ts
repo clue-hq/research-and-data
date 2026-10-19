@@ -1,4 +1,5 @@
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
+import { chatShellKindForCard } from "./artifact-kind";
 import type { ChatShellOpenArtifact } from "./chat-shell";
 
 /**
@@ -15,6 +16,7 @@ import type { ChatShellOpenArtifact } from "./chat-shell";
  */
 export interface AutoOpenFeedArtifact {
   createdAt?: string;
+  documentKind?: ProjectArtifact["documentKind"];
   updatedAt?: string;
   id: string;
   originThreadId: string;
@@ -65,7 +67,7 @@ export function artifactsToAutoOpen({
     .sort((left, right) => updatedAtOf(left) - updatedAtOf(right))
     .map((artifact) => ({
       id: artifact.id,
-      kind: artifact.type === "website" ? ("web" as const) : ("ad" as const),
+      kind: chatShellKindForCard(artifact),
       title: artifact.title,
     }));
 }

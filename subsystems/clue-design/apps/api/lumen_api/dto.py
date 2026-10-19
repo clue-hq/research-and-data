@@ -9,8 +9,10 @@ DTO_SCHEMA_VERSION = 1
 
 
 def document_summary(document: JsonObject) -> JsonObject:
-    # A WebDoc has no `meta` wrapper, so it can't share the scene reader —
+    # A WebDoc or a site has no `meta` wrapper, so it can't share the scene reader —
     # branch on the stored kind rather than sniffing the payload.
+    if document.get("doc_kind") == "site":
+        return site_document_summary(document)
     if document.get("doc_kind") == "web":
         return web_document_summary(document)
     scene = document["scene"]
@@ -55,6 +57,34 @@ def web_document_summary(document: JsonObject) -> JsonObject:
             "mode": document.get("effective_brand_mode"),
         },
         "counts": web_doc_counts(web_doc),
+        "created_at": document["created_at"],
+        "updated_at": document["updated_at"],
+    }
+
+
+def site_document_summary(document: JsonObject) -> JsonObject:
+    site = document["scene"]
+    theme = site.get("theme") or {}
+    pages = site.get("pages") or {}
+    return {
+        "id": document["id"],
+        "title": document["title"],
+        "status": document["status"],
+        "doc_kind": "site",
+        "current_version": document["current_version"],
+        "artifact_type": "website",
+        "medium": "web",
+        "brand_kit": theme.get("brand_kit"),
+        "effective_brand_kit": {
+            "source": document.get("effective_brand_kit_source"),
+            "id": document.get("effective_brand_kit_id"),
+            "version": document.get("effective_brand_kit_version"),
+            "mode": document.get("effective_brand_mode"),
+        },
+        "counts": {
+            "pages": len(pages),
+            "sections": sum(len((p or {}).get("content") or []) for p in pages.values()),
+        },
         "created_at": document["created_at"],
         "updated_at": document["updated_at"],
     }

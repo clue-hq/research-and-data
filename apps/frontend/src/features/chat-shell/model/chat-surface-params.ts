@@ -30,7 +30,7 @@ function parseChatSurface(
   // The target-accounts rail surface is addressable by its own name — the
   // shareable route is /projects/:id/chats/:chatId?surface=target-accounts.
   if (raw === "target-accounts") return "target-accounts";
-  if (raw === "web" || raw === "ad") return "artifact";
+  if (raw === "web" || raw === "ad" || raw === "site") return "artifact";
   // `chat` is the ratified alias of the conversation-only resting state (rail
   // closed, nothing editing) — deliberately the SAME state an absent param
   // lands on, spelled out here so the alias is a decision and not a
@@ -100,7 +100,7 @@ export function chatSurfacePaneParams(
     // No open artifact yet (a deep link can land on the artifact surface
     // before a tab exists): preserve the incoming kind rather than rewriting
     // `ad` → `web` at mount.
-    (state.rawSurface === "web" || state.rawSurface === "ad"
+    (state.rawSurface === "web" || state.rawSurface === "ad" || state.rawSurface === "site"
       ? state.rawSurface
       : "web");
   return {

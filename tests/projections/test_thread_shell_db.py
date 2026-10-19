@@ -991,39 +991,64 @@ def test_sidebar_orders_a_projects_chats_by_their_last_message(
                 await _stamp_created_at(conn, thread_id=thread.id, at=START)
 
             await _message_at(
-                conn, workspace_id=ws, project_id=pid, thread_id=ids["pinned"],
-                at=START + timedelta(minutes=5), role="user",
+                conn,
+                workspace_id=ws,
+                project_id=pid,
+                thread_id=ids["pinned"],
+                at=START + timedelta(minutes=5),
+                role="user",
             )
             await conn.execute(
                 text("UPDATE agent_thread SET pinned = true WHERE id = :id"),
                 {"id": ids["pinned"]},
             )
             await _message_at(
-                conn, workspace_id=ws, project_id=pid, thread_id=ids["replied"],
-                at=START + timedelta(hours=1), role="user",
+                conn,
+                workspace_id=ws,
+                project_id=pid,
+                thread_id=ids["replied"],
+                at=START + timedelta(hours=1),
+                role="user",
             )
             await _message_at(
-                conn, workspace_id=ws, project_id=pid, thread_id=ids["replied"],
-                at=START + timedelta(hours=3), role="assistant",
+                conn,
+                workspace_id=ws,
+                project_id=pid,
+                thread_id=ids["replied"],
+                at=START + timedelta(hours=3),
+                role="assistant",
             )
             await _submission_at(
-                conn, project=project, principal=owner, thread_id=ids["queued"],
+                conn,
+                project=project,
+                principal=owner,
+                thread_id=ids["queued"],
                 at=START + timedelta(hours=2),
             )
             await _message_at(
-                conn, workspace_id=ws, project_id=pid, thread_id=ids["renamed"],
-                at=START + timedelta(minutes=30), role="assistant",
+                conn,
+                workspace_id=ws,
+                project_id=pid,
+                thread_id=ids["renamed"],
+                at=START + timedelta(minutes=30),
+                role="assistant",
             )
             # A rename moves agent_thread.updated_at to now(), long after every message here.
             await conn.execute(
-                text("UPDATE agent_thread SET title = 'renamed later', updated_at = now() "
-                     "WHERE id = :id"),
+                text(
+                    "UPDATE agent_thread SET title = 'renamed later', updated_at = now() "
+                    "WHERE id = :id"
+                ),
                 {"id": ids["renamed"]},
             )
             # A turn the server queued for the person is not a message they sent.
             await _submission_at(
-                conn, project=project, principal=owner, thread_id=ids["empty"],
-                at=START + timedelta(hours=5), derivation="discovery_finished",
+                conn,
+                project=project,
+                principal=owner,
+                thread_id=ids["empty"],
+                at=START + timedelta(hours=5),
+                derivation="discovery_finished",
             )
 
             rail = await project_sidebar_page(
@@ -1037,7 +1062,11 @@ def test_sidebar_orders_a_projects_chats_by_their_last_message(
             ]
             names = {thread_id: name for name, thread_id in ids.items()}
             assert [names[thread_id] for thread_id in order] == [
-                "pinned", "replied", "queued", "renamed", "empty",
+                "pinned",
+                "replied",
+                "queued",
+                "renamed",
+                "empty",
             ]
 
     run_async(scenario())

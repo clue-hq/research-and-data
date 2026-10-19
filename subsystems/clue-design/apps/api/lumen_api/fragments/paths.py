@@ -77,26 +77,36 @@ def resolve_structural_path(
         # if it ever happens the annotation degrades to "no longer resolves" rather than
         # taking the whole prompt build down with it.
         return None
-    current: Any = tree.body
+    current = resolve_structural_node(tree.body, path, hidden_slot_keys)
+    if current is None:
+        return None
+    slot = current.attributes.get("data-lumen-slot")
+    return {
+        "tag": current.tag,
+        "text": " ".join((current.text(deep=True, separator=" ") or "").split()),
+        "slot": slot if isinstance(slot, str) and slot else None,
+    }
+
+
+def structural_children(node: Any, hidden_slot_keys: Collection[str] = ()) -> list:
+    """Element-only children shared by the inspector and structural path resolver."""
+    return [child for child in node.iter(include_text=False)
+            if child.tag not in _NON_ELEMENT_TAGS
+            and child.attributes.get("data-lumen-slot") not in hidden_slot_keys]
+
+
+def resolve_structural_node(body: Any, path: str | None, hidden_slot_keys: Collection[str] = ()) -> Any:
+    """Resolve against an existing parser tree, without guessing or mutating it."""
+    if not path or not PATH_RE.fullmatch(path):
+        return None
+    current = body
     if current is None:
         return None
     hidden = frozenset(hidden_slot_keys)
     for step in _STEP_RE.findall(path):
         index = int(step)
-        children = [
-            child for child in current.iter(include_text=False)
-            if child.tag not in _NON_ELEMENT_TAGS
-            and child.attributes.get("data-lumen-slot") not in hidden
-        ]
+        children = structural_children(current, hidden)
         if index < 1 or index > len(children):
             return None
         current = children[index - 1]
-    slot = current.attributes.get("data-lumen-slot")
-    return {
-        "tag": current.tag,
-        # `separator=" "` then collapse: without it the parser welds adjacent text runs
-        # together ("Card economics" + "Body" -> "Card economicsBody"), which would quote
-        # words back to the agent that the page does not actually read.
-        "text": " ".join((current.text(deep=True, separator=" ") or "").split()),
-        "slot": slot if isinstance(slot, str) and slot else None,
-    }
+    return current

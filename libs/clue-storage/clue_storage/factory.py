@@ -11,7 +11,7 @@ from __future__ import annotations
 from clue_config import Secrets, Settings
 from clue_storage.fs import FsStorage
 from clue_storage.protocol import StorageBackend, StorageError
-from clue_storage.s3 import S3Storage
+from clue_storage.s3 import S3Storage, require_s3_sdk
 
 
 def storage_from_settings(
@@ -20,7 +20,9 @@ def storage_from_settings(
     """Build the configured backend: ``CLUE_STORAGE_BACKEND=fs`` (default) or ``s3``.
 
     ``s3`` requires ``CLUE_STORAGE_S3_BUCKET`` (fails loud, never a silent fs fallback — a
-    misconfigured store must not quietly write snapshots to a local disk that gets wiped).
+    misconfigured store must not quietly write snapshots to a local disk that gets wiped) and the
+    S3 SDK (``clue-storage[s3]``), so a service built without it refuses to start rather than
+    failing every read.
     """
     settings = settings if settings is not None else Settings()
     if settings.storage_backend == "fs":
@@ -29,6 +31,7 @@ def storage_from_settings(
         raise StorageError(
             "CLUE_STORAGE_BACKEND=s3 requires CLUE_STORAGE_S3_BUCKET; refusing to fall back to fs"
         )
+    require_s3_sdk()
     secrets = secrets if secrets is not None else Secrets()
     access_key = secrets.storage_s3_access_key_id
     secret_key = secrets.storage_s3_secret_access_key

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "puck-spike",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "trials/puck-spike", "run", "dev"],
+      "port": 3047
+    }
+  ]
+}

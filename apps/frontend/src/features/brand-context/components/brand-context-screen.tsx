@@ -11,18 +11,24 @@ import type { BrandContextInitialState, BrandContextWorkspace, BrandKnowledgeFol
 import { emptyBrandContextWorkspace, withPlatformFolders } from "../model/brand-context-mapping";
 import type { BrandProducts, OnboardingStatus } from "../model/brand-knowledge";
 import type { BrandKitMeta } from "../model/brand-kit-actions";
+import type { MeasuredBrandView } from "../model/measured-view";
 import { AssetDetailDialog, AssetsHeader, AssetsPanel } from "./assets-panel";
 import { BrandContextHeader } from "./brand-context-header";
 import { BrandContextSidebar } from "./brand-context-sidebar";
 import { ColorsPanel } from "./colors-panel";
 import { KnowledgePanel } from "./knowledge-panel";
+import { MeasuredStylesPanel } from "./measured-styles-panel";
+import { MotionPanel } from "./motion-panel";
 import { ProductDialogs } from "./product-actions";
+import { SpacingPanel } from "./spacing-panel";
 import styles from "./brand-context.module.css";
 import { NewStyleDialog, NewTypefaceDialog, TypographyPanel } from "./typography-panel";
 
 /** The brand kit as the server read it — streamed after the documents (2026-10-15). */
 export interface StreamedKitView {
   kit: BrandKitMeta | null;
+  /** What the extraction measured (Task X6); null for a kit made before measurement. */
+  measured: MeasuredBrandView | null;
   workspace: BrandContextWorkspace;
 }
 
@@ -61,6 +67,7 @@ export function BrandContextScreen({
   const kitView = useStreamed(kitViewRead);
   const kitLoading = kitView === null;
   const kit = kitView?.kit ?? null;
+  const measured = kitView?.measured ?? null;
   const workspace = useMemo(
     () => withPlatformFolders(kitView?.workspace ?? emptyBrandContextWorkspace(), knowledgeFolders),
     [kitView, knowledgeFolders],
@@ -75,7 +82,7 @@ export function BrandContextScreen({
   return (
     <ApplicationShell activeHref="/brand-context">
       <div className={styles.workspace}>
-        <BrandContextSidebar controller={controller} productActions={productActions} workspace={workspace} />
+        <BrandContextSidebar controller={controller} measured={measured} productActions={productActions} workspace={workspace} />
         <main className={styles.main}>
           {controller.section === "assets"
             ? <AssetsHeader controller={controller} />
@@ -84,8 +91,11 @@ export function BrandContextScreen({
             {kitLoading && controller.section !== "knowledge" ? (
               <div className={styles.emptyState} role="status">Loading the brand kit…</div>
             ) : null}
-            {!kitLoading && controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} workspace={workspace} /> : null}
+            {!kitLoading && controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} measuredGroups={measured?.colorGroups} workspace={workspace} /> : null}
             {!kitLoading && controller.section === "typography" ? <TypographyPanel controller={controller} emptyMessage={brandKitActions.typographyEmptyMessage} /> : null}
+            {!kitLoading && controller.section === "components" ? <MeasuredStylesPanel measured={measured} typefaces={controller.typefaces} /> : null}
+            {!kitLoading && controller.section === "spacing" ? <SpacingPanel measured={measured} /> : null}
+            {!kitLoading && controller.section === "motion" ? <MotionPanel measured={measured} /> : null}
             {!kitLoading && controller.section === "assets" ? <AssetsPanel controller={controller} /> : null}
             {controller.section === "knowledge" ? <KnowledgePanel controller={controller} productActions={productActions} /> : null}
           </div>

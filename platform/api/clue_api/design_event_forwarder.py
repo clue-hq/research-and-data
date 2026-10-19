@@ -48,6 +48,11 @@ _DESIGN_PROGRESS_TOPIC: Final = RunEventTopic.DESIGN_RUN_EVENT.value
 #: worker deployed without the design extras must still compose.
 _SCENE_CHECKPOINT_EVENT: Final = "scene_checkpoint_committed"
 
+#: The site executor's one announcement (Lane B, Contract 7): a request saved the site at
+#: `version`. It becomes the same design.checkpoint frame a scene checkpoint does, so the
+#: frontend's existing designRefreshForEvent reloads the canvas. Never an `operations` key.
+_SITE_DOCUMENT_SAVED_EVENT: Final = "site_document_saved"
+
 #: The design events this lane forwards onto the leg's chat thread, each mapped to the turn-event
 #: type it becomes and the payload keys carried across. Everything else the design vocabulary
 #: emits (~60 names, open by design) stays on the design run's own stream. A key the design event
@@ -59,6 +64,7 @@ _FORWARDED_DESIGN_EVENTS: Final[dict[str, tuple[TurnEventType, tuple[str, ...]]]
         TurnEventType.DESIGN_CHECKPOINT,
         ("document_id", "version", "operations", "preflight_clean"),
     ),
+    _SITE_DOCUMENT_SAVED_EVENT: (TurnEventType.DESIGN_CHECKPOINT, ("document_id", "version")),
 }
 
 #: The payload keys an op-bearing design event contributes to its ``design.op_batch`` frame.

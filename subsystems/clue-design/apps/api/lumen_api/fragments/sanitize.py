@@ -1,7 +1,7 @@
 """The one-time fragment sanitizer (clone-fidelity F1.2, ruling D-F4).
 
 **Sanitization happens exactly once, at artifact creation.** Everything downstream — the F1.3
-render arm, the F1.4 derive path, the F1.5 export/publish package — may trust stored artifact
+render arm, the F1.4 derive path, the F1.5 publish package — may trust stored artifact
 HTML absolutely, because no write path can put markup into a fragment except this one. That is
 the same guarantee shape the engine uses on its own write path (``lumen-web``'s
 ``canonicalize_incoming_kind`` in ``ops.rs``: an operation's payload is canonicalized once, on
@@ -61,7 +61,8 @@ from dataclasses import dataclass
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from .cssscope import rewrite_declaration_urls
-from .refs import FragmentRefused, asset_url, link_scheme_allowed, resolve_asset_reference
+from .reference_identity import indexed_references
+from .refs import FragmentRefused, asset_reference_url, link_scheme_allowed, resolve_asset_reference
 
 #: Elements removed with everything inside them. See the module docstring for the reasoning on
 #: each; `foreignobject` is the SVG escape hatch back into arbitrary HTML (and, historically,
@@ -137,10 +138,12 @@ class SanitizedHtml:
 def sanitize_fragment_html(html: str, *, rehosted: Mapping[str, str]) -> SanitizedHtml:
     """Sanitize one captured section subtree. Refuses on an unrehostable reference.
 
-    ``rehosted`` maps a reference EXACTLY as the source wrote it to the sha256 of the bytes F0
-    stored for it. A reference already written ``/asset-store/{digest}`` needs no entry, which is
-    what makes running this over its own output a no-op.
+    ``rehosted`` maps source references to held sha256 digests. Fragment-only aliases may resolve
+    when all matching entries name the same digest; other URL spelling stays exact. A reference
+    already written ``/asset-store/{digest}`` needs no entry. In-resource fragments survive both
+    rewriting and a repeat sanitization.
     """
+    rehosted = indexed_references(rehosted)
     tree = LexborHTMLParser(html)
     body = tree.body
     notes: list[str] = []
@@ -206,7 +209,7 @@ def _clean_attributes(
             digest = resolve_asset_reference(raw, rehosted)
             if digest is not None:
                 digests.add(digest)
-                node.attrs[name] = asset_url(digest)
+                node.attrs[name] = asset_reference_url(raw, digest)
             continue
 
         if lowered in _ASSET_LIST_ATTRS:
@@ -242,7 +245,7 @@ def _rewrite_srcset(
     candidates: list[str] = []
     for url, descriptor in parse_srcset_candidates(value):
         digest = resolve_asset_reference(url, rehosted)
-        target = url if digest is None else asset_url(digest)
+        target = url if digest is None else asset_reference_url(url, digest)
         if digest is not None:
             digests.add(digest)
         candidates.append(f"{target} {descriptor}".strip() if descriptor else target)

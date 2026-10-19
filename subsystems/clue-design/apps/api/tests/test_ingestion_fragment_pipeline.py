@@ -461,7 +461,11 @@ def test_the_website_ingestion_job_mints_the_sections_it_captured(
 
     async def _capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
-        return _FakeOutcome([_snapshot()])
+        snapshot = _snapshot()
+        snapshot.geometry = {"initial_font_px": 18, "root_font_px": 9}
+        from lumen_ingestion.capture.snapshot import Stylesheet
+        snapshot.stylesheets.append(Stylesheet(url="inline:root", text="html{font-size:50%}"))
+        return _FakeOutcome([snapshot])
 
     run_website_ingestion(
         str(tmp_path / "engine-cache"),
@@ -477,6 +481,7 @@ def test_the_website_ingestion_job_mints_the_sections_it_captured(
     rows = list_web_fragments(workspace_id=workspace_id)
     assert {row["section_role"] for row in rows} >= {"nav", "hero", "footer"}
     assert all(row["status"] == "approved" for row in rows)
+    assert all(row["provenance"]["css"]["root_units"]["initial_font_px"] == 18 for row in rows)
     assert all(row["source_kit_id"] == job["brand_kit_id"] for row in rows)
     assert all(row["source_kit_version"] == job["brand_kit_version"] for row in rows)
     # And the job itself says what it cloned, so "what did this ingestion keep?" is answerable
@@ -1021,3 +1026,49 @@ def test_a_hidden_section_becomes_a_real_dormant_row_the_kit_approval_cannot_wak
     with pytest.raises(FragmentReferenceError) as excinfo:
         store.create_document(_doc("doc_dormant_e2e", ("n1", row["fragment_id"])), doc_kind="web")
     assert excinfo.value.code == "fragment.not_approved"
+
+
+def test_new_ingestion_kit_can_release_identical_capture_without_rewriting_origin(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    repo = HybridRepository(workspace_id=workspace_id)
+    first = _seed_kit(workspace_id, "brand_kit_ing_first")
+    second = _seed_kit(workspace_id, "brand_kit_ing_second")
+    original = _mint(workspace_id, design_storage, kit=first).minted
+    again = _mint(workspace_id, design_storage, kit=second).minted
+    assert [f.fragment_id for f in original] == [f.fragment_id for f in again]
+    repo.update_brand_kit_approval(second["brand_kit_id"], "approved")
+    rows = list_web_fragments(workspace_id=workspace_id)
+    assert all(row["status"] == "approved" for row in rows)
+    for row in rows:
+        assert row["source_kit_id"] == first["brand_kit_id"]
+        bindings = {b["brand_kit_id"]: b for b in row["source_kit_bindings"]}
+        assert set(bindings) == {first["brand_kit_id"], second["brand_kit_id"]}
+        assert bindings[second["brand_kit_id"]]["approved"] is True
+        assert bindings[first["brand_kit_id"]]["approved"] is False
+
+
+def test_revoking_one_capture_keeps_another_explicit_release_but_not_retired_sections(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    repo = HybridRepository(workspace_id=workspace_id)
+    first = _seed_kit(workspace_id, "brand_kit_ing_first")
+    second = _seed_kit(workspace_id, "brand_kit_ing_second")
+    _mint(workspace_id, design_storage, kit=first)
+    _mint(workspace_id, design_storage, kit=second)
+    repo.update_brand_kit_approval(first["brand_kit_id"], "approved")
+    repo.update_brand_kit_approval(second["brand_kit_id"], "approved")
+    rows = list_web_fragments(workspace_id=workspace_id)
+    retired = rows[0]["fragment_id"]
+    set_web_fragment_status(workspace_id=workspace_id, fragment_id=retired, status="deprecated")
+    repo.update_brand_kit_approval(first["brand_kit_id"], "draft")
+    rows = list_web_fragments(workspace_id=workspace_id)
+    assert all(
+        row["status"] == ("deprecated" if row["fragment_id"] == retired else "approved")
+        for row in rows
+    )
+    repo.update_brand_kit_approval(second["brand_kit_id"], "draft")
+    assert all(
+        row["status"] == ("deprecated" if row["fragment_id"] == retired else "draft")
+        for row in list_web_fragments(workspace_id=workspace_id)
+    )

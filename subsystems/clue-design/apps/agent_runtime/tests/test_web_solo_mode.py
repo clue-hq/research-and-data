@@ -61,7 +61,10 @@ def test_solo_registers_no_subagents_and_carries_the_full_write_surface(
     assert captured["subagents"] == []
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in captured["tools"]}
     # The director's surface survives...
-    for name in ("render_web_preview", "review_cloned_page", "finalize_web_run"):
+    for name in (
+        "render_web_preview", "review_cloned_page", "finalize_web_run",
+        "set_web_typography_reference",
+    ):
         assert name in tool_names, name
     # ...and the author's write surface joins it.
     for name in (
@@ -134,6 +137,12 @@ def test_flag_off_keeps_the_trio_composition_byte_identical(tmp_path, monkeypatc
     assert "You direct a website-building turn" in captured["system_prompt"]
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in captured["tools"]}
     assert "author_web_page" not in tool_names
+    assert "set_web_typography_reference" in tool_names
+    author_names = {
+        getattr(t, "name", getattr(t, "__name__", ""))
+        for t in captured["subagents"][0]["tools"]
+    }
+    assert "set_web_typography_reference" in author_names
 
 
 def test_solo_account_blocks_render_only_with_an_account() -> None:
@@ -226,3 +235,22 @@ def test_solo_prompt_carries_the_annotations_law_only_when_annotations_ride() ->
     assert "inspect_cloned_section" in with_notes
     assert "confirm each annotation by its number" in with_notes
     assert "ANNOTATIONS ARE THE BRIEF" not in build_web_solo_prompt(**base)
+
+
+def test_context_clearing_rides_the_web_agent_by_default(tmp_path, monkeypatch) -> None:
+    from langchain.agents.middleware import ContextEditingMiddleware
+
+    from lumen_agent.context_clearing import SupersededToolResultsEdit
+
+    captured = _create_web_agent(tmp_path, monkeypatch, _solo_config(tmp_path))
+    editing = [m for m in captured["middleware"] if isinstance(m, ContextEditingMiddleware)]
+    assert len(editing) == 1
+    assert [type(e) for e in editing[0].edits] == [SupersededToolResultsEdit]
+
+
+def test_context_clearing_flag_off_leaves_the_composition_unchanged(tmp_path, monkeypatch) -> None:
+    from langchain.agents.middleware import ContextEditingMiddleware
+
+    config = replace(_solo_config(tmp_path), web_context_clearing=False)
+    captured = _create_web_agent(tmp_path, monkeypatch, config)
+    assert not any(isinstance(m, ContextEditingMiddleware) for m in captured["middleware"])

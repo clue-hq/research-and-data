@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S6 probe: Tailwind v4 / shadcn colours (oklch)</title>
+<!-- S6 probe. Tailwind v4's default palette and shadcn/ui's v4 theme declare every colour in oklch();
+     Chromium keeps that colour space in getComputedStyle. Three buttons: an oklch blue CTA with an oklch
+     hover, an oklch green CTA, and a hex control whose hover is oklch. One oklch band. Local file only. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; align-items: center; }
+  .b { display: inline-flex; align-items: center; padding: 12px 24px; border: 0; border-radius: 8px;
+       font: 500 14px/1.4 Arial; cursor: pointer; text-decoration: none; }
+  .blue { background: oklch(0.546 0.245 262.881); color: oklch(0.985 0 0); }
+  .blue:hover { background: oklch(0.488 0.243 264.376); }
+  .green { background: oklch(0.627 0.194 149.214); color: oklch(0.985 0 0); }
+  .hexbtn { background: #047464; color: #ffffff; }
+  .hexbtn:hover { background: oklch(0.4 0.1 180); }
+  section.band { padding: 60px 40px; background: oklch(0.21 0.034 264.665); color: oklch(0.985 0 0); }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>Colours in oklch</h1>
+  <div class="wrap">
+    <button class="b blue" id="b-blue">Book a demo</button>
+    <button class="b green" id="b-green">Start free</button>
+    <button class="b hexbtn" id="b-hex">Contact sales</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

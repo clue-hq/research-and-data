@@ -1209,6 +1209,12 @@ pub struct TokenCatalog {
     pub assets: BTreeMap<String, AssetToken>,
     #[serde(default)]
     pub aliases: BTreeMap<String, TokenAlias>,
+    /// Measured style values the typed groups cannot hold (Wave 2 A9): keywords (case, cursor,
+    /// decoration, border style…), durations, easings, transforms, keyframes, animation and reveal
+    /// entries, and button icons. Minted by ingestion only; omitted when empty, so every kit without
+    /// them serializes exactly as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub styles: BTreeMap<String, StyleToken>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1367,6 +1373,415 @@ pub struct TokenAlias {
 pub struct TokenProvenance {
     pub source: String,
     pub confidence: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StyleToken {
+    pub value: ModeValue<StyleTokenValue>,
+    pub description: Option<String>,
+    pub provenance: Option<TokenProvenance>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KeyframeStep {
+    pub offset: f64,
+    #[serde(default)]
+    pub declarations: BTreeMap<String, String>,
+}
+
+/// One measured style value. Entries that combine others (`Animation`, `Reveal`) name them, the
+/// way an effect names its shadow token.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StyleTokenValue {
+    Keyword {
+        property: String,
+        value: String,
+    },
+    Duration {
+        ms: f64,
+    },
+    Easing {
+        function: String,
+    },
+    Transform {
+        value: String,
+    },
+    Keyframes {
+        frames: Vec<KeyframeStep>,
+    },
+    Animation {
+        keyframes: String,
+        duration: String,
+        easing: String,
+        #[serde(default)]
+        delay: Option<String>,
+        iterations: String,
+        direction: String,
+        fill_mode: String,
+    },
+    Reveal {
+        #[serde(default)]
+        from_opacity: Option<String>,
+        #[serde(default)]
+        from_transform: Option<String>,
+        duration: String,
+        easing: String,
+    },
+    Glyph {
+        text: String,
+    },
+    Svg {
+        markup: String,
+        width: f64,
+        height: f64,
+    },
+    Alias {
+        token: String,
+    },
+}
+
+/// The CSS properties a keyword token may carry. Each value is a plain keyword list
+/// (`uppercase`, `pointer`, `underline`), never free CSS; `box-shadow` only ever as `none`
+/// (a state that removes the rest shadow).
+const STYLE_KEYWORD_PROPERTIES: &[&str] = &[
+    "text-transform",
+    "text-decoration-line",
+    "text-decoration-thickness",
+    "text-underline-offset",
+    "cursor",
+    "border-style",
+    "outline-style",
+    "transition-property",
+    "filter",
+    "box-shadow",
+];
+/// What a measured keyframe may animate: compositing and paint properties only.
+const KEYFRAME_PROPERTIES: &[&str] = &[
+    "opacity",
+    "transform",
+    "translate",
+    "scale",
+    "rotate",
+    "filter",
+    "color",
+    "background-color",
+    "border-color",
+    "box-shadow",
+    "background-position",
+];
+const ANIMATION_DIRECTIONS: &[&str] = &["normal", "reverse", "alternate", "alternate-reverse"];
+const ANIMATION_FILL_MODES: &[&str] = &["none", "forwards", "backwards", "both"];
+const MAX_STYLE_TEXT: usize = 400;
+const MAX_KEYFRAME_STEPS: usize = 32;
+const MAX_KEYFRAME_DECLARATIONS: usize = 12;
+const MAX_ICON_SVG_BYTES: usize = 4096;
+const MAX_ICON_SVG_DEPTH: usize = 32;
+const MAX_ICON_SVG_VALUE: usize = 2000;
+/// The icon elements that put ink down (the cleaner's `_SVG_DRAWING_ELEMENTS`); with `svg` and `g`
+/// they are all the elements an icon may use (`_SVG_ELEMENTS`).
+const ICON_SVG_DRAWING_ELEMENTS: &[&str] = &[
+    "path", "circle", "ellipse", "line", "polyline", "polygon", "rect",
+];
+/// The icon attributes, spelled exactly as the cleaner writes them (`_SVG_ATTRIBUTES`).
+const ICON_SVG_ATTRIBUTES: &[&str] = &[
+    "viewBox",
+    "d",
+    "fill",
+    "stroke",
+    "stroke-width",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "fill-rule",
+    "clip-rule",
+    "cx",
+    "cy",
+    "r",
+    "rx",
+    "ry",
+    "x",
+    "y",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "points",
+    "width",
+    "height",
+    "transform",
+    "opacity",
+    "fill-opacity",
+    "stroke-opacity",
+];
+
+fn style_text_ok(value: &str, max: usize) -> bool {
+    let lower = value.to_ascii_lowercase();
+    !value.trim().is_empty()
+        && value.len() <= max
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b" ,.()%#+-/".contains(&byte))
+        && !lower.contains("url(")
+        && !lower.contains("var(")
+        && !lower.contains("expression")
+}
+
+fn style_keyword_ok(property: &str, value: &str) -> bool {
+    STYLE_KEYWORD_PROPERTIES.contains(&property)
+        && style_text_ok(value, 200)
+        && (property != "box-shadow" || value == "none")
+}
+
+fn easing_ok(function: &str) -> bool {
+    matches!(
+        function,
+        "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
+    ) || ((function.starts_with("cubic-bezier(")
+        || function.starts_with("steps(")
+        || function.starts_with("linear("))
+        && function.ends_with(')')
+        && style_text_ok(function, MAX_STYLE_TEXT))
+}
+
+fn transform_ok(value: &str) -> bool {
+    if value == "none" {
+        return true;
+    }
+    let inner = value
+        .strip_prefix("matrix(")
+        .or_else(|| value.strip_prefix("matrix3d("))
+        .and_then(|rest| rest.strip_suffix(')'));
+    match inner {
+        Some(args) => {
+            !args.is_empty()
+                && args.len() <= MAX_STYLE_TEXT
+                && args
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || b" ,.-e".contains(&byte))
+        }
+        None => false,
+    }
+}
+
+fn keyframes_ok(frames: &[KeyframeStep]) -> bool {
+    (2..=MAX_KEYFRAME_STEPS).contains(&frames.len())
+        && frames.iter().all(|frame| {
+            finite_in_range(frame.offset, 0.0, 100.0)
+                && !frame.declarations.is_empty()
+                && frame.declarations.len() <= MAX_KEYFRAME_DECLARATIONS
+                && frame.declarations.iter().all(|(property, value)| {
+                    KEYFRAME_PROPERTIES.contains(&property.as_str()) && style_text_ok(value, 200)
+                })
+        })
+}
+
+fn glyph_ok(text: &str) -> bool {
+    let count = text.chars().count();
+    (1..=4).contains(&count) && !text.chars().any(|c| c.is_control() || "<>&\"'".contains(c))
+}
+
+/// An icon's markup is exactly the canonical form the ingestion cleaner emits
+/// (`lumen_ingestion/capture/motion.py` `clean_icon_svg`), read by a scanner, never an HTML parser:
+///
+/// ```text
+/// icon    := element whose NAME is "svg"
+/// element := "<" NAME attrs ">" element* "</" NAME ">"
+/// attrs   := ( " " ATTR "=\"" VALUE "\"" )*
+/// ```
+///
+/// NAME is one of the cleaner's elements, ATTR one of its attribute spellings (case-sensitive), and
+/// VALUE its value characters, never holding `url(`. Nothing else anywhere: no text, whitespace,
+/// comments or self-closing tags. At most `MAX_ICON_SVG_BYTES` bytes and `MAX_ICON_SVG_DEPTH` open
+/// elements, and at least one element that draws. Ingestion's `svg_ok` and site-kit's
+/// `isSafeIconSvg` are this same scanner; `fixtures/brand/icon_svg_cases.json` holds them to it.
+fn icon_svg_ok(markup: &str) -> bool {
+    fn run(bytes: &[u8], from: usize, keep: impl Fn(u8) -> bool) -> &[u8] {
+        let len = bytes[from..].iter().take_while(|byte| keep(**byte)).count();
+        &bytes[from..from + len]
+    }
+    let named = |list: &[&str], name: &[u8]| list.iter().any(|item| item.as_bytes() == name);
+    if markup.len() > MAX_ICON_SVG_BYTES {
+        return false;
+    }
+    let bytes = markup.as_bytes();
+    let mut at = 0;
+    let mut open: Vec<&[u8]> = Vec::new();
+    let mut draws = false;
+    loop {
+        if bytes.get(at) != Some(&b'<') {
+            return false;
+        }
+        at += 1;
+        if bytes.get(at) == Some(&b'/') {
+            let name = run(bytes, at + 1, |byte| byte.is_ascii_lowercase());
+            at += 1 + name.len();
+            if open.pop() != Some(name) || bytes.get(at) != Some(&b'>') {
+                return false;
+            }
+            at += 1;
+            if open.is_empty() {
+                return at == bytes.len() && draws;
+            }
+            continue;
+        }
+        let name = run(bytes, at, |byte| byte.is_ascii_lowercase());
+        at += name.len();
+        let drawing = named(ICON_SVG_DRAWING_ELEMENTS, name);
+        // The root is an `svg`; inside it, any of the cleaner's nine elements.
+        let allowed = if open.is_empty() {
+            name == b"svg"
+        } else {
+            drawing || name == b"svg" || name == b"g"
+        };
+        if !allowed {
+            return false;
+        }
+        loop {
+            match bytes.get(at) {
+                Some(b'>') => break,
+                Some(b' ') => {
+                    let attribute = run(bytes, at + 1, |byte| {
+                        byte.is_ascii_alphanumeric() || byte == b'-'
+                    });
+                    at += 1 + attribute.len();
+                    if !named(ICON_SVG_ATTRIBUTES, attribute) || !bytes[at..].starts_with(b"=\"") {
+                        return false;
+                    }
+                    let value = run(bytes, at + 2, |byte| {
+                        byte.is_ascii_alphanumeric() || b" ,.()%#+-".contains(&byte)
+                    });
+                    at += 2 + value.len();
+                    if value.len() > MAX_ICON_SVG_VALUE
+                        || value
+                            .windows(4)
+                            .any(|four| four.eq_ignore_ascii_case(b"url("))
+                        || bytes.get(at) != Some(&b'"')
+                    {
+                        return false;
+                    }
+                    at += 1;
+                }
+                _ => return false,
+            }
+        }
+        at += 1;
+        open.push(name);
+        if open.len() > MAX_ICON_SVG_DEPTH {
+            return false;
+        }
+        draws |= drawing;
+    }
+}
+
+fn iterations_ok(value: &str) -> bool {
+    value == "infinite"
+        || value
+            .parse::<f64>()
+            .map(|count| count.is_finite() && count > 0.0 && count <= 1000.0)
+            .unwrap_or(false)
+}
+
+fn validate_style_tokens(brand_kit: &BrandKit, diagnostics: &mut Vec<Diagnostic>) {
+    let styles = &brand_kit.tokens.styles;
+    let is_kind = |name: &str, want: fn(&StyleTokenValue) -> bool| {
+        styles
+            .get(name)
+            .map(|token| want(&token.value.default))
+            .unwrap_or(false)
+    };
+    let is_duration = |value: &StyleTokenValue| matches!(value, StyleTokenValue::Duration { .. });
+    let is_easing = |value: &StyleTokenValue| matches!(value, StyleTokenValue::Easing { .. });
+    for (path, token) in styles {
+        validate_mode_keys(path, &token.value.modes, &brand_kit.modes, diagnostics);
+        for value in std::iter::once(&token.value.default).chain(token.value.modes.values()) {
+            let problem: Option<(&str, &str)> = match value {
+                StyleTokenValue::Keyword { property, value }
+                    if !style_keyword_ok(property, value) =>
+                {
+                    Some(("LUMB0260", "an invalid keyword"))
+                }
+                StyleTokenValue::Duration { ms } if !finite_in_range(*ms, 0.0, 60_000.0) => {
+                    Some(("LUMB0261", "an invalid duration"))
+                }
+                StyleTokenValue::Easing { function } if !easing_ok(function) => {
+                    Some(("LUMB0262", "an invalid easing"))
+                }
+                StyleTokenValue::Transform { value } if !transform_ok(value) => {
+                    Some(("LUMB0263", "an invalid transform"))
+                }
+                StyleTokenValue::Keyframes { frames } if !keyframes_ok(frames) => {
+                    Some(("LUMB0264", "invalid keyframes"))
+                }
+                StyleTokenValue::Glyph { text } if !glyph_ok(text) => {
+                    Some(("LUMB0265", "an invalid icon glyph"))
+                }
+                StyleTokenValue::Svg {
+                    markup,
+                    width,
+                    height,
+                } if !icon_svg_ok(markup)
+                    || !finite_in_range(*width, 1.0, 256.0)
+                    || !finite_in_range(*height, 1.0, 256.0) =>
+                {
+                    Some(("LUMB0265", "an invalid icon svg"))
+                }
+                StyleTokenValue::Animation {
+                    keyframes,
+                    duration,
+                    easing,
+                    delay,
+                    iterations,
+                    direction,
+                    fill_mode,
+                } => {
+                    let refs = is_kind(keyframes, |v| {
+                        matches!(v, StyleTokenValue::Keyframes { .. })
+                    }) && is_kind(duration, is_duration)
+                        && is_kind(easing, is_easing)
+                        && delay
+                            .as_deref()
+                            .map_or(true, |name| is_kind(name, is_duration));
+                    if !refs {
+                        Some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                    } else if !iterations_ok(iterations)
+                        || !ANIMATION_DIRECTIONS.contains(&direction.as_str())
+                        || !ANIMATION_FILL_MODES.contains(&fill_mode.as_str())
+                    {
+                        Some(("LUMB0264", "an invalid animation"))
+                    } else {
+                        None
+                    }
+                }
+                StyleTokenValue::Reveal {
+                    from_opacity,
+                    from_transform,
+                    duration,
+                    easing,
+                } => {
+                    let refs = from_opacity
+                        .as_deref()
+                        .map_or(true, |name| brand_kit.tokens.opacity.contains_key(name))
+                        && from_transform.as_deref().map_or(true, |name| {
+                            is_kind(name, |v| matches!(v, StyleTokenValue::Transform { .. }))
+                        })
+                        && is_kind(duration, is_duration)
+                        && is_kind(easing, is_easing);
+                    (!refs).then_some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                }
+                StyleTokenValue::Alias { token } if !styles.contains_key(token) => {
+                    Some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                }
+                _ => None,
+            };
+            if let Some((code, what)) = problem {
+                diagnostics.push(brand_error(
+                    code,
+                    format!("style token {} has {}", path, what),
+                ));
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1675,6 +2090,7 @@ pub fn validate_brand_kit(brand_kit: &BrandKit) -> Vec<Diagnostic> {
     validate_modes(&brand_kit.modes, &mut diagnostics);
     validate_token_keys(&brand_kit.tokens, &mut diagnostics);
     validate_token_values(brand_kit, &mut diagnostics);
+    validate_style_tokens(brand_kit, &mut diagnostics);
     validate_assets(&brand_kit.assets, &mut diagnostics);
     validate_contrast_pairs(brand_kit, &mut diagnostics);
 
@@ -4215,6 +4631,7 @@ fn validate_token_keys(tokens: &TokenCatalog, diagnostics: &mut Vec<Diagnostic>)
     validate_map_keys("effect", tokens.effects.keys(), diagnostics);
     validate_map_keys("asset", tokens.assets.keys(), diagnostics);
     validate_map_keys("alias", tokens.aliases.keys(), diagnostics);
+    validate_map_keys("style", tokens.styles.keys(), diagnostics);
 }
 
 fn validate_map_keys<'a>(

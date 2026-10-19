@@ -13,12 +13,15 @@ planner, left to itself, answers the exact query the code runs from both indexes
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -29,8 +32,7 @@ from .conftest import run_async
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ALEMBIC_INI = _REPO_ROOT / "alembic.ini"
-#: The revision this migration chains off — the revision a downgrade lands on.
-_PREVIOUS_REVISION = "4a94970221e9"
+_MIGRATION = _REPO_ROOT / "alembic" / "versions" / "702784fe02b7_arv2_recovery_lookup_indexes.py"
 _INDEXES = {
     "provider_call_ledger_job": (
         "CREATE INDEX provider_call_ledger_job ON public.provider_call_ledger "
@@ -58,6 +60,28 @@ async def _index_definitions(conn: AsyncConnection) -> dict[str, str]:
         {"names": list(_INDEXES)},
     )
     return {str(r.indexname): str(r.indexdef) for r in rows}
+
+
+def _run_this_migration(step: str) -> None:
+    """This migration's own ``upgrade()`` or ``downgrade()``, and nothing else. An alembic downgrade
+    to the revision before it no longer works for that: since the website release merged, that
+    revision is where main and the website line split, so the downgrade would unwind the website's
+    migrations too — and they rightly refuse while site documents exist."""
+    spec = importlib.util.spec_from_file_location("recovery_indexes_migration", _MIGRATION)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def run(sync_conn) -> None:  # noqa: ANN001 - a SQLAlchemy sync Connection
+        with Operations.context(MigrationContext.configure(sync_conn)):
+            getattr(module, step)()
+
+    async def go() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            await conn.run_sync(run)
+            await conn.commit()
+
+    run_async(go())
 
 
 async def _definitions() -> dict[str, str]:
@@ -143,8 +167,8 @@ def test_the_recovery_indexes_round_trip_down_and_up() -> None:
     command.upgrade(cfg, "head")
     assert run_async(_definitions()) == _INDEXES
 
-    command.downgrade(cfg, _PREVIOUS_REVISION)
+    _run_this_migration("downgrade")
     assert run_async(_definitions()) == {}
 
-    command.upgrade(cfg, "head")
+    _run_this_migration("upgrade")
     assert run_async(_definitions()) == _INDEXES

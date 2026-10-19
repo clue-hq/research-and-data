@@ -13,6 +13,7 @@ acceptance walk.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,24 @@ def _measurement(fragment_id: str, **overrides: Any) -> SectionMeasurement:
     }
     base.update(overrides)
     return SectionMeasurement(**base)  # type: ignore[arg-type]
+
+
+def test_desktop_section_overflow_is_visible_advice_without_a_durable_clone_verdict():
+    walk = _walk(desktop=(_measurement("frag_footer", width_px=1200, scroll_width_px=2285),))
+    critique = compose_critique(walk)
+    finding = next(item for item in critique.page_findings if item.code == "review.desktop_overflow")
+    assert finding.detail["fragment_id"] == "frag_footer"
+    assert finding.detail["scroll_width_px"] == 2285
+    assert not critique.broken
+
+
+@pytest.mark.parametrize("values", [
+    {"scroll_width_px": 1442}, {"present": False, "scroll_width_px": 2500},
+    {"measured": False, "scroll_width_px": 2500},
+])
+def test_desktop_overflow_advice_requires_meaningful_measured_excess(values):
+    critique = compose_critique(_walk(desktop=(_measurement("frag_footer", **values),)))
+    assert all(item.code != "review.desktop_overflow" for item in critique.page_findings)
 
 
 def _walk(
@@ -744,12 +763,15 @@ class _FakePage:
             self.geometry = dict(self.owner.geometry_after_ready)
 
     def evaluate(self, script: str, arg: Any = None) -> Any:
+        from lumen_api.capture_readiness import _MEDIA_READINESS
         from lumen_api.clone_review.walk import (
             DOCUMENT_HEIGHT_SCRIPT,
             SECTION_PROBE_SCRIPT,
             STYLES_READY_SCRIPT,
         )
 
+        if script == _MEDIA_READINESS:
+            return {"settled": True, "coverage_complete": True, "unresolved": []}
         if script == DOCUMENT_HEIGHT_SCRIPT:
             return dict(self.geometry)
         if script == STYLES_READY_SCRIPT:
@@ -1064,14 +1086,14 @@ def _settled_walk(styles_ready, *, desktop=(), mobile=()):
                 walk_class=WALK_CLASS_MOBILE,
                 made=True,
                 measurements=mobile,
-                notes={"styles_ready": styles_ready},
+                notes={"styles_ready": styles_ready, "media_readiness": {"settled": True}},
             ),
             WalkObservation(walk_class=WALK_CLASS_CONSOLE, made=True),
             WalkObservation(
                 walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
                 made=True,
                 measurements=desktop,
-                notes={"styles_ready": styles_ready},
+                notes={"styles_ready": styles_ready, "media_readiness": {"settled": True}},
             ),
             WalkObservation(walk_class=WALK_CLASS_REDUCED_MOTION, made=True, notes={}),
         )
@@ -1094,6 +1116,22 @@ def test_only_a_page_that_says_it_is_ready_yields_settled_evidence(ready, settle
         f for f in critique.page_findings if f.code == "review.evidence_unsettled"
     ]
     assert bool(unsettled_notes) is (not settled)
+
+
+@pytest.mark.parametrize("walk_class", [WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE])
+@pytest.mark.parametrize("media", [None, {}, {"settled": False}, "unobserved"])
+def test_unobserved_or_unready_media_keeps_broken_findings_advisory(walk_class, media):
+    dead = _measurement("frag_dead", height_px=3200.0, content_extent_px=200.0)
+    walk = _settled_walk(True, desktop=(dead,), mobile=(dead,))
+    walk = replace(walk, observations=tuple(
+        replace(observation, notes={**observation.notes, "media_readiness": media})
+        if observation.walk_class == walk_class else observation
+        for observation in walk.observations
+    ))
+    critique = compose_critique(walk)
+    assert critique.broken
+    assert critique.settled is False
+    assert any(f.code == "review.evidence_unsettled" for f in critique.page_findings)
 
 
 def test_a_walk_that_measured_nothing_is_settled_by_default():

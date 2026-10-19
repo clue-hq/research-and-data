@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   EllipsisIcon,
+  FilesIcon,
   MonitorIcon,
   RectangleHorizontalIcon,
   RectangleVerticalIcon,
@@ -12,6 +13,8 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
+import type { SiteUrlBinding } from "@/features/site-editor/model/site-pages";
+import type { SitePublishBinding } from "@/features/site-editor/model/site-stage";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 import type {
   ImageExportFormat,
@@ -21,6 +24,8 @@ import type {
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
+import type { ArtifactVersionsBinding } from "../model/artifact-actions";
+import { isWebsiteKind } from "../model/artifact-kind";
 import {
   useArtifactToolbarController,
   type ArtifactPageOption,
@@ -29,8 +34,10 @@ import {
 import { useImageExportController } from "../hooks/use-image-export-controller";
 import { ArtifactActionMenu } from "./artifact-action-menu";
 import { ArtifactShareMenu } from "./artifact-share-menu";
+import { ArtifactTitle } from "./artifact-title";
 import { ChatShellIcon } from "./chat-shell-icon";
 import { ImageExportMenu } from "./image-export-menu";
+import { SiteUrlBar } from "./site-url-bar";
 import styles from "./chat-shell.module.css";
 
 const PREVIEW_DEVICES = ["Desktop", "Tablet", "Mobile"] as const;
@@ -63,9 +70,14 @@ export function ArtifactHeader({
   onRequestExportPreview,
   onZoomChange,
   pages,
+  publishLocked = false,
   redoDisabled,
+  renameLockNote = null,
+  renameNote = null,
+  site = null,
   title,
   undoDisabled,
+  versions = null,
   zoom,
 }: {
   /**
@@ -126,11 +138,33 @@ export function ArtifactHeader({
   /** F5 task 18: the active web document's pages. Empty/absent → the switcher
    * is not rendered at all (an ad, or a document with no pages yet). */
   pages?: readonly ArtifactPageOption[];
+  /** Task 28 (founder 2026-10-13): a design run is working on this website, so
+   * the Share menu's Publish is inert and says why. Absent leaves publishing as
+   * it is (the server still refuses mid-run). */
+  publishLocked?: boolean;
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
+  /** K1-5 (founder ruling 2026-10-16): a design run drives the document, so the
+   * action menu's Rename is inert and says this sentence. Absent leaves Rename
+   * live (the server still refuses mid-run). */
+  renameLockNote?: string | null;
+  /** K1-5: a rename the server refused anyway (a run that started before the
+   * lock knew) — the sentence to show beside the unchanged title. */
+  renameNote?: string | null;
+  /** C10 (sites): the Pages toggle's state and the URL toolbar. Absent on every other kind.
+   * K6-2: `publish` is the site editor's side of Share — its wait for edits on their way and its
+   * saved version. */
+  site?: {
+    onTogglePages: () => void;
+    pagesOpen: boolean;
+    publish?: SitePublishBinding;
+    url: SiteUrlBinding;
+  } | null;
   title: string;
   /** W3.4: empty-stack disable for the action menu's Undo. */
   undoDisabled?: boolean;
+  /** C9: the site's real version list. */
+  versions?: ArtifactVersionsBinding | null;
   /** AD2.8: the zoom to DISPLAY — the session's choice, or (until there is
    * one) the canvas's fit-on-open snapped to the nearest step this menu
    * offers. Absent leaves the toolbar controller's own local value. */
@@ -159,7 +193,14 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ documentId, kind, title });
+  } = useArtifactSharingController({
+    beforePublish: site?.publish?.prepare,
+    documentId,
+    documentVersion: site?.publish?.version ?? null,
+    kind,
+    publishLocked,
+    title,
+  });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,
@@ -213,243 +254,280 @@ export function ArtifactHeader({
     toggleArtifactActionMenu();
   };
   const PreviewDeviceIcon = PREVIEW_DEVICE_ICONS[activeDevice];
+  // The existing device menu, unchanged; for a site it sits inside the URL toolbar (C10).
+  const deviceMenu = (
+    <div className={styles.toolbarMenuAnchor} ref={deviceMenuRef}>
+      <button
+        aria-expanded={deviceMenuOpen}
+        aria-haspopup="menu"
+        aria-label={`Preview device: ${activeDevice}`}
+        className={styles.deviceButton}
+        onClick={() => {
+          closeArtifactActionMenu();
+          sharingController.closeMenu();
+          toggleDeviceMenu();
+        }}
+        type="button"
+      >
+        <PreviewDeviceIcon
+          absoluteStrokeWidth
+          aria-hidden="true"
+          size={16}
+          strokeWidth={1.25}
+        />
+        <ChatShellIcon name="chevron-down" size={8} />
+      </button>
+      {deviceMenuOpen ? (
+        <div aria-label="Preview device" className={styles.toolbarMenu} role="menu">
+          {PREVIEW_DEVICES.map((option) => (
+            <button
+              aria-checked={activeDevice === option}
+              className={`${styles.toolbarMenuItem} ${activeDevice === option ? styles.toolbarMenuItemActive : ""}`}
+              key={option}
+              onClick={() => chooseDevice(option)}
+              role="menuitemradio"
+              type="button"
+            >
+              <span>{option}</span>
+              {activeDevice === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <header className={styles.artifactHeader}>
-      <div className={styles.artifactHeading}>
-        <ChatShellIcon name={kind === "web" ? "web-output" : "ad-canvas"} size={12} />
-        {renaming ? (
-          <input
-            aria-label="Rename artifact title"
-            className={styles.artifactHeadingRenameInput}
-            onBlur={commitRename}
-            onChange={(event) => setDraftTitle(event.target.value)}
-            onKeyDown={handleRenameKeyDown}
-            ref={renameInputRef}
-            value={draftTitle}
-          />
-        ) : (
-          <span>{title}</span>
-        )}
-        <div className={styles.artifactActionMenuAnchor} ref={artifactActionMenuRef}>
-          <button
-            aria-expanded={artifactActionMenuOpen}
-            aria-haspopup="menu"
-            aria-label="More artifact actions"
-            className={`${styles.artifactHeadingMenuButton} ${artifactActionMenuOpen ? styles.artifactHeadingMenuButtonActive : ""}`}
-            onClick={toggleActions}
-            type="button"
-          >
-            <EllipsisIcon
-              absoluteStrokeWidth
-              aria-hidden="true"
-              size={14}
-              strokeWidth={1.25}
-            />
-          </button>
-          {artifactActionMenuOpen ? (
-            <ArtifactActionMenu
-              onRename={beginRename}
-              onRequestAction={requestArtifactAction}
-              onSelectVersion={selectVersion}
-              onVersionsOpenChange={setVersionsOpen}
-              redoDisabled={redoDisabled}
-              selectedVersionId={selectedVersionId}
-              undoDisabled={undoDisabled}
-              versionsOpen={versionsOpen}
-            />
+      {/* Three groups — start (title, Pages), centre (the URL bar or the canvas menus), end (Edit,
+          Share) — laid out by chat-shell.module.css: one flat row in a narrow header, three columns
+          with the URL bar centred in a wide one. */}
+      <div className={styles.artifactHeaderRow}>
+        <div className={styles.artifactHeaderStart}>
+          <div className={styles.artifactHeading}>
+            <ChatShellIcon name={isWebsiteKind(kind) ? "web-output" : "ad-canvas"} size={12} />
+            {renaming ? (
+              <input
+                aria-label="Rename artifact title"
+                className={styles.artifactHeadingRenameInput}
+                onBlur={commitRename}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={handleRenameKeyDown}
+                ref={renameInputRef}
+                value={draftTitle}
+              />
+            ) : (
+              <ArtifactTitle key={title} title={title} />
+            )}
+            <div className={styles.artifactActionMenuAnchor} ref={artifactActionMenuRef}>
+              <button
+                aria-expanded={artifactActionMenuOpen}
+                aria-haspopup="menu"
+                aria-label="More artifact actions"
+                className={`${styles.artifactHeadingMenuButton} ${artifactActionMenuOpen ? styles.artifactHeadingMenuButtonActive : ""}`}
+                onClick={toggleActions}
+                type="button"
+              >
+                <EllipsisIcon
+                  absoluteStrokeWidth
+                  aria-hidden="true"
+                  size={14}
+                  strokeWidth={1.25}
+                />
+              </button>
+              {artifactActionMenuOpen ? (
+                <ArtifactActionMenu
+                  onRename={beginRename}
+                  onRequestAction={requestArtifactAction}
+                  onSelectVersion={selectVersion}
+                  onVersionsOpenChange={setVersionsOpen}
+                  redoDisabled={redoDisabled}
+                  renameLockNote={renameLockNote}
+                  selectedVersionId={selectedVersionId}
+                  undoDisabled={undoDisabled}
+                  versions={versions}
+                  versionsOpen={versionsOpen}
+                />
+              ) : null}
+            </div>
+          </div>
+          {renameNote ? (
+            <p className={styles.artifactHeadingNote} role="status">
+              {renameNote}
+            </p>
+          ) : null}
+          {/* DESIGN REVIEW (DR1): the Pages toggle (founder ruling 2026-10-11, the Ploy reference) —
+              the Edit pill's own button style and pressed state. */}
+          {site ? (
+            <button
+              aria-label="Pages"
+              aria-pressed={site.pagesOpen}
+              className={`${styles.artifactActionButton} ${site.pagesOpen ? styles.artifactActionButtonActive : ""}`}
+              onClick={site.onTogglePages}
+              type="button"
+            >
+              <FilesIcon absoluteStrokeWidth aria-hidden="true" size={14} strokeWidth={1.25} />
+              <span className={styles.artifactActionLabel}>Pages</span>
+            </button>
           ) : null}
         </div>
-      </div>
-      <div className={styles.artifactHeaderActions}>
-        {/* FLAGGED F5 T18: no designed slot in the dummy frontend for a page
-         * switcher — minimal neutral control pending founder/design ruling.
-         * Styled as the device/zoom menus already are, so it reads as one of
-         * them rather than as invented chrome.
-         *
-         * F5 T19 (founder ruling after T18): TWO pages, not one. A single-page
-         * site has nothing to switch to, so its header stays exactly as it
-         * shipped — the switcher appears the moment a site becomes plural. */}
-        {kind === "web" && pages && pages.length >= 2 ? (
-          <div className={styles.toolbarMenuAnchor} ref={pageMenuRef}>
-            <button
-              aria-expanded={pageMenuOpen}
-              aria-haspopup="menu"
-              aria-label={`Page: ${activePage?.name ?? ""}`}
-              className={styles.zoomButton}
-              onClick={() => {
-                closeArtifactActionMenu();
-                sharingController.closeMenu();
-                imageExportController.closeMenu();
-                togglePageMenu();
-              }}
-              type="button"
-            >
-              <span>{activePage?.name ?? ""}</span>
-              <ChevronDownIcon
-                absoluteStrokeWidth
-                aria-hidden="true"
-                className={pageMenuOpen ? styles.zoomChevronOpen : undefined}
-                size={14}
-                strokeWidth={1.25}
-              />
-            </button>
-            {pageMenuOpen ? (
-              <div aria-label="Page" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
-                {pages.map((option) => (
-                  <button
-                    aria-checked={shownPageId === option.id}
-                    className={`${styles.toolbarMenuItem} ${shownPageId === option.id ? styles.toolbarMenuItemActive : ""}`}
-                    key={option.id}
-                    onClick={() => choosePage(option.id)}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>
-                      {option.name}
-                      <span className={styles.toolbarMenuItemHint}>{option.route}</span>
-                    </span>
-                    {shownPageId === option.id ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {kind === "ad" ? (
-          <div className={styles.toolbarMenuAnchor} ref={zoomMenuRef}>
-            <button
-              aria-expanded={zoomMenuOpen}
-              aria-haspopup="menu"
-              className={styles.zoomButton}
-              onClick={() => {
-                closeArtifactActionMenu();
-                sharingController.closeMenu();
-                toggleZoomMenu();
-              }}
-              type="button"
-            >
-              <span>{activeZoom}</span>
-              <ChevronDownIcon
-                absoluteStrokeWidth
-                aria-hidden="true"
-                className={zoomMenuOpen ? styles.zoomChevronOpen : undefined}
-                size={14}
-                strokeWidth={1.25}
-              />
-            </button>
-            {zoomMenuOpen ? (
-              <div aria-label="Canvas zoom" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
-                {ZOOM_LEVELS.map((option) => (
-                  <button
-                    aria-checked={activeZoom === option}
-                    className={`${styles.toolbarMenuItem} ${activeZoom === option ? styles.toolbarMenuItemActive : ""}`}
-                    key={option}
-                    onClick={() => chooseZoom(option)}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>{option}</span>
-                    {activeZoom === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className={styles.toolbarMenuAnchor} ref={deviceMenuRef}>
-            <button
-              aria-expanded={deviceMenuOpen}
-              aria-haspopup="menu"
-              aria-label={`Preview device: ${activeDevice}`}
-              className={styles.deviceButton}
-              onClick={() => {
-                closeArtifactActionMenu();
-                sharingController.closeMenu();
-                toggleDeviceMenu();
-              }}
-              type="button"
-            >
-              <PreviewDeviceIcon
-                absoluteStrokeWidth
-                aria-hidden="true"
-                size={16}
-                strokeWidth={1.25}
-              />
-              <ChatShellIcon name="chevron-down" size={8} />
-            </button>
-            {deviceMenuOpen ? (
-              <div aria-label="Preview device" className={styles.toolbarMenu} role="menu">
-                {PREVIEW_DEVICES.map((option) => (
-                  <button
-                    aria-checked={activeDevice === option}
-                    className={`${styles.toolbarMenuItem} ${activeDevice === option ? styles.toolbarMenuItemActive : ""}`}
-                    key={option}
-                    onClick={() => chooseDevice(option)}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>{option}</span>
-                    {activeDevice === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        )}
-        <button
-          aria-pressed={editing}
-          className={`${styles.artifactActionButton} ${editing ? styles.artifactActionButtonActive : ""}`}
-          disabled={editDisabled}
-          onClick={onEdit}
-          // The reason rides the pill itself rather than a new badge: this
-          // repo's presentation-truth rule forbids inventing chrome for data
-          // with no designed slot, and the same sentence is already on screen
-          // in the inspector's note line.
-          title={editDisabled ? (editDisabledReason ?? undefined) : undefined}
-          type="button"
-        >
-          <ChatShellIcon name={editing ? "pencil-ruler-knockout" : "pencil-ruler"} size={14} />
-          <span>Edit</span>
-        </button>
-        {kind === "ad" ? (
-          <div className={styles.toolbarMenuAnchor} ref={imageExportMenuRef}>
-            <button
-              aria-expanded={imageExportController.menuOpen}
-              aria-haspopup="dialog"
-              className={`${styles.artifactActionButton} ${styles.artifactShareButton}`}
-              onClick={() => {
-                closeArtifactActionMenu();
-                closeToolbarMenus();
-                sharingController.closeMenu();
-                imageExportController.toggleMenu();
-              }}
-              type="button"
-            >
-              <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
-              Export
-            </button>
-            {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreview={exportPreview} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
-          </div>
-        ) : (
-          <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>
-            <button
-              aria-expanded={sharingController.menuOpen}
-              aria-haspopup="dialog"
-              className={`${styles.artifactActionButton} ${styles.artifactShareButton}`}
-              onClick={() => {
-                closeArtifactActionMenu();
-                closeToolbarMenus();
-                imageExportController.closeMenu();
-                sharingController.toggleMenu();
-              }}
-              type="button"
-            >
-              Share
-            </button>
-            {sharingController.menuOpen ? <ArtifactShareMenu controller={sharingController} /> : null}
-          </div>
-        )}
+        <div className={styles.artifactHeaderCenter}>
+          {/* FLAGGED F5 T18: no designed slot in the dummy frontend for a page
+           * switcher — minimal neutral control pending founder/design ruling.
+           * Styled as the device/zoom menus already are, so it reads as one of
+           * them rather than as invented chrome.
+           *
+           * F5 T19 (founder ruling after T18): TWO pages, not one. A single-page
+           * site has nothing to switch to, so its header stays exactly as it
+           * shipped — the switcher appears the moment a site becomes plural. */}
+          {kind === "web" && pages && pages.length >= 2 ? (
+            <div className={styles.toolbarMenuAnchor} ref={pageMenuRef}>
+              <button
+                aria-expanded={pageMenuOpen}
+                aria-haspopup="menu"
+                aria-label={`Page: ${activePage?.name ?? ""}`}
+                className={styles.zoomButton}
+                onClick={() => {
+                  closeArtifactActionMenu();
+                  sharingController.closeMenu();
+                  imageExportController.closeMenu();
+                  togglePageMenu();
+                }}
+                type="button"
+              >
+                <span>{activePage?.name ?? ""}</span>
+                <ChevronDownIcon
+                  absoluteStrokeWidth
+                  aria-hidden="true"
+                  className={pageMenuOpen ? styles.zoomChevronOpen : undefined}
+                  size={14}
+                  strokeWidth={1.25}
+                />
+              </button>
+              {pageMenuOpen ? (
+                <div aria-label="Page" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
+                  {pages.map((option) => (
+                    <button
+                      aria-checked={shownPageId === option.id}
+                      className={`${styles.toolbarMenuItem} ${shownPageId === option.id ? styles.toolbarMenuItemActive : ""}`}
+                      key={option.id}
+                      onClick={() => choosePage(option.id)}
+                      role="menuitemradio"
+                      type="button"
+                    >
+                      <span>
+                        {option.name}
+                        <span className={styles.toolbarMenuItemHint}>{option.route}</span>
+                      </span>
+                      {shownPageId === option.id ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {kind === "ad" ? (
+            <div className={styles.toolbarMenuAnchor} ref={zoomMenuRef}>
+              <button
+                aria-expanded={zoomMenuOpen}
+                aria-haspopup="menu"
+                className={styles.zoomButton}
+                onClick={() => {
+                  closeArtifactActionMenu();
+                  sharingController.closeMenu();
+                  toggleZoomMenu();
+                }}
+                type="button"
+              >
+                <span>{activeZoom}</span>
+                <ChevronDownIcon
+                  absoluteStrokeWidth
+                  aria-hidden="true"
+                  className={zoomMenuOpen ? styles.zoomChevronOpen : undefined}
+                  size={14}
+                  strokeWidth={1.25}
+                />
+              </button>
+              {zoomMenuOpen ? (
+                <div aria-label="Canvas zoom" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
+                  {ZOOM_LEVELS.map((option) => (
+                    <button
+                      aria-checked={activeZoom === option}
+                      className={`${styles.toolbarMenuItem} ${activeZoom === option ? styles.toolbarMenuItemActive : ""}`}
+                      key={option}
+                      onClick={() => chooseZoom(option)}
+                      role="menuitemradio"
+                      type="button"
+                    >
+                      <span>{option}</span>
+                      {activeZoom === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : site ? (
+            <SiteUrlBar binding={site.url} deviceMenu={deviceMenu} />
+          ) : (
+            deviceMenu
+          )}
+        </div>
+        <div className={styles.artifactHeaderActions}>
+          <button
+            aria-label="Edit"
+            aria-pressed={editing}
+            className={`${styles.artifactActionButton} ${editing ? styles.artifactActionButtonActive : ""}`}
+            disabled={editDisabled}
+            onClick={onEdit}
+            // The reason rides the pill itself rather than a new badge: this
+            // repo's presentation-truth rule forbids inventing chrome for data
+            // with no designed slot, and the same sentence is already on screen
+            // in the inspector's note line.
+            title={editDisabled ? (editDisabledReason ?? undefined) : undefined}
+            type="button"
+          >
+            <ChatShellIcon name={editing ? "pencil-ruler-knockout" : "pencil-ruler"} size={14} />
+            <span className={styles.artifactActionLabel}>Edit</span>
+          </button>
+          {kind === "ad" ? (
+            <div className={styles.toolbarMenuAnchor} ref={imageExportMenuRef}>
+              <button
+                aria-expanded={imageExportController.menuOpen}
+                aria-haspopup="dialog"
+                className={`${styles.artifactActionButton} ${styles.artifactShareButton}`}
+                onClick={() => {
+                  closeArtifactActionMenu();
+                  closeToolbarMenus();
+                  sharingController.closeMenu();
+                  imageExportController.toggleMenu();
+                }}
+                type="button"
+              >
+                <DownloadIcon absoluteStrokeWidth aria-hidden="true" size={13} strokeWidth={1.5} />
+                Export
+              </button>
+              {imageExportController.menuOpen ? <ImageExportMenu controller={imageExportController} exportPreview={exportPreview} exportStatus={exportStatus} onRequestExportPreview={onRequestExportPreview} /> : null}
+            </div>
+          ) : (
+            <div className={styles.toolbarMenuAnchor} ref={sharingMenuRef}>
+              <button
+                aria-expanded={sharingController.menuOpen}
+                aria-haspopup="dialog"
+                className={`${styles.artifactActionButton} ${styles.artifactShareButton}`}
+                onClick={() => {
+                  closeArtifactActionMenu();
+                  closeToolbarMenus();
+                  imageExportController.closeMenu();
+                  sharingController.toggleMenu();
+                }}
+                type="button"
+              >
+                Share
+              </button>
+              {sharingController.menuOpen ? <ArtifactShareMenu controller={sharingController} /> : null}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

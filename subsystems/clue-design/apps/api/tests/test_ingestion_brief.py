@@ -11,8 +11,9 @@ Three laws are tested here rather than trusted:
   not carry is refused against the kit's own token set.
 * **fail-soft** — refusal, invalid output, or an agent that throws all land as a
   diagnostic and a briefless kit. None of them may fail an ingestion.
-* **silence when unconfigured** — with no brief agent there is no diagnostic and
-  no `brief` key: byte-identical to the pre-slice-3 pipeline.
+* **briefless when unconfigured** — with no brief agent there is no call and no
+  `brief` key, and the kit is flagged briefless with one warning, LUMI0904
+  (plan Q-A9-2).
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ def _evidence() -> BrandEvidence:
 def _kit_with_bands() -> tuple[BrandEvidence, dict]:
     """The website fixture wearing the real Stripe harvest's background rhythm.
 
-    Its two navy sections mint `surface.band.statement`, which is the whole
+    Its two navy sections mint `surface.band.0d1738`, which is the whole
     point: a name for the color the page stands on.
     """
     harvest = json.loads(
@@ -267,21 +268,21 @@ def test_every_token_bearing_section_is_checked_against_the_kit() -> None:
 def test_a_band_the_kit_minted_is_a_name_the_brief_may_speak() -> None:
     """The token law cuts both ways.
 
-    A kit whose measured rhythm minted `surface.band.statement` must offer that
+    A kit whose measured rhythm minted `surface.band.0d1738` must offer that
     name to the agent (in the prompt payload AND in the validation dictionary),
     or the agent is back to approximating the one color the page stands on.
     """
     evidence, kit = _kit_with_bands()
-    assert "surface.band.statement" in kit["tokens"]["colors"]
+    assert "surface.band.0d1738" in kit["tokens"]["colors"]
 
     request = build_brief_request(evidence, kit)
-    assert "surface.band.statement" in request.token_names
-    assert any(token["name"] == "surface.band.statement" for token in request.tokens)
+    assert "surface.band.0d1738" in request.token_names
+    assert any(token["name"] == "surface.band.0d1738" for token in request.tokens)
 
     payload = _brief_payload()
-    payload["background_rhythm"]["bands"][0]["token"] = "surface.band.statement"
+    payload["background_rhythm"]["bands"][0]["token"] = "surface.band.0d1738"
     brief = validate_brief(payload, token_names=kit_token_names(kit))
-    assert brief.background_rhythm.bands[0].token == "surface.band.statement"
+    assert brief.background_rhythm.bands[0].token == "surface.band.0d1738"
 
 
 def test_a_palette_scope_outside_the_grammar_is_refused() -> None:
@@ -382,6 +383,29 @@ def test_an_unconfigured_brief_stage_is_silent() -> None:
     )
     assert brief is None
     assert diagnostics == []
+
+
+def test_a_kit_published_without_the_brief_stage_is_flagged_briefless() -> None:
+    """Plan Q-A9-2: a briefless kit offers only the standard button though its styles were
+    measured, so the kit says it is briefless (LUMI0904) rather than leaving only a missing key."""
+    from lumen_ingestion.pipeline import _maybe_write_brief
+
+    class Inactive:
+        active = False
+
+        def write_brief(self, request):
+            raise AssertionError("an inactive agent is never asked")
+
+    diagnostics: list[dict] = []
+    brief = _maybe_write_brief(
+        _evidence(),
+        _kit(),
+        resolve_bytes=lambda _: None,
+        brief_agent=Inactive(),
+        diagnostics=diagnostics,
+    )
+    assert brief is None
+    assert [(d["code"], d["severity"]) for d in diagnostics] == [("LUMI0904", "warning")]
 
 
 def test_a_refusing_agent_leaves_the_kit_briefless_with_a_diagnostic() -> None:
@@ -552,7 +576,10 @@ def _run_website_ingestion_through_the_route(
 
     png_bytes = LOGO_PNG_PATH.read_bytes()
 
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False
+    ):
+        assert discover_pages is True
         class Outcome:
             tier = "static"
             escalated = False
@@ -634,8 +661,8 @@ def test_the_published_approved_kit_carries_the_brief(
 def test_an_unconfigured_stage_publishes_a_kit_with_no_brief_key(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Byte-stability: no agent → the kit is exactly the kit today's pipeline
-    publishes, with no `brief` key and no diagnostic about one."""
+    """No agent → no `brief` key, and the kit is flagged briefless (LUMI0904,
+    plan Q-A9-2) — never with a code that says the stage ran."""
     job = _run_website_ingestion_through_the_route(
         client,
         monkeypatch,
@@ -645,7 +672,7 @@ def test_an_unconfigured_stage_publishes_a_kit_with_no_brief_key(
     detail = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
     assert "brief" not in detail["brand_kit_json"]
     codes = {d.get("code") for d in detail["diagnostics"]["audit"]}
-    assert not {code for code in codes if str(code).startswith("LUMI09")}
+    assert {code for code in codes if str(code).startswith("LUMI090")} == {"LUMI0904"}
 
 
 def test_a_refused_brief_still_publishes_the_kit(

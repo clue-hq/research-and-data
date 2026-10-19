@@ -1,0 +1,38 @@
+{
+ "brand": "garner",
+ "pages": {
+  "/": {
+   "root": {
+    "props": {}
+   },
+   "content": [
+    {
+     "type": "ClonedSection",
+     "props": {
+      "id": "a",
+      "fragmentId": "frag_95041c54da629d99",
+      "slots": {},
+      "replacements": []
+     }
+    },
+    {
+     "type": "TailwindProbe",
+     "props": {
+      "id": "probe",
+      "heading": "Tailwind v4 probe",
+      "body": "Probe body."
+     }
+    },
+    {
+     "type": "ClonedSection",
+     "props": {
+      "id": "b",
+      "fragmentId": "frag_9a8550d2f42f1196",
+      "slots": {},
+      "replacements": []
+     }
+    }
+   ]
+  }
+ }
+}

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import re
-import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -356,7 +354,7 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
     assert is_served(workspace_id, "interactive-primary")
 
 
-def test_publish_manifest_assets_csp_export_and_curated_packages(
+def test_publish_manifest_assets_csp_and_curated_packages(
     client: TestClient, workspace_id: str
 ) -> None:
     create_account(client)
@@ -415,20 +413,9 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
         assert re.fullmatch(r"[0-9a-f]{64}", record["digest"]), record
         assert record["byte_length"] > 0
         assert record["url"].endswith(f"{record['digest']}.{record['extension']}")
-
-    exported = client.get(f"/documents/{document['id']}/web/export")
-    assert exported.status_code == 200, exported.text
-    archive = zipfile.ZipFile(io.BytesIO(exported.content))
-    export_manifest = json.loads(archive.read("manifest.json"))
-    component_manifest = json.loads(
-        archive.read("components/manifest.json")
-    )
-    assert export_manifest["schema_version"] == 2
-    assert component_manifest["components"][0]["artifact_id"] == interactive[
+    assert manifest["custom_components"]["components"][0]["artifact_id"] == interactive[
         "artifact_id"
     ]
-    for record in component_manifest["assets"]:
-        assert record["url"] in archive.namelist()
 
     curated = compile_source(
         client,

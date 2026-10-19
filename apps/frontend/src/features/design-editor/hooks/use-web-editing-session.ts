@@ -122,6 +122,7 @@ export function useWebEditingSession({
   activeArtifactId,
   documentIds,
   enabled = true,
+  onScreen = true,
   onSendAnnotation,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
@@ -156,6 +157,9 @@ export function useWebEditingSession({
    * binding, and a fresh function per render would hand the iframe a new
    * binding on every keystroke in the composer.
    */
+  /** The artifact is on screen (the artifact surface, panel open): undo/redo keys act only then
+   * (review finding S2b-6). Defaults to true. */
+  onScreen?: boolean;
   onSendAnnotation?: (note: string) => void;
 }) {
   const activeDocumentId =
@@ -177,6 +181,7 @@ export function useWebEditingSession({
     document: webSelection.document,
     documentId: activeDocumentId,
     onReload: onWriteReload,
+    onScreen,
     selection: webSelection.selection,
   });
 

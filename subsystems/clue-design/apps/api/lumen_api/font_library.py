@@ -143,6 +143,43 @@ def shared_library_font_bytes(
     return "font/ttf", data
 
 
+_SITE_CATEGORIES = {"sans", "serif", "slab", "mono", "display"}
+
+
+def site_library_fonts() -> list[JsonObject]:
+    """The library as the Puck site's ``libraryFonts`` (site element inspector, plan 2): every family
+    with its category and its faces, each face named ``/asset-store/<digest>`` (the content-addressed
+    route serves the library's blobs to the editor) and carrying its ``asset_id`` for publishing.
+    Offered after the brand's own fonts for manual styling; empty when the library is absent."""
+
+    parsed = manifest()
+    if parsed is None:
+        return []
+    families: list[JsonObject] = []
+    for family in parsed["families"]:
+        if not (isinstance(family, dict) and isinstance(family.get("family"), str) and family["family"].strip()):
+            continue
+        faces = []
+        for face in family.get("faces") or []:
+            if not isinstance(face, dict):
+                continue
+            digest, weight = face.get("digest"), face.get("weight")
+            if not (isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+                continue
+            if not (isinstance(weight, int) and not isinstance(weight, bool) and 1 <= weight <= 1000):
+                continue
+            faces.append({
+                "weight": weight,
+                "style": face.get("style") if face.get("style") in ("normal", "italic") else "normal",
+                "file": f"/asset-store/{digest}",
+                "asset_id": str(face.get("asset_id") or ""),
+            })
+        if faces:
+            category = family.get("category")
+            families.append({"family": family["family"], "category": category if category in _SITE_CATEGORIES else None, "faces": faces})
+    return families
+
+
 def library_font_spec() -> Optional[JsonObject]:
     """The library as a helper font spec, or None when the library is absent.
 

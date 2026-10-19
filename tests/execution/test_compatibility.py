@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from clue_execution import (
     CompatibilityContext,
     CompatibilityLoader,
@@ -180,6 +182,90 @@ def test_conflicting_duplicate_requirement_is_named() -> None:
             ),
             context=CompatibilityContext(workspace_id="ws"),
         )
+        assert any(item.reason == "conflicting_requirement" for item in report.incompatibilities)
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_dynamic_digest_can_strengthen_the_same_static_policy_pin(reverse: bool) -> None:
+    """Recipe #0 names policy v1; submit_ingestion adds its exact content hash."""
+
+    async def scenario() -> None:
+        observation = _observation(version="1")
+        registry = PinResolverRegistry()
+        registry.register(
+            _MutableResolver(kind="ingestion_policy", observations={"default": observation})
+        )
+        requests = (
+            PinRequest(kind="ingestion_policy", key="default", version="1"),
+            PinRequest(
+                kind="ingestion_policy", key="default", version="1", digest=observation.digest
+            ),
+        )
+        if reverse:
+            requests = tuple(reversed(requests))
+        report = await CompatibilityLoader(registry).resolve_requirements(
+            requests, context=CompatibilityContext(workspace_id="ws")
+        )
+        assert report.compatible, report.incompatibilities
+        assert len(report.pins) == 1
+        assert report.pins[0].digest == observation.digest
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_combined_requirements_keep_version_digest_and_required_checks(reverse: bool) -> None:
+    async def scenario() -> None:
+        registry = PinResolverRegistry()
+        resolver = _MutableResolver(kind="ingestion_policy", observations={})
+        registry.register(resolver)
+        loader = CompatibilityLoader(registry)
+        expected = _observation(version="1")
+        requests = (
+            PinRequest(kind="ingestion_policy", key="default", version="1", required=False),
+            PinRequest(kind="ingestion_policy", key="default", digest=expected.digest),
+        )
+        if reverse:
+            requests = tuple(reversed(requests))
+        for observation, reason in (
+            (None, "missing"),
+            (_observation(version="2"), "version_mismatch"),
+            (_observation(version="1", payload={"changed": True}), "digest_mismatch"),
+        ):
+            resolver.observations["default"] = observation
+            report = await loader.resolve_requirements(
+                requests, context=CompatibilityContext(workspace_id="ws")
+            )
+            assert not report.compatible
+            assert [item.reason for item in report.incompatibilities] == [reason]
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_conflicting_content_hashes_still_refuse_the_same_version() -> None:
+    async def scenario() -> None:
+        observation = _observation(version="1")
+        registry = PinResolverRegistry()
+        registry.register(
+            _MutableResolver(kind="ingestion_policy", observations={"default": observation})
+        )
+        report = await CompatibilityLoader(registry).resolve_requirements(
+            (
+                PinRequest(kind="ingestion_policy", key="default", version="1"),
+                PinRequest(kind="ingestion_policy", key="default", digest=observation.digest),
+                PinRequest(kind="ingestion_policy", key="default", digest="0" * 64),
+            ),
+            context=CompatibilityContext(workspace_id="ws"),
+        )
+        assert not report.compatible
         assert any(item.reason == "conflicting_requirement" for item in report.incompatibilities)
 
     from tests.db.conftest import run_async

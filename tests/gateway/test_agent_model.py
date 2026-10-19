@@ -1558,3 +1558,68 @@ def test_a_hung_non_streamed_call_moves_to_the_next_model_under_a_call_deadline(
     response = asyncio.run(model.ainvoke("Hello."))
     assert response.text == "fallback answer"
     assert response.response_metadata["clue_answering_model"] == "model/1"
+
+
+def test_a_refused_model_request_is_logged_with_the_providers_own_words() -> None:
+    """A provider 400 on a model request is logged with its status, the provider's error text and
+    its retry header. The OpenAI client retries a refusal the provider marks retryable and never
+    surfaces it, so on 2026-10-17 a site turn lost ~55 s to 12 silent 400s whose reason was
+    nowhere (lane run run_2d3b7a94518c5639a87361a7aa454872)."""
+
+    from structlog.testing import capture_logs
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                400,
+                headers={"x-should-retry": "true"},
+                json={
+                    "error": {
+                        "code": 400,
+                        "message": "Provider returned error",
+                        "metadata": {"raw": "image exceeds 20 MB", "provider_name": "xAI"},
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "gen-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "x-ai/grok-4.6",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    config = GatewayConfig(
+        base_url="https://openrouter.ai/api/v1",
+        timeout_s=30,
+        max_retries=2,
+        openrouter_chat_completions_fallback=True,
+    )
+    provider = OpenRouterAgentModelProvider(
+        config, SecretStr("test-openrouter-key"), http_client=client
+    )
+    model = provider.build(
+        model_id="x-ai/grok-4.6", timeout_s=10, max_retries=2, max_output_tokens=64, temperature=0
+    )
+    with capture_logs() as logs:
+        model.invoke("hi")
+    refusals = [entry for entry in logs if entry["event"] == "gateway.provider_refused"]
+    assert len(refusals) == 1, logs
+    refusal = refusals[0]
+    assert refusal["status"] == 400 and refusal["should_retry"] == "true"
+    assert "image exceeds 20 MB" in refusal["error"] and "xAI" in refusal["error"]
+    assert "test-openrouter-key" not in str(refusal)

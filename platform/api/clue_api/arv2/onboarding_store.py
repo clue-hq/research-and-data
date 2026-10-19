@@ -23,6 +23,7 @@ __all__ = [
     "DocumentRow",
     "RunStatus",
     "StepStatus",
+    "create_customers_run",
     "create_persona_run",
     "create_run",
     "fail_document",
@@ -96,6 +97,35 @@ async def create_run(
         text(
             "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, company_domain, "
             " requested_by_user_id) VALUES (:run_id, :workspace_id, :brand_id, :domain, :user_id) "
+            "ON CONFLICT (run_id) DO NOTHING"
+        ),
+        {
+            "run_id": run_id,
+            "workspace_id": workspace_id,
+            "brand_id": brand_id,
+            "domain": company_domain.strip(),
+            "user_id": requested_by_user_id,
+        },
+    )
+
+
+async def create_customers_run(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    workspace_id: str,
+    brand_id: str,
+    company_domain: str,
+    requested_by_user_id: str,
+) -> None:
+    """Insert the ``queued`` **customers** run: only the existing-customers step, for a brand
+    onboarded before that step existed (spec 2026-10-16-discovery-excludes-seller-customers §4.4).
+    Re-inserting the same id is a no-op, exactly as :func:`create_run`'s is."""
+    await conn.execute(
+        text(
+            "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, kind, company_domain, "
+            " requested_by_user_id) "
+            "VALUES (:run_id, :workspace_id, :brand_id, 'customers', :domain, :user_id) "
             "ON CONFLICT (run_id) DO NOTHING"
         ),
         {

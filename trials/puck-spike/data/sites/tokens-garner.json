@@ -1,0 +1,3 @@
+{ "brand": "garner", "pages": { "/": { "root": { "props": {} }, "content": [
+  { "type": "TokenProbe", "props": { "id": "tp", "heading": "Brand token probe", "body": "Body text in the brand's body role." } },
+  { "type": "ClonedSection", "props": { "id": "hero", "fragmentId": "frag_95041c54da629d99", "slots": {}, "replacements": [] } } ] } } }

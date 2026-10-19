@@ -1,5 +1,6 @@
 """Scene bundle selection exercises delivered files, discovery and direction joins."""
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 import importlib.util
 import json
 import re
@@ -187,7 +188,7 @@ def test_harness_uses_scene_view_in_real_skill_discovery_and_pins(tmp_path, monk
         deepagents, "create_deep_agent", lambda **kwargs: captured.update(kwargs) or kwargs
     )
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *args, **kwargs: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
     materialize.materialize_agent_workspace(config)
     legacy_files = files(config.workspace_root / "knowledge_docs")
     _agent, tools = harness.create_design_deepagent("Make an ad", config)
@@ -243,7 +244,7 @@ def test_interleaved_candidate_and_web_harnesses_preserve_web_context(
     )
     captured = []
     monkeypatch.setattr(deepagents, "create_deep_agent", lambda **kwargs: captured.append(kwargs))
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *args, **kwargs: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
     monkeypatch.setattr(
         "lumen_agent.llm.assert_all_role_models_support_image_input", lambda _: None
     )

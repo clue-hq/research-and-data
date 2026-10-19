@@ -1,0 +1,36 @@
+{
+  "A": {
+    "brand": "garner",
+    "seller": "Garner Health",
+    "source_run": "run_d71298e8df7c54c79631623b9f460ce4",
+    "why": "Garner x Syracuse City School District, Run 3's brief: the head-to-head baseline"
+  },
+  "B": {
+    "brand": "conduit",
+    "seller": "Conduit",
+    "source_run": "run_406fe808b26f5c1ca0cfe709bfae9f65",
+    "why": "Conduit x Dana.AI, the 2026-10-05 run's brief: rich research (the angle, D3, is still open)"
+  },
+  "C": {
+    "brand": "conduit",
+    "seller": "Conduit",
+    "source_run": "run_406fe808b26f5c1ca0cfe709bfae9f65",
+    "brief_file": "briefs/atrium.md",
+    "account_entity_id": "7494ff35-2c8a-41ca-93ba-dd9e8d8b2c50",
+    "account_name": "Atrium Hospitality",
+    "account_domain": "atriumhospitality.com",
+    "why": "Conduit x Atrium Hospitality, a short test brief: thin research, which tests honesty"
+  },
+  "D": {
+    "brand": "altcarbon",
+    "seller": "Alt Carbon",
+    "workspace_id": "ws_d4e6f4b1e1514e77bc3cb7dacafe0db3",
+    "project_id": "prj_2b044a1b5089590fb9a956f16fb8ffb2",
+    "knowledge_turn_id": "00399f4d-7221-5d7a-8d3e-51c509d6d398",
+    "brief_file": "briefs/mhi.md",
+    "account_entity_id": "f4184c00-4e81-4d1e-a6d1-8e2528da92cd",
+    "account_name": "Mitsubishi Heavy Industries",
+    "account_domain": "mhi.com",
+    "why": "Alt Carbon x Mitsubishi Heavy Industries: real research, a sparse and partly broken clone library (scroll-driven sections captured blank)"
+  }
+}

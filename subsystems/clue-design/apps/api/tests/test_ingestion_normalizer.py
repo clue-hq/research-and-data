@@ -525,3 +525,96 @@ def test_an_absurd_letter_spacing_is_dropped_the_same_way() -> None:
     assert styles["type.headline"]["line_height"] == 1.0
     assert styles["type.headline"]["letter_spacing"] == -0.01  # spec default for headline
     assert [d["code"] for d in diagnostics] == ["LUMI0233"]
+
+
+# --- 2026-10-17: the heading ink, measured from headings on light backgrounds ---------------
+
+
+def _heading_evidence(samples: list[tuple[str, str, str, float]]) -> BrandEvidence:
+    return BrandEvidence.model_validate(
+        {
+            "schema_version": 1,
+            "source": {"kind": "website", "url": "https://garner.example", "confidence": 0.9},
+            "colors": [
+                {"value": "#F9FAF8", "weight": 4.0, "role_hints": ["page-bg"],
+                 "pointer": {"source": "website", "locator": "rendered :: body"}},
+                {"value": "#0E1110", "weight": 3.0, "role_hints": ["body-text"],
+                 "pointer": {"source": "website", "locator": "rendered :: body"}},
+                {"value": "#047464", "weight": 2.0, "role_hints": ["button-bg"],
+                 "pointer": {"source": "website", "locator": "rendered :: button"}},
+            ],
+            "type_samples": [
+                {
+                    "label": label, "family": "Stix Two Text", "weight": 500, "size_px": 48.0,
+                    "color": color, "background": background, "area": area,
+                    "pointer": {"source": "website", "locator": f"rendered :: {label}"},
+                }
+                for label, color, background, area in samples
+            ],
+        }
+    )
+
+
+def _normalize_evidence(evidence: BrandEvidence):
+    return normalize_evidence(
+        evidence, brand_kit_id="brand_kit_heading_ink", version=1, name="Heading ink",
+        created_at=_CREATED_AT,
+    )
+
+
+def test_the_heading_ink_is_the_colour_of_headings_on_light_backgrounds() -> None:
+    result = _normalize_evidence(_heading_evidence([
+        ("h2", "#014036", "#F9FAF8", 20_000.0),
+        ("h1", "#FFFFFF", "#014036", 60_000.0),  # a white hero heading on a dark band: ignored
+        ("h3", "#014036", "#FFFFFF", 5_000.0),
+    ]))
+    colors = result.brand_kit["tokens"]["colors"]
+    heading = colors["text.heading"]
+    assert heading["value"]["default"]["value"] == "#014036"
+    source = heading["provenance"]["source"]
+    assert not source.startswith(("derived:", "default:"))  # measured, as site-kit reads it
+    typography = result.brand_kit["tokens"]["typography"]
+    for role in ("display", "headline", "title"):
+        assert typography[f"type.{role}"]["value"]["default"]["color"] == "text.heading"
+    assert typography["type.body"]["value"]["default"]["color"] == "text.primary"
+    validated = CoreClient().validate_brand_kit(result.brand_kit, product_ready=False)
+    assert validated["ok"] is True
+
+
+def test_a_heading_that_cannot_be_read_on_what_the_compositor_sees_behind_it_is_over_imagery() -> None:
+    """Garner's real capture (kit v4, 2026-10-17): its hero h1 is white over a video with a dark
+    overlay, but the compositor sees only the page's white behind it (the video and the overlay are
+    positioned children, not ancestor backgrounds), so "white on white" was counted as a heading on a
+    light background and, being the largest heading, became the heading ink: white. A heading whose
+    colour does not read against the backdrop the compositor found (under 3:1) sits over imagery, and
+    is ignored; the forest h2s win."""
+    result = _normalize_evidence(_heading_evidence([
+        ("h1", "#FFFFFF", "#FFFFFF", 129_129.0),
+        ("h1", "#FFFFFF", "#FFFFFF", 129_129.0),
+        ("h2", "#014036", "#FFFFFF", 86_016.0),
+        ("h2", "#FFFFFF", "#014036", 86_016.0),
+        ("h2", "#FFFFFF", "#FFFFFF", 61_824.0),
+        ("h2", "#014036", "#FFFFFF", 57_344.0),
+        ("h3", "#000000", "#FFFFFF", 30_825.0),
+    ]))
+    assert result.brand_kit["tokens"]["colors"]["text.heading"]["value"]["default"]["value"] == "#014036"
+
+
+def test_the_most_weighted_heading_colour_wins() -> None:
+    result = _normalize_evidence(_heading_evidence([
+        ("h2", "#014036", "#F9FAF8", 20_000.0),
+        ("h3", "#333333", "#FFFFFF", 5_000.0),
+        ("h3", "#333333", "#FFFFFF", 5_000.0),
+    ]))
+    assert result.brand_kit["tokens"]["colors"]["text.heading"]["value"]["default"]["value"] == "#014036"
+
+
+def test_with_only_dark_background_headings_there_is_no_heading_ink() -> None:
+    result = _normalize_evidence(_heading_evidence([
+        ("h1", "#FFFFFF", "#014036", 60_000.0),
+        ("h2", "#F9FAF8", "#0E1110", 20_000.0),
+    ]))
+    assert "text.heading" not in result.brand_kit["tokens"]["colors"]
+    typography = result.brand_kit["tokens"]["typography"]
+    for role in ("display", "headline", "title"):
+        assert typography[f"type.{role}"]["value"]["default"]["color"] == "text.primary"

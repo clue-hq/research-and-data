@@ -1,0 +1,15 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# exported brand data and media (regenerate with export/export_brand.py)
+data/brands/
+public/brands/
+# images generated for a run's site, and the account logos fetched for it (R3)
+public/generated/
+public/accounts/
+data/sites/edit-test.json
+agent-runs/
+data/sites/agent-*.json
+# Sections written by the agent (puck/agent-sections/<site>/) are NOT ignored: Tailwind 4 skips
+# git-ignored files on a full scan, so their classes would get no CSS. Never commit them.

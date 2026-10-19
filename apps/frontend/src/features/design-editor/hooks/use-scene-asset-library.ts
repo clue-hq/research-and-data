@@ -128,6 +128,14 @@ export interface SceneAssetLibraryBinding {
   thumbnailUrl: (record: AssetRecord) => string;
 }
 
+/** The library's Logo search (the scene editor has it; the site editor's library has none). */
+export type AssetLibraryLogoSearch = Pick<
+  SceneAssetLibraryBinding,
+  "tab" | "setTab" | "logoSearch" | "setLogoQuery" | "searchLogos" | "pickLogo"
+>;
+/** What the asset library panel draws: the library, and its Logo search when the editor has one. */
+export type AssetLibraryBinding = Omit<SceneAssetLibraryBinding, keyof AssetLibraryLogoSearch> & Partial<AssetLibraryLogoSearch>;
+
 export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
   kitEntries: readonly KitLibraryEntry[];
   list?: () => Promise<AssetRecord[]>;

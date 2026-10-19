@@ -34,8 +34,12 @@ MAX_FILE_BYTES = 25 * 1024 * 1024
 _HISTORY_KEY_PREFIX = "conversation_history/"
 
 
-def _iter_workspace_files(session_dir: Path) -> Iterator[tuple[str, Path]]:
-    """``(manifest key, path)`` for every file the session workspace may carry across turns."""
+def _iter_workspace_files(session_dir: Path, exclude: frozenset[str] = frozenset()) -> Iterator[tuple[str, Path]]:
+    """``(manifest key, path)`` for every file the session workspace may carry across turns.
+
+    ``exclude`` names top-level entries of ``workspace/`` that are rebuilt for every turn (the site
+    agent's research, catalog and page files) and so never belong in the session's memory.
+    """
     workspace = session_dir / "workspace"
     if not workspace.is_dir():
         return
@@ -43,6 +47,8 @@ def _iter_workspace_files(session_dir: Path) -> Iterator[tuple[str, Path]]:
         # ``is_symlink`` is checked FIRST: ``is_file`` follows the link, so a symlink to a real
         # file would otherwise be read and stored as if it were session content.
         if path.is_symlink() or not path.is_file():
+            continue
+        if path.relative_to(workspace).parts[0] in exclude:
             continue
         if path.stat().st_size <= MAX_FILE_BYTES:
             yield path.relative_to(session_dir).as_posix(), path
@@ -53,6 +59,7 @@ def snapshot_session(
     *,
     register: Callable[[bytes, str, str], str],
     history_file: Path | None,
+    exclude: frozenset[str] = frozenset(),
 ) -> dict:
     """Give this session's memory durable custody and describe it.
 
@@ -60,7 +67,7 @@ def snapshot_session(
     is ignored (see the module docstring); the manifest carries the digest computed here.
     """
     files: dict[str, dict] = {}
-    entries = list(_iter_workspace_files(session_dir))
+    entries = list(_iter_workspace_files(session_dir, exclude))
     if history_file is not None and history_file.is_file() and not history_file.is_symlink():
         entries.append((_HISTORY_KEY_PREFIX + history_file.name, history_file))
     for key, path in entries:

@@ -1744,6 +1744,7 @@ mod tests {
         options.fragments.insert(
             fragment_id.to_owned(),
             crate::render::FragmentContent {
+                native_dependencies: None,
                 html: "<h1 data-lumen-slot=\"headline\">Clone's own words</h1>".to_owned(),
                 slot_kinds: BTreeMap::from([(
                     "headline".to_owned(),

@@ -240,6 +240,7 @@ class DbCompiledContextCardReader:
                 # P3.1 (master plan §2.4): the design leg's target-document focus ref.
                 # clue_api is the composition root and may import clue_design directly;
                 # the card is a minimal typed summary, never the scene body.
+                from clue_api.design_leg_wiring import head_of_abm_doc_kind
                 from clue_design.documents import get_document as get_design_document
                 from clue_design.errors import DesignNotFoundError
 
@@ -254,7 +255,7 @@ class DbCompiledContextCardReader:
                     {
                         "id": document["id"],
                         "title": document.get("title"),
-                        "doc_kind": document.get("doc_kind"),
+                        "doc_kind": head_of_abm_doc_kind(str(document.get("doc_kind") or "")),
                         "status": document.get("status"),
                         "current_version": document.get("current_version"),
                         "brand_kit_id": document.get("effective_brand_kit_id"),

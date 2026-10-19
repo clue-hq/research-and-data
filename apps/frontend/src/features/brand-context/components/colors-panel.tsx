@@ -5,18 +5,22 @@ import styles from "./brand-context.module.css";
 export function ColorsPanel({
   controller,
   emptyMessage,
+  measuredGroups = [],
   workspace,
 }: {
   controller: BrandContextController;
   emptyMessage: string;
+  /** Section backgrounds and each measured style's colours (Task X6), after the kit's own groups. */
+  measuredGroups?: BrandContextWorkspace["colorGroups"];
   workspace: BrandContextWorkspace;
 }) {
+  const groups = [...workspace.colorGroups, ...measuredGroups];
   return (
     <div className={styles.colorsPanel}>
-      {!workspace.colorGroups.length ? (
+      {!groups.length ? (
         <div className={styles.emptyState}>{emptyMessage}</div>
       ) : null}
-      {workspace.colorGroups.map((group) => (
+      {groups.map((group) => (
         <section className={styles.colorSection} key={group.id}>
           <h2>{group.label}</h2>
           <div className={styles.swatchGrid}>

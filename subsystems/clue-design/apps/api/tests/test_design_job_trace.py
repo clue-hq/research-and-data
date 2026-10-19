@@ -139,3 +139,13 @@ def test_an_injected_factory_wins() -> None:
     sentinel: Any = object()
     handler = DesignJobWorkHandler(turn_callbacks_factory=lambda: sentinel)
     assert handler._turn_callbacks() is sentinel
+
+
+def test_a_site_turn_is_a_named_agent_trace_whose_session_is_its_document(inner_step: None) -> None:
+    """Lane B: each site request runs on a fresh thread (the run), so the Langfuse session groups
+    a document's requests by the document instead."""
+    by_name = _run(DesignJobWorkHandler(), {**_TURN, "kind": "site_turn", "checkpoint_thread_id": "run-1"})
+    step = by_name["design.step"]
+    assert step["langfuse.trace.name"] == "design.turn"
+    assert step["session.id"] == "doc-1" and step["user.id"] == "ws-1"
+    assert set(step["langfuse.trace.tags"]) == {"design", "site_turn"}

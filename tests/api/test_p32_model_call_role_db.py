@@ -26,7 +26,7 @@ from clue_agents import AgentTurnRequest
 from clue_agents.contracts import AgentRole, ResourceKind
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
 from clue_api.agent_turn_wiring import DbAgentTurnJournal
-from clue_api.design_leg_wiring import receipts_from_design_run
+from clue_api.design_leg_wiring import design_leg_execution_id, receipts_from_design_run
 from clue_core import ExecutionId
 from clue_db import db_lifespan
 from tests._workspace import seed_project
@@ -45,7 +45,10 @@ async def _seed_turn(conn: AsyncConnection, *, turn_role: str = "design") -> dic
         text("INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :p)"),
         {"id": thread_id, "ws": ws, "p": project.project_id},
     )
-    execution_id = uuid5(NAMESPACE_URL, f"p32:{ws}:execution")
+    # A design-leg turn's execution is derived from its turn id (``design_leg_execution_id``);
+    # the receipt builder relies on that, so the seed follows it.
+    turn_id = uuid5(NAMESPACE_URL, f"p32:{ws}:turn")
+    execution_id = design_leg_execution_id(turn_id)
     await conn.execute(
         text(
             "INSERT INTO execution (id, workspace_id, project_id, started_by, "
@@ -63,7 +66,6 @@ async def _seed_turn(conn: AsyncConnection, *, turn_role: str = "design") -> dic
         ),
         {"key": manifest_key, "ws": ws, "sha": sha, "size": len(json.dumps({"resources": []}))},
     )
-    turn_id = uuid5(NAMESPACE_URL, f"p32:{ws}:turn")
     await conn.execute(
         text(
             "INSERT INTO agent_turn "
@@ -217,7 +219,8 @@ def test_a_design_run_receipt_lands_with_its_role_and_gateway_cost(
                         }
                     ]
                 },
-                request=request,
+                turn_id=request.turn_id,
+                workspace_id=request.constitution.workspace_id,
             )
             await journal.record_model_call(receipt=receipt)
             row = (

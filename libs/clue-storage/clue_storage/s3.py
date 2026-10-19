@@ -95,6 +95,25 @@ def _is_connection_error(exc: BaseException) -> bool:
     return False
 
 
+def _s3_sdk() -> tuple[Any, Any]:
+    """``(aioboto3, AioConfig)``, imported here and nowhere else; a missing install fails loud
+    with the fix."""
+    try:
+        import aioboto3
+        from aiobotocore.config import AioConfig
+    except ImportError as exc:
+        raise StorageError(
+            "aioboto3 is required for the S3 storage backend; install clue-storage[s3]"
+        ) from exc
+    return aioboto3, AioConfig
+
+
+def require_s3_sdk() -> None:
+    """Refuse at start-up, not at the first read, when the S3 SDK is not installed (live
+    2026-10-19: the page origin's image lacked it, and every published asset answered 404)."""
+    _s3_sdk()
+
+
 class S3Storage:
     """Store blobs in an S3-compatible bucket (AWS S3 / R2 / MinIO — endpoint is config)."""
 
@@ -127,13 +146,7 @@ class S3Storage:
     def _new_client_context(self) -> Any:
         """A fresh ``aioboto3`` client context manager (lazy import — the one sanctioned home of
         the SDK; a missing install fails loud with the fix). The test seam."""
-        try:
-            import aioboto3
-            from aiobotocore.config import AioConfig
-        except ImportError as exc:  # pragma: no cover - CI installs the s3 extra
-            raise StorageError(
-                "aioboto3 is required for the S3 storage backend; install clue-storage[s3]"
-            ) from exc
+        aioboto3, AioConfig = _s3_sdk()
         return aioboto3.Session().client(
             "s3",
             endpoint_url=self._endpoint_url,

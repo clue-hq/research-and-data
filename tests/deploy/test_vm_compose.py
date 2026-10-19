@@ -120,3 +120,17 @@ def test_design_session_memory_has_its_own_mounted_root_outside_the_agent_worksp
         assert not design.is_relative_to(platform), name
         assert not platform.is_relative_to(design), name
         assert f"{root}:{root}" in services[name].get("volumes", []), name
+
+
+def test_chat_and_design_workers_get_eleven_minutes_to_drain_on_deploy() -> None:
+    """Drain on deploy (site-turn durability, 2026-10-16): a running turn gets the worker's drain
+    bound (CLUE_FLEET_DRAIN_BOUND_S, 10 minutes) to finish, then a minute to hand back and exit.
+    The other pools keep the shared 60s."""
+    from clue_config import load_settings
+
+    services = _services()
+    for name in ("chat", "design"):
+        assert services[name]["stop_grace_period"] == "11m", name
+    for name in ("batch1", "batch2", "batch3", "ingestion"):
+        assert services[name]["stop_grace_period"] == "60s", name
+    assert load_settings(_env_file=None).fleet_drain_bound_s == 600.0

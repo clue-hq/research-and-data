@@ -11,6 +11,8 @@ filesystem module would permanently change a lazily imported backend base class.
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
 import base64
 import hashlib
 import json
@@ -53,14 +55,14 @@ def _install_deepagents_stub(monkeypatch, capture: dict):
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr(
         "lumen_agent.harness.init_model",
-        lambda *a, **k: object(),
+        lambda *a, **k: GenericFakeChatModel(messages=iter(())),
         raising=False,
     )
     # init_model is imported lazily inside create_design_deepagent from providers,
     # so also patch it there.
     monkeypatch.setattr(
         "lumen_agent.llm.init_model",
-        lambda *a, **k: object(),
+        lambda *a, **k: GenericFakeChatModel(messages=iter(())),
         raising=False,
     )
 
@@ -705,7 +707,7 @@ def test_runner_honest_failure_on_invoke_exception(tmp_path, monkeypatch):
 
     monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
 
     payload, tools = run_deepagent_turn("Design a card", runtime_config(tmp_path))
 
@@ -742,7 +744,7 @@ def test_runner_honest_failure_on_api_timeout_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
 
     # Must NOT raise: the runner returns an honest failed payload instead.
     payload, tools = run_deepagent_turn("Design a card", runtime_config(tmp_path))

@@ -103,3 +103,49 @@ def test_an_end_with_no_matching_start_is_ignored() -> None:
     collector = ModelCallCollector()
     collector.on_llm_end(_result(), run_id=uuid4())
     assert collector.calls == []
+
+
+def _governed(inner):
+    """The model a design run actually invokes: the platform's governed wrapper."""
+    from clue_config.gateway import GatewayConfig
+    from clue_gateway.agent_model import GovernedAgentChatModel
+
+    return GovernedAgentChatModel(
+        models=(inner,),
+        model_ids=("openai/gpt-6.1-sol",),
+        requested_model="openai/gpt-6.1-sol",
+        gateway_config=GatewayConfig(max_retries=0),
+    )
+
+
+def test_a_governed_call_records_the_model_it_asked_for() -> None:
+    """The governed model names its id ``requested_model``, never ``model`` — the receipt must
+    still say which model the run asked for, not ``unknown``."""
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    collector = ModelCallCollector()
+    _governed(FakeMessagesListChatModel(responses=[AIMessage("ok")])).invoke(
+        "hi", config={"callbacks": [collector]}
+    )
+    (call,) = collector.calls
+    assert call.status == "completed"
+    assert call.requested_model == "openai/gpt-6.1-sol"
+
+
+def test_a_failed_governed_call_still_records_the_model_it_asked_for() -> None:
+    """A failed call carries no answer stamp, so the start of the call is the only witness."""
+    import pytest
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    class _Refusing(FakeMessagesListChatModel):
+        def _generate(self, *args, **kwargs):
+            raise ValueError("refused")
+
+    collector = ModelCallCollector()
+    with pytest.raises(ValueError):
+        _governed(_Refusing(responses=[AIMessage("never")])).invoke(
+            "hi", config={"callbacks": [collector]}
+        )
+    (call,) = collector.calls
+    assert call.status == "failed"
+    assert call.requested_model == "openai/gpt-6.1-sol"

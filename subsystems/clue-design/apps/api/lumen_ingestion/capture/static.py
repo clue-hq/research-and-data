@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import re
 from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
@@ -14,15 +13,7 @@ from .budget import MAX_ASSET_BYTES, budget_diagnostic
 from .candidates import collect_asset_candidates
 from .net import BoundedFetcher, FetchRequest, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
-
-#: Same defect class as the ``url()`` readers ``cssurl`` consolidated — it stops at an
-#: escaped ``)``, never unescapes, and truncates a quoted token at its first space. It is
-#: deliberately NOT routed through ``cssurl``: a bare-string ``@import "sheet.css";`` carries
-#: no ``url()`` and so is invisible to that reader. See ``cssurl``'s docstring for the full
-#: analysis and the residual. Owner: unassigned.
-_IMPORT_RE = re.compile(
-    r"@import\s+(?:url\(\s*)?['\"]?([^'\")\s]+)['\"]?", re.IGNORECASE
-)
+from .stylesheets import collect_ordered_stylesheets
 
 
 async def fetch_static(
@@ -47,9 +38,7 @@ async def fetch_static(
 
     reporter("Collecting your logos…", 0.30)
     reporter("Gathering your visuals…", 0.45)
-    downloads, asset_diagnostics = await _collect_assets(
-        tree, fetcher, final_url, stylesheets
-    )
+    downloads, asset_diagnostics = await _collect_assets(tree, fetcher, final_url, stylesheets)
     diagnostics.extend(asset_diagnostics)
 
     meta = _extract_meta(tree)
@@ -70,82 +59,21 @@ async def fetch_static(
 async def _collect_stylesheets(
     tree, fetcher: BoundedFetcher, base_url: str
 ) -> tuple[list[Stylesheet], list[dict]]:
-    sheets: list[Stylesheet] = []
-    diagnostics: list[dict] = []
-
-    # Inline <style> blocks first (no network).
-    for index, node in enumerate(tree.css("style")):
-        text = node.text() or ""
-        if text.strip():
-            sheets.append(Stylesheet(url=f"inline:{index}", text=text))
-
-    hrefs: list[str] = []
-    for node in tree.css("link[rel~=stylesheet], link[rel='stylesheet']"):
-        href = node.attributes.get("href")
-        if href:
-            hrefs.append(urljoin(base_url, href))
-
-    # Fetch ALL external stylesheets concurrently.
-    if hrefs:
-        results = await fetcher.fetch_many(
-            [FetchRequest(url=h, kind="css") for h in hrefs]
-        )
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                sheets.append(
-                    Stylesheet(
-                        url=result.url,
-                        text=result.body.decode("utf-8", errors="replace"),
-                    )
-                )
-
-    imported, import_diagnostics = await fetch_imported_sheets(sheets, fetcher)
-    sheets.extend(imported)
-    diagnostics.extend(import_diagnostics)
-
-    return sheets, diagnostics
-
-
-async def fetch_imported_sheets(
-    sheets: list[Stylesheet], fetcher: BoundedFetcher
-) -> tuple[list[Stylesheet], list[dict]]:
-    """Follow ONE level of ``@import`` out of already-collected stylesheets.
-
-    Shared with the rendered tier (``rendered.collect_stylesheets``) since the founder's
-    2026-08-20 always-render ruling: a brand whose palette or ``@font-face`` block arrives
-    through an ``@import`` used to be read by the static tier, and the rendered tier — which
-    reads ``document.styleSheets``, where an import appears only as its own one-line rule text —
-    would otherwise have silently stopped reading it the moment every ingestion started
-    rendering. One level only, and INLINE sheets are skipped, exactly as the static tier has
-    always done: a relative import inside an inline ``<style>`` has no sheet url to resolve
-    against, and deeper chains are unbounded fan-out.
-    """
-    import_urls: list[str] = []
-    for sheet in sheets:
-        if sheet.url.startswith("inline:"):
+    records = []
+    base = tree.css_first("base[href]")
+    if base is not None:
+        base_url = urljoin(base_url, base.attributes["href"])
+    for node in tree.css("style, link[rel~=stylesheet]"):
+        attrs = node.attributes
+        record = {"media": attrs.get("media") or "", "disabled": "disabled" in attrs}
+        if node.tag == "style":
+            record.update(href=None, text=node.text() or "")
+        elif attrs.get("href"):
+            record.update(href=urljoin(base_url, attrs["href"]), text=None)
+        else:
             continue
-        for match in _IMPORT_RE.finditer(sheet.text):
-            import_urls.append(urljoin(sheet.url, match.group(1)))
-    import_urls = list(dict.fromkeys(import_urls))
-    if not import_urls:
-        return [], []
-
-    imported: list[Stylesheet] = []
-    diagnostics: list[dict] = []
-    results = await fetcher.fetch_many(
-        [FetchRequest(url=u, kind="css") for u in import_urls]
-    )
-    for result in results:
-        diagnostics.extend(result.diagnostics)
-        if result.ok and result.body is not None:
-            imported.append(
-                Stylesheet(
-                    url=result.url,
-                    text=result.body.decode("utf-8", errors="replace"),
-                )
-            )
-    return imported, diagnostics
+        records.append(record)
+    return await collect_ordered_stylesheets(records, fetcher, base_url=base_url)
 
 
 async def _collect_assets(
@@ -204,9 +132,7 @@ async def _collect_assets(
         )
     if over_budget:
         diagnostics.append(
-            budget_diagnostic(
-                budget="asset bytes", limit=MAX_ASSET_BYTES, dropped=over_budget
-            )
+            budget_diagnostic(budget="asset bytes", limit=MAX_ASSET_BYTES, dropped=over_budget)
         )
     return downloads, diagnostics
 
@@ -215,6 +141,8 @@ def _download_kind(candidate) -> str:
     """The ``Download.kind`` an origin maps to — the snapshot's own three-way split."""
     if candidate is None:
         return "image"
+    if candidate.origin == "video":
+        return "video"
     if candidate.origin == "font":
         return "font"
     if candidate.origin == "logo-rung":

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { fetchDocumentAgentRun } from "../data/document-agent-run";
-import { INITIAL_AGENT_RUN_POLL, reduceAgentRunPoll } from "./document-agent-run.logic";
+import { INITIAL_AGENT_RUN_POLL, reduceAgentRunPoll, siteReloadWanted } from "./document-agent-run.logic";
 
 const idle = { active: false, runId: null, currentVersion: 3 };
 const busy = { active: true, runId: "run_1", currentVersion: 3 };
@@ -48,4 +48,16 @@ it("rejects a non-200 and a malformed body", async () => {
   const malformed: typeof fetch = async () =>
     new Response(JSON.stringify({ active: "yes" }), { status: 200, headers: { "content-type": "application/json" } });
   await assert.rejects(fetchDocumentAgentRun({ apiBaseUrl: "http://design.test", fetchImpl: malformed }, "doc_x"));
+});
+
+// Review finding K3-3: the standalone route polls the document's version to notice agent writes. It
+// must not reload the site for a version the session wrote itself — that reload pushed a copy into the
+// canvas while the marketer was still typing.
+it("the standalone site reloads for someone else's write or a finished run, never for its own save", () => {
+  assert.equal(siteReloadWanted({ polledVersion: 6, knownVersion: 6, runEnded: false }), false, "our own save");
+  assert.equal(siteReloadWanted({ polledVersion: 5, knownVersion: 6, runEnded: false }), false, "a poll older than our save");
+  assert.equal(siteReloadWanted({ polledVersion: 7, knownVersion: 6, runEnded: false }), true, "someone else wrote");
+  assert.equal(siteReloadWanted({ polledVersion: 6, knownVersion: 6, runEnded: true }), true, "the agent's run finished");
+  assert.equal(siteReloadWanted({ polledVersion: 6, knownVersion: null, runEnded: false }), true, "nothing loaded yet");
+  assert.equal(siteReloadWanted({ polledVersion: null, knownVersion: 6, runEnded: false }), false);
 });

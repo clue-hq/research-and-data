@@ -1,5 +1,6 @@
 "use client";
 
+import { artifactHistoryKey } from "../adapter/history-keys";
 import { useEffect, useRef, type RefObject } from "react";
 import {
   sceneCanvasChangeToOperation,
@@ -224,6 +225,7 @@ export function useSceneInspectorWrites({
   lockNote,
   locked,
   onReload,
+  onScreen = true,
   pageId,
   palette,
   tokenMaps,
@@ -250,6 +252,8 @@ export function useSceneInspectorWrites({
   locked?: boolean;
   /** The session's reload nonce bump. */
   onReload: () => void;
+  /** The artifact is on screen: undo/redo keys act only then (review finding S2b-6). */
+  onScreen?: boolean;
   /** AD4.0: the page the canvas is rendering (§5: one artboard), the very one
    * `hydrateSceneCanvasState` read. */
   pageId: PageId | null;
@@ -478,9 +482,11 @@ export function useSceneInspectorWrites({
   // never a general chrome undo.
   const undoRef = useRef(edits.undo);
   const redoRef = useRef(edits.redo);
+  const onScreenRef = useRef(onScreen);
   useEffect(() => {
     redoRef.current = edits.redo;
     undoRef.current = edits.undo;
+    onScreenRef.current = onScreen;
   });
 
   useEffect(() => {
@@ -495,20 +501,11 @@ export function useSceneInspectorWrites({
       if (step === "redo") redoRef.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z")
-        return;
-      // Native text-editing undo owns focused inputs/contenteditables — an
-      // inspector field mid-edit must undo the TYPING, not the document.
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA")
-      )
-        return;
+      // S2b-6: only while the artifact is on screen; typing keeps its own undo.
+      const step = artifactHistoryKey(event, onScreenRef.current);
+      if (!step) return;
       event.preventDefault();
-      if (event.shiftKey) redoRef.current();
+      if (step === "redo") redoRef.current();
       else undoRef.current();
     };
     window.addEventListener("clue:artifact-action-request", onAction);

@@ -205,6 +205,7 @@ from clue_execution import (
     sweep_stream_tokens,
 )
 from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, install_thread_pool, run_worker
+from clue_fleet.lease import prune_released_work_leases_if_due
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_obs.sentry import capture
@@ -235,6 +236,10 @@ def _require_registered(phases: frozenset[ProjectPhase]) -> None:
         )
 
 
+#: How often the fleet prunes ended work leases (on the maintenance clock below).
+_WORK_LEASE_PRUNE_EVERY = timedelta(days=1)
+
+
 async def _orphan_sweep_loop(
     settings: Settings,
     storage: StorageBackend,
@@ -261,6 +266,19 @@ async def _orphan_sweep_loop(
                 log.info("fleet.orphan_sweep.ran", deleted=len(deleted))
         except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.orphan_sweep.error", exc_info=True)
+            capture(exc)
+        # The same maintenance clock prunes ended work leases (2026-10-16): release keeps a lease's
+        # row so its generation never repeats, and rows ended a month ago, whose work has no live
+        # task, are removed once a day. Its own transaction, so a storage fault never skips it.
+        try:
+            async with conn_factory() as conn:
+                pruned = await prune_released_work_leases_if_due(
+                    conn, every=_WORK_LEASE_PRUNE_EVERY
+                )
+            if pruned is not None:
+                log.info("fleet.work_lease_prune.ran", pruned=pruned)
+        except Exception as exc:  # noqa: BLE001 — a prune fault is non-fatal to the worker
+            log.warning("fleet.work_lease_prune.error", exc_info=True)
             capture(exc)
 
 

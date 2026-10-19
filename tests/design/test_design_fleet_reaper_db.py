@@ -352,9 +352,10 @@ def test_the_reaper_reoffers_a_stranded_run_once_then_terminalizes_it() -> None:
             row = await _read_run(workspace_id, run_id)
             assert row["status"] == "queued"
             assert row["reoffer_count"] == 1
-            # The lease trio is cleared, or the next claimant's writes would be fenced by a
-            # generation nobody holds.
-            assert (row["leased_by"], row["lease_generation"]) == (None, None)
+            # The dead attempt's stamp is KEPT (2026-10-16; it used to be cleared). Lease
+            # generations never repeat, so the next claimant always holds a higher one and
+            # re-stamps the row at its claim; until then the row still fences on the dead one.
+            assert (row["leased_by"], row["lease_generation"]) == ("worker-dead", 1)
             # And a task actually exists again — a queued row with no task is a WORSE strand.
             assert await _read_task_status(work_id) == FleetTaskStatus.QUEUED.value
 
@@ -677,3 +678,52 @@ def test_a_fenced_ingestion_write_is_refused_rather_than_clobbering_the_takeover
             await _purge_work(work_id)
 
     asyncio.run(scenario())
+
+
+def test_the_reaper_loop_deletes_expired_site_turn_conversations_with_the_configured_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each reaper pass also runs the conversation retention (founder 2026-10-17: a finished site
+    turn's conversation is kept 96 h for debugging, then deleted), in its own transaction, with
+    the configured retention; a fault there never stops the loop."""
+    import asyncio
+    import contextlib
+
+    from lumen_api import fleet_reaper
+
+    seen: list[float] = []
+
+    async def fake_prune(conn, *, retain_s: float) -> int:
+        seen.append(retain_s)
+        if len(seen) == 1:
+            raise RuntimeError("database hiccup")  # the loop must carry on
+        return 2
+
+    async def fake_pass(conn_factory, *, stranded_after_s: float):
+        return fleet_reaper.ReaperSweep(
+            considered=0, skipped_live=0, skipped_queued=0, reoffered=0, failed=0
+        )
+
+    @contextlib.asynccontextmanager
+    async def fake_conn():
+        yield object()
+
+    sleeps = {"n": 0}
+
+    async def fake_sleep(_seconds: float) -> None:
+        sleeps["n"] += 1
+        if sleeps["n"] > 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(fleet_reaper, "prune_expired_site_turn_checkpoints", fake_prune)
+    monkeypatch.setattr(fleet_reaper, "run_reaper_pass", fake_pass)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            fleet_reaper.reaper_loop(
+                interval_s=1,
+                conn_factory=fake_conn,
+                sleep=fake_sleep,
+                conversation_retention_s=345_600.0,
+            )
+        )
+    assert seen == [345_600.0, 345_600.0]

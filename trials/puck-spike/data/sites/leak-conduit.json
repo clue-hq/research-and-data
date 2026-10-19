@@ -1,0 +1,38 @@
+{
+ "brand": "conduit",
+ "pages": {
+  "/": {
+   "root": {
+    "props": {}
+   },
+   "content": [
+    {
+     "type": "ClonedSection",
+     "props": {
+      "id": "a",
+      "fragmentId": "frag_459fcb8c5790a40a",
+      "slots": {},
+      "replacements": []
+     }
+    },
+    {
+     "type": "TailwindProbe",
+     "props": {
+      "id": "probe",
+      "heading": "Tailwind v4 probe",
+      "body": "Probe body."
+     }
+    },
+    {
+     "type": "ClonedSection",
+     "props": {
+      "id": "b",
+      "fragmentId": "frag_515a5d57be6c0aff",
+      "slots": {},
+      "replacements": []
+     }
+    }
+   ]
+  }
+ }
+}

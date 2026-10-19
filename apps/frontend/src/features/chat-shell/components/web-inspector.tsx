@@ -42,7 +42,6 @@ import {
 import {
   useInspectorController,
   useInspectorLayerTree,
-  type HorizontalAlignment,
   type InspectorEventAddressing,
   type InspectorPresentationState,
 } from "../hooks/use-inspector-controller";
@@ -58,6 +57,8 @@ import {
   InspectorSelect,
   InspectorTokenControl,
   RadiusControls,
+  SegmentedControl,
+  TextAlignment,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
 
@@ -175,74 +176,6 @@ function DocumentLayers({
           />
         );
       })}
-    </div>
-  );
-}
-
-function TextAlignment({
-  horizontal,
-  onHorizontalChange,
-  onVerticalChange,
-  vertical,
-  verticalHidden = false,
-}: {
-  // The ad surface's §2-row-2 Justify toggle widened the shared
-  // `HorizontalAlignment`; this annotation follows it. The web control's own
-  // three options — and everything it renders — are unchanged.
-  horizontal: HorizontalAlignment;
-  onHorizontalChange: (value: HorizontalAlignment) => void;
-  onVerticalChange: (value: "bottom" | "middle" | "top") => void;
-  vertical: "bottom" | "middle" | "top";
-  /** W3.2 (ruling 8): the text schema hides vertical alignment. */
-  verticalHidden?: boolean;
-}) {
-  const horizontalOptions = [
-    ["left", "align-left"],
-    ["center", "align-center"],
-    ["right", "align-right"],
-  ] as const;
-  const verticalOptions = [
-    ["top", "align-top"],
-    ["middle", "align-middle"],
-    ["bottom", "align-bottom"],
-  ] as const;
-
-  return (
-    <div className={styles.alignmentGroups}>
-      <div aria-label="Horizontal alignment" className={styles.alignmentControl} role="group">
-        {horizontalOptions.map(([value, icon]) => (
-          <button
-            aria-label={`Align ${value}`}
-            aria-pressed={horizontal === value}
-            className={horizontal === value ? styles.alignmentActive : ""}
-            key={value}
-            onClick={() => onHorizontalChange(value)}
-            type="button"
-          >
-            <InspectorIcon name={icon} size={12} />
-          </button>
-        ))}
-      </div>
-      {verticalHidden ? null : (
-      <div
-        aria-label="Vertical alignment"
-        className={`${styles.alignmentControl} ${styles.verticalAlignment}`}
-        role="group"
-      >
-        {verticalOptions.map(([value, icon]) => (
-          <button
-            aria-label={`Align ${value}`}
-            aria-pressed={vertical === value}
-            className={vertical === value ? styles.alignmentActive : ""}
-            key={value}
-            onClick={() => onVerticalChange(value)}
-            type="button"
-          >
-            <InspectorIcon name={icon} size={12} />
-          </button>
-        ))}
-      </div>
-      )}
     </div>
   );
 }
@@ -516,33 +449,6 @@ function Section({
   return <InspectorSection compact={id === "link"} label={label} onOpenChange={() => toggle(id)} open={state.openSections[id]}>{children}</InspectorSection>;
 }
 
-function SegmentedControl<Value extends string>({
-  ariaLabel,
-  onChange,
-  options,
-  value,
-}: {
-  ariaLabel: string;
-  onChange: (value: Value) => void;
-  options: readonly { label: ReactNode; value: Value }[];
-  value: Value;
-}) {
-  return (
-    <div aria-label={ariaLabel} className={styles.inspectorSegmentedControl} role="group">
-      {options.map((option) => (
-        <button
-          aria-pressed={option.value === value}
-          className={option.value === value ? styles.inspectorSegmentActive : ""}
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          type="button"
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function LinkSection({
   ariaLabel,
@@ -813,7 +719,7 @@ function TextControls({
         {/* W3.2 §2 addition (ruling 26): the line-spacing select. */}
         <InspectorField label="Line spacing"><InspectorSelect label="Line spacing" onChange={(value) => setValue("lineSpacing", value)} options={LINE_SPACING_OPTIONS} value={state.lineSpacing} /></InspectorField>
         {/* Ruling 8: vertical alignment hidden on the text schema. */}
-        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} verticalHidden /></InspectorField>
+        <InspectorField label="Alignment"><TextAlignment horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} options="three" /></InspectorField>
       </Section>
       {/* R3: text's padding boxes collapse to the two-axis form. */}
       <LayoutSection controller={controller} paddingAxes="two" />

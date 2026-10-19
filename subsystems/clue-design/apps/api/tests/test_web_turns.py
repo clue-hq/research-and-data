@@ -586,6 +586,7 @@ def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
 
     card = received["account_card"]
     assert card == {
+        "account_id": account_id,
         "name": "Privia",
         "domain": "privia.com",
         "logo_asset_id": None,
@@ -1031,6 +1032,58 @@ def test_a_route_shaped_web_turn_prompt_is_the_users_message_verbatim(
     )
     assert status == "succeeded", response
     assert received["prompt"] == "Build a landing page"
+
+
+@pytest.mark.parametrize("session_continued", [False, True])
+@pytest.mark.parametrize("artifact_count", [1, 3])
+def test_web_assignment_survives_continuation_without_restricting_single_site_routes(
+    client: TestClient, session_continued: bool, artifact_count: int
+) -> None:
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    store = HybridRepository()
+    received: dict = {}
+    user_message = "Improve the lab and Morgan pages; add /product to Morgan's website."
+    artifact = {
+        "position": 0,
+        "count": artifact_count,
+        "title": "Morgan contact site",
+        "note": "Use the contact's professional role and saved account research.",
+    }
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": user_message, "base_version": 0},
+            "delegation_bundle": {"brief": LEG_BRIEF, "artifact": artifact},
+            "history": [{"role": "assistant", "text": "Old plan with sibling routes"}],
+            "leg": {"leg_id": "leg-batch-scope", "first_turn_of_leg": False},
+        },
+    )
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+        session_continued=session_continued,
+    )
+    assert status == "succeeded", response
+    prompt = received["prompt"]
+    assert prompt.endswith(user_message)
+    assert envelope.config["request"]["prompt"] == user_message
+    if session_continued:
+        assert "<<<BRIEF" not in prompt and "<<<HISTORY" not in prompt
+    if artifact_count > 1:
+        assignment = prompt.split("<<<ASSIGNED_ARTIFACT\n", 1)[1].split(
+            "\nASSIGNED_ARTIFACT>>>", 1
+        )[0]
+        assert json.loads(assignment) == artifact
+        assert "within this document" in prompt
+    else:
+        assert "<<<ASSIGNED_ARTIFACT" not in prompt
+        if session_continued:
+            assert prompt == user_message
 
 
 def test_a_leg_web_turn_on_a_stale_envelope_base_runs_against_the_version_it_reads(

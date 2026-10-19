@@ -1,0 +1,219 @@
+{
+  "brand": "garner",
+  "shell": {
+    "header": {
+      "type": "SiteHeader",
+      "props": {
+        "id": "header",
+        "accountLine": "Prepared for Syracuse City School District",
+        "accountLogo": "",
+        "ctaLabel": "Request the analysis",
+        "ctaHref": "https://garnerhealth.com/provider-impact-analysis"
+      }
+    },
+    "footer": {
+      "type": "SiteFooter",
+      "props": {
+        "id": "footer",
+        "legal": "© 2026 Garner Health. Prepared for Syracuse City School District.",
+        "privacyHref": "https://garnerhealth.com/privacy-policy",
+        "termsHref": "https://garnerhealth.com/terms-of-use"
+      }
+    }
+  },
+  "pages": {
+    "/": {
+      "root": {
+        "props": {
+          "title": "Garner Health for Syracuse City School District"
+        }
+      },
+      "content": [
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "hero",
+            "fragmentId": "frag_95041c54da629d99",
+            "slots": {
+              "headline": "Lower medical spend for SCSD. Same plan, same network.",
+              "cta_href": "https://garnerhealth.com/provider-impact-analysis"
+            },
+            "replacements": [
+              {
+                "find": "Request a demo",
+                "replace": "Request the analysis"
+              }
+            ],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "stands",
+            "fragmentId": "frag_79934268c8621bd2",
+            "slots": {
+              "headline": "$4.2 million more for healthcare",
+              "body": "Your 2025–26 budget added $4.2 million for healthcare, based on plan changes and claim projections from your actuaries.",
+              "headline_2": "The plan stays as it is",
+              "body_2": "PPO, PPO 3 and HDHP 2 keep their terms. Garner sits on top as an added benefit.",
+              "headline_3": "Excellus stays too",
+              "body_3": "Staff keep the Excellus network and the member tools they use today.",
+              "headline_4": "Start with a free look",
+              "body_4": "An analysis of your specialty spend shows where it could come down. No cost, no commitment."
+            },
+            "replacements": [],
+            "links": [
+              {
+                "find": "*",
+                "replace": "/analysis"
+              }
+            ]
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "how",
+            "fragmentId": "frag_9a8550d2f42f1196",
+            "slots": {
+              "headline": "Know which doctors in your network do best",
+              "body": "Garner studies over 60 billion medical records from 320 million patients to find the doctors who diagnose more accurately and get better outcomes. It recommends only doctors already in your network.",
+              "headline_2": "The easiest way for staff to choose a doctor",
+              "body_2": "Garner Assistant shows staff the best doctors who are in network, available and near them.",
+              "headline_3": "Staff get reimbursed when they choose well",
+              "body_3": "When staff visit one of those doctors, Garner can reimburse their out-of-pocket costs, including copays, office visits, tests and surgeries. Your per-employee fee covers it.",
+              "cta_href": "https://garnerhealth.com/provider-impact-analysis"
+            },
+            "replacements": [
+              {
+                "find": "See how it works",
+                "replace": "Request the analysis"
+              }
+            ],
+            "links": []
+          }
+        },
+        {
+          "type": "StatsBand",
+          "props": {
+            "id": "proof",
+            "surface": "brandSubtle",
+            "eyebrow": "Aon study, published by Garner",
+            "heading": "7.4% lower medical spend in year one. No plan changes.",
+            "intro": "Aon compared Garner-eligible employees at multiple employers with a matched control group, 2020 to 2024. The employers kept their networks and plan designs.",
+            "stats": [
+              {
+                "value": "7.4%",
+                "label": "lower medical spend in the first year"
+              },
+              {
+                "value": "$345",
+                "label": "lower medical spend per member per year"
+              },
+              {
+                "value": "2020–24",
+                "label": "years studied, against a matched control group"
+              }
+            ],
+            "source": "Aon study, published by Garner, March 2026.",
+            "align": "center"
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "close",
+            "fragmentId": "frag_9fa31f37a0b94447",
+            "slots": {
+              "headline": "Get a free Provider Impact Analysis.",
+              "headline_2": "Your specialty spend, reviewed in 30 minutes.",
+              "cta_href": "https://garnerhealth.com/provider-impact-analysis",
+              "cta_href_2": "/analysis"
+            },
+            "replacements": [
+              {
+                "find": "Get started",
+                "replace": "Request the analysis"
+              },
+              {
+                "find": "Book a demo",
+                "replace": "How it works"
+              }
+            ],
+            "links": []
+          }
+        }
+      ]
+    },
+    "/analysis": {
+      "root": {
+        "props": {
+          "title": "The free Provider Impact Analysis for SCSD"
+        }
+      },
+      "content": [
+        {
+          "type": "FeatureSplit",
+          "props": {
+            "id": "what",
+            "surface": "page",
+            "eyebrow": "Provider Impact Analysis",
+            "heading": "What the free analysis shows SCSD",
+            "headingRole": "headline",
+            "body": "Garner models your organization's provider NPI codes against provider-performance benchmarks and shows avoidable cost and quality risk by specialty, inside the network you already have.",
+            "image": "/asset-store/b0c4188c1661edee86e8b6afa4a7d14abefb9b7e376e7ceab3f9819a2fac11d7",
+            "imageSide": "right",
+            "buttonLabel": "Request the analysis",
+            "buttonHref": "https://garnerhealth.com/provider-impact-analysis"
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "review",
+            "fragmentId": "frag_1f86b8d67557b66b",
+            "slots": {
+              "headline": "A report ready to present.",
+              "body": "You get a presentation-ready report and a personalised 30-minute review of the findings. No cost, no commitment.",
+              "cta_href": "https://garnerhealth.com/provider-impact-analysis"
+            },
+            "replacements": [
+              {
+                "find": "Learn more about Garner Insights",
+                "replace": "Request the analysis"
+              }
+            ],
+            "links": []
+          }
+        },
+        {
+          "type": "FeatureSplit",
+          "props": {
+            "id": "after",
+            "surface": "brandSubtle",
+            "eyebrow": "After the review",
+            "heading": "If it fits, Garner sits on the plan you already run",
+            "headingRole": "title",
+            "body": "Implementation generally needs a simple eligibility file. It does not require a change to the carrier, the network or the plan design.",
+            "image": "/asset-store/872c19c777231d93765dd0db8f8a5d206685e95343e6d464d2d9010f52dc676f",
+            "imageSide": "left",
+            "buttonLabel": "",
+            "buttonHref": ""
+          }
+        },
+        {
+          "type": "CtaBand",
+          "props": {
+            "id": "cta",
+            "surface": "brand",
+            "heading": "Request SCSD's free analysis",
+            "body": "Specialty spend by doctor, a report, and a 30-minute review.",
+            "buttonLabel": "Request the analysis",
+            "buttonHref": "https://garnerhealth.com/provider-impact-analysis"
+          }
+        }
+      ]
+    }
+  }
+}

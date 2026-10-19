@@ -3,11 +3,25 @@
 ``work_lease`` is fleet-private state.  A generation changes only when an expired lease is
 re-owned, giving execution-plane writers a hard fence in addition to the worker's supervised
 heartbeat.  The project-run functions at the bottom are compatibility adapters for PB-B1 callers.
+
+**Generations never repeat** (site-turn durability, 2026-10-16). Releasing a lease ends it now and
+KEEPS its row, so the next acquire — by anyone, the releasing worker included — is
+``generation + 1``. It used to DELETE the row, which restarted the next holder at generation 1,
+the very number the previous holder had: no fence could tell the old attempt from the new one
+(the same reset broke research resumes on 2026-08-19, which research works around with the task
+attempt count in its turn ids; that workaround keeps working). A row is removed only by
+:func:`prune_released_work_leases`, long after its work stopped.
+
+**A lapsed lease nobody took is taken back by its holder.** :func:`renew_work_lease` lands
+whenever the row still names this worker and this generation, even past ``expires_at``: a live
+worker that missed beats while nobody else claimed the work simply carries on, at the same
+generation. Once someone else has acquired it the row names another worker and a higher
+generation, and the renew fails exactly as before.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import NewType, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -80,15 +94,45 @@ _RENEW_SQL = text(
     WHERE work_id = :work_id
       AND worker_id = :worker_id
       AND generation = :generation
-      AND expires_at > now()
     RETURNING work_id
     """
 )
 
+# Ends the lease now and keeps the row, so the next acquire takes the ``expires_at <= now()``
+# branch and moves the generation on. ``LEAST`` keeps an already-lapsed lease's real expiry.
 _RELEASE_SQL = text(
     """
-    DELETE FROM work_lease
+    UPDATE work_lease
+    SET expires_at = LEAST(expires_at, now())
     WHERE work_id = :work_id AND worker_id = :worker_id AND generation = :generation
+    """
+)
+
+# Revocation is a fence event: the generation moves on, so the resident holder's renew and every
+# domain write that checks ``generation`` fail, and the lease is ended so anyone may acquire next.
+_REVOKE_SQL = text(
+    """
+    UPDATE work_lease
+    SET generation = generation + 1, expires_at = LEAST(expires_at, now())
+    WHERE work_id = :work_id
+    """
+)
+
+#: How long an ended lease is kept before :func:`prune_released_work_leases` may remove it.
+RELEASED_LEASE_RETENTION = timedelta(days=30)
+
+# A row ended more than ``:keep`` ago whose work has no queued or claimed fleet task. Work that
+# can still be driven always has a live task (or a recent lease), so removing these restarts a
+# generation only for work idle for a month — which is no worse than every release was before.
+_PRUNE_SQL = text(
+    """
+    DELETE FROM work_lease AS lease
+    WHERE lease.expires_at < now() - CAST(:keep AS interval)
+      AND NOT EXISTS (
+            SELECT 1 FROM fleet_task AS task
+            WHERE task.work_id = lease.work_id
+              AND task.status IN ('queued', 'claimed')
+          )
     """
 )
 
@@ -98,6 +142,19 @@ _GET_SQL = text(
            (expires_at > now()) AS live
     FROM work_lease
     WHERE work_id = :work_id
+    """
+)
+
+
+# Does the row still name this worker and generation? Locked FOR SHARE until the caller's
+# transaction ends, so an acquire (an UPDATE of this row) cannot move it under a write the caller is
+# fencing with it. Expiry is deliberately not checked: a lapsed lease nobody took is still its
+# holder's (the renew rule above).
+_HOLD_SQL = text(
+    """
+    SELECT generation FROM work_lease
+    WHERE work_id = :work_id AND worker_id = :worker_id AND generation = :generation
+    FOR SHARE
     """
 )
 
@@ -155,6 +212,88 @@ async def release_work_lease(
         _RELEASE_SQL,
         {"work_id": work_id, "worker_id": worker_id, "generation": generation},
     )
+
+
+async def hold_work_lease(
+    conn: AsyncConnection,
+    *,
+    work_id: WorkId,
+    worker_id: str,
+    generation: LeaseGeneration,
+) -> bool:
+    """Whether ``worker_id`` still holds ``work_id`` at ``generation``, for a domain write made in
+    ``conn``'s transaction (the site turn's fenced save).
+
+    True when the row still names this worker and generation, live or lapsed, and the row is then
+    locked ``FOR SHARE`` until that transaction ends; False when anyone else has acquired it
+    since, or the row is gone.
+    """
+    row = (
+        await conn.execute(
+            _HOLD_SQL, {"work_id": work_id, "worker_id": worker_id, "generation": generation}
+        )
+    ).first()
+    return row is not None
+
+
+async def revoke_work_lease(conn: AsyncConnection, *, work_id: WorkId) -> None:
+    """Take the lease away from whoever holds it (a cancellation), without reusing a number."""
+    await conn.execute(_REVOKE_SQL, {"work_id": work_id})
+
+
+async def prune_released_work_leases(
+    conn: AsyncConnection, *, keep: timedelta = RELEASED_LEASE_RETENTION
+) -> int:
+    """Remove leases ended more than ``keep`` ago whose work has no live fleet task.
+
+    Release keeps every row so generations never repeat; this is what stops them piling up. Run on
+    the fleet maintenance clock (``clue_api.fleet_main``). Returns how many rows it removed."""
+    outcome = await conn.execute(_PRUNE_SQL, {"keep": keep})
+    return int(outcome.rowcount or 0)
+
+
+#: The ``maintenance_run`` row and advisory-lock key of the fleet-wide lease prune.
+WORK_LEASE_PRUNE = "work_lease_prune"
+_WORK_LEASE_PRUNE_LOCK = "work-lease-prune"
+
+
+async def prune_released_work_leases_if_due(
+    conn: AsyncConnection,
+    *,
+    every: timedelta,
+    keep: timedelta = RELEASED_LEASE_RETENTION,
+    now: datetime | None = None,
+) -> int | None:
+    """Run :func:`prune_released_work_leases` for the whole fleet when the last run is ``every``
+    old — the storage sweep's maintenance clock (``maintenance_run`` + a transaction-scoped
+    advisory lock), so one process prunes and a deploy never resets the clock. ``None`` when
+    nothing ran (not due, or another process holds the lock), else how many rows were removed."""
+    now = now or datetime.now(UTC)
+    won = (
+        await conn.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": _WORK_LEASE_PRUNE_LOCK},
+        )
+    ).scalar_one()
+    if not won:
+        return None
+    last = (
+        await conn.execute(
+            text("SELECT last_run_at FROM maintenance_run WHERE name = :name"),
+            {"name": WORK_LEASE_PRUNE},
+        )
+    ).scalar_one_or_none()
+    if last is not None and now - last < every:
+        return None
+    pruned = await prune_released_work_leases(conn, keep=keep)
+    await conn.execute(
+        text(
+            "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+            "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
+        ),
+        {"name": WORK_LEASE_PRUNE, "at": now},
+    )
+    return pruned
 
 
 async def get_work_lease(conn: AsyncConnection, work_id: WorkId) -> WorkLeaseRow | None:
@@ -337,7 +476,9 @@ __all__ = [
     "DbWorkLeaseStore",
     "LeaseGeneration",
     "LeaseStore",
+    "RELEASED_LEASE_RETENTION",
     "RunLeaseRow",
+    "WORK_LEASE_PRUNE",
     "WorkId",
     "WorkLeaseRow",
     "WorkLeaseStore",
@@ -345,8 +486,11 @@ __all__ = [
     "acquire_work_lease",
     "get_run_lease",
     "get_work_lease",
+    "prune_released_work_leases",
+    "prune_released_work_leases_if_due",
     "release_run_lease",
     "release_work_lease",
     "renew_run_lease",
     "renew_work_lease",
+    "revoke_work_lease",
 ]

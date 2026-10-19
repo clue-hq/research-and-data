@@ -1,6 +1,7 @@
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
 import type { ProductActionsController } from "../hooks/use-product-actions";
 import type { BrandContextSection, BrandContextWorkspace, BrandKnowledgeDocument } from "../model/brand-context";
+import { measuredSections, type MeasuredBrandView, type MeasuredSection } from "../model/measured-view";
 import { productOfPage } from "../model/product-links";
 import { BrandContextIcon, type BrandContextIconName } from "./brand-context-icon";
 import { PendingProductPages, ProductFolderFooter, ProductMenu } from "./product-actions";
@@ -15,6 +16,14 @@ const brandKitItems: Array<{
   { icon: "typography", id: "typography", label: "Typography" },
   { icon: "assets", id: "assets", label: "Assets" },
 ];
+
+/** What the extraction measured (Task X6): listed after Typography, only when the kit has it.
+ * Icons from the existing set (DR-A9-1). */
+const measuredItems: Record<MeasuredSection, { icon: BrandContextIconName; label: string }> = {
+  components: { icon: "grid", label: "Components" },
+  spacing: { icon: "list", label: "Spacing" },
+  motion: { icon: "sortActive", label: "Motion" },
+};
 
 function DocumentButton({ controller, document }: { controller: BrandContextController; document: BrandKnowledgeDocument }) {
   return (
@@ -39,13 +48,20 @@ function DocumentButton({ controller, document }: { controller: BrandContextCont
 
 export function BrandContextSidebar({
   controller,
+  measured,
   productActions,
   workspace,
 }: {
   controller: BrandContextController;
+  measured: MeasuredBrandView | null;
   productActions?: ProductActionsController;
   workspace: BrandContextWorkspace;
 }) {
+  const items = [
+    ...brandKitItems.slice(0, 2),
+    ...measuredSections(measured).map((id) => ({ id, ...measuredItems[id] })),
+    ...brandKitItems.slice(2),
+  ];
   return (
     <aside aria-label="Brand context navigation" className={styles.contextSidebar}>
       <div className={styles.contextSidebarTitle}>Brand context</div>
@@ -53,7 +69,7 @@ export function BrandContextSidebar({
         <div className={styles.sidebarSection}>
           <div className={styles.sidebarLabel}>Brand kit</div>
           <nav className={styles.sidebarItems}>
-            {brandKitItems.map((item) => (
+            {items.map((item) => (
               <button
                 aria-current={controller.section === item.id ? "page" : undefined}
                 className={`${styles.contextNavItem} ${controller.section === item.id ? styles.contextNavItemActive : ""}`}

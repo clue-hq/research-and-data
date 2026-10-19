@@ -43,9 +43,9 @@ not limited to the sentences in the brief.
 2. Read its research: `read_account_research(account_entity_id, section="overview")`. An answer
    of `overview_not_written` is normal for an account whose write-up is not done; then read
    `section="claims"`. An account that research has not run on refuses `section="claims"` with
-   `account_not_researched`; say so in `review_needs` and design from the brief. Claims come in
-   pages: when `next_offset` is not null, read again with that offset before you state a count
-   or say a field is empty. Narrow with `field_prefix` only to a family the answer's `prefixes`
+   `account_not_researched`; say so in `review_needs` and design from the brief. Both sections
+   come in pages: when `next_offset` is not null, read again with that offset before you say
+   what research found, state a count, or say a field is empty. Narrow with `field_prefix` only to a family the answer's `prefixes`
    lists.
 3. Ask a specific question with `read_claims(entity_id, ...)` — one family, one source tier,
    only verified, only since a date, or a contact's claims.

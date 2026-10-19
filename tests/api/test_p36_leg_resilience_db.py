@@ -63,7 +63,7 @@ from clue_db import db_lifespan
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
 from clue_design.documents import create_document
-from clue_fleet import WorkId, acquire_work_lease
+from clue_fleet import LeaseGeneration, WorkId, acquire_work_lease, release_work_lease
 from clue_storage import FsStorage
 from tests.api.conftest import hermetic_flag_env
 from tests.api.test_p34_design_leg_engine_db import (
@@ -568,8 +568,13 @@ def test_per_thread_single_flight_holds_at_the_fleet_seam(
                 ),
                 {"work": work_id, "dedup": f"{AGENT_TURN_DEDUP_PREFIX}{first.turn_id}"},
             )
-            await conn.execute(
-                text("DELETE FROM work_lease WHERE work_id = :work"), {"work": work_id}
+            # Its worker releases the lease: the row stays (ended) so the next holder's
+            # generation is higher — releases never delete since 2026-10-16.
+            await release_work_lease(
+                conn,
+                work_id=WorkId(work_id),
+                worker_id="worker-a",
+                generation=LeaseGeneration(held.generation),
             )
             assert (
                 await dispatch_next_thread_turn(
@@ -577,6 +582,10 @@ def test_per_thread_single_flight_holds_at_the_fleet_seam(
                 )
                 == second.turn_id
             )
+            following = await acquire_work_lease(
+                conn, work_id=WorkId(work_id), worker_id="worker-b"
+            )
+            assert following is not None and following.generation == held.generation + 1
 
     run_async(scenario())
 

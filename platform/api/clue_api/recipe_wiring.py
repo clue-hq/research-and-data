@@ -94,6 +94,12 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # `manage_products@1`, which `head-of-abm@v71` grants. v33 stays the exact replay input for
     # turns pinned to it.
     "recipe0-stage0-v34.json",
+    # Discovery excludes the seller's customers (spec 2026-10-16): one address RE-PINNED, none
+    # added — `launch_arv2_discovery@3`, whose brief carries `exclude`, the contract
+    # `head-of-abm@v72` grants. `@2` leaves (one version per (kind, key)) and stays registered,
+    # so v34 still promotes on a fresh database and stays the exact replay input for turns pinned
+    # to it.
+    "recipe0-stage0-v35.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

@@ -16,6 +16,8 @@ model is ever built and no network call fires.
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
 import json
 import time
 from dataclasses import replace
@@ -464,7 +466,7 @@ def test_reviewer_role_is_still_registered_with_metrics(tmp_path, monkeypatch) -
         lambda cfg, tools, model_id, role, budget=None: (
             seen.append(role),
             tools.metrics.register_role(role),
-            object(),
+            GenericFakeChatModel(messages=iter(())),
         )[-1],
     )
 
