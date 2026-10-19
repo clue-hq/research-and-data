@@ -3412,10 +3412,10 @@ def create_app(
         status = (
             "failed"
             if not result.get("ok", False)
-            or has_blocking_export_diagnostics(diagnostics)
+            or has_blocking_export_diagnostics(diagnostics, editor_export=True)
             else "ok"
         )
-        warnings = export_warning_views(diagnostics)
+        warnings = export_warning_views(diagnostics, editor_export=True)
         log_event(
             api_logger,
             logging.INFO,
@@ -5908,9 +5908,10 @@ def create_app(
         # does not — and consulting it here would re-block the advisory codes
         # the split exists to let through. The blocking predicate is now the
         # single source of truth; `has_errors` still rides the response as the
-        # raw engine signal.
+        # raw engine signal. `editor_export`: a person's export, so text that does
+        # not fit its box never refuses it (ruling 2026-10-19, export_policy.py).
         blocking_diagnostics, advisory_diagnostics = partition_export_diagnostics(
-            preflight_diagnostics
+            preflight_diagnostics, editor_export=True
         )
         if blocking_diagnostics:
             _record_diagnostics(repo, document_id, "export", preflight_diagnostics)
@@ -5999,7 +6000,7 @@ def create_app(
         status = (
             "failed"
             if not export_result.get("ok", False)
-            or has_blocking_export_diagnostics(diagnostics)
+            or has_blocking_export_diagnostics(diagnostics, editor_export=True)
             else "ok"
         )
         log_event(
@@ -8835,13 +8836,13 @@ def document_export_response(
         # rather than render blockers: the export SUCCEEDED with these present.
         # An editor-surface channel only — the export menu renders them; the
         # end client who receives the artifact never sees them.
-        "warnings": export_warning_views(diagnostics),
+        "warnings": export_warning_views(diagnostics, editor_export=True),
         "preflight": {
             # The raw engine signal — `any(severity == Error)`. Deliberately
             # NOT the export gate any more: consult `warnings` and `status` to
             # tell "refused" from "exported with advisories".
             "has_errors": preflight.get("has_errors", False),
-            "advisory_warnings": len(export_warning_views(diagnostics)),
+            "advisory_warnings": len(export_warning_views(diagnostics, editor_export=True)),
             "brand_ref_operations": len(preflight.get("brand_ref_operations", [])),
             "token_operations": len(preflight.get("token_operations", [])),
             "layout_operations": len(preflight.get("layout_operations", [])),

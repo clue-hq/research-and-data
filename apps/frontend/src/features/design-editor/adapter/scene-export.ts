@@ -241,7 +241,7 @@ export function parseSceneExportRequest(detail: unknown): SceneExportRequest | n
 /**
  * The one line the menu's `aria-live` span reads when an export finishes.
  *
- * A failure speaks in the ENGINE's words — the first diagnostic's `message` —
+ * A failure speaks in the ENGINE's words — the first blocking error's `message` —
  * because a generic "export failed" hides the one fact the user can act on (a
  * raster budget exceeded at 4x, a missing font). The generic line is the
  * fallback for a failure that arrived carrying nothing sayable: a blank message
@@ -254,11 +254,13 @@ export function sceneExportResultMessage(
   if (result.status === "ok") {
     return `${format} exported`;
   }
-  const first = result.diagnostics[0];
-  if (first && first.message.trim() !== "") {
-    return first.message;
-  }
-  return `${format} export failed`;
+  // Name what actually blocked: the first error the API did not let through. A warning (a font
+  // licence flag that only matters for PDF) never blocks an export, so it is never the reason.
+  const advisory = new Set(result.advisoryCodes);
+  const blocking = result.diagnostics.find(
+    (item) => item.severity === "error" && !advisory.has(item.code) && item.message.trim() !== "",
+  );
+  return blocking ? blocking.message : `${format} export failed`;
 }
 
 /**

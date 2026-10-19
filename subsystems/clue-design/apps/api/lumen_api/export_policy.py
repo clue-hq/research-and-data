@@ -78,6 +78,22 @@ ADVISORY_EXPORT_DIAGNOSTIC_CODES: frozenset[str] = frozenset(
 )
 
 
+#: Error-severity codes that do NOT block a person's export from the editor, though the design
+#: agent must still clear them before it may finish (founder ruling 2026-10-19). Each says a
+#: text does not fit its box. The engine paints overflowing text exactly as the canvas shows it,
+#: so the person sees what they will get: a fixed-height "x" between two logos (LUMV0903)
+#: refused every PNG export of a design the canvas showed correctly, and the PNG rendered with
+#: the gate bypassed matched the canvas. The agent keeps the strict rule because overflow in
+#: its own layout is a defect it should fix, not a choice a person made.
+EDITOR_EXPORT_ADVISORY_CODES: frozenset[str] = frozenset(
+    {
+        "LUMV0902",  # non-wrapping text runs past its box's width
+        "LUMV0903",  # text is taller than its box
+        "LUMV0904",  # text has more lines than its max_lines
+    }
+)
+
+
 #: Codes reviewed for advisory status and deliberately LEFT BLOCKING, recorded
 #: so the next reader does not have to re-derive the reasoning. This set is
 #: documentation; it is not consulted at runtime (the fail-closed default
@@ -122,11 +138,15 @@ def is_error_diagnostic(diagnostic: JsonObject) -> bool:
     return diagnostic.get("severity") == "error"
 
 
-def is_blocking_export_diagnostic(diagnostic: JsonObject) -> bool:
+def is_blocking_export_diagnostic(
+    diagnostic: JsonObject, *, editor_export: bool = False
+) -> bool:
     """True when this diagnostic must refuse an export.
 
     Fail-closed: an error-severity diagnostic blocks unless its code is
-    explicitly classified advisory. Unknown codes block.
+    explicitly classified advisory. Unknown codes block. `editor_export` is a
+    person exporting from the editor, who also gets
+    :data:`EDITOR_EXPORT_ADVISORY_CODES` through; the design agent never passes it.
     """
     if not is_error_diagnostic(diagnostic):
         return False
@@ -135,26 +155,35 @@ def is_blocking_export_diagnostic(diagnostic: JsonObject) -> bool:
         # A malformed diagnostic we cannot classify is treated as blocking —
         # the same fail-closed posture as an unknown code.
         return True
-    return code not in ADVISORY_EXPORT_DIAGNOSTIC_CODES
+    if code in ADVISORY_EXPORT_DIAGNOSTIC_CODES:
+        return False
+    return not (editor_export and code in EDITOR_EXPORT_ADVISORY_CODES)
 
 
-def is_advisory_export_diagnostic(diagnostic: JsonObject) -> bool:
+def is_advisory_export_diagnostic(
+    diagnostic: JsonObject, *, editor_export: bool = False
+) -> bool:
     """True for an error-severity diagnostic that is a policy lint, not a
     render blocker — the set surfaced to the editor under ruling R5."""
     return is_error_diagnostic(diagnostic) and not is_blocking_export_diagnostic(
-        diagnostic
+        diagnostic, editor_export=editor_export
     )
 
 
-def has_blocking_export_diagnostics(diagnostics: List[JsonObject]) -> bool:
+def has_blocking_export_diagnostics(
+    diagnostics: List[JsonObject], *, editor_export: bool = False
+) -> bool:
     """The export gate's predicate. Replaces a bare ``has_error_diagnostics``
     check at every point where the consequence is *refusing to produce
     bytes*."""
-    return any(is_blocking_export_diagnostic(item) for item in diagnostics)
+    return any(
+        is_blocking_export_diagnostic(item, editor_export=editor_export)
+        for item in diagnostics
+    )
 
 
 def partition_export_diagnostics(
-    diagnostics: List[JsonObject],
+    diagnostics: List[JsonObject], *, editor_export: bool = False
 ) -> Tuple[List[JsonObject], List[JsonObject]]:
     """Split into ``(blocking, advisory)``.
 
@@ -166,7 +195,7 @@ def partition_export_diagnostics(
     for item in diagnostics:
         if not is_error_diagnostic(item):
             continue
-        if is_blocking_export_diagnostic(item):
+        if is_blocking_export_diagnostic(item, editor_export=editor_export):
             blocking.append(item)
         else:
             advisory.append(item)
@@ -197,14 +226,16 @@ def draft_verification_note(verification: object) -> str:
     return " ".join(parts)
 
 
-def export_warning_views(diagnostics: List[JsonObject]) -> List[JsonObject]:
+def export_warning_views(
+    diagnostics: List[JsonObject], *, editor_export: bool = False
+) -> List[JsonObject]:
     """The ``warnings`` payload carried on an export response.
 
     Ruling R5: this is an **editor-surface** channel. It rides the API response
     so the export menu can show "exported, with N advisories"; it is never
     stamped into the artifact or shown to an end client.
     """
-    _, advisory = partition_export_diagnostics(diagnostics)
+    _, advisory = partition_export_diagnostics(diagnostics, editor_export=editor_export)
     return [
         {
             "code": item.get("code"),

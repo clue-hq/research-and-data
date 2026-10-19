@@ -268,6 +268,31 @@ describe("export runner profiles", () => {
     expect(result.printReady).toBeNull();
   });
 
+  it("reads the codes of the response's warnings as the errors this export let through", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          schema_version: 1,
+          status: "ok",
+          diagnostics: [],
+          warnings: [{ code: "LUMV0903", message: "text node separator exceeds available height" }, { message: "no code" }],
+          export: { artifacts: [] }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const runner = createApiExportRunner({ apiBaseUrl: "http://localhost:8000" });
+
+    const result = await runner({
+      scene: minimalScene,
+      profile: defaultEditorExportProfile(),
+      pageIds: ["page_a4"]
+    });
+
+    expect(result.advisoryCodes).toEqual(["LUMV0903"]);
+  });
+
   it("uses the persisted document export route when a document id is configured", async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(

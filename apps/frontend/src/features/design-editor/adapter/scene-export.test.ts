@@ -235,6 +235,7 @@ function exportResult(overrides: Partial<EditorExportResult>): EditorExportResul
     diagnostics: [],
     artifacts: [],
     printReady: null,
+    advisoryCodes: [],
     ...overrides,
   };
 }
@@ -256,6 +257,39 @@ it("a failed export reports the FIRST diagnostic — the engine's own words", ()
       }),
     ),
     "raster budget exceeded",
+  );
+});
+
+it("a failed export names the error that blocked it, not a warning listed before it", () => {
+  assert.equal(
+    sceneExportResultMessage(
+      "PNG",
+      exportResult({
+        status: "failed",
+        diagnostics: [
+          { ...diagnostic("font asset brand is not marked subsettable for PDF export"), severity: "warning", code: "LUMB0614" },
+          { ...diagnostic("image focal point outside 0..1"), code: "LUMV0821" },
+        ],
+      }),
+    ),
+    "image focal point outside 0..1",
+  );
+});
+
+it("an error the API let through is never named as the reason an export failed", () => {
+  assert.equal(
+    sceneExportResultMessage(
+      "PNG",
+      exportResult({
+        status: "failed",
+        advisoryCodes: ["LUMV0903"],
+        diagnostics: [
+          { ...diagnostic("text node separator exceeds available height"), code: "LUMV0903" },
+          { ...diagnostic("image focal point outside 0..1"), code: "LUMV0821" },
+        ],
+      }),
+    ),
+    "image focal point outside 0..1",
   );
 });
 

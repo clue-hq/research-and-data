@@ -2415,6 +2415,44 @@ def test_document_export_route_exports_with_warnings_on_advisory_diagnostics(
     assert payload["preflight"]["advisory_warnings"] == 1
 
 
+def text_overflow_scene(document_id: str) -> dict:
+    """A scene with a free text (bound to no slot, like the "x" between two logos) that is
+    taller than its fixed box: LUMV0903 and nothing else that blocks."""
+    scene = preflightable_scene()
+    scene["meta"]["id"] = document_id
+    separator = json.loads(json.dumps(scene["nodes"]["node_contact_name"]))
+    separator["id"] = "node_separator"
+    separator["kind"]["content"] = "x"
+    separator["size"] = {"width": {"kind": "fixed", "value": 26.0}, "height": {"kind": "fixed", "value": 4.0}}
+    scene["nodes"]["node_separator"] = separator
+    scene["pages"]["page_a4"]["children"].append("node_separator")
+    return scene
+
+
+def test_document_export_route_exports_text_that_does_not_fit_its_box(
+    client: TestClient,
+) -> None:
+    """Founder ruling 2026-10-19: text that does not fit its box renders as the canvas shows
+    it, so it never refuses a person's export. It rides the response as a warning."""
+    document = create_document(client, text_overflow_scene("doc_export_text_overflow"))
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"format": "svg", "page_ids": ["page_a4"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(
+        diagnostic["code"] == "LUMV0903" and diagnostic["severity"] == "error"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+    errors = [d["code"] for d in payload["diagnostics"]["current"] if d["severity"] == "error"]
+    assert payload["status"] == "ok", errors
+    assert payload["export"]["artifacts"], "an overflowing text must not cost the person the file"
+    assert "LUMV0903" in [warning["code"] for warning in payload["warnings"]]
+
+
 def test_document_export_route_fails_closed_before_export_on_preflight_errors(
     client: TestClient,
 ) -> None:
