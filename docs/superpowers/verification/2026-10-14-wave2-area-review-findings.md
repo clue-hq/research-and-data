@@ -919,9 +919,10 @@ when an async step completes.
 **This group gated everything else.** S7-1 is fixed (option A, 2026-10-14) and S2b-2, which blocked every
 live walk, is fixed; then S7-2, S7-4, K3-8, S2b-9 (2026-10-14) and the domain-move findings K3-6, S4-1, S4-3,
 S7-3 (2026-10-15: label unique across domains, the origin serving either domain by label, the 301 last,
-the move script that refuses rather than leave a row behind, a two-label suffix refused). K3-7's editor-server
-fallback is done (2026-10-19, `34e2bcdd7`: 1 MB headers, no cookies read); only its Public Suffix List request
-remains, the founder's (pages-hosting runbook §9 step 10). Before runbook §8 step 2 in production,
+the move script that refuses rather than leave a row behind, a two-label suffix refused). K3-7 is fixed without
+the Public Suffix List (founder 2026-10-19, option 1): the editor page and the published page's runtime switch
+off cookie writing before any section loads, frames included, and the editor server reads no cookies and
+accepts 1 MB of headers (`34e2bcdd7`); the list is optional (pages-hosting runbook §9 step 10). Before runbook §8 step 2 in production,
 these fixes must be deployed and migration `abf95e465478` run.
 
 ### 4.6 Brand capture misses common modern patterns

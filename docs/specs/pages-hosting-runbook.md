@@ -570,14 +570,18 @@ every workspace via `LUMEN_SITE_LIVE_WORKSPACES=*`) is on `main` and deployed.
    (also the S2 walk owed since 2026-09-18).
 9. **Optional cleanup:** the unused `pages.cluehq.ai` DNS record (and the Railway custom domain
    behind it, if any) can go once step 8 passes.
-10. **Public Suffix List** — when "thousands of users" can be stated honestly (founder 2026-10-15):
-    the term from step 1, a role address (e.g. `security@cluehq.ai`), a public abuse-contact page,
-    the PR, and `_psl.cluehq.page` TXT holding the PR's URL. **List `edit.deeppresence.ai` in the
-    same PR** (review K3-7): every workspace's editor shares that registrable domain, so one
-    workspace's agent code can set cookies every other workspace's editor receives. Until it is
-    listed, the editor server ignores cookies and accepts up to 1 MB of headers (so it never
-    answers 431); a proxy in front of it with a smaller header limit (Railway's, Cloudflare's
-    32 KB) can still refuse such a request.
+10. **Public Suffix List — optional** (founder 2026-10-19: not filing for now). What the list would
+    give is done in code instead (review K3-7, option 1): the editor page and the published page's
+    runtime switch off `document.cookie` and `cookieStore` before any section loads, for the page and
+    every same-origin frame or window its code reaches (`site-kit/src/cookie-lock.ts`), and our
+    servers set no cookies on `cluehq.page` or `edit.deeppresence.ai` — so no workspace's code can put
+    a cookie where another workspace's pages or editor would receive it. The editor server also reads
+    no cookies and accepts up to 1 MB of headers. What only the list (or a customer's own domain)
+    gives: Google Safe Browsing judging each workspace address on its own, so one abusive page cannot
+    get all of `cluehq.page` flagged. Until then, unpublish an abusive page quickly, and point
+    customers who run real campaigns at their own domain (Settings → Pages). Filing later needs: the
+    term from step 1, a role address (e.g. `security@cluehq.ai`), a public abuse-contact page, the PR,
+    and `_psl.cluehq.page` TXT holding the PR's URL.
 
 ---
 
