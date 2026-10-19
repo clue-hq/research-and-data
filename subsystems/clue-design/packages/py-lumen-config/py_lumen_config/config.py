@@ -289,7 +289,7 @@ class Settings(BaseSettings):
 
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
-    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash"
+    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash-1017"
     # Hybrid asset search (founder ruling 2026-10-05): ingestion stores a CLIP image vector per
     # asset and the scene agent's `search_assets` fuses its keyword ranking with a visual one.
     # Runs on ONNX Runtime from a model directory holding image.onnx (fp32, ingestion only),
