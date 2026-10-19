@@ -148,3 +148,8 @@ fails without it).
   (one page, with page menu) and which to use; the account line is "Prepared for" + the full name, never
   shortened for phones. Failing case: Oliver's agent wrote "For Oliver" to fit mobile and the header put
   the line beside the logo with an empty menu box.
+- 2026-10-19 · building-with-puck, the header and footer part (founder-approved): the header still
+  starts from the brand's templates; the footer is the plain footer (`SiteFooter`: the seller's logo,
+  the legal line, privacy and terms in one row) unless the person asks for the seller's own footer or
+  something richer. The footer templates stay available. Failing case: sites took the seller's busy
+  captured footer by default; the founder wants the simple layout, editable by the agent and the person.

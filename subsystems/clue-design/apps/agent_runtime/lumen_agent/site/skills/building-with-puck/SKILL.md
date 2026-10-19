@@ -103,10 +103,10 @@ a page, with the id `header` or `footer`:
       "replacements": [], "links": [] } } }
 ```
 
-**Start from the brand's templates.** `catalog/index.md` lists them first, under "Header and footer
-templates". They are made from the seller's own header and footer, so they look like the seller's
-site, and they carry what a page for an account needs: the seller's logo, the account's logo, a line
-for the account and one button.
+**The header: start from the brand's templates.** `catalog/index.md` lists them first, under "Header
+and footer templates". They are made from the seller's own header, so it looks like the seller's site,
+and they carry what a page for an account needs: the seller's logo, the account's logo, a line for the
+account and one button.
 
 - **Which header**: there are two. Use "Header template, one page" for a site with one page, which is
   the usual page for an account: the account line sits in the centre. Use "Header template, with page
@@ -129,7 +129,12 @@ for the account and one button.
 - Any other word in a template is a slot like a clone's; change it there when it reads oddly for this
   site.
 
-**When the brand has no template**, use the plain header and footer:
+**The footer: use the plain footer.** Every site starts with the plain footer (`SiteFooter`): the
+seller's logo, the legal line, and the privacy and terms links in one row, in the brand's styles. Fill
+in the legal line and the two links. Use the brand's footer template, or a footer of your own, only
+when the person asks for the seller's own footer or something richer.
+
+**When the brand has no header template**, use the plain header:
 
 ```json
 { "header": { "type": "SiteHeader", "props": { "id": "header", "accountLine": "Built for Acme Health's care team",

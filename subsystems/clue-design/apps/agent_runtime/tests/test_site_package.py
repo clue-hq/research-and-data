@@ -54,6 +54,8 @@ def test_the_approved_prompt_and_skill_changes_are_in_place() -> None:
     assert '"Prepared for …", optional links' not in prompt
     assert "- `fetch_logo`: finds a company's real published logos by its website domain" in prompt
     building = (SITE / "skills/building-with-puck/SKILL.md").read_text()
+    assert "**The footer: use the plain footer.** Every site starts with the plain footer" in building
+    assert "**When the brand has no header template**, use the plain header:" in building
     assert "brings back the last good version." not in building
     assert "bring back an earlier saved version with `restore_version`" in building
     images = (SITE / "skills/images-and-logos/SKILL.md").read_text()
