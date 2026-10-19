@@ -285,7 +285,10 @@ def test_each_duplicated_rule_has_one_home():
     assert "in words specific to its message" in flat("knowledge/scene/review.md")
     imagery = flat("skills/brand-imagery/SKILL.md")
     assert "Existing imagery, a flat token fill" not in imagery
-    assert "Preserve the inspected reference's material" in imagery
+    # Ported 2026-10-19: the reference look lives in the imagery guide, which brand-imagery
+    # points to before any generate_image call.
+    assert "/.deepagent/skills/generative-imagery/SKILL.md" in imagery
+    assert "take its look only from the seller's own imagery" in imagery
 
 
 def test_operating_note_and_pointer_skills_are_gone_and_their_content_lives_in_the_prompt(
