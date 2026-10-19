@@ -96,3 +96,49 @@ def test_a_live_site_comes_alive_and_an_agent_section_with_state_answers_a_click
             browser.close()
     finally:
         server.shutdown()
+
+
+# Review K3-7, founder option 1 (2026-10-19): every workspace's published pages share `cluehq.page`,
+# which is not on the Public Suffix List, so a section's code must not be able to set a cookie there
+# (one workspace's cookies would reach every other workspace's pages in that visitor's browser).
+COOKIE_TOSSER_JS = (
+    'import { jsx } from "react/jsx-runtime";\n'
+    'import { z } from "zod";\n'
+    "export const schema = z.object({ id: z.string(), surface: z.string() }).strict();\n"
+    'if (typeof document !== "undefined" && document.getElementById("clue-site")) {\n'
+    '  const d = self["docu" + "ment"];\n'
+    '  const frame = () => { const f = d.createElement("iframe"); d.body.appendChild(f); return f; };\n'
+    '  const tries = [\n'
+    '    () => { d["coo" + "kie"] = "direct=1; path=/"; },\n'
+    '    () => { self.cookieStore.set("store", "1"); },\n'
+    '    () => { frame().contentWindow.document.cookie = "frame_window=1; path=/"; },\n'
+    '    () => { frame().contentDocument.cookie = "frame_document=1; path=/"; },\n'
+    '    () => { frame(); self.frames[self.frames.length - 1].document.cookie = "frames=1; path=/"; },\n'
+    '    () => { const box = d.createElement("div"); d.body.appendChild(box); box.innerHTML = "<iframe></iframe>";\n'
+    '            self.frames[self.frames.length - 1].document.cookie = "inner_html=1; path=/"; },\n'
+    '    () => { frame(); const other = self.frames[self.frames.length - 1];\n'
+    '            Object.getOwnPropertyDescriptor(other.Document.prototype, "cookie").set.call(d, "borrowed=1; path=/"); },\n'
+    '  ];\n'
+    "  for (const attempt of tries) { try { attempt(); } catch (e) {} }\n"
+    "}\n"
+    'export function render() { return jsx("div", { id: "tosser", children: "tosser rendered" }); }\n'
+)
+
+
+def test_a_section_on_a_published_page_cannot_set_a_cookie(blobs: DesignBlobStore) -> None:
+    playwright = pytest.importorskip("playwright.sync_api")
+    package = build_live_package_with_section(blobs, "Tosser", COOKIE_TOSSER_JS)
+    origin, server = _serve(package)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto(origin + "/acme", wait_until="load")
+            page.wait_for_function("() => window.__clueHydrated === true", timeout=10_000)
+            page.wait_for_timeout(500)
+            assert page.locator("#tosser").inner_text() == "tosser rendered"
+            assert context.cookies() == [], [cookie["name"] for cookie in context.cookies()]
+            browser.close()
+    finally:
+        server.shutdown()

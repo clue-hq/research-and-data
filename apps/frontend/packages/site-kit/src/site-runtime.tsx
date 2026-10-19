@@ -3,8 +3,13 @@
 // page loads it as <script type="module" src="/p-assets/<sha>.js">; its import map points react,
 // react/jsx-runtime and zod at /p-assets shims that hand over THIS module's copies.
 import type { AgentSectionModule } from "./agent-kit";
+import { lockCookies } from "./cookie-lock";
 import { hydrateSite, type LivePageData } from "./live-page";
 import { hostModules } from "./section-host";
+
+// Review K3-7: no section on a published page can set a cookie on the shared pages domain. Runs when
+// this module loads, before any section is imported.
+lockCookies();
 
 declare global {
   interface Window {

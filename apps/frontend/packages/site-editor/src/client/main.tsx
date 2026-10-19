@@ -1,9 +1,13 @@
 import "./jitless";
+import { lockCookies } from "@clue/site-kit/cookie-lock";
 import { createRoot } from "react-dom/client";
 import { readBootContext } from "./boot";
 import { EditorApp } from "./editor-app";
 import { installSectionHost } from "./host-globals";
 
+// Review K3-7: no section can set a cookie on the editor domain every workspace's editor shares.
+// Before anything else, so before any section loads.
+lockCookies();
 installSectionHost();
 const boot = readBootContext(
   window.location.hash,
