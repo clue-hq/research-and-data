@@ -28,7 +28,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import SecretStr
@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents.contracts import ArtifactRef
 from clue_api.arv2 import onboarding_store as default_store
 from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.customer_domains import DomainCheck, check_domains
 from clue_api.arv2.exa_client import (
     ExaAgentRun,
     ExaClient,
@@ -47,6 +48,7 @@ from clue_api.arv2.onboarding_documents import (
     KnowledgeDocument,
     company_overview_document,
     customer_reviews_document,
+    existing_customers_document,
     product_catalog_document,
     product_research_document,
     render_markdown,
@@ -58,11 +60,14 @@ from clue_api.arv2.onboarding_reconcile import CatalogReconciler
 from clue_api.arv2.onboarding_requests import (
     COMPANY_OVERVIEW_SYSTEM_PROMPT,
     CUSTOMER_REVIEWS_SYSTEM_PROMPT,
+    EXISTING_CUSTOMERS_SYSTEM_PROMPT,
     PRODUCT_RESEARCH_SYSTEM_PROMPT,
     company_overview_output_schema,
     company_overview_query,
     customer_reviews_output_schema,
     customer_reviews_query,
+    existing_customers_output_schema,
+    existing_customers_query,
     product_research_output_schema,
     product_research_query,
 )
@@ -313,6 +318,19 @@ def build_onboarding_provider_caller(*, raw: RawSink, ledger: LedgerSink) -> Pro
     )
 
 
+def build_customer_domain_caller(*, raw: RawSink, ledger: LedgerSink) -> ProviderCaller:
+    """The customers step's public-web caller: the DNS-pinned transport media resolution uses, so a
+    customer domain can never point the worker at a private address."""
+    from clue_api.arv2.media_resolution import PublicMediaTransport
+
+    return ProviderCaller(
+        transport=PublicMediaTransport(),
+        raw_sink=raw,
+        ledger=ledger,
+        now=lambda: datetime.now(UTC),
+    )
+
+
 def build_onboarding_exa_client_factory(secrets: Secrets) -> ExaClientFactory:
     """The production factory. A blank key is unset (``.env.example`` ships the empty line), so it
     fails here at composition rather than as a provider 401 in the middle of a run."""
@@ -338,6 +356,9 @@ class _Scope:
     ``personas`` is the narrow run that writes the personas of ONE already-existing ICP document
     — no recon, no catalog, no ICP turn — and ``persona_icp`` is that document. The two are welded
     the way the row's CHECK welds them: a personas payload without its ICP is invalid.
+    ``customers`` researches only the seller's existing customers (``proof/customers.md``), for a
+    brand onboarded before that step existed (spec 2026-10-16-discovery-excludes-seller-customers
+    §4.4).
     """
 
     run_id: UUID
@@ -345,7 +366,7 @@ class _Scope:
     brand_id: str
     company_domain: str
     company_name: str
-    kind: Literal["full", "personas"] = "full"
+    kind: Literal["full", "personas", "customers"] = "full"
     persona_icp: IcpRef | None = None
 
 
@@ -384,6 +405,10 @@ class OnboardingRunWorkHandler:
         reconciler_factory: Callable[[RawSink, LedgerSink], CatalogReconciler] | None = None,
         drain: DrainProviderCalls = drain_provider_calls,
         catalog_regenerator: CatalogRegenerator | None = None,
+        domain_caller: Callable[..., ProviderCaller] | None = None,
+        domain_checker: Callable[
+            [ProviderCaller, Sequence[Mapping[str, Any]]], Mapping[str, DomainCheck]
+        ] = check_domains,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -412,6 +437,10 @@ class OnboardingRunWorkHandler:
         # the catalog it just published lists them again; this rebuilds it from the product list.
         # ``None`` (the offline tests, a lane without storage) leaves the published catalog as is.
         self._regenerate_catalog = catalog_regenerator
+        # The customers step's domain check fetches public homepages (spec 2026-10-16 §4.2).
+        # Injected like the store, so the offline tests never reach the network.
+        self._domain_caller = domain_caller or build_customer_domain_caller
+        self._check_domains = domain_checker
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -447,9 +476,9 @@ class OnboardingRunWorkHandler:
     def _scope(payload: Mapping[str, Any]) -> _Scope:
         try:
             named_kind = str(payload.get("kind") or "full")
-            if named_kind not in ("full", "personas"):
+            if named_kind not in ("full", "personas", "customers"):
                 raise ValueError(f"unknown onboarding run kind {named_kind!r}")
-            kind: Literal["full", "personas"] = "personas" if named_kind == "personas" else "full"
+            kind = cast(Literal["full", "personas", "customers"], named_kind)
             icp: IcpRef | None = None
             if kind == "personas":
                 # Required, not optional: a personas run's whole subject is this document, and a
@@ -524,6 +553,8 @@ class OnboardingRunWorkHandler:
     async def _run(self, scope: _Scope) -> str:
         if scope.kind == "personas":
             return await self._personas_only(scope)
+        if scope.kind == "customers":
+            return await self._customers_only(scope)
         async with self._connection() as conn:
             await self._store.mark_run_running(conn, run_id=scope.run_id)
             if self._binder is not None:
@@ -552,6 +583,7 @@ class OnboardingRunWorkHandler:
         ]
         if not reviews_fast:
             background.append(self._reviews(scope, phase="background"))
+        background.append(self._customers(scope))
         semaphore = asyncio.Semaphore(self._settings.onboarding_max_parallel_runs)
 
         async def bounded(work: Any) -> None:
@@ -572,6 +604,14 @@ class OnboardingRunWorkHandler:
             )
         finally:
             await asyncio.gather(*products)
+        async with self._connection() as conn:
+            return str(await self._store.finish_run(conn, run_id=scope.run_id))
+
+    async def _customers_only(self, scope: _Scope) -> str:
+        """A customers run: mark it running, research the existing customers, finish (§4.4)."""
+        async with self._connection() as conn:
+            await self._store.mark_run_running(conn, run_id=scope.run_id)
+        await self._customers(scope)
         async with self._connection() as conn:
             return str(await self._store.finish_run(conn, run_id=scope.run_id))
 
@@ -639,6 +679,37 @@ class OnboardingRunWorkHandler:
             ),
         )
 
+    async def _customers(self, scope: _Scope) -> None:
+        """The seller's existing customers (spec 2026-10-16-discovery-excludes-seller-customers):
+        one Exa Agent run, then one homepage check per domain it gave, into proof/customers.md."""
+
+        async def finish(run: ExaAgentRun) -> KnowledgeDocument:
+            data = run.structured if isinstance(run.structured, dict) else {}
+            customers = [c for c in data.get("customers") or [] if isinstance(c, dict)]
+            raw, ledger = BufferedRawSink(), BufferedLedger()
+            try:
+                caller = self._domain_caller(raw=raw, ledger=ledger)
+                checks = await asyncio.to_thread(self._check_domains, caller, customers)
+            finally:
+                await self._drain(scope, raw, ledger, step_label="customers")
+            return existing_customers_document(
+                run, company_domain=scope.company_domain, as_of=self._clock(), checks=checks
+            )
+
+        await self._agent_step(
+            scope,
+            kind="customers",
+            phase="background",
+            folder="proof",
+            path="proof/customers.md",
+            doc_kind="existing-customers",
+            query=existing_customers_query(scope.company_name, scope.company_domain),
+            schema=existing_customers_output_schema(),
+            effort=self._settings.onboarding_customers_effort,
+            system_prompt=EXISTING_CUSTOMERS_SYSTEM_PROMPT,
+            finish=finish,
+        )
+
     async def _product_research(self, scope: _Scope, link: ProductLink) -> None:
         product_id = link.product_id or ""
         slug = slugify(link.name)
@@ -681,8 +752,9 @@ class OnboardingRunWorkHandler:
         schema: Mapping[str, object],
         effort: str,
         system_prompt: str,
-        mapper: Callable[[ExaAgentRun], KnowledgeDocument],
+        mapper: Callable[[ExaAgentRun], KnowledgeDocument] | None = None,
         subject: str | None = None,
+        finish: Callable[[ExaAgentRun], Awaitable[KnowledgeDocument]] | None = None,
     ) -> None:
         """One Exa Agent step: open the step and its document, call, settle. Never raises.
 
@@ -765,13 +837,24 @@ class OnboardingRunWorkHandler:
                 ),
             )
             return
+        try:
+            if finish is not None:
+                document = await finish(run)
+            else:
+                assert mapper is not None, "an agent step needs a mapper or a finish"
+                document = mapper(run)
+        except Exception as error:
+            # The document's own work (the customers step's domain check) failing is the step's
+            # outcome, exactly as a provider failure is.
+            await self._settle(scope, step_id, document_id, _failed_step(error))
+            return
         await self._settle(
             scope,
             step_id,
             document_id,
             _StepOutcome(
                 status="completed",
-                document=mapper(run),
+                document=document,
                 provider_run_id=run.run_id,
                 raw_artifact_key=run.raw_refs[-1] if run.raw_refs else None,
                 cost_usd=run.cost_usd or Decimal(0),

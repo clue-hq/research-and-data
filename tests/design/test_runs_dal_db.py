@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_db import create_engine, db_lifespan
 from clue_design import documents as design_documents
 from clue_design import runs as design_runs
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignNotFoundError, DesignRunFencedError
 from tests.design.conftest import run_async
 
 
@@ -397,6 +397,129 @@ def test_runs_for_execution_lists_the_executions_runs_oldest_first() -> None:
                         conn, workspace_id=other_ws, execution_id=execution_id
                     )
                     == []
+                )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
+# --- site-turn durability, task 1 (2026-10-16): equality fence, generation kept on re-offer ---
+#
+# Lease generations no longer repeat, so a run's ``lease_generation`` names exactly one attempt.
+# The completion write is fenced on EQUALITY with it (it was ``<=``, which let a writer holding
+# a generation the row never recorded through), and the reaper's re-offer keeps it (it used to
+# clear it, letting ANY generation write until the next claim).
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_the_run_result_is_written_only_under_the_rows_own_generation() -> None:
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                ws = await _seed_ws(conn, "fenceeq")
+                run_id = f"run_{uuid4().hex}"
+                await design_runs.create_run(conn, workspace_id=ws, run_id=run_id, document_id=None)
+                work_id = design_runs.work_id_for_run(run_id)
+                assert await design_runs.claim_run_for_execution(
+                    conn, work_id=work_id, worker_id="holder", lease_generation=2
+                )
+                for wrong in (1, 3):  # an older attempt, and a generation never recorded
+                    with pytest.raises(DesignRunFencedError):
+                        await design_runs.set_run_result(
+                            conn,
+                            workspace_id=ws,
+                            run_id=run_id,
+                            status="succeeded",
+                            result={"schema_version": 1, "status": "accepted"},
+                            expected_generation=wrong,
+                        )
+                    with pytest.raises(DesignRunFencedError):
+                        await run_stream.complete_run_and_emit(
+                            conn,
+                            workspace_id=ws,
+                            run_id=run_id,
+                            status="succeeded",
+                            result={"schema_version": 1, "status": "accepted"},
+                            event_type="done",
+                            expected_generation=wrong,
+                        )
+                    with pytest.raises(DesignRunFencedError):
+                        await run_stream.emit_progress(
+                            conn,
+                            workspace_id=ws,
+                            run_id=run_id,
+                            event_type="status",
+                            data={"message": "zombie"},
+                            expected_generation=wrong,
+                        )
+                await run_stream.complete_run_and_emit(
+                    conn,
+                    workspace_id=ws,
+                    run_id=run_id,
+                    status="succeeded",
+                    result={"schema_version": 1, "status": "accepted"},
+                    event_type="done",
+                    expected_generation=2,
+                )
+                run = await design_runs.get_run(conn, workspace_id=ws, run_id=run_id)
+                assert run is not None and run["status"] == "succeeded"
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_a_reoffered_run_keeps_its_generation_and_only_the_next_attempt_claims_it() -> None:
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                ws = await _seed_ws(conn, "reofferkeep")
+                run_id = f"run_{uuid4().hex}"
+                await design_runs.create_run(conn, workspace_id=ws, run_id=run_id, document_id=None)
+                work_id = design_runs.work_id_for_run(run_id)
+                assert await design_runs.claim_run_for_execution(
+                    conn, work_id=work_id, worker_id="dead", lease_generation=1
+                )
+                handed_back = await design_runs.reoffer_stranded_run(conn, work_id=work_id)
+                assert handed_back is not None
+                assert handed_back["status"] == "queued"
+                assert handed_back["lease_generation"] == 1  # kept, not cleared
+                # A writer holding a generation the row never recorded cannot slip in before the
+                # next claim (with the generation cleared, any generation passed).
+                with pytest.raises(DesignRunFencedError):
+                    await design_runs.set_run_result(
+                        conn,
+                        workspace_id=ws,
+                        run_id=run_id,
+                        status="succeeded",
+                        result={"schema_version": 1, "status": "accepted"},
+                        expected_generation=2,
+                    )
+                taken = await design_runs.claim_run_for_execution(
+                    conn, work_id=work_id, worker_id="takeover", lease_generation=2
+                )
+                assert taken is not None
+                assert (taken["leased_by"], taken["lease_generation"]) == ("takeover", 2)
+                with pytest.raises(DesignRunFencedError):  # the dead attempt, back from the grave
+                    await design_runs.set_run_result(
+                        conn,
+                        workspace_id=ws,
+                        run_id=run_id,
+                        status="failed",
+                        result={"schema_version": 1, "status": "failed"},
+                        expected_generation=1,
+                    )
+                await design_runs.set_run_result(
+                    conn,
+                    workspace_id=ws,
+                    run_id=run_id,
+                    status="succeeded",
+                    result={"schema_version": 1, "status": "accepted"},
+                    expected_generation=2,
                 )
             finally:
                 await trans.rollback()

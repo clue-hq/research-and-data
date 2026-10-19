@@ -1,0 +1,116 @@
+// Where a section's rich text is (plan 2, spec §4.4; ruling R4): our sections' RICH_PROPS, the props
+// an agent section marked for editing in place, and a clone's text slots. One reading for the save
+// check (validate.ts) and for the frame, which saves rich text in the grammar's canonical form.
+import { richPropPaths, richValuesAt } from "./agent-props";
+import type { BrandData } from "./brand";
+import { getAtPath, setAtPath } from "./editor-site";
+import { normalizeRich } from "./rich";
+import { RICH_PROPS, RICH_PROPS_NO_LINKS } from "./schemas";
+import { slotsInsideLinks } from "./clone";
+
+/** An agent section's stored props JSON Schema, by section name (undefined when unknown). */
+export type PropsSchemaOf = (type: string) => unknown;
+
+/** The section's rich values, each with its prop path (`heading`, `cards.1.title`, `slots.headline`)
+ * and whether it may hold links (a button's words may not: plan 3). */
+export function richValuesOfItem(
+  item: { type: string; props: Record<string, unknown> },
+  brand: BrandData,
+  propsSchemaOf: PropsSchemaOf,
+): { path: string; value: string; links: boolean }[] {
+  const props = item.props ?? {};
+  // Ours when either list names the type (the header has only words without links: plan 6).
+  const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
+  const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type];
+  if (ours || noLinks) {
+    return [
+      ...richValuesAt(props, ours ?? []).map((entry) => ({ ...entry, links: true })),
+      ...richValuesAt(props, noLinks ?? []).map((entry) => ({ ...entry, links: false })),
+    ];
+  }
+  if (item.type === "ClonedSection") {
+    const clone = brand.clones[String(props.fragmentId ?? "")];
+    const inLinks = clone ? slotsInsideLinks(clone) : new Set<string>();
+    const slots = (props.slots as Record<string, unknown> | undefined) ?? {};
+    return Object.entries(slots).flatMap(([key, value]) =>
+      clone?.slots[key]?.kind === "text" && typeof value === "string" ? [{ path: `slots.${key}`, value, links: !inLinks.has(key) }] : [],
+    );
+  }
+  const schema = propsSchemaOf(item.type);
+  return schema ? richValuesAt(props, richPropPaths(schema as Parameters<typeof richPropPaths>[0])).map((entry) => ({ ...entry, links: true })) : [];
+}
+
+/** The page with every rich value in the grammar's canonical form (what the editor's TipTap or a
+ * paste wrote, cleaned: a pasted alignment, a stray attribute, paragraphs as line breaks). A value
+ * that says the same as the one `previous` stores at that place (the editor's own <p> around it, `&`
+ * written as `&amp;`) is kept exactly as stored, so a page reported back unchanged is not a change.
+ * The same page object when nothing changes. */
+export function normalizeRichIn<P extends { content?: { type: string; props: Record<string, unknown> }[] }>(
+  page: P,
+  brand: BrandData,
+  propsSchemaOf: PropsSchemaOf,
+  previous?: P | null,
+): P {
+  const before = new Map((previous?.content ?? []).map((item) => [String(item.props?.id ?? ""), item.props]));
+  let changed = false;
+  const content = (page.content ?? []).map((item) => {
+    let props = item.props;
+    const stored = before.get(String(item.props?.id ?? ""));
+    for (const { path, value, links } of richValuesOfItem(item, brand, propsSchemaOf)) {
+      const clean = normalizeRich(value, { links });
+      const was = stored ? getAtPath(stored, path) : undefined;
+      const next = typeof was === "string" && normalizeRich(was, { links }) === clean ? was : clean;
+      if (next !== value) props = setAtPath(props, path, next);
+    }
+    if (props === item.props) return item;
+    changed = true;
+    return { ...item, props };
+  });
+  return changed ? { ...page, content } : page;
+}
+
+/** Where our section's or the shell's own link for an element is written (plan 2, ruling R5): the
+ * address prop and the new-tab prop beside it. Null for an element that is not one of those links. */
+export function ownLinkSource(type: string, key: string): { kind: "prop"; href: string; newTab: string } | null {
+  if (type === "ProofCard" && key === "linkLabel") return { kind: "prop", href: "linkHref", newTab: "linkNewTab" };
+  // Plan 3: our buttons and the header's.
+  if ((type === "FeatureSplit" || type === "CtaBand") && key === "button") return { kind: "prop", href: "buttonHref", newTab: "buttonNewTab" };
+  if (type === "SiteHeader" && key === "cta") return { kind: "prop", href: "ctaHref", newTab: "ctaNewTab" };
+    if (type === "SiteFooter" && (key === "privacy" || key === "terms")) return { kind: "prop", href: `${key}Href`, newTab: `${key}NewTab` };
+  // Plan 6 (ruling R8): a link the agent keeps after the site's pages in a menu.
+  const extra = type === "SiteHeader" || type === "ClonedSection" ? /^menu\._(\d+)$/.exec(key) : null;
+  if (extra) return { kind: "prop", href: `menuExtra.${extra[1]}.href`, newTab: `menuExtra.${extra[1]}.newTab` };
+  return null;
+}
+
+/** Plan 6 (ruling R11): what the link panel says for a menu item that is one of the site's pages. */
+export const PAGE_MENU_LINK = "This link opens the site's <label> page; the menu follows the site's pages.";
+export const pageMenuLink = (label: string): string => PAGE_MENU_LINK.replace("<label>", label);
+
+/** The footer's link words are stored apart from the link's key (plan 6, ruling R7). */
+const SHELL_WORDS: Record<string, Record<string, string>> = { SiteFooter: { privacy: "privacyLabel", terms: "termsLabel" } };
+
+/** Where an element's words are stored when they are rich text (ruling R4): our section's rich prop
+ * the element draws (its key is the prop's name), or an agent's inline prop the element is named after
+ * (`cards.*.body` names `cards.1.body`). A clone's slot is read from the canvas (its slot attribute).
+ * The header's and footer's words are ours too (plan 6), the footer's link words by SHELL_WORDS. */
+export function richSourceOf(
+  item: { type: string; props: Record<string, unknown> },
+  key: string,
+  _brand: BrandData,
+  propsSchemaOf: PropsSchemaOf,
+): { prop: string } | null {
+  const ours = (RICH_PROPS as Record<string, readonly string[]>)[item.type];
+  const noLinks = (RICH_PROPS_NO_LINKS as Record<string, readonly string[]>)[item.type];
+  if (ours || noLinks) {
+    const prop = SHELL_WORDS[item.type]?.[key] ?? key;
+    return [...(ours ?? []), ...(noLinks ?? [])].includes(prop) ? { prop } : null;
+  }
+  if (item.type === "ClonedSection") return null;
+  const schema = propsSchemaOf(item.type);
+  if (!schema) return null;
+  const matches = richPropPaths(schema as Parameters<typeof richPropPaths>[0]).some((path) =>
+    new RegExp(`^${path.replace(/\./g, "\\.").replace(/\*/g, "\\d+")}$`).test(key),
+  );
+  return matches ? { prop: key } : null;
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Anchor cards fixture</title>
+<!-- Wave 2 A9 FX-C4: six feature cards wrapped in <a> (a heading and a paragraph each) and two inline
+     paragraph links in their own colour; in the header, two nav items and a menu entry wrapped in <a>
+     the same way. The page's text links are the inline links, and its nav items the plain ones.
+     Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header nav { display: flex; gap: 24px; align-items: flex-start; }
+  header a { color: #0d2b25; text-decoration: none; }
+  header a.menu-item { display: block; width: 220px; padding: 16px; border-radius: 8px; background: #eef2f1; }
+  main { padding: 0 40px; }
+  p { font: 400 16px/1.5 Arial; }
+  p a { color: #0b5cad; text-decoration: underline; }
+  p a:hover { color: #08427c; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 24px 0; }
+  a.feature { display: block; padding: 24px; border-radius: 12px; background: #f6f6f2; color: #111;
+              text-decoration: none; transition: transform .2s ease; }
+  a.feature:hover { transform: translateY(-4px); }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav>
+  <a id="n-home" href="#home">Home</a>
+  <a id="n-pricing" href="#pricing">Pricing</a>
+  <a class="menu-item" id="n-platform" href="#platform"><h4>Platform</h4><p>Everything in one place.</p></a>
+</nav></header>
+<main>
+  <h1>Features</h1>
+  <p>Read <a id="l-docs" href="#docs">the docs</a> or <a id="l-guide" href="#guide">our guide</a> to begin.</p>
+  <div class="grid">
+    <a class="feature" href="#f1"><h3>Fast</h3><p>Sub-second queries across every table.</p></a>
+    <a class="feature" href="#f2"><h3>Safe</h3><p>Row-level security on by default.</p></a>
+    <a class="feature" href="#f3"><h3>Open</h3><p>Postgres underneath, always.</p></a>
+    <a class="feature" href="#f4"><h3>Cheap</h3><p>Pay for what you store.</p></a>
+    <a class="feature" href="#f5"><h3>Global</h3><p>Replicas on four continents.</p></a>
+    <a class="feature" href="#f6"><h3>Yours</h3><p>Export everything, any time.</p></a>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

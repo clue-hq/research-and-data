@@ -55,8 +55,8 @@ relationship distinct as well as changing its surface styling.
 
 ## Compose the idea, then test its reading
 
-Read `knowledge/scene/components.md` and `knowledge/scene/references.md` for
-source roles and independent artwork generation. Keep the headline, supporting
+Read `knowledge/scene/components.md`, and `/.deepagent/skills/generative-imagery/SKILL.md`
+(illustration) before generating the metaphor. Keep the headline, supporting
 bridge, any CTA label and simple authored geometry native. Use independently
 placed authentic logos and exact product imagery when included. Generate the
 metaphorical component rather than the whole ad. Requested new artwork needs a

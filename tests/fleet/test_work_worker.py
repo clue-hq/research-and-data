@@ -998,3 +998,248 @@ def test_a_failing_task_releases_its_slot() -> None:
             await _shutdown([worker], [running])
 
     asyncio.run(scenario())
+
+
+# --- site-turn durability, task 1 (2026-10-16): a late beat is not a lost lease ---------------
+
+
+class _UnreachableThenBackLeases(_Leases):
+    """Renew raises (the database is unreachable) until ``back_after`` seconds have passed, then
+    answers like the real store: True while the row still names this holder and generation —
+    even past expiry, since nobody else took it — and False once ``taken`` is set."""
+
+    def __init__(self, *, back_after: float) -> None:
+        super().__init__()
+        self._back_after = back_after
+        self._started: float | None = None
+        self.taken = False
+        self.renew_errors = 0
+        self.renewed = 0
+
+    async def renew(
+        self,
+        *,
+        work_id: WorkId,
+        worker_id: str,
+        generation: LeaseGeneration,
+        ttl: timedelta,
+    ) -> bool:
+        loop = asyncio.get_running_loop()
+        if self._started is None:
+            self._started = loop.time()
+        if loop.time() - self._started < self._back_after:
+            self.renew_errors += 1
+            raise InterfaceError("UPDATE work_lease", {}, RuntimeError("connection refused"))
+        if self.taken:
+            return False
+        self.renewed += 1
+        return await super().renew(
+            work_id=work_id, worker_id=worker_id, generation=generation, ttl=ttl
+        )
+
+
+class _SleepingHandler(_Handler):
+    def __init__(self, kind: FleetTaskKind, *, seconds: float) -> None:
+        super().__init__(kind)
+        self._seconds = seconds
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        await asyncio.sleep(self._seconds)
+        return WorkResult(outcome="done", references={})
+
+
+def test_beats_that_land_after_expiry_keep_the_task_when_nobody_took_the_lease() -> None:
+    """The database is unreachable for twice the lease TTL; when it comes back the renew lands
+    (nobody claimed the work meanwhile), so the turn carries on and finishes. It used to give up
+    at expiry and abandon the turn."""
+
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.DESIGN_JOB)
+        queue = _Queue([task])
+        leases = _UnreachableThenBackLeases(back_after=0.6)
+        handler = _SleepingHandler(task.kind, seconds=1.0)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="slow-worker",
+            heartbeat_interval=0.05,
+            lease_ttl=timedelta(seconds=0.3),
+        )
+        assert await worker.drain_once()
+        assert leases.renew_errors > 0 and leases.renewed > 0
+        assert not handler.contexts[0].lease_lost.is_set()
+        assert [status for _, status, _ in queue.finished] == [FleetTaskStatus.DONE]
+        assert queue.requeued == []
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=10))
+
+
+def test_a_renew_that_fails_after_the_database_returns_declares_the_lease_lost() -> None:
+    """Same outage, but another worker took the lease meanwhile: the first renew that reaches
+    the database fails, and the turn is abandoned and handed back."""
+
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.DESIGN_JOB)
+        queue = _Queue([task])
+        leases = _UnreachableThenBackLeases(back_after=0.6)
+        leases.taken = True
+        handler = _SleepingHandler(task.kind, seconds=5.0)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="slow-worker",
+            heartbeat_interval=0.05,
+            lease_ttl=timedelta(seconds=0.3),
+        )
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        assert await worker.drain_once()
+        elapsed = loop.time() - started
+        assert handler.contexts[0].lease_lost.is_set()
+        assert queue.finished == []
+        assert [task_id for task_id, _ in queue.requeued] == [task.task_id]
+        assert 0.55 < elapsed < 2.0  # stopped when the renew failed, not at expiry or at the end
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=10))
+
+
+# --- drain on deploy (site-turn durability, Task 4) -----------------------------------------------
+
+
+class _DrainableHandler(_Handler):
+    """Runs until asked to drain (or released), then hands the task back, as a drained site
+    turn does."""
+
+    def __init__(self, kind: FleetTaskKind) -> None:
+        super().__init__(kind)
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.drained = asyncio.Event()
+        self.drain_reasons: list[str] = []
+
+    def request_drain(self, reason: str) -> None:
+        self.drain_reasons.append(reason)
+        self.drained.set()
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        self.entered.set()
+        done, _ = await asyncio.wait(
+            {asyncio.create_task(self.release.wait()), asyncio.create_task(self.drained.wait())},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if self.release.is_set():
+            return WorkResult(outcome="done", references={})
+        return WorkResult(outcome="drained", references={}, requeue=True)
+
+
+def _draining_worker(handler: object, queue: _Queue, *, drain_bound: timedelta) -> LeasedWorkWorker:
+    return LeasedWorkWorker(
+        handlers=(handler,),  # type: ignore[arg-type]
+        queue=queue,
+        leases=_Leases(),
+        worker_id="worker:draining",
+        poll_interval=0.001,
+        heartbeat_interval=10,
+        lease_ttl=timedelta(seconds=30),
+        drain_bound=drain_bound,
+    )
+
+
+def test_stop_lets_running_work_finish_and_never_asks_it_to_drain_before_the_bound() -> None:
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.DESIGN_JOB)
+        queue = _Queue([task])
+        handler = _DrainableHandler(task.kind)
+        worker = _draining_worker(handler, queue, drain_bound=timedelta(seconds=30))
+        running = asyncio.create_task(worker.run())
+        await asyncio.wait_for(handler.entered.wait(), timeout=2)
+        worker.stop()  # SIGTERM
+        for _ in range(200):
+            await asyncio.sleep(0)
+        assert not running.done() and handler.drain_reasons == []
+        handler.release.set()  # the turn finishes on its own
+        await asyncio.wait_for(running, timeout=2)
+        assert [status for _, status, _ in queue.finished] == [FleetTaskStatus.DONE]
+        assert queue.requeued == [] and handler.drain_reasons == []
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
+def test_work_still_running_at_the_bound_is_asked_to_drain_and_handed_back() -> None:
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.DESIGN_JOB)
+        queue = _Queue([task])
+        handler = _DrainableHandler(task.kind)
+        worker = _draining_worker(handler, queue, drain_bound=timedelta(seconds=0.05))
+        running = asyncio.create_task(worker.run())
+        await asyncio.wait_for(handler.entered.wait(), timeout=2)
+        worker.stop()
+        await asyncio.wait_for(running, timeout=2)
+        assert len(handler.drain_reasons) == 1 and "0.05" in handler.drain_reasons[0]
+        assert queue.finished == []
+        assert [task_id for task_id, _ in queue.requeued] == [task.task_id]
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
+def test_no_task_is_claimed_after_stop() -> None:
+    """Stop lands while the worker is claiming its first kind: it claims no other kind after it."""
+
+    async def scenario() -> None:
+        first, second = _task(FleetTaskKind.DESIGN_JOB), _task(FleetTaskKind.AGENT_TURN)
+        holder: dict[str, LeasedWorkWorker] = {}
+
+        class StopsWhileClaiming(_Queue):
+            async def claim_next(self, *, kind, worker_id, **kwargs):
+                if kind is FleetTaskKind.DESIGN_JOB:
+                    holder["worker"].stop()  # SIGTERM arrives during this claim
+                    return None
+                return await super().claim_next(kind=kind, worker_id=worker_id, **kwargs)
+
+        queue = StopsWhileClaiming([second])
+        handlers = (_Handler(first.kind), _Handler(second.kind))
+        worker = LeasedWorkWorker(
+            handlers=handlers, queue=queue, leases=_Leases(), worker_id="w", poll_interval=0.001
+        )
+        holder["worker"] = worker
+        assert await worker.drain_once() is False
+        assert handlers[1].contexts == [] and list(queue.rows) == [second]
+        assert await worker.drain_once() is False and list(queue.rows) == [second]
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
+def test_a_body_that_raises_work_drained_is_handed_back_and_the_worker_lives_on() -> None:
+    """The inline design lane ends its agent turn with ``WorkDrained``: the task goes back to the
+    queue for another worker, and the slot is neither failed nor killed."""
+    from clue_fleet import WorkDrained
+
+    async def scenario() -> None:
+        drained_task, next_task = _task(FleetTaskKind.AGENT_TURN), _task(FleetTaskKind.AGENT_TURN)
+
+        class Drains(_Handler):
+            async def handle(self, context: WorkContext) -> WorkResult:
+                self.contexts.append(context)
+                if len(self.contexts) == 1:
+                    raise WorkDrained("the worker is shutting down")
+                return WorkResult(outcome="done", references={})
+
+        queue = _Queue([drained_task, next_task])
+        worker = LeasedWorkWorker(
+            handlers=(Drains(drained_task.kind),),
+            queue=queue,
+            leases=_Leases(),
+            worker_id="w",
+            poll_interval=0.001,
+        )
+        assert await worker.drain_once()
+        assert [task_id for task_id, _ in queue.requeued] == [drained_task.task_id]
+        assert queue.finished == []
+        assert await worker.drain_once()
+        assert [task_id for task_id, _, _ in queue.finished] == [next_task.task_id]
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))

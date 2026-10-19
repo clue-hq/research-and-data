@@ -1500,14 +1500,26 @@ class AgentTurnWorkHandler:
         runner: ProjectConversationTurnRunner,
         queue: WorkQueue,
         conn_factory: ConnFactory = transaction,
+        design_lane: object | None = None,
     ) -> None:
         self._runner = runner
         self._queue = queue
         self._conn_factory = conn_factory
+        self._design_lane = design_lane
 
     @property
     def kind(self) -> FleetTaskKind:
         return FleetTaskKind.AGENT_TURN
+
+    def request_drain(self, reason: str) -> None:
+        """The chat worker's drain bound passed (``clue_fleet.DrainAware``; site-turn durability,
+        2026-10-16). Agent turns themselves are left to finish; a design leg's site turn running on
+        the inline lane is drained at its next step boundary. The lane then raises
+        ``WorkDrained`` out of this turn, and the worker hands the task back to the queue: the
+        turn's next attempt, on another worker, continues the design run from its working copy."""
+        request = getattr(self._design_lane, "request_drain", None)
+        if request is not None:
+            request(reason)
 
     async def handle(self, context: WorkContext) -> WorkResult:
         turn_id = UUID(str(context.payload["turn_id"]))
@@ -1922,4 +1934,5 @@ def build_agent_turn_work_handler(
         ),
         queue=queue,
         conn_factory=conn_factory,
+        design_lane=design_lane,
     )

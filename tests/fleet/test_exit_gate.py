@@ -225,8 +225,10 @@ async def _assert_exactly_once(run_id: ProjectRunId, worker_a: str, worker_b: st
                 f"phase {phase.value} ledger not exactly-once"
             )
         # 4. The queue drained clean: all 500 account jobs + the drive task are DONE; the lease
-        # was released by the finishing driver.
-        assert await get_run_lease(conn, run_id) is None
+        # was released by the finishing driver (release ends the lease and keeps its row, so the
+        # generation never repeats).
+        lease = await get_run_lease(conn, run_id)
+        assert lease is not None and not lease.live
 
     statuses = await _query(
         "SELECT status, count(*) FROM fleet_task WHERE work_id = :run "

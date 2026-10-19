@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 
 from fastapi import FastAPI, Request, Response
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from clue_page_origin.edge import BadPublicHost, EdgeGate, EdgeRefused
 from clue_page_origin.reads import PageReads
@@ -42,4 +44,38 @@ def create_page_origin_app(
         return Response(status_code=400)
 
     app.include_router(build_router(reads, gate))
+    # A live page and its runtime are hundreds of KB, so the origin gzips what a client asks for
+    # gzipped (the edge passes the encoding through). The weak-ETag step sits outside gzip so it
+    # sees the encoded response.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(_WeakEtagWhenEncoded)
     return app
+
+
+class _WeakEtagWhenEncoded:
+    """A gzipped response is another representation of the same content, so its ETag is weak."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_weak(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                if any(name.lower() == b"content-encoding" for name, _ in headers):
+                    headers = [
+                        (name, _weak(value) if name.lower() == b"etag" else value)
+                        for name, value in headers
+                    ]
+                    message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_weak)
+
+
+def _weak(etag: bytes) -> bytes:
+    return etag if etag.startswith(b"W/") else b"W/" + etag

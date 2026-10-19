@@ -247,6 +247,7 @@ _TOKEN_GROUPS = (
     "effects",
     "assets",
     "aliases",
+    "styles",
 )
 
 

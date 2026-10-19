@@ -12,6 +12,7 @@ import copy
 import hashlib
 import io
 import json
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,6 +37,36 @@ def _vendor_rung_disabled(monkeypatch):
 
     monkeypatch.setattr(logo_fetch, "_vendor_rung", disabled)
     monkeypatch.setattr(logo_fetch, "_logo_dev_rung", disabled, raising=False)
+
+
+@contextmanager
+def _vendor_transport(handler):
+    """Serve the paid lookup and free asset downloads through one offline handler."""
+    import httpx
+    from lumen_api import spend
+
+    from clue_spend import HttpResponse, LedgerStamp
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        class Transport:
+            def send(self, request):
+                response = client.request(
+                    request.method,
+                    request.url,
+                    headers=dict(request.headers),
+                    content=request.body,
+                    timeout=request.timeout_s,
+                )
+                return HttpResponse(
+                    status=response.status_code,
+                    headers=dict(response.headers),
+                    body=response.content,
+                )
+
+        with spend.spend_scope(
+            LedgerStamp(workspace_id="ws_logo_tool_test"), transport=Transport()
+        ):
+            yield client
 
 
 def test_brandfetch_original_is_attributed_and_usable_when_site_is_blocked(monkeypatch):
@@ -880,7 +911,7 @@ def test_dispatch_retains_identity_refusal_when_official_site_is_rate_limited(
 
     cache = _RecordingCache()
     monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
-    with httpx.Client(transport=httpx.MockTransport(provider)) as client:
+    with _vendor_transport(provider) as client:
         monkeypatch.setattr(
             logo_fetch, "_vendor_rung",
             lambda site, company: fetch_vendor_family(
@@ -1194,16 +1225,16 @@ def _e2e_vendor_handler(request):
 
 
 def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monkeypatch):
-    """The whole tool, both rungs live, nothing faked above the transport.
+    """The whole tool with real vendor logic and a fixture-backed ladder rung.
 
-    The vendor rung runs the REAL `fetch_vendor_family` against an httpx MockTransport, so the
-    lookup, the allowlist, the download, the theme inversion and the cell mapping all execute;
+    The vendor rung runs the REAL `fetch_vendor_family` with an offline ProviderCaller
+    transport for the lookup and an httpx MockTransport for the free downloads. The identity
+    check, allowlist, download, theme inversion and cell mapping all execute;
     the ladder rung is faked at its own driver seam, as every other test in this file does. Two
     cells therefore come from Brandfetch and two from the ladder, and the point of the test is
     that each ingested record carries ITS OWN source: a family is allowed to be mixed, and a
     reader must never have to guess which half of it the vendor served.
     """
-    import httpx
     from lumen_ingestion.logo_vendor import fetch_vendor_family
 
     ladder = _resolution({
@@ -1215,7 +1246,7 @@ def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monk
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
 
     tools = _web_tools(tmp_path)
-    with httpx.Client(transport=httpx.MockTransport(_e2e_vendor_handler)) as client:
+    with _vendor_transport(_e2e_vendor_handler) as client:
         monkeypatch.setattr(
             logo_fetch,
             "_vendor_rung",
@@ -1255,3 +1286,45 @@ def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monk
     assert registry[
         next(e["asset_id"] for e in result["logos"] if e["cell"] == "dark_lockup")
     ]["source"]["url"] == "https://acme.com/logo-white.svg"
+
+
+def test_every_logo_the_ladder_stands_behind_reaches_the_agent_as_an_alternative(monkeypatch):
+    """Founder ask 2026-10-04: the agent sees all of the site's logos, not only the cells.
+
+    A ranked candidate the ladder stands behind (fetched, positive score, first-party) and could
+    read as logo artwork rides along as an alternative; a CSS background photo the ladder could
+    not read as a logo (`lockup == "unknown"`) does not; the cell's own bytes are not repeated.
+    """
+    from lumen_ingestion.logo_ladder import LadderCandidate
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing
+
+    def ranked(url, body, *, lockup, score=50.0, first_party=True, content_type="image/svg+xml"):
+        candidate = LadderCandidate(url=url, rung="BRAND_PAGE", fmt="svg", dom_role="link rel=icon")
+        candidate.body, candidate.content_type = body, content_type
+        candidate.lockup, candidate.variant = lockup, "light"
+        candidate.score, candidate.first_party = score, first_party
+        return candidate
+
+    cell = _slot(_svg(), lockup="full_lockup", variant="light", url="https://acme.com/logo.svg")
+    resolution = _resolution({"light": cell})
+    resolution.ranked = [
+        ranked("https://acme.com/logo.svg", _svg(), lockup="full_lockup"),  # the cell itself
+        ranked("https://acme.com/favicon.svg", _svg("#2050c0", 64, 64), lockup="symbol"),
+        ranked("https://acme.com/footer-photo.jpg", _png(), lockup="unknown",
+               content_type="image/png"),
+        ranked("https://partner.com/badge.svg", _svg("#999999", 90, 90), lockup="symbol",
+               first_party=False),
+        ranked("https://acme.com/junk.svg", _svg("#123456", 70, 70), lockup="symbol", score=-5),
+    ]
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: resolution)
+
+    def no_vendor(site, company):
+        raise VendorCredentialsMissing("no key in this test")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", no_vendor)
+    outcome = logo_fetch.fetch_logo_family("acme.com", company_name="Acme")
+
+    assert [p.cell for p in outcome.prepared] == ["light_lockup"]
+    urls = [p.source_ref["url"] for p in outcome.alternatives]
+    assert urls == ["https://acme.com/favicon.svg"]
+    assert outcome.alternatives[0].label == "Acme logo (site: light symbol, link rel=icon)"

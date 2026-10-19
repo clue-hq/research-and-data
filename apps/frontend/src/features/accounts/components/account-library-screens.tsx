@@ -9,7 +9,7 @@ import { DesignIcon } from "@/components/ui/design-icon";
 import { useAccountArtifactsController } from "../hooks/use-account-artifacts-controller";
 import type { AccountDetail } from "../model/account-detail";
 import type { AccountArtifact, AccountWorkspace } from "../model/account-workspace";
-import { artifactTypeLabels, artifactTypeOptions, filterAccountActivity, formatAccountDate } from "../model/account-workspace-presentation";
+import { artifactDisplayType, artifactTypeLabels, artifactTypeOptions, filterAccountActivity, formatAccountDate } from "../model/account-workspace-presentation";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
 import { AccountFilterSelect } from "./account-filter-select";
 import { AccountActivityFeed } from "./account-activity-feed";
@@ -27,8 +27,9 @@ const sortOptions = [
 ];
 
 function ArtifactTypeIcon({ type }: { type: AccountArtifact["type"] }) {
-  const Icon = typeIcons[type];
-  return <span className={styles.typeIcon} data-type={type}><Icon aria-hidden="true" size={16} strokeWidth={1.5} /></span>;
+  const shown = artifactDisplayType(type);
+  const Icon = typeIcons[shown];
+  return <span className={styles.typeIcon} data-type={shown}><Icon aria-hidden="true" size={16} strokeWidth={1.5} /></span>;
 }
 
 function ArtifactUpdated({ artifact }: { artifact: AccountArtifact }) {

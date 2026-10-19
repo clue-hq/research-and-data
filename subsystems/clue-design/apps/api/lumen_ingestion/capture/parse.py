@@ -16,6 +16,7 @@ import tinycss2
 from clue_core.normalize import canonical_workspace_name
 from selectolax.parser import HTMLParser
 
+from ..css_color4 import COLOR4_FUNCTIONS, color4_to_hex
 from .budget import (
     MAX_ASSET_COUNT,
     MAX_STATE_STYLE_COUNT,
@@ -49,6 +50,11 @@ class ParsedType:
     line_height: float | None
     letter_spacing: float | None
     locator: str
+    color: str | None = None
+    background: str | None = None
+    area: float | None = None
+    #: Which computed sample it came from, so the same element can be read at other widths.
+    sample_index: int | None = None
 
 
 @dataclass
@@ -151,6 +157,9 @@ class ParsedSite:
     declared_roles: list[DeclaredRole] = field(default_factory=list)
     state_styles: list[ParsedStateStyle] = field(default_factory=list)
     diagnostics: list[dict] = field(default_factory=list)
+    #: Responsive brand type: the capture's own width and the type samples at each narrower width.
+    type_capture_width: int | None = None
+    type_widths: list[tuple[int, list[ParsedType]]] = field(default_factory=list)
 
 
 # --- color parsing --------------------------------------------------------------
@@ -344,6 +353,23 @@ def parse_color_value(
             return hex6
         _record_color_skip(diagnostics, f"unreadable hsl() value: {text}")
         return None
+
+    for name in COLOR4_FUNCTIONS:
+        body = _function_body(text, (name,))
+        if body is None:
+            continue
+        parts, alpha_slot = _split_color_args(body)
+        # These functions have no legacy comma syntax (Chromium refuses `oklch(0.5, 0.1, 180)`).
+        # Only the channel half is checked: the alpha slot may hold `var(--o, 0.5)`.
+        hex6 = None if "," in body.partition("/")[0] else color4_to_hex(name, parts)
+        if hex6 is None:
+            _record_color_skip(diagnostics, f"unreadable {name}() value: {text}")
+            return None
+        if alpha_slot is not None:
+            alpha = _alpha_or_opaque(alpha_slot, text, custom_props, diagnostics)
+            if alpha < 255:
+                return hex6 + "%02X" % alpha
+        return hex6
 
     return None
 
@@ -1023,6 +1049,9 @@ def parse_site(snapshot: SiteSnapshot) -> ParsedSite:
     _parse_css(snapshot, parsed, custom_props, base_url)
     if snapshot.computed_samples:
         _parse_computed_samples(snapshot, parsed)
+        parsed.type_widths = parse_type_widths(snapshot, custom_props)
+        if parsed.type_widths and snapshot.type_widths:
+            parsed.type_capture_width = int(snapshot.type_widths["capture_width"])
     _parse_dom(snapshot, parsed, base_url)
     _parse_narrative(snapshot, parsed, base_url)
     return parsed
@@ -1228,7 +1257,31 @@ _SAMPLE_HINTS: dict[str, tuple[list[str], list[str]]] = {
 
 
 def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
-    for sample in snapshot.computed_samples or []:
+    _parse_samples(enumerate(snapshot.computed_samples or []), parsed)
+
+
+def parse_type_widths(snapshot: SiteSnapshot, custom_props: dict[str, str]) -> list[tuple[int, list[ParsedType]]]:
+    """Responsive brand type: the type samples at each width the capture narrowed to, parsed exactly
+    as desktop's (the desktop sample with that width's size, line height and letter spacing). A
+    sample with no reading at a width (gone, hidden) is left out there; each keeps its index."""
+    measured = snapshot.type_widths or {}
+    samples = snapshot.computed_samples or []
+    out: list[tuple[int, list[ParsedType]]] = []
+    for entry in measured.get("widths") or []:
+        reads = entry.get("samples") or []
+        indexed = [
+            (index, {**sample, **{key: read[key] for key in ("fontSize", "lineHeight", "letterSpacing") if key in read}})
+            for index, (sample, read) in enumerate(zip(samples, reads))
+            if isinstance(read, dict)
+        ]
+        scratch = ParsedSite(custom_props=dict(custom_props))
+        _parse_samples(indexed, scratch)
+        out.append((int(entry["width"]), scratch.type_samples))
+    return out
+
+
+def _parse_samples(indexed, parsed: ParsedSite) -> None:
+    for index, sample in indexed:
         tag = str(sample.get("tag") or sample.get("selectorish") or "").lower()
         area = float(sample.get("area") or 0.0)
         weight = max(0.5, math.log2(1 + area) / 4.0)
@@ -1256,6 +1309,15 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
         family = sample.get("fontFamily")
         if label and family:
             size_px = _px_from_length(str(sample.get("fontSize") or ""))
+            # A heading keeps its own ink, what sits behind it and its whole box: the heading ink
+            # is read from these (normalizer.typography.heading_ink).
+            ink = backdrop = box = None
+            if label in ("h1", "h2", "h3"):
+                if color:
+                    ink = parse_color_value(str(color), parsed.custom_props)
+                if sample.get("behind"):
+                    backdrop = parse_color_value(str(sample["behind"]), parsed.custom_props)
+                box = float(sample.get("boxArea") or sample.get("area") or 0.0)
             parsed.type_samples.append(
                 ParsedType(
                     label="body" if label == "html" else label,
@@ -1265,6 +1327,10 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
                     line_height=_line_height(str(sample.get("lineHeight") or ""), size_px),
                     letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or ""), size_px),
                     locator=locator,
+                    color=ink,
+                    background=backdrop,
+                    area=box,
+                    sample_index=index,
                 )
             )
 

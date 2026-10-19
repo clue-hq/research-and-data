@@ -36,6 +36,7 @@ from clue_design.storage import SOURCE_KEY_SITE_SNAPSHOT, read_design_bytes, reg
 from clue_storage import StorageBackend
 from lumen_api.design_store import DesignStoreBridge
 
+from .capture.geometry import captured_font_context
 from .sections.bands import (
     SNAPSHOT_META_BANDS_KEY,
     SNAPSHOT_META_SKIPPED_KEY,
@@ -82,6 +83,11 @@ class SiteSnapshotRef:
 class LoadedStylesheet:
     url: str
     text: str
+    raw_text: str | None = None
+    source_order: tuple[int, ...] | None = None
+    media: str | None = None
+    disabled: bool = False
+    imported_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,9 +186,24 @@ async def _persist_one(
             media_type=_CSS_MEDIA_TYPE,
             source_key=SITE_SNAPSHOT_SOURCE_KEY,
         )
-        stylesheets.append(
-            {"url": sheet.url, "digest": sheet_digest, "byte_length": len(sheet_bytes)}
-        )
+        entry = {"url": sheet.url, "digest": sheet_digest, "byte_length": len(sheet_bytes)}
+        raw_text = getattr(sheet, "raw_text", None)
+        if raw_text is not None:
+            raw_bytes = raw_text.encode("utf-8")
+            await register_design_bytes(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                data=raw_bytes,
+                media_type=_CSS_MEDIA_TYPE,
+                source_key=SITE_SNAPSHOT_SOURCE_KEY,
+            )
+            entry["raw_digest"] = _digest(raw_bytes)
+        for name in ("source_order", "media", "disabled", "imported_from"):
+            value = getattr(sheet, name, None)
+            if value is not None and value is not False:
+                entry[name] = value
+        stylesheets.append(entry)
 
     screenshot = _screenshot_download(snapshot)
     screenshot_digest: str | None = None
@@ -198,6 +219,44 @@ async def _persist_one(
             source_key=SITE_SNAPSHOT_SOURCE_KEY,
         )
 
+    # Preserve every successful source download, even if a section cannot yet
+    # mint. Otherwise repair requires another network capture, and video (which
+    # deliberately bypasses the image engine) has no durable custody at all.
+    assets: list[dict[str, Any]] = []
+    for download in getattr(snapshot, "downloads", None) or []:
+        if download.kind == "screenshot":
+            continue
+        data = base64.b64decode(download.bytes_b64, validate=True)
+        digest = _digest(data)
+        if digest != download.sha256:
+            raise ValueError(f"capture asset digest mismatch: {download.url}")
+        media_type = download.content_type or "application/octet-stream"
+        await register_design_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            data=data,
+            media_type=media_type,
+            source_key=SITE_SNAPSHOT_SOURCE_KEY,
+        )
+        assets.append(
+            {
+                "url": download.url,
+                "digest": digest,
+                "kind": download.kind,
+                "content_type": media_type,
+                "byte_length": len(data),
+                "origin": download.origin,
+                "dark_scheme": download.dark_scheme,
+            }
+        )
+    meta = _meta(snapshot)
+    from .capture.page_plan import motion_inventory
+
+    meta["motion"] = motion_inventory(snapshot)
+    meta["assets"] = assets
+    meta["diagnostics"] = list(getattr(snapshot, "diagnostics", None) or [])
+
     snapshot_id = site_snapshot_id(job_id, page_url)
     await dal.upsert_site_snapshot(
         conn,
@@ -211,7 +270,7 @@ async def _persist_one(
         screenshot_digest=screenshot_digest,
         viewport_width=_viewport_width(snapshot),
         captured_at=snapshot.fetched_at,
-        meta=_meta(snapshot),
+        meta=meta,
     )
     return SiteSnapshotRef(
         snapshot_id=snapshot_id,
@@ -234,9 +293,7 @@ async def load_site_snapshot(
     """
     row = await dal.get_site_snapshot(conn, workspace_id=workspace_id, snapshot_id=snapshot_id)
     html = (
-        await read_design_bytes(
-            conn, storage, workspace_id=workspace_id, sha256=row["html_digest"]
-        )
+        await read_design_bytes(conn, storage, workspace_id=workspace_id, sha256=row["html_digest"])
     ).decode("utf-8", errors="replace")
 
     stylesheets: list[LoadedStylesheet] = []
@@ -244,8 +301,25 @@ async def load_site_snapshot(
         data = await read_design_bytes(
             conn, storage, workspace_id=workspace_id, sha256=sheet["digest"]
         )
+        raw_text = None
+        if sheet.get("raw_digest"):
+            raw_text = (
+                await read_design_bytes(
+                    conn, storage, workspace_id=workspace_id, sha256=sheet["raw_digest"]
+                )
+            ).decode("utf-8", errors="replace")
         stylesheets.append(
-            LoadedStylesheet(url=sheet["url"], text=data.decode("utf-8", errors="replace"))
+            LoadedStylesheet(
+                url=sheet["url"],
+                text=data.decode("utf-8", errors="replace"),
+                raw_text=raw_text,
+                source_order=tuple(sheet["source_order"])
+                if sheet.get("source_order") is not None
+                else None,
+                media=sheet.get("media"),
+                disabled=bool(sheet.get("disabled")),
+                imported_from=sheet.get("imported_from"),
+            )
         )
 
     screenshot: bytes | None = None
@@ -280,18 +354,14 @@ def list_site_snapshot_refs(*, workspace_id: str, job_id: str) -> list[SiteSnaps
     """Every page one job captured, in capture order — refs only, no bytes read."""
 
     async def _list(conn: Any) -> list[SiteSnapshotRef]:
-        rows = await dal.list_site_snapshots_for_job(
-            conn, workspace_id=workspace_id, job_id=job_id
-        )
+        rows = await dal.list_site_snapshots_for_job(conn, workspace_id=workspace_id, job_id=job_id)
         return [
             SiteSnapshotRef(
                 snapshot_id=row["snapshot_id"],
                 page_url=row["page_url"],
                 page_index=row["page_index"],
                 html_digest=row["html_digest"],
-                stylesheet_digests=tuple(
-                    sheet["digest"] for sheet in (row["stylesheets"] or [])
-                ),
+                stylesheet_digests=tuple(sheet["digest"] for sheet in (row["stylesheets"] or [])),
                 screenshot_digest=row["screenshot_digest"],
             )
             for row in rows
@@ -344,6 +414,7 @@ def _meta(snapshot: Any) -> dict[str, Any]:
     return {
         "meta": dict(getattr(snapshot, "meta", None) or {}),
         "tier": getattr(snapshot, "tier", None),
+        "font_context": captured_font_context(getattr(snapshot, "geometry", None)),
         "requested_url": getattr(snapshot, "requested_url", None),
         "final_url": getattr(snapshot, "final_url", None),
         "fetched_at": getattr(snapshot, "fetched_at", None),

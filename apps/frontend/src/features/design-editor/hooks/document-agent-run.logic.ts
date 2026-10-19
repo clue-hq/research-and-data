@@ -34,3 +34,24 @@ export function reduceAgentRunPoll(
     reloadNonce: moved ? previous.reloadNonce + 1 : previous.reloadNonce,
   };
 }
+
+/**
+ * Whether the standalone route should reload an open SITE when its poll moves (review finding
+ * K3-3): for a version past the one the site's save queue already knows (someone else wrote: the
+ * agent, another tab), or when the agent's run just ended — never for a version the session wrote
+ * itself, whose reload used to push a copy into the canvas while the marketer was still typing.
+ * (The working copy ignores a stale load anyway; this also saves the needless read.)
+ */
+export function siteReloadWanted({
+  polledVersion,
+  knownVersion,
+  runEnded,
+}: {
+  polledVersion: number | null;
+  knownVersion: number | null;
+  runEnded: boolean;
+}): boolean {
+  if (runEnded) return true;
+  if (polledVersion === null) return false;
+  return knownVersion === null || polledVersion > knownVersion;
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sprite icons fixture</title>
+<!-- A9 scenario A4f: buttons whose icons are drawn three ways — through the page's own sprite with the
+     old xlink:href form (its svg declares xmlns:xlink and has no viewBox of its own, so the symbol's is
+     copied), through an external sprite file this server does not serve, and as a plain inline path
+     (the control). One <symbol id="arrow"> on the page. Each button has its own fill so each is its own
+     measured style. Served from 127.0.0.1; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  p { font: 400 16px/1.5 Arial; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+  .sb { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; color: #fff; border: 0;
+        border-radius: 8px; font: 500 14px/1.4 Arial; cursor: pointer; }
+  .s1 { background: #00695c; }
+  .s2 { background: #ad1457; }
+  .s3 { background: #283593; }
+  .sb:hover { filter: brightness(0.9); }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>Icons drawn through a sprite</h1>
+  <p>Each button draws the same arrow a different way.</p>
+  <div class="wrap">
+    <button class="sb s1" id="s-xlink">The xlink form <svg xmlns:xlink="http://www.w3.org/1999/xlink" width="12" height="12"><use xlink:href="#arrow"/></svg></button>
+    <button class="sb s2" id="s-external">An external sprite <svg width="12" height="12" viewBox="0 0 12 12"><use href="/sprite.svg#arrow"/></svg></button>
+    <button class="sb s3" id="s-inline">An inline path <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+  </div>
+  <svg width="0" height="0" style="position:absolute"><symbol id="arrow" viewBox="0 0 12 12"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none"/></symbol></svg>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

@@ -2068,16 +2068,31 @@ export interface WebPublishState {
   /** The same routes on the workspace's active custom hostname, computed by the
    * server. Empty when the workspace has no active custom hostname. */
   customPageUrls: Record<string, string>;
+  /** K6-2: the document's own version now, in both states. Newer than
+   * `docVersion` means the site changed since it was published. Null from a
+   * server that predates the field. */
+  currentVersion: number | null;
+  /** K6-3: the document's durable noindex, in both states. Every publish ORs it
+   * into its pages, so it is what the next publish will do about indexing. */
+  noindex: boolean;
 }
+
+/** Which publish routes a document uses: a web page publishes through
+ * `/documents/{id}/web/publish`, a Puck site through `/documents/{id}/site/publish`.
+ * The two take the same body and answer the same shapes; each refuses the other
+ * kind (`document.kind_unsupported`). Unpublish and rollback are shared
+ * (`/web/publishes/{slug}`). */
+export type PublishKind = "web" | "site";
 
 /** Read the document's publish state. Throws (with the server message) on any
  * non-2xx so the dialog surfaces it inline. */
 export async function fetchWebPublishInfo(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
-  documentId: string
+  documentId: string,
+  kind: PublishKind = "web"
 ): Promise<WebPublishState> {
   const response = await fetchImpl(
-    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl)
+    new URL(`/documents/${encodeURIComponent(documentId)}/${kind}/publish`, apiBaseUrl)
   );
   if (!response.ok) {
     throw new Error(
@@ -2102,6 +2117,8 @@ export async function fetchWebPublishInfo(
     pages?: unknown;
     page_urls?: unknown;
     custom_page_urls?: unknown;
+    current_version?: unknown;
+    noindex?: unknown;
   };
   return {
     published: payload.published === true,
@@ -2120,8 +2137,37 @@ export async function fetchWebPublishInfo(
     htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
     pages: parseWebPublishPages(payload.pages),
     pageUrls: parseStringMap(payload.page_urls),
-    customPageUrls: parseStringMap(payload.custom_page_urls)
+    customPageUrls: parseStringMap(payload.custom_page_urls),
+    currentVersion: typeof payload.current_version === "number" ? payload.current_version : null,
+    noindex: payload.noindex === true
   };
+}
+
+/** Store the marketer's indexing choice on the document (`PUT
+ * /documents/{id}/web-noindex`, web pages and sites alike — K6-3). It is the
+ * one explicit act that can take noindex off a page, and every later publish
+ * honours it. Returns the value stored; throws the server's message on a
+ * refusal. */
+export async function setWebNoindex(
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
+  documentId: string,
+  noindex: boolean
+): Promise<boolean> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web-noindex`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ noindex })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Indexing setting failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { web_noindex?: unknown };
+  return payload.web_noindex === true;
 }
 
 /** The `pages` array of a publish state — anything that is not a route-bearing
@@ -2181,10 +2227,27 @@ export interface WebPublishResult {
   customPageUrls: Record<string, string>;
 }
 
-/** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
+/** A refused publish: the server's message, plus the HTTP status and the
+ * design API's refusal code (`detail.code`, null when it sent none) so a caller
+ * can tell refusals apart without parsing prose — e.g. 409
+ * `document.agent_run_active`, which names a run and carries no message. */
+export class WebPublishError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, options: { status: number; code: string | null }) {
+    super(message);
+    this.name = "WebPublishError";
+    this.status = options.status;
+    this.code = options.code;
+  }
+}
+
+/** Publish (or republish) a website (`POST /documents/{id}/web/publish`, or
+ * `/site/publish` for a Puck site — `options.kind`, see {@link PublishKind}). Pass
  * the desired slug; omit it to let the server keep the current one. A 422 (bad
- * slug) or 409 (slug taken by another document) throws with the server's
- * message so the dialog can surface it inline.
+ * slug) or 409 (slug taken by another document) throws a {@link WebPublishError}
+ * with the server's message so the dialog can surface it inline.
  *
  * `noindex` (R-F1) asks the server to serve the pages with a robots `noindex`
  * meta. Omitted, the server keeps its own default — and it ORs the document's
@@ -2193,7 +2256,7 @@ export async function publishWebDocument(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
   slug?: string,
-  options: { noindex?: boolean } = {}
+  options: { noindex?: boolean; kind?: PublishKind } = {}
 ): Promise<WebPublishResult> {
   const body: Record<string, unknown> = {};
   if (slug != null && slug.length > 0) {
@@ -2203,7 +2266,7 @@ export async function publishWebDocument(
     body.noindex = options.noindex;
   }
   const response = await fetchImpl(
-    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl),
+    new URL(`/documents/${encodeURIComponent(documentId)}/${options.kind ?? "web"}/publish`, apiBaseUrl),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2211,7 +2274,16 @@ export async function publishWebDocument(
     }
   );
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response, `Publish failed (HTTP ${response.status}).`));
+    let parsed: unknown = null;
+    try {
+      parsed = await response.clone().json();
+    } catch {
+      /* not JSON — no refusal code */
+    }
+    throw new WebPublishError(
+      await readErrorMessage(response, `Publish failed (HTTP ${response.status}).`),
+      { status: response.status, code: readErrorDetail(parsed).code }
+    );
   }
   const payload = (await response.json()) as {
     schema_version?: unknown;

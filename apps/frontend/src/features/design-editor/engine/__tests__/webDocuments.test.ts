@@ -28,6 +28,7 @@ import {
   publishWebDocument,
   removePageOp,
   resumeWebBatch,
+  setWebNoindex,
   rollbackWebPublish,
   routeIsValid,
   saveWebTemplate,
@@ -809,8 +810,24 @@ describe("fetchWebPublishInfo", () => {
       htmlDigest: "html-abc",
       pages: [],
       pageUrls: {},
-      customPageUrls: {}
+      customPageUrls: {},
+      currentVersion: null,
+      noindex: false
     });
+  });
+
+  it("maps the document's current version and durable noindex (K6-2, K6-3)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { published: true, slug: "acme", doc_version: 3, current_version: 4, noindex: true })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "site"
+    );
+    expect(info.docVersion).toBe(3);
+    expect(info.currentVersion).toBe(4);
+    expect(info.noindex).toBe(true);
   });
 
   it("maps the custom hostname's url and page urls", async () => {
@@ -885,6 +902,29 @@ describe("fetchWebPublishInfo", () => {
     await expect(
       fetchWebPublishInfo({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123")
     ).rejects.toThrow("boom");
+  });
+});
+
+describe("setWebNoindex", () => {
+  it("puts the explicit choice on the document's noindex route and returns what was stored", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { schema_version: 1, document_id: "doc_abc123", web_noindex: false })
+    );
+    const stored = await setWebNoindex({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123", false);
+    expect(stored).toBe(false);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web-noindex");
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(String(init?.body))).toEqual({ noindex: false });
+  });
+
+  it("throws the server message on a refusal", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(409, { detail: { code: "document.kind_unsupported", message: "not a website" } })
+    );
+    await expect(
+      setWebNoindex({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123", true)
+    ).rejects.toThrow("not a website");
   });
 });
 

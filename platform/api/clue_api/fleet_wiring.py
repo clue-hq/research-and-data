@@ -539,6 +539,7 @@ def build_multi_work_worker(
         heartbeat_interval=settings.fleet_heartbeat_interval_s,
         task_stale_after=timedelta(seconds=settings.fleet_task_stale_after_s),
         concurrency=settings.fleet_worker_concurrency,
+        drain_bound=timedelta(seconds=settings.fleet_drain_bound_s),
     )
 
 

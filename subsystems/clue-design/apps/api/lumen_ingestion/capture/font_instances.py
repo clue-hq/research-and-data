@@ -23,6 +23,23 @@ from lumen_ingestion.font_library import FontLibraryError, _instance_bytes
 INSTANCE_WEIGHTS: tuple[int, ...] = (400, 500, 600, 700)
 
 
+def instance_weights(family: str, samples) -> tuple[int, ...]:
+    """The named weights plus every weight the site was measured using this family.
+
+    Stripe sets its headings in sohne-var at weight 300; with only 400-700 instanced the kit had no
+    300 face and every role snapped to 400. Weights outside the font's axis are skipped later by
+    :func:`plan_font_instances`, so an over-wide list costs nothing.
+    """
+    wanted = family.strip().lower()
+    measured = {
+        int(sample.weight)
+        for sample in samples
+        if sample.family and sample.family.strip().lower() == wanted
+        and sample.weight and 1 <= int(sample.weight) <= 1000
+    }
+    return tuple(sorted(set(INSTANCE_WEIGHTS) | measured))
+
+
 @dataclass(frozen=True)
 class FontInstance:
     weight: int

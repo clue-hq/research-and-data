@@ -66,6 +66,7 @@ from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
 from . import logo_fetch
+from .asset_catalog import one_line as _one_line
 from .asset_preview import PREVIEWABLE_MIME_TYPES, asset_preview_path, blob_path_for_digest
 from ..run_metrics import RunMetrics
 from ..text_clearance import collision_advisory
@@ -1316,25 +1317,23 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
-        """Search all frozen workspace images by type, usage, source, text or exact id.
-
-        Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,
-        then asset(action='use_brand_asset', asset_id=...) to place the chosen image.
+        """Search this workspace's images by meaning and by look. Write what you need in plain
+        words: what the image shows, what it looks like, and what it is for — for example
+        "soft pastel blur, no text", "inbox screenshot with guest messages", "Oracle Hospitality
+        logo". Results combine two matches: the words in each image's title, description and
+        tags, and the image itself compared with your words. Best first, up to `limit` (1–20).
+        Each result gives the id, type, source, title and a one-line description;
+        `view("asset:<id>")` before using one. An exact asset id also works as the query. `kind`
+        narrows to image, logo or font. Run a separate search for each separate need.
         """
-        from .asset_catalog import rank_assets, asset_summary
-        if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
-            return json.dumps({"status": "error", "message": "Supply a query and limit 1..20"})
+        from .asset_catalog import hybrid_search
+
         candidates = {}
         for manifest, origin in ((self.config.brand_kit_assets or {}, "brand_kit"),
                                  (self.config.asset_library or {}, "library")):
             for asset_id, entry in manifest.items():
                 candidates.setdefault(asset_id, (entry, origin))
-        results = [{"asset_id": aid, "origin": origin, "title": entry.get("title"),
-                    "description": entry.get("description"), "usage": entry.get("usage"),
-                    "view": f"asset:{aid}", **asset_summary(entry)}
-                   for aid, entry, origin, _, _ in rank_assets(candidates, q.strip().lower(), (kind or "").lower())[:limit]]
-        return json.dumps({"status": "ok", "results": results, "count": len(results),
-                           "inventory_count": len(candidates)})
+        return json.dumps(hybrid_search(candidates, q, kind, limit, self.config.asset_embeddings))
 
     def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
         """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.
@@ -2916,6 +2915,9 @@ class LumenDesignTools:
           (or `target_slot_id`) so the aspect is derived from that frame's geometry —
           images are cropped to fill, never stretched. Optional `aspect_ratio` /
           `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+          `brand_notes` and `reference_framing` are appended to the prompt the image
+          model receives; they follow the same rules as the prompt
+          (`/.deepagent/skills/generative-imagery/SKILL.md`).
           `reference_asset_ids` selects up to four inspected style inputs by ID
           from this run's attachments, brand kit, workspace library or scene.
           Omit it to use turn attachments; [] uses no references. A selection
@@ -5235,8 +5237,8 @@ class LumenDesignTools:
         under-specified brief, before any authoring, rendering, or finalize
         cost — never mid-design. Ask ONLY for decision-critical facts you cannot
         derive from the prompt, conversation, document, or brand kit (asking
-        about something derivable is a failure). Read the clarify-design-brief
-        skill for the spec table and the derive-first protocol.
+        about something derivable is a failure). An unclear angle, tone or
+        message counts as decision-critical.
 
         `questions` is a list of at most 4 objects, each:
           - id: short stable key (e.g. "format", "message_focus")

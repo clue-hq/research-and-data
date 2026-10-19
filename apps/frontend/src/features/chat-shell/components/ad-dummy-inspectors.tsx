@@ -35,6 +35,7 @@ import styles from "./chat-shell.module.css";
 // exactly. The provider still wraps the whole panel from `image-inspector.tsx`,
 // so these schemas inherit the palette through context with no new props.
 import { useAdColorRow, useScenePaletteOptions } from "./inspector-color-row";
+import { LayerList } from "./layer-list";
 
 export const AD_DUMMY_INSPECTOR_SELECTIONS = [
   "auto-layout",
@@ -790,8 +791,9 @@ export function AdSceneLayers({
   onToggleLayer,
   selectedIds = [],
 }: AdLayersBinding) {
+  // Founder 2026-10-19: Layers fills the panel to its bottom (or the chat box), like the site editor.
   return (
-    <div className={styles.layerList}>
+    <LayerList>
       {layers.map((row) => {
         const active = selectedIds.includes(row.nodeId);
         const clickable = row.selectable || row.expandable;
@@ -821,7 +823,7 @@ export function AdSceneLayers({
           />
         );
       })}
-    </div>
+    </LayerList>
   );
 }
 

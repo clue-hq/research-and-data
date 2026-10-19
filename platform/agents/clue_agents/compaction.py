@@ -137,9 +137,14 @@ class HistoryPathBackend:
 
 
 def build_compaction_middleware(
-    model: Any, backend: Any, settings: CompactionSettings
+    model: Any, backend: Any, settings: CompactionSettings, *, history_under_work: bool = True
 ) -> tuple[ClueSummarizationMiddleware, SummarizationToolMiddleware]:
-    """Our summariser and the ``compact_conversation`` tool, sized from ``settings``."""
+    """Our summariser and the ``compact_conversation`` tool, sized from ``settings``.
+
+    ``history_under_work=False`` keeps offloaded history at deepagents' own root paths, for a
+    backend that already admits them (the design agent's session workspace admits exactly its own
+    ``/conversation_history/<session>.md``).
+    """
     trigger: tuple[Literal["tokens"], int]
     keep: tuple[Literal["tokens"], int] | tuple[Literal["messages"], int]
     if settings.context_window is not None:
@@ -149,7 +154,9 @@ def build_compaction_middleware(
         trigger = ("tokens", settings.trigger_tokens)
         keep = ("messages", settings.keep_messages)
     # ``backend`` arrives untyped (deepagents' backend objects); the wrapper forwards to it.
-    history_backend: Any = HistoryPathBackend(backend) if backend is not None else None
+    history_backend: Any = (
+        HistoryPathBackend(backend) if backend is not None and history_under_work else backend
+    )
     summariser = ClueSummarizationMiddleware(
         model=model,
         backend=history_backend,

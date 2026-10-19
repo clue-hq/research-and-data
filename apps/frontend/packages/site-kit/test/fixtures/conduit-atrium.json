@@ -1,0 +1,140 @@
+{
+  "brand": "conduit",
+  "shell": {
+    "header": {
+      "type": "SiteHeader",
+      "props": {
+        "id": "header",
+        "accountLine": "Prepared for Atrium Hospitality",
+        "accountLogo": "",
+        "ctaLabel": "Book a demo",
+        "ctaHref": "https://www.conduit.ai/book-demo"
+      }
+    },
+    "footer": {
+      "type": "SiteFooter",
+      "props": {
+        "id": "footer",
+        "legal": "© 2026 Conduit. Prepared for Atrium Hospitality.",
+        "privacyHref": "https://www.conduit.ai/privacy",
+        "termsHref": "https://www.conduit.ai/terms"
+      }
+    }
+  },
+  "pages": {
+    "/": {
+      "root": {
+        "props": {
+          "title": "Conduit for Atrium Hospitality"
+        }
+      },
+      "content": [
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "hero",
+            "fragmentId": "frag_459fcb8c5790a40a",
+            "slots": {
+              "headline": "AI agents for Atrium's guest operations.",
+              "body": "Automate guest messaging and calls across your hotels, and coordinate the teams behind them.",
+              "cta_href": "https://www.conduit.ai/book-demo"
+            },
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "trust",
+            "fragmentId": "frag_f0f8e5711b83f0ff",
+            "slots": {},
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "FeatureSplit",
+          "props": {
+            "id": "inbox",
+            "surface": "page",
+            "eyebrow": "One inbox",
+            "heading": "Every guest conversation in one place",
+            "headingRole": "title",
+            "body": "Conduit's inbox brings email, WhatsApp, OTA messages, social and voice into one workspace. An agent can answer, and a person can take over when a conversation needs one.",
+            "image": "/asset-store/87439dc874a52d69fa3875905545ee7397d11a29fb7a7c2944c6eb18fe8958c8",
+            "imageSide": "right",
+            "buttonLabel": "Book a demo",
+            "buttonHref": "https://www.conduit.ai/book-demo"
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "agents",
+            "fragmentId": "frag_515a5d57be6c0aff",
+            "slots": {
+              "cta_href": "https://www.conduit.ai/book-demo"
+            },
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "CtaBand",
+          "props": {
+            "id": "cta",
+            "surface": "brand",
+            "heading": "See Conduit on Atrium's guest operations",
+            "body": "A demo with your own channels and properties in mind.",
+            "buttonLabel": "Book a demo",
+            "buttonHref": "https://www.conduit.ai/book-demo"
+          }
+        }
+      ]
+    },
+    "/stories": {
+      "root": {
+        "props": {
+          "title": "How hospitality teams use Conduit"
+        }
+      },
+      "content": [
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "bali",
+            "fragmentId": "frag_99b68501cf3bc5f3",
+            "slots": {},
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "teams",
+            "fragmentId": "frag_ef9fbe18007c5195",
+            "slots": {
+              "cta_href": "https://www.conduit.ai/customers"
+            },
+            "replacements": [],
+            "links": []
+          }
+        },
+        {
+          "type": "ClonedSection",
+          "props": {
+            "id": "demo",
+            "fragmentId": "frag_9c9f2ec5f397f795",
+            "slots": {
+              "cta_href": "https://www.conduit.ai/book-demo"
+            },
+            "replacements": [],
+            "links": []
+          }
+        }
+      ]
+    }
+  }
+}

@@ -35,7 +35,9 @@ from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
 from .models.schemas import VisualCritique
 from .platform_reads import (
+    PROJECT_CONTEXT_DIR,
     make_platform_read_tools,
+    write_project_design_context,
     write_seller_knowledge,
 )
 from .prompts_web import (
@@ -227,6 +229,8 @@ def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
     # agent (fs_backend's readonly_subdirs).
     if tools.config.platform_reads is not None:
         write_seller_knowledge(workspace, tools.config.platform_reads, record=tools.record)
+    if tools.config.platform_reads is not None or (workspace / PROJECT_CONTEXT_DIR).exists():
+        write_project_design_context(workspace, tools.config.platform_reads, record=tools.record)
     logger.debug("web_workspace_scaffolded", run_id=tools.run_id, workspace=str(workspace))
     return f"/{tools.workspace_scope_id}/workspace"
 
@@ -321,6 +325,14 @@ def create_web_deepagent(
 
     theme_token_names = web_theme_token_names(runtime_config.brand_kit)
 
+    # The platform injects governed reads only on LEG turns. Share those tools with the
+    # copy author as well as the director; neither role invents its own research path.
+    platform_read_tools = (
+        make_platform_read_tools(tools, runtime_config.platform_reads)
+        if runtime_config.platform_reads is not None
+        else []
+    )
+
     # SOLO MODE: the ternary short-circuits, so neither subagent dict (nor the models they
     # would close over) is ever constructed — the same tool-absence enforcement as D-F7,
     # widened to both roles. The trio path below is byte-identical to before the ruling.
@@ -380,6 +392,7 @@ def create_web_deepagent(
                 # pinned like any clone. The author's, because it writes library content the
                 # author then places.
                 tools.compose_web_section,
+                tools.set_web_typography_reference,
                 # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
                 # was shown it and asked. The brand-kit approval no longer sweeps repairs along
                 # with the harvested sections, so this is the only door — and it is the author's
@@ -409,6 +422,7 @@ def create_web_deepagent(
                 # routes its sibling pages answer on, to link between them) — but creating,
                 # dropping and switching pages is the director's plan, not the author's.
                 tools.list_pages,
+                *platform_read_tools,
             ],
             "skills": workspace_skills,
         },
@@ -471,6 +485,7 @@ def create_web_deepagent(
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,
+        tools.set_web_typography_reference,
         # F3.3: the behavioural review gate. The ORCHESTRATOR's, in both flag states — it is the
         # role that renders and the role that decides, and its findings are advice a director
         # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads
@@ -491,7 +506,6 @@ def create_web_deepagent(
     # turn `platform_reads` is None and the tools do not exist. Inserted before finalize_web_run
     # so the honest exit stays last.
     if runtime_config.platform_reads is not None:
-        platform_read_tools = make_platform_read_tools(tools, runtime_config.platform_reads)
         for read_tool in platform_read_tools:
             orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
         tools.record(
@@ -590,11 +604,26 @@ def create_web_deepagent(
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
         # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters
         # cannot leak.
-        middleware=[WebDelegationCap(record=tools.record)],
+        middleware=[
+            WebDelegationCap(record=tools.record),
+            *_context_clearing_middleware(runtime_config),
+        ],
         name="lumen-web-deepagent",
         checkpointer=checkpointer,
     )
     return agent, tools
+
+
+def _context_clearing_middleware(runtime_config: AgentRuntimeConfig) -> list:
+    """Founder decisions 2026-10-06: superseded screenshots and finished planning results leave
+    the model request (never the saved history). Off restores the previous composition."""
+    if not runtime_config.web_context_clearing:
+        return []
+    from langchain.agents.middleware import ContextEditingMiddleware
+
+    from .context_clearing import SupersededToolResultsEdit
+
+    return [ContextEditingMiddleware(edits=[SupersededToolResultsEdit()])]
 
 
 def run_deepagent_web_turn(

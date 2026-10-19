@@ -1,193 +1,94 @@
 ---
 name: design-guidance
-description: The brand-deployment grammar — how a brand USES its tokens (allocation, rhythm, posture, signature moments) and how to read a Creative Brief when the kit carries one. Sits between brand-and-tokens (the values) and create-website (the mechanics). Must-read for every website turn.
+description: Use when applying a website brand's measured typography, backgrounds, geometry, imagery and component treatments, especially when generic theme defaults conflict with captured or approved source design.
 ---
 
-# Design Guidance — deploying a brand, not just its palette
+# Deploy the observed brand
 
-Your design training carries hierarchy, balance, proportion, typography. The
-sibling skills carry our mechanics: `create-website` owns the vocabulary,
-class grammar, and copy rules; `brand-and-tokens` owns the token taxonomy;
-`review-website` owns the ship bar. **This skill owns the layer between
-them: the rules by which a real brand deploys its vocabulary** — where color
-is allowed to live, how backgrounds sequence, what the buttons mean, when
-scale may spike — and the contract for reading a per-brand **Creative
-Brief** when the brand card carries one.
+Tokens supply values; source components show how the brand uses them. Preserve
+that composition instead of reducing the brand to a palette. `create-website`
+owns supported construction, `brand-and-tokens` token mechanics, and
+`review-website` acceptance. This skill owns deployment judgment.
 
-Two situations, one discipline:
+## Resolve the source of design decisions
 
-- **The brand card carries a Creative Brief** (characterization, chromatic
-  moment, palette application, background rhythm, postures, constraints,
-  component recipes): the brief is the spec. Follow it literally; the rules
-  below are the defaults for whatever the brief is silent about.
-- **No brief** (kit-only, or the platform default theme): the rules below
-  are the whole grammar. Derive the characterization yourself from the
-  brand card's anchor words and hold to it as if it were briefed.
+1. Follow the user's current explicit requirements and preserve human edits
+   outside their scope.
+2. For a retained or adapted band, use its inspected source and any explicitly
+   approved current composition: actual fonts, scale, backgrounds, product stage,
+   crop, spacing and behavior. A generated draft is not automatically approved.
+3. Use the current Creative Brief and kit to guide new material and fill source
+   gaps. A brief is useful evidence, not permission to strip a healthy source
+   band of its identity. If the brief and current source disagree materially,
+   record the discrepancy; retain the requested/current approved treatment and
+   resolve the choice before expensive recomposition.
+4. Use generic design defaults only for properties with no applicable evidence.
 
-## The adherence ladder (binding, top wins)
+No Creative Brief does not mean no brand grammar. Inspect relevant released
+components and assets. A missing property stays unknown; do not invent a rule
+such as “one colored band per page” and impose it on captured originals.
+These choices still use supported tools and lanes; evidence does not authorize
+unsupported scripts or alter the tool's release rules.
 
-1. The user's explicit request this turn.
-2. The Creative Brief (follow literally when not overridden by 1).
-3. The kit's tokens, theme variants, and brand-geometry utilities
-   (`brand-and-tokens`; the class grammar in `create-website`, whose ten
-   geometry utilities render the kit's measured shape).
-4. Your design instincts.
+## Preserve the background and media system
 
-When 1 conflicts with 2–4: comply, and flag the deviation in one sentence in
-your report — the director flags it in the finalize summary, the author in
-its completion report back to the director. Never silently "improve" a brief
-directive, and never refuse a user ask because the brief disagrees —
-comply-and-flag is the whole protocol.
+Record the observed sequence of surfaces, image fields and content density.
+A brand may use several vivid fields or a single canvas. Neither a universal
+alternating-band pattern nor a one-chromatic-peak limit applies to every brand.
+For a new band, inherit the relevant ancestor's treatment and the page's rhythm.
+Use palette roles (canvas, ink, accent, card, motif) to understand placement,
+not to replace actual background imagery with approximate token fills.
 
-## Palette allocation — color has scopes, not just values
+For product-led bands use `web-product-story` and `web-media-composition`:
+keep the authentic UI, decorative background, crop/clip, radius, shadow and
+layer order. Product above background does not mean drawing a new product.
+If the background is already baked into a composite, do not duplicate it.
+A required background image cannot be satisfied by a black rectangle or generic
+gradient. A source CSS field remains CSS unless the brief calls for a change.
 
-A brand is not a set of colors; it is a set of **permissions about where
-each color may live**. Read (or assign) every palette entry one of these
-scopes, and keep it there:
+Use the source's imagery posture. A text-only band can remain text-only; every
+band need not have decorative art. Missing imagery is not a reason to fabricate
+a customer, product screenshot or proof. Name the gap and use the supported
+reuse/acquisition path described by the relevant skill.
 
-| Scope | Meaning | Typical carrier |
-|---|---|---|
-| **canvas** | the page's resting background | `bg-light` (or the brief's named canvas) |
-| **ink** | headline/body foreground | `text-dark` / `text-primary`-as-text only if the brief says so |
-| **accent-punctuation** | the saturated brand color as SIGNAL | button fills, icon color, check marks, link text, one highlighted word |
-| **tinted-card** | a card surface tinted with brand color | `bg-primary/10`, one saturated card in a set |
-| **closing-surface / statement band** | a full band in brand or dark color | at most where the rhythm calls for it |
-| **motif** | a repeated small brand mark | logo tile, chip, badge |
+## Hold a coherent typographic hierarchy
 
-The load-bearing rule: **accent is punctuation, not volume.** Within a
-section, brand color lives on small surfaces; a restrained brand gets zero
-to one brand-colored band per page, a heavy-brand-color identity two to
-four — the brief's background rhythm decides, and when silent, default to
-restrained. When siblings repeat (cards in a grid, steps in a row), they
-share ONE background treatment; a tint applied to one sibling is a
-deliberate chromatic moment (see below), not a styling accident. Tinted
-brand color (`bg-primary/10`) is still brand color — allocate it, don't
-scatter it.
+Read family, weight, size, line-height, tracking, text width and breakpoint
+behavior from the relevant source; keep its font faces and class/root context.
+An h1/h2 tag or platform type token alone does not guarantee the measured style.
+Native vocabulary uses its supported theme; raw source bands retain the real
+CSS and font dependencies that create their appearance.
 
-**The chromatic brand moment.** Strong pages have ONE chromatic peak — the
-single place the saturated brand color goes big (the one filled pricing
-card, the statement band, the oversized accent numeral). Decide where the
-peak is before authoring; everything else stays quiet so the peak reads.
-Two peaks is zero peaks. The brief may name this moment explicitly
-(`chromatic_moment`) — then it is not yours to move.
+Judge the page together, not each band in isolation. The opening proposition,
+section headings, card titles, body and labels should have deliberate roles.
+An accidentally tiny opening headline beside a much larger ordinary product
+heading is a mismatch to fix, not a reason to rescale every source section.
+Compare wrapping and density at desktop and phone width. Preserve a deliberate
+source scale contrast; do not invent a one-large-heading quota for the brand.
 
-## Background rhythm — the page is a sequence
+## Keep controls recognizable and actions truthful
 
-Think of the page as its background sequence before you think of sections:
-`canvas → canvas → statement → canvas → footer-dark` is a design decision,
-not an accident of authoring order. Rules when the brief is silent:
+Preserve observed button geometry, padding, type, border and contrast. For typed
+components use the kit's supported button variants and geometry utilities;
+for cloned bands retain their measured treatment. A token fallback cannot silently
+replace a captured button with a generic one.
 
-- Alternate deliberately between the canvas token and the card/muted
-  surface (`create-website`'s band-alternation rule); insert at most one
-  statement band (`bg-dark`/brand) where the argument peaks.
-- A single-canvas brand (everything on one background) differentiates
-  sections **compositionally, not chromatically** — spacing, scale, and
-  structure change; the background does not. Do not fake variety with
-  tinted bands the brand would never use.
-- Cards sit ON the canvas; never stack a card-colored full section against
-  the canvas without a card boundary — surface roles do not blur.
-- The brief's `background_rhythm` (a sequence plus ratio, e.g. "1 dark
-  sliver : 20 cream") is followed as given — reproduce the ratio's spirit,
-  not a mechanical copy of section counts.
+Select a variant that reads against the required surface before recoloring.
+Recolor only when necessary for contrast and within the brand's observed system.
+Use `campaign-landing-page` for the action choice: the source button's styling
+is reusable, but its demo/booking label is not automatically appropriate.
 
-## Buttons are brand-identity components
+## Review without erasing stronger work
 
-A brand's button — its radius, padding, border, fill, label color, weight —
-carries identity the way the wordmark does. Our theme already renders
-`data-button="primary|secondary|outline|ghost|link"` as the brand's real
-buttons; that is why `create-website` forbids restyling them. The deployment
-etiquette this skill adds:
+Before a scoped change, record the current band's keeper properties and the
+specific defect. Compare its before/after composition plus neighboring bands.
+For a new band, compare it with the named source ancestor and the whole page:
 
-- **Placement over override.** The default move is to choose a section
-  background the button's own variants read against — primary on canvas,
-  outline/ghost on a statement band. Ask "which variant works here?" before
-  ever asking "how do I recolor this?".
-- A recolor is the last resort, reached only when the band's background is
-  fixed by the composition AND no variant reads against it — and then only
-  with theme tokens, inheriting the variant's shape untouched. Never
-  recolor a button for visual interest.
-- When the brief carries **component recipes** (the measured shape of the
-  brand's real buttons/cards, in token names), use them verbatim — a recipe
-  came from the brand's actual site and outranks your instinct.
-- **The measured shape now renders mechanically.** A recipe's geometry slots
-  are deployed through `create-website`'s brand-geometry utilities (the recipe
-  names the class beside the token), so "use it verbatim" is a class to write,
-  not a number to eyeball. Overriding one of those utilities with a raw value
-  on a briefed kit is a deviation: the reviewer sees a shape unlike the brand's
-  other controls and reports it as an ADVISORY note, and the ladder's
-  comply-and-flag rule applies when a user ask is what forced it.
-- `link` buttons are prose, not chrome: they may take copy-fitting styling
-  (tracking, underline) where the primary shape may not.
+- Is the hierarchy and reading density consistent with the observed brand?
+- Do background, authentic product, text, button and logo still read together?
+- Are required product visuals and interaction states present at phone width?
+- Did the requested change improve its target without losing an existing strength?
 
-## Typographic posture — read it, then hold it
-
-A brand has a typographic posture: case (sentence-case vs uppercase-tracked
-labels), scale temperament (restrained vs stadium), signature moves (a
-two-color headline split, an accent-colored numeral, an eyebrow ritual).
-Read it from the brief (`typographic_posture`) or infer it from the kit's
-type roles — then hold it page-wide:
-
-- The theme's type ramp is the voice; headings land styled with zero
-  classes (`create-website`). Posture decisions are about deployment:
-  which variant where, what case, which single word carries accent color.
-- **Stat-numeric accent:** when the brand's signature is an accent-colored
-  metric (the brief will say so), the numeral MUST carry the accent token —
-  a neutral stat number on such a brand reads as generic SaaS.
-- **The signature moment:** at most ONE section per page may exceed the
-  ramp — the stadium headline, the oversized hero number — and only where
-  the brief designates it (`signature_compositions` marked STRONG/SINGLE).
-  Everywhere else, strict variant discipline. No brief, no spike.
-- Uppercase tracked text is a chip/eyebrow garnish, never body posture,
-  unless the brief says the brand shouts.
-
-## Imagery posture — the brief decides the diet
-
-Photography-led, product-UI-led, text-forward, or abstract: the posture
-(brief `imagery_posture`, else the brand card) sets the image DIET for the
-whole page, not per-section whims. `create-website` owns the mechanics
-(generate-then-reference, sibling uniformity, one hero image); this skill
-adds the deployment rule: when the posture says text-only for a section
-type, **omit imagery rather than decorate** — restraint (space, type, one
-anchor) beats a filler visual every time. Product-UI briefs compose UI from
-the vocabulary as a system across the page (create-website's Design-guidance
-item on composable primitives); photography briefs without library assets
-lead with type rather than shipping placeholder rectangles.
-
-## Constraints are law, not mood
-
-A brief's `constraints[]` are hard rules harvested from the brand's real
-presence ("mint is the sole saturated color", "navy never as a mid-page
-background", "exactly one filled card per tier row", "never flatten the
-logo lockup"). Treat each as a lint you run over your own draft before
-finalizing; the reviewer receives the same constraints and will report a
-violation as a defect, not a taste note. When a user ask collides with a
-constraint, the ladder applies: comply with the user, flag the collision.
-
-## The pre-ship ritual (authoring-side QA)
-
-Run the same three checks the reviewer will — as the author, before
-reporting success back to the director; as the director, before
-`finalize_web_run` (that tool is yours alone):
-
-1. **Characterization recheck.** Re-read the anchor (brief's
-   characterization, else your own 2–3 words). Point — literally, to a
-   section id — at one element that would only make sense for THIS brand.
-   Cannot? The page is generic: push the allocation, the chromatic moment,
-   or the signature composition until it isn't.
-2. **Squint pass.** Blur the text mentally at 1440: one dominant element
-   per band; weight deliberate; edges on a shared grid; one or two color
-   moments, not spread. Squint failures are structural — fix before polish.
-3. **Chain trace.** Every band: background token → text token → button
-   variant → logo variant all read together; the contrast rules in
-   `review-website` are the bar.
-
-## What this skill deliberately does NOT contain
-
-The node vocabulary, class grammar, diagnostics, components, and repair
-loop (`create-website`); the token taxonomy and mode rules
-(`brand-and-tokens`); the review checklist (`review-website`); the recipe
-grammar (`knowledge_docs/knowledge/web/landing-page.md`, `abm-page.md`).
-When this skill and a sibling seem to conflict, the sibling owns its layer:
-mechanics beat deployment advice mechanically (a class the grammar rejects
-is rejected no matter what this skill implies), and this skill governs
-which mechanically-valid choice the brand permits.
+Keep approved geometry and assets while correcting the actual defect. Report
+remaining capture or evidence gaps; another full generation is not a substitute
+for knowing what failed.

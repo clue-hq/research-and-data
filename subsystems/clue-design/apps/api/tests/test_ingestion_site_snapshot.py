@@ -92,6 +92,7 @@ def test_persisting_a_snapshot_writes_one_row_four_blobs_and_round_trips(
 ) -> None:
     job_id = _job(workspace_id)
     snapshot = _snapshot()
+    snapshot.geometry.update(initial_font_px=18, root_font_px=9)
 
     refs = persist_site_snapshots(
         [snapshot], workspace_id=workspace_id, job_id=job_id, storage=design_storage
@@ -136,6 +137,7 @@ def test_persisting_a_snapshot_writes_one_row_four_blobs_and_round_trips(
     assert loaded.meta["meta"]["title"] == "Insight"
     assert loaded.meta["final_url"] == snapshot.final_url
     assert loaded.meta["tier"] == "rendered"
+    assert loaded.meta["font_context"] == {"initial_font_px": 18, "root_font_px": 9}
 
 
 def test_static_tier_snapshot_has_no_screenshot_and_no_phantom_blob(
@@ -569,3 +571,74 @@ def test_a_dead_byte_store_costs_the_snapshots_and_nothing_else(
     assert len(loud) == 1, kit["diagnostics"]
     assert loud[0]["severity"] == "error"
     assert "not durable" in loud[0]["message"]
+
+
+def test_snapshot_keeps_unminted_media_dependencies_in_durable_custody(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """A refused section must not discard its source video or prevent a later repair."""
+    from lumen_api.fragments.refs import asset_url
+
+    snapshot = _snapshot()
+    video = b"\x1a\x45\xdf\xa3original-video"
+    snapshot.downloads.append(
+        Download(
+            url="https://cdn.example/hero.webm",
+            kind="video",
+            content_type="video/webm",
+            bytes_b64=base64.b64encode(video).decode(),
+            sha256=_sha(video),
+            origin="video",
+        )
+    )
+    snapshot.downloads.append(
+        Download(
+            url="https://cdn.example/customer.png?width=640",
+            kind="image",
+            content_type="image/png",
+            bytes_b64=base64.b64encode(PNG).decode(),
+            sha256=_sha(PNG),
+            origin="img",
+        )
+    )
+    (ref,) = persist_site_snapshots(
+        [snapshot], workspace_id=workspace_id, job_id=_job(workspace_id), storage=design_storage
+    )
+    loaded = read_site_snapshot(
+        design_storage, workspace_id=workspace_id, snapshot_id=ref.snapshot_id
+    )
+    assets = {item["url"]: item for item in loaded.meta["assets"]}
+    assert assets["https://cdn.example/hero.webm"]["digest"] == _sha(video)
+    assert assets["https://cdn.example/hero.webm"]["kind"] == "video"
+    assert assets["https://cdn.example/customer.png?width=640"]["digest"] == _sha(PNG)
+    blobs = DesignBlobStore(design_storage, workspace_id)
+    assert blobs.read(_sha(video)) == video
+    assert asset_url(_sha(video)) == f"/asset-store/{_sha(video)}"
+
+
+def test_motion_inventory_is_durable_without_claiming_canvas_runtime(
+    workspace_id: str,
+    design_storage: FsStorage,
+) -> None:
+    snapshot = _snapshot(
+        html='<html><body><canvas></canvas><video src="/hero.webm"></video></body></html>'
+    )
+    snapshot.stylesheets.append(
+        Stylesheet(
+            url="https://insighthealth.example/motion.css", text="@keyframes fade {to {opacity: 1}}"
+        )
+    )
+    (ref,) = persist_site_snapshots(
+        [snapshot],
+        workspace_id=workspace_id,
+        job_id=_job(workspace_id),
+        storage=design_storage,
+    )
+    loaded = read_site_snapshot(
+        design_storage, workspace_id=workspace_id, snapshot_id=ref.snapshot_id
+    )
+    assert loaded.meta["motion"]["css_keyframes"] == ["fade"]
+    assert loaded.meta["motion"]["canvas_runtime_recovered"] is False
+    assert loaded.meta["motion"]["missing_video_assets"] == [
+        "https://insighthealth.example/hero.webm"
+    ]

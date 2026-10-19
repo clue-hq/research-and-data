@@ -44,7 +44,8 @@ Choose from the source's reasoning and inspected references, not a universal
 manifesto layout. For a close companion, preserve the original ad's hierarchy,
 typographic character, image treatment, logo relationship and CTA treatment.
 Vary the actual argument or visual relationship intentionally. Do not remove
-observed texture or expressive imagery to default to a flat statement panel.
+the original's texture or expressive imagery to default to a flat statement panel;
+new imagery follows `/.deepagent/skills/generative-imagery/SKILL.md`.
 
 ## Compose a legible, attributable position
 

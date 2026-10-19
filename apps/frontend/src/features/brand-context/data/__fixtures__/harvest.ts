@@ -17,6 +17,16 @@
  */
 import kitDetail from "./brand-kit.harvested.json";
 import assetRecords from "./brand-kit-assets.harvested.json";
+import measuredKitDetail from "./brand-kit.measured.json";
 
 export const HARVESTED_BRAND_KIT: unknown = kitDetail;
 export const HARVESTED_ASSET_RECORDS: Record<string, unknown> = assetRecords;
+
+/**
+ * Wave 2 A9 (Task X6): a kit carrying everything the extraction measures — `measured_components`,
+ * the minted style and colour tokens, a minted section background — as `GET /brand-kits/{id}` serves
+ * it. Written by `subsystems/clue-design/scripts/build_site_kit_brand_fixtures.py` from the probe's
+ * committed harvest of `apps/api/tests/fixtures/capture/style_states.html` over Garner's kit, through
+ * the real minting code and the real detail DTO; never edited by hand.
+ */
+export const MEASURED_BRAND_KIT: unknown = measuredKitDetail;

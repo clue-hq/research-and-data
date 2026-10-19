@@ -1,26 +1,37 @@
 """Refuse a production env that still carries a lane default (first deployment spec §10).
 
-Usage: python3 deploy/check_prod_env.py {platform-api|design-api|worker|page-origin} <env-file>
+Usage: python3 deploy/check_prod_env.py <role> <env-file>
+         role: platform-api | design-api | worker | page-origin | frontend
+       python3 deploy/check_prod_env.py site-editor <site-editor-env> <frontend-env> \
+           <platform-api-env>
+
+The site editor is always checked against the app it serves and the published pages beside it: the
+app and the editor must name the same editor domain and app origin, or every site loads forever
+(review finding S7-2); and the editor's domain must share a registrable domain with neither the app
+(S2b-9) nor the published pages (K3-8).
 
 Standard library only — the worker VM runs it with its system python3 before every deploy.
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
-ROLES = ("platform-api", "design-api", "worker", "page-origin")
+ROLES = ("platform-api", "design-api", "worker", "page-origin", "frontend", "site-editor")
 #: The roles that run application code; page-origin only serves published pages.
 APP_ROLES = ("platform-api", "design-api", "worker")
 
 #: name -> the only acceptable production value, for every role.
 EXACT = {
     "CLUE_STORAGE_BACKEND": "s3",
-    "CLUE_PAGES_SYSTEM_SUFFIX": "pages.cluehq.ai",
     "CLUE_PAGES_PUBLIC_SCHEME": "https",
     "CLUE_PAGES_TRUST_HOST_HEADER": "false",
 }
+#: Where published pages lived before they moved to their own registrable domain (Wave 2
+#: Contract 9). A production suffix is this one, or a hostname off cluehq.ai.
+LEGACY_PAGES_SUFFIX = "pages.cluehq.ai"
 #: ... and for the application roles. CLUE_AUTH_ENVIRONMENT=production is also what makes a process
 #: refuse the two development lenses at startup, which is why the VM workers need it too.
 APP_EXACT = {
@@ -40,8 +51,16 @@ REQUIRED = (
     "CLUE_STORAGE_S3_REGION",
     "CLUE_STORAGE_S3_ACCESS_KEY_ID",
     "CLUE_STORAGE_S3_SECRET_ACCESS_KEY",
+    "CLUE_PAGES_SYSTEM_SUFFIX",
 )
 APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY", "CLUE_METRICS_OTLP_ENDPOINT")
+#: ... and for the design API alone. Wave 2 Contract 4: without it every editor section load
+#: answers 503 site_section_links.unconfigured.
+DESIGN_API_REQUIRED = ("CLUE_SITE_SECTION_LINK_SECRET",)
+#: Review finding S7-4: a literal section-link secret shorter than this is a placeholder, not a
+#: secret. (A Railway ${{shared.…}} reference cannot be seen from a file; the design API itself
+#: refuses to start in production without a secret this long — lumen_api.site_section_links.)
+SECTION_LINK_SECRET_MIN = 32
 #: Sumble switches that make a service refuse to start without CLUE_SUMBLE_API_KEY, and whether
 #: CLUE_PRODUCT_PATH=integration_pilot turns them on when unset (clue_config.settings overlay).
 SUMBLE_SWITCHES = {
@@ -57,6 +76,12 @@ IMAGE_OWNED = {
     "CLUE_ARV2_RAW_ROOT": "podcast downloads, writable by uid 1000",
     "LUMEN_CORE_HELPER": "the design engine helper binary",
     "LUMEN_FONT_LIBRARY_MANIFEST_PATH": "the font library manifest",
+    # Review finding S7-1: .env.example's 1 (right on a Mac) breaks every site render in a
+    # container.
+    "LUMEN_SITE_RENDER_CHROMIUM_SANDBOX": (
+        "0: the containers cannot give the site renderer's Chromium its own sandbox; see "
+        "docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md"
+    ),
 }
 #: Telemetry labels that must say production when present (the lane writes its own name there).
 PRODUCTION_LABELS = ("CLUE_SENTRY_ENVIRONMENT", "CLUE_LANGFUSE_ENVIRONMENT")
@@ -67,6 +92,7 @@ NOT_LOCAL = (
     "CLUE_APP_ORIGIN",
     "CLUE_DESIGN_API_BASE_URL",
     "LUMEN_API_ORIGIN",
+    "CLUE_PAGES_SYSTEM_SUFFIX",
 )
 
 
@@ -90,18 +116,50 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     """Every way ``env`` falls short of production for ``role``; empty means it is fine."""
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}; expected one of {ROLES}")
+    # The two Node services carry none of the backend's settings: they have their own checks.
+    if role == "frontend":
+        return _frontend_problems(env)
+    if role == "site-editor":
+        return _site_editor_problems(env)
     app = role in APP_ROLES
     found: list[str] = []
     for name, wanted in {**EXACT, **(APP_EXACT if app else {})}.items():
         if env.get(name, "") != wanted:
             found.append(f"{name} must be {wanted!r} in production (is {env.get(name)!r})")
-    required = (*REQUIRED, *(APP_REQUIRED if app else ("CLUE_PAGES_EDGE_SECRET",)))
+    required = (
+        *REQUIRED,
+        *(APP_REQUIRED if app else ("CLUE_PAGES_EDGE_SECRET",)),
+        *(DESIGN_API_REQUIRED if role == "design-api" else ()),
+    )
     for name in required:
         if not env.get(name):
             found.append(f"{name} must be set")
+    secret = env.get("CLUE_SITE_SECTION_LINK_SECRET", "")
+    literal = secret and not secret.startswith("${{")
+    if role == "design-api" and literal and len(secret) < SECTION_LINK_SECRET_MIN:
+        found.append(
+            f"CLUE_SITE_SECTION_LINK_SECRET must be at least {SECTION_LINK_SECRET_MIN} "
+            "characters (a placeholder is not a secret; e.g. `openssl rand -hex 32`)"
+        )
     for name in NOT_LOCAL:
         if _local(env.get(name, "")):
             found.append(f"{name} points at localhost")
+    suffix = env.get("CLUE_PAGES_SYSTEM_SUFFIX", "").strip().lower()
+    if suffix and suffix != LEGACY_PAGES_SUFFIX:
+        if suffix == "cluehq.ai" or suffix.endswith(".cluehq.ai"):
+            found.append(
+                "CLUE_PAGES_SYSTEM_SUFFIX must be pages.cluehq.ai or a hostname on the published "
+                f"pages' own domain, never another cluehq.ai name (is {suffix!r})"
+            )
+        legacy = env.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES")
+        if legacy is not None and LEGACY_PAGES_SUFFIX not in [
+            part.strip().lower() for part in legacy.split(",")
+        ]:
+            found.append(
+                "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES must keep pages.cluehq.ai once published pages "
+                "move to their own domain (the custom-domain reservation depends on it)"
+            )
+    found.extend(_pages_zone_problems(env))
     for name, value in env.items():
         # ${{…}} is a Railway reference and is resolved; a bare ${…} is a shell expansion that
         # neither Railway nor docker's env_file performs — the process would get the literal text.
@@ -124,6 +182,14 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         for name in PRODUCTION_LABELS:
             if name in env and env[name] != "production":
                 found.append(f"{name} must be 'production' (is {env[name]!r})")
+        # Langfuse is on unless switched off, and an unset label is NOT production: the code
+        # default is Langfuse's `default`, where every development lane's traces land.
+        langfuse_on = env.get("CLUE_LANGFUSE_ENABLED", "true").lower() in ("1", "true", "yes")
+        if langfuse_on and "CLUE_LANGFUSE_ENVIRONMENT" not in env:
+            found.append(
+                "CLUE_LANGFUSE_ENVIRONMENT must be set to 'production' (unset, traces are "
+                "filed under the development environment 'default')"
+            )
         if not env.get("CLUE_SUMBLE_API_KEY"):
             pilot = env.get("CLUE_PRODUCT_PATH") == "integration_pilot"
             for name, pilot_default in SUMBLE_SWITCHES.items():
@@ -143,6 +209,140 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     if role == "worker":
         found.extend(_worker_problems(env))
     return found
+
+
+#: What the site editor service must never carry: it serves agent-written code on its own domain
+#: and holds no login, no secret and no database access (apps/frontend/docs/railway-deployment.md).
+_EDITOR_FORBIDDEN = re.compile(
+    r"(SECRET|API_KEY|PASSWORD|TOKEN|DATABASE_URL|REDIS_URL|CLERK)", re.IGNORECASE
+)
+_DOMAIN = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def _editor_suffix_problems(env: dict[str, str]) -> list[str]:
+    suffix = env.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    if not suffix:
+        return [
+            "CLUE_SITE_EDITOR_SUFFIX must be set (the site editor's domain, e.g. "
+            "edit.deeppresence.ai)"
+        ]
+    if _local(suffix) or "localhost" in suffix or not _DOMAIN.match(suffix.lower()):
+        return [
+            "CLUE_SITE_EDITOR_SUFFIX must be a bare domain name — no scheme, port or path, never "
+            f"localhost (is {suffix!r})"
+        ]
+    return []
+
+
+#: Second-level labels that, under a two-letter country code, form a public suffix (co.uk, com.au).
+#: A conservative stand-in for the Public Suffix List, mirrored in site-kit's editor-origin.ts.
+_TWO_LEVEL_SECOND = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ltd", "plc"})
+
+
+def _registrable(host: str) -> str:
+    labels = [label for label in host.strip().lower().split(":")[0].split(".") if label]
+    two_level = len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _TWO_LEVEL_SECOND
+    return ".".join(labels[-3:] if two_level else labels[-2:])
+
+
+def _pages_zone_problems(env: dict[str, str]) -> list[str]:
+    """Review finding S7-3: the pages edge Worker reads "our zone" as a suffix's last two labels
+    (infra/cloudflare/pages-edge/routing.js `apexOf`). Under a two-label public suffix (co.uk,
+    com.au) that is the public suffix itself, so every customer domain under it would be taken
+    for one of our own records and passed through unserved. Every pages suffix — current and
+    legacy — must sit directly under a one-label suffix."""
+    named = [("CLUE_PAGES_SYSTEM_SUFFIX", env.get("CLUE_PAGES_SYSTEM_SUFFIX", ""))]
+    named += [
+        ("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", part)
+        for part in env.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", "").split(",")
+    ]
+    found: list[str] = []
+    for name, raw in named:
+        suffix = raw.strip().lower().strip(".")
+        registrable = _registrable(suffix) if suffix else ""
+        if registrable.count(".") < 2:
+            continue
+        zone = ".".join(registrable.split(".")[-2:])
+        found.append(
+            f"{name} {suffix!r} sits under the two-label public suffix {zone!r}: the pages edge "
+            "Worker reads the zone as the domain's last two labels, so every customer domain "
+            f"under .{zone} would pass through unserved; choose a domain directly under a "
+            "one-label suffix such as .com"
+        )
+    return found
+
+
+def _app_origin_problems(env: dict[str, str]) -> list[str]:
+    origin = env.get("CLUE_APP_ORIGIN", "").strip()
+    if not re.match(r"^https://[a-z0-9.-]+$", origin) or _local(origin):
+        return [f"CLUE_APP_ORIGIN must be the app's https origin, with no path (is {origin!r})"]
+    return []
+
+
+def _not_the_apps_domain(env: dict[str, str]) -> list[str]:
+    """Review finding S2b-9: agent-written code runs on the editor's domain; on the app's
+    registrable domain it could set the app's cookies, undoing the separation it exists for."""
+    suffix = env.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    app_host = env.get("CLUE_APP_ORIGIN", "").strip().removeprefix("https://")
+    if suffix and app_host and _registrable(suffix) == _registrable(app_host):
+        return [
+            f"CLUE_SITE_EDITOR_SUFFIX ({suffix!r}) must not be on the app's own domain "
+            f"({app_host!r}): agent-written code runs there"
+        ]
+    return []
+
+
+def _frontend_problems(env: dict[str, str]) -> list[str]:
+    """The app (review finding S7-2): without the editor's domain, every site shows 'not
+    configured'."""
+    return [*_editor_suffix_problems(env), *_app_origin_problems(env), *_not_the_apps_domain(env)]
+
+
+def _site_editor_problems(env: dict[str, str]) -> list[str]:
+    found = [*_editor_suffix_problems(env), *_app_origin_problems(env), *_not_the_apps_domain(env)]
+    design_api = env.get("LUMEN_API_BASE_URL", "")
+    if not design_api or _local(design_api):
+        found.append(
+            "LUMEN_API_BASE_URL must be the design API's private address "
+            "(http://design-api.railway.internal:8010)"
+        )
+    for name in sorted(env):
+        if _EDITOR_FORBIDDEN.search(name):
+            found.append(
+                f"{name} must not be set: the site editor serves agent-written code and holds no "
+                "login, secret or database access"
+            )
+    return found
+
+
+def editor_pair_problems(frontend: dict[str, str], editor: dict[str, str]) -> list[str]:
+    """The app and the editor service it frames must agree, or the frame never answers: the app
+    mints addresses on its suffix, and the editor only lets its configured app origin frame it."""
+    found: list[str] = []
+    for name in ("CLUE_SITE_EDITOR_SUFFIX", "CLUE_APP_ORIGIN"):
+        if frontend.get(name, "").strip().lower() != editor.get(name, "").strip().lower():
+            found.append(
+                f"{name} differs between the frontend ({frontend.get(name)!r}) and the site "
+                f"editor ({editor.get(name)!r}); they must be the same"
+            )
+    return found
+
+
+def editor_domain_problems(editor: dict[str, str], platform: dict[str, str]) -> list[str]:
+    """Review finding K3-8: published pages on the editor's registrable domain — now or as an old
+    domain kept after the move — would make the edge Worker forward editor hosts to the page origin
+    (every workspace's editor down), and put published pages where agent code sets cookies."""
+    suffix = editor.get("CLUE_SITE_EDITOR_SUFFIX", "").strip()
+    if not suffix:
+        return []
+    pages = [platform.get("CLUE_PAGES_SYSTEM_SUFFIX", "")]
+    pages += platform.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES", "").split(",")
+    return [
+        f"the published pages' domain {page.strip()!r} must not be on the site editor's domain "
+        f"({suffix!r}): pick a different registrable domain for one of them"
+        for page in pages
+        if page.strip() and _registrable(page) == _registrable(suffix)
+    ]
 
 
 def _platform_api_problems(env: dict[str, str]) -> list[str]:
@@ -197,11 +397,15 @@ def _worker_problems(env: dict[str, str]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    role = argv[1] if len(argv) > 1 else ""
+    if len(argv) != (5 if role == "site-editor" else 3):
         sys.stderr.write(f"{__doc__}\n")
         return 2
-    role, path = argv[1], Path(argv[2])
-    found = problems(parse(path.read_text(encoding="utf-8")), role)
+    env = parse(Path(argv[2]).read_text(encoding="utf-8"))
+    found = problems(env, role)
+    if role == "site-editor":
+        found += editor_pair_problems(parse(Path(argv[3]).read_text(encoding="utf-8")), env)
+        found += editor_domain_problems(env, parse(Path(argv[4]).read_text(encoding="utf-8")))
     for problem in found:
         sys.stdout.write(f"PROBLEM: {problem}\n")
     sys.stdout.write("OK\n" if not found else f"{len(found)} problem(s)\n")

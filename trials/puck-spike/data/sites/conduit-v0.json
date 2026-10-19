@@ -1,0 +1,12 @@
+{
+  "brand": "conduit",
+  "pages": {
+    "/": {
+      "root": { "props": {} },
+      "content": [
+        { "type": "ClonedSection", "props": { "id": "hero", "fragmentId": "frag_459fcb8c5790a40a", "slots": {}, "replacements": [] } },
+        { "type": "ClonedSection", "props": { "id": "answer", "fragmentId": "frag_515a5d57be6c0aff", "slots": {}, "replacements": [] } }
+      ]
+    }
+  }
+}

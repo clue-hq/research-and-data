@@ -1,7 +1,7 @@
 """The design fleet work handler (design-integration Part II, slice D5 Rounds B + C).
 
 The same handler implementation serves two disjoint execution roles. Primary and embedded
-workers claim only agent turns (scene or web); the dedicated ingestion coordinator is built
+workers claim only agent turns (scene, web or site); the dedicated ingestion coordinator is built
 with ``ingestion_only=True`` and claims only brand-kit ingestions. Required claim-time
 capabilities enforce this boundary in SQL. Per-image analysis has its own handler and pool.
 
@@ -40,13 +40,23 @@ Rust engine and to node. It therefore runs under ``asyncio.to_thread`` so the wo
 coroutine keeps beating; a blocked event loop would be a self-inflicted lease loss
 (``clue_fleet.work_worker`` renews on the loop).
 
-Cancellation is COOPERATIVE ONLY. Python cannot interrupt a thread, so on ``lease_lost`` /
-``stop_requested`` the handler stops waiting and returns — it does not, and cannot, stop the
-thread. The abandoned thread may finish minutes later and try to write a terminal result. That is
-why every durable write this handler makes carries ``expected_generation``: the design row's
-generation fence (``clue_design.runs``) refuses a stale writer's terminal write and raises
+Cancellation is COOPERATIVE ONLY. Python cannot interrupt a thread, so on ``lease_lost`` the
+handler stops waiting and returns — it does not, and cannot, stop the thread. The abandoned thread
+may finish minutes later and try to write a terminal result. That is why every durable write this
+handler makes carries ``expected_generation``: the design row's generation fence
+(``clue_design.runs``) refuses a stale writer's terminal write and raises
 ``DesignRunFencedError``, which is logged loudly and dropped. The zombie burns CPU until it
 finishes; it cannot corrupt the run.
+
+DRAIN ON DEPLOY (site-turn durability, 2026-10-16)
+--------------------------------------------------
+A worker being shut down no longer abandons a running TURN: ``stop_requested`` is not raced for
+turns, so the turn finishes and saves. Once the worker's drain bound passes it calls
+:meth:`DesignJobWorkHandler.request_drain`. A site turn then stops at its next step boundary
+(:mod:`lumen_agent.drain`; its working copy and checkpoint are saved) and is handed back to the
+queue as ``drained``: the run is not failed, and the next worker continues it. A scene or web turn
+cannot stop at a step, so at the bound it is abandoned exactly as on a lost lease. An ingestion
+job keeps today's behaviour: it is abandoned and handed back as soon as the worker stops.
 """
 
 from __future__ import annotations
@@ -133,6 +143,8 @@ class DesignTurnHost:
 
     agent_turn_runner: Any = None
     web_turn_runner: Any = None
+    #: Puck site turn test seam (Lane B): replaces the site runtime; see main.run_site_agent_turn.
+    site_turn_runner: Any = None
     core: Any = None
     compiler_node_bin: str = "node"
     compiler_worker: Any = None
@@ -193,6 +205,13 @@ class DesignJobWorkHandler:
         # takes none (it is a pipeline, not a graph).
         self._turn_callbacks_factory = turn_callbacks_factory
         self._ingestion_only = ingestion_only
+        # Drain on deploy. ``request_drain`` sets the reason and the event; the site turns this
+        # handler runs register in the scope (built with the first turn: the agent runtime is an
+        # optional, heavy import in this process), and the event lets the turns that cannot stop
+        # at a step be abandoned instead.
+        self._drain_reason: Optional[str] = None
+        self._drain_requested = asyncio.Event()
+        self._drain_scope: Any = None
         # Every drained job is one named Langfuse trace (2026-10-03 agent-scoped tracing spec,
         # R7). The platform's inline leg lane turns this off: its turns already run inside
         # ``design-leg.turn``, and a second trace name would rename the leg's trace.
@@ -210,11 +229,34 @@ class DesignJobWorkHandler:
                 field="kind",
                 required=True,
                 supported=frozenset(
-                    {"ingestion"} if self._ingestion_only else {"agent_turn", "web_turn"}
+                    {"ingestion"} if self._ingestion_only else {"agent_turn", "web_turn", "site_turn"}
                 ),
             ),
             TaskCapability(field=_INGESTION_KIND_FIELD, supported=runnable_ingestion_kinds()),
         )
+
+    def request_drain(self, reason: str) -> None:
+        """The worker's drain bound passed (``clue_fleet.DrainAware``): every site turn this
+        handler runs stops at its next step boundary and is handed back; every other turn is
+        abandoned and handed back. Called on the worker's event loop."""
+        logger.warning("design_job.drain_requested", reason=reason)
+        self._drain_reason = reason
+        self._drain_requested.set()
+        if self._drain_scope is not None:
+            self._drain_scope.request_drain(reason)
+
+    def _turn_drain(self) -> tuple[Any, Any]:
+        """``(the scope a turn runs in, TurnDrained)``; ``(None, None)`` without the agent
+        runtime, whose absence the executor reports as an honest failed turn."""
+        try:
+            from lumen_agent.drain import DrainScope, TurnDrained
+        except ImportError:
+            return None, None
+        if self._drain_scope is None:
+            self._drain_scope = DrainScope()
+            if self._drain_reason is not None:
+                self._drain_scope.request_drain(self._drain_reason)
+        return self._drain_scope, TurnDrained
 
     async def handle(self, context: WorkContext) -> WorkResult:
         """Execute one design job, and NEVER raise past this point (R3-B).
@@ -345,10 +387,28 @@ class DesignJobWorkHandler:
             **subject,
         )
 
-        body = asyncio.create_task(
-            asyncio.to_thread(self._execute, envelope, generation, host)
-        )
-        fence = asyncio.create_task(_first_of(context.lease_lost, context.stop_requested))
+        # What ends the wait before the body does. A lost lease always. A stopping worker only for
+        # an ingestion job: a turn keeps running (drain on deploy). At the drain bound, a turn that
+        # cannot stop at a step boundary (scene, web) is abandoned; a site turn drains itself.
+        scope, turn_drained = (None, None)
+        if isinstance(envelope, DesignIngestionEnvelope):
+            reasons = {"lease_lost": context.lease_lost, "stop_requested": context.stop_requested}
+        elif envelope.kind == DesignRunKind.SITE_TURN.value:
+            reasons = {"lease_lost": context.lease_lost}
+            scope, turn_drained = self._turn_drain()
+        else:
+            reasons = {"lease_lost": context.lease_lost, "drain_requested": self._drain_requested}
+        selected: Any = contextlib.nullcontext()
+        if scope is not None:
+            from lumen_agent.drain import drain_scope
+
+            selected = drain_scope(scope)
+        # The selected scope rides into the turn's thread (``to_thread`` copies the context).
+        with selected:
+            body = asyncio.create_task(
+                asyncio.to_thread(self._execute, envelope, generation, host, context.worker_id)
+            )
+        fence = asyncio.create_task(_first_of(*reasons.values()))
         try:
             done, _ = await asyncio.wait({body, fence}, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -359,23 +419,33 @@ class DesignJobWorkHandler:
         if body not in done:
             # Cooperative stop. The thread is NOT cancelled (Python cannot); it is abandoned, and
             # the generation fence on its durable writes is what protects the takeover's work.
-            lost = context.lease_lost.is_set()
+            reason = next(name for name, event in reasons.items() if event.is_set())
             logger.warning(
                 "design_job.abandoned",
                 work_id=str(context.work_id),
                 worker_id=context.worker_id,
                 lease_generation=generation,
-                reason="lease_lost" if lost else "stop_requested",
+                reason=reason,
                 residual="the synchronous job thread keeps running until it finishes",
                 **subject,
             )
-            return WorkResult(
-                outcome="lease_lost" if lost else "stopped",
-                references=_refs(context, subject),
-                requeue=True,
-            )
+            outcome = {"lease_lost": "lease_lost", "stop_requested": "stopped"}.get(reason, "drained")
+            return WorkResult(outcome=outcome, references=_refs(context, subject), requeue=True)
 
         error = body.exception()
+        if turn_drained is not None and isinstance(error, turn_drained):
+            # The worker is shutting down and the site turn stopped at a step boundary: its working
+            # copy and checkpoint are saved. Not a failure: nothing is terminalized, and the task
+            # goes back to the queue for the worker that continues it.
+            logger.info(
+                "design_job.drained",
+                work_id=str(context.work_id),
+                worker_id=context.worker_id,
+                lease_generation=generation,
+                reason=error.reason,
+                **subject,
+            )
+            return WorkResult(outcome="drained", references=_refs(context, subject), requeue=True)
         if error is not None:
             # IN-HANDLER CONTAINMENT (D5 Round C). A raise from here — a store fault, not a
             # failed turn — used to mark only the FLEET task failed and leave the design row
@@ -409,7 +479,7 @@ class DesignJobWorkHandler:
         )
         return WorkResult(outcome=status, references=_refs(context, subject))
 
-    def _execute(self, envelope: Any, generation: int, host: Any) -> str:
+    def _execute(self, envelope: Any, generation: int, host: Any, worker_id: Optional[str] = None) -> str:
         """Dispatch one claimed envelope to its executor, on the worker thread."""
         from .main import execute_ingestion_job
 
@@ -429,6 +499,7 @@ class DesignJobWorkHandler:
             self._checkpointer_factory,
             spend_drain=self._spend_drain,
             turn_callbacks_factory=self._turn_callbacks,
+            worker_id=worker_id,
         )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
@@ -463,6 +534,15 @@ _TRACE_SHAPES: Dict[str, tuple[str, Any, tuple[str, ...], Optional[str], tuple[s
     )
     for kind in ("agent_turn", "web_turn")
 }
+#: A site turn opens a fresh thread per request (founder ruling 2026-10-11), so its Langfuse session
+#: is its DOCUMENT, which groups a site's requests the way one continued thread groups a web page's.
+_TRACE_SHAPES["site_turn"] = (
+    "design.turn",
+    "agent",
+    ("run_id", "document_id", "project_id"),
+    "document_id",
+    ("kind",),
+)
 _TRACE_SHAPES["ingestion"] = (
     "design.ingestion",
     "chain",
@@ -621,6 +701,23 @@ def _terminalize_failed(envelope: Any, generation: int, error: BaseException) ->
     return True
 
 
+def executor_for_kind(kind: str) -> Any:
+    """The executor for one design turn kind. An unknown kind is refused, never run as web: the old
+    ``else execute_web_turn_job`` sent every non-scene envelope to the web executor."""
+
+    from .main import execute_agent_turn_job, execute_site_turn_job, execute_web_turn_job
+
+    executors = {
+        DesignRunKind.AGENT_TURN.value: execute_agent_turn_job,
+        DesignRunKind.WEB_TURN.value: execute_web_turn_job,
+        DesignRunKind.SITE_TURN.value: execute_site_turn_job,
+    }
+    try:
+        return executors[kind]
+    except KeyError:
+        raise DesignTurnJobError(f"no executor for design turn kind {kind!r}") from None
+
+
 def _execute_turn(
     envelope: DesignTurnEnvelope,
     store: HybridRepository,
@@ -630,17 +727,26 @@ def _execute_turn(
     *,
     spend_drain: Any = None,
     turn_callbacks_factory: Any = None,
+    worker_id: Optional[str] = None,
 ) -> str:
     """Run ONE design turn to a terminal result. Synchronous by nature; called via to_thread.
 
-    Returns the terminal run status (``succeeded`` / ``failed``), or ``fenced`` when the terminal
-    write was refused because a takeover worker owns the run.
+    Returns the terminal run status (``succeeded`` / ``failed``), or ``fenced`` when a takeover
+    worker owns the run: either the terminal write was refused, or the executor itself reported
+    ``fenced`` (a site turn whose save found the attempt no longer holding the run — site-turn
+    durability, 2026-10-16). In the second case no terminal write is even attempted: when only the
+    LEASE has moved and the new holder has not claimed the run yet, the row still carries this
+    attempt's generation and the write would land, ending the run under the new holder's feet.
 
-    The lazy ``lumen_api.main`` import breaks a genuine cycle: ``main`` imports THIS module to
-    build the embedded worker, and the turn executors live in ``main`` because every by-value
-    resolver they need (brand kit, fonts, references, asset library, engine cache) lives there.
+    ``worker_id`` is the attempt's lease holder, handed to the executor with ``generation`` so the
+    site turn's save can check the work lease too.
+
+    The lazy ``lumen_api.main`` import (in :func:`executor_for_kind`) breaks a genuine cycle:
+    ``main`` imports THIS module to build the embedded worker, and the turn executors live in
+    ``main`` because every by-value resolver they need (brand kit, fonts, references, asset
+    library, engine cache) lives there.
     """
-    from .main import execute_agent_turn_job, execute_web_turn_job
+    executor = executor_for_kind(envelope.kind)
 
     def sink(event_type: str, data: JsonObject) -> None:
         try:
@@ -675,11 +781,6 @@ def _execute_turn(
         # twice. Probed HERE, under the saver the turn will actually run on, and BEFORE the turn
         # touches it (the first invoke writes state of its own).
         session_continued = _thread_has_state(checkpointer, envelope.checkpoint_thread_id)
-        executor = (
-            execute_agent_turn_job
-            if envelope.kind == DesignRunKind.AGENT_TURN.value
-            else execute_web_turn_job
-        )
         # Lane 3 slice 5: ONE call per turn. The factory mints this turn's Langfuse handler and
         # the registry it fills; the executor adds the receipt collector to them.
         callbacks = turn_callbacks_factory() if turn_callbacks_factory is not None else None
@@ -692,11 +793,21 @@ def _execute_turn(
             # D7: the turn's governed tool invocations reach the same stream, fenced by the same
             # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
             lease_generation=generation,
+            lease_worker_id=worker_id,
             spend_drain=spend_drain,
             callbacks=callbacks,
             session_continued=session_continued,
         )
 
+    if status == "fenced":
+        logger.warning(
+            "design_job.save_fenced",
+            run_id=envelope.run_id,
+            worker_id=worker_id,
+            lease_generation=generation,
+            detail="this attempt no longer holds the run; it saved nothing and writes no result",
+        )
+        return "fenced"
     try:
         store.complete_run(
             envelope.run_id,

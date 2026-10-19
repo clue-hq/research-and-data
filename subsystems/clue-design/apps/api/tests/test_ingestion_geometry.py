@@ -21,8 +21,12 @@ from lumen_api.core import CoreClient
 from lumen_ingestion import BrandEvidence, normalize_evidence
 from lumen_ingestion.capture import build_evidence
 from lumen_ingestion.capture import CaptureOutcome
-from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry
+from lumen_ingestion.capture.geometry import GEOMETRY_JS, normalize_transform, parse_geometry
 from lumen_ingestion.capture.snapshot import SiteSnapshot, load_snapshot
+from lumen_ingestion.evidence import EvidencePointer, SectionBackground
+from lumen_ingestion.normalizer import _band_ink
+from lumen_ingestion.normalizer.bands import BandSurface, build_band_surfaces
+from lumen_ingestion.normalizer.emit import KitBuilder
 from lumen_ingestion.normalizer.geometry import MEASURED_CONFIDENCE, cluster_numbers
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ingestion"
@@ -205,9 +209,7 @@ def test_button_shape_evidence_survives_for_the_brief_agent() -> None:
     harvest = parse_geometry(_harvest("stripe_home"), page_url="https://stripe.com/")
     buttons = [shape for shape in harvest.surfaces if shape.surface == "button"]
     assert len(buttons) >= 2, "several visual button variants exist on the page"
-    assert {shape.variant for shape in buttons} == {
-        shape.variant for shape in buttons
-    }, "variant keys are unique per surface"
+    assert len({shape.variant for shape in buttons}) == len(buttons), "variant keys are unique per surface"
     for shape in buttons:
         assert shape.fill in ("solid", "outline", "ghost")
         assert len(shape.radius_px) == 4
@@ -345,175 +347,111 @@ def test_partial_measurement_leaves_the_rest_derived() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Emission: recurring band surfaces (surface.band.*)
+# Emission: section background surfaces (surface.band.<hex>), Wave 2 A9
 # --------------------------------------------------------------------------- #
 
 
 def _bands(kit: dict) -> dict[str, dict]:
-    return {
-        path: entry
-        for path, entry in kit["tokens"]["colors"].items()
-        if path.startswith("surface.band")
+    return {path: entry for path, entry in kit["tokens"]["colors"].items() if path.startswith("surface.band")}
+
+
+def _band_values(kit: dict) -> dict[str, str]:
+    return {path: entry["value"]["default"]["value"] for path, entry in _bands(kit).items()}
+
+
+def test_every_flat_band_colour_no_surface_token_holds_exactly_is_minted_by_its_value() -> None:
+    """Stripe: white (only `text.inverse` holds #FFFFFF, an ink), navy, and the 380px footer tint."""
+    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
+    assert _band_values(kit) == {
+        "surface.band.ffffff": "#FFFFFF", "surface.band.0d1738": "#0D1738", "surface.band.f8fafd": "#F8FAFD",
     }
+    navy = kit["tokens"]["colors"]["surface.band.0d1738"]
+    assert navy["role"] == "surface" and navy["value"]["modes"] == {}
+    assert navy["provenance"]["source"].startswith("website:https://stripe.com")
+    assert "section background (sections 3, 5)" in navy["provenance"]["source"]
+    assert navy["provenance"]["confidence"] == MEASURED_CONFIDENCE
+    assert navy["description"] == "section background (2 bands, 3318px)"
+    assert kit["tokens"]["colors"]["surface.band.f8fafd"]["description"] == "section background (1 band, 380px)"
 
 
-def test_a_recurring_measured_band_color_mints_a_surface_band_token() -> None:
-    """Stripe's navy runs under sections 3 and 5 — that is a brand surface.
-
-    Before this, the normalizer never read `evidence.geometry`, so the one color
-    the page actually *stands on* had no name and the brief agent could only
-    approximate it. The band sequence is measured, so the token is measured.
-    """
-    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
-    statement = kit["tokens"]["colors"]["surface.band.statement"]
-    assert statement["value"]["default"]["value"] == "#0D1738"
-    assert statement["role"] == "surface"
-    provenance = statement["provenance"]
-    assert provenance["source"].startswith("website:https://stripe.com")
-    assert "recurring band background" in provenance["source"]
-    assert provenance["confidence"] == MEASURED_CONFIDENCE
-    # Light-mode only: bands are measured on the light capture.
-    assert statement["value"]["modes"] == {}
-    assert "2 bands" in statement["description"]
+def test_a_band_an_existing_surface_token_holds_exactly_mints_nothing() -> None:
+    kit = _normalize(_synthetic([_section(0, "rgb(245, 245, 245)", 900), _section(1, "rgb(20, 40, 120)", 900)]))
+    assert set(_bands(kit)) == {"surface.band.142878"}, "#F5F5F5 is this kit's surface.page exactly"
 
 
-def test_the_five_white_bands_the_kit_already_names_mint_nothing() -> None:
-    """A band that IS an existing kit color is that token, not a second name."""
-    kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
-    bands = _bands(kit)
-    assert set(bands) == {"surface.band.statement"}
-    values = {entry["value"]["default"]["value"] for entry in bands.values()}
-    assert "#FFFFFF" not in values, "white is surface.page / text.inverse already"
-    # …and the one-off 380px footer tint is a footer tint, not a brand surface.
-    assert "#F8FAFD" not in values
-
-
-def test_a_flat_brand_mints_no_band_surface() -> None:
-    """Both of flat_brand's bands are colors the kit already carries.
-
-    White is `text.inverse`; the near-black #111111 is within merge distance of
-    the derived `surface.inverse` #121212. Two bands, zero new tokens — the
-    honest outcome, and the dedupe is the reason.
-    """
+def test_near_misses_are_minted_never_merged() -> None:
+    """flat_brand's #111111 is within merge distance of surface.inverse #121212 — and not equal."""
     kit = _normalize(_with_geometry("evidence_website_insight", _harvest("flat_brand")))
-    assert _bands(kit) == {}
+    assert set(_bands(kit)) == {"surface.band.ffffff", "surface.band.111111"}
 
 
-def test_gradient_and_image_bands_name_nothing() -> None:
-    """Their hex is not what the page shows, so it may not become a token."""
-    kit = _normalize(
-        _synthetic(
-            [
-                _section(0, "rgb(255, 255, 255)", 900),
-                _section(1, "rgb(200, 10, 10)", 900, gradient=True),
-                _section(2, "rgb(200, 10, 10)", 900, gradient=True),
-                _section(3, "rgb(200, 10, 10)", 900, image=True),
-            ]
-        )
-    )
-    assert _bands(kit) == {}
-
-    # The control: the SAME crimson, flat, is a brand surface.
-    flat = _normalize(
-        _synthetic(
-            [
-                _section(0, "rgb(255, 255, 255)", 900),
-                _section(1, "rgb(200, 10, 10)", 900),
-                _section(2, "rgb(200, 10, 10)", 900),
-            ]
-        )
-    )
-    assert flat["tokens"]["colors"]["surface.band.statement"]["value"]["default"][
-        "value"
-    ] == "#C80A0A"
-
-
-def test_a_translucent_band_names_nothing() -> None:
-    """The capture drops only FULLY transparent backgrounds.
-
-    So a band painted `rgba(20, 40, 120, 0.04)` — which a visitor sees as
-    barely-tinted white — arrives as the 8-digit `#1428780A`, and every reader
-    downstream (OKLab, luminance, the web theme) ignores that alpha byte. Left
-    unrefused it minted `surface.band.statement = #1428780A`: classified DARK,
-    with the alpha riding into the kit. Same dishonesty class as a gradient.
-    """
-    kit = _normalize(
-        _synthetic(
-            [
-                _section(0, "rgb(255, 255, 255)", 900),
-                _section(1, "rgba(20, 40, 120, 0.04)", 900),
-                _section(2, "rgba(20, 40, 120, 0.04)", 900),
-            ]
-        )
-    )
-    assert _bands(kit) == {}
-
-    # The control: the same navy, painted opaque, IS a brand surface.
-    opaque = _normalize(
-        _synthetic(
-            [
-                _section(0, "rgb(255, 255, 255)", 900),
-                _section(1, "rgb(20, 40, 120)", 900),
-                _section(2, "rgb(20, 40, 120)", 900),
-            ]
-        )
-    )
-    assert opaque["tokens"]["colors"]["surface.band.statement"]["value"]["default"][
-        "value"
-    ] == "#142878"
-
-
-def test_a_single_small_band_names_nothing_but_a_dominant_one_does() -> None:
-    quiet = _normalize(
-        _synthetic(
-            [_section(0, "rgb(255, 255, 255)", 5000), _section(1, "rgb(255, 140, 0)", 400)]
-        )
-    )
-    assert _bands(quiet) == {}, "7% of the scroll, seen once, is an accident"
-
-    dominant = _normalize(
-        _synthetic(
-            [_section(0, "rgb(255, 255, 255)", 5000), _section(1, "rgb(255, 140, 0)", 2000)]
-        )
-    )
-    statement = dominant["tokens"]["colors"]["surface.band.statement"]
-    assert statement["value"]["default"]["value"] == "#FF8C00"
-    assert "1 band," in statement["description"]
-
-
-def test_band_names_are_classified_by_luminance_and_suffixed_by_presence() -> None:
-    kit = _normalize(
-        _synthetic(
-            [
-                _section(0, "rgb(255, 255, 255)", 1000),
-                _section(1, "rgb(43, 11, 78)", 2000),
-                _section(2, "rgb(43, 11, 78)", 2000),
-                _section(3, "rgb(61, 42, 15)", 800),
-                _section(4, "rgb(61, 42, 15)", 800),
-                _section(5, "rgb(255, 233, 196)", 600),
-                _section(6, "rgb(255, 233, 196)", 600),
-            ]
-        )
-    )
-    bands = {path: entry["value"]["default"]["value"] for path, entry in _bands(kit).items()}
-    assert bands == {
-        "surface.band.statement": "#2B0B4E",    # darkest class, tallest first
-        "surface.band.statement-2": "#3D2A0F",
-        "surface.band.tint": "#FFE9C4",         # luminance ≥ 0.5 → a tint
+def test_band_names_do_not_move_when_the_band_order_does() -> None:
+    forward = _normalize(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900), _section(1, "rgb(1, 64, 54)", 700), _section(2, "rgb(255, 233, 196)", 600),
+    ]))
+    backward = _normalize(_synthetic([
+        _section(0, "rgb(255, 233, 196)", 600), _section(1, "rgb(1, 64, 54)", 700), _section(2, "rgb(255, 255, 255)", 900),
+    ]))
+    assert set(_bands(forward)) == set(_bands(backward)) == {
+        "surface.band.ffffff", "surface.band.014036", "surface.band.ffe9c4",
     }
+
+
+def test_gradient_image_and_translucent_bands_name_nothing() -> None:
+    kit = _normalize(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        _section(1, "rgb(200, 10, 10)", 900, gradient=True),
+        _section(2, "rgb(200, 10, 10)", 900, image=True),
+        _section(3, "rgba(20, 40, 120, 0.04)", 900),
+    ]))
+    assert set(_bands(kit)) == {"surface.band.ffffff"}
+    flat = _normalize(_synthetic([_section(0, "rgb(200, 10, 10)", 900)]))
+    assert _band_values(flat) == {"surface.band.c80a0a": "#C80A0A"}
+
+
+def test_a_band_with_measured_text_gets_it_as_its_contrast_pair() -> None:
+    kit = _normalize(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        {**_section(1, "rgb(1, 64, 54)", 700), "ink": "rgb(255, 255, 255)"},
+        {**_section(2, "rgb(40, 36, 30)", 600), "ink": "rgb(250, 245, 230)"},
+    ]))
+    pairs = kit["constraints"]["contrast_pairs"]
+    assert {"foreground": "text.inverse", "background": "surface.band.014036", "min_ratio": 4.5} in pairs
+    assert {"foreground": "text.band.28241e", "background": "surface.band.28241e", "min_ratio": 4.5} in pairs
+    assert kit["tokens"]["colors"]["text.band.28241e"]["value"]["default"]["value"] == "#FAF5E6"
+
+
+def test_a_translucent_token_holds_no_opaque_band_or_ink_colour() -> None:
+    """Band matches are exact, alpha included: `#F5F5F580` is not the colour of a flat `#F5F5F5` band."""
+    pointer = EvidencePointer(source="website", locator="https://synthetic.example/ :: section 0 (section)")
+    band = SectionBackground(index=0, background="#F5F5F5", height_px=900, pointer=pointer)
+    minted, skipped = build_band_surfaces([band], {"surface.page": "#F5F5F580"})
+    assert [surface.path for surface in minted] == ["surface.band.f5f5f5"] and skipped == 0
+    assert build_band_surfaces([band], {"surface.page": "#F5F5F5"}) == ([], 0)
+    assert build_band_surfaces([band], {"surface.page": "#F5F5F5FF"}) == ([], 0)
+    # …and the text on a band: a translucent token never holds the opaque ink measured there.
+    surface = BandSurface(
+        path="surface.band.28241e", hex="#28241E", description="section background (1 band, 600px)",
+        provenance="website:https://synthetic.example/ :: section background (sections 0)", ink_hex="#FAF5E6",
+    )
+
+    def builder_holding(value: str) -> KitBuilder:
+        builder = KitBuilder(_evidence("evidence_website_insight"), brand_kit_id="b", version=1, name="B", created_at=_CREATED_AT)
+        builder.colors["text.cream"] = {"value": {"default": {"kind": "hex", "value": value}, "modes": {}}}
+        return builder
+
+    assert _band_ink(builder_holding("#FAF5E680"), surface) == "text.band.28241e"
+    assert _band_ink(builder_holding("#FAF5E6"), surface) == "text.cream"
 
 
 def test_band_minting_is_deterministic() -> None:
     evidence = _with_geometry("evidence_website_insight", _harvest("stripe_home"))
-    first = _normalize(evidence)
-    second = _normalize(evidence)
-    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
-    assert list(_bands(first)) == list(_bands(second))
+    assert json.dumps(_normalize(evidence), sort_keys=True) == json.dumps(_normalize(evidence), sort_keys=True)
 
 
 def test_a_kit_carrying_band_surfaces_still_validates_through_the_engine() -> None:
     kit = _normalize(_with_geometry("evidence_website_insight", _harvest("stripe_home")))
-    assert "surface.band.statement" in kit["tokens"]["colors"]
+    assert "surface.band.0d1738" in kit["tokens"]["colors"]
     core = CoreClient()
     validated = core.validate_brand_kit(kit, product_ready=False)
     assert validated["ok"] is True
@@ -597,3 +535,100 @@ def test_colour_type_and_asset_extraction_are_byte_stable() -> None:
             golden["tokens"].pop(group)
         assert kit == golden, name
         assert produced.ingestion_report == expected["ingestion_report"], name
+
+
+# --------------------------------------------------------------------------- #
+# Transforms as evidence (Wave 2 A9 FX-C2 fix round 1)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_transform_leftover_is_no_transform() -> None:
+    """An entrance held one millisecond before its end reads a sub-pixel leftover; rounded, it is the
+    identity, and the identity is no transform."""
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 1.88911e-06)") == "none"
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 0.000334674)") == "none"
+    assert normalize_transform("matrix(1.0000003, 0, 0, 1.0000003, 0, 0)") == "none"
+    assert normalize_transform("matrix(1, -1e-07, 1e-07, 1, 0, 0)") == "none"
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 0)") == "none"
+    identity_3d = "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)"
+    assert normalize_transform(identity_3d) == "none"
+    assert normalize_transform("matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.001, 0, 0.004, 1)") == "none"
+
+
+def test_a_real_transform_is_kept_as_the_browser_writes_it() -> None:
+    for value in ("matrix(1, 0, 0, 1, 0, -2)", "matrix(0.98, 0, 0, 0.98, 0, 0)", "matrix(1, 0, 0, 1, 4, 0)",
+                  "matrix(1, 0, 0, 1, 0, 24)", "matrix(-1, 0, 0, -1, 0, 0)"):
+        assert normalize_transform(value) == value, value
+    # Precision beyond the rounding goes; no "-0" and no trailing zeros are written.
+    assert normalize_transform("matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)") == (
+        "matrix(0.7071, 0.7071, -0.7071, 0.7071, 0, 0)"
+    )
+    assert normalize_transform("matrix(1.02996, 0, 0, 1.02996, 0, 0)") == "matrix(1.03, 0, 0, 1.03, 0, 0)"
+    assert normalize_transform("matrix(0.5, -0.00001, 0, 0.5, 12.3456, -0.001)") == "matrix(0.5, 0, 0, 0.5, 12.35, 0)"
+    assert normalize_transform(
+        "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.00416667, 0, 4.0000001, -12.345678, 1)"
+    ) == "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.0042, 0, 4, -12.35, 1)"
+
+
+def test_anything_else_passes_through_unchanged() -> None:
+    for value in (None, "none", "", "translateY(4px)", "matrix(1, 0, 0, 1, 0)", "matrix(1, 0, 0, 1, 0, nan)",
+                  "matrix(a, b, c, d, e, f)", 3):
+        assert normalize_transform(value) == value, value
+
+
+
+def _normalized(evidence):
+    return normalize_evidence(evidence, brand_kit_id="brand_kit_geometry", version=1, name="Geometry", created_at=_CREATED_AT)
+
+
+def test_s6_1_a_band_text_colour_that_does_not_read_is_replaced_by_one_that_does() -> None:
+    result = _normalized(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        {**_section(1, "rgb(243, 240, 232)", 700), "ink": "rgb(245, 166, 35)"},   # orange on cream, 1.78:1
+        {**_section(2, "rgb(11, 37, 69)", 600), "ink": "rgb(34, 34, 34)"},        # dark grey on navy, 1.03:1
+    ]))
+    kit, diagnostics = result.brand_kit, result.diagnostics
+    colors, pairs = kit["tokens"]["colors"], kit["constraints"]["contrast_pairs"]
+    by_band = {p["background"]: p["foreground"] for p in pairs if p["background"].startswith("surface.band.")}
+    from lumen_ingestion.colorspace import contrast_ratio
+    for band, ink in by_band.items():
+        ratio = contrast_ratio(colors[ink]["value"]["default"]["value"], colors[band]["value"]["default"]["value"])
+        assert ratio >= 4.5, (band, ink, ratio)
+    assert [d["code"] for d in diagnostics if d["code"] == "LUMI0609"] == ["LUMI0609", "LUMI0609"]
+    assert "#F5A623" in next(d["message"] for d in diagnostics if d["code"] == "LUMI0609")
+    # The brand's own text colour beats a generic one whenever it reads (D4): the kit's text.primary
+    # reads on cream, so the cream band's pair names it and no text.band.f3f0e8 is minted.
+    assert contrast_ratio(colors["text.primary"]["value"]["default"]["value"], "#F3F0E8") >= 4.5
+    assert by_band["surface.band.f3f0e8"] == "text.primary"
+    assert "text.band.f3f0e8" not in colors
+
+
+def test_s6_1_a_band_text_colour_that_reads_is_kept_as_measured() -> None:
+    result = _normalized(_synthetic([
+        _section(0, "rgb(255, 255, 255)", 900),
+        {**_section(1, "rgb(40, 36, 30)", 600), "ink": "rgb(250, 245, 230)"},
+    ]))
+    assert result.brand_kit["tokens"]["colors"]["text.band.28241e"]["value"]["default"]["value"] == "#FAF5E6"
+    assert not [d for d in result.diagnostics if d["code"] == "LUMI0609"]
+
+
+def test_s6_1_readable_ink_prefers_the_measured_ink_then_the_kits_own_then_black_or_white() -> None:
+    from lumen_ingestion.colorspace import contrast_ratio
+    from lumen_ingestion.normalizer.bands import readable_ink
+
+    def band(hex_value: str, ink: str) -> BandSurface:
+        return BandSurface(path=f"surface.band.{hex_value[1:].lower()}", hex=hex_value,
+                           provenance="website:https://x.example/ :: section background (sections 1)",
+                           description="section background (1 band, 600px)", ink_hex=ink)
+
+    # (a) the measured ink reads: it is kept.
+    assert readable_ink(band("#28241E", "#FAF5E6"), ["#111111", "#FFFFFF"]) == ("#FAF5E6", True)
+    # (b) the measured ink fails; the kit's text.primary reads: it wins over black and white.
+    assert readable_ink(band("#F3F0E8", "#F5A623"), ["#1F2937", "#FFFFFF"]) == ("#1F2937", False)
+    # (c) the measured ink and both kit candidates fail: the better of black and white.
+    grey = band("#777777", "#7A7A7A")
+    ink, measured = readable_ink(grey, ["#6A6A6A", "#8A8A8A"])
+    best = max(("#0B0F14", "#FFFFFF"), key=lambda option: contrast_ratio(option, "#777777"))
+    assert (ink, measured) == (best, False)
+    if max(contrast_ratio("#0B0F14", "#777777"), contrast_ratio("#FFFFFF", "#777777")) >= 4.5:
+        assert contrast_ratio(ink, "#777777") >= 4.5

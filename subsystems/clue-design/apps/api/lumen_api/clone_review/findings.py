@@ -468,7 +468,7 @@ class CloneReviewCritique:
     broken: tuple[BrokenClone, ...]
     page_findings: tuple[PageFinding, ...]
     comparison: Mapping[str, Any] | None = None
-    #: Whether the numbers behind ``broken`` were taken from a page whose styling had SETTLED
+    #: Whether the numbers behind ``broken`` were taken after styling and images settled
     #: (ruling R19-1). ``False`` does not make the findings wrong — it makes them unfit to be
     #: written down: the caller reports them as advice and records no durable marker. See
     #: :func:`evidence_settled`.
@@ -487,7 +487,7 @@ class CloneReviewCritique:
 
 
 def evidence_settled(walk: BehaviouralWalk) -> bool:
-    """Were these numbers taken from a page that had finished styling itself? (Ruling R19-1.)
+    """Were these numbers taken after styling and image loading settled? (Ruling R19-1.)
 
     The gate walks the EDITOR render, whose utility CSS is compiled IN THE BROWSER by our
     vendored Tailwind JIT. Before that compile lands the page has no layout utilities at all: a
@@ -500,13 +500,17 @@ def evidence_settled(walk: BehaviouralWalk) -> bool:
     for 400ms. Every probe pass reports `styles_ready` as a tri-state, and only ``True`` from
     every pass that contributed measurements counts. ``False`` (not compiled) and ``None`` (the
     check could not run) both mean unsettled, so every way the signal can be wrong errs toward
-    writing nothing.
+    writing nothing. Lazy images must also have loaded and decoded under a bounded
+    scroll pass; an absent media observation is not evidence of readiness.
     """
     for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE):
         observation = walk.by_class(walk_class)
         if not observation.made or not observation.measurements:
             continue
         if observation.notes.get("styles_ready") is not True:
+            return False
+        media = observation.notes.get("media_readiness")
+        if not isinstance(media, Mapping) or media.get("settled") is not True:
             return False
     return True
 
@@ -527,6 +531,7 @@ def compose_critique(
     findings: list[PageFinding] = []
     findings.extend(console_findings(console.console if console.made else ()))
     findings.extend(absent_section_findings(desktop_measurements))
+    findings.extend(desktop_overflow_findings(desktop_measurements))
     findings.extend(reduced_motion_findings(walk))
     findings.extend(abstention_findings(walk))
     findings.extend(comparison_findings(comparison))
@@ -537,12 +542,16 @@ def compose_critique(
                 severity="warning",
                 message=(
                     f"the walk measured {len(broken)} cloned section(s) as broken, but the page's "
-                    "styling had not finished compiling when it looked — so NOTHING was recorded "
+                    "styling or images had not settled when it looked — so NOTHING was recorded "
                     "in the library. Treat these as advice: look at the captures, and re-run the "
                     "review before briefing a repair on the strength of them"
                 ),
                 detail={
                     "fragment_ids": [item.fragment_id for item in broken],
+                    "media_readiness": {
+                        walk_class: walk.by_class(walk_class).notes.get("media_readiness")
+                        for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE)
+                    },
                     "styles_ready": {
                         walk_class: walk.by_class(walk_class).notes.get("styles_ready")
                         for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE)
@@ -557,6 +566,32 @@ def compose_critique(
         page_findings=tuple(findings),
         comparison=comparison,
         settled=settled,
+    )
+
+
+def desktop_overflow_findings(measurements: Sequence[SectionMeasurement]) -> tuple[PageFinding, ...]:
+    """Surface excess desktop content width without minting a clone verdict.
+
+    A carousel may intentionally scroll. This measurement asks the reviewer to
+    inspect clipping and the page boundary; it does not label that intent broken.
+    Use the same rounding tolerance as the mobile measurement.
+    """
+    return tuple(
+        PageFinding(
+            code="review.desktop_overflow",
+            severity="warning",
+            message=(
+                f"desktop content in {item.fragment_id} exceeds its section width: "
+                f"{item.scroll_width_px:g}px inside {item.width_px:g}px. Inspect the current "
+                "desktop capture for clipped text or page overflow; intentional contained "
+                "horizontal scrolling may be valid. These measurements are advice only"
+            ),
+            detail={"fragment_id": item.fragment_id, "width_px": item.width_px,
+                    "scroll_width_px": item.scroll_width_px, "viewport": item.viewport},
+        )
+        for item in measurements
+        if item.present and item.measured and item.visible and item.width_px > 0
+        and item.scroll_width_px > item.width_px * MOBILE_OVERFLOW_TOLERANCE
     )
 
 

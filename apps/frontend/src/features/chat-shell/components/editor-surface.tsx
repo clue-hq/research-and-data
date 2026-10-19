@@ -1,20 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useArtifactRename } from "../hooks/use-artifact-rename";
 import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { siteReloadWanted } from "@/features/design-editor/hooks/document-agent-run.logic";
 import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document-agent-run";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
+import { useSiteEditingSession } from "@/features/site-editor/hooks/use-site-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
+import { chatShellKindForCard, isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
+import { SiteImageField } from "./site-image-field";
+import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
 
@@ -80,25 +85,48 @@ export function EditorSurface({
   // in as `enabled` — the disabled one touches no transport at all (audit
   // finding F3: before this, every ad load ran the web theme/document fetches
   // and swallowed their 409s).
+  // S2b-6: the open artifact's undo/redo keys act only while it is actually on screen.
+  const artifactOnScreen = controller.surface === "artifact" && controller.panelOpen;
   const session = useWebEditingSession({
     activeArtifactId: controller.activeArtifactId,
     documentIds,
     enabled: controller.artifactKind === "web",
+    onScreen: artifactOnScreen,
   });
   // The recorded follow-up, now built (2026-09-03): the lock on this route comes
   // from the DOCUMENT-scoped agent-busy read (`useDocumentAgentRun` polling
   // `GET /documents/{id}/agent-run`), which answers from the same predicate the
   // manual-write routes' 409 uses — ruling R1 of the standalone-artifact-lock
   // plan, so no thread-shaped source is invented for a route with no turn stream.
-  const sceneDocumentId =
-    controller.artifactKind === "ad" && controller.activeArtifactId
+  // The ad lane's document-scoped lock (R1), extended to sites (Wave 2 ruling): one read, keyed on
+  // whichever locked kind is open.
+  const lockedKind = controller.artifactKind === "ad" || controller.artifactKind === "site";
+  const lockDocumentId =
+    lockedKind && controller.activeArtifactId
       ? (documentIds?.[controller.activeArtifactId] ?? null)
       : null;
-  const agentRun = useDocumentAgentRun({
-    documentId: sceneDocumentId,
-    enabled: controller.artifactKind === "ad",
+  const agentRun = useDocumentAgentRun({ documentId: lockDocumentId, enabled: lockedKind });
+  const sceneLocked = controller.artifactKind === "ad" && agentRun.active;
+  const siteLocked = controller.artifactKind === "site" && agentRun.active;
+  // Task 28 (founder 2026-10-13): a person's publish waits while the design
+  // agent works on the page, and the Share menu says so. This route has no turn
+  // stream, so the website lane reads the same document-scoped agent-busy poll —
+  // for PUBLISHING only. A site already has that read (above); a web page gets
+  // its own, whose reload counter is not consumed: editing and rendering on the
+  // web lane are unchanged here.
+  const webDocumentId =
+    controller.artifactKind === "web" && controller.activeArtifactId
+      ? (documentIds?.[controller.activeArtifactId] ?? null)
+      : null;
+  const webAgentRun = useDocumentAgentRun({
+    documentId: webDocumentId,
+    enabled: controller.artifactKind === "web",
   });
-  const sceneLocked = agentRun.active;
+  const publishLocked = isWebsiteKind(controller.artifactKind) && (siteLocked || webAgentRun.active);
+  // K1-5 (founder ruling 2026-10-16): no rename while a design run drives the
+  // document, any kind — the same document-scoped poll; exactly one of the two
+  // reads is enabled for the open kind (ad/site, or web).
+  const renameLocked = agentRun.active || webAgentRun.active;
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
     // Task 4 (scene live-streaming rung A), closed here: the lock is the
@@ -106,11 +134,43 @@ export function EditorSurface({
     agentRunLocked: sceneLocked,
     documentIds,
     enabled: controller.artifactKind === "ad",
+    onScreen: artifactOnScreen,
   });
+  const siteSession = useSiteEditingSession({
+    activeArtifactId: controller.activeArtifactId,
+    documentIds,
+    editing: controller.editing,
+    enabled: controller.artifactKind === "site",
+    locked: siteLocked,
+    onScreen: artifactOnScreen,
+    warm: (artifacts ?? []).some((artifact) => artifact.documentKind === "site"),
+  });
+  // This route has no turn stream: an agent write to an open site is seen only by the poll above,
+  // whose `reloadNonce` moves when the document's version does. The persistent site stage takes no
+  // reload token, so a moved nonce reloads the site session. The nonce starts at 0 for each
+  // document (and resets on a switch), so 0 never reloads; web and ad tabs never reload here.
+  // Only for someone else's write or a finished run: a version the session wrote itself must not
+  // reload the canvas under the marketer's typing (review finding K3-3).
+  const agentReloadNonce = agentRun.reloadNonce;
+  const agentActive = agentRun.active;
+  const polledVersion = agentRun.currentVersion;
+  const siteKnownVersion = siteSession.saves.baseVersion;
+  const siteOpen = controller.artifactKind === "site";
+  const reloadSiteSession = siteSession.reload;
+  const seenAgentReloadNonce = useRef(agentReloadNonce);
+  const seenAgentActive = useRef(agentActive);
+  useEffect(() => {
+    const runEnded = seenAgentActive.current && !agentActive;
+    seenAgentActive.current = agentActive;
+    const versionMoved = agentReloadNonce !== seenAgentReloadNonce.current;
+    seenAgentReloadNonce.current = agentReloadNonce;
+    if (!siteOpen || (!versionMoved && !runEnded)) return;
+    if (siteReloadWanted({ knownVersion: siteKnownVersion, polledVersion, runEnded })) reloadSiteSession();
+  }, [agentActive, agentReloadNonce, polledVersion, reloadSiteSession, siteKnownVersion, siteOpen]);
   // Exactly one lane can be enabled, so this is the active document either way
   // — the canvas branch inside the stage picks the surface by kind.
   const activeDocumentId =
-    session.activeDocumentId ?? sceneSession.activeDocumentId;
+    session.activeDocumentId ?? sceneSession.activeDocumentId ?? siteSession.activeDocumentId;
 
   // The header's rename is a document write (the design API stores it and
   // advances the version), so the tab takes the title the backend stored and
@@ -121,17 +181,20 @@ export function EditorSurface({
   const setArtifactTitleFor = controller.setArtifactTitleFor;
   const reloadWebCanvas = session.onWriteReload;
   const reloadSceneCanvas = sceneSession.onWriteReload;
+  const reloadSiteCanvas = siteSession.reload;
   const onArtifactRenamed = useCallback(
     (artifactId: string, persisted: string) => {
       setArtifactTitleFor(artifactId, persisted);
       reloadWebCanvas();
       reloadSceneCanvas();
+      reloadSiteCanvas();
       router.refresh();
     },
-    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+    [reloadSceneCanvas, reloadSiteCanvas, reloadWebCanvas, router, setArtifactTitleFor],
   );
   const renameArtifact = useArtifactRename({
     documentIds,
+    locked: renameLocked,
     onRenamed: onArtifactRenamed,
   });
 
@@ -155,7 +218,11 @@ export function EditorSurface({
     controller.editing &&
     controller.artifactKind === "ad" &&
     sceneSession.activeDocumentId !== null;
-  const inspectorVisible = webInspectorVisible || adInspectorVisible;
+  const siteInspectorVisible =
+    controller.editing &&
+    controller.artifactKind === "site" &&
+    siteSession.activeDocumentId !== null;
+  const inspectorVisible = webInspectorVisible || adInspectorVisible || siteInspectorVisible;
   const inspectorSelection =
     session.webSelection.selection?.schema.selection ??
     sceneSession.selection?.selection ??
@@ -270,6 +337,22 @@ export function EditorSurface({
           </div>
         </div>
       ) : null}
+      {siteInspectorVisible ? (
+        <div className={styles.chatBody}>
+          <div className={styles.inspectorDock}>
+            <SiteInspector
+              // Never remounted by a selection: see chat-surface.tsx.
+              binding={siteSession.inspector}
+              renderImageField={(field, path, value) => {
+                const binding = siteSession.imageField(path, value);
+                return binding ? (
+                  <SiteImageField binding={binding} disabled={siteLocked} key={path} label={field.label} />
+                ) : null;
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       <ArtifactStage
         annotations={session.canvasAnnotations}
         activeArtifactId={controller.activeArtifactId}
@@ -282,7 +365,7 @@ export function EditorSurface({
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={
-          session.reloadNonce + sceneSession.reloadNonce + agentRun.reloadNonce
+          session.reloadNonce + sceneSession.reloadNonce + siteSession.reloadNonce + agentRun.reloadNonce
         }
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
@@ -307,6 +390,7 @@ export function EditorSurface({
         // read polled at the top of this component (ruling R1), not a turn
         // stream this route does not have.
         sceneGestureDisabled={sceneLocked}
+        publishLocked={publishLocked}
         onSceneLockedEdit={sceneSession.onLockedEdit}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
@@ -335,15 +419,24 @@ export function EditorSurface({
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
-            kind: artifact.source?.type === "website" ? "web" : "ad",
+            kind: chatShellKindForCard({
+              documentKind: artifact.source?.documentKind,
+              type: artifact.source?.type,
+            }),
             title: artifact.title,
           })
         }
         onRenameArtifact={(title) => {
           if (controller.activeArtifactId) {
-            renameArtifact(controller.activeArtifactId, title);
+            renameArtifact.rename(controller.activeArtifactId, title);
           }
         }}
+        renameLockNote={renameLocked ? AGENT_RUN_LOCK_NOTE : null}
+        renameNote={
+          renameArtifact.refusal?.artifactId === controller.activeArtifactId
+            ? renameArtifact.refusal.note
+            : null
+        }
         // The tab strip's rename of a NON-active tab is unchanged local state
         // (it carries no document handle of its own here).
         onRenameArtifactFor={controller.setArtifactTitleFor}
@@ -354,7 +447,7 @@ export function EditorSurface({
         // while the lock holds — an editor whose every control is inert is not
         // an editor — but LEAVING it never is, or a lock engaging mid-edit would
         // trap the user in a dock they cannot close.
-        editDisabled={sceneLocked && !controller.editing}
+        editDisabled={(sceneLocked || siteLocked) && !controller.editing}
         editDisabledReason={AGENT_RUN_LOCK_NOTE}
         openArtifacts={controller.openArtifacts}
         // Replace-image Task 6: the asset-library picker floats over the stage,
@@ -367,6 +460,11 @@ export function EditorSurface({
               library={sceneSession.assetLibrary}
               onUploadFile={sceneSession.onReplaceImage}
             />
+          ) : siteSession.images.library?.isOpen ? (
+            <AssetLibraryPanel
+              library={siteSession.images.library}
+              onUploadFile={siteSession.images.uploadToLibraryTarget}
+            />
           ) : null
         }
         // AD3.3: one pair of history-row disables in the header, so the artifact
@@ -375,14 +473,19 @@ export function EditorSurface({
         redoDisabled={
           controller.artifactKind === "ad"
             ? sceneSession.redoDisabled
-            : session.redoDisabled
+            : controller.artifactKind === "site"
+              ? siteSession.history.redoDisabled
+              : session.redoDisabled
         }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
+        site={siteSession.stage}
         surface={controller.surface}
         undoDisabled={
           controller.artifactKind === "ad"
             ? sceneSession.undoDisabled
-            : session.undoDisabled
+            : controller.artifactKind === "site"
+              ? siteSession.history.undoDisabled
+              : session.undoDisabled
         }
       />
     </main>

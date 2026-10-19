@@ -15,6 +15,7 @@ both and is imported only by the turn's wiring, so the dependency runs one way.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -41,6 +42,7 @@ from clue_api.project_context_files import (
     summary_of,
 )
 from clue_api.statement_evidence import resolve_statement_quotes
+from clue_core import OnboardingInputKind
 from clue_projections.stage0 import ResolvedQuote
 from clue_research.stage0 import StatementRoute, read_statements
 from clue_spine import ProjectProductSet, current_project_product_set, get_project
@@ -159,6 +161,17 @@ class ProjectStatusFacts:
 class DecisionItem:
     route_key: str
     quote: str
+    statement_id: UUID | None = None
+    onboarding_input_id: UUID | None = None
+    entity_id: UUID | None = None
+    route_ref: str | None = None
+    correction_of_id: UUID | None = None
+    input_kind: OnboardingInputKind | None = None
+    input_actor: str | None = None
+    input_created_at: datetime | None = None
+    input_source_ref: str | None = None
+    recorded_by_actor: str | None = None
+    created_at: datetime | None = None
 
 
 _ACCOUNT_COUNT = text(
@@ -524,7 +537,21 @@ async def load_project_decisions(
         conn, artifacts, workspace_id=workspace_id, statements=rows
     )
     return tuple(
-        DecisionItem(route_key=row.route_key, quote=item.quote)
+        DecisionItem(
+            route_key=row.route_key,
+            quote=item.quote,
+            statement_id=row.id,
+            onboarding_input_id=row.onboarding_input_id,
+            entity_id=row.entity_id,
+            route_ref=row.route_ref,
+            correction_of_id=row.correction_of_id,
+            input_kind=row.input_kind,
+            input_actor=row.input_actor,
+            input_created_at=row.input_created_at,
+            input_source_ref=row.input_source_ref,
+            recorded_by_actor=row.recorded_by_actor,
+            created_at=row.created_at,
+        )
         for row, item in zip(rows, resolved, strict=True)
         if isinstance(item, ResolvedQuote)
     )
@@ -642,8 +669,36 @@ def render_decisions_markdown(items: Sequence[DecisionItem]) -> str:
             "# Project decisions\n\nNothing recorded yet. Record preferences, boundaries and "
             "choices through `record_interview_answer` (route `project_state`).\n"
         )
-    lines = ["# Project decisions", ""]
+    lines = [
+        "# Project decisions",
+        "",
+        "Current recorded statements; explicit corrections supersede earlier statements. "
+        "Keep each quote's named target and scope. A missing entity/reference does not establish "
+        "applicability to every account or artifact. Input actor and recording actor are distinct; "
+        "do not present agent-authored context as the human's own request.",
+        "",
+    ]
     for item in items:
         quote = item.quote.replace("\n", " ").strip()
         lines.append(f'- **{item.route_key}** — "{quote}"')
+        # JSON keeps values on one line and distinguishes missing metadata from
+        # a human attribution or an asserted project-wide scope. Preserve IDs so
+        # record_interview_answer can actually address a prior statement to correct.
+        provenance = {
+            "statement_id": item.statement_id,
+            "input_id": item.onboarding_input_id,
+            "input_kind": item.input_kind,
+            "input_actor": item.input_actor,
+            "input_created_at": item.input_created_at,
+            "recorded_by_actor": item.recorded_by_actor,
+            "recorded_at": item.created_at,
+        }
+        scope = {
+            "entity_id": item.entity_id,
+            "route_ref": item.route_ref,
+            "input_source_ref": item.input_source_ref,
+            "correction_of_id": item.correction_of_id,
+        }
+        lines.append(f"  - Provenance: {json.dumps(provenance, default=str, ensure_ascii=False)}")
+        lines.append(f"  - Scope: {json.dumps(scope, default=str, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"

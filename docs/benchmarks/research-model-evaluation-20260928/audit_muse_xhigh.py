@@ -1,84 +1,264 @@
 """Read-only evidence comparison; no model/provider calls or database writes."""
+
 import json, re
 from pathlib import Path
 from datetime import datetime
 
 BASE = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
-M = BASE / '.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh'
-G = BASE / '.artifacts/zafran-three-model-medium-20260928/grok46'
-JOBS = {'account':'59d4870e-2207-56ca-a50b-e76ab86f6a53','nick':'1a912ee3-806b-50ca-a0b5-d927cab2f677','vari':'d9a7b71f-fa01-5b6b-8599-3119e6461527'}
+M = BASE / ".artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh"
+G = BASE / ".artifacts/zafran-three-model-medium-20260928/grok46"
+JOBS = {
+    "account": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+    "nick": "1a912ee3-806b-50ca-a0b5-d927cab2f677",
+    "vari": "d9a7b71f-fa01-5b6b-8599-3119e6461527",
+}
 read = lambda p: json.loads(p.read_text())
-docs = {s: read(M/'review'/j/'dossier.json') for s,j in JOBS.items()}
-findings = {s: {f['id']:f for sec in d['sections'] for f in sec['findings']} for s,d in docs.items()}
-baseline = read(OUT/'quality-evidence.json')
+docs = {s: read(M / "review" / j / "dossier.json") for s, j in JOBS.items()}
+findings = {
+    s: {f["id"]: f for sec in d["sections"] for f in sec["findings"]} for s, d in docs.items()
+}
+baseline = read(OUT / "quality-evidence.json")
 raw = []
-for op in read(M/'all-raw/manifest.json'):
-    if op['kind'].startswith('quality_tool:'): continue
-    p=M/'all-raw'/op['exported_file']; d=read(p)
-    b=json.loads(d['body_utf8']) if d.get('body_utf8') else d
-    for item in b.get('results',[]):
-        raw.append({'subject':next((s for s,j in JOBS.items() if j==op['job_id']),None), 'file':str(p),'url':item.get('url'), 'text':'\n'.join(str(item.get(k,'')) for k in ['title','text','highlights'])})
+for op in read(M / "all-raw/manifest.json"):
+    if op["kind"].startswith("quality_tool:"):
+        continue
+    p = M / "all-raw" / op["exported_file"]
+    d = read(p)
+    b = json.loads(d["body_utf8"]) if d.get("body_utf8") else d
+    for item in b.get("results", []):
+        raw.append(
+            {
+                "subject": next((s for s, j in JOBS.items() if j == op["job_id"]), None),
+                "file": str(p),
+                "url": item.get("url"),
+                "text": "\n".join(str(item.get(k, "")) for k in ["title", "text", "highlights"]),
+            }
+        )
 
 # Explicit editorial assessments, backed by exact saved finding objects and provider passages.
 P = [
- ('preserved','account:F026;vari:F016',r'building ABM end.to.end|shoulder.to.shoulder','Like Grok A41/V22–23: preserves Vari’s own end-to-end ABM and Sales-partnership words. Strong useful signal.'),
- ('preserved_bundled','account:F011,F012,F013;vari:F021,F022',r'large team and a large budget','Hands-on HubSpot work, account tiers, buying groups and outcome measures survive. Grok A30–32 separates the units better. Muse interpretation “production-constrained” is stronger than a lean-role requirement proves.'),
- ('account_omission_recovered_person','nick:F047',r'Common Room|Monday at 9:30','The full workflow was in account media-discovery results but omitted from the account JSON. Nick later preserves all five tools and the self-built Claude workflow. Grok retained it at account stage.'),
- ('preserved_bundled','account:F024;nick:F061',r'shipping real workflows','Distinctive “shipping real workflows” survives in both stages. Account F024 unnecessarily combines the 2026 hiring post with a separate April 2024 joining/Gong article.'),
- ('account_omission_recovered_person','nick:F046',r'overwrite.{0,40}pipeline|no human would','Account acquired the warning but omitted it. Nick quotes both concrete harms, improving on the earlier Muse max run. Grok also recovered both in person research, with clearer attribution of the relayed Lemkin practices.'),
- ('account_omission_recovered_person','nick:F048',r'working demo.{0,50}hours','Exact idea-to-demo-in-hours passage was in account-deep returned sources but absent from account findings. Nick restores it. Grok retained it at both stages.'),
- ('partial_account_recovered_person','account:F023;nick:F043,F044,F070',r'record.store|comic store|Pokemon cards','Account retained the 2024 record-store campaign but omitted acquired 2026 comic-store details. Nick preserves both distinct tactics and reported results, broadly comparable to Grok person depth.'),
- ('selection_and_discovery_gaps','account:F001',r'Exposure Gateway|Zero Day Agent|Asset Ownership Agent','Zero Day Agent and the September Asset Ownership Agent announcement were returned but have no substantive findings. Exposure Gateway was not found in the targeted saved-result scan. Grok A21/A22 retained dated author, mechanism, integrations and response workflow.'),
- ('partial_with_omission','account:F006,F007',r'Amex|30.40 million|layoff|down.round','Series C and Cisco survive. A direct February Amex announcement was retrieved but omitted. Grok also captured later journalist ARR/acquisition context; that adverse reporting was not located in Muse returned-result scans. Funding is not marketing budget.'),
- ('discovery_gap','account:F027',r'Havdala.{0,180}Nvidia|Nvidia.{0,180}Havdala','No departure passage located in Muse returned results. Grok A91 retained a qualified secondary report. Muse founder/leadership lists do not replace this dated contrary evidence; neither run proves the external report is true.'),
- ('selection_omission','',r'5X.{0,30}new|new \$\$\$|MTTR.{0,30}80','The same account-deep results include Sanaz’s “5X in new $$$$$” and almost-80% MTTR statement. Neither appears in Muse authored findings. Grok also omitted the 5X signal: the baseline is not complete.'),
- ('mixed_scope_and_contradiction','account:F019,F024;nick:F041,F065;vari:F020',r'Gong|6sense|Demandbase|Outreach','Career tools and employer installations are usually distinguished well. But account F019 says Gong was not named in any Zafran source while F024 already cites Nick’s first-week Gong-call research. That contradiction survives the final account narrative.'),
- ('rich_shortform_preservation','nick:F030,F031,F032',r'Cocktail Chemistry|audience cares','Strong book/hobby/audience-feedback wording, visible on the contact page. Grok also had an additional first-person kitchen/hobby passage not located in Muse acquisition. One very large Muse book finding bundles several independently usable details.'),
- ('lead_only','nick:F033',r'CocktailGPT|cocktailgpt.com','Project name, profile description and date retained; no project-site fetch. Similar limitation to Grok, behind the earlier Muse max run which inspected the site. Do not claim all available side-project depth was exhausted.'),
- ('lead_only','nick:F034',r'Get out of the building|technical curiosity|IT doesn.t want to be','Publication titles survive, not the actual old article/deck arguments. Both this retry and Grok miss substance found by the earlier Muse max run; a reason to retain a cross-run evidence union.'),
- ('listing_only_no_transcription','nick:F080,F081,F082,F083,F084',r'Zero Trust in Healthcare|value.based care|BYOD','Muse keeps ISMG/Okta metadata, performs no recording-resolution or transcription call, and stops after discovering listings. Grok obtained actual ISMG speech with speaker/history qualifications. No failed transcription attempt establishes provider unavailability here.'),
- ('source_review_failure','vari:F009,F010',r'Successfully integrated CRM','Axiom integration is present but downgraded to synthesis-only insufficient context, despite the directly returned profile containing the full Salesforce–HubSpot quote. Grok V10 uses that passage correctly. Both preserve the truncated 25% metric without inventing an endpoint.'),
- ('thinner_profile_discovery','vari:F014,F024,F025',r'arzgsjcfpzxh|6o2fh9ncjbr7|Fundamentals of Next.Gen','Education and thin outside-work footprint are qualified. Explicit 6sense/Demandbase certification findings are absent; exact credential passages not located in acquired-result scan. Grok retains credentials; neither should invent hobbies.'),
- ('material_attribution_and_claim_hygiene_defects','account:F015,F024,F030,F031;nick:F084,F091,F100;vari:F004,F006,F023,F024',r'','Vari F004 assigns Secureworks and Ivanti experience to current Zafran. Research gaps and analyst characterizations are stored as supported observations. Independent posts/events/people remain bundled. Grok also has bookkeeping, duplication and bundling defects; it is a comparative baseline, not gold truth.'),
- ('published_useful_but_inaccurate_in_places','account:F019,F024;nick:F046,F047;vari:F004',r'','All initial pages are saved. Nick’s page preserves strong quotations and seller-relevance caveats. Vari’s page repeats the wrong-employer remit; account tooling contradicts its own Gong evidence. Final account page includes common Muse reconciliation, assessed separately from initial authoring.')
+    (
+        "preserved",
+        "account:F026;vari:F016",
+        r"building ABM end.to.end|shoulder.to.shoulder",
+        "Like Grok A41/V22–23: preserves Vari’s own end-to-end ABM and Sales-partnership words. Strong useful signal.",
+    ),
+    (
+        "preserved_bundled",
+        "account:F011,F012,F013;vari:F021,F022",
+        r"large team and a large budget",
+        "Hands-on HubSpot work, account tiers, buying groups and outcome measures survive. Grok A30–32 separates the units better. Muse interpretation “production-constrained” is stronger than a lean-role requirement proves.",
+    ),
+    (
+        "account_omission_recovered_person",
+        "nick:F047",
+        r"Common Room|Monday at 9:30",
+        "The full workflow was in account media-discovery results but omitted from the account JSON. Nick later preserves all five tools and the self-built Claude workflow. Grok retained it at account stage.",
+    ),
+    (
+        "preserved_bundled",
+        "account:F024;nick:F061",
+        r"shipping real workflows",
+        "Distinctive “shipping real workflows” survives in both stages. Account F024 unnecessarily combines the 2026 hiring post with a separate April 2024 joining/Gong article.",
+    ),
+    (
+        "account_omission_recovered_person",
+        "nick:F046",
+        r"overwrite.{0,40}pipeline|no human would",
+        "Account acquired the warning but omitted it. Nick quotes both concrete harms, improving on the earlier Muse max run. Grok also recovered both in person research, with clearer attribution of the relayed Lemkin practices.",
+    ),
+    (
+        "account_omission_recovered_person",
+        "nick:F048",
+        r"working demo.{0,50}hours",
+        "Exact idea-to-demo-in-hours passage was in account-deep returned sources but absent from account findings. Nick restores it. Grok retained it at both stages.",
+    ),
+    (
+        "partial_account_recovered_person",
+        "account:F023;nick:F043,F044,F070",
+        r"record.store|comic store|Pokemon cards",
+        "Account retained the 2024 record-store campaign but omitted acquired 2026 comic-store details. Nick preserves both distinct tactics and reported results, broadly comparable to Grok person depth.",
+    ),
+    (
+        "selection_and_discovery_gaps",
+        "account:F001",
+        r"Exposure Gateway|Zero Day Agent|Asset Ownership Agent",
+        "Zero Day Agent and the September Asset Ownership Agent announcement were returned but have no substantive findings. Exposure Gateway was not found in the targeted saved-result scan. Grok A21/A22 retained dated author, mechanism, integrations and response workflow.",
+    ),
+    (
+        "partial_with_omission",
+        "account:F006,F007",
+        r"Amex|30.40 million|layoff|down.round",
+        "Series C and Cisco survive. A direct February Amex announcement was retrieved but omitted. Grok also captured later journalist ARR/acquisition context; that adverse reporting was not located in Muse returned-result scans. Funding is not marketing budget.",
+    ),
+    (
+        "discovery_gap",
+        "account:F027",
+        r"Havdala.{0,180}Nvidia|Nvidia.{0,180}Havdala",
+        "No departure passage located in Muse returned results. Grok A91 retained a qualified secondary report. Muse founder/leadership lists do not replace this dated contrary evidence; neither run proves the external report is true.",
+    ),
+    (
+        "selection_omission",
+        "",
+        r"5X.{0,30}new|new \$\$\$|MTTR.{0,30}80",
+        "The same account-deep results include Sanaz’s “5X in new $$$$$” and almost-80% MTTR statement. Neither appears in Muse authored findings. Grok also omitted the 5X signal: the baseline is not complete.",
+    ),
+    (
+        "mixed_scope_and_contradiction",
+        "account:F019,F024;nick:F041,F065;vari:F020",
+        r"Gong|6sense|Demandbase|Outreach",
+        "Career tools and employer installations are usually distinguished well. But account F019 says Gong was not named in any Zafran source while F024 already cites Nick’s first-week Gong-call research. That contradiction survives the final account narrative.",
+    ),
+    (
+        "rich_shortform_preservation",
+        "nick:F030,F031,F032",
+        r"Cocktail Chemistry|audience cares",
+        "Strong book/hobby/audience-feedback wording, visible on the contact page. Grok also had an additional first-person kitchen/hobby passage not located in Muse acquisition. One very large Muse book finding bundles several independently usable details.",
+    ),
+    (
+        "lead_only",
+        "nick:F033",
+        r"CocktailGPT|cocktailgpt.com",
+        "Project name, profile description and date retained; no project-site fetch. Similar limitation to Grok, behind the earlier Muse max run which inspected the site. Do not claim all available side-project depth was exhausted.",
+    ),
+    (
+        "lead_only",
+        "nick:F034",
+        r"Get out of the building|technical curiosity|IT doesn.t want to be",
+        "Publication titles survive, not the actual old article/deck arguments. Both this retry and Grok miss substance found by the earlier Muse max run; a reason to retain a cross-run evidence union.",
+    ),
+    (
+        "listing_only_no_transcription",
+        "nick:F080,F081,F082,F083,F084",
+        r"Zero Trust in Healthcare|value.based care|BYOD",
+        "Muse keeps ISMG/Okta metadata, performs no recording-resolution or transcription call, and stops after discovering listings. Grok obtained actual ISMG speech with speaker/history qualifications. No failed transcription attempt establishes provider unavailability here.",
+    ),
+    (
+        "source_review_failure",
+        "vari:F009,F010",
+        r"Successfully integrated CRM",
+        "Axiom integration is present but downgraded to synthesis-only insufficient context, despite the directly returned profile containing the full Salesforce–HubSpot quote. Grok V10 uses that passage correctly. Both preserve the truncated 25% metric without inventing an endpoint.",
+    ),
+    (
+        "thinner_profile_discovery",
+        "vari:F014,F024,F025",
+        r"arzgsjcfpzxh|6o2fh9ncjbr7|Fundamentals of Next.Gen",
+        "Education and thin outside-work footprint are qualified. Explicit 6sense/Demandbase certification findings are absent; exact credential passages not located in acquired-result scan. Grok retains credentials; neither should invent hobbies.",
+    ),
+    (
+        "material_attribution_and_claim_hygiene_defects",
+        "account:F015,F024,F030,F031;nick:F084,F091,F100;vari:F004,F006,F023,F024",
+        r"",
+        "Vari F004 assigns Secureworks and Ivanti experience to current Zafran. Research gaps and analyst characterizations are stored as supported observations. Independent posts/events/people remain bundled. Grok also has bookkeeping, duplication and bundling defects; it is a comparative baseline, not gold truth.",
+    ),
+    (
+        "published_useful_but_inaccurate_in_places",
+        "account:F019,F024;nick:F046,F047;vari:F004",
+        r"",
+        "All initial pages are saved. Nick’s page preserves strong quotations and seller-relevance caveats. Vari’s page repeats the wrong-employer remit; account tooling contradicts its own Gong evidence. Final account page includes common Muse reconciliation, assessed separately from initial authoring.",
+    ),
 ]
-rows=[]
-for old,(status,refs,pat,note) in zip(baseline['probes'],P):
-    fs=[]
-    for part in refs.split(';'):
-        if not part: continue
-        subject,ids=part.split(':')
-        for fid in ids.split(','):
-            fs.append({'subject':subject,'finding_id':fid,'dossier_path':str(M/'review'/JOBS[subject]/'dossier.json'),'finding':findings[subject][fid]})
-    matches=[]
+rows = []
+for old, (status, refs, pat, note) in zip(baseline["probes"], P):
+    fs = []
+    for part in refs.split(";"):
+        if not part:
+            continue
+        subject, ids = part.split(":")
+        for fid in ids.split(","):
+            fs.append(
+                {
+                    "subject": subject,
+                    "finding_id": fid,
+                    "dossier_path": str(M / "review" / JOBS[subject] / "dossier.json"),
+                    "finding": findings[subject][fid],
+                }
+            )
+    matches = []
     if pat:
         for x in raw:
-            m=re.search(pat,x['text'],re.I|re.S)
-            if m: matches.append({k:v for k,v in x.items() if k!='text'}|{'excerpt':x['text'][max(0,m.start()-200):m.end()+800]})
-    rows.append({'probe_id':old['probe_id'],'key':old['key'],'probe':old['probe'],'grok46':old['models']['grok46'],'muse_xhigh':{'assessment':status,'note':note,'findings':fs,'acquired_passage_matches':matches}})
-evidence={'scope':'Latest Muse xhigh retry versus completed Grok4.6 medium Zafran research. All 109 Muse findings and three narratives reviewed; 20 targeted comparative probes with saved provider-result excerpts. Not an exhaustive recall denominator or independent web fact-check. No new paid calls.','probes':rows}
-(OUT/'muse-xhigh-quality-evidence.json').write_text(json.dumps(evidence,indent=2,ensure_ascii=False))
+            m = re.search(pat, x["text"], re.I | re.S)
+            if m:
+                matches.append(
+                    {k: v for k, v in x.items() if k != "text"}
+                    | {"excerpt": x["text"][max(0, m.start() - 200) : m.end() + 800]}
+                )
+    rows.append(
+        {
+            "probe_id": old["probe_id"],
+            "key": old["key"],
+            "probe": old["probe"],
+            "grok46": old["models"]["grok46"],
+            "muse_xhigh": {
+                "assessment": status,
+                "note": note,
+                "findings": fs,
+                "acquired_passage_matches": matches,
+            },
+        }
+    )
+evidence = {
+    "scope": "Latest Muse xhigh retry versus completed Grok4.6 medium Zafran research. All 109 Muse findings and three narratives reviewed; 20 targeted comparative probes with saved provider-result excerpts. Not an exhaustive recall denominator or independent web fact-check. No new paid calls.",
+    "probes": rows,
+}
+(OUT / "muse-xhigh-quality-evidence.json").write_text(
+    json.dumps(evidence, indent=2, ensure_ascii=False)
+)
 
 # Preserve the earliest account section versions, before the common reconciler edited them.
-blocks=read(M/'review/display_block.json'); selected={}
-for b in sorted(blocks,key=lambda x:x['generated_at']):
-    if b['subject_kind']=='account': selected.setdefault((b['page'],b['section_key']),b)
-initial=M/'account-initial';initial.mkdir(exist_ok=True)
-(initial/'display-blocks.json').write_text(json.dumps(list(selected.values()),indent=2))
-lines=['# Muse xhigh initial account narrative','','Earliest saved version of each section, before common reconciliation. Literal text; claim links remain in the accompanying JSON.','']
+blocks = read(M / "review/display_block.json")
+selected = {}
+for b in sorted(blocks, key=lambda x: x["generated_at"]):
+    if b["subject_kind"] == "account":
+        selected.setdefault((b["page"], b["section_key"]), b)
+initial = M / "account-initial"
+initial.mkdir(exist_ok=True)
+(initial / "display-blocks.json").write_text(json.dumps(list(selected.values()), indent=2))
+lines = [
+    "# Muse xhigh initial account narrative",
+    "",
+    "Earliest saved version of each section, before common reconciliation. Literal text; claim links remain in the accompanying JSON.",
+    "",
+]
 for b in selected.values():
-    d=b['body_json'].get('_quality_draft',b['body_json']);lines+=['## '+b['page']+' / '+b['section_key'],'']
-    lines += [s.get('text','')+'\n' for s in d.get('intro',[])]
-    for item in d.get('items',[]):lines += ['### '+item.get('h2',''),'']+[s.get('text','')+'\n' for s in item.get('body',[])]
-(initial/'page.md').write_text('\n'.join(lines))
+    d = b["body_json"].get("_quality_draft", b["body_json"])
+    lines += ["## " + b["page"] + " / " + b["section_key"], ""]
+    lines += [s.get("text", "") + "\n" for s in d.get("intro", [])]
+    for item in d.get("items", []):
+        lines += ["### " + item.get("h2", ""), ""] + [
+            s.get("text", "") + "\n" for s in item.get("body", [])
+        ]
+(initial / "page.md").write_text("\n".join(lines))
 
-def link(label,p):return f'[{label}]({p})'
-def mdref(f):return link(f["subject"]+' '+f['finding_id'],f['dossier_path'])
-table=[]
+
+def link(label, p):
+    return f"[{label}]({p})"
+
+
+def mdref(f):
+    return link(f["subject"] + " " + f["finding_id"], f["dossier_path"])
+
+
+table = []
 for r in rows:
-    g=r['grok46'];m=r['muse_xhigh'];table.append('| '+str(r['probe_id'])+' | '+r['probe']+' | '+g['note']+' | '+m['note']+' | '+(', '.join(mdref(f) for f in m['findings']) or 'No retained finding')+' |')
-report='''# Muse xhigh retry versus Grok 4.6 medium: research-quality review
+    g = r["grok46"]
+    m = r["muse_xhigh"]
+    table.append(
+        "| "
+        + str(r["probe_id"])
+        + " | "
+        + r["probe"]
+        + " | "
+        + g["note"]
+        + " | "
+        + m["note"]
+        + " | "
+        + (", ".join(mdref(f) for f in m["findings"]) or "No retained finding")
+        + " |"
+    )
+report = (
+    """# Muse xhigh retry versus Grok 4.6 medium: research-quality review
 
 **Decision: keep Grok 4.6 medium as the quality baseline for now. Muse xhigh is a substantially faster, cheaper candidate, with strong Nick research, but it is not a demonstrated quality-equivalent replacement.** Its most consequential defect is a wrong-employer attribution in Vari’s current remit that propagates into her narrative. Account coverage is also narrower, including omissions from material already acquired.
 
@@ -163,7 +343,9 @@ Independent events are still bundled: account F024 joins two posts from differen
 
 | # | Probe | Grok baseline | Muse retry | Exact Muse findings |
 |---|---|---|---|---|
-'''+ '\n'.join(table)+'''
+"""
+    + "\n".join(table)
+    + """
 
 ## What the observable execution explains
 
@@ -183,7 +365,30 @@ Muse’s Nick result is credible evidence that it can produce useful, specific r
 
 ## Inspectable artifacts
 
-'''
-for label,p in [('Exact 20-probe evidence',OUT/'muse-xhigh-quality-evidence.json'),('Source checks',M/'review/targeted-source-checks.json'),('Vari full returned profile',M/'review/vari-profile-source.txt'),('Muse initial account narrative',initial/'page.md'),('Muse final reconciled account narrative',M/'account/page.md'),('Nick narrative',M/'person-a503cf2b-0ce4-4867-8e80-d47764e89d01/page.md'),('Vari narrative',M/'person-b0b87722-4292-444b-bfc5-4eaa371b7ca8/page.md'),('Provider acquisition manifest',M/'all-raw/manifest.json'),('Observable action summary',M/'activity-latest.json'),('Timing',M/'timing.json'),('Trace ID verification',M/'trace-verification.json'),('Grok run report',G/'REPORT.md')]:report+='- '+link(label,p)+'\n'
-(OUT/'MUSE-XHIGH-QUALITY.md').write_text(report)
-print('Reviewed',sum(len(x) for x in findings.values()),'findings;',len(rows),'probes;',len(raw),'returned source records (including repeats).')
+"""
+)
+for label, p in [
+    ("Exact 20-probe evidence", OUT / "muse-xhigh-quality-evidence.json"),
+    ("Source checks", M / "review/targeted-source-checks.json"),
+    ("Vari full returned profile", M / "review/vari-profile-source.txt"),
+    ("Muse initial account narrative", initial / "page.md"),
+    ("Muse final reconciled account narrative", M / "account/page.md"),
+    ("Nick narrative", M / "person-a503cf2b-0ce4-4867-8e80-d47764e89d01/page.md"),
+    ("Vari narrative", M / "person-b0b87722-4292-444b-bfc5-4eaa371b7ca8/page.md"),
+    ("Provider acquisition manifest", M / "all-raw/manifest.json"),
+    ("Observable action summary", M / "activity-latest.json"),
+    ("Timing", M / "timing.json"),
+    ("Trace ID verification", M / "trace-verification.json"),
+    ("Grok run report", G / "REPORT.md"),
+]:
+    report += "- " + link(label, p) + "\n"
+(OUT / "MUSE-XHIGH-QUALITY.md").write_text(report)
+print(
+    "Reviewed",
+    sum(len(x) for x in findings.values()),
+    "findings;",
+    len(rows),
+    "probes;",
+    len(raw),
+    "returned source records (including repeats).",
+)

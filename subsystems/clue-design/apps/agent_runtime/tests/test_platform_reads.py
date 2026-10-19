@@ -8,11 +8,14 @@ below is the whole contract the design runtime knows about.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from agent_fixtures import FakeCoreClient, runtime_config
+from lumen_agent import harness_web
+from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent.platform_reads import make_platform_read_tools, write_seller_knowledge
 from lumen_agent.tools.substrate import LumenDesignTools
 from lumen_agent.workspace import scaffold_workspace, workspace_root
@@ -267,3 +270,108 @@ def test_the_scene_tools_skill_and_the_web_prompt_teach_web_search_as_the_last_r
     assert "## Web search" in skill
     assert "`web_search`" in skill and "comes after the account reads" in skill
     assert prompts.count("web_search is the last resort") == 2
+
+
+def test_web_scaffold_preserves_project_sources_and_clears_stale_context(tmp_path):
+    from lumen_agent.fs_backend import AgentWorkspaceBackend
+    from test_web_substrate import _bare_tools
+
+    payload = {
+        "status": "available",
+        "source_turn_id": "opening-turn",
+        "source_pin_sha256": "0" * 64,
+        "is_live_project_view": False,
+        "files": [{"path": "instructions.md", "body_text": "No target logo in navigation."}],
+    }
+    reads = _Reads()
+    reads.project_design_context = lambda: payload
+    tools = _bare_tools(tmp_path)
+    tools.config = replace(tools.config, platform_reads=reads)
+    virtual = harness_web._scaffold_web_workspace(tools, "Make the account page.")
+    file = tools.trace_dir / "workspace/project-context/snapshot.json"
+    assert file.exists(), "The design workspace drops original project instructions"
+    assert json.loads(file.read_text()) == payload
+    backend = AgentWorkspaceBackend(tools.config.trace_dir)
+    result = backend.edit(virtual + "/project-context/snapshot.json", "No target", "Add target")
+    assert "read-only" in result.error
+    assert json.loads(file.read_text()) == payload
+
+    def unavailable():
+        raise _ReadError("read_failed")
+
+    reads.project_design_context = unavailable
+    harness_web._scaffold_web_workspace(tools, "Continue.")
+    failed = json.loads(file.read_text())
+    assert failed["status"] == "unavailable"
+    assert failed["files"] == []
+    assert "No target logo" not in file.read_text()
+
+    reads.project_design_context = lambda: payload
+    harness_web._scaffold_web_workspace(tools, "Continue.")
+    tools.config = replace(tools.config, platform_reads=None)
+    harness_web._scaffold_web_workspace(tools, "Continue without platform reads.")
+    assert json.loads(file.read_text())["status"] == "unavailable"
+    assert "No target logo" not in file.read_text()
+
+
+@pytest.mark.parametrize("web_solo", [False, True], ids=["trio", "solo"])
+@pytest.mark.parametrize("has_reads", [False, True], ids=["direct", "leg"])
+def test_web_account_reads_follow_injected_provider_and_authoring_role(
+    tmp_path, monkeypatch, web_solo, has_reads
+) -> None:
+    """The copy author needs the same governed reads; other turns and reviewers do not."""
+    import deepagents
+    import lumen_agent.llm as llm
+    from lumen_api.core import CoreClient
+
+    captured: dict = {}
+    monkeypatch.setattr(deepagents, "create_deep_agent", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(harness_web, "materialize_agent_workspace", lambda _config: None)
+    monkeypatch.setattr(
+        harness_web, "_instrument", lambda _config, _tools, _model, role: f"{role}-model"
+    )
+    monkeypatch.setattr(llm, "assert_all_role_models_support_image_input", lambda _config: None)
+    repo_root = Path(__file__).resolve().parents[3]
+    reads = _Reads(research_error=_ReadError("refused:account_not_researched"))
+    config = replace(
+        AgentRuntimeConfig.from_env(repo_root),
+        trace_dir=tmp_path / "workspace",
+        web_solo=web_solo,
+        web_reviewer=True,
+        platform_reads=reads if has_reads else None,
+    )
+    web_doc = CoreClient(repo_root=repo_root).web_new_doc(
+        "doc_account_reads", "Account page", None
+    )["web_doc"]
+    _, tools = harness_web.create_web_deepagent("Build an account page.", config, web_doc)
+
+    def named(tool_list):
+        return {getattr(tool, "name", getattr(tool, "__name__", "")): tool for tool in tool_list}
+
+    read_names = {"read_project_accounts", "read_account_research", "read_claims"}
+    director_tools = named(captured["tools"])
+    expected_reads = read_names if has_reads else set()
+    assert director_tools.keys() & read_names == expected_reads
+    if web_solo:
+        assert captured["subagents"] == []
+        copy_tools = director_tools
+    else:
+        subagents = {subagent["name"]: subagent for subagent in captured["subagents"]}
+        copy_tools = named(subagents["lumen-web-author"]["tools"])
+        assert copy_tools.keys() & read_names == expected_reads
+        assert not named(subagents["lumen-web-reviewer"]["tools"]).keys() & read_names
+        for name in expected_reads:
+            assert copy_tools[name] is director_tools[name]
+
+    if has_reads:
+        assert json.loads(copy_tools["read_project_accounts"].invoke({"query": "prem"})) == {
+            "total": 1,
+            "accounts": [{"canonical_name": "Premier"}],
+        }
+        research = copy_tools["read_account_research"].invoke({"account_entity_id": "x"})
+        assert json.loads(research) == {
+            "error": "refused",
+            "reasons": ["account_not_researched"],
+        }
+        events = [event for event in _events(tools) if event["event"] == "platform_read"]
+        assert [event["payload"]["ok"] for event in events] == [True, False]

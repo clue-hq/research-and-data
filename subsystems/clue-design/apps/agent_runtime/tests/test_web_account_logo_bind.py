@@ -328,9 +328,9 @@ def test_the_recipe_says_the_same_two_things() -> None:
     ).read_text()
     squashed = _squashed(recipe)
 
-    assert "PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE" in squashed
+    assert "Publish only the resolved derived page" in squashed
     assert "bind_account_logo" in squashed
-    assert "empty-logo page — which is CORRECT" in squashed
+    assert "name-only presentation" in squashed
 
 
 def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():

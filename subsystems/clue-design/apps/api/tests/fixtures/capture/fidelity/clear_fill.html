@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S6 probe: a ghost button with a fully transparent white fill</title>
+<!-- S6 probe. Tailwind v3's `bg-white/0 hover:bg-white/10` ghost button on a dark hero: the fill is
+     rgba(255, 255, 255, 0), fully transparent, with a white border. Plus a control outline button with
+     `background: transparent`. Local file only. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  .hero { background: #0d2b25; padding: 60px 40px; display: flex; gap: 24px; }
+  .b { display: inline-flex; padding: 12px 24px; border-radius: 8px; font: 500 14px/1.4 Arial; cursor: pointer; }
+  .ghost { background: rgba(255, 255, 255, 0); color: #fff; border: 1px solid #ffffff; }
+  .ghost:hover { background: rgba(255, 255, 255, 0.1); }
+  .ctrl { background: transparent; color: #fff; border: 1px solid #f5a623; }
+  main section { padding: 40px; }
+</style></head>
+<body>
+<main>
+  <section class="hero"><button class="b ghost" id="g">Watch the video</button><button class="b ctrl" id="c">Talk to us</button></section>
+  <section><h2>Next</h2><p>Text.</p></section>
+</main>
+</body></html>

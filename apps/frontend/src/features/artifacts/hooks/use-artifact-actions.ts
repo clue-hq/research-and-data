@@ -10,7 +10,6 @@ import type {
 import { useChatRepositories } from "@/features/projects/data/projects-transport";
 import {
   exportAdArtifact,
-  exportWebArtifact,
   renameArtifactDocument,
   setArtifactArchived,
 } from "../data/artifact-document.repository";
@@ -90,26 +89,6 @@ export function useArtifactActions() {
         format: options.format,
         scale: options.scale,
       }),
-    /**
-     * The web artifact's export: the design API's static-site zip. Written out
-     * rather than run through `run` because an export changes no row — there is
-     * nothing for `router.refresh()` to re-read — but it is still caught here,
-     * because the dialog may not import a repository.
-     */
-    exportWeb: async (artifact: LibraryArtifact) => {
-      setBusy(true);
-      try {
-        await exportWebArtifact(artifact.documentId, artifact.title);
-        setNotice("Export downloaded.");
-        return true;
-      } catch (error) {
-        console.warn("[artifacts] the export was refused:", error);
-        setNotice("Export couldn’t be prepared. Please try again.");
-        return false;
-      } finally {
-        setBusy(false);
-      }
-    },
     viewed: (artifact: LibraryArtifact) => {
       // A last-viewed mark is a courtesy, not the operator's action: it is not
       // awaited and never blocks the preview it accompanies.

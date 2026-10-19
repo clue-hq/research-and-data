@@ -17,6 +17,10 @@ from typing import Callable, Iterable, Literal, Optional, Sequence
 import httpx
 
 from .net import BoundedFetcher, CaptureError, guard_url
+from .page_plan import (
+    MAX_CAPTURE_PAGES, ROLE_LIMITS, canonical_page_url, discover_reference_pages,
+    page_coverage, page_role,
+)
 from .parse import parse_site
 from .quality_gate import evaluate
 from .snapshot import SiteSnapshot, load_snapshot, save_snapshot
@@ -50,6 +54,9 @@ class CaptureOutcome:
     escalation_reason: str | None
     diagnostics: list[dict] = field(default_factory=list)
     snapshots: list[SiteSnapshot] = field(default_factory=list)
+    page_coverage: list[dict] = field(default_factory=list)
+    missing_page_roles: list[str] = field(default_factory=list)
+    library_capture: bool = False
 
     def __post_init__(self) -> None:
         if not self.snapshots:
@@ -135,11 +142,15 @@ def _pages_to_capture(url: str, page_urls: Optional[Sequence[str]]) -> list[str]
     under both natural interpretations — "the pages to capture" and "the extra pages to capture"
     — and a caller that repeats the entry url in the list does not capture it twice.
     """
-    pages = [url]
+    pages = [canonical_page_url(url, url)]
     for page in page_urls or ():
-        if page and page not in pages:
-            pages.append(page)
+        candidate = canonical_page_url(page, url)
+        if candidate and candidate not in pages:
+            pages.append(candidate)
+    if len(pages) > MAX_CAPTURE_PAGES:
+        raise CaptureError("LUMI0514", f"capture allows at most {MAX_CAPTURE_PAGES} pages")
     return pages
+
 
 
 def _silent(stage: str, progress: float) -> None:
@@ -161,6 +172,7 @@ async def capture_website(
     http_client: httpx.AsyncClient | None = None,
     fetched_at: str | None = None,
     page_urls: Optional[Sequence[str]] = None,
+    discover_pages: bool = False,
 ) -> CaptureOutcome:
     """Capture one site. ``page_urls`` (F0.4) asks for more of it than the entry page.
 
@@ -172,8 +184,9 @@ async def capture_website(
     **The entry page is the job.** A failure capturing it propagates, exactly as before — an
     ingestion with no entry page has nothing to be about. A failure on any OTHER page is a
     ``LUMI0513`` diagnostic and that page contributes nothing; the capture, and the job, carry
-    on with the pages that worked. Nothing here discovers pages: crawling and nav-following are
-    later work, and this is the seam they will arrive through.
+    on with the pages that worked. Automatic discovery is opt-in for low-level
+    callers; the website API enables it.
+    Discovery follows observed same-origin product/customer links within category budgets.
     """
     if render_available is None:
         render_available = _playwright_available()
@@ -193,11 +206,29 @@ async def capture_website(
             force_render=force_render,
             render_available=render_available,
             fetched_at=fetched_at,
+            measure_states=True,
         )
         diagnostics.record(entry.diagnostics)
         snapshots = [entry.snapshot]
-
-        for page in pages[1:]:
+        plan = [
+            {"url": page, "role": "homepage" if i == 0 else page_role(page)}
+            for i, page in enumerate(pages)
+        ]
+        coverage = [page_coverage(entry.snapshot, role="homepage", diagnostics=entry.diagnostics)]
+        if discover_pages:
+            plan.extend(
+                discover_reference_pages(
+                    entry.snapshot.html,
+                    entry.snapshot.final_url or pages[0],
+                    existing=plan,
+                )
+            )
+        cursor = 1
+        while cursor < len(plan):
+            planned = plan[cursor]
+            page = planned["url"]
+            cursor += 1
+            reporter(f"Capturing source page {cursor} of {len(plan)}…", 0.55)
             try:
                 extra = await _capture_page(
                     page,
@@ -208,19 +239,56 @@ async def capture_website(
                     fetched_at=fetched_at,
                 )
             except Exception as error:  # noqa: BLE001 — one page is not the job
-                diagnostics.record_one(
+                diagnostic = {
+                    "code": "LUMI0513",
+                    "severity": "warning",
+                    "url": page,
+                    "message": f"page capture failed for {page}: {type(error).__name__}: {error}",
+                }
+                diagnostics.record_one(diagnostic)
+                coverage.append(
                     {
-                        "code": "LUMI0513",
-                        "severity": "warning",
-                        "message": (
-                            f"page capture failed for {page}; it contributes no snapshot: "
-                            f"{type(error).__name__}: {error}"
-                        ),
+                        **planned,
+                        "status": "failed",
+                        "diagnostics": [diagnostic],
+                        "fidelity_verified": False,
                     }
                 )
                 continue
             diagnostics.record(extra.diagnostics)
             snapshots.append(extra.snapshot)
+            coverage.append(
+                page_coverage(extra.snapshot, role=planned["role"], diagnostics=extra.diagnostics)
+            )
+            if discover_pages:
+                # One bounded library plan; customer indexes can supply actual story URLs.
+                # Never recurse into unselected unrelated links or exceed category budgets.
+                plan.extend(
+                    discover_reference_pages(
+                        extra.snapshot.html,
+                        extra.snapshot.final_url or page,
+                        existing=plan,
+                    )
+                )
+        missing_roles = (
+            [
+                role
+                for role in ROLE_LIMITS
+                if not any(row["role"] == role and row["status"] != "failed" for row in coverage)
+            ]
+            if discover_pages
+            else []
+        )
+        if missing_roles:
+            diagnostics.record_one(
+                {
+                    "code": "LUMI0540",
+                    "severity": "warning",
+                    "message": "No captured source page for categories: "
+                    + ", ".join(missing_roles),
+                    "missing_page_roles": missing_roles,
+                }
+            )
 
         return CaptureOutcome(
             snapshot=entry.snapshot,
@@ -229,6 +297,9 @@ async def capture_website(
             escalation_reason=entry.escalation_reason,
             diagnostics=diagnostics.entries,
             snapshots=snapshots,
+            page_coverage=coverage,
+            missing_page_roles=missing_roles,
+            library_capture=discover_pages or len(plan) > 1,
         )
     finally:
         if owns_client:
@@ -243,6 +314,7 @@ async def _capture_page(
     force_render: bool,
     render_available: bool,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> _PageCapture:
     """One page through the tiered walk: static → quality gate → rendered.
 
@@ -260,7 +332,9 @@ async def _capture_page(
     if force_render:
         from .rendered import fetch_rendered
 
-        snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
+        snapshot = await fetch_rendered(
+            url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+        )
         diagnostics.record(fetcher.diagnostics[before:])
         diagnostics.record(snapshot.diagnostics)
         return _PageCapture(snapshot, "rendered", False, None, diagnostics.entries)
@@ -296,7 +370,9 @@ async def _capture_page(
     )
     from .rendered import fetch_rendered
 
-    rendered_snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
+    rendered_snapshot = await fetch_rendered(
+        url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+    )
     diagnostics.record(fetcher.diagnostics[after_static:])
     diagnostics.record(rendered_snapshot.diagnostics)
     return _PageCapture(rendered_snapshot, "rendered", True, reason, diagnostics.entries)

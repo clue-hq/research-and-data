@@ -21,10 +21,10 @@ on an element the sanitizer was about to remove; and the preview is cropped last
 digest is part of the artifact's identity.
 
 **The rehost map is keyed on the token as the page wrote it.** ``refs.resolve_asset_reference``
-looks a reference up EXACTLY as it appears in the markup — Task 6's ruling, because normalising
-a URL here would mean guessing which of two spellings the rehoster meant, and a wrong guess
-serves the wrong bytes silently. Resolution against a base URL happens only to FIND the
-captured bytes; the key stays raw.
+retains exact URL/query spelling while allowing fragment-only aliases that name equal held
+content. Conflicting aliases refuse rather than guessing. Resolution against a base URL
+happens only to FIND the captured bytes; the rehost-map key stays raw and the authored
+fragment suffix survives rewriting.
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from lumen_api.fragments import (
     parse_srcset_candidates,
 )
 from lumen_api.fragments.cssscope import PRELUDE_REFERENCE_STRIP
+from lumen_api.fragments.reference_identity import ReferenceConflict, ReferenceIndex
 from lumen_api.fragments.sanitize import sanitize_fragment_html
 from py_lumen_config import settings
 from selectolax.lexbor import LexborHTMLParser
@@ -70,8 +71,10 @@ from .deadheight import (
     DeadHeightAssessment,
     assess_dead_height,
 )
-from .segment import SectionRecord, SectionSegmentation, resolve_section
+from .rootunits import RootUnits, prepare_root_units
+from .segment import SectionRecord, SectionSegmentation, recovery_sections, resolve_section
 from .slotdetect import detect_slots
+from .source_context import SourceDocumentContext
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,7 @@ logger = logging.getLogger(__name__)
 #: Configurable as ``LUMEN_FRAGMENT_MINT_CAP``. Tripping it is reported loudly (``LUMI0532``),
 #: for the sections of a page that were skipped and for whole later pages never reached.
 SECTION_MINT_CAP = int(settings.lumen_fragment_mint_cap)
+LIBRARY_MINT_CAP = int(settings.lumen_site_library_fragment_mint_cap)
 
 #: A preview is a thumbnail in a picker, not a rendition. A 2x full-page shot of a tall hero is
 #: megabytes; nothing that reads this blob wants them.
@@ -126,6 +130,8 @@ MINT_DEGRADED_RECONCILED_CODE = "LUMI0536"
 #: that is the honest-absence posture the whole detector is built on (`DeadHeightAssessment.judged`
 #: exists for exactly this distinction), and the one place it could still be silent was here.
 MINT_CHECK_NOT_RUN_CODE = "LUMI0538"
+#: Independent authored descendants attempted after a wrapper refused a missing dependency.
+MINT_RECOVERY_CODE = "LUMI0539"
 
 _PREVIEW_MEDIA_TYPE = "image/png"
 _DEFAULT_INLINE_MEDIA_TYPE = "application/octet-stream"
@@ -216,6 +222,8 @@ def build_reference_harvest(
     found: dict[str, set[str]] = {}
     inline: dict[str, tuple[bytes, str]] = {}
     missing: list[str] = []
+    alias_conflicts: set[str] = set()
+    references = ReferenceIndex(captured, identity=lambda asset: asset.data)
 
     def offer(token: str, base: str) -> None:
         raw = (token or "").strip()
@@ -231,8 +239,13 @@ def build_reference_harvest(
                 missing.append(raw)
             return
         absolute = urljoin(base, raw)
-        if absolute in captured:
-            found.setdefault(raw, set()).add(absolute)
+        try:
+            captured_key = references.lookup_key(absolute)
+        except ReferenceConflict:
+            alias_conflicts.add(raw)
+            return
+        if captured_key is not None:
+            found.setdefault(raw, set()).add(captured_key)
         elif raw not in missing:
             missing.append(raw)
 
@@ -249,8 +262,10 @@ def build_reference_harvest(
         _harvest_css(text, base, offer)
 
     resolved: dict[str, str] = {}
-    conflicts: list[str] = []
+    conflicts: list[str] = list(alias_conflicts)
     for raw, urls in found.items():
+        if raw in alias_conflicts:
+            continue
         if len(urls) == 1:
             resolved[raw] = next(iter(urls))
         else:
@@ -395,7 +410,9 @@ def crop_extent(
         return CropExtent(
             top_px=geometry.top_px, bottom_px=geometry.bottom_px, basis=geometry.basis
         )
-    if record.hidden_on_source:
+    # Inference only applies to the original top-level flow. Recovered descendants have no
+    # measured placement; a footer-like label must not borrow the actual page footer's pixels.
+    if record.hidden_on_source or record not in segmentation.sections:
         return None
 
     measured = [
@@ -504,6 +521,30 @@ class MintOutcome:
     diagnostics: tuple[dict[str, Any], ...] = ()
 
 
+def _recovery_plan(
+    segmentation: SectionSegmentation, tree: SectionParser
+) -> dict[int, tuple[SectionRecord, ...]]:
+    records = (*segmentation.sections, *segmentation.hidden_sections)
+    index = max((r.index for r in records), default=-1) + 1
+    plan = {}
+    for record in segmentation.sections:
+        children = recovery_sections(tree, record, start_index=index)
+        if children:
+            plan[record.index] = children
+            index += len(children)
+    return plan
+
+
+def visible_mint_capacity(segmentation: SectionSegmentation, html: str) -> int:
+    """Reserve fair page budget for recovery without minting parent AND children.
+
+    The parent is preferred. Only a refused parent spends its reservation on descendants;
+    planning with just top-level wrappers would allocate Google's entire body one slot.
+    """
+    plan = _recovery_plan(segmentation, SectionParser(html or ""))
+    return sum(max(1, len(plan.get(record.index, ()))) for record in segmentation.sections)
+
+
 def mint_sections(
     segmentation: SectionSegmentation,
     *,
@@ -519,6 +560,7 @@ def mint_sections(
     dormant_limit: int = SECTION_MINT_CAP,
     mark_degraded: Callable[..., dict[str, Any]] | None = None,
     weight: PageWeight | None = None,
+    initial_font_px: float | None = None,
 ) -> MintOutcome:
     """Mint every section of one captured page. Never raises.
 
@@ -553,6 +595,20 @@ def mint_sections(
     # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
     # times to extract twelve subtrees would be the most expensive thing this module does.
     tree = SectionParser(html or "")
+    root_units = prepare_root_units(stylesheets, html=html, initial_font_px=initial_font_px)
+    source_context = SourceDocumentContext.prepare(html, stylesheets, root_units)
+    if root_units.notes:
+        diagnostics.append(_diag(
+            "LUMI0540",
+            "source root-unit context was not normalized: " + "; ".join(root_units.notes),
+            reason="unsupported_root_units", page_url=segmentation.page_url,
+        ))
+    recovery_plan = _recovery_plan(segmentation, tree)
+    recovery_parents = {
+        child.index: parent
+        for parent in segmentation.sections
+        for child in recovery_plan.get(parent.index, ())
+    }
 
     def _mint_bounded(
         records: Sequence[SectionRecord], budget: int, scope: str
@@ -563,7 +619,8 @@ def mint_sections(
         # `remaining` — "segmented and not cloned, and not otherwise reported" — announce sections
         # the job had already explained twice over.
         reported = 0
-        for record in records:
+        queue = list(records)
+        for position, record in enumerate(queue):
             if len(minted) >= budget:
                 break
             try:
@@ -571,7 +628,9 @@ def mint_sections(
                     segmentation,
                     record,
                     tree=tree,
-                    stylesheets=stylesheets,
+                    stylesheets=root_units.stylesheets,
+                    root_units=root_units,
+                    source_context=source_context,
                     captured=captured,
                     screenshot=screenshot,
                     source_kit_id=source_kit_id,
@@ -581,6 +640,7 @@ def mint_sections(
                     mark_degraded=mark_degraded,
                     diagnostics=diagnostics,
                     weight=weight,
+                    recovery_parent=recovery_parents.get(record.index),
                 )
             except FragmentRefused as refusal:
                 # The diagnostic is for the human reading the job; this is for the operator
@@ -607,6 +667,37 @@ def mint_sections(
                     )
                 )
                 reported += 1
+                # Only dependency custody failures qualify. No fallback after writer errors,
+                # security refusals, byte budgets or an empty sanitized shell. No recursive
+                # recovery: this map contains original top-level wrapper indices only.
+                children = recovery_plan.get(record.index, ())
+                if refusal.code == "fragment.unrehosted_reference" and children:
+                    omitted = max(0, len(children) - max(0, SECTION_MINT_CAP))
+                    children = children[:max(0, SECTION_MINT_CAP)]
+                    queue[position + 1 : position + 1] = children
+                    diagnostics.append(_diag(
+                        MINT_RECOVERY_CODE,
+                        f"wrapper section {record.index} refused; attempting {len(children)} "
+                        "independent authored descendants. The wrapper layout, decorations "
+                        "and inherited context are not preserved; source fidelity is unverified.",
+                        section_index=record.index,
+                        parent_dom_path=list(record.dom_path),
+                        parts=len(children),
+                        omitted_parts=omitted,
+                        wrapper_layout_preserved=False,
+                        fidelity_verified=False,
+                    ))
+                    if omitted:
+                        diagnostics.append(_diag(
+                            MINT_CAPPED_CODE,
+                            f"{omitted} authored descendants were not attempted because "
+                            "the per-wrapper recovery candidate cap was reached",
+                            section_index=record.index,
+                            scope=scope,
+                            cap=SECTION_MINT_CAP,
+                            remaining=omitted,
+                            reason="recovery_candidate_cap",
+                        ))
                 continue
             except Exception as error:  # noqa: BLE001 — one section is not the ingest
                 logger.exception(
@@ -633,7 +724,7 @@ def mint_sections(
                 continue
             minted.append(result)
 
-        remaining = len(records) - len(minted) - reported
+        remaining = len(queue) - len(minted) - reported
         if remaining > 0 and len(minted) >= budget:
             diagnostics.append(
                 _diag(
@@ -660,6 +751,8 @@ def _mint_one(
     *,
     tree: SectionParser,
     stylesheets: Sequence[Any],
+    root_units: RootUnits,
+    source_context: SourceDocumentContext | None,
     captured: Mapping[str, CapturedAsset],
     screenshot: bytes | None,
     source_kit_id: str | None,
@@ -669,6 +762,7 @@ def _mint_one(
     mark_degraded: Callable[..., dict[str, Any]] | None,
     diagnostics: list[dict[str, Any]],
     weight: PageWeight | None = None,
+    recovery_parent: SectionRecord | None = None,
 ) -> MintedSection | None:
     weight = weight if weight is not None else PageWeight()
     node = resolve_section(tree, record)
@@ -685,11 +779,38 @@ def _mint_one(
             )
         )
         return None
-    subtree = node.html or ""
+    subtree = root_units.markup(node.html or "")
 
-    matched = rules_for_subtree(stylesheets, subtree_html=subtree)
+    root_classes = ((tree.root.attributes.get("class") or "").split() if tree.root else ())
+    section_context = source_context.for_section(node) if source_context is not None else None
+    context_gap = None
+    if source_context is None:
+        context_gap = {
+            "mode": "unsupported", "fidelity_verified": False,
+            "limitations": ["source document context could not allocate collision-free markers"],
+        }
+    elif section_context is None:
+        context_gap = {
+            "mode": "unsupported" if source_context.unsupported else "not_needed",
+            "fidelity_verified": False,
+            "limitations": list(source_context.notes) if source_context.unsupported else [],
+        }
+    try:
+        matched = rules_for_subtree(
+            stylesheets, subtree_html=subtree, source_root_classes=root_classes,
+            source_context=section_context,
+        )
+    except ValueError as error:
+        if section_context is None:
+            raise
+        context_gap = {"mode": "unsupported", "fidelity_verified": False,
+                       "limitations": [*section_context.notes, str(error)]}
+        section_context = None
+        matched = rules_for_subtree(
+            stylesheets, subtree_html=subtree, source_root_classes=root_classes,
+        )
     harvest = build_reference_harvest(
-        subtree_html=subtree,
+        subtree_html=section_context.wrap(subtree) if section_context is not None else subtree,
         page_url=segmentation.page_url,
         css_blocks=matched.blocks,
         captured=captured,
@@ -780,6 +901,10 @@ def _mint_one(
             )
         )
 
+    if section_context is not None:
+        html_for_artifact = section_context.wrap(html_for_artifact)
+        detected = section_context.wrap_slots(detected)
+
     provenance = _provenance(
         segmentation,
         record,
@@ -791,6 +916,18 @@ def _mint_one(
         assessment,
         preview_refused_by=preview_refused_by,
     )
+    provenance["css"]["root_units"] = root_units.provenance()
+    provenance["css"]["source_document_context"] = (
+        section_context.provenance() if section_context is not None else context_gap
+    )
+    if recovery_parent is not None:
+        provenance["recovery"] = {
+            "mode": "authored-descendant-after-refusal",
+            "parent_section_index": recovery_parent.index,
+            "parent_dom_path": list(recovery_parent.dom_path),
+            "wrapper_layout_preserved": False,
+            "fidelity_verified": False,
+        }
     if record.hidden_on_source:
         provenance["hidden_on_source"]["unhidden_selectors"] = list(unhidden_selectors)
         provenance["hidden_on_source"]["unhidden_inline"] = list(unhidden_inline)
@@ -1343,6 +1480,7 @@ def _provenance(
             "rules_kept": matched.rules_kept,
             "sheets_read": matched.sheets_read,
             "byte_length": matched.byte_length,
+            "root_variable_rules": matched.root_variable_rules,
         },
         "slots": list(detected.keys),
         "slot_notes": list(detected.notes),

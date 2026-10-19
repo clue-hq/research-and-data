@@ -1,5 +1,6 @@
 import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
+import { chatShellKindForCard } from "./artifact-kind";
 import type { ChatShellOpenArtifact } from "./chat-shell";
 
 /**
@@ -27,6 +28,7 @@ export interface GalleryCardArtifact {
   id: string;
   title: string;
   type?: ProjectArtifact["type"];
+  documentKind?: ProjectArtifact["documentKind"];
   document?: ProjectDocument;
 }
 
@@ -43,8 +45,8 @@ export function galleryCardTarget(
   return {
     artifact: {
       id: card.id,
-      // The gallery's own kind derivation, unchanged.
-      kind: card.type === "website" ? "web" : "ad",
+      // Contract 8: the card's own document kind, else the historical derivation.
+      kind: chatShellKindForCard(card),
       title: card.title,
     },
     surface: "artifact",

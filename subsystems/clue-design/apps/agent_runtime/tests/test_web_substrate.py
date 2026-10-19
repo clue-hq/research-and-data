@@ -13,6 +13,7 @@ import io
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -26,6 +27,9 @@ from lumen_agent.tools.web_substrate import (
     sanitize_token_name,
     web_theme_token_names,
 )
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -1308,6 +1312,7 @@ def _seed_page_capture(tmp_path: Path, tools: LumenWebTools, width: int, size) -
     tools._preview_by_width[width] = str(path)
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
 
 
 def test_web_view_preview_clamps_to_the_many_image_ceiling(tmp_path: Path):
@@ -1317,6 +1322,230 @@ def test_web_view_preview_clamps_to_the_many_image_ceiling(tmp_path: Path):
     emitted = _emitted_image(tools._view_content("preview:1440"))
     assert max(emitted.size) <= view_mod._VISION_MANY_IMAGE_MAX_PX
     assert abs((emitted.size[0] / emitted.size[1]) - (1440 / 14325)) < 0.005
+
+
+def test_web_preview_tile_crops_saved_pixels_before_normalization(tmp_path: Path, monkeypatch):
+    """A real narrow/tall capture must stay legible, not become a 102px strip."""
+    from PIL import Image, ImageDraw
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (379, 7464))
+    path = Path(tools._preview_by_width[375])
+    with Image.open(path) as source:
+        drawing = ImageDraw.Draw(source)
+        drawing.rectangle((0, 1100, 378, 1699), fill="red")
+        drawing.rectangle((0, 1700, 378, 2299), fill="blue")
+        source.save(path)
+    original = path.read_bytes()
+    doc_before = json.dumps(tools.web_doc, sort_keys=True)
+    version_before = tools._doc_version
+
+    def must_not_render(*args, **kwargs):
+        raise AssertionError("viewing a saved tile must never render")
+
+    monkeypatch.setattr(tools, "render_web_preview", must_not_render)
+    # Invoke the same callable exposed to a non-rendering reviewer.
+    blocks = ws.make_web_view_tool(tools, can_render=False).invoke(
+        {"target": "preview:375:tile:1"}
+    )
+    tile = _emitted_image(blocks)
+    assert tile.size == (512, 1621)
+    assert tile.getpixel((256, 200)) == (255, 0, 0)
+    assert tile.getpixel((256, 1400)) == (0, 0, 255)
+    meta = json.loads(blocks[0]["text"])
+    assert meta["source"] == {
+        "target": "preview:375",
+        "sha256": hashlib.sha256(original).hexdigest(),
+        "pixel_width": 379,
+        "pixel_height": 7464,
+        "render_iteration": 1,
+        "local_document_version": version_before,
+    }
+    assert meta["crop"] == {"x": 0, "y": 1100, "width": 379, "height": 1200}
+    assert meta["tile"] == {"index": 1, "count": 7, "height": 1200, "overlap": 100}
+    assert meta["document_id"] == "doc_web_test"
+    assert meta["page_id"] == "home"
+    assert meta["run_id"] == tools.run_id
+    assert meta["persisted_revision_checked"] is False
+    assert meta["coverage"] == {
+        "scope": "this_call_only",
+        "other_tile_index_ranges": [[0, 0], [2, 6]],
+        "next_target": "preview:375:tile:2",
+        "complete_source_shown": False,
+    }
+    assert path.read_bytes() == original
+    assert list(tmp_path.glob("*.png")) == [path]
+    assert json.dumps(tools.web_doc, sort_keys=True) == doc_before
+    assert tools._doc_version == version_before
+    assert tools.operations_ledger == []
+
+
+@pytest.mark.parametrize(
+    ("size", "index", "crop", "count"),
+    [
+        ((379, 7464), 6, {"x": 0, "y": 6600, "width": 379, "height": 864}, 7),
+        ((768, 1200), 0, {"x": 0, "y": 0, "width": 768, "height": 1200}, 1),
+        ((1440, 600), 0, {"x": 0, "y": 0, "width": 1440, "height": 600}, 1),
+    ],
+)
+def test_web_preview_tile_bounds_cover_tail_and_short_pages(tmp_path, size, index, crop, count):
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, size)
+    blocks = tools._view_content(f"preview:375:tile:{index}")
+    meta = json.loads(blocks[0]["text"])
+    assert meta["crop"] == crop
+    assert meta["tile"]["count"] == count
+    assert meta["coverage"]["next_target"] is None
+    assert meta["coverage"]["complete_source_shown"] is (count == 1)
+    assert meta["coverage"]["other_tile_index_ranges"] == ([] if count == 1 else [[0, 5]])
+    assert max(_emitted_image(blocks).size) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    refused = tools._view_content(f"preview:375:tile:{count}")
+    assert len(refused) == 1
+    assert "out of range" in refused[0]["text"]
+
+
+@pytest.mark.parametrize("suffix", ["-1", "1.5", "0:extra", "../secret.png", "9" * 100])
+def test_web_preview_tile_invalid_indexes_never_open_a_file(tmp_path, monkeypatch, suffix):
+    tools = _bare_tools(tmp_path)
+
+    def must_not_open(*args, **kwargs):
+        raise AssertionError("malformed targets must be rejected before image access")
+
+    monkeypatch.setattr(Path, "read_bytes", must_not_open)
+    blocks = tools._view_content(f"preview:375:tile:{suffix}")
+    assert len(blocks) == 1
+    assert "invalid preview tile target" in blocks[0]["text"]
+
+
+def test_web_preview_tiles_use_only_registered_capture_and_existing_stale_guards(tmp_path):
+    tools = _bare_tools(tmp_path)
+    # An unregistered file with the expected name is not enough to expose pixels.
+    (tmp_path / "preview_375.png").write_bytes(b"unreadable")
+    missing = tools._view_content("preview:375:tile:0", can_render=False)
+    assert "no preview rendered" in missing[0]["text"]
+    tools._preview_by_width[375] = str(tmp_path / "preview_375.png")
+    tools._preview_doc_version = tools._doc_version
+    tools._doc_version += 1
+    # The unreadable bytes prove the stale guard runs before image decoding.
+    for can_render in (False, True):
+        stale = tools._view_content("preview:375:tile:0", can_render=can_render)
+        assert len(stale) == 1
+        assert "STALE" in stale[0]["text"]
+        assert ("render_web_preview" in stale[0]["text"]) is can_render
+        assert ("END YOUR REPLY" in stale[0]["text"]) is not can_render
+    unsupported = tools._view_content("preview:1024:tile:0")
+    assert "unknown preview width" in unsupported[0]["text"]
+
+
+def test_web_preview_tile_reports_new_snapshot_identity_without_carrying_coverage(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (379, 2400))
+    first = json.loads(tools._view_content("preview:375:tile:0")[0]["text"])
+    path = Path(tools._preview_by_width[375])
+    Image.new("RGB", (379, 2400), "red").save(path)
+    tools._doc_version += 1
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 2
+    second = json.loads(tools._view_content("preview:375:tile:0")[0]["text"])
+    assert second["source"]["sha256"] != first["source"]["sha256"]
+    assert second["source"]["render_iteration"] == 2
+    assert second["source"]["local_document_version"] == tools._doc_version
+    assert second["coverage"] == first["coverage"]
+    assert second["coverage"]["other_tile_index_ranges"] == [[1, 2]]
+
+
+def _review_report(tools):
+    return json.loads(tools._view_content("review")[0]["text"])
+
+
+def test_review_report_retains_render_and_comparison_limits(tmp_path):
+    tools = _bare_tools(tmp_path)
+    tools._review_observations.record_walk(tools.page_id, tools._doc_version, {
+        "evidence_settled": True, "advice_available": False,
+        "comparison": {"status": "ok", "bands": [], "skipped": [
+            {"fragment_id": "frag_footer", "because": "no_reference_geometry"},
+        ]},
+    })
+    tools._state_capture_limits = {
+        "page_id": tools.page_id, "version": tools._doc_version,
+        "error": None, "omitted": {"tabs": ["omitted_tab"]},
+    }
+    report = _review_report(tools)
+    codes = {item["code"] for item in report["gaps"]}
+    assert {"review.preview_unsettled", "review.advice_unavailable",
+            "review.source_bands_uncompared", "review.state_capture_incomplete"} <= codes
+    assert report["clone_review"]["comparison"]["skipped"][0]["fragment_id"] == "frag_footer"
+    assert report["quality_verdict"] == "not_computed"
+
+
+def test_review_report_accumulates_readable_tiles_without_accepting_the_page(tmp_path):
+    tools = _bare_tools(tmp_path)
+    for width in (1440, 768, 375):
+        _seed_page_capture(tmp_path, tools, width, (width, 2400))
+        tools._view_content(f"preview:{width}")
+    tools._view_content("preview:375:tile:0")
+    tools._view_content("preview:375:tile:0")
+    report = _review_report(tools)
+    phone = report["previews"]["375"]
+    assert phone["overview_shown"] is True
+    assert phone["shown_tile_indexes"] == [0]
+    assert phone["unseen_tile_index_ranges"] == [[1, 2]]
+    assert report["quality_verdict"] == "not_computed"
+    for width in (1440, 768, 375):
+        for index in range(3):
+            tools._view_content(f"preview:{width}:tile:{index}")
+    report = _review_report(tools)
+    assert report["status"] == "observations_recorded"
+    assert report["quality_verdict"] == "not_computed"
+    assert all(row["readable_coverage_complete"] for row in report["previews"].values())
+
+
+def test_review_receipts_are_invalidated_by_document_revision_and_changed_pixels(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (375, 500))
+    tools._view_content("preview:375")
+    assert _review_report(tools)["previews"]["375"]["readable_coverage_complete"]
+    Image.new("RGB", (375, 500), "red").save(tools._preview_by_width[375])
+    assert not _review_report(tools)["previews"]["375"]["readable_coverage_complete"]
+    tools._view_content("preview:375")
+    tools._doc_version += 1
+    report = _review_report(tools)
+    assert report["previews"]["375"]["status"] == "stale"
+    assert report["previews"]["375"]["shown_tile_indexes"] == []
+
+
+def test_state_view_refuses_stale_capture_and_supports_readable_strips(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    path = _seed_state_capture(tmp_path, tools)
+    Image.new("RGB", (1440, 3500), "white").save(path)
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 1
+    blocks = tools._view_content("state:0:tile:1")
+    meta = json.loads(blocks[0]["text"])
+    assert meta["source"]["target"] == "state:0"
+    assert _review_report(tools)["states"]["0"]["shown_tile_indexes"] == [1]
+    tools._doc_version += 1
+    assert "STALE" in tools._view_content("state:0")[0]["text"]
+    assert "STALE" in tools._view_content("state:0:tile:1")[0]["text"]
+
+
+def test_finalization_persists_observed_review_gaps_without_blocking_draft_save(tmp_path):
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (375, 2400))
+    tools._view_content("preview:375:tile:0")
+    result = json.loads(tools.finalize_web_run("completed_with_warnings", "Draft saved"))
+    assert result["status"] == "ok"
+    evidence = result["review_evidence"]
+    assert evidence["status"] == "incomplete"
+    assert evidence["previews"]["375"]["unseen_tile_index_ranges"] == [[1, 2]]
+    saved = json.loads((tools.turn_dir / "final.json").read_text())
+    assert saved["review_evidence"] == evidence
 
 
 def test_web_view_state_capture_clamps_to_the_many_image_ceiling(tmp_path: Path):
@@ -1360,6 +1589,7 @@ def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
         tools._preview_by_width[width] = str(tmp_path / f"preview_{width}.png")
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
     iteration_before = tools.iteration
 
     def _must_not_render(*args, **kwargs):
@@ -1394,6 +1624,23 @@ def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
     assert after["error_code"] == "web_render.failed"
 
 
+def test_unsettled_media_preview_is_not_reused_for_an_unchanged_document(tmp_path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    for width in ws._PREVIEW_WIDTHS:
+        tools._preview_by_width[width] = str(tmp_path / f"preview_{width}.png")
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_media_ready = False
+    from lumen_api.core import CoreError
+
+    def failed_render(*args, **kwargs):
+        raise CoreError("helper.unavailable", "render retry reached", [])
+
+    monkeypatch.setattr(tools.core, "web_render", failed_render)
+    result = json.loads(tools.render_web_preview())
+    assert result.get("unchanged") is not True
+    assert result["error_code"] == "web_render.failed"
+
+
 # --- between-renders edit budget + role-aware stale views --------------------
 # Live failure 2026-07-29: an author round churned blind for 14 minutes (16
 # subtree rewrites) because stale views told it to call render_web_preview —
@@ -1423,6 +1670,7 @@ def test_round_budget_refuses_mutations_then_render_reopens(tmp_path: Path, monk
         tools._preview_by_width[width] = str(path)
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
     assert json.loads(tools.render_web_preview())["status"] == "ok"
     assert tools._mutations_since_render == 0
 
@@ -1777,14 +2025,17 @@ def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path,
     """FOUNDER RULE (2026-08-23): the deepagent must be able to specify the
     aspect ratio. The neighbouring test stops at the provider seam; this one runs
     the REAL `image_provider` on the gpt-image-2 (`IMAGE_MODEL_API_STYLE=images`)
-    transport with only the HTTP call mocked, so the whole chain —
+    transport with only the ProviderCaller transport mocked, so the whole chain —
     `asset(aspect_ratio=...)` → `_generate_image_record` → `generate` →
     `_invoke_images_api` → the wire body's STRUCTURED `aspect_ratio` — is pinned
     end to end. Its `21:9` also proves the closed-enum snap survives the trip:
     the agent asks for an unsupported 5:2 and the endpoint sees a legal member.
     """
     from lumen_api import image_provider as real_image_provider
+    from lumen_api import spend
     from py_lumen_config import settings
+
+    from clue_spend import HttpResponse, LedgerStamp
 
     png = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -1798,23 +2049,26 @@ def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path,
 
     captured: dict = {}
 
-    class _FakeResponse:
-        status_code = 200
-        headers = {"content-type": "application/json"}
+    class Transport:
+        def send(self, request):
+            assert request.method == "POST"
+            assert request.headers["Authorization"] == "Bearer test-key"
+            captured.update(url=request.url, json=json.loads(request.body))
+            return HttpResponse(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({
+                    "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]
+                }).encode("utf-8"),
+            )
 
-        def json(self) -> dict:
-            return {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
-
-    def fake_post(url, json=None, headers=None, timeout=None):
-        captured.update(url=url, json=json)
-        return _FakeResponse()
-
-    monkeypatch.setattr("httpx.post", fake_post)
     tools = _tools(tmp_path)
-
-    result = json.loads(
-        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
-    )
+    with spend.spend_scope(
+        LedgerStamp(workspace_id="ws_image_ratio_test"), transport=Transport()
+    ):
+        result = json.loads(
+            tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
+        )
 
     assert result["status"] == "ok", result
     assert result["mode"] == "model"

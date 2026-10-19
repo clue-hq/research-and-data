@@ -132,6 +132,22 @@ def is_finalized_document(document: JsonObject) -> bool:
     return scene_status(document.get("scene") or {}) == "finalized"
 
 
+#: The kinds of document a person publishes as a website.
+_WEBSITE_DOC_KINDS = ("web", "site")
+
+
+def _born_noindex(doc_kind: str) -> bool:
+    """The one birth rule for the durable ``web_noindex`` (founder ruling 2026-10-16).
+
+    Every NEW website document — web or site, whichever route creates it (a plain document, a
+    derivation, a template, a chat-born page) — is born kept out of search indexes. A person
+    makes it indexable by ticking "Allow indexing" in Share, which clears the flag through
+    :func:`set_web_noindex`. A scene has no publish surface and is born false. Only the two
+    inserts below call this; nothing rewrites a document that already exists.
+    """
+    return doc_kind in _WEBSITE_DOC_KINDS
+
+
 def _document_from_row(row: Any) -> JsonObject:
     return {
         "id": row.id,
@@ -152,7 +168,8 @@ def _document_from_row(row: Any) -> JsonObject:
         # Clone-fidelity F4.3, FOUNDER RULING R-F1: `noindex` is a DURABLE property of a web
         # page, not an argument one caller happens to pass. Every publish path ORs it with
         # whatever the request asked for, so a plain republish of an ABM account page cannot
-        # quietly re-index it. Meaningless on a scene document, and false there.
+        # quietly re-index it. Every new website document is born true (`_born_noindex`).
+        # Meaningless on a scene document, and false there.
         "web_noindex": bool(row.web_noindex),
         "is_template": bool(row.is_template),
         "template_document_id": row.template_document_id,
@@ -198,7 +215,7 @@ async def create_document(
     template_doc_version: int | None = None,
     account_id: str | None = None,
 ) -> JsonObject:
-    if doc_kind == "web":
+    if doc_kind in _WEBSITE_DOC_KINDS:
         scene = await _stamp_approved_brand_kit_at_birth(
             conn, workspace_id=workspace_id, web_doc=scene
         )
@@ -228,11 +245,12 @@ async def create_document(
               id, workspace_id, title, status, doc_kind, current_scene_json,
               current_version, effective_brand_kit_source, effective_brand_kit_id,
               effective_brand_kit_version, effective_brand_mode_json, brand_kit_json,
-              template_document_id, template_doc_version, account_id
+              template_document_id, template_doc_version, account_id, web_noindex
             )
             VALUES (:id, :w, :title, :status, :doc_kind, CAST(:scene AS jsonb), 0,
                     :eff_source, :eff_id, :eff_version, CAST(:eff_mode AS jsonb),
-                    CAST(:brand_kit AS jsonb), :tpl_doc, :tpl_version, :account_id)
+                    CAST(:brand_kit AS jsonb), :tpl_doc, :tpl_version, :account_id,
+                    :web_noindex)
             """
         ),
         {
@@ -250,6 +268,7 @@ async def create_document(
             "tpl_doc": template_document_id,
             "tpl_version": template_doc_version,
             "account_id": account_id,
+            "web_noindex": _born_noindex(doc_kind),
         },
     )
     return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
@@ -273,10 +292,10 @@ async def create_web_template(
             INSERT INTO design_document (
               id, workspace_id, title, status, doc_kind, current_scene_json,
               current_version, effective_brand_kit_id, effective_brand_kit_version,
-              is_template, account_id
+              is_template, account_id, web_noindex
             )
             VALUES (:id, :w, :title, 'draft', 'web', CAST(:doc AS jsonb), 0,
-                    :eff_id, :eff_version, true, :account_id)
+                    :eff_id, :eff_version, true, :account_id, :web_noindex)
             """
         ),
         {
@@ -287,6 +306,7 @@ async def create_web_template(
             "eff_id": brand_ref["id"] if brand_ref else None,
             "eff_version": brand_ref["version"] if brand_ref else None,
             "account_id": account_id,
+            "web_noindex": _born_noindex("web"),
         },
     )
     return await get_document(conn, workspace_id=workspace_id, document_id=str(web_doc["id"]))
@@ -376,10 +396,10 @@ async def rename_document(
     document = await get_document(
         conn, workspace_id=workspace_id, document_id=document_id, for_update=True
     )
-    # The jsonb path to the document's own title: a web doc carries it at the top level, a
+    # The jsonb path to the document's own title: a web or site doc carries it at the top level, a
     # scene under ``meta``. Passed as a list, not the ``{a,b}`` literal — the driver binds a
     # text[] argument from a sized iterable and refuses a string.
-    path = ["title"] if document["doc_kind"] == "web" else ["meta", "title"]
+    path = ["title"] if document["doc_kind"] in ("web", "site") else ["meta", "title"]
     await conn.execute(
         text(
             "UPDATE design_document"
@@ -608,12 +628,16 @@ async def update_web_document(
     reverts_batch_id: str | None = None,
     reapplies_batch_id: str | None = None,
     expected_base_version: int | None = None,
+    actor_id: str | None = None,
 ) -> JsonObject:
     """The website-mode state write (ported verbatim; see the module docstring's undo model).
 
     The row lock serializes concurrent writers; the CAS predicate is kept as well so an
     explicit ``expected_base_version`` mismatch surfaces as the typed conflict rather than a
     silent overwrite — same double guard as the SQLite layer's version predicate.
+
+    ``actor_id`` is stamped on the history rows. An agent-run site save passes its run id, which
+    is how :func:`clue_design.runs.hold_run_for_save` knows the run has already saved.
     """
     document = await get_document(
         conn, workspace_id=workspace_id, document_id=document_id, for_update=True
@@ -688,7 +712,7 @@ async def update_web_document(
         envelope=envelope,
         source=source,
         actor_kind=actor_kind,
-        actor_id=None,
+        actor_id=actor_id,
     )
     await _history.append_operations(
         conn,
@@ -697,7 +721,7 @@ async def update_web_document(
         operations=operations,
         source=source,
         actor_kind=actor_kind,
-        actor_id=None,
+        actor_id=actor_id,
         diagnostics=[],
         batch_id=batch_id,
     )

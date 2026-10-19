@@ -25,6 +25,9 @@ clean up their committed rows; the payload test stays on the rolled-back session
 from __future__ import annotations
 
 import asyncio
+import os
+import socket
+from contextlib import asynccontextmanager as contextlib_asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -35,11 +38,11 @@ from pydantic import TypeAdapter
 from sqlalchemy import text
 
 from clue_api.agent_turn_submission import message_artifact_ref
-from clue_api.design_fleet import InlineDesignLaneDriver
+from clue_api.design_fleet import InlineDesignLaneDriver, design_leg_lane_worker_id
 from clue_db import db_lifespan, transaction
 from clue_design import runs as design_runs
 from clue_design.envelopes import DesignTurnEnvelope
-from clue_fleet import WorkId, acquire_work_lease, get_work_lease
+from clue_fleet import LeaseGeneration, WorkId, acquire_work_lease, get_work_lease
 from clue_fleet.work_worker import WorkContext, WorkResult
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -483,5 +486,151 @@ def test_cancelled_inline_driver_waits_for_its_body_and_keeps_lease(
                 if not drive.done():
                     drive.cancel()
                 await _cleanup_committed_run(envelope)
+
+    run_async(scenario())
+
+
+# --- site-turn durability, task 1 (2026-10-16) -------------------------------------------------
+#
+# The inline lane used ONE worker id, "design-leg-inline-lane", in every process, and the lease
+# lets its holder re-acquire a live lease — so two processes could both "hold" one design run's
+# lease and drive it at once. The id is now per process.
+
+
+def test_the_inline_lane_worker_id_names_its_host_and_process() -> None:
+    assert design_leg_lane_worker_id() == (
+        f"design-leg-inline-lane:{socket.gethostname()}:{os.getpid()}"
+    )
+    assert design_leg_lane_worker_id(host="h", pid=1) != design_leg_lane_worker_id(host="h", pid=2)
+
+
+def test_two_inline_lane_processes_cannot_both_drive_one_run(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Process 1 is driving the run; process 2's lane is refused the lease, waits on the live
+    foreign holder, and returns once process 1 has finished — its handler never runs."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            envelope = await _seed_committed_run("two-processes")
+            entered, release = asyncio.Event(), asyncio.Event()
+            seen: list[str] = []
+
+            class FirstProcessHandler:
+                async def handle(self, context: WorkContext) -> WorkResult:
+                    seen.append(context.worker_id)
+                    entered.set()
+                    await release.wait()
+                    async with transaction() as conn:
+                        await design_runs.claim_run_for_execution(
+                            conn,
+                            work_id=envelope.work_id,
+                            worker_id=context.worker_id,
+                            lease_generation=int(context.lease_generation),
+                        )
+                        await design_runs.set_run_result(
+                            conn,
+                            workspace_id=envelope.workspace_id,
+                            run_id=envelope.run_id,
+                            status="succeeded",
+                            result={"schema_version": 1, "status": "accepted"},
+                            expected_generation=int(context.lease_generation),
+                        )
+                    return WorkResult(outcome="succeeded", references={})
+
+            class SecondProcessHandler:
+                async def handle(self, context: WorkContext) -> WorkResult:
+                    seen.append(context.worker_id)
+                    return WorkResult(outcome="succeeded", references={})
+
+            settings = {
+                "lease_ttl": timedelta(seconds=1.0),
+                "heartbeat_interval_s": 0.25,
+                "join_poll_interval_s": 0.1,
+                "join_timeout_s": 10.0,
+            }
+            try:
+                first = InlineDesignLaneDriver(
+                    handler=FirstProcessHandler(),
+                    worker_id=design_leg_lane_worker_id(host="vm", pid=101),
+                    **settings,
+                )
+                second = InlineDesignLaneDriver(
+                    handler=SecondProcessHandler(),
+                    worker_id=design_leg_lane_worker_id(host="vm", pid=202),
+                    **settings,
+                )
+                one = asyncio.create_task(first.drive(envelope=envelope))
+                await asyncio.wait_for(entered.wait(), 3)
+                two = asyncio.create_task(second.drive(envelope=envelope))
+                await asyncio.sleep(0.6)
+                assert not two.done()  # waiting on process 1's live lease, not driving
+                async with transaction() as conn:
+                    lease = await get_work_lease(conn, WorkId(envelope.work_id))
+                assert lease is not None and lease.live
+                assert lease.worker_id == design_leg_lane_worker_id(host="vm", pid=101)
+                release.set()
+                await asyncio.wait_for(asyncio.gather(one, two), 8)
+                assert seen == [design_leg_lane_worker_id(host="vm", pid=101)]
+            finally:
+                release.set()
+                await _cleanup_committed_run(envelope)
+
+    run_async(scenario())
+
+
+def test_the_lane_keeps_a_lease_whose_beats_land_late_while_nobody_took_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The database is unreachable for longer than the TTL; when it returns, the renew lands
+    (nobody claimed the run), so the lane does not abandon the turn. A renew that reaches the
+    database and fails — someone took the lease — still ends it at once."""
+
+    import clue_api.design_fleet as design_fleet
+
+    state = {"back": False, "taken": False, "renewed": 0}
+
+    async def renew(conn: object, **_: object) -> bool:
+        if not state["back"]:
+            raise RuntimeError("connection refused")
+        if state["taken"]:
+            return False
+        state["renewed"] += 1
+        return True
+
+    @contextlib_asynccontextmanager
+    async def connections() -> Any:
+        yield object()
+
+    monkeypatch.setattr(design_fleet, "renew_work_lease", renew)
+
+    async def scenario() -> None:
+        driver = InlineDesignLaneDriver(
+            handler=_AbandonOnLeaseLossHandler(),
+            conn_factory=connections,
+            lease_ttl=timedelta(seconds=0.3),
+            heartbeat_interval_s=0.05,
+        )
+        lease_lost = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        beat = asyncio.create_task(
+            driver._keep_lease(
+                work_id=WorkId(uuid4()),
+                generation=LeaseGeneration(1),
+                lease_lost=lease_lost,
+                acquired_at=loop.time(),
+            )
+        )
+        await asyncio.sleep(0.6)  # twice the TTL with every renew failing to connect
+        assert not lease_lost.is_set() and not beat.done()
+        state["back"] = True
+        await asyncio.sleep(0.2)
+        assert state["renewed"] > 0 and not lease_lost.is_set()
+        state["taken"] = True
+        await asyncio.wait_for(beat, 1)
+        assert lease_lost.is_set()
 
     run_async(scenario())

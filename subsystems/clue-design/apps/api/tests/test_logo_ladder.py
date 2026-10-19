@@ -6,12 +6,12 @@ confidently wrong answer. They are regression pins, not coverage.
 
 from __future__ import annotations
 
+import asyncio
 import io
 
+import httpx
 import pytest
-
 from lumen_ingestion import logo_ladder as ladder
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -947,6 +947,189 @@ def test_company_tokens_read_the_organisation_label():
     assert {"goodman", "campbell"} <= ladder.company_tokens(
         "goodmancampbell.com", "Goodman Campbell Brain and Spine"
     )
+
+
+# ---------------------------------------------------------------------------
+# optional brand pages must not discard logos harvested from a successful page
+# ---------------------------------------------------------------------------
+
+
+def _fetch_static_site(monkeypatch, responses, requested):
+    """Keep the real fetcher and SSRF guard; substitute DNS and HTTP transport only."""
+    from lumen_ingestion.capture import net
+
+    async def public_dns(host, port):
+        return ["93.184.216.34"]
+
+    def respond(request):
+        url = str(request.url)
+        requested.append(url)
+        response = responses.get(url, httpx.Response(404))
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await ladder.fetch_logo_family(
+                "https://acme.com/", company_name="Acme Robotics", client=client,
+            )
+
+    monkeypatch.setattr(net, "_resolve_all", public_dns)
+    return asyncio.run(run())
+
+
+@pytest.mark.parametrize("redirected", [False, True])
+@pytest.mark.parametrize("optional_failure", ["not_found", "timeout"])
+def test_homepage_logo_survives_optional_page_fetch_failures(
+    monkeypatch, redirected, optional_failure,
+):
+    logo_url = "https://assets.example.net/acme-logo.svg"
+    final_url = "https://acme.com/overview/default.aspx" if redirected else "https://acme.com/"
+    responses = {
+        final_url: httpx.Response(200, text=(
+            '<title>Acme Robotics</title><header><a href="/">'
+            '<img src="//assets.example.net/acme-logo.svg" alt="Acme Robotics">'
+            '</a></header>'
+        )),
+        logo_url: httpx.Response(
+            200, content=_wordmark_svg(), headers={"content-type": "image/svg+xml"},
+        ),
+    }
+    if redirected:
+        responses["https://acme.com/"] = httpx.Response(
+            302, headers={"location": "/overview/default.aspx"},
+        )
+    if optional_failure == "timeout":
+        responses["https://acme.com/brand"] = httpx.ReadTimeout("fixture " * 1000)
+    requested = []
+
+    result = _fetch_static_site(monkeypatch, responses, requested)
+
+    assert result.status == "resolved"
+    assert result.slots["light"].candidate.url == logo_url
+    assert result.slots["light"].body == _wordmark_svg()
+    assert "https://acme.com/press" in requested
+    notes = [note for note in result.notes if "optional brand page" in note]
+    assert len(notes) == 2
+    assert all(len(note) <= 240 for note in notes)
+    assert all("fixture" not in note for note in notes)
+
+
+def test_later_optional_page_can_supply_a_logo_after_an_earlier_404(monkeypatch):
+    requested = []
+    result = _fetch_static_site(monkeypatch, {
+        "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+        "https://acme.com/press": httpx.Response(200, text=(
+            '<header><img src="/acme-logo.svg" alt="Acme Robotics"></header>'
+        )),
+        "https://acme.com/acme-logo.svg": httpx.Response(
+            200, content=_wordmark_svg(), headers={"content-type": "image/svg+xml"},
+        ),
+    }, requested)
+
+    assert result.status == "resolved"
+    assert result.slots["light"].candidate.url == "https://acme.com/acme-logo.svg"
+    assert result.slots["light"].candidate.rung == "BRAND_PAGE"
+    assert requested.index("https://acme.com/brand") < requested.index("https://acme.com/press")
+
+
+def test_initial_page_failure_still_aborts_logo_discovery(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+
+    requested = []
+    with pytest.raises(CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {}, requested)
+
+    assert failure.value.code == "LUMI0503"
+    assert requested == ["https://acme.com/"]
+
+
+def test_optional_page_redirect_to_private_address_still_fails_closed(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+
+    requested = []
+    with pytest.raises(CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {
+            "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+            "https://acme.com/brand": httpx.Response(
+                302, headers={"location": "http://127.0.0.1/internal"},
+            ),
+        }, requested)
+
+    assert failure.value.code == "LUMI0501"
+    assert requested == ["https://acme.com/", "https://acme.com/brand"]
+
+
+def test_optional_page_size_limit_still_fails_closed(monkeypatch):
+    from lumen_ingestion.capture import net
+
+    monkeypatch.setattr(net, "PAGE_MAX_BYTES", 100)
+    with pytest.raises(net.CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {
+            "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+            "https://acme.com/brand": httpx.Response(200, content=b"x" * 101),
+        }, [])
+
+    assert failure.value.code == "LUMI0507"
+# --- Atrium Hospitality, 2026-10-04: the header lockups only became measurable once AVIF decoded --
+
+
+def test_an_ambiguous_dark_name_yields_to_measured_dark_ink() -> None:
+    """A file named "dark" whose ink measures dark is the LIGHT-background asset, not dark mode."""
+    candidate = ladder.LadderCandidate(
+        url="https://cdn.example/logos/acme-logo-dark.png",
+        appearance={"kind": "png", "verdict": "light_variant", "mean_lightness": 0.295},
+    )
+    variant, basis, _rank = ladder.classify_variant(candidate)
+    assert variant == "light"
+    assert "dark ink" in basis
+
+
+def test_a_dark_name_still_wins_when_the_pixels_agree_or_say_nothing() -> None:
+    agreeing = ladder.LadderCandidate(
+        url="https://cdn.example/logos/acme-logo-dark.png",
+        appearance={"kind": "png", "verdict": "dark_variant", "mean_lightness": 0.97},
+    )
+    unread = ladder.LadderCandidate(url="https://cdn.example/logos/acme-logo-dark.png")
+    assert ladder.classify_variant(agreeing)[0] == "dark"
+    assert ladder.classify_variant(unread)[0] == "dark"
+    assert "filename/alt" in ladder.classify_variant(unread)[1]
+
+
+def _large_header_raster(url: str, link: str | None) -> ladder.LadderCandidate:
+    return ladder.LadderCandidate(
+        url=url, rung="HEADER", fmt="png", width=3000, height=1562, link_destination=link,
+    )
+
+
+def test_a_full_resolution_header_logo_linked_home_and_brand_named_is_not_a_hero() -> None:
+    candidate = _large_header_raster(
+        "https://cdn.example/logos/atrium-hospitality-12735-morris-rd.png",
+        "https://www.atriumhospitality.com/",
+    )
+    score, signals, *_ = ladder.score_candidate(candidate, "atriumhospitality.com", set())
+    assert not any("hero/screenshot" in s for s in signals)
+    unlinked = _large_header_raster(candidate.url, None)
+    unlinked_score, *_ = ladder.score_candidate(unlinked, "atriumhospitality.com", set())
+    # The link home is worth +20; the rest of the gap is the hero penalty it no longer pays.
+    assert score - unlinked_score == 20 + 90
+
+
+@pytest.mark.parametrize(
+    ("url", "link"),
+    [
+        # brand-named but not linked home: a lobby photo
+        ("https://cdn.example/img/atrium-hospitality-lobby.png", None),
+        # linked home but not brand-named: a hero banner
+        ("https://cdn.example/img/summer-hero.png", "https://www.atriumhospitality.com/"),
+    ],
+)
+def test_a_large_raster_with_only_one_signal_is_still_a_hero(url: str, link: str | None) -> None:
+    _score, signals, *_ = ladder.score_candidate(
+        _large_header_raster(url, link), "atriumhospitality.com", set()
+    )
+    assert any("hero/screenshot" in s for s in signals)
 
 
 # ---------------------------------------------------------------------------

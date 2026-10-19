@@ -1,4 +1,5 @@
 import type { AssetLibraryCategory, AssetLibraryItem } from "@/features/design-editor/adapter/scene-asset-library";
+import type { AssetLibraryLogoSearch } from "@/features/design-editor/hooks/use-scene-asset-library";
 
 /** The picker's rules, kept out of the panel so every one of them is tested (the lane's
  * presentation-components-carry-no-logic convention). */
@@ -60,4 +61,27 @@ export function nextFocusIndex(current: number, key: string, count: number, colu
     case "ArrowUp": return current - columns >= 0 ? current - columns : current;
     default: return null;
   }
+}
+
+/** A logo search tile's two lines: what the version is (and the background it is for, when the
+ * source claimed one), then who served it. */
+export function logoResultCaption(logo: { kind: string; background: "light" | "dark" | null; source: string }) {
+  return {
+    title: logo.background ? `${logo.kind} · ${logo.background} bg` : logo.kind,
+    source: logo.source,
+  };
+}
+
+/** The results heading: the company's domain and how many versions came back. */
+export function logoSearchHeading(name: string | null, count: number): string {
+  const versions = count === 1 ? "1 version found" : `${count} versions found`;
+  return name ? `${name} · ${versions}` : versions;
+}
+
+/** The library's Logo search when it provides every part of it, else null: the site editor's library
+ * has none, so its panel shows the library alone (no tabs). */
+export function logoSearchOf(library: Partial<AssetLibraryLogoSearch>): AssetLibraryLogoSearch | null {
+  const { tab, setTab, logoSearch, setLogoQuery, searchLogos, pickLogo } = library;
+  if (!tab || !setTab || !logoSearch || !setLogoQuery || !searchLogos || !pickLogo) return null;
+  return { tab, setTab, logoSearch, setLogoQuery, searchLogos, pickLogo };
 }

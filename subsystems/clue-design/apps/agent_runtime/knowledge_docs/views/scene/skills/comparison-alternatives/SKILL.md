@@ -61,7 +61,7 @@ weaken credibility even when the headline sounds plausible.
 Use `knowledge/scene/components.md` for native labels, rules, charts, qualifiers
 and optional buttons. Place authentic advertiser and authorized comparison logos
 as independent assets; logo size does not establish feature superiority. Use
-`knowledge/scene/references.md` for independent background imagery. Generate
+`/.deepagent/skills/generative-imagery/SKILL.md` for independent background imagery. Generate
 illustrative context only; never generate comparison evidence, competitor UI or
 certification badges.
 

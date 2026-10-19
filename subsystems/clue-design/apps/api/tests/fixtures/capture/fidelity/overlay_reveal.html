@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S6 probe: a reveal behind a removed overlay</title>
+<!-- S6 probe. The page opens with a full-viewport cookie wall as the FIRST child of <body> (the capture
+     removes it before measuring: LUMI0530), then the page wrapper whose third section fades in when it
+     scrolls into view, then a footer wrapper of the same shape. Local file only. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  .wall { position: fixed; inset: 0; background: rgba(0,0,0,.6); color: #fff; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .wrap > section { padding: 60px 40px; min-height: 400px; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 600ms ease-out, transform 600ms ease-out; }
+  .reveal.is-in { opacity: 1; transform: none; }
+  .b { display: inline-flex; padding: 12px 24px; border: 0; border-radius: 8px; background: #047464; color: #fff; }
+  .foot > section { padding: 40px; min-height: 120px; background: #f5f5f5; transition: background-color 200ms ease; }
+</style></head>
+<body>
+<div class="wall" id="wall"><p>We use cookies. <button>Accept</button></p></div>
+<div class="wrap" id="page">
+  <section><h1>Hero</h1><button class="b">Book a demo</button></section>
+  <section><h2>Second</h2><p>Text.</p></section>
+  <section class="reveal" id="rv"><h2>Fades in on scroll</h2><p>Text.</p></section>
+</div>
+<div class="foot" id="foot">
+  <section><p>Footer one</p></section>
+  <section><p>Footer two</p></section>
+  <section id="foot3"><p>Footer three</p></section>
+</div>
+<script>
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) e.target.classList.add('is-in'); }));
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body></html>

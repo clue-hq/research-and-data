@@ -97,6 +97,8 @@ export type OnboardingAuthResult =
     }
   | { status: "error"; message: string };
 
+export type OnboardingGoogleAuthResult = OnboardingAuthResult | { status: "redirecting" };
+
 export type InvitationSignUpInput = {
   ticket: string;
   firstName: string;
@@ -121,7 +123,7 @@ export interface OnboardingAuthAdapter {
   acceptInvitation?(params: InvitationSignUpInput): Promise<OnboardingAuthResult>;
   verifyEmailCode(code: string): Promise<OnboardingAuthResult>;
   resendEmailCode(): Promise<OnboardingAuthResult>;
-  signInWithGoogle(): Promise<OnboardingAuthResult>;
+  signInWithGoogle(): Promise<OnboardingGoogleAuthResult>;
   signOut(): Promise<void>;
 }
 

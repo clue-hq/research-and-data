@@ -15,34 +15,22 @@ subagents, the reviewer can report its absence), not the exact prose.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from lumen_agent.prompts_web import (
     build_web_author_prompt,
     build_web_orchestrator_prompt,
     build_web_reviewer_prompt,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-REVIEW_SKILL = (
-    REPO_ROOT
-    / "apps"
-    / "agent_runtime"
-    / "knowledge_docs"
-    / "skills"
-    / "review-website"
-    / "SKILL.md"
-)
+from test_web_skill_family import read_required_skill_reference
 
 
 def _director(**kwargs) -> str:
-    defaults = dict(
-        doc_title="Acme",
-        has_existing_content=False,
-        brand_card="{}",
-        review_cap=2,
-        author_cap=2,
-    )
+    defaults = {
+        "doc_title": "Acme",
+        "has_existing_content": False,
+        "brand_card": "{}",
+        "review_cap": 2,
+        "author_cap": 2,
+    }
     defaults.update(kwargs)
     return build_web_orchestrator_prompt(**defaults)
 
@@ -118,17 +106,21 @@ def test_the_reviewer_can_report_brand_generic_imagery() -> None:
     assert "brand-generic" in prompt
 
 
-def test_the_reviewer_distinguishes_deliberate_restraint_from_bareness() -> None:
+def test_the_reviewer_distinguishes_deliberate_restraint_from_bareness(tmp_path) -> None:
     """The one thing this must not become: a rule that says every page needs a
     picture. Text-forward brands are real."""
-    skill = " ".join(REVIEW_SKILL.read_text(encoding="utf-8").split())
+    skill = " ".join(read_required_skill_reference(
+        tmp_path, "review-website", "fidelity and behavior checks",
+    ).split())
     assert "## Imagery — the decision check" in skill
     assert "text-forward" in skill
     assert "do not score restraint as failure or bareness as restraint" in skill
 
 
-def test_the_review_checklist_treats_a_missing_brand_mark_as_blocking() -> None:
-    skill = REVIEW_SKILL.read_text(encoding="utf-8")
+def test_the_review_checklist_treats_a_missing_brand_mark_as_blocking(tmp_path) -> None:
+    skill = read_required_skill_reference(
+        tmp_path, "review-website", "fidelity and behavior checks",
+    )
     imagery = skill.split("## Imagery — the decision check", 1)[1].split("\n## ", 1)[0]
     assert "No logo anywhere is blocking" in imagery
 

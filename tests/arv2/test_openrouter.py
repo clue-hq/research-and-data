@@ -59,6 +59,23 @@ def test_the_cost_reader_prefers_upstream_inference_cost_and_keeps_the_request_i
     assert reading.provider_request_id == "gen-1"
 
 
+def test_a_byok_call_costs_the_upstream_charge_plus_the_openrouter_fee() -> None:
+    body = (
+        b'{"usage":{"is_byok":true,"cost":0.0021,'
+        b'"cost_details":{"upstream_inference_cost":0.052755}}}'
+    )
+    reading = openrouter_cost_reader(HttpResponse(200, {}, body))
+    assert reading.cost_usd == Decimal("0.054855")
+
+
+def test_the_request_id_falls_back_to_the_generation_id_header() -> None:
+    """The Images API puts no ``id`` in the body; the generation id is a header."""
+    reading = openrouter_cost_reader(
+        HttpResponse(200, {"X-Generation-Id": "gen-img-1"}, b'{"usage":{"cost":0.1}}')
+    )
+    assert reading.provider_request_id == "gen-img-1"
+
+
 def test_the_cost_reader_falls_back_to_cost_and_then_to_nothing() -> None:
     assert openrouter_cost_reader(HttpResponse(200, {}, b'{"usage":{"cost":0.5}}')).cost_usd == (
         Decimal("0.5")

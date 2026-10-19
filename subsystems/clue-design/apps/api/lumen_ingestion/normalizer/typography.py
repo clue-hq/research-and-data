@@ -9,8 +9,10 @@ fonts[] role hints), falling back to a single family used for both.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
+from ..colorspace import contrast_ratio, relative_luminance
 from ..evidence import BrandEvidence, FontEvidence, TypeSample
 
 _DEFAULT_BODY = 16.0
@@ -46,13 +48,17 @@ class TypeAnchors:
     heading_weight: int
     body_weight: int
     samples: dict[str, TypeSample]
+    #: The rendered samples the headline and body sizes came from (responsive brand type reads the
+    #: same elements at narrower widths).
+    headline_index: int | None = None
+    body_index: int | None = None
 
 
 def _family_from(samples: list[TypeSample], labels: set[str], fonts: list[FontEvidence], role: str) -> str | None:
     counts: dict[str, int] = {}
     order: list[str] = []
     for sample in samples:
-        if sample.label in labels and sample.family:
+        if sample.label in labels and _resolved_family(sample.family):
             if sample.family not in counts:
                 order.append(sample.family)
             counts[sample.family] = counts.get(sample.family, 0) + 1
@@ -64,14 +70,79 @@ def _family_from(samples: list[TypeSample], labels: set[str], fonts: list[FontEv
     return None
 
 
+def _resolved_family(family: str | None) -> bool:
+    return bool(family and family.strip() and "var(" not in family.lower())
+
+
+def _positive(value: float | int | None) -> bool:
+    return value is not None and math.isfinite(value) and value > 0
+
+
+def _sample_rank(sample: TypeSample) -> tuple[bool, bool, bool, int]:
+    """Prefer a complete rendered style, never CSS encounter order or largest type.
+
+    Keep each sample intact: combining an unrelated rule's size with a rendered
+    face can invent a style the site never uses. Ties retain source order.
+    """
+    complete = (
+        _resolved_family(sample.family) and _positive(sample.size_px) and _positive(sample.weight)
+    )
+    rendered = sample.pointer.locator.startswith("rendered ::")
+    fields = sum((
+        _resolved_family(sample.family), _positive(sample.size_px), _positive(sample.weight),
+    ))
+    return rendered and complete, complete, rendered, fields
+
+
+#: Labels whose role is a repeated section heading rather than a one-off hero.
+_SECTION_HEADING_LABELS = ("h2", "h3")
+
+
+def _prominent_heading(samples: list[TypeSample]) -> TypeSample | None:
+    """The rendered heading whose size fills the most heading space on the page.
+
+    Each size scores (how often it appears) x (the size), ties to the larger size. The first few
+    h2s on a page are often tab or card labels (garnerhealth.com: four 18px labels before seven
+    56px section headings), so the first sample is not the section heading; plain "most common"
+    lets many small card titles outvote fewer section headings (ramp.com, notion.com); "largest"
+    picks a one-off call-to-action. Checked against 14 B2B homepages on 2026-10-05: 14 of 14.
+    """
+    rendered = [
+        s for s in samples
+        if s.pointer.locator.startswith("rendered ::")
+        and _resolved_family(s.family) and _positive(s.size_px) and _positive(s.weight)
+    ]
+    if not rendered:
+        return None
+    groups: dict[float, list[TypeSample]] = {}
+    for sample in rendered:
+        groups.setdefault(round(float(sample.size_px), 1), []).append(sample)
+    size = max(groups, key=lambda px: (len(groups[px]) * px, px))
+    return groups[size][0]
+
+
 def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     samples = evidence.type_samples
     by_label: dict[str, TypeSample] = {}
     for sample in samples:
-        by_label.setdefault(sample.label, sample)
+        prior = by_label.get(sample.label)
+        if prior is None or _sample_rank(sample) > _sample_rank(prior):
+            by_label[sample.label] = sample
+    for label in _SECTION_HEADING_LABELS:
+        prominent = _prominent_heading([s for s in samples if s.label == label])
+        if prominent is not None:
+            by_label[label] = prominent
 
-    heading_family = _family_from(samples, _HEADING_LABELS, evidence.fonts, "heading")
-    body_family = _family_from(samples, _BODY_LABELS, evidence.fonts, "body")
+    selected = list(by_label.values())
+    # The H1's own face is the brand's headline face. A frequency vote across h1-h3 let two sans
+    # section headings overwrite a serif H1 (2026-09-29 audit); the vote is the fallback only.
+    h1 = by_label.get("h1")
+    heading_family = (
+        h1.family
+        if h1 is not None and _resolved_family(h1.family)
+        else _family_from(selected, _HEADING_LABELS, evidence.fonts, "heading")
+    )
+    body_family = _family_from(selected, _BODY_LABELS, evidence.fonts, "body")
 
     # PDF-shaped labels
     if heading_family is None:
@@ -89,17 +160,28 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     if body_family is None:
         body_family = heading_family
 
-    headline_sample = by_label.get("h1") or by_label.get("pdf-heading")
+    # A page with no H1 (headings built from h2s, or styled divs plus an h2) still shows its
+    # biggest heading: that is the headline's measurement, not the 32px/700 default, which used
+    # to come out smaller than the measured title.
+    headline_sample = (
+        by_label.get("h1") or by_label.get("pdf-heading") or _largest_heading(by_label)
+    )
     body_sample = by_label.get("body") or by_label.get("p") or by_label.get("pdf-body")
 
-    headline_size = (
-        headline_sample.size_px if headline_sample and headline_sample.size_px else _DEFAULT_HEADLINE
-    )
-    body_size = body_sample.size_px if body_sample and body_sample.size_px else _DEFAULT_BODY
-    heading_weight = (
-        headline_sample.weight if headline_sample and headline_sample.weight else _DEFAULT_HEADING_WEIGHT
-    )
-    body_weight = body_sample.weight if body_sample and body_sample.weight else _DEFAULT_BODY_WEIGHT
+    headline_size = _DEFAULT_HEADLINE
+    heading_weight = _DEFAULT_HEADING_WEIGHT
+    body_size = _DEFAULT_BODY
+    body_weight = _DEFAULT_BODY_WEIGHT
+    if headline_sample:
+        if _positive(headline_sample.size_px):
+            headline_size = headline_sample.size_px
+        if _positive(headline_sample.weight):
+            heading_weight = headline_sample.weight
+    if body_sample:
+        if _positive(body_sample.size_px):
+            body_size = body_sample.size_px
+        if _positive(body_sample.weight):
+            body_weight = body_sample.weight
 
     return TypeAnchors(
         heading_family=heading_family,
@@ -109,7 +191,18 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
         heading_weight=int(heading_weight),
         body_weight=int(body_weight),
         samples=by_label,
+        headline_index=headline_sample.sample_index if headline_sample else None,
+        body_index=body_sample.sample_index if body_sample else None,
     )
+
+
+def _largest_heading(by_label: dict[str, TypeSample]) -> TypeSample | None:
+    """The biggest measured h2/h3, for a page that has no H1."""
+    candidates = [
+        by_label[label] for label in ("h2", "h3")
+        if label in by_label and _positive(by_label[label].size_px)
+    ]
+    return max(candidates, key=lambda sample: sample.size_px, default=None)
 
 
 def _round_half(value: float) -> float:
@@ -184,10 +277,47 @@ def type_unit_diagnostic(role: str, field: str, value: float, locator: str) -> d
     }
 
 
+#: A heading sits on a light background when what is behind it has a relative luminance above this.
+HEADING_INK_LIGHT_LUMINANCE = 0.35
+#: ...and its colour must read on that backdrop (WCAG's large-text minimum); otherwise it is over imagery.
+HEADING_INK_MIN_CONTRAST = 3.0
+
+
+def heading_ink(samples: list[TypeSample]) -> TypeSample | None:
+    """The heading sample whose colour is the brand's heading ink, or None.
+
+    The ink is the colour of the h1/h2/h3 headings that sit on a light background, weighted by each
+    heading's area; the most-weighted colour wins, and its largest heading is returned (for its
+    pointer). Headings on a dark background (a white h1 on a hero), or whose colour does not read on
+    the backdrop found behind them (they sit over imagery the compositor cannot see), are ignored.
+    """
+    weights: dict[str, float] = {}
+    largest: dict[str, TypeSample] = {}
+    for sample in samples:
+        if sample.label not in _HEADING_LABELS or not sample.color or not sample.background:
+            continue
+        if relative_luminance(sample.background[:7]) <= HEADING_INK_LIGHT_LUMINANCE:
+            continue
+        # A colour that cannot be read on the backdrop the compositor found (Garner's white hero h1
+        # over a video the compositor cannot see: "white on white") sits over imagery, not on a
+        # light background, and says nothing about the heading ink.
+        if contrast_ratio(sample.color[:7], sample.background[:7]) < HEADING_INK_MIN_CONTRAST:
+            continue
+        area = sample.area or 0.0
+        weights[sample.color] = weights.get(sample.color, 0.0) + area
+        if sample.color not in largest or area > (largest[sample.color].area or 0.0):
+            largest[sample.color] = sample
+    if not weights:
+        return None
+    winner = max(weights, key=lambda color: (weights[color], color))
+    return largest[winner]
+
+
 def build_type_styles(
     anchors: TypeAnchors,
     cta_color: str = "text.inverse",
     custodied: dict[str, list[int]] | None = None,
+    heading_color: str = "text.primary",
 ) -> tuple[dict[str, dict], list[dict]]:
     """Return {role: {font_family, font_size, font_weight, line_height,
     letter_spacing, color, font_asset}} for the 12 required roles, plus any
@@ -205,20 +335,26 @@ def build_type_styles(
     H = anchors.headline_size
     hw = anchors.heading_weight
     bw = anchors.body_weight
+    # Small emphasis roles (eyebrow, label) borrow the weight the site gives its buttons when
+    # that was measured; otherwise they keep the semibold default.
+    button = anchors.samples.get("button")
+    emphasis = int(button.weight) if button is not None and _positive(button.weight) else 600
 
     # (role, size, weight, line_height, color, letter_spacing)
     spec: list[tuple[str, float, int, float, str, float]] = [
-        ("display", H * 1.6, max(hw, 700), 1.05, "text.primary", -0.02),
-        ("headline", H, hw, 1.1, "text.primary", -0.01),
-        ("title", H * 0.72, hw, 1.15, "text.primary", 0.0),
-        ("subtitle", B * 1.25, 500, 1.3, "text.secondary", 0.0),
+        # Display and stat are computed, not measured: they carry the headline's own weight. The
+        # old floor of 700 made every ad headline bold on light-type brands (Stripe's 300).
+        ("display", H * 1.6, hw, 1.05, heading_color, -0.02),
+        ("headline", H, hw, 1.1, heading_color, -0.01),
+        ("title", H * 0.72, hw, 1.15, heading_color, 0.0),
+        ("subtitle", B * 1.25, bw, 1.3, "text.secondary", 0.0),
         ("body", B, bw, 1.45, "text.primary", 0.0),
         ("body.small", B * 0.875, bw, 1.4, "text.primary", 0.0),
         ("caption", B * 0.75, 500, 1.35, "text.secondary", 0.0),
-        ("eyebrow", B * 0.75, 600, 1.2, "text.brand", 0.08),
-        ("label", B * 0.8125, 600, 1.2, "text.primary", 0.0),
+        ("eyebrow", B * 0.75, emphasis, 1.2, "text.brand", 0.08),
+        ("label", B * 0.8125, emphasis, 1.2, "text.primary", 0.0),
         ("cta", B, 600, 1.2, cta_color, 0.0),
-        ("stat", H * 1.25, max(hw, 700), 1.0, "text.brand", 0.0),
+        ("stat", H * 1.25, hw, 1.0, "text.brand", 0.0),
         ("legal", B * 0.6875, bw, 1.3, "text.muted", 0.0),
     ]
 
@@ -226,15 +362,15 @@ def build_type_styles(
     styles: dict[str, dict] = {}
     diagnostics: list[dict] = []
     for role, size, weight, line_height, color, letter_spacing in spec:
-        anchor = _anchor_for(role, anchors)
+        anchor = anchor_for_role(role, anchors)
         final_size = size
         final_weight = weight
         final_lh = line_height
         final_ls = letter_spacing
         if anchor is not None:
-            if anchor.size_px:
+            if _positive(anchor.size_px):
                 final_size = anchor.size_px
-            if anchor.weight:
+            if _positive(anchor.weight):
                 final_weight = anchor.weight
             if anchor.line_height:
                 lo, hi = LINE_HEIGHT_RATIO_RANGE
@@ -252,7 +388,19 @@ def build_type_styles(
                         type_unit_diagnostic(role, "letter_spacing", anchor.letter_spacing, anchor.pointer.locator)
                     )
         family = anchors.heading_family if role in _HEADING_ROLES else anchors.body_family
-        font_asset = "brand" if role in _HEADING_ROLES else ("body" if anchors.body_family != anchors.heading_family else "brand")
+        # A measured role keeps its own face when the kit carries that face (an h2 set in the body
+        # family stays in the body family). A third family the kit has no asset for is left alone.
+        if (
+            anchor is not None
+            and _resolved_family(anchor.family)
+            and anchor.family in (anchors.heading_family, anchors.body_family)
+        ):
+            family = anchor.family
+        font_asset = (
+            "brand"
+            if family == anchors.heading_family
+            else ("body" if anchors.body_family != anchors.heading_family else "brand")
+        )
 
         # Never declare a weight this family cannot paint.
         available = shipped.get(family)
@@ -276,8 +424,39 @@ def build_type_styles(
     return styles, diagnostics
 
 
-def _anchor_for(role: str, anchors: TypeAnchors) -> TypeSample | None:
+def anchor_for_role(role: str, anchors: TypeAnchors) -> TypeSample | None:
     for label, mapped in ANCHOR_LABELS.items():
         if mapped == role and label in anchors.samples:
             return anchors.samples[label]
     return None
+
+
+TYPE_MEASUREMENT_FIELDS = frozenset({
+    "font_family", "font_size", "font_weight", "line_height", "letter_spacing",
+})
+
+
+def measured_style_fields(anchors: TypeAnchors, role: str, style: dict) -> frozenset[str]:
+    """Fields actually supported by the selected sample, after normalization.
+
+    A sample's existence is not evidence for its empty fields. Font custody
+    substitution and derived defaults must not be recited as observed style.
+    """
+    anchor = anchor_for_role(role.removeprefix("type."), anchors)
+    if anchor is None:
+        return frozenset()
+    observed = {}
+    if _resolved_family(anchor.family):
+        observed["font_family"] = anchor.family
+    if _positive(anchor.size_px):
+        observed["font_size"] = _round_half(anchor.size_px)
+    if _positive(anchor.weight):
+        observed["font_weight"] = int(anchor.weight)
+    if (
+        anchor.line_height is not None
+        and LINE_HEIGHT_RATIO_RANGE[0] <= anchor.line_height <= LINE_HEIGHT_RATIO_RANGE[1]
+    ):
+        observed["line_height"] = round(anchor.line_height, 4)
+    if anchor.letter_spacing is not None and abs(anchor.letter_spacing) <= LETTER_SPACING_EM_LIMIT:
+        observed["letter_spacing"] = round(anchor.letter_spacing, 4)
+    return frozenset(key for key, value in observed.items() if style.get(key) == value)

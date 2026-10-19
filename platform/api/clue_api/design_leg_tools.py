@@ -29,10 +29,11 @@ stamps, never values) — validated structurally at the input model. Their exist
 provenance is the research-view surface's job: the only way a head-of-abm holds claim ids at all
 is by having read them through ``get_research_view``.
 
-What this tool does **not** do: dispatch anything. Opening a leg spends nothing and runs no
-design turn; the agent's next act is to tell the user the design session is open and end its
-turn. The user's next message on the thread is what becomes the first design turn (the P3.4
-routing rule in ``agent_turn_fleet_wiring``).
+Opening a leg queues its first design turn from the opening turn's own user submission, in
+the same transaction (spec 2026-09-20 §2.3; ``_queue_first_turn``), so the user does not have to
+speak again to begin. The tool itself makes no provider call; the queued design turn is what
+spends. A machine-originated opening with no submission of its own queues nothing, and every
+later user message on the thread routes to Design (the P3.4 rule in ``agent_turn_fleet_wiring``).
 
 **@2 — document birth at leg-open (genweb slice 2, plan §4.1).** A leg may now *create* the
 document its docstring always promised (§2.1). ``doc_kind="web"`` on a document-less open
@@ -139,6 +140,7 @@ from clue_api.agent_turn_submission import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
+from clue_api.site_documents import mint_empty_site_document
 from clue_api.turn_action import (
     TurnActionUnresolvable,
     TurnIdentity,
@@ -560,6 +562,11 @@ def _default_web_document_minter(
 #: :func:`_default_scene_document_minter`.
 SceneDocumentMinter = Callable[..., dict[str, Any]]
 
+#: The pure seam a site birth needs (website agent on Puck, 2026-10-09 plan): same kwargs as the
+#: web minter, one empty Puck ``site`` document out. No engine round-trip, so no thread hop;
+#: production uses :func:`clue_api.site_documents.mint_empty_site_document`.
+SiteDocumentMinter = Callable[..., dict[str, Any]]
+
 
 def _default_scene_document_minter(
     *,
@@ -607,8 +614,12 @@ class OpenDesignLegTool(Tool):
         "each; the shared ask stays in brief. Each item becomes its own document, opens in its "
         "own tab and iterates in its own design session, and they appear in the project's "
         "gallery immediately. "
-        "Put the user's actual ask in brief — what the artifacts are for, who they are for, "
-        "what they must say — because Design sees the brief, not this conversation. To keep "
+        "Put the user's actual ask and your direction in brief — what the artifacts are for, "
+        "who they are for, the angle, a suggested structure and the facts to draw on, with your "
+        "private notes kept apart (the brief format is in the siblings chapter of the manual) — "
+        "because Design sees the brief, not this conversation. Design writes the words on the "
+        "page itself; do not write its copy. For an ad, you may suggest what its headline "
+        "could say, but only as a suggestion: never tell Design to use your words. To keep "
         "working on an EXISTING artifact pass its document_id instead (doc_kind and artifacts "
         "are then refused). "
         "On a scene birth the design agent authors the page itself — size, unit (px for "
@@ -618,9 +629,12 @@ class OpenDesignLegTool(Tool):
         "To resume a design session you closed by "
         "mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is "
         "open, every user message on this thread goes directly to Design — you will not see the "
-        "thread again until the leg closes. Opening a leg spends nothing and runs no design "
-        "turn: the user's NEXT message is what starts generation, and generating a page takes "
-        "minutes, not seconds. Tell the user the design session is open and end your turn."
+        "thread again until the leg closes. Opening a leg starts the design work at once: the "
+        "platform queues the leg's first design turn from the user's message on this turn, so "
+        "the user does not need to send anything else. The tool itself makes no provider call; "
+        "the queued design turn is what spends, and generating a page takes minutes, not "
+        "seconds. Tell the user the design session is open and what is being made, and end "
+        "your turn. Queued is not finished: never say the design is done."
     )
     input_model: ClassVar[type[ToolInput]] = OpenDesignLegInput
     output_model: ClassVar[type[ToolOutput]] = OpenDesignLegOutput
@@ -658,6 +672,8 @@ class OpenDesignLegTool(Tool):
         enabled: bool = True,
         web_document_minter: WebDocumentMinter | None = None,
         scene_document_minter: SceneDocumentMinter | None = None,
+        site_engine_workspaces: frozenset[str] = frozenset(),
+        site_document_minter: SiteDocumentMinter = mint_empty_site_document,
     ) -> None:
         self._conn_factory = conn_factory
         self._storage = storage
@@ -670,6 +686,11 @@ class OpenDesignLegTool(Tool):
         self._enabled = enabled
         self._mint_web_document = web_document_minter or _default_web_document_minter
         self._mint_scene_document = scene_document_minter or _default_scene_document_minter
+        # CLUE_DESIGN_SITE_ENGINE_WORKSPACES: a listed workspace's doc_kind="web" birth is a
+        # Puck `site` document instead of a WebDoc. Empty (the default) leaves every web birth
+        # byte-identical.
+        self._site_engine_workspaces = site_engine_workspaces
+        self._mint_site_document = site_document_minter
 
     def _require_runtime(self) -> None:
         """The thread-wedge guard: refuse BEFORE any database touch on a design-disabled
@@ -976,7 +997,13 @@ class OpenDesignLegTool(Tool):
 
         ``account_id`` (@5, spec §3.6) is the design-plane account this page was born for, or
         ``None`` for a generic one. It makes the existing G2 account-card resolution work for
-        chat-born 1:1 pages; nothing in the design runtime reads it.
+        chat-born 1:1 pages; nothing in the design runtime reads it. Like every new website
+        document, the page is born noindex — the DAL's one birth rule (founder ruling 2026-10-16).
+
+        A workspace listed in ``CLUE_DESIGN_SITE_ENGINE_WORKSPACES`` (website agent on Puck,
+        2026-10-09 plan) is born a Puck ``site`` document instead, through the same DAL call
+        and the same read-back: the site minter is pure, so it runs inline, and the creation
+        contract stamps the approved kit onto a site exactly as onto a web document.
         """
 
         requested_ref = (
@@ -984,16 +1011,34 @@ class OpenDesignLegTool(Tool):
             if requested_brand_kit_id is None or requested_brand_kit_version is None
             else {"id": requested_brand_kit_id, "version": requested_brand_kit_version}
         )
-        # The engine round-trip is a blocking subprocess call; keep it off the event loop.
-        web_doc = await asyncio.to_thread(
-            self._mint_web_document,
-            document_id=document_id,
-            title=title,
-            brand_kit_ref=requested_ref,
-        )
-        document = await create_document(
-            conn, workspace_id=workspace_id, scene=web_doc, doc_kind="web", account_id=account_id
-        )
+        if workspace_id in self._site_engine_workspaces:
+            site_doc = self._mint_site_document(
+                document_id=document_id,
+                title=title,
+                brand_kit_ref=requested_ref,
+            )
+            document = await create_document(
+                conn,
+                workspace_id=workspace_id,
+                scene=site_doc,
+                doc_kind="site",
+                account_id=account_id,
+            )
+        else:
+            # The engine round-trip is a blocking subprocess call; keep it off the event loop.
+            web_doc = await asyncio.to_thread(
+                self._mint_web_document,
+                document_id=document_id,
+                title=title,
+                brand_kit_ref=requested_ref,
+            )
+            document = await create_document(
+                conn,
+                workspace_id=workspace_id,
+                scene=web_doc,
+                doc_kind="web",
+                account_id=account_id,
+            )
         stamped_id = document.get("effective_brand_kit_id")
         stamped_version = document.get("effective_brand_kit_version")
         if stamped_id is None or stamped_version is None:
@@ -1839,6 +1884,7 @@ def build_design_leg_tools(
     enabled: bool = True,
     web_document_minter: WebDocumentMinter | None = None,
     scene_document_minter: SceneDocumentMinter | None = None,
+    site_engine_workspaces: frozenset[str] = frozenset(),
 ) -> tuple[Tool, ...]:
     """The design-leg tool set, registered unconditionally (the C6 audit is exact set equality).
 
@@ -1847,6 +1893,9 @@ def build_design_leg_tools(
     before any durable write, and without a storage backend they refuse
     ``design_leg_storage_not_configured``. Present-but-refusing, the same posture as the
     sibling design write tools.
+
+    ``site_engine_workspaces`` (``CLUE_DESIGN_SITE_ENGINE_WORKSPACES``) lists the workspaces
+    whose new websites are born as Puck ``site`` documents; empty leaves every birth unchanged.
     """
 
     return (
@@ -1856,6 +1905,7 @@ def build_design_leg_tools(
             enabled=enabled,
             web_document_minter=web_document_minter,
             scene_document_minter=scene_document_minter,
+            site_engine_workspaces=site_engine_workspaces,
         ),
         FinishDesignLegTool(conn_factory=conn_factory, storage=storage, enabled=enabled),
     )

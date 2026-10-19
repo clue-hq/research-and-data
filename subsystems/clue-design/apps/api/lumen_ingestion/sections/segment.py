@@ -418,7 +418,8 @@ def segment_snapshot(snapshot: Any) -> SectionSegmentation:
     """
     return segment_page(
         getattr(snapshot, "html", "") or "",
-        page_url=getattr(snapshot, "page_url", "") or "",
+        page_url=(getattr(snapshot, "meta", None) or {}).get("final_url")
+        or getattr(snapshot, "page_url", "") or "",
         bands=measured_bands(getattr(snapshot, "meta", None)),
         skips=skipped_children(getattr(snapshot, "meta", None)),
         viewport_width=getattr(snapshot, "viewport_width", None),
@@ -510,6 +511,45 @@ def _records(candidates: list[_Candidate]) -> tuple[SectionRecord, ...]:
         )
         for candidate in candidates
     )
+
+
+def recovery_sections(
+    source: HTMLParser, parent: SectionRecord, *, start_index: int
+) -> tuple[SectionRecord, ...]:
+    """Independent authored sections available if a framework wrapper refuses custody.
+
+    This is a recovery inventory, NOT a replacement segmentation. The original wrapper and
+    its refusal remain recorded; its own layout, decorations and inherited context are not
+    claimed to survive. Never split a semantic composition, recurse into its subsections, or
+    promote explicitly hidden descendants into the visible library. Geometry stays absent.
+    """
+    if parent.hidden_on_source or parent.tag in _SECTIONING_CONTENT_TAGS:
+        return ()
+    root = resolve_section(source, parent)
+    if root is None:
+        return ()
+    candidates: list[_Candidate] = []
+    stack = [(root, parent.dom_path)]
+    while stack:
+        node, path = stack.pop()
+        if _self_declared_hidden_evidence(node):
+            continue
+        tag = (node.tag or "").lower()
+        if path != parent.dom_path:
+            if tag in _AUTHORED_SECTION_TAGS:
+                if _is_significant(node):
+                    candidate = _candidate(node, path, in_measured_root=False)
+                    candidate.index = start_index + len(candidates)
+                    candidates.append(candidate)
+                continue
+            if tag in _SECTIONING_CONTENT_TAGS or tag in _SKIP_TAGS:
+                continue
+        stack.extend((child, path + (index,)) for index, child in reversed(_element_children(node)))
+    if len(candidates) < _COMPOUND_MIN_PARTS:
+        return ()
+    # These are extracted parts, not the full document sequence: positions cannot name roles.
+    _call_hidden_roles(candidates)
+    return _records(candidates)
 
 
 def resolve_section(source: HTMLParser | str, record: SectionRecord) -> Node | None:

@@ -24,6 +24,8 @@ from clue_db import db_lifespan
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
+    LeaseGeneration,
+    WorkId,
     acquire_run_lease,
     claim_next_task,
     enqueue_task,
@@ -33,6 +35,7 @@ from clue_fleet import (
     list_tasks,
     release_run_lease,
     renew_run_lease,
+    renew_work_lease,
     requeue_failed_tasks,
     requeue_task,
 )
@@ -164,7 +167,7 @@ def test_lease_takeover_after_expiry() -> None:
     run_async(_run())
 
 
-def test_lease_renew_is_holder_guarded_and_dead_after_expiry() -> None:
+def test_lease_renew_is_holder_guarded_and_a_lapsed_unclaimed_lease_is_taken_back() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run_id = new_project_run_id()
@@ -176,18 +179,43 @@ def test_lease_renew_is_holder_guarded_and_dead_after_expiry() -> None:
             assert not await renew_run_lease(
                 conn, project_run_id=run_id, worker_id="worker-b", ttl=_TTL
             )
-            # Expired → not renewable even by the old holder (a takeover may be racing): the
-            # driver must treat this as lease-lost and abort.
+            # A stale generation → no renewal, even by the named worker.
+            held = await get_run_lease(conn, run_id)
+            assert held is not None
+            assert not await renew_work_lease(
+                conn,
+                work_id=WorkId(run_id),
+                worker_id="worker-a",
+                generation=LeaseGeneration(held.generation - 1),
+                ttl=_TTL,
+            )
+            # Lapsed but nobody claimed it → the holder's renew lands, at the same generation.
             other = new_project_run_id()
             await acquire_run_lease(conn, project_run_id=other, worker_id="worker-a", ttl=_EXPIRED)
-            assert not await renew_run_lease(
-                conn, project_run_id=other, worker_id="worker-a", ttl=_TTL
+            lapsed = await get_run_lease(conn, other)
+            assert lapsed is not None and not lapsed.live
+            assert await renew_run_lease(conn, project_run_id=other, worker_id="worker-a", ttl=_TTL)
+            back = await get_run_lease(conn, other)
+            assert back is not None and back.live and back.worker_id == "worker-a"
+            assert back.generation == lapsed.generation
+            # Once another worker has acquired a lapsed lease, the old holder's renew fails (the
+            # driver must treat this as lease-lost and abort).
+            taken = new_project_run_id()
+            await acquire_run_lease(conn, project_run_id=taken, worker_id="worker-a", ttl=_EXPIRED)
+            assert await acquire_run_lease(
+                conn, project_run_id=taken, worker_id="worker-b", ttl=_TTL
             )
+            assert not await renew_run_lease(
+                conn, project_run_id=taken, worker_id="worker-a", ttl=_TTL
+            )
+            stolen = await get_run_lease(conn, taken)
+            assert stolen is not None and stolen.worker_id == "worker-b"
+            assert stolen.generation == lapsed.generation + 1
 
     run_async(_run())
 
 
-def test_lease_release_is_holder_guarded() -> None:
+def test_lease_release_is_holder_guarded_and_ends_the_lease() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run_id = new_project_run_id()
@@ -195,10 +223,19 @@ def test_lease_release_is_holder_guarded() -> None:
             # A fenced-out zombie's release is a no-op.
             await release_run_lease(conn, project_run_id=run_id, worker_id="worker-b")
             lease = await get_run_lease(conn, run_id)
-            assert lease is not None and lease.worker_id == "worker-a"
-            # The holder's release frees the run.
+            assert lease is not None and lease.worker_id == "worker-a" and lease.live
+            # The holder's release ends the lease (the row is kept, so generations never repeat).
             await release_run_lease(conn, project_run_id=run_id, worker_id="worker-a")
-            assert await get_run_lease(conn, run_id) is None
+            ended = await get_run_lease(conn, run_id)
+            assert ended is not None and not ended.live
+            assert ended.generation == lease.generation
+            # The run is free: the next acquire — by anyone — is the next generation.
+            assert await acquire_run_lease(
+                conn, project_run_id=run_id, worker_id="worker-b", ttl=_TTL
+            )
+            after = await get_run_lease(conn, run_id)
+            assert after is not None and after.live and after.worker_id == "worker-b"
+            assert after.generation == lease.generation + 1
 
     run_async(_run())
 

@@ -74,7 +74,12 @@ from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.arv2.discovery_brief import DiscoveryBrief
 from clue_api.arv2.discovery_launch import Arv2DiscoveryRefused, read_icp_document
-from clue_api.arv2.discovery_request import DiscoveryBrief2, apply_roles, verifier_gates
+from clue_api.arv2.discovery_request import (
+    DiscoveryBrief2,
+    apply_roles,
+    excluded_domains,
+    verifier_gates,
+)
 from clue_api.arv2.discovery_store import (
     CandidateRow,
     DiscoveryRunRow,
@@ -99,6 +104,7 @@ from clue_api.arv2.exa_websets_client import (
     WebsetItem,
     WebsetItemsResult,
     WebsetView,
+    import_csv,
 )
 from clue_api.arv2.fleet_task import arv2_discovery_work_id
 from clue_api.arv2.logo_resolution import websets_mark_url
@@ -271,6 +277,12 @@ class _Stopped(Arv2Error):
     """A human asked this run to stop while a webset round was being read."""
 
 
+#: The ``excluded_by_entry`` of a candidate on the seller's own domain (spec 2026-10-16 §4.6).
+SELLER_ENTRY = "seller"
+#: How often a run re-reads its Exa Import's status while waiting for it.
+_IMPORT_POLL_S = 5.0
+
+
 @dataclass
 class _RunState:
     """What one attempt has learned so far — the numbers its receipt is made of."""
@@ -328,6 +340,16 @@ class _RunState:
     unresolvable: int = 0
     #: The companies a gate's role excluded, by the gate that excluded them, in the order verified.
     excluded: dict[str, list[str]] = field(default_factory=dict)
+    #: Every domain this run must leave out — the brief's ``exclude`` entries and the seller's own
+    #: domain — mapped to the entry that named it (``"seller"`` for the seller); spec 2026-10-16.
+    excluded_domains: dict[str, str] = field(default_factory=dict)
+    #: The companies the brief excluded, in the order met.
+    brief_excluded: list[str] = field(default_factory=list)
+    #: The Exa Import holding ``excluded_domains`` once it is ready; tried once per attempt.
+    import_id: str | None = None
+    #: How many rows Exa read from that Import — what it really keeps out, never what was sent.
+    import_count: int = 0
+    import_tried: bool = False
     #: Companies shown with an ``unclear`` disposition.
     unclear_count: int = 0
     #: Why the run ended, once something has decided it (``None`` while it is still running).
@@ -538,6 +560,9 @@ class Arv2DiscoveryWorkHandler:
             searches = await self._store.list_searches(conn, run_id=run.run_id)
             already = await self._store.list_candidates(conn, run_id=run.run_id)
             owner_user_id = await self._owner_user(conn, run.requested_by_user_id)
+            seller = await self._store.seller_domain(
+                conn, workspace_id=run.workspace_id, brand_id=run.brand_id
+            )
         state = _RunState(
             run=run,
             brief2=brief2,
@@ -558,7 +583,10 @@ class Arv2DiscoveryWorkHandler:
             searches={search.ordinal: search for search in searches},
             recall_estimate=run.recall_estimate,
             hops=asyncio.Semaphore(self._settings.arv2_discovery_verify_concurrency),
+            excluded_domains=excluded_domains(brief2),
         )
+        if seller and seller not in state.excluded_domains:
+            state.excluded_domains[seller] = SELLER_ENTRY
         for search in searches:
             if search.found is not None:
                 state.found_by_search[search.ordinal] = search.found
@@ -581,6 +609,8 @@ class Arv2DiscoveryWorkHandler:
                 state.unclear_count += 1
             if candidate.disposition == "excluded" and candidate.excluded_by_gate:
                 state.excluded.setdefault(candidate.excluded_by_gate, []).append(candidate.name)
+            if candidate.disposition == "excluded_by_brief":
+                state.brief_excluded.append(candidate.name)
         # Every row an earlier attempt read was priced then; the raw Websets item is kept whole on
         # the candidate's snapshot, so its id is recoverable and this attempt does not buy it again.
         for candidate in already:
@@ -685,13 +715,15 @@ class Arv2DiscoveryWorkHandler:
         """
         run = state.run
         known = state.seen | state.project_domains | state.found_before
+        # Excluded domains take result slots too when Exa returns them (spec 2026-10-16 §4.6).
+        padding = len(known | state.excluded_domains.keys())
         query = state.brief.query
         result = await self._hop(
             state,
             lambda caller: self._clients.exa(caller).search(
                 query,
                 category="company",
-                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + len(known)),
+                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + padding),
                 label=f"discovery-search-{search.ordinal}",
             ),
         )
@@ -708,6 +740,9 @@ class Arv2DiscoveryWorkHandler:
             if len(tasks) >= budget:
                 break
             domain = registrable_domain(item.url) or ""
+            if domain in state.excluded_domains and domain not in state.seen:
+                await self._record_brief_exclusion(state, item, domain, pass_="strict")
+                continue
             if not domain or domain in known or domain in state.seen:
                 continue
             state.seen.add(domain)
@@ -752,6 +787,7 @@ class Arv2DiscoveryWorkHandler:
                     f"ARV2 discovery {run.project_id} {run.icp_key}@{run.icp_version} "
                     f"search {search.ordinal}"
                 )
+                import_ids = await self._ensure_import(state)
                 view = await self._hop(
                     state,
                     lambda caller: self._clients.websets(caller).create(
@@ -764,6 +800,7 @@ class Arv2DiscoveryWorkHandler:
                         # The pool-size estimate is asked once, of the first search: it is what
                         # tells "Exa ran out" apart from "our checks removed some".
                         recall=search.ordinal == 1,
+                        exclude_import_ids=import_ids,
                     ),
                 )
             self._require(view)
@@ -865,6 +902,9 @@ class Arv2DiscoveryWorkHandler:
                 if domain and domain in state.seen:
                     continue
                 state.claimed.add(item.item_id)
+                if domain in state.excluded_domains:
+                    await self._record_brief_exclusion(state, item, domain, pass_=pass_)
+                    continue
                 if domain:
                     state.seen.add(domain)
                 tasks.add(asyncio.create_task(self._verify_contained(state, item, pass_=pass_)))
@@ -1069,6 +1109,9 @@ class Arv2DiscoveryWorkHandler:
             provider_snapshot=snapshot,
         )
 
+        if verified in state.excluded_domains:
+            await self._record_brief_exclusion(state, item, verified, pass_=pass_, row=row)
+            return
         refusal = self._pre_spend_disposition(state, verified)
         if refusal is not None:
             async with self._connection() as conn:
@@ -1199,6 +1242,99 @@ class Arv2DiscoveryWorkHandler:
             answered = registrable_domain(str(result.answer.get("website_domain") or ""))
             evidence_url = str(result.answer.get("evidence_url") or "")
         return answered or websets_domain, evidence_url
+
+    async def _ensure_import(self, state: _RunState) -> tuple[str, ...]:
+        """The Exa Import of every excluded domain, so websets never return those companies (spec
+        2026-10-16 §4.6). Made once per attempt; waits up to ``arv2_discovery_import_wait_s`` for
+        Exa to finish reading it. Anything short of ``completed`` goes on without it, counted as the
+        ``brief_import_unavailable`` guard: the domain skip at dispatch still applies. So does an
+        Import Exa ``completed`` having read no rows, which would exclude nothing."""
+        if state.import_id is not None:
+            return (state.import_id,)
+        if state.import_tried or not state.excluded_domains:
+            return ()
+        state.import_tried = True
+        csv_bytes = import_csv(list(state.excluded_domains))
+        count = len(state.excluded_domains)
+        title = f"ARV2 discovery {state.run.run_id} exclusions"
+        try:
+            handle = await self._hop(
+                state,
+                lambda caller: self._clients.websets(caller).create_import(
+                    csv_bytes=csv_bytes, count=count, title=title
+                ),
+            )
+            await self._hop(
+                state,
+                lambda caller: self._clients.websets(caller).upload_import(
+                    upload_url=handle.upload_url, csv_bytes=csv_bytes
+                ),
+            )
+            waited = 0.0
+            while True:
+                status = await self._hop(
+                    state, lambda caller: self._clients.websets(caller).get_import(handle.import_id)
+                )
+                if status.status == "completed":
+                    if not status.count:
+                        log.warning(
+                            "arv2.discovery_import_empty",
+                            run_id=str(state.run.run_id),
+                            import_id=handle.import_id,
+                            sent=count,
+                            read=status.count,
+                        )
+                        break
+                    state.import_id = handle.import_id
+                    state.import_count = status.count
+                    return (handle.import_id,)
+                if status.status in ("failed", "canceled"):
+                    break
+                if waited >= self._settings.arv2_discovery_import_wait_s:
+                    break
+                await self._sleep(_IMPORT_POLL_S)
+                waited += _IMPORT_POLL_S
+        except Exception:
+            log.exception("arv2.discovery_import_failed", run_id=str(state.run.run_id))
+        state.count_guard("brief_import_unavailable")
+        return ()
+
+    async def _record_brief_exclusion(
+        self,
+        state: _RunState,
+        item: WebsetItem,
+        domain: str,
+        *,
+        pass_: Pass,
+        row: CandidateRow | None = None,
+    ) -> None:
+        """A company the brief (or the seller's own domain) excludes: recorded with the entry that
+        named it, before any further spend, and never verified or added (spec 2026-10-16 §4.6)."""
+        run = state.run
+        state.seen.add(domain)
+        entry = state.excluded_domains[domain]
+        base = row or CandidateRow(
+            candidate_id=uuid5(_CANDIDATE_NS, f"{run.run_id}:{domain}"),
+            run_id=run.run_id,
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            pass_=pass_,
+            domain=domain,
+            websets_url=item.url,
+            name=item.name,
+            provider_snapshot={"websets_domain": domain, "item": dict(item.raw)},
+        )
+        async with self._connection() as conn:
+            await self._store.upsert_candidate(
+                conn, replace(base, disposition="excluded_by_brief", excluded_by_entry=entry)
+            )
+        state.brief_excluded.append(item.name)
+        log.info(
+            "arv2.discovery_candidate_excluded_by_brief",
+            run_id=str(run.run_id),
+            domain=domain,
+            entry=entry,
+        )
 
     def _pre_spend_disposition(self, state: _RunState, verified: str) -> Disposition | None:
         """What this company is *before* a gate is asked, or ``None`` when it is worth verifying.
@@ -1468,6 +1604,7 @@ class Arv2DiscoveryWorkHandler:
             "from_other_projects": state.from_other_projects,
             "unresolvable_domain": state.unresolvable,
             "excluded": {gate: len(names) for gate, names in state.excluded.items()},
+            "excluded_by_brief": len(state.brief_excluded),
             "candidate_failures": [dict(failure) for failure in state.candidate_failures],
         }
         if failure is not None:
@@ -1701,6 +1838,12 @@ def build_summary(state: _RunState, *, failure: str | None = None) -> dict[str, 
         "searches": len(state.searches),
         "end_reason": state.end_reason,
         "spend_usd": str(state.cost_usd),
+        "excluded_by_brief": len(state.brief_excluded),
+        "excluded_by_brief_example": state.brief_excluded[0] if state.brief_excluded else None,
+        # How many excluded domains the Exa Import kept out upfront: those companies never come
+        # back, so this is the only trace of them the person sees (spec 2026-10-16 §4.6).
+        "import_domains": state.import_count if state.import_id is not None else 0,
+        "import_unavailable": state.import_tried and state.import_id is None,
     }
     if failure is not None:
         summary["failure"] = failure
@@ -1719,6 +1862,10 @@ def _failure_summary(run: DiscoveryRunRow, failure: str) -> dict[str, Any]:
         "searches": 0,
         "end_reason": "failed",
         "spend_usd": "0",
+        "excluded_by_brief": 0,
+        "excluded_by_brief_example": None,
+        "import_domains": 0,
+        "import_unavailable": False,
         "failure": failure,
     }
 
@@ -1745,6 +1892,22 @@ def summary_message(run_id: UUID, summary: Mapping[str, Any]) -> str:
                 for entry in summary["excluded_by"]
             )
             + "."
+        )
+    if summary.get("excluded_by_brief"):
+        lines.append(
+            "Excluded by the brief (existing customers or the seller): "
+            f"{summary['excluded_by_brief']} — e.g. {summary.get('excluded_by_brief_example')}."
+        )
+    if summary.get("import_domains"):
+        count = summary["import_domains"]
+        lines.append(
+            f"The Exa import kept {count} excluded domain{'' if count == 1 else 's'} out of every "
+            "search upfront."
+        )
+    elif summary.get("import_unavailable"):
+        lines.append(
+            "The Exa import of the excluded domains could not be used; they were skipped as they "
+            "came."
         )
     rates = [entry for entry in summary["criteria_rates"] if entry["rate"] is not None]
     if rates:

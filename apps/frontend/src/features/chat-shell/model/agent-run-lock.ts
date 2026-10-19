@@ -233,6 +233,13 @@ export function applyAgentRunLockEvent(
 export const AGENT_RUN_LOCK_NOTE =
   "The design agent is working — editing unlocks when it finishes.";
 
+/**
+ * The share menu's line while Publish waits for the run (founder copy,
+ * 2026-10-13 — do not paraphrase it at a call site).
+ */
+export const AGENT_RUN_PUBLISH_NOTE =
+  "The design agent is working — publishing unlocks when it finishes.";
+
 export interface AgentRunLock {
   /** True when every manual write path on the open document must be inert. */
   locked: boolean;

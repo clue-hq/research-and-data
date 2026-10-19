@@ -316,6 +316,31 @@ def _assemble(
         seen.add(candidate.asset_id)
         alternatives.append(candidate)
 
+    # Every other logo the ladder found and stands behind (its own "viable first-party" test:
+    # fetched, positive score, served by the brand) rides along too, so the agent can see and
+    # place what the site actually publishes — a favicon, a footer mark, a brand-page variant —
+    # beside the cells and the vendor's assets. A candidate whose artwork the ladder could not
+    # read as a logo (`lockup == "unknown"`, e.g. a CSS background photo) is left out. Same bytes
+    # found at several rungs are one asset.
+    if resolution is not None:
+        for ranked in resolution.ranked:
+            if not ranked.body or ranked.fetch_error or ranked.score <= 0 or not ranked.first_party:
+                continue
+            if ranked.lockup == "unknown":
+                continue
+            tag = f"{ranked.variant} {ranked.lockup}, {ranked.dom_role or ranked.rung}"
+            candidate = _prepare(
+                "unclassified",
+                _ladder_candidate_cell(ranked),
+                resolution,
+                label_base,
+                label=f"{label_base} logo (site: {tag})",
+            )
+            if candidate.asset_id in seen:
+                continue
+            seen.add(candidate.asset_id)
+            alternatives.append(candidate)
+
     all_notes = list(notes)
     if resolution is not None:
         all_notes.extend(resolution.notes)
@@ -379,6 +404,28 @@ def _assemble(
         candidates=(
             [c.summary() for c in resolution.ranked[:6]] if resolution is not None else []
         ),
+    )
+
+
+def _ladder_candidate_cell(candidate):
+    """One ranked ladder candidate as a `FamilyCell`, carrying the evidence the ladder measured."""
+    from lumen_ingestion.logo_family import SOURCE_LADDER, FamilyCell
+
+    return FamilyCell(
+        cell="unclassified",
+        body=candidate.body,
+        content_type=candidate.content_type or "application/octet-stream",
+        source=SOURCE_LADDER,
+        origin_url=candidate.url,
+        evidence={
+            "rung": candidate.rung,
+            "role": (candidate.dom_role or "")[:120],
+            "variant": candidate.variant,
+            "lockup": candidate.lockup,
+            "score": round(candidate.score, 2),
+            "width": candidate.width,
+            "height": candidate.height,
+        },
     )
 
 

@@ -1,43 +1,39 @@
-# Recipe: Landing Page
+# Landing-page composition reference
 
-The section grammar and hard rules for a product landing page. A recipe is a
-business contract, not a style guide — the create-website skill owns HOW to
-author; this owns WHAT a landing page must contain and must never do.
+`campaign-landing-page` chooses the reader's decision, argument, shell and section
+order. `plan-design` records it. This reference offers composition options inside
+that plan; it does not prescribe a universal stack of feature cards and CTAs.
 
-## Required section order
+## Give each section a job
 
-1. **header** — brand name or logo left; 2–4 text nav items (anchor links to
-   sections); primary CTA right. On phone: logo + CTA only.
-2. **hero** — overline (category, e.g. "AI medical scribe"), h1 with the
-   value proposition (`display` variant), one supporting paragraph, primary +
-   secondary CTA pair. Optional single hero image.
-3. **social proof strip** — ONLY with real, verifiable customer names/logos
-   from the brand kit or brief. No real proof → OMIT the section entirely.
-4. **features** — h2 + 3 (or 6) cards: icon, h3, one concrete sentence each.
-5. **how-it-works** — h2 + 3 numbered steps, one line each. Omit if the brief
-   gives no process to describe.
-6. **final CTA band** — statement background (`bg-dark` or `bg-primary`),
-   h2 restating the value, the primary CTA.
-7. **footer** — brand name, 2–4 links, © line with the current year.
+| Visitor question | Useful composition, when supported by the source library |
+|---|---|
+| What is this, and why is it for me? | Concise source-derived hero; centered, split or editorial according to the argument and observed brand grammar |
+| What would I actually see or do? | Product demonstration with adjacent task copy; retain authentic interface imagery and crop |
+| Why does this matter to this account? | A supported situation connected to a relevant product mechanism; a focused editorial band or annotated workflow |
+| What would need evaluating? | Proposed evaluation questions beside the product capability; no invented integration or delivery commitments |
+| What evidence should I consider? | Named, relevant customer proof or an actual product demonstration, with its owner and conditions visible |
+| What happens next? | The supported offer and real action, placed where the visitor has enough context to choose |
 
-Optional between 4 and 6: a product-shot band (one generated product image),
-an FAQ (h3 question + p answer pairs). Never two imagery bands adjacent.
+Choose only the questions the page needs to answer. A feature grid, process strip,
+proof wall, FAQ, secondary CTA or final band earns its place; none is mandatory.
+An exact source reproduction follows its preservation scope. An authorized campaign
+adaptation may change copy, order or section selection without being a broken clone.
+Healthy source bands are rebound first; derive a variant when their structure
+cannot carry the selected argument. Compose gaps from inspected source ancestors.
 
-## Hard rules (violations are defects, not taste)
+## Composition and copy checks
 
-- **Never invent facts**: no made-up statistics, customer counts, quotes,
-  testimonials, awards, compliance claims beyond the brief. If the brief
-  says "HIPAA", you may say "HIPAA"; you may not add "SOC 2".
-- **Real links only**: CTAs point to the brand's real domain (from the brand
-  kit source or the brief) or to `#section` anchors. Never guess deep paths
-  (`/pricing`, `/signup`) unless given. Unverifiable → use an anchor or omit
-  the element.
-- **One primary CTA destination**, reused verbatim in header, hero, and the
-  final band. Secondary CTAs are anchors (`#features`, `#how-it-works`).
-- **CTA variants**: `primary` and `secondary`/`outline` only. `ghost`/`link`
-  are for footer/nav-adjacent links.
-- **Sibling parity**: feature cards all use icons or all use images, same
-  size, same structure. Never mix.
-- **Never reuse an image** in two places on the page.
-- **Copy**: concrete verbs over adjectives; one idea per sentence; no
-  emojis; no em-dashes; sentence case everywhere except the brand name.
+- Show what the product does on the first screen. Supporting copy adds scope or
+  mechanism rather than repeating the headline. Use `conversion-copywriting`.
+- Use real product assets for product evidence. Generate supporting imagery only
+  when the brief calls for it; do not synthesize interface facts or target logos.
+- Keep the seller's type, spacing, surfaces, image treatment and responsive
+  behavior. Choose density and rhythm from the inspected brand, not a card count.
+- Keep supplied assertions, verified facts and proposed applications distinct.
+  Proof remains attached to its actual subject; target identity is not endorsement.
+- A primary CTA leads to the actual supported action. An in-page link can navigate
+  to a real section; it does not substitute for a missing booking or form endpoint.
+  Report an unavailable conversion destination as a draft gap.
+- For requested alternatives, use the campaign skill's distinct-page-directions
+  guide. Compare actual arguments and compositions, not only renamed headings.

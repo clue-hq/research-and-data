@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict
 from clue_db import ConnFactory, transaction
 from clue_design.brand import approved_brand_mark_sha256
 from clue_design.errors import DesignNotFoundError
-from clue_design.publishes import get_web_publish, get_web_publish_page
+from clue_design.publishes import (
+    get_web_publish,
+    get_web_publish_page,
+    live_script_hashes,
+    manifest_delivery,
+)
 from clue_design.storage import read_design_blob, read_public_design_blob
 from clue_spine.hostnames import resolve_active_hostname
 from clue_spine.pages_settings import get_pages_settings
@@ -28,6 +33,11 @@ class ServedPublish(BaseModel):
     manifest_json: str
     manifest_digest: str
     noindex: bool
+    #: "site" for a Puck site publish, "site_live" for a live one (its manifest says so): each is
+    #: served under its own CSP.
+    delivery: str = "web"
+    #: A live site page's allowed inline-script hashes (its import map), from ``manifest["live"]``.
+    script_hashes: tuple[str, ...] = ()
 
 
 class ServedPage(BaseModel):
@@ -38,6 +48,8 @@ class ServedPage(BaseModel):
     html: str
     html_digest: str
     noindex: bool
+    delivery: str = "web"
+    script_hashes: tuple[str, ...] = ()
 
 
 class PageReads(Protocol):
@@ -55,15 +67,28 @@ def _sha(value: str) -> str:
 
 
 class DbPageReads:
-    """The production reads over the registry, the publish DAL and the blob store."""
+    """The production reads over the registry, the publish DAL and the blob store.
 
-    def __init__(self, storage: StorageBackend, *, conn_factory: ConnFactory = transaction) -> None:
+    ``system_suffixes`` — the system suffix and every legacy one — are the domains a system
+    address ``<label>.<suffix>`` is served under, by its label, whichever of them its row names
+    (review finding K3-6: both addresses answer throughout a published-pages domain move)."""
+
+    def __init__(
+        self,
+        storage: StorageBackend,
+        *,
+        conn_factory: ConnFactory = transaction,
+        system_suffixes: tuple[str, ...] = (),
+    ) -> None:
+        self.system_suffixes = system_suffixes
         self._storage = storage
         self._conn_factory = conn_factory
 
     async def workspace_for_hostname(self, hostname: str) -> str | None:
         async with self._conn_factory() as conn:
-            return await resolve_active_hostname(conn, hostname)
+            return await resolve_active_hostname(
+                conn, hostname, system_suffixes=self.system_suffixes
+            )
 
     async def active_publish(self, workspace_id: str, slug: str) -> ServedPublish | None:
         async with self._conn_factory() as conn:
@@ -83,6 +108,8 @@ class DbPageReads:
             manifest_json=manifest_json,
             manifest_digest=str(publish.get("manifest_digest") or _sha(manifest_json)),
             noindex=manifest.get("robots") == "noindex",
+            delivery=manifest_delivery(manifest),
+            script_hashes=live_script_hashes(manifest),
         )
 
     async def active_page(self, workspace_id: str, slug: str, route: str) -> ServedPage | None:
@@ -97,10 +124,16 @@ class DbPageReads:
             )
         manifest = publish.get("manifest")
         noindex = isinstance(manifest, dict) and manifest.get("robots") == "noindex"
+        delivery = manifest_delivery(manifest)
+        script_hashes = live_script_hashes(manifest)
         if row is not None:
             html = str(row["html"])
             return ServedPage(
-                html=html, html_digest=str(row.get("html_digest") or _sha(html)), noindex=noindex
+                html=html,
+                html_digest=str(row.get("html_digest") or _sha(html)),
+                noindex=noindex,
+                delivery=delivery,
+                script_hashes=script_hashes,
             )
         if route == "/":
             html = str(publish["html"])
@@ -108,6 +141,8 @@ class DbPageReads:
                 html=html,
                 html_digest=str(publish.get("html_digest") or _sha(html)),
                 noindex=noindex,
+                delivery=delivery,
+                script_hashes=script_hashes,
             )
         return None
 

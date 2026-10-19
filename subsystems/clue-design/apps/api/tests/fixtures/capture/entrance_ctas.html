@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Entrance CTAs fixture</title>
+<!-- Wave 2 A9 FX-C fix round 1: calls to action that fade in on load from an authored `opacity: 0`,
+     16px down, with a forwards fill — one over 4 s, one after a 3 s delay with a short fade — so both
+     are still moving when the probes reach them. Each is read where its entrance ends: opaque, in
+     place. Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .cta { display: inline-flex; padding: 12px 24px; border-radius: 8px; border: 0; color: #fff;
+         font: 500 14px/1.4 Arial; cursor: pointer; opacity: 0; transform: translateY(16px); }
+  .slow { background: #047464; animation: fade-in 4s ease-out forwards; }
+  .slow:hover { background: #035a4e; }
+  .late { background: #28241e; animation: fade-in .3s ease-out 3s forwards; }
+  .late:hover { background: #000; }
+  @keyframes fade-in { to { opacity: 1; transform: none; } }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="cta slow" id="b-slow">Book a demo</button>
+    <button class="cta late" id="b-late">See the plans</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

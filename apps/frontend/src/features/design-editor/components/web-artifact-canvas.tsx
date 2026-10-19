@@ -20,6 +20,7 @@ import type {
 } from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
+import { CanvasEmptyState, CanvasErrorState, CanvasLoadingState } from "./canvas-states";
 import { WebAnnotationPopover } from "./web-annotation-popover";
 import styles from "./web-artifact-canvas.module.css";
 import { WebRichTextToolbar } from "./web-rich-text-toolbar";
@@ -513,29 +514,7 @@ function DocumentRender({
     );
   }
 
-  if (state.kind === "error") {
-    return (
-      <div className={styles.stateFrame} role="alert">
-        <p className={styles.stateTitle}>Preview failed</p>
-        <p className={styles.stateHint}>{state.message}</p>
-      </div>
-    );
-  }
-
-  if (state.kind === "loading") {
-    return (
-      <div className={styles.stateFrame} role="status">
-        <p className={styles.stateHint}>Loading preview…</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.stateFrame}>
-      <p className={styles.stateTitle}>Your website will render here</p>
-      <p className={styles.stateHint}>
-        Describe what you want in the chat and the agent will build it.
-      </p>
-    </div>
-  );
+  if (state.kind === "error") return <CanvasErrorState message={state.message} />;
+  if (state.kind === "loading") return <CanvasLoadingState />;
+  return <CanvasEmptyState />;
 }

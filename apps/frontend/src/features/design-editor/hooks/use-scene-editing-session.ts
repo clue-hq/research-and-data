@@ -33,6 +33,7 @@ import { buildKitTokenMaps, type KitTokenMaps } from "../engine/scene/tokenColor
 import { useSceneArrange } from "./use-scene-arrange";
 import { useSceneAssetLibrary } from "./use-scene-asset-library";
 import { useSceneClipboard } from "./use-scene-clipboard";
+import { useSceneDelete } from "./use-scene-delete";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
@@ -100,6 +101,7 @@ export function useSceneEditingSession({
   agentRunLocked = false,
   documentIds,
   enabled = true,
+  onScreen = true,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
   activeArtifactId: string | null;
@@ -124,6 +126,9 @@ export function useSceneEditingSession({
    * so a caller that only ever mounts ads needs nothing extra.
    */
   enabled?: boolean;
+  /** The artifact is on screen (the artifact surface, panel open): undo/redo keys act only then
+   * (review finding S2b-6). Defaults to true. */
+  onScreen?: boolean;
 }) {
   const activeDocumentId =
     enabled && activeArtifactId
@@ -533,6 +538,7 @@ export function useSceneEditingSession({
     lockNote: AGENT_RUN_LOCK_NOTE,
     locked: agentRunLocked,
     onReload: onWriteReload,
+    onScreen,
     pageId,
     palette,
     tokenMaps,
@@ -724,6 +730,21 @@ export function useSceneEditingSession({
     selectedNodeId: primaryNodeId,
     viewportPageCenter,
     writes,
+  });
+
+  // The Delete key (Backspace on a Mac keyboard): the WHOLE selection set, not
+  // the primary — several layer-panel-selected elements go in one undo frame.
+  const clearSelection = useCallback(() => select(null, false), [select]);
+  useSceneDelete({
+    applyOps: writes.applyOps,
+    clearMessages: writes.clearMessages,
+    clearSelection,
+    documentId: activeDocumentId,
+    onNote: writes.reportNote,
+    pageId,
+    scene,
+    selectedIds,
+    writeGate: writes.writeGate,
   });
 
   // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside

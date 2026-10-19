@@ -5,14 +5,17 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from lumen_api import main
+from lumen_api import main, spend
 from py_lumen_config import settings
 from test_image_reference_custody import _png
 from test_image_reference_custody import fake_transport as fake_transport
+
+from clue_spend import HttpResponse, LedgerStamp
 
 
 @pytest.fixture
@@ -82,6 +85,32 @@ def route_client(tmp_path, monkeypatch: pytest.MonkeyPatch, fake_transport):
         main, "DescriptionStore", lambda **kwargs: SimpleNamespace(get_many=lambda ids: {})
     )
     monkeypatch.setattr(main, "register_engine_write", lambda *args, **kwargs: None)
+
+    calls, output = fake_transport
+
+    class RequestTransport:
+        def send(self, request):
+            assert request.method == "POST"
+            assert request.url == "https://provider.invalid/v1/images"
+            assert request.headers["Authorization"] == "Bearer unit-test"
+            calls.append((request.url, json.loads(request.body)))
+            return HttpResponse(
+                status=200,
+                body=json.dumps({
+                    "data": [{"b64_json": base64.b64encode(output).decode("ascii")}]
+                }).encode("utf-8"),
+            )
+
+    # The route opens its own caller, which supersedes fake_transport's unscoped
+    # fallback. Keep a real request-scoped ProviderCaller, with transport and
+    # ledger custody in memory like this fixture's asset repository and blobs.
+    monkeypatch.setattr(
+        main,
+        "_request_spend_scope",
+        lambda workspace_id: spend.spend_scope(
+            LedgerStamp(workspace_id=workspace_id), transport=RequestTransport()
+        ),
+    )
     app = main.create_app(tmp_path / "engine-cache")
     app.state.core = SimpleNamespace(ingest_asset=ingest_asset)
     app.state.design_tools = SimpleNamespace(invoke=invoke)

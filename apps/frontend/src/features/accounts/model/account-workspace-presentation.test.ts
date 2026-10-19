@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { AccountArtifactSchema, WorkspaceActivitySchema } from "./account-workspace";
-import { accountArtifacts, activityPresentation, artifactTypeOptions, filterAccountActivity, filterAccountArtifacts, formatAccountDate, insightHeaderSummary } from "./account-workspace-presentation";
+import { accountArtifacts, activityPresentation, artifactDisplayType, artifactTypeLabels, artifactTypeOptions, filterAccountActivity, filterAccountArtifacts, formatAccountDate, insightHeaderSummary } from "./account-workspace-presentation";
 import { openAiWorkspaceFixture } from "../data/account-workspace.fixture";
 import { zafranWorkspaceFixture } from "../data/zafran/insights";
 import { fixtureAccountWorkspaceRepository } from "../data/account-workspace.repository";
@@ -148,4 +148,24 @@ test("activity filtering is a tick-free segmented selector and the rail shares t
   assert.doesNotMatch(detail, /function ActivityIcon\(/);
   assert.match(feed, /activityPresentation\(item\)/);
   assert.match(feed, /compact \? styles\.railFeed/);
+});
+
+// Review finding K1-1: the backend labels a site built for an account `"site"`, and the frontend's
+// list did not have it, so one site artifact made the whole Insights / Artifacts / Activity read fail.
+// A site is a landing page to the marketer: it shows exactly as one (label, icon, the "Landing pages"
+// filter); no new filter or label was designed, so none is invented.
+test("a site artifact parses and shows as a landing page: label, icon type, filter and sort", () => {
+  const base = openAiWorkspaceFixture.artifacts[0]!;
+  const site = { ...base, id: "site-1", title: "Garner microsite", type: "site" as const };
+  const web = { ...base, id: "web-1", title: "Old landing page", type: "web" as const };
+  const ad = { ...base, id: "ad-1", title: "Banner", type: "ad" as const };
+  assert.ok(AccountArtifactSchema.safeParse(site).success, "the read no longer fails on a site");
+  assert.equal(artifactTypeLabels.site, "Landing page");
+  assert.equal(artifactDisplayType("site"), "web");
+  assert.equal(artifactDisplayType("ad"), "ad");
+  assert.deepEqual(filterAccountArtifacts([site, web, ad], { type: "web" }).map((a) => a.id).sort(), ["site-1", "web-1"]);
+  assert.deepEqual(filterAccountArtifacts([site, web, ad], { search: "landing page" }).map((a) => a.id).sort(), ["site-1", "web-1"]);
+  assert.deepEqual(artifactTypeOptions.map(({ value }) => value), ["all", "ad", "web", "document", "presentation", "email"], "no new filter");
+  const sorted = filterAccountArtifacts([web, ad, site], { sort: "type" }).map((a) => a.id);
+  assert.deepEqual(sorted, ["ad-1", "site-1", "web-1"], "sites sort with landing pages");
 });

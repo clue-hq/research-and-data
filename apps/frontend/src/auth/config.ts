@@ -62,6 +62,12 @@ export function clueAppOrigin(): string {
   return parsed.origin;
 }
 
+/** Wave 2 Contract 9: the site editor's domain suffix (`<label>.<suffix>`). Empty = no editor
+ * domain is configured; a site then shows the canvas error state. */
+export function siteEditorSuffix(): string {
+  return process.env.CLUE_SITE_EDITOR_SUFFIX?.trim().toLowerCase() ?? "";
+}
+
 function configuredAuthorizedParties(raw: string): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);

@@ -196,17 +196,17 @@ export function exportStatusFor(
 
 /**
  * The listener's gate, as a pure decision: `null` means "not this lane's
- * export", and the listener returns silently — the same `clue:artifact-export-request`
- * name is dispatched by the image-export menu
- * (`use-image-export-controller.ts:39`, `{format, kind, scale?, title}`) AND by
- * the sharing menu (`use-artifact-sharing-controller.ts:181`, `{format: "ZIP" |
- * "PDF", kind}`), so both shapes reach every listener on the window.
+ * export", and the listener returns silently — `clue:artifact-export-request`
+ * is dispatched by the image-export menu (`use-image-export-controller.ts:39`,
+ * `{format, kind, scale?, title}`), and any window listener can receive it. (The
+ * sharing menu also dispatched it, as `{format: "ZIP" | "PDF", kind}`, until the
+ * founder ruling of 2026-10-13 removed every website download.)
  *
  * The FORMAT guard is load-bearing, not defensive padding (D1 review
  * carry-forward): `sceneExportProfile` is a total switch over the three menu
- * formats, so an unvalidated `"ZIP"` — which the sharing menu really does send
- * with `kind: "ad"` — returns `undefined` at runtime and would be posted to the
- * export endpoint as a profile-shaped hole. Nothing downstream re-checks it.
+ * formats, so an unvalidated format such as `"ZIP"` returns `undefined` at
+ * runtime and would be posted to the export endpoint as a profile-shaped hole.
+ * Nothing downstream re-checks it.
  *
  * The scale is read by the shared `sceneExportScaleMultiplier`, which is where
  * the "absent or unrecognized is 1x, not a refusal" reasoning lives — the same

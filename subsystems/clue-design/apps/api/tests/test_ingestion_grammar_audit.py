@@ -423,7 +423,7 @@ def test_a_band_colour_the_kit_named_is_reported_under_its_token() -> None:
     kit = _kit_for(evidence)
     audit = extract_grammar_audit(evidence, kit)
     text = _rules_text(audit.color_frequency)
-    assert "surface.band.statement" in text
+    assert "surface.band.0d1738" in text
 
 
 def test_an_accent_that_only_ever_fills_a_control_is_stated_as_control_scale() -> None:
@@ -536,7 +536,10 @@ def _run_website_ingestion_through_the_route(
 
     png_bytes = LOGO_PNG_PATH.read_bytes()
 
-    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+    async def fake_capture(
+        url, *, reporter, force_render=False, page_urls=None, discover_pages=False
+    ):
+        assert discover_pages is True
         class Outcome:
             tier = "rendered"
             escalated = False

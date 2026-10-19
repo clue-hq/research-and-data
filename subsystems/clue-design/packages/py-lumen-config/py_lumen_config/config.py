@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     # Deliberately slow: it is a safety net over a rare failure, not a control loop, and every
     # pass is a query against three indexed status predicates.
     lumen_design_reaper_interval_s: float = 300.0
+    # How long a finished site turn's conversation checkpoints are kept before the design reaper
+    # deletes them (founder 2026-10-17: 96 hours, so a slow or odd turn can be traced from its own
+    # messages). The working copy is deleted at once when the run ends; this is only the
+    # conversation. Seconds; 345600 = 96 h.
+    lumen_site_turn_conversation_retention_s: float = 345600.0
     # Clone-fidelity F2.2: the RUNAWAY BACKSTOP on how many website sections one ingestion may
     # mint as fragments. FOUNDER RULING (2026-08-27): extraction yields as many fragments as the
     # page honestly offers — the acceptance's "at least five" is a floor, not a target — so this
@@ -103,6 +108,8 @@ class Settings(BaseSettings):
     # minting cannot be a SECOND, tighter ceiling on a page the capture layer was willing to
     # measure in full. Tripping it is reported loudly (LUMI0532), never silently truncated.
     lumen_fragment_mint_cap: int = 40
+    # New multipage library captures: total per visible/dormant pool; per-page cap still applies.
+    lumen_site_library_fragment_mint_cap: int = 240
     # Clone-fidelity F3/F4, FOUNDER RULING R-X4 (2026-08-29): what a repair lineage resolves to
     # when EVERY released member of it — the harvested original and every repair of it — is
     # marked broken. Two values, and the founder's own words for the default:
@@ -289,7 +296,16 @@ class Settings(BaseSettings):
 
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
-    lumen_ad_dna_model: str = "x-ai/grok-4.5"
+    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash"
+    # Hybrid asset search (founder ruling 2026-10-05): ingestion stores a CLIP image vector per
+    # asset and the scene agent's `search_assets` fuses its keyword ranking with a visual one.
+    # Runs on ONNX Runtime from a model directory holding image.onnx (fp32, ingestion only),
+    # text.onnx (int8, every search), tokenizer.json and preprocess.json — built by
+    # scripts/export_clip_onnx.py. An empty directory setting, a missing directory or a model
+    # that will not load turns the visual half off and search stays keyword-only (said so in
+    # the tool result); it never fails ingestion or a turn.
+    lumen_asset_embeddings: bool = True
+    lumen_asset_embedding_model_dir: str = ""
 
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
@@ -430,6 +446,9 @@ class Settings(BaseSettings):
     # in a 57-minute page build. Overrides the two web flags above when on: there are no
     # subagents to quarantine selectively.
     lumen_agent_web_solo: bool = False
+    # Context clearing (founder decisions 2026-10-06): replace superseded preview screenshots and
+    # finished planning results with stubs before each website-agent model call. On by default.
+    lumen_agent_web_context_clearing: bool = True
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #

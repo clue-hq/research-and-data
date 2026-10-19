@@ -26,12 +26,19 @@ check "helper answers build_info" helper_answers
 check "font manifest" run test -f /app/subsystems/clue-design/apps/api/font-library/manifest.json
 check "tailwind toolchain" run test -d /app/subsystems/clue-design/apps/editor/node_modules/@tailwindcss/node
 check "tailwind browser runtime" run test -f /app/subsystems/clue-design/apps/editor/public/vendor/tailwind-browser.js
+check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/render-browser.js -a -f /app/apps/frontend/packages/site-kit/dist/validate-site.mjs -a -f /app/apps/frontend/packages/site-kit/dist/site-runtime.js -a -f /app/apps/frontend/packages/site-kit/dist/site-runtime-shims/react.js
+check "site-kit section toolchain" run test -d /app/apps/frontend/node_modules/typescript -a -d /app/apps/frontend/node_modules/esbuild -a -d /app/apps/frontend/node_modules/tsx
+check "site-kit section check folder writable" run test -w /app/apps/frontend/packages/site-kit/.section-check
 check "node" run node --version
 check "ffmpeg" quiet run ffmpeg -version
 check "ffprobe" quiet run ffprobe -version
 check "ffmpeg mp3 encoder (research media speech audio)" run bash -c 'ffmpeg -hide_banner -encoders | grep -q libmp3lame'
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
+# The site renderer's own hardened page, launched exactly as the services run it: it reads the
+# image's LUMEN_SITE_RENDER_CHROMIUM_SANDBOX (0: the container cannot give Chromium its own sandbox).
+# Review finding S7-1 and docs/specs/2026-10-14-site-render-chromium-sandbox-decision.md.
+check "site renderer launches" run python -c "exec('from lumen_api.hardened_browser import hardened_page\\nwith hardened_page(javascript=True) as (page, _):\\n    page.set_content(\"<p>ok</p>\")\\n    assert page.inner_text(\"p\") == \"ok\"')"
 check "non-root (uid 1000)" runs_as_uid_1000
 check "alembic" quiet run alembic --help
 check "s3 storage sdk" run python -c "import aioboto3"

@@ -30,6 +30,8 @@ the artifact.
 
 from __future__ import annotations
 
+from .native import native_render_fields
+
 import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -76,6 +78,14 @@ _ASSET_PATH_PREFIX = "/asset-store/"
 _PAGE_ID = "home"
 _SECTION_NODE_ID = "sec_isolation"
 _FRAGMENT_NODE_ID = "frg_isolation"
+
+
+@dataclass(frozen=True)
+class IsolationFonts:
+    """Resolved faces from the fragment's pinned kit, never a replacement theme."""
+
+    css: str
+    asset_digests: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -140,7 +150,9 @@ def isolation_web_doc(fragment_id: str) -> dict[str, Any]:
     }
 
 
-def build_isolation_page(core: Any, loaded: Any, *, brand_kit: Any = None) -> IsolationPage:
+def build_isolation_page(
+    core: Any, loaded: Any, *, brand_kit: Any = None, fonts: IsolationFonts | None = None
+) -> IsolationPage:
     """Render one fragment's own bytes, alone, through the engine.
 
     ``loaded`` is a :class:`~lumen_api.fragments.registry.LoadedFragment` — its ``html`` and
@@ -157,6 +169,11 @@ def build_isolation_page(core: Any, loaded: Any, *, brand_kit: Any = None) -> Is
     written in the platform's own class vocabulary against theme tokens) photographs in the
     brand's real colours rather than the engine's defaults. A harvested clone carries all of its
     own styling and does not care either way.
+
+    ``fonts`` supplies only the pinned kit's resolved @font-face rules and custodied digests.
+    A generated section can use a kit font alias without carrying that font's declaration in
+    its own CSS. Supplying those faces matches full-page rendering without changing the
+    artifact's styles or choosing a newer theme. The artifact's own CSS still follows them.
     """
     fragment_id = loaded.fragment_id
     asset_base = ISOLATION_ORIGIN + _ASSET_PATH_PREFIX.rstrip("/")
@@ -166,8 +183,10 @@ def build_isolation_page(core: Any, loaded: Any, *, brand_kit: Any = None) -> Is
         mode="delivery",
         asset_base_url=asset_base,
         brand_kit=brand_kit,
+        **({"font_face_css": fonts.css} if fonts is not None else {}),
         fragments={
             fragment_id: {
+                **native_render_fields(loaded.payload),
                 "html": rebase_artifact_assets(loaded.html, asset_base),
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
             }
@@ -177,7 +196,11 @@ def build_isolation_page(core: Any, loaded: Any, *, brand_kit: Any = None) -> Is
     return IsolationPage(
         fragment_id=fragment_id,
         html=str(response.get("html") or ""),
-        asset_digests=tuple(loaded.asset_digests),
+        asset_digests=tuple(
+            dict.fromkeys(
+                (*loaded.asset_digests, *(fonts.asset_digests if fonts is not None else ()))
+            )
+        ),
         element_selector=f".{fragment_wrapper_class(fragment_id)}",
     )
 
@@ -321,6 +344,7 @@ def render_isolation_preview(
     *,
     read_blob: Callable[[str], tuple[str, bytes]],
     brand_kit: Any = None,
+    fonts: IsolationFonts | None = None,
     shoot: Callable[[IsolationPage, Mapping[str, tuple[str, bytes]]], bytes] = (
         screenshot_isolation_page
     ),
@@ -332,7 +356,7 @@ def render_isolation_preview(
     which is honest, and refusing would mean a clone with one purged byte could never be looked
     at at all.
     """
-    page = build_isolation_page(core, loaded, brand_kit=brand_kit)
+    page = build_isolation_page(core, loaded, brand_kit=brand_kit, fonts=fonts)
     assets: dict[str, tuple[str, bytes]] = {}
     for digest in page.asset_digests:
         try:
@@ -349,6 +373,7 @@ def preview_digest(data: bytes) -> str:
 __all__ = [
     "ISOLATION_PREVIEW_MEDIA_TYPE",
     "ISOLATION_RENDER_BASIS",
+    "IsolationFonts",
     "IsolationPage",
     "IsolationRenderFailed",
     "build_isolation_page",

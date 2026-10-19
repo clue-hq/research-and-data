@@ -44,7 +44,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.manual import tool_manual_link
-from clue_api.arv2.discovery_request import BriefGate, DiscoveryBrief2, DiscoverySource
+from clue_api.arv2.discovery_request import (
+    BriefGate,
+    DiscoveryBrief2,
+    DiscoverySource,
+    ExcludedCompany,
+)
 from clue_api.arv2.discovery_store import (
     DiscoveryRunRow,
     active_discovery_for_project,
@@ -848,6 +853,8 @@ class LaunchArv2DiscoveryV2Input(ToolInput):
 
 class LaunchArv2DiscoveryV2Tool(LaunchArv2DiscoveryTool):
     version = "2"
+    #: The tool inputs that make up the brief.
+    _brief_fields: ClassVar[frozenset[str]] = frozenset({"source", "query", "criteria", "gates"})
     model_description = (
         "Launch account discovery for one project with the search you write: what kind of company "
         "to find (query), what every company must satisfy (criteria), and the checks run on every "
@@ -881,7 +888,7 @@ class LaunchArv2DiscoveryV2Tool(LaunchArv2DiscoveryTool):
         try:
             # Structural only (counts, unique keys); the wording is the agent's.
             brief = DiscoveryBrief2.model_validate(
-                inputs.model_dump(include={"source", "query", "criteria", "gates"})
+                inputs.model_dump(include=set(self._brief_fields))
             )
         except ValidationError as bad:
             raise PreconditionFailed([PreconditionFailure("brief_invalid", str(bad))]) from bad
@@ -912,6 +919,33 @@ class LaunchArv2DiscoveryV2Tool(LaunchArv2DiscoveryTool):
         )
 
 
+class LaunchArv2DiscoveryV3Input(LaunchArv2DiscoveryV2Input):
+    exclude: list[ExcludedCompany] = Field(default_factory=list)
+
+
+class LaunchArv2DiscoveryV3Tool(LaunchArv2DiscoveryV2Tool):
+    """``@2`` plus the brief's ``exclude`` list: the companies this search must leave out, each
+    with its domains (spec 2026-10-16-discovery-excludes-seller-customers §4.5). ``@2`` keeps its
+    input schema byte for byte, because historical profiles pin it by hash."""
+
+    version = "3"
+    _brief_fields: ClassVar[frozenset[str]] = frozenset(
+        {"source", "query", "criteria", "gates", "exclude"}
+    )
+    model_description = (
+        "Launch account discovery for one project with the search you write: what kind of company "
+        "to find (query), what every company must satisfy (criteria), the checks run on every "
+        "company found (gates, each with a role: must, must_not or prefer), and the companies to "
+        "leave out with their domains (exclude: the seller's existing customers you chose from "
+        "brand/knowledge/proof/customers.md, and the seller's own domains). Read section 7b of the "
+        "stage0-interview skill before calling. The project needs a confirmed ICP and product set. "
+        "A successful result means the run was created or replayed, never that companies were "
+        "found; this conversation stays busy until the run ends and you get a turn with its "
+        "summary. " + tool_manual_link("launch_arv2_discovery")
+    )
+    input_model: ClassVar[type[ToolInput]] = LaunchArv2DiscoveryV3Input
+
+
 def build_arv2_discovery_tools(service: Arv2DiscoveryService | None) -> tuple[Tool, ...]:
     """The lane's toolbelt surface. Registered always; composed only behind the flag.
 
@@ -920,6 +954,11 @@ def build_arv2_discovery_tools(service: Arv2DiscoveryService | None) -> tuple[To
     that reaches for discovery on a deployment without the lane gets the named
     ``arv2_discovery_not_composed`` refusal rather than an ``UnknownTool`` it cannot explain.
     ``@1`` stays registered beside ``@2`` so a call journaled against it still resolves, and is
-    refused by name (``discovery_tool_retired``).
+    refused by name (``discovery_tool_retired``). ``@2`` stays live beside ``@3`` for the profiles
+    that pin it.
     """
-    return (LaunchArv2DiscoveryTool(service), LaunchArv2DiscoveryV2Tool(service))
+    return (
+        LaunchArv2DiscoveryTool(service),
+        LaunchArv2DiscoveryV2Tool(service),
+        LaunchArv2DiscoveryV3Tool(service),
+    )

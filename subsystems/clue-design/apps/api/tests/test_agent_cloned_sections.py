@@ -1022,3 +1022,25 @@ def test_a_campaign_variant_never_replaces_the_original_but_a_repair_does() -> N
     verdicts = resolve_fragment_lineages([_lineage_row("a", degraded=True), repair])
     # A genuine repair still supersedes its broken original.
     assert verdicts["a"].representative == "r1"
+
+
+def test_source_inspection_retains_capture_evidence_without_arbitrary_metadata(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    kit = _seed_kit(workspace_id)
+    row = _mint(workspace_id, design_storage,
+        source_kit_id=kit["brand_kit_id"], source_kit_version=int(kit["version"]),
+        provenance={"page_url": SOURCE_URL, "snapshot_id": "snap_source",
+                    "dead_height_check": {"assessed": False, "because": "no_preview"},
+                    "recovery": {"fidelity_verified": False},
+                    "unrelated_provider_payload": "must not reach the model"})
+    source = _registry(workspace_id, design_storage, tmp_path / "cache").read_source(
+        row["fragment_id"])
+    assert source["source_kit_id"] == kit["brand_kit_id"]
+    assert source["source_kit_bindings"]
+    assert source["payload_digest"] == row["payload_digest"]
+    assert source["created_at"] == row["created_at"]
+    assert source["capture_evidence"]["snapshot_id"] == "snap_source"
+    assert source["capture_evidence"]["dead_height_check"]["assessed"] is False
+    assert source["capture_evidence"]["recovery"]["fidelity_verified"] is False
+    assert "unrelated_provider_payload" not in source["capture_evidence"]

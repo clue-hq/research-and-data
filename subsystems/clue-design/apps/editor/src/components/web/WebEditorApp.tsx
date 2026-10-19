@@ -1077,22 +1077,6 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
 
   const title = document?.title ?? "Website";
 
-  // Export the built site as a zip: the endpoint sets Content-Disposition, so an
-  // anchor click to the absolute API URL is enough (no fetch/blob). `document`
-  // is shadowed by the loaded doc in this scope — reach the DOM via `window`.
-  const handleExport = useCallback(() => {
-    const href = new URL(
-      `/documents/${encodeURIComponent(documentId)}/web/export`,
-      editorApiBaseUrl()
-    ).toString();
-    const anchor = window.document.createElement("a");
-    anchor.href = href;
-    anchor.rel = "noopener";
-    window.document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-  }, [documentId]);
-
   // Clone the current doc into a fresh template document. On success a toast
   // links to the new template; failure surfaces the server message in the same
   // toast slot. The topbar reflects `document.isTemplate` for THIS doc, so a
@@ -1269,13 +1253,6 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
               disabled={savingTemplate}
             >
               {savingTemplate ? "Saving…" : "Save as template"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={handleExport}
-            >
-              Export
             </button>
             <button
               type="button"

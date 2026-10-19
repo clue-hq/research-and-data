@@ -258,7 +258,36 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # add, rename, merge or remove the brand's products when the person asks (founder ruling D3:
     # applied directly; when the agent only suspects, it asks). The conversation recipe moves
     # 33 -> 34 for the new address and the manual re-mints at `manual-*@v17`. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v71",
+    # The website line's own v71-v73 (2026-10-05/10, never in production) carried the
+    # design leg's first turn, the page brief format and the ad headline suggestion on manual
+    # v17-v19 — the same numbers main used for its own v71 and manual v17. Their notes:
+    #   v71 (2026-10-04): v70's surface exactly. The manual re-mints at `manual-*@v17`: the design
+    #   leg's first turn is queued from the human's own message when the leg opens (the v16 chapters
+    #   and the open_design_leg note still said opening a leg starts nothing), and
+    #   `read_account_research` pages the overview by whole section. `stage0-interview@v44` only
+    #   repoints its manual paths. Prompt v18 and the recipe stay.
+    #   v72 (2026-10-05): v71's surface exactly. The manual re-mints at `manual-*@v18`: a page brief
+    #   gives Design direction (purpose, reader, angle, suggested structure, facts with sources) and
+    #   keeps private notes apart, Design writes every word, and research is offered for an
+    #   unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
+    #   paths. Prompt v18 and the recipe stay.
+    #   v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an
+    #   ad, Head of ABM may suggest what its headline could say, but only as a suggestion. The
+    #   manual re-mints at `manual-*@v19` (its tools chapter renders that description) and
+    #   `stage0-interview@v46` only repoints its manual paths. Prompt v18 and the recipe stay.
+    # v74 (2026-10-16, the website release merges main): main's v71 keeps its number (production
+    # ran it); the website line re-mints on top of it — v73's surface plus `manage_products@1`,
+    # recipe 34, `manual-*@v20` and `stage0-interview@v47`. Prompt v18 stays.
+    # v72 (discovery excludes the seller's customers, spec 2026-10-16): v71's surface with
+    # `launch_arv2_discovery` RE-PINNED at `@3`, whose brief adds `exclude` — the companies the
+    # search leaves out, chosen from `brand/knowledge/proof/customers.md` (stage0-interview v45).
+    # The conversation recipe moves 34 -> 35 and the manual re-mints at `manual-*@v18`. Prompt v18
+    # stays.
+    # v75 (2026-10-19, the website line merges research-streaming): research-streaming's v72 keeps
+    # its number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top
+    # of it — v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines'
+    # chapters) and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v75",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -268,7 +297,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # head-of-abm holds — so a 1:1 creative can open the target account's research itself
     # instead of writing from whatever the brief happened to carry. Nothing else moves.
     # v3 (2026-09-22): v2 plus web_search@1 (spec 2026-09-22). Nothing else moves.
-    AgentRole.DESIGN: "v3",
+    # v4 (2026-10-05): read_account_research @2 -> @3 (insights page + buying committee with each
+    # person's contact page), so a 1:1 page is written from the whole of the research.
+    # v5 (2026-10-11, Wave 2 Lane B): read_cited_claims@1 and design_record_site_section@1.
+    AgentRole.DESIGN: "v5",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -324,6 +356,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # authority and its profile's tool list disagree, so a grant is that bump and never a dict
     # edit. stage0-interview v33 §7c says which question it is the read for.
     "read_claims": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
+    # Contract 5 (Lane B, 2026-10-11): the claims a research page cites, by id, behind the display
+    # gate, with a reason for each held one. The design API reads it to build a site turn's research
+    # files; the site agent itself never calls it. Granted at `design@v5` (reviewed bump).
+    "read_cited_claims": (AgentRole.DESIGN,),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
@@ -384,9 +420,22 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_finalize_document": (AgentRole.DESIGN,),
     "design_persist_preflight": (AgentRole.DESIGN,),
     "design_publish_web": (AgentRole.DESIGN,),
+    # Wave 2 Lane A: the Puck site publish, ungranted (ruling R6): only the person's Publish
+    # route invokes it.
+    "design_publish_site": (),
     "design_record_diagnostics": (AgentRole.DESIGN,),
     "design_redo_document": (AgentRole.DESIGN,),
     "design_redo_web_document": (AgentRole.DESIGN,),
+    # Wave 2 Lane A (Contract 2): the Puck site writes. Registered UNGRANTED, on the ad-assets
+    # lane's footing: no model names them. The editor's site routes invoke them as the person, and
+    # the site turn's executor persists the agent's finished request through design_write_site
+    # from code. Granting any of them to a role later is a reviewed design profile bump.
+    "design_write_site": (),
+    "design_undo_site": (),
+    "design_redo_site": (),
+    # Contract 4 (Lane B): records one compiled agent-written Puck section; the site turn's section
+    # port calls it. Granted to the design role like every design write, at `design@v5`.
+    "design_record_site_section": (AgentRole.DESIGN,),
     "design_replace_scene": (AgentRole.DESIGN,),
     "design_rollback_web_publish": (AgentRole.DESIGN,),
     "design_set_agent_instructions": (AgentRole.DESIGN,),
@@ -875,18 +924,24 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
     # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
     # on `@2` only. The `@1`s stay held by nobody.
+    # 2026-10-05: `@3` adds the insights page and the committee; `design@v4` pins it, so the DESIGN
+    # role holds `@3` and head-of-abm keeps `@2` (its pinned contract). `@1` is held by nobody.
     if name == "read_account_research":
-        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
+        if address == f"{name}@2":
+            return (AgentRole.HEAD_OF_ABM,)
+        if address == f"{name}@3":
+            return (AgentRole.DESIGN,)
+        return ()
     # Asset ingestion registered @2 for the upload/edit API, while the reviewed design
     # profile still pins @1. Registration must not implicitly grant every new version.
     if name in {"design_register_asset_record", "design_set_asset_description"}:
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
     # Agent-authored discovery (2026-09-30) registered `launch_arv2_discovery@2`, which takes the
     # brief the Head of ABM writes; `@1` stays registered only to refuse `discovery_tool_retired`.
-    # The grant follows the version the active profile pins: `head-of-abm@v70` pins `@2`, so `@1`
-    # is held by nobody.
+    # The grant follows the version the active profile pins: `head-of-abm@v72` pins `@3` (the
+    # brief's exclude list, spec 2026-10-16), so `@1` and `@2` are held by nobody.
     if name == "launch_arv2_discovery":
-        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@2" else ()
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@3" else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { AssetLibraryItem } from "@/features/design-editor/adapter/scene-asset-library";
-import { ASSET_LIBRARY_CATEGORIES, nextFocusIndex, shouldCloseOnKey, shouldCloseOnPointer, splitLibrarySections } from "./asset-library-panel.logic";
+import { ASSET_LIBRARY_CATEGORIES, logoResultCaption, logoSearchHeading, nextFocusIndex, shouldCloseOnKey, shouldCloseOnPointer, splitLibrarySections } from "./asset-library-panel.logic";
 
 const item = (id: string, pinned: boolean): AssetLibraryItem => ({
   record: { id, kind: "raster_image", label: id, status: "ready", source: { kind: "uploaded", filename: null, uploaded_by: null } },
@@ -63,4 +63,30 @@ it("moves focus across a 4-column grid with the arrow keys and clamps at the edg
   assert.equal(nextFocusIndex(9, "ArrowDown", 10, 4), 9);
   assert.equal(nextFocusIndex(5, "ArrowUp", 10, 4), 1);
   assert.equal(nextFocusIndex(2, "Tab", 10, 4), null);
+});
+
+it("logo search: a tile names the version, its background when one was claimed, and its source", () => {
+  assert.deepEqual(logoResultCaption({ kind: "Full logo", background: "light", source: "Brandfetch" }), {
+    title: "Full logo · light bg", source: "Brandfetch",
+  });
+  assert.deepEqual(logoResultCaption({ kind: "Icon", background: null, source: "Website" }), {
+    title: "Icon", source: "Website",
+  });
+});
+
+it("logo search: the heading names the company and counts the versions", () => {
+  assert.equal(logoSearchHeading("stripe.com", 6), "stripe.com · 6 versions found");
+  assert.equal(logoSearchHeading("stripe.com", 1), "stripe.com · 1 version found");
+  assert.equal(logoSearchHeading(null, 2), "2 versions found");
+});
+
+// The research-streaming merge (2026-10-19): the scene editor's library has Logo search; the site
+// editor's has none, and its panel draws no Logo search tab.
+it("finds the logo search only when the library provides every part of it", async () => {
+  const { logoSearchOf } = await import("./asset-library-panel.logic");
+  const noop = () => undefined;
+  const logo = { tab: "library" as const, setTab: noop, logoSearch: { query: "", status: "idle" as const, searchedFor: "", name: null, results: [], savingAssetId: null, error: null }, setLogoQuery: noop, searchLogos: noop, pickLogo: noop };
+  assert.equal(logoSearchOf({}), null);
+  assert.equal(logoSearchOf({ ...logo, pickLogo: undefined }), null);
+  assert.deepEqual(logoSearchOf(logo), logo);
 });
