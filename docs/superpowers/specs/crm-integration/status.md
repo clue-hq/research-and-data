@@ -6,14 +6,17 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–2 done; next Task 3 (Composio gateway)._
+_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–5 done (backend connect flow); next Task 6 (connect card, frontend)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
 - ✅ Configuration (Task 1, `be7883485`): Composio key, flag, auth config ids, pinned toolkit versions, Salesforce share
 - ✅ Migration (Task 2): `workspace_integration_connection`, `crm_connect_request`, `crm_connected` derivation (revision `3b800d603402`; db-smoke green)
 - ✅ Composio setup with development apps (dev project, managed auth configs for HubSpot and Salesforce)
-- ⬜ Connect card in chat, connect-link and callback routes, `crm_connected` wake
+- ✅ Composio REST gateway (Task 3)
+- ✅ Connection store (Task 4)
+- ✅ Connect-link, callback-completion and status routes; `crm_connected` wake of every waiting chat (Task 5)
+- ⬜ Connect card in chat and callback page (Task 6, frontend)
 - ⬜ `find_crm_actions` / `run_crm_action` (reads; results to `reads/` files)
 - ⬜ Salesforce API-budget check before large pulls (10% default share)
 - ⬜ `write_brand_document` (`company/`, `proof/` only)
