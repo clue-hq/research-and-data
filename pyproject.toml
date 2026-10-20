@@ -324,6 +324,10 @@ forbidden_modules = [
     "markdownify",
     "simple_salesforce",
     "hubspot",
+    # CRM integration (R-3.11): Composio is reached over its REST API from
+    # clue_api.crm.composio_gateway; its SDKs are never imported.
+    "composio",
+    "composio_client",
 ]
 # The ONE sanctioned SDK location: the Firecrawl SDK is imported lazily, inside a function, *behind
 # the M4.3 adapter seam* (``adapters.concrete._build_client``, ``# pragma: no cover`` live path). The
