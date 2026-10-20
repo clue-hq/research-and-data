@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–6 done (connect flow end to end, minus the tool); next Task 7 (`connect_crm`)._
+_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–7 done; next Task 8 (read tools)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -17,6 +17,7 @@ _Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks
 - ✅ Connection store (Task 4)
 - ✅ Connect-link, callback-completion and status routes; `crm_connected` wake of every waiting chat (Task 5)
 - ✅ Connect card in chat and callback page (Task 6, frontend) — preview screenshot owed once `connect_crm` exists (Task 7); visuals to be polished later (R-3.9)
+- ✅ `connect_crm` tool (Task 7; registered, granted in Task 11)
 - ⬜ `find_crm_actions` / `run_crm_action` (reads; results to `reads/` files)
 - ⬜ Salesforce API-budget check before large pulls (10% default share)
 - ⬜ `write_brand_document` (`company/`, `proof/` only)
