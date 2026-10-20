@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–9 done; next Task 10 (onboarding keeps CRM customer rows)._brand_document`)._
+_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–10 done; next Task 11 (agent catalog: grants, manual, skill text for founder review)._brand_document`)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -23,7 +23,7 @@ _Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks
 - ✅ `write_brand_document` (Task 9; `company/`, `proof/` only; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file; registered, granted in Task 11)
 - ⬜ `crm-sales-analysis` skill (substance reviewed by founder first) and interview step
 - ⬜ `company/sales-motion.md`
-- ⬜ CRM customers merged into `proof/customers.md`; onboarding refresh keeps CRM rows
+- 🔨 CRM customers merged into `proof/customers.md` (the agent's merge comes with the Task 11 skill); ✅ onboarding refresh keeps CRM rows (Task 10: rows whose Source has `CRM:` are carried, merged by domain)
 - ⬜ Manual path (no CRM): same document from the user's answers
 
 - ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)

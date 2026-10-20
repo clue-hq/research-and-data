@@ -50,7 +50,14 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   identical bytes → `unchanged: true` (its replay identity); `from_file` under `outputs/` via
   `SandboxWorkspaces`. Pinned counts 155 names / 181 addresses.
 
-## Next
-Task 10, Task 11 (catalog; skill text to founder first,
+- Task 10: `onboarding_documents.crm_customer_rows` parses CRM rows (Source contains `CRM:`,
+  columns found by header name, `\|` unescaped); `existing_customers_document(carried_rows=)`
+  merges one row per domain (shared domain → web row + ` · CRM: …` on its Source; others
+  appended; sorted by name). Driver gets an injected `CurrentDocumentReader`
+  (`fleet_main._current_brand_document` = `brand_knowledge_writes.current_brand_version` +
+  `product_management.read_brand_document`); a failed read fails the customers step rather than
+  dropping rows. CRM rows the agent writes MUST put `CRM: <HubSpot|Salesforce> …` in Source.
+
+## Next Task 11 (catalog; skill text to founder first,
 uncommitted until trial), then Task 12 founder test on the local stack (gate before Phase 2),
 then deploy reads (R-2.4).
