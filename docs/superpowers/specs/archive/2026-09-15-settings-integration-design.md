@@ -7,7 +7,7 @@ interactive preview and reuse of Settings primitives; the visual gate is satisfi
 remain dummy frontends. Pages V1 contracts and generated-research acceptance remain open. Real
 invitation email receipt and acceptance are confirmed; the invitee's selected workspace/redirect
 and remaining membership lifecycle walk still need direct observation. The
-[completion plan](../plans/2026-09-16-settings-integration-completion.md) tracks these separately.
+[completion plan](../../plans/2026-09-16-settings-integration-completion.md) tracks these separately.
 **Original design branch:** `research-streaming` (worktree `san-salvador`).
 **Implementation branch:** `settings-page` (worktree `irvine`). **Founder:** Aryan.
 **Discussion record:** `_memory/2026-09-14-settings-integration-exploration.md` (committed as `9c1e791f9`).
@@ -557,10 +557,10 @@ and `contact.*` rows, proposed fields should be filed per workspace instead. Tha
 change with its own review because it alters what every workspace's menu contains.
 
 **2026-09-16: detailed follow-up plan requested.** Track R is now covered by
-[Workspace-local agent-proposed research fields](../plans/2026-09-16-workspace-agent-proposed-fields.md):
+[Workspace-local agent-proposed research fields](../../plans/2026-09-16-workspace-agent-proposed-fields.md):
 trusted registration, manager controls, namespaces/facets, historical global-definition containment,
 concurrency/lifecycle tests and versioned agent documentation. This is planning only; automatic
-global registration is still current. The [agent guidance](../../agents/research-field-scope.md)
+global registration is still current. The [agent guidance](../../../agents/research-field-scope.md)
 separates that behavior from prepared replacement instructions and their activation gates.
 
 ### 9.5 Frontend
@@ -651,7 +651,7 @@ must show its confirmation card, and every failure must show the envelope messag
 
 ## 12. Build order
 
-This is the original build order. The [2026-09-16 completion plan](../plans/2026-09-16-settings-integration-completion.md)
+This is the original build order. The [2026-09-16 completion plan](../../plans/2026-09-16-settings-integration-completion.md)
 records what already exists and the proposed remaining sequence, including concrete registry,
 retirement and evidence-access corrections discovered by tracing the current code.
 

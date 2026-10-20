@@ -9,7 +9,7 @@ below are proposed implementation decisions, not a claim of product sign-off or 
 
 Companions:
 
-- [Settings design §9.4](../specs/2026-09-15-settings-integration-design.md): existing
+- [Settings design §9.4](../specs/archive/2026-09-15-settings-integration-design.md): existing
   workspace registry and the original Track R follow-up.
 - [Settings completion plan](2026-09-16-settings-integration-completion.md): delivered Settings
   work and outstanding acceptance; this plan is a separately tracked extension.

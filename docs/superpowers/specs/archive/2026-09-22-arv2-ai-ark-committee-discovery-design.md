@@ -5,7 +5,7 @@ v2 is the default for new launches by the founder's later 2026-09-22 instruction
 and deployment remain separate and unperformed in the default-change session.
 **Date:** 2026-09-22. **Inspected base:** `8df27dd25`, after pulling
 `origin/research-streaming` (includes PR #75, general-purpose web search).
-**Companion:** [implementation plan](../plans/2026-09-22-arv2-ai-ark-committee-discovery.md).
+**Companion:** [implementation plan](../../plans/2026-09-22-arv2-ai-ark-committee-discovery.md).
 
 ## 1. Outcome and authority
 
@@ -36,7 +36,7 @@ such as page size, context pinning and storage shape are recommendations in this
 additional founder rulings. Approval of the flow does not mean these changes are implemented.
 
 On adoption, this design narrowly supersedes the **name-scoped-only** AI Ark rule in
-[ARV2 master plan §3](../../specs/ARV2-MASTER-PLAN.md) and the **web-first committee** rule in its
+[ARV2 master plan §3](../../../specs/ARV2-MASTER-PLAN.md) and the **web-first committee** rule in its
 R3 row. It preserves ARV2's own-row rule, shared claim substrate, lenient research writes,
 sensitivity floor, launch authority, monetary accounting and existing failure law. The older
 substrate-era waterfall/quality-veto rules must not be reintroduced through this change.
@@ -53,10 +53,10 @@ does not prove the old request was invalid under the historical API. Preserve th
 
 Relevant local evidence:
 
-- [Probook research report](../../../.context/arv2-clue-sample-v3/CLUE-SAMPLE-RUN.md).
-- [Zafran AI Ark report](../../../.context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md).
-- [Early title probe](../../../.context/arv2-smoke-cluehq/b1c_ark_probe.py).
-- [Historical AI Ark evaluation and live canary](../../specs/ARV2-ai-ark-contract-notes.md).
+- [Probook research report](../../../../.context/arv2-clue-sample-v3/CLUE-SAMPLE-RUN.md).
+- [Zafran AI Ark report](../../../../.context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md).
+- [Early title probe](../../../../.context/arv2-smoke-cluehq/b1c_ark_probe.py).
+- [Historical AI Ark evaluation and live canary](../../../specs/ARV2-ai-ark-contract-notes.md).
 
 Current provider documentation was checked on 2026-09-22. No paid provider requests were made
 for this design. Historical employee rosters are comparison material, not current ground truth.
@@ -488,7 +488,7 @@ source rendering can reach the correct evidence through existing authorized read
 The inspected accounts feature has no direct-phone presentation contract despite the registered
 `core.direct_phone` field. This design includes acquiring and storing phones, not an invented
 phone widget. Before adding a visible phone slot, perform the repository-required frontend
-contract-gap review and update [accounts contract](../../../apps/frontend/docs/api-contracts/accounts.md).
+contract-gap review and update [accounts contract](../../../../apps/frontend/docs/api-contracts/accounts.md).
 The implementation must report backend enrichment and visible UI support separately.
 
 Out of scope: R4 company discovery strategy; AI Ark personality analysis; preview/bulk-export
@@ -598,7 +598,7 @@ The detailed work order, touched files and verification gates are in the compani
   rationale, evidence and result references. Phone claims use existing `core.direct_phone` and
   do not imply verification, consent or DNC clearance. No frontend phone slot was added.
 
-The [acceptance record](../plans/2026-09-22-arv2-ai-ark-committee-acceptance.md) separates local
+The [acceptance record](../../plans/2026-09-22-arv2-ai-ark-committee-acceptance.md) separates local
 proof, baseline failures, and outstanding live validation. The founder subsequently requested
 the v2 default: Settings, `.env.example` and local `.env` now select `v2`; no historical research
 is re-run. The media-research spec builds on this v2 behavior.

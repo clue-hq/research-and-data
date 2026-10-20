@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, deepagents 0.6.12 backend protocol, asyncio bridge thread, SQLAlchemy async engine (second engine on the bridge loop), pydantic, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W6, W7, W8, §4.4, §4.6, §4.7.
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` — W6, W7, W8, §4.4, §4.6, §4.7.
 
 ## Global Constraints
 

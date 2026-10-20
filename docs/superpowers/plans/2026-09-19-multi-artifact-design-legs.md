@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 / FastAPI / SQLAlchemy async / Alembic / pydantic v2 / pytest (platform); LangGraph + deepagents (design runtime, untouched); Next.js + Zod + `node --test` (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md` — read it first; every task below cites its section.
+**Spec:** `docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md` — read it first; every task below cites its section.
 
 ## Global Constraints
 
@@ -1438,7 +1438,7 @@ git commit -m "feat(chat-shell): a tab per born design document; the account rid
 ### Task 12: Docs, memory, the full gate, the live-acceptance checklist
 
 **Files:**
-- Modify: `CLAUDE.md` (a backlog bullet under the design entries), `_memory/2026-09-19-multi-artifact-design-legs.md` (closing entry), `docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md` (status line → implemented on branch X, owed live proofs)
+- Modify: `CLAUDE.md` (a backlog bullet under the design entries), `_memory/2026-09-19-multi-artifact-design-legs.md` (closing entry), `docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md` (status line → implemented on branch X, owed live proofs)
 - Modify: `.env.example` — nothing new is read from the environment; assert that with `git diff --stat -- .env.example` empty (the parity rule).
 
 - [ ] **Step 1: Run the whole offline gate** — `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports`, then `uv run pytest tests/design tests/api -x -q --ignore-glob='*_live.py'` with the stack DOWN and NO provider keys in the environment (unset `CLUE_OPENROUTER_API_KEY`, `LUMEN_AGENT_API_KEY`, `CLUE_EXA_API_KEY` for the run). Record the counts in the memory note. Any red that is pre-existing on the base is listed by name, not fixed here.
@@ -1448,7 +1448,7 @@ git commit -m "feat(chat-shell): a tab per born design document; the account rid
 - [ ] **Step 3: Commit**
 
 ```bash
-git add CLAUDE.md _memory/2026-09-19-multi-artifact-design-legs.md docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md
+git add CLAUDE.md _memory/2026-09-19-multi-artifact-design-legs.md docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md
 git commit -m "docs(design-legs): multi-artifact legs — records, gates, owed live proofs"
 ```
 

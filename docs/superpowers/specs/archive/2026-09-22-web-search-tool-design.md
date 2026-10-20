@@ -158,7 +158,7 @@ The web lane's prompt (`prompts.py`, at both platform-reads sentences) gets the 
 ### 2.4 Record
 
 - `docs/specs/M8B-exa-sumble-account-deep-integration-roadmap.md` item 15: one dated line,
-  "Superseded 2026-09-22 by `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`;
+  "Superseded 2026-09-22 by `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md`;
   M8B's target-locked acquisition is untouched."
 - `docs/specs/ARV2-MASTER-PLAN.md`, the Track O "Exa MCP search tool" item: one dated note that
   it landed as a direct governed tool (`web_search@1`), not MCP.

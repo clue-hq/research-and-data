@@ -2,7 +2,7 @@
 
 Branch `research-streaming`, worktree `san-salvador`, lane DB `clue_san-salvador`. Plan
 `docs/superpowers/plans/2026-09-12-head-of-abm-read-tools.md`; spec
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.4 (ruling R8).
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.4 (ruling R8).
 SDD ledger and per-task reports: `.superpowers/sdd/2026-09-12-head-of-abm-read-tools/`
 (git-ignored). Base `c1407823f` (plan 3's close-out). Commits `2509eca68`, `e9a4af9b6`,
 `0024d8eb3`, `f6e2dc9ca`, `9619577f6`, and this close-out.

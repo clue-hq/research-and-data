@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + SQLAlchemy async; Pydantic v2 contracts; Docker CLI via `subprocess` for the sandbox; `node:test` + Zod for the frontend; pytest with a throwaway Postgres for `*_db.py` suites.
 
-**Spec:** `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md` (revised 2026-09-19 afternoon: no markdown step anywhere)
+**Spec:** `docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md` (revised 2026-09-19 afternoon: no markdown step anywhere)
 
 ## Global Constraints
 

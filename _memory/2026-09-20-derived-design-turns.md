@@ -1,6 +1,6 @@
 # 2026-09-20 — Derived design turns: no repeated message, no "go" (SDD on `project-home`)
 
-Spec `docs/superpowers/specs/2026-09-20-derived-design-turns-design.md`; plan
+Spec `docs/superpowers/specs/archive/2026-09-20-derived-design-turns-design.md`; plan
 `docs/superpowers/plans/2026-09-20-derived-design-turns.md`; ledger
 `.superpowers/sdd/2026-09-20-derived-design-turns/progress.md`. Opus implementers, every review
 the controller's own.

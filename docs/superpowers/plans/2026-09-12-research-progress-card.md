@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13 / SQLAlchemy async / Alembic / FastAPI (backend), pytest (offline + lane-DB), Next.js / TypeScript / Zod / node:test (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-research-progress-card-design.md`
 
 ## Global Constraints
 
@@ -1388,7 +1388,7 @@ git commit -m "feat(frontend): the pinned research progress card — polled ever
 ```markdown
 ### Research progress card (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`. One pinned card per
+Spec `docs/superpowers/specs/archive/2026-09-12-research-progress-card-design.md`. One pinned card per
 project above the composer, rendered from `GET /frontend/v1/projects/:projectId/research/progress`
 (BFF `GET /api/projects/:projectId/research-progress`): `{ requested_accounts, queued, running,
 finished, progress_pct, pill, last_finished_at, agents[{account_name, stage, subject}],

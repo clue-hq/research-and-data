@@ -1,6 +1,6 @@
 # 2026-09-22 — `web_search@1` design session (lome lane, branch `research-streaming-v3`)
 
-Spec: `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` — founder-approved section by
+Spec: `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md` — founder-approved section by
 section in chat; written spec awaiting the founder's read before the implementation plan.
 
 ## Rulings taken (founder, 2026-09-22)

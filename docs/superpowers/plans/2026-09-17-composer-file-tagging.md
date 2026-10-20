@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + pydantic + SQLAlchemy text SQL + Alembic (backend); Next.js App Router, TypeScript, Slate, Zod, `node:test` via `tsx --test` (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md` (approved 2026-09-17). Read it first; every value below comes from it or from the code as read on 2026-09-17.
+**Spec:** `docs/superpowers/specs/archive/2026-09-17-composer-file-tagging-design.md` (approved 2026-09-17). Read it first; every value below comes from it or from the code as read on 2026-09-17.
 
 ## Global Constraints
 
@@ -2043,7 +2043,7 @@ In `chat-transcript.tsx` extend the fallback ladder with `project_document → "
 
 In `apps/frontend/docs/api-contracts/projects.md`, at the `context_refs` bullet (`:978-982`) replace "`object_type` is exactly `account | contact` for this composer." with:
 
-> `object_type` is one of `account | contact | project_document | design_document` for this composer (`design_node`/`design_asset` ride the design leg). `project_document` is a Gallery file: `object_id` is the document's `id` from `GET /projects/{id}/documents` and `version` is required and must equal that listing's `version` (the latest); otherwise `409 CONTEXT_REF_STALE`. A `project_document` ref on `POST /projects` (Home) is refused with `409 CONTEXT_REF_RELATIONSHIP_MISMATCH`. `design_document` mentions carry the artifact's `document_id` and `Number(current_version_id)` and must belong to the project (`404 CONTEXT_REF_NOT_FOUND` otherwise). Tags never open a design leg; the agent decides that by reasoning. (2026-09-17, spec `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md`.)
+> `object_type` is one of `account | contact | project_document | design_document` for this composer (`design_node`/`design_asset` ride the design leg). `project_document` is a Gallery file: `object_id` is the document's `id` from `GET /projects/{id}/documents` and `version` is required and must equal that listing's `version` (the latest); otherwise `409 CONTEXT_REF_STALE`. A `project_document` ref on `POST /projects` (Home) is refused with `409 CONTEXT_REF_RELATIONSHIP_MISMATCH`. `design_document` mentions carry the artifact's `document_id` and `Number(current_version_id)` and must belong to the project (`404 CONTEXT_REF_NOT_FOUND` otherwise). Tags never open a design leg; the agent decides that by reasoning. (2026-09-17, spec `docs/superpowers/specs/archive/2026-09-17-composer-file-tagging-design.md`.)
 
 At the message `refs` description add: "Echoed `context` refs of type `project_document` and `design_document` carry `label` (the document's own title) and `kind` (the document kind, or `web|ad`), resolved at read time; the frontend renders the chip from `label` and never from the id."
 

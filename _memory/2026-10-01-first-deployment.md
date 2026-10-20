@@ -1,7 +1,7 @@
 # 2026-10-01 — First deployment: spec, plan, implementation (Tasks 1–9)
 
 Branch `deploy/first-deployment` (off `research-streaming` at `e2e629684`). Spec
-`docs/superpowers/specs/2026-10-01-first-deployment-design.md`, plan
+`docs/superpowers/specs/archive/2026-10-01-first-deployment-design.md`, plan
 `docs/superpowers/plans/2026-10-01-first-deployment.md`, runbook `docs/deploy/runbook.md`.
 Ledger with every ruling: `.superpowers/sdd/2026-10-01-first-deployment/progress.md` (git-ignored).
 

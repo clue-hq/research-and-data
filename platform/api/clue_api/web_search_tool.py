@@ -1,5 +1,5 @@
 """``web_search@1`` — one open-web search for Head-of-ABM and the design agents, used LAST
-(spec ``docs/superpowers/specs/2026-09-22-web-search-tool-design.md``).
+(spec ``docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md``).
 
 The model authors a query, a result count and optional domain / date filters. Everything else that
 shapes the request is fixed here — ``type="deep-lite"``, a text ``outputSchema``, highlights on —

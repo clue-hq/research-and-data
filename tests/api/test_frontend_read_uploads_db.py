@@ -15,7 +15,7 @@ bare app here: the FI-1 envelope that turns that into ``{"error": {"code", "mess
 "requestId"}}`` is installed by ``install_frontend_read_surface``, not by the router under test
 (its own mapping of a ``detail`` dict's ``code`` is covered in ``test_frontend_read_app``).
 
-Spec: docs/superpowers/specs/2026-09-18-chat-attachments-design.md.
+Spec: docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md.
 """
 
 from __future__ import annotations

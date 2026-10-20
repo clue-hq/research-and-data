@@ -8,7 +8,7 @@
 
 **Tech Stack:** as plan 3a (langfuse 4.15, opentelemetry-sdk 1.42, langchain-core 1.x, pytest).
 
-**Spec:** `docs/superpowers/specs/2026-09-15-lane3-slice3-langfuse-design.md` §3.3 (research agent, exit judge), §3.4, §3.5, §3.6, §3.7. Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.3.
+**Spec:** `docs/superpowers/specs/archive/2026-09-15-lane3-slice3-langfuse-design.md` §3.3 (research agent, exit judge), §3.4, §3.5, §3.6, §3.7. Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.3.
 
 ## Global Constraints
 
@@ -1113,8 +1113,8 @@ git commit -m "feat(api): the design leg's exit judge is a Langfuse evaluator ho
 ### Task 6: Docs and the memory note
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-15-lane3-slice3-langfuse-design.md` (§3.6 first sentence; status line)
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§9 item 3)
+- Modify: `docs/superpowers/specs/archive/2026-09-15-lane3-slice3-langfuse-design.md` (§3.6 first sentence; status line)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§9 item 3)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (row 3b: nothing to change unless the plan file name differs)
 - Create: `_memory/2026-09-15-lane3-slice3-langfuse.md`; Modify: `_memory/README.md` (one index line under "Topic notes", newest first)
 
@@ -1135,7 +1135,7 @@ Add to `_memory/README.md` under "Topic notes", first line: `- `2026-09-15-lane3
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-15-lane3-slice3-langfuse-design.md docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md _memory/2026-09-15-lane3-slice3-langfuse.md _memory/README.md
+git add docs/superpowers/specs/archive/2026-09-15-lane3-slice3-langfuse-design.md docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md _memory/2026-09-15-lane3-slice3-langfuse.md _memory/README.md
 git commit -m "docs(memory): lane 3 slice 3 — Langfuse on the roots, the agent tree, provider and tool observations, receipt and ledger ids; live proof owed"
 ```
 

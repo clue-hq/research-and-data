@@ -6,8 +6,8 @@ belongs to — and the validation both the upload route and the submission route
 families are accepted: text (.md, .txt), image (PNG, JPEG, WebP, GIF) and document (PDF, DOCX,
 PPTX, XLSX, CSV, JSON). A document is never converted here — it is checked by size and magic bytes
 and stored as-is, for the agent's workspace to read. Specs:
-docs/superpowers/specs/2026-09-18-chat-attachments-design.md and
-docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md.
+docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md and
+docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md.
 """
 
 from __future__ import annotations

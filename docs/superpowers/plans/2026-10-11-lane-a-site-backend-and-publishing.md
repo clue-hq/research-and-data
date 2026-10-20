@@ -26,7 +26,7 @@ oxide); Cloudflare Workers (`infra/cloudflare/pages-edge`).
 **Spec:** `docs/superpowers/plans/2026-10-09-website-agent-on-puck-integration.md` — "Global
 constraints", "Review focus", "D2", and "Wave 2: rulings and cross-lane contracts (2026-10-11)",
 Contracts 1, 2, 3, 8 (backend half) and 9 (published pages half), plus the brand-fidelity ruling
-(site-kit half). Background: `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md`
+(site-kit half). Background: `docs/superpowers/specs/archive/2026-10-08-puck-production-readiness-map.md`
 §5–§9. Code surveys: `wave2-survey-lane-a.md`, `wave2-survey-brand-domains.md` (scratchpad,
 2026-10-11).
 
@@ -7247,7 +7247,7 @@ connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop a
 1. Register the domain. Add it to Cloudflare as its own zone; add a proxied wildcard record
    `*` → the page-origin service (as `*.pages` is today, §5). A first-level wildcard is covered by
    Universal SSL. Apply to the Public Suffix List if the domain should be listed (§5 of the
-   isolation research, `docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+   isolation research, `docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md`).
 2. Deploy the Worker with the new domain (`infra/cloudflare/pages-edge/wrangler.toml`):
    `SYSTEM_SUFFIX = "<new domain>"`, `LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai"`, and a second
    route `{ pattern = "*/*", zone_name = "<new domain>" }`. Check:

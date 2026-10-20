@@ -1,6 +1,6 @@
 """Conversation naming — one cheap call names a chat and, on the Home path, its project.
 
-Spec: docs/superpowers/specs/2026-09-18-conversation-naming-design.md. The namer is a service
+Spec: docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md. The namer is a service
 step with no agent authority: it is not a tool, appears in no profile, and never raises into the
 turn that started it. It fills only placeholders — ``agent_thread.title IS NULL`` and
 ``project.name = UNTITLED_PROJECT_NAME`` — so a human rename always wins (§4.5).

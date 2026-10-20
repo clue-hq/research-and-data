@@ -4,7 +4,7 @@ Branch `research-streaming-v3` (trenton lane). Purpose of the branch per the fou
 "Untitled project" / "New chat" / the 80-character first-message prefix with generated names, the
 way ChatGPT names chats (a separate cheap model call over the opening exchange).
 
-Spec: `docs/superpowers/specs/2026-09-18-conversation-naming-design.md` — awaiting founder review
+Spec: `docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md` — awaiting founder review
 of the written spec; the implementation plan comes after that.
 
 Rulings taken in discussion: project named after the FIRST AGENT REPLY (not the first message);

@@ -97,7 +97,7 @@ ngrok (`docs/specs/demo-2026-08-29-runbook.md`).
 - Option C ratified: hosted Postgres (Railway) + R2 now; ONE small page-origin service on Railway
   (`platform/page_origin/clue_page_origin`) reading the publish tables + blobs; other services stay
   local until they migrate. Eleven design sections approved in chat.
-- Spec: `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` (registry table
+- Spec: `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` (registry table
   `workspace_hostname` = slug registry + custom rows; `workspace_pages_settings`; Worker
   `pages-edge`; page origin routes + edge gate; host-independent publish with og:url/canonical
   DROPPED and og:image the one absolute URL; control plane under `/frontend/v1/settings/pages`;

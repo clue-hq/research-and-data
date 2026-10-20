@@ -93,7 +93,7 @@ unknowns are how much polish the editor needs and the agent's chat integration.
 
 ## Phase 2 (in parallel): capture upgrade for JavaScript-heavy sites
 
-Source: `docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md`.
+Source: `docs/superpowers/specs/archive/2026-10-08-capturing-javascript-heavy-sites-notes.md`.
 
 | Step | Effort |
 |---|---|

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13 / FastAPI / SQLAlchemy async / asyncio (backend, `platform/api/clue_api/arv2`), pytest (offline fakes + lane-DB suites), Next.js App Router / TypeScript / Zod / node:test (`apps/frontend`).
 
-**Spec:** `docs/superpowers/specs/2026-09-12-discovery-streaming-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-discovery-streaming-design.md`
 
 ## Global Constraints
 
@@ -1688,7 +1688,7 @@ git commit -m "feat(frontend): the Target accounts tab polls the live discovery 
 
 ```markdown
 **Seam edit 4 — the tab streams a live discovery run** (spec
-`docs/superpowers/specs/2026-09-12-discovery-streaming-design.md`). A new read,
+`docs/superpowers/specs/archive/2026-09-12-discovery-streaming-design.md`). A new read,
 `GET /frontend/v1/projects/:projectId/discovery/current` (BFF mirror
 `GET /api/projects/:projectId/discovery`), serves the project's latest discovery run:
 `{ run_id, status, asked, found, verified, shown, started_at, finished_at }` or `null`. While

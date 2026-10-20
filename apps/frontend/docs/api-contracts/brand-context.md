@@ -703,7 +703,7 @@ does not discover linked pages. Ad-library harvesting remains a separate job.
 ## Asset context and bulk upload (ratified 2026-09-21)
 
 Implementation follows the founder-authorized
-[asset-context design](../../../../docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md).
+[asset-context design](../../../../docs/superpowers/specs/archive/2026-09-21-asset-context-and-bulk-upload-design.md).
 The engine's asset record remains authoritative for custody, licensing and placement.
 `design_asset_description` owns one generated analysis and field-level human overrides.
 

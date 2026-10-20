@@ -8,7 +8,7 @@ accepted refuses the turn instead of attaching somebody else's bytes.
 Validation is all this module does: every attached file — text, image or document alike — reaches
 the agent the one way, as a file the fleet worker syncs into the workspace's read-only
 ``attachments/`` folder. Nothing here writes a project document. Spec:
-docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md.
+docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md.
 """
 
 from __future__ import annotations

@@ -210,7 +210,7 @@ transaction, so it was most likely waiting on a lock held by another job. Unconf
 
 ## Implementation (branch perf/research-slowness-fixes, 2026-10-04)
 
-Spec `docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md`, plan
+Spec `docs/superpowers/specs/archive/2026-10-03-research-slowness-fixes-design.md`, plan
 `docs/superpowers/plans/2026-10-03-research-slowness-fixes.md`. Commits (base `1ad82b6be`):
 - T1 `critical_section` timing log (`CLUE_DB_CRITICAL_SECTION_LOG_MS`, default 500).
 - T2 `dea0a05c1` one shared S3 client per (event loop, config); one rebuild+retry on connection errors; `CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS=50`; closed at shutdown in fleet/projections/page-origin.

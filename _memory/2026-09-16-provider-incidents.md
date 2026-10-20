@@ -1,7 +1,7 @@
 # 2026-09-16 — Provider incidents (plan close-out)
 
 Plan `docs/superpowers/plans/2026-09-16-provider-incidents.md`; spec
-`docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. Branch `research-streaming`
+`docs/superpowers/specs/archive/2026-09-16-provider-incidents-design.md`. Branch `research-streaming`
 (worktree san-salvador). Seven tasks, all landed; this note is Task 7 (live proof, contract notes,
 memory).
 

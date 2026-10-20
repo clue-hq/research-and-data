@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async + asyncpg, Alembic, sentry-sdk 2.69, pytest (`-p no:cacheprovider`, `--ignore-glob='*_live.py'`), Next.js frontend with Zod and `node:test`.
 
-**Spec:** `docs/superpowers/specs/2026-09-16-provider-incidents-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-16-provider-incidents-design.md`
 
 **Spec amendment recorded by this plan (§3.4 writers).** The spec named "the model gateway" as the second writer through a root-installed hook. The plan places both writers where the platform already catches the failure with a database connection in hand, so the gateway (`libs/clue-gateway`) is **not modified**: (1) the ARV2 provider caller classifies at settle time and stamps the classification onto the ledger row's `extras`; `drain_provider_calls` — the one function every ARV2 row passes through, with an `AsyncConnection` and a `LedgerStamp` — records incidents; the research agent's model rounds are ledger rows too and get the same stamp from their exception. (2) The chat turn's `DurableAgentModelCallHandler` classifies in `on_llm_error` and records through a connection factory. Same guarantees, fewer seams, no change to a library the design subsystem also depends on.
 

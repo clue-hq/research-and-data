@@ -10,7 +10,7 @@
 
 **Tech Stack:** existing Python/FastAPI/deepagents, Postgres/Fleet/Redis, Rust DSL/native helper/WASM, Next.js editor, existing Grok and GPT Image 2 provider adapters. No new hosting or evaluation service.
 
-**Spec:** [editable-ad-control-design.md](../specs/2026-09-07-editable-ad-control-design.md)
+**Spec:** [editable-ad-control-design.md](../specs/archive/2026-09-07-editable-ad-control-design.md)
 
 **Tickets:** [Linear ticket pack](2026-09-07-editable-ad-control-tickets.md). Planning keys are not external issue IDs.
 

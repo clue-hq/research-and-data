@@ -1016,7 +1016,7 @@ Field rules:
   mentions carry the artifact's `document_id` and `Number(current_version_id)`
   and must belong to the project (`404 CONTEXT_REF_NOT_FOUND` otherwise). Tags
   never open a design leg; the agent decides that by reasoning. (2026-09-17,
-  spec `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md`.)
+  spec `docs/superpowers/specs/archive/2026-09-17-composer-file-tagging-design.md`.)
 - `attachment_refs` is ordered and may contain only durable, workspace-scoped
   upload receipts: `artifact_key`, 64-character lowercase `sha256`,
   `media_type`, `byte_count`, and `filename`. Browser blob URLs and local paths
@@ -2625,7 +2625,7 @@ The frontend composes this URL in `toProjectArtifact` from the list read's
 
 ### Research progress card (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`. One pinned card per
+Spec `docs/superpowers/specs/archive/2026-09-12-research-progress-card-design.md`. One pinned card per
 project above the composer, rendered from `GET /frontend/v1/projects/:projectId/research/progress`
 (BFF `GET /api/projects/:projectId/research-progress`): `{ requested_accounts, queued, running,
 finished, progress_pct, pill, last_finished_at, agents[{account_name, stage, subject}],
@@ -2650,7 +2650,7 @@ served and rotates the status line every 4 seconds (`model/research-progress-lin
 no dismiss, no per-account detail. Field mapping and multiple-project navigation are unchanged.
 
 **Provider incidents on the card (2026-09-16).** Spec
-`docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. The payload carries one more
+`docs/superpowers/specs/archive/2026-09-16-provider-incidents-design.md`. The payload carries one more
 field:
 
 ```
@@ -2679,7 +2679,7 @@ as they did.
 
 ### Project documents — the plan and the project's own knowledge (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
+Spec `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
 project owns documents of its own — the plan the Head of ABM writes (`write_project_document@1` →
 `project/plan.md`), and any ICP or persona document authored local to the project. They are served
 by three routes on the workspace-scoped `/frontend/v1` router
@@ -2844,7 +2844,7 @@ required.
 
 ## Chat attachments (2026-09-18)
 
-Backend as built on branch `add-attachment` (spec `docs/superpowers/specs/2026-09-18-chat-attachments-design.md`).
+Backend as built on branch `add-attachment` (spec `docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md`).
 Every refusal below reaches the browser as the FI-1 error envelope
 `{"error": {"code", "message", "requestId"}}` — the route raises
 `HTTPException(detail={"code","message"})` and the projections app's middleware renders the envelope.

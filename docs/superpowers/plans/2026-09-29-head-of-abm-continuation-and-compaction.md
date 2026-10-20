@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, deepagents 0.6.12 / LangChain agents middleware, LangGraph Postgres checkpointer, SQLAlchemy async, pydantic-settings, pytest (DB suites on the lane's throwaway DB).
 
-**Spec:** `docs/superpowers/specs/2026-09-29-head-of-abm-continuation-and-compaction-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-29-head-of-abm-continuation-and-compaction-design.md`
 
 ## Global Constraints
 

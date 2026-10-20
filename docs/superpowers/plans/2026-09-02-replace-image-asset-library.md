@@ -18,7 +18,7 @@ pure composer. No backend, no engine, no migrations, no brand-kit writes.
 **Tech Stack:** TypeScript / React (Next.js App Router), `@base-ui/react` (Menu, already used for
 Select/Popover), zod (Brand context models), node:test via `npx tsx --test`, eslint.
 
-**Spec:** `docs/superpowers/specs/2026-09-02-replace-image-asset-library-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-02-replace-image-asset-library-design.md`
 
 ## Global Constraints
 

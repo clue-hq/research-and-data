@@ -2,7 +2,7 @@
 
 Branch `research-streaming`, worktree `san-salvador`, lane DB `clue_san-salvador`. Plan
 `docs/superpowers/plans/2026-09-12-icp-authoring.md`; spec
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.2. SDD ledger
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.2. SDD ledger
 and per-task reports: `.superpowers/sdd/2026-09-12-icp-authoring/` (git-ignored).
 Base `47e9e08b6` (plan 1's close-out). Commits `0d96ab62f`, `ad756321d`, `c28454890`, `885c246f2`,
 `311b4e51c`, `ab590794d`, and this close-out.

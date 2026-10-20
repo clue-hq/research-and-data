@@ -1,7 +1,7 @@
 # Agent-authored account discovery — built, walked live, ready for PR (2026-09-30 / 2026-10-01)
 
 Branch `discovery/target-discovery-trial` (worktree addis-ababa), base `research-streaming`.
-Spec `docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md`; plan
+Spec `docs/superpowers/specs/archive/2026-09-30-agent-authored-account-discovery-design.md`; plan
 `docs/superpowers/plans/2026-09-30-agent-authored-account-discovery.md`; trial evidence and the
 live-walk table in `docs/superpowers/drafts/2026-09-30-target-discovery-trial/README.md`.
 

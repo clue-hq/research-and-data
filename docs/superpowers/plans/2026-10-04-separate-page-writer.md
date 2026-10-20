@@ -1,6 +1,6 @@
 # Separate page writer — implementation plan
 
-Spec: `docs/superpowers/specs/2026-10-04-research-narration-quality-design.md`.
+Spec: `docs/superpowers/specs/archive/2026-10-04-research-narration-quality-design.md`.
 Trial evidence: `_memory/2026-10-04-narration-quality.md` (iterations 1–5, two accounts).
 Branch: `research/narration-quality`.
 

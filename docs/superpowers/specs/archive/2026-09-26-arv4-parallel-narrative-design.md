@@ -8,10 +8,10 @@ selection change, paid calls or research launches are authorized by this documen
 
 Companions:
 
-- [Exact draft prompts](../drafts/2026-09-26-parallel-narrative/PROMPTS.md).
-- [Review-only r18 input examples](../drafts/2026-09-26-parallel-narrative/INPUT-EXAMPLES.md).
-- [Full offline r18 selection and coverage report](../../../.artifacts/narrative-selection-20260926/REVIEW.md).
-- [Reproducible fixture preparation](../drafts/2026-09-26-parallel-narrative/prepare_r18_inputs.py).
+- [Exact draft prompts](../../drafts/2026-09-26-parallel-narrative/PROMPTS.md).
+- [Review-only r18 input examples](../../drafts/2026-09-26-parallel-narrative/INPUT-EXAMPLES.md).
+- [Full offline r18 selection and coverage report](../../../../.artifacts/narrative-selection-20260926/REVIEW.md).
+- [Reproducible fixture preparation](../../drafts/2026-09-26-parallel-narrative/prepare_r18_inputs.py).
 
 ## 1. Outcome and founder decisions
 
@@ -65,23 +65,23 @@ requirements are not reintroduced through this spec.
 
 Source pointers:
 
-- [Narrative profile](../../../platform/agents/catalog/research-quality/profiles/quality-research-narrative/v19/profile.yaml)
-- [Current narrative prompt](../../../platform/agents/catalog/research-quality/prompts/quality-research-narrative/v15/SYSTEM.md)
-- [Dossier importer](../../../platform/api/clue_api/arv2/dossier_import.py)
-- [Finding contract](../../../platform/api/clue_api/arv2/dossier_findings.py)
-- [Page storage/read](../../../platform/api/clue_api/arv2/quality_pages.py)
-- [Registry](../../../subsystems/research/clue_research/claimstore/registry.py)
-- [r18 report](../../../.artifacts/arv4-clue-zafran-20260926-r18/REPORT.md)
-- [r18 follow-up audit](../../../.artifacts/arv4-clue-zafran-20260926-r18/FOLLOWUP-AUDIT.md)
+- [Narrative profile](../../../../platform/agents/catalog/research-quality/profiles/quality-research-narrative/v19/profile.yaml)
+- [Current narrative prompt](../../../../platform/agents/catalog/research-quality/prompts/quality-research-narrative/v15/SYSTEM.md)
+- [Dossier importer](../../../../platform/api/clue_api/arv2/dossier_import.py)
+- [Finding contract](../../../../platform/api/clue_api/arv2/dossier_findings.py)
+- [Page storage/read](../../../../platform/api/clue_api/arv2/quality_pages.py)
+- [Registry](../../../../subsystems/research/clue_research/claimstore/registry.py)
+- [r18 report](../../../../.artifacts/arv4-clue-zafran-20260926-r18/REPORT.md)
+- [r18 follow-up audit](../../../../.artifacts/arv4-clue-zafran-20260926-r18/FOLLOWUP-AUDIT.md)
 
 ### PoC inspiration, not a literal template
 
-Read together: [final research report](../../../.context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md),
-[claim bundle](../../../.context/arv2-one-account-aiark/claims_zafran.json),
-[frontend methodology](../../../.context/frontend-page-content/README.md),
-[page examples](../../../.context/frontend-page-content/ZAFRAN-PAGES.md),
-[frontend spec](../../../.context/frontend-page-content/FRONTEND-SPEC-ZAFRAN.md) and
-[Vari example](../../../.context/frontend-page-content/VARI-KAUR-CONTACT-PAGE.md).
+Read together: [final research report](../../../../.context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md),
+[claim bundle](../../../../.context/arv2-one-account-aiark/claims_zafran.json),
+[frontend methodology](../../../../.context/frontend-page-content/README.md),
+[page examples](../../../../.context/frontend-page-content/ZAFRAN-PAGES.md),
+[frontend spec](../../../../.context/frontend-page-content/FRONTEND-SPEC-ZAFRAN.md) and
+[Vari example](../../../../.context/frontend-page-content/VARI-KAUR-CONTACT-PAGE.md).
 
 Keep: distinct overview/insight/person questions, source-backed public statements, multiple
 providers contributing evidence, parallel per-section writing, direct lookup rails, claim-based
@@ -453,9 +453,9 @@ Review decisions still open: final UI labels/key compatibility; model after comp
 current config initially); inline vs expandable detail presentation; exact durable category/field
 schema and authority for richer agent-proposed field meanings. None prevents the isolated trial.
 
-Binding architecture references: [Doc A](../../architecture/clue-hq-platform-agent-runtime.md),
-[shared seams](../../specs/_conventions.md), and the existing
-[frontend contract](../../../apps/frontend/docs/api-contracts/accounts.md). This focused spec
+Binding architecture references: [Doc A](../../../architecture/clue-hq-platform-agent-runtime.md),
+[shared seams](../../../specs/_conventions.md), and the existing
+[frontend contract](../../../../apps/frontend/docs/api-contracts/accounts.md). This focused spec
 supersedes no runtime behavior until implemented and explicitly activated.
 
 ## 11. Isolated execution checkpoint — 2026-09-26

@@ -1,7 +1,7 @@
 # 2026-10-03 — Follow-up PR: the artifact-derivation model (and other follow-ups)
 
 Not part of `perf/research-slowness-fixes` (spec
-`docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md`). That PR only makes the
+`docs/superpowers/specs/archive/2026-10-03-research-slowness-fixes-design.md`). That PR only makes the
 derivation writes one statement. This note is the brief for the PR after it. Needs its own spec and
 founder sign-off, because it changes what privacy erasure deletes.
 

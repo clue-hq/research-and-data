@@ -6,7 +6,7 @@ browser acceptance and default-profile promotion have **not** run. The founder e
 the pause before paid testing. No historical catalog/claim repair or remote publication is included.
 
 Canonical scope: [implementation plan](2026-09-22-arv3-research-quality.md) and
-[approved design](../specs/2026-09-22-arv3-research-quality-design.md).
+[approved design](../specs/archive/2026-09-22-arv3-research-quality-design.md).
 
 ## Delivered behavior and ownership
 

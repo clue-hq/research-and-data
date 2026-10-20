@@ -218,7 +218,7 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   pre-merge code until restarted.
 
 ## Written down (2026-10-04): spec + roadmap
-- Spec: docs/superpowers/specs/2026-10-04-website-quality-and-code-first-lane-design.md (Ploy
+- Spec: docs/superpowers/specs/archive/2026-10-04-website-quality-and-code-first-lane-design.md (Ploy
   study in detail, diagnosis with evidence, decisions, target architecture, week-1 bridge, risks).
 - Roadmap: docs/superpowers/plans/2026-10-04-website-quality-roadmap.md (A1 brief format +
   research offer [Head of ABM v72/manual v18], A2 design copy skills, A3 research visibility

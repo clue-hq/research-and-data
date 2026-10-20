@@ -1,6 +1,6 @@
 """The project context files one production conversation turn opens with.
 
-Spec: docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md §4.1.
+Spec: docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md §4.1.
 
 A turn does not learn the project's state by being told about it — it reads files. The compiled
 set (``status.md``, ``decisions.md``, the project's own documents and the artifact index) is served

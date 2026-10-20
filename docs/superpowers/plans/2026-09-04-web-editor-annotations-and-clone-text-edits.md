@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (`lumen-web` crate, quick_xml walk), Python 3.12 (FastAPI design API, `selectolax`, platform API + Alembic), TypeScript/React 19 (Next.js app router, `tsx --test` unit tests), vanilla JS bridge script embedded in Python.
 
-**Spec:** `docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md`
 
 ## Global Constraints
 
@@ -281,7 +281,7 @@ Expected: lint clean (two pre-existing warnings in `canvasOperations.ts` are kno
 `_memory/2026-09-04-web-editor-annotations.md`:
 ```markdown
 # 2026-09-04 — web editor: annotations, human names, clone text edits (implementation log)
-Spec: docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md
+Spec: docs/superpowers/specs/archive/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md
 Plan: docs/superpowers/plans/2026-09-04-web-editor-annotations-and-clone-text-edits.md
 
 ## Slice 1 — names

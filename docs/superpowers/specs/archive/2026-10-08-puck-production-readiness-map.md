@@ -194,7 +194,7 @@ research files are the agent's main input, not just a backup to the brief.
   (`trials/puck-spike/RUNTIME-SECTIONS.md`). The research found every AI and code-first builder
   runs generated code away from the logged-in app: Framer, Figma, v0, Lovable, Claude, Canva,
   Google, and the MCP Apps standard
-  (`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+  (`docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md`).
 - **What we do:** the whole Puck editor (canvas, fields, outline) is a page served from a separate
   registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one frame
   and keeps everything else: chat, header, gallery, asset library, versions, publish.

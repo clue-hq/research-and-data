@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async, Alembic, pydantic), Postgres, TypeScript (Next.js, node:test via tsx), the agent catalog (immutable versioned prompts/profiles).
 
-**Spec:** `docs/superpowers/specs/2026-09-20-derived-design-turns-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-20-derived-design-turns-design.md`
 
 ## Global Constraints
 

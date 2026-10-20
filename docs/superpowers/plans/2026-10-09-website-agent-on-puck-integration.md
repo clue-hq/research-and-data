@@ -28,8 +28,8 @@ per-workspace flag.
 - `@puckeditor/core` 0.23.0.
 - esbuild 0.28.2 (already present as a dependency of tsx).
 
-**Spec.** `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md`, with the roadmap
-`docs/superpowers/specs/2026-10-08-website-agent-on-puck-roadmap.md` and the founder rulings
+**Spec.** `docs/superpowers/specs/archive/2026-10-08-puck-production-readiness-map.md`, with the roadmap
+`docs/superpowers/specs/archive/2026-10-08-website-agent-on-puck-roadmap.md` and the founder rulings
 recorded there and below. Both are drafts. The founder approved this direction on 2026-10-09:
 option A for agent code, one Node renderer, a per-workspace flag, and Head of ABM unchanged.
 The founder decided D2 later the same day: the separate-domain editor.
@@ -157,7 +157,7 @@ Each failure mode has a test in its owning task.
   Four hostile probes passed the lint (`trials/puck-spike/RUNTIME-SECTIONS.md`).
 - The research found every AI and code-first builder runs generated code away from the logged-in
   app, one boundary per surface, never per section
-  (`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+  (`docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md`).
 
 **The design.**
 - **The editor domain.** The Puck canvas is a page on a separate registrable domain that never

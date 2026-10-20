@@ -1,6 +1,6 @@
 # 2026-09-21 — Display pages written on the fleet, and shared blocks (SDD on `display/prewrite-and-shared-blocks`)
 
-Spec `docs/superpowers/specs/2026-09-12-display-prewrite-and-shared-blocks-design.md` (+ the
+Spec `docs/superpowers/specs/archive/2026-09-12-display-prewrite-and-shared-blocks-design.md` (+ the
 founder ruling of 2026-09-21); plan
 `docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`; ledger
 `.superpowers/sdd/2026-09-21-display-prewrite-and-shared-blocks/progress.md`. Branch off

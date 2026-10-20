@@ -173,7 +173,7 @@
   source-flow reads. A same-URL snapshot list append would overwrite desktop;
   a DOM path without its immutable state reference could read the wrong source.
 - Prepared proposed architecture in
-  docs/superpowers/specs/2026-09-21-responsive-source-capture-design.md. It retains
+  docs/superpowers/specs/archive/2026-09-21-responsive-source-capture-design.md. It retains
   page identity and uses immutable state manifests in the existing design storage
   seam; no migration or new live capture was executed. Includes bounded acquisition,
   conservative source-branch reuse, exact state-aware reads and acceptance gates.

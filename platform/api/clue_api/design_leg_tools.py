@@ -84,7 +84,7 @@ unchanged from the web path: one document per leg, one transaction, brand decide
 only read back.
 
 **@5 — one message may ask for MANY artifacts, so a leg holds a SET of documents** (spec
-``docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md`` §3.1/§3.2/§3.6,
+``docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md`` §3.1/§3.2/§3.6,
 founder rulings 2026-09-19). "A 1:1 ad for each of these twenty accounts" is twenty ads and
 "five variants of this ad" is five ads, so the single ``title`` of @2–@4 is retired into a list
 of ``artifacts`` items — each one a ``title`` the user would recognise, a ``note`` carrying that

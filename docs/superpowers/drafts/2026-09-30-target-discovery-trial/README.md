@@ -107,7 +107,7 @@ What round 3 adds:
 ## Round 4 — the production change, walked live (2026-09-30 / 2026-10-01)
 
 The agent-authored brief shipped on `discovery/target-discovery-trial` (spec
-`docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md`) and was walked
+`docs/superpowers/specs/archive/2026-09-30-agent-authored-account-discovery-design.md`) and was walked
 in the app on the Conduit hotel-operators project. Every brief below was written by the Head of
 ABM itself.
 

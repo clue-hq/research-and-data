@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + SQLAlchemy Core (async) + Alembic on Postgres; Pydantic v2 wire models; the `clue_toolbelt` governed-tool substrate; Next.js App Router + TypeScript + Zod; `node:test` for frontend unit tests; pytest for the backend.
 
-**Spec:** `docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-15-artifacts-page-integration-design.md`
 
 ## Global Constraints
 
@@ -134,7 +134,7 @@ Create `apps/frontend/docs/api-contracts/artifacts.md`:
 # Artifacts API contract
 
 Status: as-built contract for the cross-project artifacts library, ratified 2026-09-15.
-Spec: `docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md` (repo root).
+Spec: `docs/superpowers/specs/archive/2026-09-15-artifacts-page-integration-design.md` (repo root).
 
 The dummy's `/artifacts` read `workspace.artifacts` per project. In this repo `workspace.artifacts`
 is the schema-hard empty tuple; the library reads ONE workspace-wide endpoint instead.
@@ -744,7 +744,7 @@ Create `platform/api/clue_api/frontend_read/artifacts.py`:
 ```python
 """The artifacts library on ``/frontend/v1``: one workspace-wide read and the caller's marks.
 
-Spec ``docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md`` §3.1–§3.2.
+Spec ``docs/superpowers/specs/archive/2026-09-15-artifacts-page-integration-design.md`` §3.1–§3.2.
 The read is the workspace-wide form of the per-project design-artifact feed; the marks are user
 metadata (saved, last-viewed) and never document state — document writes (rename, archive) are
 governed design tools on the design API, not routes here.

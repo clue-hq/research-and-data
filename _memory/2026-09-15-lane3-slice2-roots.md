@@ -1,7 +1,7 @@
 # 2026-09-15 — Lane 3 slice 2: the roots — OpenTelemetry, Sentry, run context, trace propagation
 
 Branch `lane3/sice1b` (continues after slice 1b; unpushed). Design:
-`docs/superpowers/specs/2026-09-15-lane3-slice2-roots-design.md` (D1–D3). Plan:
+`docs/superpowers/specs/archive/2026-09-15-lane3-slice2-roots-design.md` (D1–D3). Plan:
 `docs/superpowers/plans/2026-09-15-lane3-slice2-roots.md`. Commits: `3f6ea1ba8` (design),
 `057ac12c3` (plan), `ef32972da` (T1 settings/secrets/deps/env parity), `2e751e58c` (T2
 `clue_obs.otel.install` + propagation), `19c5c35a8` (T3 `clue_obs.sentry`), `609e67a9f` (T4 fleet

@@ -16,7 +16,7 @@ below describe that sequence, with Task 8's amendment governing the final tab be
 
 **Tech Stack:** Next.js App Router + TypeScript, Zod, CSS modules with `@clue/design-system` tokens, `react-markdown` + `remark-gfm`, `@mdxeditor/editor`; `node --test` via `tsx`.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R6, R7, R10, R11, R12). Depends on `docs/superpowers/plans/2026-09-12-project-plan-document.md` Tasks 1–3 and 9 (the backend and the grant).
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R6, R7, R10, R11, R12). Depends on `docs/superpowers/plans/2026-09-12-project-plan-document.md` Tasks 1–3 and 9 (the backend and the grant).
 
 ## Global Constraints
 

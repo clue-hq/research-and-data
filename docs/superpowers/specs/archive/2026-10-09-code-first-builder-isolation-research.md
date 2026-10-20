@@ -172,7 +172,7 @@ The spike measured exactly this. Section code that passed the stricter check sti
 - it fired a network beacon from the editor;
 - it reached `fetch` through `(()=>0).constructor`;
 - it reached `top` and `parent` without ever naming `window`;
-- during the server render, it read another workspace's compiled modules through `process.getBuiltinModule` ([spike notes](../../../trials/puck-spike/RUNTIME-SECTIONS.md)).
+- during the server render, it read another workspace's compiled modules through `process.getBuiltinModule` ([spike notes](../../../../trials/puck-spike/RUNTIME-SECTIONS.md)).
 
 The obvious fixes do not hold:
 
@@ -189,7 +189,7 @@ The obvious fixes do not hold:
 | Infinite loop | Freezes the editor's main thread | Desktop Chromium ≥127 runs it out of the editor's process ([Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md)); other browsers unverified | `--init` plus a timeout and a memory cap |
 | Reading another workspace's files | n/a | n/a | Read-only mount of one workspace; Node `--permission` also refused it in local testing |
 
-The hostile author is realistically not the marketer. It is the model, steered by content it ingests (scraped sites, web research) or by another member of the workspace. Prompt injection succeeds often enough to matter: Pluto pushed Claude's artifact-publish path into leaking a `.env.local` file in **10 of 85 attempts** ([Pluto Security](https://pluto.security/blog/inside-claude-artifacts-how-your-agent-publishes-to-the-web/)). Anthropic's containment guidance treats defences at the model layer as probabilistic and puts containment in the environment ([Anthropic](https://www.anthropic.com/engineering/how-we-contain-claude)). Retool's docs describe the case of several members exactly: builder code on a shared origin lets one builder act in another's browser ([Retool docs](https://docs.retool.com/self-hosted/guides/origin-sandbox)). The spike's lint is a useful first gate, but four probes passed it ([spike notes](../../../trials/puck-spike/RUNTIME-SECTIONS.md)). A denylist, like Google's 2012 sanitizer, is a filter, not a boundary.
+The hostile author is realistically not the marketer. It is the model, steered by content it ingests (scraped sites, web research) or by another member of the workspace. Prompt injection succeeds often enough to matter: Pluto pushed Claude's artifact-publish path into leaking a `.env.local` file in **10 of 85 attempts** ([Pluto Security](https://pluto.security/blog/inside-claude-artifacts-how-your-agent-publishes-to-the-web/)). Anthropic's containment guidance treats defences at the model layer as probabilistic and puts containment in the environment ([Anthropic](https://www.anthropic.com/engineering/how-we-contain-claude)). Retool's docs describe the case of several members exactly: builder code on a shared origin lets one builder act in another's browser ([Retool docs](https://docs.retool.com/self-hosted/guides/origin-sandbox)). The spike's lint is a useful first gate, but four probes passed it ([spike notes](../../../../trials/puck-spike/RUNTIME-SECTIONS.md)). A denylist, like Google's 2012 sanitizer, is a filter, not a boundary.
 
 ### Rare untrusted sections make frames per section the cheap option
 
@@ -230,7 +230,7 @@ Three things would change this call:
 
 ### The server render and the published page need their own boundaries
 
-**The server render.** The spike's container is the right boundary for both editor-time and publish-time renders: no network, read-only, one workspace's modules, `--init` and a timeout. It needs two additions: a memory cap and an output cap, since the 20k-row probe produced 32 MB of HTML ([spike notes](../../../trials/puck-spike/RUNTIME-SECTIONS.md)). Node's `--permission` and `--disallow-code-generation-from-strings` flags add depth, not a boundary, and AI code should never be loaded into the renderer's own process. Latency is the real cost: about 1.6 s for the first container and about 0.35 s warm, per the spike. A pre-warmed subprocess pool (Val Town) or isolates such as Cloudflare Dynamic Workers, priced at $0.002 per unique Worker loaded per day ([Cloudflare](https://blog.cloudflare.com/dynamic-workers/)), are the scale paths.
+**The server render.** The spike's container is the right boundary for both editor-time and publish-time renders: no network, read-only, one workspace's modules, `--init` and a timeout. It needs two additions: a memory cap and an output cap, since the 20k-row probe produced 32 MB of HTML ([spike notes](../../../../trials/puck-spike/RUNTIME-SECTIONS.md)). Node's `--permission` and `--disallow-code-generation-from-strings` flags add depth, not a boundary, and AI code should never be loaded into the renderer's own process. Latency is the real cost: about 1.6 s for the first container and about 0.35 s warm, per the spike. A pre-warmed subprocess pool (Val Town) or isolates such as Cloudflare Dynamic Workers, priced at $0.002 per unique Worker loaded per day ([Cloudflare](https://blog.cloudflare.com/dynamic-workers/)), are the scale paths.
 
 **Publishing.** AI sections should default to static HTML with no hydration unless the section needs interactivity. This shrinks the visitor-facing exposure to markup and CSS.
 

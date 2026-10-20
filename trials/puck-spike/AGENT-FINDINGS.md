@@ -19,7 +19,7 @@ given (capture of JavaScript-heavy sites, research coverage, images). Those are 
 would matter whichever editor we used.
 
 **Recommendation: go for a platform integration spec** (see the roadmap,
-`docs/superpowers/specs/2026-10-08-website-agent-on-puck-roadmap.md`).
+`docs/superpowers/specs/archive/2026-10-08-website-agent-on-puck-roadmap.md`).
 
 ## What we built
 

@@ -1,7 +1,7 @@
 # Parallel narrative spec and offline input selection
 
 - Authorized scope: spec/prompt drafts and offline selection from the retained r18 claims. No model/provider calls, DB changes, workers, runtime/catalog changes or publication.
-- Added `docs/superpowers/specs/2026-09-26-arv4-parallel-narrative-design.md` and companion exact prompts/input examples under `docs/superpowers/drafts/2026-09-26-parallel-narrative/`.
+- Added `docs/superpowers/specs/archive/2026-09-26-arv4-parallel-narrative-design.md` and companion exact prompts/input examples under `docs/superpowers/drafts/2026-09-26-parallel-narrative/`.
 - Direction: deterministic packet preparation and parallel tool-free section model calls; 60 seconds is an upper performance target, never a cancellation/publication gate. Seller/product and exact project-pinned ICP/persona context govern relevance. Generalized multi-category recipes supplement fields; no production category or field migration was implemented.
 - Offline fixture script `prepare_r18_inputs.py` reads retained exports and writes `.artifacts/narrative-selection-20260926/`. Explicit fixture annotations are not a production classifier. Full snapshot, original context, 19 candidate packets, readable section inventories, reverse-routing CSV, complete findings and hashes are retained.
 - Final selection: 481 records = 341 dossier imports + 56 later findings + 84 other fields. 336 distinct selected; 24 direct-field/complete-findings records; 121 complete-findings-only outside selected pages. 321 selected records reused across sections. Zero unmapped records and zero unresolved review-link references in this snapshot. Other contacts' personal histories remain accessible although only one contact page is selected for this trial.

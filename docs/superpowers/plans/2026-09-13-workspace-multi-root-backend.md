@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, `os.*` with `dir_fd`, `fcntl`, deepagents 0.6.12 `BackendProtocol`, pytest with `tmp_path`, one Alembic revision.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W1, W5, §4.1, §4.2, §4.3 (as amended 2026-09-13: thread-rooted, no per-turn directory).
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` — W1, W5, §4.1, §4.2, §4.3 (as amended 2026-09-13: thread-rooted, no per-turn directory).
 
 ## Global Constraints
 

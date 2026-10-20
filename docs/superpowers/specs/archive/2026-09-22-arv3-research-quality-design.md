@@ -3,7 +3,7 @@
 **Status:** design and implementation plan authorized by the founder 2026-09-22; implementation
 in progress. New-profile activation and offline/live acceptance are tracked separately in the plan.
 **Date / inspected checkout:** 2026-09-22, `codex/ai-ark-committee-discovery-spec`, `2dd07c55f`.
-**Implementation sequence:** [companion plan](../plans/2026-09-22-arv3-research-quality.md).
+**Implementation sequence:** [companion plan](../../plans/2026-09-22-arv3-research-quality.md).
 
 ## 1. Outcome and authority
 
@@ -34,7 +34,7 @@ Person research remains detached fleet work; it uses the same claim-specialist c
 
 ### 1.2 Policy decisions and proposed contract changes
 
-The [ARV2 master plan](../../specs/ARV2-MASTER-PLAN.md) currently implements quality checks as
+The [ARV2 master plan](../../../specs/ARV2-MASTER-PLAN.md) currently implements quality checks as
 annotations that never block storage or a page. On 2026-09-22 the founder explicitly adopted
 the factual-visibility change in item 1: retain invalid observations for audit, exclude them from
 ordinary factual summaries, and keep unresolved findings visible. This resolves that policy decision;
@@ -60,9 +60,9 @@ their current behavior until implementation and explicit activation; preserve hi
 
 ## 2. Evidence and verified starting state
 
-The baseline is the [Premier v3 comparison](../plans/2026-09-22-arv3-premier-live-comparison.md),
-the [cumulative review](../plans/2026-09-22-arv3-cumulative-quality-review.md), and the
-[Probook/Zafran comparison](../plans/2026-09-22-arv3-live-poc-comparison.md). They are not a
+The baseline is the [Premier v3 comparison](../../plans/2026-09-22-arv3-premier-live-comparison.md),
+the [cumulative review](../../plans/2026-09-22-arv3-cumulative-quality-review.md), and the
+[Probook/Zafran comparison](../../plans/2026-09-22-arv3-live-poc-comparison.md). They are not a
 controlled aggregate quality benchmark. Retained artifacts allow a controlled conversion replay.
 
 | Finding | Required response |
@@ -103,13 +103,13 @@ Verified code anchors (paths are relative to repository root):
 - `subsystems/research/clue_research/claimstore/claims.py` already provides supersession and
   verification transitions. Extend the shared seam where necessary; do not hand-copy its SQL.
 
-Binding foundations: [output contract](../../architecture/clue-hq-research-architecture-overview.md),
-[Doc A delegation](../../architecture/clue-hq-platform-agent-runtime.md#23-subagent-contract-revised-2026-07-18),
-[shared seams](../../specs/_conventions.md),
+Binding foundations: [output contract](../../../architecture/clue-hq-research-architecture-overview.md),
+[Doc A delegation](../../../architecture/clue-hq-platform-agent-runtime.md#23-subagent-contract-revised-2026-07-18),
+[shared seams](../../../specs/_conventions.md),
 [project context/variants](2026-09-12-project-context-and-icp-authoring-design.md),
 [AI Ark design](2026-09-22-arv2-ai-ark-committee-discovery-design.md), and
 [media design](2026-09-22-arv2-media-research-design.md).
-The newer automatic-targeting ruling in the [projects contract](../../../apps/frontend/docs/api-contracts/projects.md)
+The newer automatic-targeting ruling in the [projects contract](../../../../apps/frontend/docs/api-contracts/projects.md)
 remains in force: this spec does not reintroduce a mandatory human confirmation card for every pin.
 
 ## 3. Responsibility and end-to-end flow
@@ -565,7 +565,7 @@ state. Old unscoped blocks are legacy, not relabelled as freshly verified projec
 
 ### 10.2 User-visible contract changes for review
 
-The existing [accounts contract](../../../apps/frontend/docs/api-contracts/accounts.md) hides
+The existing [accounts contract](../../../../apps/frontend/docs/api-contracts/accounts.md) hides
 watch-outs on overview and routes unsafe claims to restricted sections. Required proposed deltas:
 
 - Carry explicit project/context/generation identity on reads and refreshes.

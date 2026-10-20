@@ -18,7 +18,7 @@ the new quality composition is internally v4.
 Implementation was authorized on 2026-09-22, including the proposed context, membership and
 presentation contracts. Before implementation, latest origin was fetched; feature upstream and
 `origin/research-streaming` were contained in local base `a14ccbee0`; fast-forward pull needed no merge.
-**Design:** [research quality, evidence access and specialist ownership](../specs/2026-09-22-arv3-research-quality-design.md).
+**Design:** [research quality, evidence access and specialist ownership](../specs/archive/2026-09-22-arv3-research-quality-design.md).
 **Inspected base:** `2dd07c55f`, `codex/ai-ark-committee-discovery-spec`, 2026-09-22.
 
 ## 1. Delivery rules

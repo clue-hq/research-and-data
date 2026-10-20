@@ -18,7 +18,7 @@ Settings → Pages rebound onto the settings slice's shell, env/docs, and the ex
 
 **Tech Stack:** unchanged (Python 3.12 / FastAPI / SQLAlchemy / Alembic; Next.js / Zod 4 / node --test).
 
-**Spec:** `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` (binding for our side) +
+**Spec:** `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` (binding for our side) +
 the founder ruling of 2026-09-28 recorded in `_memory/2026-09-28-custom-domain-f5-reconciliation.md`
 (Task 5 writes it) and the memory `custom-domain-vs-f5-handle-ruling`. F5's own record:
 `_memory/2026-09-03-f5-multipage-build-close.md` on the other branch (present after the merge).

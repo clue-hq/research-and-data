@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, `clue_agents` context/runtime, `clue_api` composition, SQLAlchemy async `text()` SQL, Alembic, pytest with `rollback_conn` and `ScriptedAgentChatModel`.
 
-**Spec:** `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (approved 2026-09-08). Parent: `docs/specs/ARV2-ONBOARDING-PLAN.md` §5–§6 (S5–S7). Facts file: none — every signature is quoted inline below.
+**Spec:** `docs/superpowers/specs/archive/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (approved 2026-09-08). Parent: `docs/specs/ARV2-ONBOARDING-PLAN.md` §5–§6 (S5–S7). Facts file: none — every signature is quoted inline below.
 
 ## Evidence (why this shape)
 

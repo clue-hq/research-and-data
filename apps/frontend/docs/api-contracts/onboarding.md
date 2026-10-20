@@ -512,7 +512,7 @@ job's live status (both sections above).
 
 ## The setting-up screen runs the new onboarding lane (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-onboarding-v2-default-design.md`. After provisioning, the
+Spec `docs/superpowers/specs/archive/2026-09-12-onboarding-v2-default-design.md`. After provisioning, the
 setting-up screen posts `POST /api/clue/onboarding` `{ company_domain, brand_id: null }` (the
 profile's website, folded to its host; a 409 `onboarding_in_progress` is the replay-safe answer)
 and polls `GET /api/clue/onboarding/current` every 1.5 s. The screen's `SetupStatus` is derived in

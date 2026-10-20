@@ -75,7 +75,7 @@ leg is open, images keep going to the design agent as reference images; text goe
 "leave it as is for now".
 
 ## Spec written (uncommitted, awaiting founder review)
-`docs/superpowers/specs/2026-09-18-chat-attachments-design.md`. Key design facts verified for it:
+`docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md`. Key design facts verified for it:
 history messages carry `turn_id` (`agent_turn_wiring.py:1385`), so prior turns' image attachments
 can be looked up from `agent_artifact_ref` (`ref_role='attachment'`); the transcript read already
 surfaces those rows as `flavor: "attachment"` refs (`clue_projections/threads.py:653`) and the
@@ -421,7 +421,7 @@ Record each outcome and any defect here.
   under `attachments/` (XLSX/DOCX/PDF, sandbox-based). Founder REJECTED converters-only and chose
   option 1: a governed `run_python@1` tool in a Docker sandbox over the thread workspace, plus the
   converters as the fast path. Spec written:
-  `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`
+  `docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md`
   (assumed defaults recorded in it: no network, 60 s / 1 CPU / 1 GB / 10 runs per turn / 1 MB
   output; `CLUE_SANDBOX_ENABLED` ships off). Key verified facts: workspace is a real anchored dir
   per thread; mounts are read-only dirs beside the root and exempt from quota; seeds/library are
@@ -456,7 +456,7 @@ has to choose subagent-driven vs inline.
 
 ## Execution record (SDD, 2026-09-19 — code sandbox and document attachments)
 
-Spec `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`,
+Spec `docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md`,
 plan `docs/superpowers/plans/2026-09-19-agent-code-execution-and-document-attachments.md`
 (16 tasks), executed subagent-driven on branch `rebase-and-expand-attachment-types` in the
 `damascus` worktree, base `7a548e110`. Controller = Fable; implementers Opus only; every review

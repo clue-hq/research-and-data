@@ -5,7 +5,7 @@ store, the Railway `page-origin` service, Cloudflare for SaaS, the system-hostna
 `pages-edge` Worker. Everything here is done by hand in the Railway and Cloudflare dashboards; the
 code it deploys is already on the branch (S1, see the session record).
 
-- Design spec: `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` (§3 is this
+- Design spec: `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` (§3 is this
   runbook's source; §3 item 7 is the acceptance walk in section 7 below).
 - S1 session record: `_memory/2026-09-17-custom-domain-publishing-s1.md`.
 - Local dev equivalent of all of this: `DEV_STACK.md` (port 8040, `*.pages.localhost`).
@@ -469,7 +469,7 @@ the services deployed with those two fixes (2026-10-15) before step 2.
    finding S7-3). Add it to Cloudflare as its own zone; add a proxied wildcard record
    `*` → the page-origin service (as `*.pages` is today, §5). A first-level wildcard is covered by
    Universal SSL. Apply to the Public Suffix List if the domain should be listed (§5 of the
-   isolation research, `docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+   isolation research, `docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md`).
    Nothing links to the new domain yet, so nothing can break.
 2. Deploy the Worker with **only** the new zone's route added (`infra/cloudflare/pages-edge/wrangler.toml`):
    `routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }, { pattern = "*/*", zone_name = "<new domain>" }]`.

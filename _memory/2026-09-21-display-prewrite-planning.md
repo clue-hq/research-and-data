@@ -11,7 +11,7 @@ per section, superseded on rewrite; prompt/recipe versions stamped); spend on
 `provider_call_ledger` labelled `display-<page>-<section>`. Nothing runs after research settles;
 the agent's `read_account_research` reads stored overview blocks only (`overview_not_written`).
 
-Prior discussion FOUND: `docs/superpowers/specs/2026-09-12-display-prewrite-and-shared-blocks-design.md`
+Prior discussion FOUND: `docs/superpowers/specs/archive/2026-09-12-display-prewrite-and-shared-blocks-design.md`
 (founder rulings 2026-09-12: overview at settle on the fleet; contact pages in the background on
 the first open of their account; insights lazy + shared blocks; a not-yet-written section blank).
 Never implemented (no `arv2_display_page` kind, no handler, no `shared_from`).

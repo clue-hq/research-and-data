@@ -1,6 +1,6 @@
 # 2026-09-18 — Workspace display names (chooser + sidebar switcher on real memberships)
 
-Spec `docs/superpowers/specs/2026-09-18-workspace-display-names-design.md`; plan
+Spec `docs/superpowers/specs/archive/2026-09-18-workspace-display-names-design.md`; plan
 `docs/superpowers/plans/2026-09-18-workspace-display-names.md`. Branch `feature/workspace-display-names`
 off research-streaming; SDD with Opus implementers, Fable reviewing.
 

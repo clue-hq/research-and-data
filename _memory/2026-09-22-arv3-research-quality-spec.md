@@ -3,7 +3,7 @@
 - Founder requested a thorough spec after reviewing the Premier and earlier v3 findings. Explicit
   additions: project pins may reference brand or project-local ICP/persona variants; explain concrete
   claim validation/correction and scalable evidence sharing; person-to-account reconciliation agreed.
-- Added `docs/superpowers/specs/2026-09-22-arv3-research-quality-design.md` and companion ordered plan
+- Added `docs/superpowers/specs/archive/2026-09-22-arv3-research-quality-design.md` and companion ordered plan
   `docs/superpowers/plans/2026-09-22-arv3-research-quality.md`, based on checkout `2dd07c55f`.
 - Design reuses Postgres scope/state, existing workspace-scoped artifact storage and disposable
   read-only specialist workspaces. Includes exact document lineage, project-context display identity,

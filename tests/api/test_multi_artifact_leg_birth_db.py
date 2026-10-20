@@ -1,6 +1,6 @@
 """``open_design_leg@5`` — a list of artifacts, N births, the account stamp.
 
-Spec ``docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md`` §3.1/§3.2/§3.6:
+Spec ``docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md`` §3.1/§3.2/§3.6:
 one chat message may ask for MANY design artifacts, so one delegation opens ONE leg holding a
 SET of documents. The properties pinned here:
 

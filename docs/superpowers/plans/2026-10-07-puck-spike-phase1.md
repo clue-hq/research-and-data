@@ -23,7 +23,7 @@ optimized current engine (staged run, about $1 a page).
 
 | Brand | Workspace | Brand kit | Clones | 1:1 page |
 |---|---|---|---|---|
-| Garner Health | `ws_c080123a7c434454898aa5ae1a8f698b` | `brand_kit_ing_ba0708281cb44f7c847dfb8949110103` v2 | Garner homepage and customer-story sections, kit v2 originals | Syracuse City School District, from the approved copy trial (`docs/superpowers/specs/2026-10-06-syracuse-copy-trial.md`) |
+| Garner Health | `ws_c080123a7c434454898aa5ae1a8f698b` | `brand_kit_ing_ba0708281cb44f7c847dfb8949110103` v2 | Garner homepage and customer-story sections, kit v2 originals | Syracuse City School District, from the approved copy trial (`docs/superpowers/specs/archive/2026-10-06-syracuse-copy-trial.md`) |
 | Conduit | `ws_3c96440b557a413fa02bda3fbf90cc5e` | `brand_kit_ing_c162dc8c5b99418284b42a21a7a80298` v3 | conduit.ai sections, kit v3 originals (37) | Atrium Hospitality (researched; not Dana.AI, whose angle is an open founder decision) |
 
 Baseline for comparison: the staged trial's Syracuse page

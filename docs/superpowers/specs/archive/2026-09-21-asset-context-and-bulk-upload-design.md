@@ -38,7 +38,7 @@ Carry only this design document to the new branch. Do not merge this entire refe
 
 At this snapshot the describer, description DAL, ad-onboarding module, Brand Context feature directory and editor asset-library adapter are identical between the reference branch and `origin/research-streaming`. The central design API differs; re-read its latest composition/job wiring, current instructions and migrations before implementation. Use isolated DB/Redis/ports for the new workspace's verification. Eventual integration should contain only feature code, focused tests/migrations/config and relevant feature documentation, with `research-streaming` as its target when publication is explicitly requested.
 
-New-workspace handoff: restore only `docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md` from the preserved `ICP-definition/head-of-ABM-improvements` branch, then commit that document on the new feature branch. A single-file restore copies that file's contents without bringing the source branch's commit ancestry or other files. No branch switch, new workspace or remote publication was performed while preparing this plan.
+New-workspace handoff: restore only `docs/superpowers/specs/archive/2026-09-21-asset-context-and-bulk-upload-design.md` from the preserved `ICP-definition/head-of-ABM-improvements` branch, then commit that document on the new feature branch. A single-file restore copies that file's contents without bringing the source branch's commit ancestry or other files. No branch switch, new workspace or remote publication was performed while preparing this plan.
 
 ## What exists and what changes
 
@@ -52,7 +52,7 @@ New-workspace handoff: restore only `docs/superpowers/specs/2026-09-21-asset-con
 | Assets UI | Screenshot → mockup; most other kit images → background. Registry assets are labeled upload/generated and have no joined description. Reads stop at the first 200 records per image kind and return early without a kit. Detail edits are local state. | Separate type from source; join durable metadata; paginate; show assets without a kit; persist edits through the repository seam. |
 | Upload | Single-file `POST /assets` and editor upload exist. Brand-kit asset ingestion is a different operation. No bulk upload button exists in this Assets panel. | Reuse asset custody with retry-safe per-file upload, metadata and enrichment scheduling. Add the floating upload dialog to this panel. |
 
-Sources: [describer](../../../subsystems/clue-design/apps/api/lumen_ingestion/describe.py), [description DAL](../../../subsystems/design/clue_design/descriptions.py), [capture evidence](../../../subsystems/clue-design/apps/api/lumen_ingestion/capture/evidence_builder.py), [ad onboarding](../../../subsystems/clue-design/apps/api/lumen_ingestion/ad_library/onboarding.py), [ad runtime](../../../subsystems/clue-design/apps/api/lumen_api/ad_runtime.py), [asset API/manifests](../../../subsystems/clue-design/apps/api/lumen_api/main.py), [frontend repository](../../../apps/frontend/src/features/brand-context/data/brand-context.repository.ts), [mapping](../../../apps/frontend/src/features/brand-context/model/brand-context-mapping.ts).
+Sources: [describer](../../../../subsystems/clue-design/apps/api/lumen_ingestion/describe.py), [description DAL](../../../../subsystems/design/clue_design/descriptions.py), [capture evidence](../../../../subsystems/clue-design/apps/api/lumen_ingestion/capture/evidence_builder.py), [ad onboarding](../../../../subsystems/clue-design/apps/api/lumen_ingestion/ad_library/onboarding.py), [ad runtime](../../../../subsystems/clue-design/apps/api/lumen_api/ad_runtime.py), [asset API/manifests](../../../../subsystems/clue-design/apps/api/lumen_api/main.py), [frontend repository](../../../../apps/frontend/src/features/brand-context/data/brand-context.repository.ts), [mapping](../../../../apps/frontend/src/features/brand-context/model/brand-context-mapping.ts).
 
 ## One enrichment contract, three inputs
 
@@ -108,7 +108,7 @@ Keep reusable visual observations attached to the workspace asset. Brand/product
 
 ## Backend ↔ frontend contract proposal
 
-These are additions to review, not claims about endpoints already implemented. Record the ratified shapes in [the Brand Context API contract](../../../apps/frontend/docs/api-contracts/brand-context.md) during implementation.
+These are additions to review, not claims about endpoints already implemented. Record the ratified shapes in [the Brand Context API contract](../../../../apps/frontend/docs/api-contracts/brand-context.md) during implementation.
 
 | Operation | Proposed contract |
 | --- | --- |
@@ -170,4 +170,4 @@ Run focused backend/DAL/runtime and frontend repository/controller tests for the
 
 Approve the shared metadata contract and floating-dialog flow, including separate **type**, **usage role** and **source**. Confirm the upload format scope. Existing paid backfill and video/carousel-ad ingestion are separate actions.
 
-This review is required by [AGENTS.md](../../../AGENTS.md): “Every screen/flow starts with an explicit contract-gap review with the founder … and gets sign-off before implementation.” The implementation has not started; this document makes the required review concrete.
+This review is required by [AGENTS.md](../../../../AGENTS.md): “Every screen/flow starts with an explicit contract-gap review with the founder … and gets sign-off before implementation.” The implementation has not started; this document makes the required review concrete.

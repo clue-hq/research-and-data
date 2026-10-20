@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + SQLAlchemy async + Alembic (platform API), Pydantic v2 contracts (`clue_agents`), LangChain `ChatOpenAI` over OpenRouter (Responses API), Next.js App Router + Zod + `node:test` (frontend), pytest with a throwaway Postgres for `*_db.py` suites.
 
-**Spec:** `docs/superpowers/specs/2026-09-18-chat-attachments-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md`
 
 ## Global Constraints
 
@@ -511,7 +511,7 @@ Run: `uv run pytest tests/api/test_chat_uploads.py -v` → FAIL, module not foun
 The bytes live in the content-addressed artifact store like every turn artifact; this module owns
 the two things that store cannot say — the filename the person gave the file and which family
 (text or image) it belongs to — and the validation both the upload route and the submission route
-apply. Spec: docs/superpowers/specs/2026-09-18-chat-attachments-design.md.
+apply. Spec: docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md.
 """
 
 from __future__ import annotations

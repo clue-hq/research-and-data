@@ -8,7 +8,7 @@
 
 **Tech Stack:** Docker (multi-stage), uv (Python 3.12), Rust/cargo (`lumen-api-helper`), Node 24 (design editor Tailwind toolchain), Playwright Chromium, docker compose, PgBouncer, GitHub Actions + GHCR, Railway, OVHcloud VPS, Cloudflare R2.
 
-**Spec:** `docs/superpowers/specs/2026-10-01-first-deployment-design.md` (approved 2026-10-01). Read it before any task.
+**Spec:** `docs/superpowers/specs/archive/2026-10-01-first-deployment-design.md` (approved 2026-10-01). Read it before any task.
 
 ## Global Constraints
 
@@ -1506,7 +1506,7 @@ This is the founder-facing checklist for every step that happens in a dashboard 
 ````markdown
 # First deployment runbook
 
-Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md`. Order matters.
+Spec: `docs/superpowers/specs/archive/2026-10-01-first-deployment-design.md`. Order matters.
 
 ## 1. Cloudflare [FOUNDER]
 1. R2 → create bucket `clue-prod` (location hint: Eastern North America). *(Superseded 2026-10-01: also `clue-backups` with its own token — see Task 6's ruling and `docs/deploy/runbook.md` §1.)*

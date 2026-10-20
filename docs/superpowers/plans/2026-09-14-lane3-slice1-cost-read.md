@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy async `text()` queries, Pydantic v2 DTOs, Alembic (hash revision ids), pytest with the repo's rolled-back-connection DB harness, `uv`.
 
-**Spec:** `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§2 R2, R8, R9, R11, R12; §3; §5.5; §9 slice 1; §10 items 4–5). Rulings ledger: `_memory/2026-09-14-lane3-telemetry-rulings.md`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§2 R2, R8, R9, R11, R12; §3; §5.5; §9 slice 1; §10 items 4–5). Rulings ledger: `_memory/2026-09-14-lane3-telemetry-rulings.md`.
 
 ## Global Constraints
 
@@ -54,7 +54,7 @@
 | `tests/projections/test_cost_db.py` | **Create.** The read over seeded rows: scoping, phases, labels, filters, jobs, projects. |
 | `tests/projections/test_cost_cli.py` | **Create.** `render_report` and `main` argument handling (no DB). |
 | `tests/api/test_cost_report_endpoint_db.py` | **Create.** The route through the ASGI app. |
-| `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.5 | **Modify.** Record discoveries 1 and 3; slice 1b. |
+| `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.5 | **Modify.** Record discoveries 1 and 3; slice 1b. |
 | `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** Lane 3 section. |
 | `_memory/2026-09-14-lane3-slice1-cost-read.md` | **Create.** Session note with the proof. |
 
@@ -1962,7 +1962,7 @@ git commit -m "docs(memory): lane 3 slice 1 proven on the lane stack; slice 1b r
 ### Task 8: Design note and lane index reflect what was found
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§3 table "LLM cost per call" row; §5.5; §9)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§3 table "LLM cost per call" row; §5.5; §9)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (new "Lane 3" section)
 
 **Interfaces:** none (documentation).
@@ -2001,7 +2001,7 @@ Append to `docs/superpowers/plans/2026-09-13-lane-plan-index.md` after the Lane 
 ```markdown
 ## Lane 3 — telemetry and cost (worktree `lane3/*` off `research-streaming`)
 
-Design note: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md`.
+Design note: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md`.
 
 | # | Plan | What it builds | Depends on |
 | --- | --- | --- | --- |
@@ -2017,7 +2017,7 @@ Held, high priority: the design subsystem (R12). Separate lane after 1–3: ARV2
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
+git add docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
 git commit -m "docs(lane3): design note records the zero-cost receipt and JSONL ledger findings; lane index gains lane 3"
 ```
 

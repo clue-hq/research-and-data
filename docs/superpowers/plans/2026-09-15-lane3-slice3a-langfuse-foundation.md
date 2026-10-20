@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, langfuse 4.15 (OTel-based SDK), opentelemetry-sdk 1.42, langchain-core 1.x, pydantic-settings, alembic, pytest with the repo's rolled-back-connection DB harness, `uv`.
 
-**Spec:** `docs/superpowers/specs/2026-09-15-lane3-slice3-langfuse-design.md` (D1–D4 ruled 2026-09-15; this plan covers §3.1, §3.2, §3.3 runtime part, §3.8, §3.9, §3.10, §3.11). Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.3, §7, §9 slice 3.
+**Spec:** `docs/superpowers/specs/archive/2026-09-15-lane3-slice3-langfuse-design.md` (D1–D4 ruled 2026-09-15; this plan covers §3.1, §3.2, §3.3 runtime part, §3.8, §3.9, §3.10, §3.11). Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.3, §7, §9 slice 3.
 
 ## Global Constraints
 
@@ -66,7 +66,7 @@
 | `platform/api/clue_api/langfuse_check.py` | **Create.** `python -m clue_api.langfuse_check`. |
 | `Makefile`, `scripts/dev_stack.sh` | **Modify.** `langfuse-check`; the status line. |
 | `tests/api/test_langfuse_check.py` | **Create.** |
-| `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md`, `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** §7 names, §9 slice 3a done, index row. |
+| `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md`, `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** §7 names, §9 slice 3a done, index row. |
 
 ---
 
@@ -2014,7 +2014,7 @@ git commit -m "feat(ops): make langfuse-check probes the keys without a trace; t
 ### Task 9: Docs — the design note's §7 names, §9 slice 3a, the lane index
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§7 lines ~289–294 and ~308; §9 item 3 ~line 343)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§7 lines ~289–294 and ~308; §9 item 3 ~line 343)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (the lane 3 table row `3`)
 
 - [ ] **Step 1: §7**
@@ -2066,7 +2066,7 @@ Replace the row `| 3 | (to write) | ... | 2 |` with two rows:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
+git add docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
 git commit -m "docs(lane3): the design note records slice 3a as done with the CLUE_LANGFUSE_* names; lane index rows 3a/3b"
 ```
 

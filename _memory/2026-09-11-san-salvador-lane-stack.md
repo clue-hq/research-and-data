@@ -433,7 +433,7 @@ website across reloads is a founder call.
 Founder walk findings: a second thread of a project knows nothing of the first (the `project_state`
 route of `record_interview_answer` is write-only since O6 ruling D5; L6 is thread-scoped; no ARV2
 list/read tools on head-of-abm@v45), and skill v22 §3/§5/§10 forbids ICP authoring. Founder rulings
-R1–R9 recorded in `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md`.
+R1–R9 recorded in `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md`.
 Presentation truth for markdown documents = the dummy's Plan tab (screenshot 2026-09-12); this repo's
 `project-plan.tsx` / `ProjectPlanSchema` are orphaned dummy lifts (zero importers) and get replaced.
 

@@ -20,9 +20,9 @@ section, on this repo's `fetchRead` / `fetchMutation` seam.
 `tldextract` (offline public-suffix snapshot), `dnspython`, `python-multipart`; Next.js / TypeScript /
 Zod 4 frontend with `node --test`.
 
-**Spec:** `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` §4.1 (label change,
+**Spec:** `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` §4.1 (label change,
 A1), §4.2, §5.2 (fallback/favicon), §7 (control plane), §8.2 (Settings → Pages), §9, §10, §11 (S2 row),
-§12. Companion: `docs/superpowers/specs/2026-09-15-settings-integration-design.md` §2.1–2.3, §6.1–6.4
+§12. Companion: `docs/superpowers/specs/archive/2026-09-15-settings-integration-design.md` §2.1–2.3, §6.1–6.4
 (the shell, autosave, confirmation card, `workspace.manage_settings` = policy revision 3). S1 record:
 `_memory/2026-09-17-custom-domain-publishing-s1.md`.
 
@@ -2533,7 +2533,7 @@ git commit -m "frontend: Settings → Pages on the lifted settings shell — def
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/frontend/docs/api-contracts/settings.md _memory/2026-09-17-custom-domain-publishing-s2.md _memory/README.md docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md
+git add apps/frontend/docs/api-contracts/settings.md _memory/2026-09-17-custom-domain-publishing-s2.md _memory/README.md docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md
 git commit -m "docs: Pages settings contract, custom-domain S2 session record"
 ```
 

@@ -16,7 +16,7 @@ Status: created and verified in Linear on September 7, 2026 (America/Los_Angeles
 
 The product contract allows generated raster backgrounds/imagery, with native editable headline/support/CTA text, separate logo and button layers, and independently transformable artwork. Exact UI/screenshots/vector assets may remain original assets. No full-ad bitmap may substitute for the editable scene.
 
-The [design](../specs/2026-09-07-editable-ad-control-design.md) and [implementation plan](2026-09-07-editable-ad-control.md) are the technical source of truth for this pack.
+The [design](../specs/archive/2026-09-07-editable-ad-control-design.md) and [implementation plan](2026-09-07-editable-ad-control.md) are the technical source of truth for this pack.
 
 ## CT-01 — Freeze the control cases and verify Fleet dispatch readiness
 

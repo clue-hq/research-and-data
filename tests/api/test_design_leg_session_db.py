@@ -1,7 +1,7 @@
 """Design session continuity — the leg turn's thread is the DOCUMENT's session (2026-09-18).
 
 One design document = one persistent design-agent session (design note
-``docs/superpowers/specs/2026-09-18-design-session-continuity-design.md``). Four durable
+``docs/superpowers/specs/archive/2026-09-18-design-session-continuity-design.md``). Four durable
 consequences are pinned here, all on the real :class:`DesignLegTurnRunner` with a faked lane:
 
 * **the envelope names the session** — a document-pinned leg turn's ``checkpoint_thread_id`` is

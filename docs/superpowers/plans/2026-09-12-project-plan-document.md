@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async), the `clue_toolbelt` `Tool` envelope, pytest on the lane DB. (Frontend: deferred plan.)
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3, R7, R12). Depends on plans 1 and 2. The frontend half is `2026-09-12-plan-tab-frontend.md` (deferred).
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3, R7, R12). Depends on plans 1 and 2. The frontend half is `2026-09-12-plan-tab-frontend.md` (deferred).
 
 ## Global Constraints
 

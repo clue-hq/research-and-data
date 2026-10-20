@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async, `clue_storage` artifacts, the plan-1 mount table, pytest DB suites against the lane DB.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W2, W3, W4, W11, §4.1, §4.3.
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` — W2, W3, W4, W11, §4.1, §4.3.
 
 ## Global Constraints
 

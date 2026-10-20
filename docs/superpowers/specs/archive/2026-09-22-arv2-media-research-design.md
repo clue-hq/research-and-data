@@ -2,7 +2,7 @@
 
 **Status:** approved by founder 2026-09-22; offline implementation completed and verified; see the acceptance record. Live acceptance and activation remain separate.
 **Date / inspected base:** 2026-09-22 / `99253e5d4`, Jerusalem v1.
-**Implementation plan:** [ordered work and acceptance gates](../plans/2026-09-22-arv2-media-research.md).
+**Implementation plan:** [ordered work and acceptance gates](../../plans/2026-09-22-arv2-media-research.md).
 **Depends on:** the locally implemented [AI Ark committee design](2026-09-22-arv2-ai-ark-committee-discovery-design.md), whose live acceptance remains separate.
 **Founder update:** AI Ark v2 is now the default for new research launches. Build this media
 feature on that updated flow only; preserve historical v1/v2 pins for replay.
@@ -27,12 +27,12 @@ change was authorized and committed independently; media v3 remains opt-in pendi
 
 Binding foundations:
 
-- [Doc A](../../architecture/clue-hq-platform-agent-runtime.md), especially the agent/tool
+- [Doc A](../../../architecture/clue-hq-platform-agent-runtime.md), especially the agent/tool
   distinction and source persistence before a receipt reaches a model.
-- [Shared seams](../../specs/_conventions.md): claim ownership, storage, provider isolation,
+- [Shared seams](../../../specs/_conventions.md): claim ownership, storage, provider isolation,
   identity, tenancy, and no duplication of shared mechanisms.
-- [ARV2 master plan](../../specs/ARV2-MASTER-PLAN.md) and
-  [R2 stop ruling](../plans/2026-09-08-arv2-r2-account-agent.md): annotations rather than new
+- [ARV2 master plan](../../../specs/ARV2-MASTER-PLAN.md) and
+  [R2 stop ruling](../../plans/2026-09-08-arv2-r2-account-agent.md): annotations rather than new
   quality vetoes; no new total-call, monetary, or consecutive-zero-yield caps.
 - Existing sensitivity/use restrictions, identity requirements for personal voice, paid-call
   failure semantics, media-seconds ceiling, runtime limits, and person media allowance.
@@ -71,10 +71,10 @@ marked NOT_FOUND/unusable lost those markers on return; metadata alone verified 
 Passing current tests therefore does not establish the desired new behavior.
 
 PoC evidence is historical: direct video ingestion in
-[z4a](../../../.context/arv2-one-account-aiark/z4a_gemini_youtube.py), contextual channel search in
-[z4c](../../../.context/arv2-one-account-aiark/z4c_find_nick_video.py), page-to-RSS resolution in
-[p2a](../../../.context/arv2-person-depth/p2a_resolve.py), and retrieval in
-[z6](../../../.context/arv2-one-account-aiark/z6_embed_retrieval.py). The PoC used selected URLs,
+[z4a](../../../../.context/arv2-one-account-aiark/z4a_gemini_youtube.py), contextual channel search in
+[z4c](../../../../.context/arv2-one-account-aiark/z4c_find_nick_video.py), page-to-RSS resolution in
+[p2a](../../../../.context/arv2-person-depth/p2a_resolve.py), and retrieval in
+[z6](../../../../.context/arv2-one-account-aiark/z6_embed_retrieval.py). The PoC used selected URLs,
 contained a wrong-speaker video and a looping transcript, and its retrieval script referenced
 the earlier transcript after a repair. It is an acceptance seed, not proof of autonomous recall.
 
@@ -607,5 +607,5 @@ Native-video metering records provider usage and reserved seconds with an explic
 `usd_unpriced` qualification. The audio PoC price is not reused as a video price. Current billed
 USD reconciliation remains a live acceptance requirement before activating v3.
 
-Offline implementation: `5d90cdbe3`; see the [acceptance record](../plans/2026-09-22-arv2-media-acceptance.md)
+Offline implementation: `5d90cdbe3`; see the [acceptance record](../../plans/2026-09-22-arv2-media-acceptance.md)
 for measured checks and outstanding live-provider/research-quality acceptance.

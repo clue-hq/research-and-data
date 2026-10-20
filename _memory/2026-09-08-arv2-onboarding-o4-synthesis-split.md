@@ -2,7 +2,7 @@
 
 Branch `onboarding/o4-synthesis-split` (worktree `semarang-o4split`), base `6ed8a4642`, five
 commits `4b217b486 … 4a23fd0d7`. Spec:
-`docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (founder-approved
+`docs/superpowers/specs/archive/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (founder-approved
 2026-09-08). Plan: `docs/superpowers/plans/2026-09-08-arv2-onboarding-o4-synthesis-split.md`.
 **Not pushed. The live proof (plan Task 6) has not run — it is founder-triggered.**
 

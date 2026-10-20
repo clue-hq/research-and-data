@@ -2,7 +2,7 @@
 
 Branch `research-streaming-v3`, worktree `addis-ababa`, lane DB `clue_addis-ababa@55040` (throwaway,
 created EMPTY by Task 2 — no seed data, no dev-login rows). Spec:
-`docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md`. Plan:
+`docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md`. Plan:
 `docs/superpowers/plans/2026-09-17-custom-domain-publishing-s0-s1.md`. Per-task briefs, reports and
 the full ruling ledger: `.superpowers/sdd/2026-09-17-custom-domain-publishing-s0-s1/progress.md`.
 Research/decision record that precedes this: `_memory/2026-09-17-custom-domain-publishing-research.md`.

@@ -1,6 +1,6 @@
 """A discovery run holds the thread that launched it; its wake turn goes first; Stop is recorded.
 
-Spec ``docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md`` §4 "The
+Spec ``docs/superpowers/specs/archive/2026-09-30-agent-authored-account-discovery-design.md`` §4 "The
 wake" and §5 "Locks": while a discovery run is unreleased, the launching thread is busy — a user
 message is accepted but held, not refused. When the run ends the platform queues a derived
 Head-of-ABM turn carrying the summary, which runs before any held message; when that turn finishes

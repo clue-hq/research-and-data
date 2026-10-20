@@ -6,7 +6,7 @@ evidence; the pre-existing import/type-check failures are recorded in the
 **Later founder ruling, 2026-09-22:** make v2 the default for future launches and build the
 media-research improvement on that flow. Settings/example/local selectors now use v2;
 historical jobs retain their pins. Live acceptance and deployment are still separate.
-**Design:** [company-scoped committee discovery](../specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md).
+**Design:** [company-scoped committee discovery](../specs/archive/2026-09-22-arv2-ai-ark-committee-discovery-design.md).
 **Base inspected:** `8df27dd25` on `origin/research-streaming`, pulled before planning.
 
 ## 1. Deliverable and boundaries

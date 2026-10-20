@@ -2,7 +2,7 @@
 
 Branch `research-streaming`, worktree `san-salvador`, lane DB `clue_san-salvador`. Plan
 `docs/superpowers/plans/2026-09-12-project-context-files.md`; spec
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.1.
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.1.
 Commits `0e7f6da72` (migration `6c54be5199c8`), `e1b410675`, `5354d933a`, `91b77a327`, fix wave `434858f0e`.
 
 ## What shipped

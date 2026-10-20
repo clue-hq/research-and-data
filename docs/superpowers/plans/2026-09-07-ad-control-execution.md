@@ -54,4 +54,4 @@ Head of ABM creates the business brief and opens the Design handoff. Design's di
 
 The control project closes when useful quality gains and actual editing/persistence/export are demonstrated, with failures and remaining work recorded. A render, an average visual score, or ten completed ticket descriptions cannot substitute for that evidence. Generalization to another brand and more formats remains a separate validation step.
 
-Tracking: [Editable Ad Quality — Control Test](https://linear.app/deeppresence/project/editable-ad-quality-control-test-170a09e4cc95). Architecture: [design spec](../specs/2026-09-07-editable-ad-control-design.md). Detailed tasks: [implementation plan](2026-09-07-editable-ad-control.md).
+Tracking: [Editable Ad Quality — Control Test](https://linear.app/deeppresence/project/editable-ad-quality-control-test-170a09e4cc95). Architecture: [design spec](../specs/archive/2026-09-07-editable-ad-control-design.md). Detailed tasks: [implementation plan](2026-09-07-editable-ad-control.md).
