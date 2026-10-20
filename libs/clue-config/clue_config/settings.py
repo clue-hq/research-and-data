@@ -1016,8 +1016,27 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
-    # Public frontend origin used for settings invitation links. Env: CLUE_APP_ORIGIN.
+    # Public frontend origin used for settings invitation links and the CRM connect callback page.
+    # Env: CLUE_APP_ORIGIN.
     app_origin: str = "http://localhost:3020"
+    # CRM integration (HubSpot / Salesforce through Composio; spec
+    # docs/superpowers/specs/crm-integration/). The CRM tools and routes refuse until this is on
+    # AND ``CLUE_COMPOSIO_API_KEY`` is set. Env: ``CLUE_CRM_INTEGRATION_ENABLED``.
+    crm_integration_enabled: bool = True
+    # Composio REST API base (v3.1). Env: ``CLUE_COMPOSIO_BASE_URL``.
+    composio_base_url: str = "https://backend.composio.dev/api/v3.1"
+    # The Composio auth config per CRM; a CRM without one is not offered on the connect card.
+    # Env: ``CLUE_COMPOSIO_HUBSPOT_AUTH_CONFIG_ID`` / ``CLUE_COMPOSIO_SALESFORCE_AUTH_CONFIG_ID``.
+    composio_hubspot_auth_config_id: str = ""
+    composio_salesforce_auth_config_id: str = ""
+    # Pinned Composio toolkit versions, sent on every tool execution so actions never change
+    # under the agent. Env: ``CLUE_COMPOSIO_HUBSPOT_TOOLKIT_VERSION`` /
+    # ``CLUE_COMPOSIO_SALESFORCE_TOOLKIT_VERSION``.
+    composio_hubspot_toolkit_version: str = "20261020_01"
+    composio_salesforce_toolkit_version: str = "20261018_00"
+    # Clue's cap on a Salesforce org's daily API allowance, in percent (R-7.5).
+    # Env: ``CLUE_CRM_SALESFORCE_API_SHARE_PCT``.
+    crm_salesforce_api_share_pct: int = Field(default=10, ge=1, le=100)
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
