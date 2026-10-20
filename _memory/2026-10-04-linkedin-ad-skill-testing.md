@@ -44,19 +44,6 @@ Branch cut from origin/research-streaming at 135ca509a (PR #98 merge). Lane stac
 - 126 font faces missing from this lane's font library.
 - Frontend build gate (design-system:build/lint/build) not run for fa0ce77a6 (dev server shares .next).
 
-## Verbosity rulings applied (founder, 2026-10-04)
-- Design agent picks the angle and writes every word; Head of ABM's brief is direction only
-  (may SUGGEST a headline/message, never require it); support line <= 15 words on feed ads;
-  unclear angle/tone/message -> request_clarification as opening move; no target-person quotes
-  about unrelated topics/vendors. Copy guide stays scene-brief-copy (nothing added).
-- 0c7afbc66 Head of ABM v71 (prompt v19, manual v17, stage0-interview v44 links only; tool
-  surface = v70). 525bdd2ab scene-brief-copy / account-adaptation / scene prompts /
-  request_clarification text.
-- Pre-existing failures seen (not from these changes): test_product_knowledge_tools_s5d gate
-  visibility (stale since v44), test_pilot_budget_controls (field-registry DB state).
-- Stack restarted 2026-10-04 ~15:50 UTC with solo mode, v71, Langfuse env=default. Next: rerun the
-  Atrium 1:1 LinkedIn prompt in a NEW chat and compare copy length/angle.
-
 ## 2026-10-05 — imagery investigation (no product change)
 - Run 4 (`run_bfcb80e9…`) gave a good round 1 (8-word headline, 13-word support, pre-generated
   pastel ground) then failed on a hung LLM call (1,045 s despite a 60 s timeout; network flaky).
@@ -71,3 +58,5 @@ Branch cut from origin/research-streaming at 135ca509a (PR #98 merge). Lane stac
 - Founder direction: no pre-generated assets by default; the agent generates at runtime with full
   context; image prompts must not add detail no reference shows. Trials T1–T6 not started; §5
   prompt wording awaits founder review before it goes into any skill.
+
+(Ported to design/harness-alignment 2026-10-19: the branch's 'Verbosity rulings applied' section is left out here because that work — Head of ABM v71, 525bdd2ab — was not ported.)

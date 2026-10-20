@@ -77,9 +77,6 @@ For a new account message, construct the argument before choosing a headline:
    relevant product/source candidates for what the product actually does. A brand
    slogan establishes voice, not a mechanism or a target's need. Bind capabilities
    to the exact named product; a brand's portfolio does not prove one model does it all.
-   A public statement someone at the target made is not your angle when it was about
-   another topic or another vendor's product, for example a CEO praising an unnamed AI
-   tool. Do not quote it, echo it or build the message on it.
 3. Write a concrete proposition connecting that mechanism to the proposed task,
    then choose headline and support that express it together. Address the target
    as an invitation when only its identity is known. Record inferred relevance
@@ -109,8 +106,7 @@ reading order. Vary messaging only when evidence changes the argument.
 
 Preserve the advertiser's voice, palette and visual system unless a deliberate
 departure is requested. Choose the identity treatment through the supporting
-skill rather than treating a logo row as the creative concept. CTA presence
-follows the actual next step; an awareness ad need not have one.
+skill rather than treating a logo row as the creative concept.
 
 The direction's `copy` contains only native artwork text, including a separator.
 Keep requested companion channel copy out of the image and direction schema; label it separately in the existing

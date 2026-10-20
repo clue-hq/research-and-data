@@ -1,3 +1,13 @@
+## Design agents ALWAYS run solo (founder ruling 2026-10-04, restated 2026-10-16)
+Both design deepagents — the **scene/ad agent** and the **website agent** — always start and work in
+**solo mode**: ONE agent, no director/author/reviewer subagents. `LUMEN_AGENT_SCENE_SOLO=1` and
+`LUMEN_AGENT_WEB_SOLO=1` are the code defaults (`py_lumen_config/config.py`) and the values in
+`.env.example`, `subsystems/clue-design/.env.example` and every lane `.env`. Never turn the trio back on,
+never measure, tune or change the trio path as if it were the product, and never ship a branch whose
+env has solo off — check it before any design-agent work or measurement. All design-agent work (prompts,
+tools, speed, quality) targets the solo path (`build_scene_solo_prompt`, the solo web prompt). Solo needs
+`LUMEN_AGENT_SCENE_SKILL_BUNDLE=candidate` and `LUMEN_AGENT_FAST_LOOP=1` (both defaults).
+
 ## ARV2 work — coding agents start here (added 2026-09-04)
 If your task concerns account research, contact research, the display layer, the accounts screens,
 or anything named "ARV2", read **`docs/specs/ARV2-AGENT-BRIEFING.md`** first, then

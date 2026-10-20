@@ -46,6 +46,9 @@ export interface EditorExportResult {
   /** Print workstream W3: the server's print-preflight report, present only
    * for print-intent PDF exports (null otherwise). */
   printReady: PrintReadyReport | null;
+  /** The codes of the response's `warnings`: errors the API let through for this export, so
+   * never the reason it failed. */
+  advisoryCodes: string[];
 }
 
 export type PrintReadyStatus = "pass" | "warn" | "fail";
@@ -259,7 +262,8 @@ export function exportResultFromUnknown(payload: unknown): EditorExportResult {
       status: "failed",
       diagnostics: [exportDiagnostic("EDITOR_EXPORT_INVALID_RESPONSE", "Export API returned a non-object response.")],
       artifacts: [],
-      printReady: null
+      printReady: null,
+      advisoryCodes: []
     };
   }
 
@@ -270,7 +274,10 @@ export function exportResultFromUnknown(payload: unknown): EditorExportResult {
     artifacts: Array.isArray(exportPayload.artifacts)
       ? exportPayload.artifacts.flatMap(artifactFromUnknown)
       : [],
-    printReady: printReadyFromUnknown(exportPayload.print_ready)
+    printReady: printReadyFromUnknown(exportPayload.print_ready),
+    advisoryCodes: Array.isArray(payload.warnings)
+      ? payload.warnings.flatMap((item) => (isRecord(item) && typeof item.code === "string" ? [item.code] : []))
+      : []
   };
 }
 

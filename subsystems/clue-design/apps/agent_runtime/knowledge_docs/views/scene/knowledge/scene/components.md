@@ -8,8 +8,7 @@ Establish one dominant
 element, a clear second read and intentional space. Components are reusable
 mechanics, not fixed proportions, mandatory cards or required layout patterns.
 Recompose for the actual words, imagery and aspect ratio. Type-only is a valid
-finished direction when imagery is optional; requested new artwork still needs
-generation. CTA, eyebrow, benefit row and proof card are optional.
+finished direction when imagery is optional. CTA, eyebrow, benefit row and proof card are optional.
 
 Use native editable text for copy, native geometry for frames, simple paths,
 connectors and meaningful UI-independent diagrams. Use real independently
@@ -49,10 +48,9 @@ the references and preference context actually available to that run. Do not
 transfer one brand's chosen size or type ratio to unrelated brands or formats.
 
 The diagnostic `resolved_font_size * viewing_width / page_width` explains how
-type scales; it is not a universal size target. If a caller explicitly selected
-a numeric review profile, satisfy it alongside visual hierarchy; report a
-conflict with an approved treatment rather than silently overriding that
-treatment. With no selected profile, do not invent a numeric acceptance floor.
+type scales; it is not a universal size target. Meet the minimum text size
+alongside visual hierarchy; report a conflict with an approved treatment rather
+than silently overriding that treatment.
 Preserve an approved headline and change support only as far as needed for the
 second read. Give it enough width and height to wrap comfortably; a natural
 single line is also valid. Use a supplied size token or checked explicit edit,
@@ -111,12 +109,7 @@ Quotes and metrics use independent native text with source-backed qualification
 and attribution where needed. Their treatment follows the inspected examples,
 not a compulsory card. Use native connectors only when the relationship is real.
 
-Page before spend: on a pageless document compile explicit page dimensions before
-logo or image operations. Required authentic target-logo acquisition permits
-page-only source preparation before the first complete direction: fetch and view
-the real logo, then validate the direction with its returned asset ID. Creative
-nodes and artwork construction, including new imagery spend, follow validated
-direction. Reserve artwork as an empty leaf `fr`.
+Reserve artwork as an empty leaf `fr`.
 For a real raster/logo asset, `asset(action="place", ...)`
 accepts that frame or an existing image: it changes the leaf to an image in
 place, preserving its ID, parent/order and geometry. It cannot consume a frame
@@ -182,7 +175,11 @@ baked inside the selected rectangle or recover missing/occluded product content.
 turn. In short: decide what the image is for, take its look only from the
 seller's own imagery, and ask for nothing those references do not show.
 
-Author through `compile_dsl_block` or supported checked operations only. The
+Author through `compile_dsl_block`, `apply_structured_edit` or other checked
+operations only. To change an element that already exists, use
+apply_structured_edit or a compile_dsl_block modify line; they are the same
+engine operation. Prefer apply_structured_edit for one named element: it is
+checked and can be strictly scoped. Use compile_dsl_block for new structure. The
 DSL grammar/directives and artboard-frame reference are authoritative mechanics.
 Reparenting changes parent-relative placement and paint order. Inspect the new
 tree and geometry; an unindexed `parent(...)` can move content before its former
@@ -190,6 +187,6 @@ background. For deliberate ordering, use `before`, `after` or indexed `parent`
 from `knowledge/lumen-dsl/directives.md`, then check the result. Managed siblings
 paint in stored order; pinned absolute nodes use a separate page pass above
 managed content and escape ancestor clipping (the page still clips them).
-Use measured geometry for repairs and keep unrelated existing content intact.
+Use measured geometry for repairs.
 After changes: preflight, render, view the actual composite and repair the
 specific failure. Components that compile still need visual judgment.

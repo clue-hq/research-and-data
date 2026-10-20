@@ -7,12 +7,10 @@ These are supported authoring examples, not a statement of current ad-platform
 requirements. Confirm supplied placement specs or available current platform
 evidence before promising channel compliance.
 
-Direction validation may report a caller-selected native-copy review profile.
-Use its explicit display-width assumption for this run; it is not inferred from
-canvas dimensions or brand tokens. Its minimum is a technical rejection floor,
-not the target type scale. Continue visual review of hierarchy, contrast, actual
-glyphs and product detail. A feed profile is unsuitable for print or another
-viewing condition; record that mismatch instead of changing units to evade it.
+The minimum text size in your instructions is a rejection floor, not the target
+type scale. Keep judging hierarchy, contrast, actual glyphs and product detail.
+The feed minimum doesn't fit print or other viewing conditions; record that
+mismatch instead of changing units to evade it.
 
 | Placement example | Explicit page dimensions | Decision to verify |
 |---|---|---|

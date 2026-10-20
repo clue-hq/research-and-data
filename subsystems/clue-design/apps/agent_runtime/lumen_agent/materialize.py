@@ -6,7 +6,7 @@ This module derives that read-only content from the repo's authored source tree:
     <repo>/apps/agent_runtime/knowledge_docs/        (source of truth, git-tracked)
         →  <workspace>/knowledge_docs/                (selected knowledge view)
         →  <workspace>/.deepagent/skills/<name>/…     (selected skills, flat)
-        →  <workspace>/.deepagent/AGENTS.md           (from knowledge_docs/AGENT.md)
+        →  <workspace>/.deepagent/AGENTS.md           (from knowledge_docs/AGENT.md; legacy view only)
 
 The repo tree is the SINGLE source of truth; the workspace copy is derived and is
 never written back. Sync is content-hash guarded (``.deepagent/.sync-stamp``, the
@@ -110,7 +110,9 @@ def _view_files(root: Path, knowledge_view: str) -> dict[str, Path]:
         raise RuntimeError(f"Unknown knowledge view: {knowledge_view}")
     manifest = scene_view_manifest(root)
     overlay = root / "views/scene"
-    selected = ["AGENT.md", *manifest["knowledge"], *(
+    # Harness alignment S1 (founder ruling 2026-10-17): the scene view delivers no operating note;
+    # its content lives in the scene system prompt, so no /.deepagent/AGENTS.md is materialised.
+    selected = [*manifest["knowledge"], *(
         f"skills/{name}/SKILL.md" for name in manifest["skills"]
     )]
     result = {}

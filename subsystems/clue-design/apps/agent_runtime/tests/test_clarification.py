@@ -42,15 +42,41 @@ def _valid_question(qid="format", default="an Instagram square (1080x1080)"):
     }
 
 
-def test_five_questions_rejected(tmp_path, monkeypatch):
+def test_seven_questions_rejected(tmp_path, monkeypatch):
+    # Cap is six since harness alignment I6 (founder ruling 2026-10-17).
     tools = _tools(tmp_path, monkeypatch)
     result = json.loads(
-        tools.request_clarification([_valid_question(qid=f"q{i}") for i in range(5)])
+        tools.request_clarification([_valid_question(qid=f"q{i}") for i in range(7)])
     )
     assert result["status"] == "error"
     assert result["error_code"] == "clarification.invalid_payload"
     # It is a validation rejection, not a written turn envelope.
     assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_six_questions_accepted(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    result = json.loads(
+        tools.request_clarification([_valid_question(qid=f"q{i}") for i in range(6)])
+    )
+    assert result.get("status") != "error", result
+
+
+def test_registered_tool_hands_the_model_a_typed_schema(tmp_path, monkeypatch):
+    """The agent sees every field, its description and the 1-6 limit before it calls."""
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from lumen_agent.harness import _make_request_clarification_tool
+
+    tools = _tools(tmp_path, monkeypatch)
+    params = convert_to_openai_tool(_make_request_clarification_tool(tools))["function"]["parameters"]
+    questions = params["properties"]["questions"]
+    assert (questions["minItems"], questions["maxItems"]) == (1, 6)
+    item = questions["items"]
+    if "$ref" in item:
+        item = params["$defs"][item["$ref"].split("/")[-1]]
+    assert {"id", "question", "why_it_matters", "default"} <= set(item["required"])
+    for field in ("id", "question", "why_it_matters", "options", "default", "allow_freeform"):
+        assert item["properties"][field].get("description"), field
 
 
 def test_missing_default_rejected(tmp_path, monkeypatch):

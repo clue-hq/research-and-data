@@ -17,8 +17,10 @@ import {
   spansVectorForContentEdit,
 } from "../engine/scene/textSpans";
 import { deriveSelectionChromeModel } from "../engine/scene/selectionChrome";
+import type { Box } from "../engine/scene/transformerMath";
 import type { WorkspaceViewport } from "../engine/scene/workspaceViewport";
 import {
+  sceneTextPaintedBox,
   selectionOutlineForBox,
   type SceneArtboardModel,
 } from "./scene-canvas-view";
@@ -76,6 +78,21 @@ export const SCENE_TEXT_STYLE_INTENT = "canvas: text style";
  * somewhere to stand — so the overlay never collapses to nothing.
  */
 export const MIN_TEXT_EDIT_SIZE_PX = 8;
+
+/**
+ * Founder ruling 2026-10-18: the edit surface is a live preview of the whole
+ * text, never a window onto part of it. A `<textarea>` cannot overflow
+ * visibly — content past its height scrolls out of sight — so the surface
+ * grows to its measured content (plus its own border, `chrome`) and never
+ * shrinks below the box it opened on.
+ */
+export function textEditSurfaceHeight(
+  boxHeight: number,
+  contentHeight: number,
+  chrome: number,
+): number {
+  return Math.max(boxHeight, contentHeight + chrome);
+}
 
 /**
  * What a double-click resolves to.
@@ -389,6 +406,24 @@ export interface SceneTextEditModel {
 }
 
 /**
+ * Founder ruling 2026-10-18: the box the edit surface opens on. Copy that
+ * outgrew a fixed box is still PAINTED — its lines run past the box — so the
+ * surface covers those lines too instead of clipping them. Only the vertical
+ * extent widens: the width stays the box the engine wraps in, so the DOM
+ * breaks the same lines. A rotated node keeps its box, because the overlay
+ * rotates about the box origin and a shifted origin would misplace it.
+ */
+function editSurfaceBox(box: Box, node: Node, rotation: number): Box {
+  const painted = sceneTextPaintedBox(node);
+  if (!painted || rotation !== 0) {
+    return box;
+  }
+  const top = Math.min(box.y, painted.y);
+  const bottom = Math.max(box.y + box.height, painted.y + painted.height);
+  return { x: box.x, y: top, width: box.width, height: bottom - top };
+}
+
+/**
  * The open session's overlay model, or null when there is no session to draw.
  *
  * The box is not re-derived: `deriveSelectionChromeModel` is the engine's own
@@ -431,7 +466,7 @@ export function sceneTextEditModel({
   }
   const outline = selectionOutlineForBox({
     artboard,
-    box: selectionBox.box,
+    box: editSurfaceBox(selectionBox.box, node, selectionBox.rotation),
     nodeId: editingNodeId,
     rotation: selectionBox.rotation,
     viewport,

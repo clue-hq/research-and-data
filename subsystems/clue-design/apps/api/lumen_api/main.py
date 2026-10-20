@@ -254,7 +254,7 @@ from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
 from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
-from clue_design.leg_context import render_leg_turn_prompt
+from clue_design.leg_context import SCENE_ASSIGNMENT_LABEL, render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.sessions import design_session_id, render_document_drift_note
 from clue_design.storage import location_digest
@@ -3471,10 +3471,10 @@ def create_app(
         status = (
             "failed"
             if not result.get("ok", False)
-            or has_blocking_export_diagnostics(diagnostics)
+            or has_blocking_export_diagnostics(diagnostics, editor_export=True)
             else "ok"
         )
-        warnings = export_warning_views(diagnostics)
+        warnings = export_warning_views(diagnostics, editor_export=True)
         log_event(
             api_logger,
             logging.INFO,
@@ -6225,9 +6225,10 @@ def create_app(
         # does not — and consulting it here would re-block the advisory codes
         # the split exists to let through. The blocking predicate is now the
         # single source of truth; `has_errors` still rides the response as the
-        # raw engine signal.
+        # raw engine signal. `editor_export`: a person's export, so text that does
+        # not fit its box never refuses it (ruling 2026-10-19, export_policy.py).
         blocking_diagnostics, advisory_diagnostics = partition_export_diagnostics(
-            preflight_diagnostics
+            preflight_diagnostics, editor_export=True
         )
         if blocking_diagnostics:
             _record_diagnostics(repo, document_id, "export", preflight_diagnostics)
@@ -6316,7 +6317,7 @@ def create_app(
         status = (
             "failed"
             if not export_result.get("ok", False)
-            or has_blocking_export_diagnostics(diagnostics)
+            or has_blocking_export_diagnostics(diagnostics, editor_export=True)
             else "ok"
         )
         log_event(
@@ -9209,13 +9210,13 @@ def document_export_response(
         # rather than render blockers: the export SUCCEEDED with these present.
         # An editor-surface channel only — the export menu renders them; the
         # end client who receives the artifact never sees them.
-        "warnings": export_warning_views(diagnostics),
+        "warnings": export_warning_views(diagnostics, editor_export=True),
         "preflight": {
             # The raw engine signal — `any(severity == Error)`. Deliberately
             # NOT the export gate any more: consult `warnings` and `status` to
             # tell "refused" from "exported with advisories".
             "has_errors": preflight.get("has_errors", False),
-            "advisory_warnings": len(export_warning_views(diagnostics)),
+            "advisory_warnings": len(export_warning_views(diagnostics, editor_export=True)),
             "brand_ref_operations": len(preflight.get("brand_ref_operations", [])),
             "token_operations": len(preflight.get("token_operations", [])),
             "layout_operations": len(preflight.get("layout_operations", [])),
@@ -9602,9 +9603,10 @@ def run_agent_turn_preview(
         # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
         # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
         # is left exactly as the human composed it — no top-up to the cap, no reordering.
-        reference_assets = resolve_auto_ad_references(
-            payload, turn_blobs, turn_cache_root, ad_lane
-        )
+        with _setup_step(run_id or "preview", "auto_ad_references"):
+            reference_assets = resolve_auto_ad_references(
+                payload, turn_blobs, turn_cache_root, ad_lane
+            )
 
     try:
         config = AgentRuntimeConfig.from_env(root)
@@ -9772,12 +9774,13 @@ def run_agent_turn_preview(
             # A DIFFERENT worker ran this session's last turn (or this one's disk was reclaimed).
             # Rebuild the folder before anything reads it, or the agent would continue a
             # conversation about files it cannot open.
-            restored = restore_session(
-                session_dir,
-                session_manifest,
-                read_blob=turn_blobs.read_blob,
-                history_file=history_file,
-            )
+            with _setup_step(run_id or "preview", "session_restore"):
+                restored = restore_session(
+                    session_dir,
+                    session_manifest,
+                    read_blob=turn_blobs.read_blob,
+                    history_file=history_file,
+                )
             api_logger.info(
                 "design_session.restored", session_id=session_id, files=restored
             )
@@ -10677,8 +10680,9 @@ def _empty_page_steering_note(scene: Any) -> Optional[str]:
             "Do not restate the page size: it is already set, and re-stating it rewrites the "
             "page.",
             "",
-            "Once the page has content, edit nodes with `#<node_id> property(...)` modify "
-            "lines, and add, remove or reorder children inside an existing container with "
+            "Once the page has content, change an existing element with apply_structured_edit "
+            "or a `#<node_id> property(...)` modify line, and add, remove or reorder children "
+            "inside an existing container with "
             "`reconcile(<container_id>)` followed by that container's full intended child "
             "subtree.",
         ]
@@ -10713,6 +10717,25 @@ def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
         project_id=getattr(envelope, "project_id", None),
         job_id=job_id,
     )
+
+
+@contextmanager
+def _setup_step(run_id: str, step: str):
+    """Log how long one step of a design turn's setup took, before the agent starts.
+
+    A follow-up edit spent ~100 s here with one silent minute (2026-10-16); these lines make
+    each step's share visible in the worker log as ``design_turn.setup_step``.
+    """
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        api_logger.info(
+            "design_turn.setup_step",
+            run_id=run_id,
+            step=step,
+            duration_ms=round((time.perf_counter() - started) * 1000, 1),
+        )
 
 
 @contextmanager
@@ -10974,7 +10997,8 @@ def _execute_agent_turn_job(
         reads_factory = getattr(host, "platform_reads_factory", None)
         if callable(reads_factory):
             try:
-                platform_reads = reads_factory(envelope)
+                with _setup_step(envelope.run_id, "platform_reads"):
+                    platform_reads = reads_factory(envelope)
             except Exception:
                 api_logger.warning(
                     "design_turn.platform_reads_unavailable",
@@ -11005,7 +11029,8 @@ def _execute_agent_turn_job(
     drift_note: str | None = None
     if leg_persist:
         try:
-            doc = store.require_document(document_id)
+            with _setup_step(envelope.run_id, "document_read"):
+                doc = store.require_document(document_id)
         except Exception as error:  # noqa: BLE001 - mirrors the executor's own outer handler
             # Same shape the outer handler below mints, minted here because this read happens
             # before it opens: a turn that cannot read its own document has not begun.
@@ -11016,9 +11041,10 @@ def _execute_agent_turn_job(
             )
             return "failed", failed, "error", {"message": str(error)}
         base_version = int(doc["current_version"])
-        drift_note = _document_drift_note(
-            store, document_id=str(document_id), current_version=base_version
-        )
+        with _setup_step(envelope.run_id, "drift_note"):
+            drift_note = _document_drift_note(
+                store, document_id=str(document_id), current_version=base_version
+            )
         payload = payload.model_copy(update={"scene": doc["scene"]})
 
     pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
@@ -11037,14 +11063,15 @@ def _execute_agent_turn_job(
                     "the leg's brand pin carries no version; a pin is (id, version)"
                 )
             pinned_version = int(pinned_version)
-            resolved_brand_kit = load_brand_kit_by_value(
-                workspace_id=envelope.workspace_id,
-                brand_kit_id=str(pinned_kit_id),
-                version=pinned_version,
-                blobs=_turn_blob_store(host, envelope.workspace_id),
-                source="leg_pin",
-                ensure_workspace=False,
-            )
+            with _setup_step(envelope.run_id, "brand_kit"):
+                resolved_brand_kit = load_brand_kit_by_value(
+                    workspace_id=envelope.workspace_id,
+                    brand_kit_id=str(pinned_kit_id),
+                    version=pinned_version,
+                    blobs=_turn_blob_store(host, envelope.workspace_id),
+                    source="leg_pin",
+                    ensure_workspace=False,
+                )
         except Exception as error:
             failed = failed_agent_turn_response(
                 "design_leg.brand_pin_unresolvable",
@@ -11087,6 +11114,8 @@ def _execute_agent_turn_job(
         history=history_block if isinstance(history_block, list) else None,
         prompt=composed_prompt,
         drift_note=drift_note,
+        # Harness alignment I10: an ad leg's brief is labelled as the agent's assignment.
+        brief_label=SCENE_ASSIGNMENT_LABEL,
         artifact=(
             delegation_bundle.get("artifact") if isinstance(delegation_bundle, dict) else None
         ),
@@ -11121,6 +11150,18 @@ def _execute_agent_turn_job(
                 run_id=envelope.run_id,
                 intent=user_message,
             )
+        turn_asset_library = None
+        turn_session_manifest = None
+        if override is None:
+            with _setup_step(envelope.run_id, "asset_library"):
+                turn_asset_library = pinned_asset_library(store, envelope.run_id)
+            if session_id:
+                with _setup_step(envelope.run_id, "session_manifest"):
+                    turn_session_manifest = _session_manifest(
+                        store,
+                        _turn_blob_store(host, envelope.workspace_id),
+                        document_id=str(document_id),
+                    )
         if override is not None:
             response = _call_turn_override(
                 override, payload, root, scene_checkpoint=_checkpoint_sink(committer),
@@ -11132,7 +11173,7 @@ def _execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
-                resolved_asset_library=pinned_asset_library(store, envelope.run_id),
+                resolved_asset_library=turn_asset_library,
                 frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
@@ -11150,15 +11191,7 @@ def _execute_agent_turn_job(
                 # ...and the memory that session left behind, so a turn on a worker that has
                 # never run it rebuilds the folder instead of opening a continued thread over
                 # an empty workspace.
-                session_manifest=(
-                    _session_manifest(
-                        store,
-                        _turn_blob_store(host, envelope.workspace_id),
-                        document_id=str(document_id),
-                    )
-                    if session_id
-                    else None
-                ),
+                session_manifest=turn_session_manifest,
                 resolved_brand_kit=resolved_brand_kit,
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
@@ -13595,13 +13628,16 @@ def editor_target_node_ids(payload: AgentTurnPreviewRequest) -> List[str]:
 
 def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
     targets = editor_target_node_ids(payload)
+    # Harness alignment I1 (founder ruling 2026-10-17): the editor context carries facts only. How
+    # much a turn may change is decided once, in the scene agent's system prompt, from the kind of
+    # request; the old `editor_instruction` (touch as little as possible, preserve the layout) rode
+    # every message, revamps included, and is gone.
     context = {
         "document_id": payload.document_id,
         "active_page_id": payload.active_page_id,
         "target_node_ids": targets,
-        "scene_summary": scene_context_summary(payload.scene),
+        # Harness alignment I11: no scene_summary — the system prompt's scene digest carries more.
         "current_diagnostics": payload.diagnostics[:20],
-        "editor_instruction": editor_instruction(targets),
     }
     instructions = (payload.agent_instructions or "").strip()
     if instructions:
@@ -13616,46 +13652,6 @@ def editor_agent_prompt(payload: AgentTurnPreviewRequest) -> str:
         "Editor context JSON:\n"
         f"{json.dumps(context, indent=2)}"
     )
-
-
-def editor_instruction(targets: List[str]) -> str:
-    """2c compensating-edit contract (Moda §1.6): scope the change to the
-    chipped target(s), then re-fit and verify — and report both what changed
-    and what was preserved. When targets are named, everything else must stay
-    byte-identical."""
-    base = (
-        "Return changes that can be applied to the current canonical Scene. "
-        "Do not mutate scene JSON outside canonical operations. "
-    )
-    if targets:
-        scope = (
-            "Scope every change to these target node id(s): "
-            f"{', '.join(targets)}. Do not touch any other node — every "
-            "untouched node must stay byte-identical. "
-        )
-    else:
-        scope = (
-            "Prefer targeted repairs when a selected node or diagnostic target "
-            "is present, and touch as little else as possible. "
-        )
-    contract = (
-        "Make a compensating edit: apply the requested change, then re-fit and "
-        "verify the result — text must still fit its box (no overflow), nodes "
-        "must not newly overlap, and the surrounding layout must be preserved. "
-        "In your summary, state both what you changed and what you preserved."
-    )
-    return base + scope + contract
-
-
-def scene_context_summary(scene: JsonObject) -> JsonObject:
-    return {
-        "meta": scene.get("meta", {}),
-        "pages": page_summary(scene),
-        "nodes": node_summary(scene)[:80],
-        "slots": slot_summary(scene),
-        "asset_count": len(scene.get("assets", {})),
-        "export_profile_count": len(scene.get("export_profiles", [])),
-    }
 
 
 def agent_response_from_trace(

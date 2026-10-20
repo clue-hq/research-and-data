@@ -20,6 +20,7 @@ import {
   sceneDoubleClickEffect,
   sceneTextEditModel,
   textEditCommitOperations,
+  textEditSurfaceHeight,
 } from "./scene-text-edit";
 
 /**
@@ -535,6 +536,54 @@ test("the overlay covers the node's laid-out box, in stage px", () => {
   assert.equal(model.width, STAT_BOX.width);
   assert.equal(model.height, STAT_BOX.height);
   assert.equal(model.rotation, 0);
+});
+
+test("2026-10-18: the overlay opens over every painted line, even past a box the copy outgrew", () => {
+  const scene = sceneWithLaidOutStat();
+  // A fixed box one line tall whose copy wraps to two: the engine paints the
+  // second line below the box, and the caret must show it rather than clip it.
+  scene.nodes.text_proof_stat.computed!.text_lines = [
+    { x: STAT_BOX.x, y: STAT_BOX.y, width: 200, height: 36 },
+    { x: STAT_BOX.x, y: STAT_BOX.y + 36, width: 120, height: 36 },
+  ];
+  const model = modelFor(scene);
+  assert.ok(model);
+  assert.equal(model.top, STAT_BOX.y);
+  assert.equal(model.height, 72);
+  // Width stays the box the engine wraps in, so the DOM wraps the same lines.
+  assert.equal(model.left, STAT_BOX.x);
+  assert.equal(model.width, STAT_BOX.width);
+});
+
+test("2026-10-18: lines painted above the box (bottom-aligned overflow) are covered too", () => {
+  const scene = sceneWithLaidOutStat();
+  scene.nodes.text_proof_stat.computed!.text_lines = [
+    { x: STAT_BOX.x, y: STAT_BOX.y - 20, width: 300, height: 30 },
+    { x: STAT_BOX.x, y: STAT_BOX.y + 10, width: 120, height: 26 },
+  ];
+  const model = modelFor(scene);
+  assert.ok(model);
+  assert.equal(model.top, STAT_BOX.y - 20);
+  assert.equal(model.height, 56);
+  assert.equal(model.width, STAT_BOX.width);
+});
+
+test("2026-10-18: lines inside the box leave the overlay on the box", () => {
+  const scene = sceneWithLaidOutStat();
+  scene.nodes.text_proof_stat.computed!.text_lines = [
+    { x: STAT_BOX.x, y: STAT_BOX.y + 4, width: 120, height: 20 },
+  ];
+  const model = modelFor(scene);
+  assert.ok(model);
+  assert.equal(model.top, STAT_BOX.y);
+  assert.equal(model.height, STAT_BOX.height);
+});
+
+test("2026-10-18: the edit surface grows to its text and never shrinks below the box", () => {
+  // box 100, text 80 + 2px border: the box wins.
+  assert.equal(textEditSurfaceHeight(100, 80, 2), 100);
+  // box 100, text 160 + 2px border: the surface grows to show every line.
+  assert.equal(textEditSurfaceHeight(100, 160, 2), 162);
 });
 
 test("the overlay edits the STORED content, not the painted text", () => {

@@ -286,22 +286,18 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     previews.mkdir(parents=True, exist_ok=True)
 
     state = initial_turn_state(tools, prompt)
-    header = f"# Design turn brief — run {tools.run_id}\n\n"
-    review_context = ""
-    if profile := state.get("native_copy_review_profile"):
-        # Expose the same delivered policy used by review in the first gather,
-        # before the agent chooses copy length, typography and composition.
-        review_context = (
-            "\n\n## Caller-selected native-copy review\n\n"
-            f"{json.dumps(profile)}\n\n"
-            "For whole-creative acceptance, every native text fragment must meet this "
-            "nominal em floor at the selected viewing width. Plan copy length, space and "
-            "type together before authoring: nominal em = resolved font size × display "
-            "width / canonical page width. This is an explicit internal evaluation "
-            "condition, not a platform specification or a readability guarantee. "
-            "Inspect the final preview for actual readability.\n"
-        )
-    (workspace / "brief.md").write_text(header + prompt + review_context, encoding="utf-8")
+    # Harness alignment I11 (founder ruling 2026-10-17): the solo scene agent reads the person's
+    # message in the conversation itself, so it gets no brief.md copy of it (and a copy an earlier
+    # turn left in a persistent session folder is removed, so it can never be read as current).
+    # The trio prompts still read brief.md, so other configurations keep it.
+    solo = bool(getattr(tools.config, "scene_solo", False))
+    if solo:
+        (workspace / "brief.md").unlink(missing_ok=True)
+    else:
+        header = f"# Design turn brief — run {tools.run_id}\n\n"
+        # Harness alignment I9: the minimum text size reaches the agent once, in the system
+        # prompt; the brief no longer repeats it with evaluation-harness wording.
+        (workspace / "brief.md").write_text(header + prompt, encoding="utf-8")
 
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
@@ -372,8 +368,11 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
             encoding="utf-8",
         )
 
+    # Harness alignment I11: the state FILE does not repeat the message for the solo agent; the
+    # graph state keeps `turn_request` for the runtime.
+    file_state = {k: v for k, v in state.items() if not (solo and k == "turn_request")}
     (workspace / "state.json").write_text(
-        json.dumps(state, indent=2), encoding="utf-8"
+        json.dumps(file_state, indent=2), encoding="utf-8"
     )
 
     # RC: references.md ONLY when references rode the turn. No references → this

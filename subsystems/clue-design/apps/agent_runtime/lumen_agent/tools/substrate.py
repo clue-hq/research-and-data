@@ -692,7 +692,11 @@ class LumenDesignTools:
     @_tool_span
     @_scene_mutation
     def compile_dsl_block(self, source: str) -> str:
-        """Compile a Lumen DSL block and update the scene only from core output."""
+        """Compile a block of Lumen DSL into the scene: new structure, modify lines (#id ...) for existing
+        elements, and directives such as delete(id). Returns the compile result with diagnostics. Each
+        compile counts toward the round's compile limit in your instructions. Past the limit it refuses
+        and changes nothing, and the scene from your last good compile stands.
+        """
         self._begin_solo_construction()
         # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
         # costs nothing: no iteration number, no metrics compile, no scene touch.
@@ -1317,14 +1321,17 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
-        """Search this workspace's images by meaning and by look. Write what you need in plain
-        words: what the image shows, what it looks like, and what it is for — for example
-        "soft pastel blur, no text", "inbox screenshot with guest messages", "Oracle Hospitality
-        logo". Results combine two matches: the words in each image's title, description and
-        tags, and the image itself compared with your words. Best first, up to `limit` (1–20).
-        Each result gives the id, type, source, title and a one-line description;
-        `view("asset:<id>")` before using one. An exact asset id also works as the query. `kind`
-        narrows to image, logo or font. Run a separate search for each separate need.
+        """Search every image in the brand kit and the workspace library, by meaning and by look.
+        Write what you need in plain words: what the image shows, what it looks like, and what it
+        is for — for example "soft pastel blur, no text", "inbox screenshot with guest messages",
+        "Oracle Hospitality logo". Results combine two matches: the words in each image's title,
+        description and tags, and the image itself compared with your words. Best first, up to
+        `limit` (1–20). Each result gives the id, origin, type, source, title and a one-line
+        description; `view("asset:<id>")` before using one, then place it by its origin: a
+        "library" result with asset(action='place', asset_id=..., node_id=...), a "brand_kit"
+        result with asset(action='use_brand_asset', asset_id=..., node_id=...). An exact asset id
+        also works as the query. `kind` narrows to image, logo or font. Run a separate search for
+        each separate need.
         """
         from .asset_catalog import hybrid_search
 
@@ -1562,52 +1569,37 @@ class LumenDesignTools:
         company_name: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
-        """Fetch a company's REAL logo family and register it here.
+        """Fetch a real company's logos and register them. Use it for every company in the design that
+        isn't us: the target account, a named customer, a partner.
 
-        Use this whenever the design shows a company that is not us — the target
-        account, a named customer, a partner. Pass their domain
-        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
-        too when you know it, because it sharpens the identity check.
+        It returns up to four logos, one per cell:
+        - light_lockup and dark_lockup: the full logo, for light and for dark backgrounds;
+        - light_mark and dark_mark: the symbol alone, for light and for dark backgrounds.
 
-        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:
-        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x
-        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).
-        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and
-        `dark_mark`. Place them with `asset(action="place", ...)` like any other
-        registered asset. A cell is missing when the brand publishes nothing for
-        it — that is a real answer, and it is never filled by recoloring
-        another cell.
+        A missing cell means the company publishes nothing for it. That is a real answer, and it is never
+        filled by recolouring another cell. Place a cell with asset(action="place", ...).
 
-        Each cell is the best PROVEN asset from two sources — Brandfetch and a
-        scrape of the company's own site — judged by measured ink colour for the
-        surface, completeness, format and size. Every asset says which source
-        served it. `alternatives` lists every other real asset found for the
-        company (a vendor icon, a short form, a losing candidate), each
-        registered too and each saying why it is not in a cell. Use a cell
-        first; reach for an alternative only when the cell does not fit the
-        placement — for example when the dark lockup turns out to be only a
-        symbol — and say so. Results
-        are cached per workspace+company, so asking twice in a project costs
-        one fetch — pass `force_refresh=True` only when the user says the logo
-        is wrong or outdated, which refetches and replaces the cached family.
+        Each cell is the best proven logo from two sources, Brandfetch and the company's own site, chosen
+        by its measured colour against the background, completeness, format and size. Each says which
+        source it came from. `alternatives` lists every other real logo found (a vendor icon, a short
+        form, a candidate that lost); each is registered and says why it isn't in a cell. Use a cell
+        first. Use an alternative only when the cell doesn't fit the placement, for example when the dark
+        lockup turns out to be only a symbol, and say so.
 
-        In an account-personalized or co-branded design, the OTHER company's
-        logo must be its COMPLETE lockup — the `light_lockup`/`dark_lockup`
-        cell for the surface you are placing on. The bare `*_mark` is a
-        fallback for when the brand publishes no lockup, or the placement is
-        genuinely too small to hold one — never the first choice: a naked
-        symbol does not identify an account the way its full logo does.
+        In an account-personalized or co-branded design, the OTHER company's logo must be its COMPLETE
+        lockup — the `light_lockup`/`dark_lockup` cell for the surface you are placing on. The bare
+        `*_mark` is a fallback for when the brand publishes no lockup, or the placement is genuinely too
+        small to hold one — never the first choice: a naked symbol does not identify an account the way
+        its full logo does.
 
-        If it comes back `needs_review`, nothing was registered because no asset
-        could be attributed to that company with confidence. Say so and ask for
-        the file. Never draw, recolor or approximate a logo.
+        If the result is needs_review, nothing was registered, because no logo could be tied to that
+        company with confidence. Say so and ask the person for the file. Never draw, recolour or
+        approximate a logo.
 
-        Static fetch only on the ladder fallback: a site that builds its header
-        in JavaScript has no logo to read there, and reports that plainly.
+        The site check reads only the page's HTML. A site that builds its header with JavaScript has no
+        logo there, and the result says so.
 
-        The scene must already contain a page/artboard: on a pageless scene this
-        tool REFUSES before fetching (error `scene.page_required`) — author the
-        page first.
+        It needs a page in the scene. Without one it refuses (scene.page_required) before fetching.
         """
         refused = self._refuse_without_page("fetch_logo")
         if refused is not None:
@@ -3267,9 +3259,9 @@ class LumenDesignTools:
     @_tool_span
     @_scene_mutation
     def preflight_design(self) -> str:
-        """Run canonical brand/token/layout preflight using the effective Brand Kit
-        (the kit passed by value in config — the document's attached kit — or the
-        platform default)."""
+        """Check the scene against the brand kit in effect (the document's attached kit, or the platform
+        default): brand tokens, rules and layout. Returns the diagnostics to fix.
+        """
         iteration_dir = self._iteration_dir()
         self._preflight_scene_stamp = None
         self._preflight_iteration = self.iteration
@@ -4206,12 +4198,9 @@ class LumenDesignTools:
 
     @_scene_mutation
     def validate_creative_direction(self, revision_reason: str = "") -> str:
-        """Validate this run's creative-direction.json against its delivered catalog.
-
-        Checks the compact handoff and source availability, not visual quality
-        or truth of model-authored evidence excerpts. Writes no scene geometry.
-        Candidate revisions after validation need a concise revision_reason;
-        unchanged canonical content preserves the digest and existing review.
+        """Check this run's creative-direction.json: that it matches its contract, and that the sources it
+        names were delivered. It doesn't judge visual quality, or whether your evidence quotes are true,
+        and it changes nothing in the scene. Call it after writing the file, and again after changing it.
         """
         from ..materialize import scene_view_manifest
         from ..models.creative_direction import (
@@ -4592,7 +4581,11 @@ class LumenDesignTools:
         evidence: str,
         suggested_phase: Optional[str] = None,
     ) -> str:
-        """Record a product gap instead of hiding unsupported semantics in prompts."""
+        """Record a gap in the product: something the tools, the engine or the guides can't do, or did
+        wrong, so the team can fix it. Use it instead of quietly working around a missing capability. It
+        is not for missing evidence behind a claim; that goes in your review's source_gaps. It changes
+        nothing in the design.
+        """
         coerced_area = _coerce_gap_area(area)
         if coerced_area.value != area:
             summary = f"[reported area: {area}] {summary}"
@@ -4655,25 +4648,8 @@ class LumenDesignTools:
         foreground_color: str | None = None,
         region: list[float] | None = None,
     ) -> str:
-        """Read-only inspection of the in-memory scene. Pick `view`:
-
-        - `view="scene"` — document, pages, counts, slots, effective brand.
-        - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
-        - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
-        - `view="slots"` — every slot key → bound nodes.
-        - `view="copy_review"` — candidate-only, complete current exported native
-          text inventory for direction_review bindings; includes observation limits.
-        - `view="geometry"` (target=node_id) — stored computed geometry + declared
-          transform/size for one node.
-        - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
-        - `view="image_contrast"` (target=asset_id, foreground_color="#RRGGBB",
-          region=[left,top,right,bottom]) — measure an opaque text color over
-          actual image pixels. Region is normalized 0..1 in SOURCE coordinates;
-          account for placement cropping. Returns sampled ratios and threshold
-          checks. Excludes overlaid plates, glyphs, opacity and effects; inspect
-          the final composition too. Transparent/profiled sources return a gap.
-
-        Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
+        """Read the current scene without changing it. Use it to confirm an id before you edit it.
+        """
         if view == "scene":
             return self.summarize_scene()
         if view == "slots":
@@ -5232,24 +5208,16 @@ class LumenDesignTools:
 
     @_tool_span
     def request_clarification(self, questions: List[Dict[str, Any]]) -> str:
-        """Ask the user up to FOUR clarifying questions, then STOP — calling this
-        ENDS THE TURN. Use it only as an OPENING MOVE on a genuinely
-        under-specified brief, before any authoring, rendering, or finalize
-        cost — never mid-design. Ask ONLY for decision-critical facts you cannot
-        derive from the prompt, conversation, document, or brand kit (asking
-        about something derivable is a failure). An unclear angle, tone or
-        message counts as decision-critical.
+        """Ask the person up to SIX clarifying questions, then STOP — calling this
+        ENDS THE TURN. Use it only as an OPENING MOVE, before any authoring,
+        rendering or finalize, and never mid-design. Ask only for choices that
+        shape the whole design and that you cannot find in the person's message,
+        the Head of ABM's brief, the conversation, the ad, the brand kit, the
+        seller's files or the research (asking about something you could find is
+        a failure). Ask as many questions as you need, from one to six; never pad
+        the list. Read the clarify-design-brief skill for what is worth asking.
 
-        `questions` is a list of at most 4 objects, each:
-          - id: short stable key (e.g. "format", "message_focus")
-          - question: the question, in plain language
-          - why_it_matters: one line on why the answer changes the design
-          - options: optional list of suggested answers (chips)
-          - default: REQUIRED — the "if you don't care, I'll do X" fallback so
-            an unanswered question never blocks the design
-          - allow_freeform: whether a typed answer is accepted (default true)
-
-        After calling this, do NOT author, render, or finalize — the user's next
+        After calling this, do NOT author, render, or finalize — the person's next
         message answers the questions and that turn continues the design. Never
         re-ask a question a previous turn already answered.
         """
@@ -5260,7 +5228,7 @@ class LumenDesignTools:
             # read and retry, never a raised exception that kills the turn.
             return self._tool_error(
                 "clarification.invalid_payload",
-                "request_clarification payload is invalid. Provide 1-4 questions, "
+                "request_clarification payload is invalid. Provide 1-6 questions, "
                 "each with a non-empty `default` ('if you don't care, I'll do X').",
                 errors=[
                     {

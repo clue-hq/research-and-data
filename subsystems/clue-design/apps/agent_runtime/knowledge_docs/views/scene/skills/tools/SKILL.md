@@ -8,8 +8,10 @@ description: Use when choosing an available tool for a scene design step or reco
 Use only tools registered for the current agent. Use inspect/view for evidence,
 validate_creative_direction for the shared direction, checked compile/asset tools
 for construction, preflight_design and render_preview for current artifacts, and
-finalize_run only after the required review. Delegate only when the configured
-runtime exposes and calls for delegation.
+finalize_run when your routine's check is done. To change an element that already
+exists, use apply_structured_edit or a compile_dsl_block modify line; they are the
+same engine operation. Prefer apply_structured_edit for one named element: it is
+checked and can be strictly scoped. Use compile_dsl_block for new structure.
 
 ## Platform reads
 

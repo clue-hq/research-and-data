@@ -3,10 +3,6 @@
 Write one compact JSON record to the run workspace's `creative-direction.json`.
 Use `validate_creative_direction()` before construction. This is the shared
 direction record; do not repeat it in separate creative/imagery/reference briefs.
-For a required authentic target logo on a pageless scene, only explicit page
-dimensions may be compiled first as source preparation. Fetch and view the real
-logo, then include its returned registered ID in the first complete direction.
-Creative nodes and new imagery spend still require validated direction.
 Round `direction.md` can refer to it and contain only the repair delta.
 The tool returns the direction digest and indexed review requirements. Carry
 that result into current-scene review. A semantic revision after validation uses
@@ -49,7 +45,8 @@ Required fields:
   artboard within 0..1; fit is contain or cover (default contain). Translate
   these into artboard layout points; these are intent, not locked boxes.
 - Artboard `placement`: `{width, height, unit}` with unit px/pt/mm/in.
-- `review_needs`: nonempty list of specific checks; `assumptions`: concise list.
+- `review_needs`: nonempty list of specific checks. The first item is the person's
+  request in their own words. `assumptions`: concise list.
 
 Keep real logo/product images independent; generated conditioning cannot certify
 their exactness. Select evidence and product sources according to the chosen

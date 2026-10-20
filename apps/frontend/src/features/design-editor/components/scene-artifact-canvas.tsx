@@ -39,6 +39,7 @@ import {
   sceneViewportModel,
   sceneWheelViewport,
   selectionHandleRects,
+  selectionStrokesPaintedOutline,
   type SceneArtboardModel,
   type ScenePreview,
   type SceneSelectionOutline,
@@ -70,6 +71,7 @@ import {
   SCENE_TEXT_STYLE_INTENT,
   sceneDoubleClickEffect,
   sceneTextEditModel,
+  textEditSurfaceHeight,
   type SceneTextEditModel,
 } from "../adapter/scene-text-edit";
 import {
@@ -2249,10 +2251,11 @@ function SceneEngineBanners({
  * Plan 4 item F (ruling R5) adds the dashed FRAME: when the selected text's
  * painted lines do not fill its layout box, the outline carries that box too.
  * It is stroked dashed, it is what the handles ride (a resize changes the box,
- * not the glyphs), and it is the rotation pivot — so the chrome says "this is
- * the text, and this is the box around it" in one read. Never on hover: a
- * hover preview answers "what would a click select", and two boxes there would
- * be noise over a node the user has not chosen yet.
+ * not the glyphs), and it is the rotation pivot. Never on hover: a hover
+ * preview answers "what would a click select", and two boxes there would be
+ * noise over a node the user has not chosen yet. Founder ruling 2026-10-18:
+ * once selected, such a text shows ONLY the frame — the outline around its
+ * letters is the hover preview alone (`selectionStrokesPaintedOutline`).
  */
 function SelectionChrome({
   handles = false,
@@ -2286,16 +2289,20 @@ function SelectionChrome({
             : undefined
         }
       >
-        <rect
-          fill="none"
-          height={outline.height}
-          stroke={SELECTION_OUTLINE_COLOR}
-          strokeOpacity={hover ? HOVER_OUTLINE_OPACITY : undefined}
-          strokeWidth={hover ? HOVER_OUTLINE_WIDTH : SELECTION_OUTLINE_WIDTH}
-          width={outline.width}
-          x={outline.x}
-          y={outline.y}
-        />
+        {selectionStrokesPaintedOutline(outline, variant) ? (
+          // 2026-10-18 (amends R5): a selected text with a dashed frame shows
+          // only the frame; the outline around its letters is hover-only.
+          <rect
+            fill="none"
+            height={outline.height}
+            stroke={SELECTION_OUTLINE_COLOR}
+            strokeOpacity={hover ? HOVER_OUTLINE_OPACITY : undefined}
+            strokeWidth={hover ? HOVER_OUTLINE_WIDTH : SELECTION_OUTLINE_WIDTH}
+            width={outline.width}
+            x={outline.x}
+            y={outline.y}
+          />
+        ) : null}
         {outline.frame && !hover ? (
           // Plan 4 item F: the layout box of a text node whose painted lines
           // do not fill it — dashed, so the eye reads "the box you can
@@ -2471,38 +2478,46 @@ function SceneTextEditOverlay({
   // the outside-pointer listener can race the blur that follows it.
   const settledRef = useRef(false);
 
+  // Founder ruling 2026-10-18: the surface is a live preview of the WHOLE text.
+  // A textarea cannot overflow visibly, so it grows to its measured content
+  // (`textEditSurfaceHeight`) instead of hiding lines and scrolling to the
+  // caret. State, not only a style write, because the toolbar places itself
+  // against this height; it changes when the line count does, not per key.
+  const [surfaceHeight, setSurfaceHeight] = useState(model.height);
+
   // A7a: match the painted vertical position with a computed top padding. The
   // content height is a LIVE DOM measurement — the only part of the geometry a
   // pure model cannot answer — so it is recomputed as the text grows and
-  // shrinks, keeping the caret aligned mid-session.
+  // shrinks, keeping the caret aligned mid-session. The same read sizes the
+  // surface (2026-10-18, above).
   //
   // Written STRAIGHT TO THE ELEMENT rather than held in state (upstream holds
   // it in a `useState`): it is a measurement of the DOM feeding a style of the
   // same DOM node, so a render round-trip buys nothing and costs one per
   // keystroke. `paddingTop` is deliberately absent from the `style` prop below,
   // which is what keeps React from overwriting it on the next render.
-  const recomputePadding = useCallback(() => {
+  const recomputeGeometry = useCallback(() => {
     const element = ref.current;
     if (!element) {
       return;
     }
-    if (model.style.valign === "top") {
-      element.style.paddingTop = "0px";
-      return;
-    }
     // `scrollHeight` floors at `clientHeight` (so content shorter than the box
     // reads back AS the box) and counts whatever padding is already applied —
-    // both are zeroed for the read and the height is restored before paint.
-    const previousHeight = element.style.height;
+    // both are zeroed for the read, and the height is set before paint. At
+    // zero height `offsetHeight - clientHeight` is the border the
+    // border-box height must also hold.
     element.style.paddingTop = "0px";
     element.style.height = "0px";
     const contentHeight = element.scrollHeight;
-    element.style.height = previousHeight;
+    const chrome = element.offsetHeight - element.clientHeight;
+    const height = textEditSurfaceHeight(model.height, contentHeight, chrome);
+    element.style.height = `${height}px`;
     element.style.paddingTop = `${valignOffset(
       model.height,
       contentHeight,
       model.style.valign,
     )}px`;
+    setSurfaceHeight(height);
   }, [model.height, model.style.valign]);
 
   // MOUNT ONLY: focus the caret and select the node's text, upstream's own
@@ -2534,9 +2549,10 @@ function SceneTextEditOverlay({
   // `live.content` is a dependency because F3's re-seed changes the text with no
   // input event to recompute from: a valigned overlay would otherwise keep the
   // padding of the content it no longer shows.
-  useEffect(() => {
-    recomputePadding();
-  }, [live.content, recomputePadding]);
+  // Layout, so the first painted frame already shows every line.
+  useLayoutEffect(() => {
+    recomputeGeometry();
+  }, [live.content, recomputeGeometry]);
 
   /**
    * The tracked half of rung C's typing path.
@@ -2758,12 +2774,12 @@ function SceneTextEditOverlay({
   // `setPosition`) for every character typed.
   const toolbarBox = useMemo(
     () => ({
-      height: model.height,
+      height: surfaceHeight,
       left: model.left,
       top: model.top,
       width: model.width,
     }),
-    [model.height, model.left, model.top, model.width],
+    [surfaceHeight, model.left, model.top, model.width],
   );
 
   return (
@@ -2789,7 +2805,7 @@ function SceneTextEditOverlay({
             ),
           );
           trackSelection(event.target);
-          recomputePadding();
+          recomputeGeometry();
         }}
         onDoubleClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
@@ -2824,7 +2840,7 @@ function SceneTextEditOverlay({
           fontSize: model.style.fontSize,
           fontStyle: model.style.fontStyle,
           fontWeight: model.style.fontWeight,
-          height: model.height,
+          height: surfaceHeight,
           left: model.left,
           letterSpacing: `${model.style.letterSpacing}px`,
           lineHeight: String(model.style.lineHeight),

@@ -905,7 +905,7 @@ def test_a_leg_turn_on_a_content_bearing_scene_gets_no_steering_block(
     """The pre-genad shape — every scene leg until now pinned a document with content. Its
     prompt must stay byte-identical to what P3.7 composes."""
 
-    from clue_design.leg_context import render_leg_turn_prompt
+    from clue_design.leg_context import SCENE_ASSIGNMENT_LABEL, render_leg_turn_prompt
 
     document = create_document(client)
     config = _leg_config(document, 0, prompt="Warmer, please.")
@@ -918,6 +918,7 @@ def test_a_leg_turn_on_a_content_bearing_scene_gets_no_steering_block(
         bundle=config["delegation_bundle"],
         history=config["history"],
         prompt="Warmer, please.",
+        brief_label=SCENE_ASSIGNMENT_LABEL,
     )
     assert "DOCUMENT STATE" not in prompt
 
@@ -928,7 +929,7 @@ def test_a_leg_turn_on_a_scene_with_no_pages_gets_no_steering_block(
     """A page-less scene is the genuine from-scratch case: `page ...` is the CORRECT move
     there, so the block must not appear and talk the author out of it."""
 
-    from clue_design.leg_context import render_leg_turn_prompt
+    from clue_design.leg_context import SCENE_ASSIGNMENT_LABEL, render_leg_turn_prompt
 
     document = create_document(client)
     config = _leg_config(document, 0)
@@ -942,6 +943,7 @@ def test_a_leg_turn_on_a_scene_with_no_pages_gets_no_steering_block(
         bundle=config["delegation_bundle"],
         history=config["history"],
         prompt="Go ahead.",
+        brief_label=SCENE_ASSIGNMENT_LABEL,
     )
     assert "DOCUMENT STATE" not in prompt
 

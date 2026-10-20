@@ -72,10 +72,24 @@ def test_candidate_target_anchor_policy_reaches_each_active_role(
     schema = convert_to_openai_tool(bound)["function"]
     original = convert_to_openai_tool(tools.fetch_logo)["function"]
     assert schema["name"] == original["name"] == "fetch_logo"
-    assert schema["parameters"] == original["parameters"]
+    # Harness alignment T11: the same parameters, now each with a plain description.
+    params, plain = schema["parameters"], original["parameters"]
+    assert set(params["properties"]) == set(plain["properties"])
+    assert params.get("required") == plain.get("required")
+    for name, prop in params["properties"].items():
+        assert prop.get("description")
+        assert prop.get("default") == plain["properties"][name].get("default")
     if surface == "prompts":
+        # Harness alignment I11 (T9): the selection policy has one home, the fetch_logo
+        # description. A prompt points there and carries no legacy small-mark restriction.
         for prompt in prompts:
-            assert_target_anchor_option(prompt)
+            words = " ".join(prompt.split())
+            assert "small placements only" not in words
+            assert "logo must be its COMPLETE lockup" not in words
+        if solo:
+            assert "its description says how to choose and place the result" in " ".join(
+                prompts[0].split()
+            )
     else:
         assert_target_anchor_option(schema["description"])
 

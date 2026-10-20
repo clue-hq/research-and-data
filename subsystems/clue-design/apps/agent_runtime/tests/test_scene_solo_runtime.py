@@ -46,12 +46,17 @@ def offline_models(monkeypatch, responses=None):
     return built, checked
 
 
-def test_scene_solo_env_defaults_off_and_explicit_boolean_reaches_factory_config(
+def test_scene_solo_env_defaults_on_and_explicit_boolean_reaches_factory_config(
     tmp_path, monkeypatch
 ):
+    # Founder ruling 2026-10-04, restated 2026-10-16: the scene agent always runs solo, so solo
+    # and the candidate bundle it requires are the code defaults.
     monkeypatch.delenv("LUMEN_AGENT_SCENE_SOLO", raising=False)
+    monkeypatch.delenv("LUMEN_AGENT_SCENE_SKILL_BUNDLE", raising=False)
     default = Settings(_env_file=None)
-    assert getattr(default, "lumen_agent_scene_solo", None) is False
+    assert getattr(default, "lumen_agent_scene_solo", None) is True
+    assert default.lumen_agent_scene_skill_bundle == "candidate"
+    assert default.lumen_agent_fast_loop is True
     monkeypatch.setenv("LUMEN_AGENT_SCENE_SOLO", "1")
     enabled = Settings(_env_file=None)
     monkeypatch.setattr(config_module, "settings", enabled)
@@ -94,11 +99,17 @@ def test_solo_compiled_graph_has_no_dispatch_and_builds_only_the_active_model(
     assert checked == [config.orchestrator_model]
     names = set(graph.nodes["tools"].bound.tools_by_name)
     assert not {"task", "task_background", "task_result", "task_status"} & names
+    # Harness alignment I9: no to-do tool in the scene agent.
+    assert "write_todos" not in names
     assert {
         "view", "render_preview", "inspect", "compile_dsl_block", "asset", "fetch_logo",
-        "validate_binding_set", "preflight_design", "validate_creative_direction",
-        "record_gap", "finalize_run", "read_file", "write_file", "edit_file", "write_todos",
+        "preflight_design", "validate_creative_direction",
+        "record_gap", "finalize_run", "read_file", "write_file", "edit_file",
+        # A follow-up's targeted edit goes through the typed edit builder, not a compile.
+        "apply_structured_edit",
     } <= names
+    # Harness alignment T11: never called and never mentioned, so not offered.
+    assert "validate_binding_set" not in names
     assert tools.fast_loop_budget is not None
     assert config.scene_reviewer_enabled is False
     topology = [
@@ -166,7 +177,7 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(
     assert first_system.count(component_body) == 1
     initial_gather = first_system.split("1. Gather ", 1)[1].split("2. Inspect ", 1)[0]
     assert component_path not in initial_gather
-    assert "Apply the loaded component guide" in first_system
+    assert "Apply the component guide and the DSL grammar, both already in this prompt" in first_system
     saved = checkpoint.get_tuple(invocation)
     assert saved is not None
     assert saved.checkpoint["channel_values"]["turn_request"] == user_prompt
@@ -189,12 +200,12 @@ def test_solo_bound_prompt_separates_logo_page_bootstrap_from_creative_construct
     assert preparation.index("fetch_logo") < preparation.index("view('asset:<returned_id>')")
     assert "creative nodes or new imagery spend" in preparation
     direction = prompt.split("3. Write ", 1)[1].split("4. Create ", 1)[0]
-    assert "validate_creative_direction()" in direction
+    assert "call validate_creative_direction." in " ".join(direction.split())  # T11 D4
     assert "Resolve refusals before construction" in direction
-    # The eagerly bound component guide must carry the same exception; checking
-    # only the solo instructions misses conflicting policy in the actual input.
-    component_page_policy = prompt.split("Page before spend:", 1)[1].split("\n\n", 1)[0]
-    assert "page-only source preparation" in component_page_policy
+    # Harness alignment I11: the step-2 instruction is the one home of this rule. The eagerly
+    # bound component guide no longer carries its own copy, so it cannot carry a conflicting one.
+    assert "Page before spend" not in prompt
+    assert prompt.count("page-only source preparation") == 1
 
 
 @pytest.mark.parametrize(

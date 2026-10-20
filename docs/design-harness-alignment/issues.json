@@ -1,0 +1,508 @@
+[
+ {
+  "id": "I1",
+  "topic": "SCOPE",
+  "severity": "high",
+  "title": "Nine 'keep it small' rules, and nothing that lets a revamp recompose",
+  "what": "Every turn on an existing ad carries rules that say change as little as possible and keep the layout. They come from the system prompt, the operating note, a skill, two guides and the attached editor instruction. The follow-up routine sends a revamp to the 'full routine', but the full routine still contains the preserve rule. No rule anywhere says a revamp may change the composition, and the direction record has no intent value for it.",
+  "why": "This is why 'Make the whole ad feel more premium' kept the layout and only swapped the image.",
+  "groups": [
+   {
+    "label": "Keep it small (every turn on an existing ad)",
+    "rows": [
+     "A1-13",
+     "A2-12",
+     "A2-13",
+     "C1-05",
+     "D5-02",
+     "D5-03",
+     "E2-29",
+     "E4-22",
+     "G1-03",
+     "G1-04"
+    ]
+   },
+   {
+    "label": "What the revamp is told instead",
+    "rows": [
+     "A1-50",
+     "A2-11"
+    ]
+   },
+   {
+    "label": "No place to record a revamp",
+    "rows": [
+     "E1-05",
+     "E3-09"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I2",
+  "topic": "SCOPE",
+  "severity": "high",
+  "title": "Is a selected element the subject or a fence?",
+  "what": "When the person has elements selected, the attached editor instruction says touch nothing else and keep every other node byte-identical. The system prompt's shared-surface rules say the selection is the subject of the request, never a fence, and that neighbours may be restyled, resized or moved, with small announced collateral changes allowed.",
+  "why": "The agent gets both on the same turn. The third follow-up (image selected) followed the fence.",
+  "groups": [
+   {
+    "label": "Fence (attached to the message)",
+    "rows": [
+     "G1-02"
+    ]
+   },
+   {
+    "label": "Subject (system prompt)",
+    "rows": [
+     "A2-09",
+     "A2-11",
+     "A2-12"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I3",
+  "topic": "PRECEDENCE",
+  "severity": "high",
+  "title": "The brand's observed look is ranked below the request, and only binds in account skills",
+  "what": "The only text that describes how the brand's ads look is labelled 'advisory … nothing here overrides what the person actually asked for'. The imagery skill and the references guide keep the brand's material and texture only 'when the chosen direction requires it', and the agent chooses the direction. The clear rule ('preserve the advertiser's voice, palette and visual system unless a departure is requested') lives only in the two account skills and the account part of review. Playbooks disagree on whether continuity is the default or only on request. Conduit's kit has no imagery rules at all, and the token guides define on-brand as using tokens.",
+  "why": "This is why the revamp replaced Conduit's pastel bokeh with warm wood, stone and lamp light: 'premium' counted as what the person asked for.",
+  "groups": [
+   {
+    "label": "Brand look is advisory / below the request",
+    "rows": [
+     "A4-09",
+     "H3-01",
+     "A3-01",
+     "D9-03",
+     "E3-14",
+     "E3-10",
+     "E3-02"
+    ]
+   },
+   {
+    "label": "Brand look binds (account skills only)",
+    "rows": [
+     "D13-14",
+     "D14-03",
+     "D14-20",
+     "E4-24"
+    ]
+   },
+   {
+    "label": "Playbooks: continuity only when asked",
+    "rows": [
+     "D15-28",
+     "D18-04",
+     "D18-11",
+     "D17-34"
+    ]
+   },
+   {
+    "label": "Playbooks: keep the look",
+    "rows": [
+     "D17-23",
+     "D17-03",
+     "E2-26"
+    ]
+   },
+   {
+    "label": "What 'brand' means elsewhere",
+    "rows": [
+     "C1-01",
+     "A7-01",
+     "A4-08",
+     "F9-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I4",
+  "topic": "REVIEW",
+  "severity": "high",
+  "title": "The self-check grades the agent's own plan",
+  "what": "Acceptance requires every 'preserve' and 'review_needs' item to be met. The agent writes both lists itself in its direction. The review guide says the direction cannot certify its own choices, and the framework says to check against what was asked, but the anti-circular rule that actually names the user's request exists only for account adaptation.",
+  "why": "The revamp accepted itself because 'warmer atmosphere' was on its own checklist.",
+  "groups": [
+   {
+    "label": "Acceptance = own checklist",
+    "rows": [
+     "A1-36",
+     "E4-08",
+     "E4-29",
+     "E1-12",
+     "D4-01"
+    ]
+   },
+   {
+    "label": "Check against the request (weak or account-only)",
+    "rows": [
+     "E4-03",
+     "A5-06",
+     "D14-22",
+     "E4-23"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I5",
+  "topic": "ROUTINE",
+  "severity": "high",
+  "title": "The follow-up routine and the edit skills give opposite instructions",
+  "what": "The follow-up routine says: use apply_structured_edit, don't re-validate the direction, don't write critique.json or round notes, finish edit_applied. repair-design (whose description covers 'a scoped edit') says: use compile_dsl_block modify lines, keep the direction current and re-validate it, record the repair delta in the round. The review guide says edit_applied rests on a scoped_edit critique. The components guide, grammar and steering note never mention apply_structured_edit; the directives guide recommends it and points to two skills that don't mention it.",
+  "why": "A targeted edit that opens repair-design or review.md is pulled back into the slow path.",
+  "groups": [
+   {
+    "label": "Follow-up routine (system prompt)",
+    "rows": [
+     "A1-46",
+     "A1-44",
+     "A1-49"
+    ]
+   },
+   {
+    "label": "repair-design skill",
+    "rows": [
+     "D5-01",
+     "D5-10",
+     "D5-12",
+     "D5-13"
+    ]
+   },
+   {
+    "label": "Review guide and tools",
+    "rows": [
+     "E4-12",
+     "E4-38",
+     "B3-07"
+    ]
+   },
+   {
+    "label": "Where apply_structured_edit is missing or misreferenced",
+    "rows": [
+     "E2-27",
+     "F1-04",
+     "F2-04",
+     "D6-01",
+     "G3-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I6",
+  "topic": "ASK",
+  "severity": "medium",
+  "title": "Five different policies on when to ask the user",
+  "what": "The scene prompt says infer from a short request and never make the user write copy. The framework says ask the minimum follow-up; its memory wrapper says 'it is preferred for you to ask … don't assume anything'. The clarification tool says ask only as an opening move and points to a skill that isn't delivered. The brand-kit guides say ask for missing brand facts or ask for kit generation, which the agent cannot do.",
+  "why": "The agent can justify asking or not asking from text it was given on the same turn.",
+  "groups": [
+   {
+    "label": "Infer, don't ask",
+    "rows": [
+     "A1-05",
+     "D1-06",
+     "D1-20"
+    ]
+   },
+   {
+    "label": "Ask",
+    "rows": [
+     "A1-51",
+     "A5-03",
+     "A6-03",
+     "F9-05",
+     "F9-07"
+    ]
+   },
+   {
+    "label": "The clarification tool",
+    "rows": [
+     "B3-03",
+     "B3-04",
+     "B3-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I7",
+  "topic": "READING",
+  "severity": "medium",
+  "title": "Six instructions on how much to read",
+  "what": "One line says follow each file to its end; the framework says pass limit=1000; the read_file tool says scan 100 lines first and 'speculatively read multiple files'; ls says list before every read. The follow-up routine says read only what the request needs, and the context block says the pinned guides are already inline. Meanwhile pointer skills tell the agent to read the components guide that is already pasted into its prompt.",
+  "why": "Reading is where follow-up turns lost most of their time and tokens.",
+  "groups": [
+   {
+    "label": "Read more",
+    "rows": [
+     "A5-14",
+     "B1-05",
+     "B1-03",
+     "A5-15",
+     "A2-01"
+    ]
+   },
+   {
+    "label": "Read less",
+    "rows": [
+     "A1-44",
+     "A4-01",
+     "A4-16"
+    ]
+   },
+   {
+    "label": "Asked to re-read what is already inline",
+    "rows": [
+     "A1-24",
+     "D3-01",
+     "D9-04",
+     "A3-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I8",
+  "topic": "TOOLS",
+  "severity": "medium",
+  "title": "Broken references and impossible instructions",
+  "what": "Text that points at files, tools or permissions the scene agent does not have.",
+  "why": "Each one costs a failed call or leaves a rule the agent cannot follow.",
+  "groups": [
+   {
+    "label": "Points at files not delivered to the scene agent",
+    "rows": [
+     "B3-05",
+     "F3-03",
+     "F3-04",
+     "F3-06",
+     "F9-03",
+     "F10-03"
+    ]
+   },
+   {
+    "label": "Points at tools or abilities it lacks",
+    "rows": [
+     "A6-02",
+     "A2-16",
+     "F9-04",
+     "F9-05",
+     "B2-06"
+    ]
+   },
+   {
+    "label": "Cross-reference that says the opposite",
+    "rows": [
+     "F2-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I9",
+  "topic": "MULTIAGENT",
+  "severity": "low",
+  "title": "Leftovers: helper agents, test probes and evaluation wording",
+  "what": "Text written for the old three-agent setup, for test runs, or for the evaluation harness, still shipped to every solo production turn.",
+  "why": "Noise the agent has to read and decide to ignore; some of it changes behaviour (the review profile floor).",
+  "groups": [
+   {
+    "label": "Helper-agent leftovers",
+    "rows": [
+     "C1-11",
+     "D1-23",
+     "D6-02",
+     "F11-05",
+     "F10-05"
+    ]
+   },
+   {
+    "label": "Test probes inside skills",
+    "rows": [
+     "D15-31",
+     "D16-18",
+     "D17-26",
+     "D17-37",
+     "D18-07",
+     "D18-14",
+     "E4-28"
+    ]
+   },
+   {
+    "label": "Evaluation wording on production turns",
+    "rows": [
+     "H1-02",
+     "H1-03",
+     "E4-37"
+    ]
+   },
+   {
+    "label": "Generic framework text",
+    "rows": [
+     "A5-08",
+     "A5-15",
+     "A6-04",
+     "A5-11",
+     "B1-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I10",
+  "topic": "LAYOUT",
+  "severity": "medium",
+  "title": "Specific rules that contradict each other",
+  "what": "Smaller, concrete contradictions between guides.",
+  "why": "Each is a coin-flip for the agent.",
+  "groups": [
+   {
+    "label": "Scrim required vs not",
+    "rows": [
+     "F3-06",
+     "E6-03"
+    ]
+   },
+   {
+    "label": "Type ratios",
+    "rows": [
+     "F3-04",
+     "E2-12"
+    ]
+   },
+   {
+    "label": "Preferred structure",
+    "rows": [
+     "F7-02",
+     "F5-02",
+     "E2-01",
+     "E2-02"
+    ]
+   },
+   {
+    "label": "Font-size floor",
+    "rows": [
+     "E4-36",
+     "H1-02"
+    ]
+   },
+   {
+    "label": "CTA example",
+    "rows": [
+     "F3-05",
+     "D1-14"
+    ]
+   },
+   {
+    "label": "Inter",
+    "rows": [
+     "F8-02",
+     "F8-03"
+    ]
+   },
+   {
+    "label": "Who the agent is / how a turn ends",
+    "rows": [
+     "A1-01",
+     "A5-01",
+     "A1-40",
+     "A5-11"
+    ]
+   },
+   {
+    "label": "What counts as instructions",
+    "rows": [
+     "G2-01",
+     "A6-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "I11",
+  "topic": "ROUTINE",
+  "severity": "medium",
+  "title": "The same rule in three to six places",
+  "what": "Rules repeated across the system prompt, the operating note, skills, guides and tool descriptions, often with slightly different wording.",
+  "why": "Every copy costs tokens on every turn, and any edit to one copy leaves the others disagreeing.",
+  "groups": [
+   {
+    "label": "Write and validate the direction (5)",
+    "rows": [
+     "A1-18",
+     "C1-09",
+     "D1-22",
+     "E1-01",
+     "D3-02"
+    ]
+   },
+   {
+    "label": "Page-only logo preparation (5)",
+    "rows": [
+     "A1-15",
+     "C1-10",
+     "D14-05",
+     "E1-02",
+     "E2-18"
+    ]
+   },
+   {
+    "label": "New imagery needs generation (6)",
+    "rows": [
+     "A1-20",
+     "D1-19",
+     "D9-01",
+     "E2-03",
+     "E3-11",
+     "Z1-26"
+    ]
+   },
+   {
+    "label": "CTA (5+)",
+    "rows": [
+     "D1-14",
+     "D13-16",
+     "D14-18",
+     "E2-15",
+     "E4-18"
+    ]
+   },
+   {
+    "label": "Logo fetching (2 full copies)",
+    "rows": [
+     "A2-03",
+     "B4-10"
+    ]
+   },
+   {
+    "label": "Review profile floor (4)",
+    "rows": [
+     "E2-10",
+     "E4-37",
+     "E5-02",
+     "H1-02"
+    ]
+   },
+   {
+    "label": "Your message, three times",
+    "rows": [
+     "G1-07",
+     "H1-01",
+     "H5-01"
+    ]
+   },
+   {
+    "label": "Published-ad description, twice",
+    "rows": [
+     "A4-09",
+     "H3-01"
+    ]
+   }
+  ]
+ }
+]

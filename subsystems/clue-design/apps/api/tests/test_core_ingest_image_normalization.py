@@ -1,46 +1,52 @@
-"""`CoreClient.ingest_asset` decodes AVIF to PNG before the helper sniffs it (2026-10-04).
+"""`CoreClient.ingest_asset` converts AVIF and ICO to PNG before the helper sees them.
 
-A CDN that negotiates the format from ``Accept`` (Cloudflare ``cdn-cgi/image/f=auto``) served
-Atrium Hospitality's header logo as AVIF; the helper cannot sniff AVIF, stored it as
-``application/octet-stream``, and every placement failed ``op.asset_incompatible``.
+Every asset byte passes through that one call — fetch_logo, the brand-kit harvest, uploads,
+`POST /assets` — so converting there means no caller and no reader has to know AVIF or ICO
+ever existed. The real-helper scenario below is the user-visible proof: a logo fetched as AVIF
+is stored as a PNG with a thumbnail, so the agent's `view` can show it.
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
 from io import BytesIO
 from pathlib import Path
 
 import pytest
-from PIL import Image, features
+from PIL import Image
 
+from lumen_agent.tools.asset_preview import asset_preview_path
 from lumen_api.core import CoreClient, CoreError
-from lumen_api.image_containers import (
-    INGEST_IMAGE_DECODE_FAILED,
-    decode_to_png,
-    is_avif,
-    normalize_ingest_image,
-)
+from lumen_api.image_containers import INGEST_IMAGE_CONVERT_FAILED, convert_to_png
+from py_lumen_config import settings
 
-pytestmark = pytest.mark.skipif(not features.check("avif"), reason="Pillow built without AVIF")
-
-TINY_PNG = bytes.fromhex(
-    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
-    "1f15c4890000000d49444154789c626001000000ffff03000006000557"
-    "bfabd40000000049454e44ae426082"
-)
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RELEASE_HELPER = REPO_ROOT / "target" / "release" / "lumen-api-helper"
+BROKEN_AVIF = b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1" + b"\x00" * 64
 
 
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
-def avif_bytes(mode: str = "RGBA") -> bytes:
-    image = Image.new(mode, (24, 12), (20, 90, 200, 128) if mode == "RGBA" else (20, 90, 200))
+def encode(image: Image.Image, fmt: str, **params) -> bytes:
     out = BytesIO()
-    image.save(out, format="AVIF", quality=90)
+    image.save(out, format=fmt, **params)
     return out.getvalue()
+
+
+@pytest.fixture(scope="module")
+def avif_logo() -> bytes:
+    image = Image.new("RGBA", (120, 40), (0, 0, 0, 0))
+    for x in range(10, 110):
+        for y in range(12, 28):
+            image.putpixel((x, y), (20, 40, 90, 255))
+    return encode(image, "AVIF", quality=95)
+
+
+@pytest.fixture(scope="module")
+def ico_favicon() -> bytes:
+    return encode(Image.new("RGBA", (64, 64), (200, 30, 30, 255)), "ICO", sizes=[(16, 16), (32, 32)])
 
 
 class RecordingClient(CoreClient):
@@ -55,145 +61,101 @@ class RecordingClient(CoreClient):
         return {"ok": True, "asset": {"record": {"id": request["asset_id"]}}}
 
 
-# --- sniffing and decoding (pure) -------------------------------------------------------------
-
-
-def test_is_avif_recognizes_the_ftyp_brand_and_nothing_else() -> None:
-    assert is_avif(avif_bytes())
-    assert not is_avif(TINY_PNG)
-    assert not is_avif(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")  # an MP4
-    assert not is_avif(b"")
-
-
-def test_decode_to_png_keeps_alpha_and_size() -> None:
-    decoded = decode_to_png(avif_bytes("RGBA"))
-    assert decoded is not None
-    assert decoded.mime_type == "image/png"
-    with Image.open(BytesIO(decoded.data)) as png:
-        assert png.format == "PNG"
-        assert png.size == (24, 12)
-        assert png.mode == "RGBA"
-
-
-def test_decode_to_png_is_deterministic() -> None:
-    data = avif_bytes()
-    first, second = decode_to_png(data), decode_to_png(data)
-    assert first is not None and second is not None
-    assert first.data == second.data
-
-
-# --- normalize_ingest_image (pure) ------------------------------------------------------------
-
-
-def test_normalize_decodes_avif_and_rewrites_mime_filename_provenance() -> None:
-    data = avif_bytes()
-    normalized = normalize_ingest_image(
-        bytes_base64=b64(data),
-        declared_mime_type="image/avif",
-        filename="logo.avif",
-        provenance={"created_by": "logo_ladder", "notes": ["kept"]},
-    )
-    assert normalized.refusal is None
-    assert normalized.decoded is not None
-    assert base64.b64decode(normalized.bytes_base64)[:8] == TINY_PNG[:8]
-    assert normalized.declared_mime_type == "image/png"
-    assert normalized.filename == "logo.png"
-    assert normalized.provenance["created_by"] == "logo_ladder"
-    assert normalized.provenance["notes"][0] == "kept"
-    assert hashlib.sha256(data).hexdigest() in normalized.provenance["notes"][1]
-
-
-def test_normalize_leaves_other_payloads_byte_identical() -> None:
-    png_b64 = b64(TINY_PNG)
-    normalized = normalize_ingest_image(
-        bytes_base64=png_b64, declared_mime_type="image/png", filename="dot.png", provenance=None
-    )
-    assert normalized.bytes_base64 is png_b64
-    assert normalized.decoded is None and normalized.refusal is None
-
-
-def test_normalize_refuses_an_undecodable_avif() -> None:
-    broken = b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf" + b"\x00" * 64
-    normalized = normalize_ingest_image(
-        bytes_base64=b64(broken), declared_mime_type=None, filename="x.avif", provenance=None
-    )
-    assert normalized.decoded is None
-    assert normalized.refusal is not None
-    assert normalized.refusal["code"] == INGEST_IMAGE_DECODE_FAILED
-
-
-# --- CoreClient.ingest_asset (captured helper call) -------------------------------------------
-
-
-def test_ingest_asset_hands_the_helper_png_bytes_for_an_avif_payload() -> None:
+def test_ingest_asset_hands_the_helper_png_bytes_for_an_avif_payload(avif_logo: bytes) -> None:
     client = RecordingClient()
-    response = client.ingest_asset(
+    client.ingest_asset(
         store_root="/tmp/unused",
-        bytes_base64=b64(avif_bytes()),
-        asset_id="asset_test_avif",
+        bytes_base64=b64(avif_logo),
+        asset_id="asset_ing_atrium",
         label="Atrium Hospitality logo (light_lockup)",
         declared_mime_type="image/avif",
-        tags=["target-account", "logo-ladder"],
+        filename="atrium.avif",
+        kind="raster_image",
         provenance={"created_by": "logo_ladder"},
     )
-    assert response["ok"] is True
-    request = client.requests[0]
-    assert base64.b64decode(request["bytes_base64"])[:8] == TINY_PNG[:8]
+    (request,) = client.requests
+    expected = convert_to_png(avif_logo)
+    assert expected is not None
+    assert base64.b64decode(request["bytes_base64"]) == expected.data
     assert request["declared_mime_type"] == "image/png"
-    assert request["tags"] == ["target-account", "logo-ladder"]
-    assert any("avif -> png" in note for note in request["provenance"]["notes"])
+    assert request["filename"] == "atrium.png"
+    assert request["provenance"]["created_by"] == "logo_ladder"
+    assert request["provenance"]["notes"][-1].startswith(
+        "image container converted at ingestion: avif -> png"
+    )
+
+
+def test_ingest_asset_passes_a_png_through_untouched() -> None:
+    client = RecordingClient()
+    encoded = b64(encode(Image.new("RGB", (4, 4)), "PNG"))
+    client.ingest_asset(
+        store_root="/tmp/unused",
+        bytes_base64=encoded,
+        asset_id="asset_png",
+        label="dot",
+        declared_mime_type="image/png",
+        filename="dot.png",
+    )
+    (request,) = client.requests
+    assert request["bytes_base64"] is encoded
+    assert request["declared_mime_type"] == "image/png"
+    assert request["filename"] == "dot.png"
+    assert request["provenance"] is None
 
 
 def test_ingest_asset_refuses_an_undecodable_avif_without_calling_the_helper() -> None:
     client = RecordingClient()
-    broken = b64(b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf" + b"\x00" * 64)
-    refused = client.ingest_asset("/tmp/unused", broken, "a", "a", raise_on_error=False)
-    assert refused["ok"] is False
-    assert refused["error"]["code"] == INGEST_IMAGE_DECODE_FAILED
-    assert client.requests == []
-    with pytest.raises(CoreError) as raised:
-        client.ingest_asset("/tmp/unused", broken, "a", "a")
-    assert raised.value.code == INGEST_IMAGE_DECODE_FAILED
-
-
-# --- the real helper --------------------------------------------------------------------------
-
-
-def test_real_helper_stores_the_decoded_png_as_a_raster_image(tmp_path: Path) -> None:
-    """End to end through the release helper: the record is a PNG raster, not `other`."""
-    data = avif_bytes()
-    response = CoreClient().ingest_asset(
-        store_root=str(tmp_path),
-        bytes_base64=b64(data),
-        asset_id="asset_test_avif_logo",
-        label="avif logo",
-        declared_mime_type="image/avif",
-        provenance={"created_by": "test", "notes": []},
+    response = client.ingest_asset(
+        store_root="/tmp/unused",
+        bytes_base64=b64(BROKEN_AVIF),
+        asset_id="asset_broken",
+        label="broken",
+        filename="broken.avif",
         raise_on_error=False,
     )
-    assert response.get("ok"), response
-    record = response["asset"]["record"]
-    expected = decode_to_png(data)
-    assert expected is not None
-    assert record["kind"] == "raster_image"
-    assert record["media"]["mime_type"] == "image/png"
-    assert record["media"]["digest"]["value"] == hashlib.sha256(expected.data).hexdigest()
+    assert client.requests == []
+    assert response["ok"] is False
+    assert response["error"]["code"] == INGEST_IMAGE_CONVERT_FAILED
+    with pytest.raises(CoreError):
+        client.ingest_asset(
+            store_root="/tmp/unused",
+            bytes_base64=b64(BROKEN_AVIF),
+            asset_id="asset_broken",
+            label="broken",
+        )
+    assert client.requests == []
 
 
-def test_an_ico_favicon_is_decoded_to_its_largest_image_as_png() -> None:
-    icon = Image.new("RGBA", (64, 64), (10, 80, 200, 255))
-    out = BytesIO()
-    icon.save(out, format="ICO", sizes=[(16, 16), (32, 32), (64, 64)])
-    data = out.getvalue()
-    assert not is_avif(data)
-    decoded = decode_to_png(data)
-    assert decoded is not None and decoded.source_format == "ico"
-    with Image.open(BytesIO(decoded.data)) as png:
-        assert png.format == "PNG" and png.size == (64, 64)
-    normalized = normalize_ingest_image(
-        bytes_base64=b64(data), declared_mime_type="image/x-icon", filename="favicon.ico",
-        provenance=None,
+@pytest.mark.skipif(not RELEASE_HELPER.exists(), reason="needs the release lumen-api-helper")
+@pytest.mark.parametrize(
+    ("fixture", "size"), [("avif_logo", (120, 40)), ("ico_favicon", (32, 32))]
+)
+def test_a_fetched_avif_or_ico_logo_is_stored_as_a_viewable_png(
+    request, tmp_path: Path, monkeypatch, fixture: str, size: tuple[int, int]
+) -> None:
+    monkeypatch.setattr(settings, "lumen_core_helper", str(RELEASE_HELPER))
+    payload = request.getfixturevalue(fixture)
+    # The same call shape fetch_logo uses (`logo_fetch.PreparedLogo.ingest_kwargs`).
+    result = CoreClient().ingest_asset(
+        store_root=str(tmp_path),
+        bytes_base64=b64(payload),
+        asset_id=f"asset_ing_{fixture}",
+        label=f"{fixture} logo",
+        declared_mime_type="image/avif" if fixture == "avif_logo" else "image/x-icon",
+        kind="raster_image",
+        provenance={"created_by": "logo_ladder", "notes": []},
+        tags=["target-account", "logo-ladder"],
+        raise_on_error=False,
     )
-    assert normalized.declared_mime_type == "image/png"
-    assert normalized.filename == "favicon.png"
-    assert "ico -> png" in normalized.provenance["notes"][0]
+    assert result.get("ok") is not False, result
+    record = result["asset"]["record"]
+    media = record["media"]
+    assert media["mime_type"] == "image/png"
+    assert record["kind"] == "raster_image"
+    assert media.get("thumbnail"), "a PNG gets a thumbnail at ingest"
+    resolved = asset_preview_path(record, tmp_path)
+    assert resolved is not None, "the agent's view must be able to show it"
+    preview = Path(resolved[0])
+    assert preview.is_file()
+    stored = tmp_path / media["location"]["opaque_ref"]
+    assert Image.open(stored).size == size

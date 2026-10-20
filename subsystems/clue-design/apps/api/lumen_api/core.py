@@ -191,15 +191,18 @@ class CoreClient:
             filename=filename,
             provenance=provenance,
         )
-        if normalized.decoded is None and normalized.refusal is None:
-            # The same chokepoint turns AVIF (which the engine cannot sniff) into PNG; see
-            # `image_containers.py`. A payload is a font or an image, never both.
-            normalized = normalize_ingest_image(
-                bytes_base64=bytes_base64,
-                declared_mime_type=declared_mime_type,
-                filename=filename,
-                provenance=provenance,
-            )
+        if normalized.refusal is not None:
+            if raise_on_error:
+                raise CoreError(normalized.refusal["code"], normalized.refusal["message"])
+            return {"ok": False, "error": dict(normalized.refusal), "diagnostics": []}
+        # 2026-10-18: AVIF and ICO become PNG at the same chokepoint (`image_containers.py`),
+        # because the helper's sniffer stores them as unreadable `application/octet-stream`.
+        normalized = normalize_ingest_image(
+            bytes_base64=normalized.bytes_base64,
+            declared_mime_type=normalized.declared_mime_type,
+            filename=normalized.filename,
+            provenance=normalized.provenance,
+        )
         if normalized.refusal is not None:
             if raise_on_error:
                 raise CoreError(normalized.refusal["code"], normalized.refusal["message"])

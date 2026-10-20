@@ -19,6 +19,6 @@ real candidates before deciding.
 turn. In short: decide what the image is for, take its look only from the
 seller's own imagery, and ask for nothing those references do not show.
 
-Read `/knowledge_docs/knowledge/scene/components.md` for native text and geometry and for
-independent authentic logo and product layers. Keep those editable, and inspect the
-finished composition as well as every generated image.
+`knowledge/scene/components.md`, already in your prompt, covers native text and
+geometry and independent authentic logo and product layers. Keep those editable, and
+inspect the finished composition as well as every generated image.

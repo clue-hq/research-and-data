@@ -174,6 +174,8 @@ class LadderCandidate:
     visibility_state: str | None = None
     scroll_state: str | None = None
     scroll_swap_partner: bool = False
+    # The page preloads this exact file under a header/nav logo name (see `harvest`).
+    preloaded_header_logo: bool = False
     render_key: str | None = None
     observed_ink: str | None = None
     # The browser's painted box, kept apart from width/height because those get
@@ -284,6 +286,12 @@ _CHROME_SEL_HINT = re.compile(
     r"(header|nav|navbar|masthead|topbar|site-head|footer|logo|brand)", re.I
 )
 _LOGO_NAMED_RE = re.compile(r"(logo|wordmark|brandmark|brand-mark)", re.I)
+# A file name that says where the logo sits: the header or the nav. Read only off a
+# preloaded image's own name (`qc-topnav-logo.svg`), never off the page around it.
+_HEADER_NAMED_RE = re.compile(
+    r"(?:^|[^a-z])(?:top-?nav|nav-?bar|nav|site-?header|header|masthead|top-?bar)(?:[^a-z]|$)",
+    re.I,
+)
 _JSONLD_ORG_TYPES = (
     "Organization", "Corporation", "LocalBusiness", "MedicalOrganization",
     "WebSite", "MedicalClinic", "Physician",
@@ -632,6 +640,28 @@ def harvest(
                 height=_int_or_none(img.attributes.get("height")),
             )
 
+    # ---- preload hints: `<link rel="preload" as="image">` whose own file name says logo.
+    # A header logo painted as a CSS background on an empty element (tencentcloud.com:
+    # `<i class="qc-topnav__logo-text">`) leaves no <img> and no inline <svg> in the header.
+    # The preload hint names the file directly, and a header/nav word in that name is
+    # evidence it is the brand's own header logo. Without that evidence the CSS-background
+    # copy ranked below a square share image whose name carried the company name.
+    preloaded_header: set[str] = set()
+    for link in tree.css("link[rel~='preload']"):
+        if (link.attributes.get("as") or "").strip().lower() != "image":
+            continue
+        hrefs = [link.attributes.get("href"), *_srcset_urls(link.attributes.get("imagesrcset"))]
+        for raw in hrefs:
+            url = norm_url(page_url, raw)
+            if not url:
+                continue
+            basename = urlsplit(url).path.rsplit("/", 1)[-1]
+            if not _LOGO_NAMED_RE.search(basename):
+                continue
+            add(url, "PAGE_LOGO_NAMED", "preload hint: image named 'logo'")
+            if _HEADER_NAMED_RE.search(basename):
+                preloaded_header.add(url)
+
     # ---- CSS background images on chrome selectors
     for selectors, url in css_bg_images:
         if any(_CHROME_SEL_HINT.search(s) for s in selectors):
@@ -677,6 +707,10 @@ def harvest(
     favicon = norm_url(page_url, "/favicon.ico")
     if favicon and not any(c.url == favicon for c in out):
         add("/favicon.ico", "FAVICON", "well-known /favicon.ico")
+
+    for candidate in out:
+        if candidate.url in preloaded_header:
+            candidate.preloaded_header_logo = True
 
     return _dedupe(out)
 
@@ -925,18 +959,18 @@ def attach_bytes(candidates: list[LadderCandidate], fetched: dict) -> list[Ladde
             # neither our appearance analysis nor the engine can read. Decode it to PNG here, once,
             # so every later step — ink, real dimensions, the asset id, placement — sees PNG.
             # Lazy: `lumen_ingestion.capture` imports this module and must stay PIL-free.
-            from lumen_api.image_containers import ImageContainerError, decode_to_png
+            from lumen_api.image_containers import PNG_MIME, ImageContainerError, convert_to_png
 
             try:
-                decoded = decode_to_png(blob)
+                decoded = convert_to_png(blob)
             except ImageContainerError as error:
-                candidate.fetch_error = f"avif could not be decoded: {error}"
+                candidate.fetch_error = f"image could not be decoded: {error}"
                 continue
             if decoded is not None:
                 candidate.notes.append(
-                    f"decoded {decoded.source_format.upper()} to PNG (source sha256:{decoded.source_sha256})"
+                    f"decoded {decoded.source_container.upper()} to PNG (source sha256:{decoded.source_sha256})"
                 )
-                blob, content_type = decoded.data, decoded.mime_type
+                blob, content_type = decoded.data, PNG_MIME
                 candidate.content_type = content_type
             candidate.fmt = guess_fmt(candidate.url, content_type, blob)
         candidate.body = blob
@@ -2341,6 +2375,8 @@ def resolve(
             why.append("wrapped in a link to the site root")
         if candidate.scroll_swap_partner:
             why.append("participates in a collapse-on-scroll logo swap")
+        if candidate.preloaded_header_logo:
+            why.append("the page preloads it under a header/nav logo name")
         return why
 
     def pick_primary(pool):

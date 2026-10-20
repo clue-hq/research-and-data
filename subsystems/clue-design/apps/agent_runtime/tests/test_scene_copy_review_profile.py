@@ -103,9 +103,15 @@ def test_selected_profile_is_delivered_in_initial_workspace_gather(tools):
     assert json.loads(state.content)["native_copy_review_profile"] == {
         "id": "compact-feed-v1", "display_width_px": 360, "minimum_nominal_em_px": 11,
     }
-    # The first-gather brief must expose the selected delivered values too.
-    assert "compact-feed-v1" in brief.content.decode()
-    assert "360" in brief.content.decode() and "11" in brief.content.decode()
+    # Harness alignment I9 (founder ruling 2026-10-17): the selected values reach the agent once,
+    # in the system prompt written from the same delivered profile; the brief no longer repeats them.
+    assert "compact-feed-v1" not in brief.content.decode()
+    from lumen_agent.prompts import build_scene_solo_prompt
+
+    prompt = " ".join(build_scene_solo_prompt(
+        "/w", review_profile=tools._native_copy_review_profile()
+    ).split())
+    assert "at least 11px when the ad is shown 360px wide" in prompt
     assert workspace == tools.trace_dir / "workspace"
 
 

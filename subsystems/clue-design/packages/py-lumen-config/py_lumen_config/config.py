@@ -296,7 +296,7 @@ class Settings(BaseSettings):
 
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
-    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash"
+    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash-1017"
     # Hybrid asset search (founder ruling 2026-10-05): ingestion stores a CLIP image vector per
     # asset and the scene agent's `search_assets` fuses its keyword ranking with a visual one.
     # Runs on ONNX Runtime from a model directory holding image.onnx (fp32, ingestion only),
@@ -404,13 +404,15 @@ class Settings(BaseSettings):
     lumen_agent_fast_loop: bool = True
     # Scene-only knowledge selection; separate workspace roots prevent mixing
     # knowledge during concurrent control/candidate runs. Website is unchanged.
-    lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # "candidate" by default because the always-on solo scene agent requires it.
+    lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "candidate"
     # Optional caller-owned viewing profile from the candidate manifest. Empty
     # means no numeric native-copy floor. Never inferred from page units/brand.
     lumen_agent_scene_review_profile: str = ""
-    # Default-off single-agent scene experiment. Requires candidate knowledge
-    # and the fast loop at scene construction; has no effect on website turns.
-    lumen_agent_scene_solo: bool = False
+    # The scene agent runs as ONE agent, always (founder ruling 2026-10-04, restated
+    # 2026-10-16; see the repo CLAUDE.md). Requires candidate knowledge and the fast loop
+    # at scene construction; has no effect on website turns.
+    lumen_agent_scene_solo: bool = True
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the
@@ -445,7 +447,8 @@ class Settings(BaseSettings):
     # coordination overhead (per-delegation skill re-reads, brief writing, discovery loss)
     # in a 57-minute page build. Overrides the two web flags above when on: there are no
     # subagents to quarantine selectively.
-    lumen_agent_web_solo: bool = False
+    # Always on (founder rulings 2026-09-04 and 2026-10-04; see the repo CLAUDE.md).
+    lumen_agent_web_solo: bool = True
     # Context clearing (founder decisions 2026-10-06): replace superseded preview screenshots and
     # finished planning results with stubs before each website-agent model call. On by default.
     lumen_agent_web_context_clearing: bool = True

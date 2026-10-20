@@ -1,0 +1,198 @@
+[
+ {
+  "name": "write_todos",
+  "description": "Use this tool to create and manage a structured task list for your current work session. This helps you track progress and organize complex tasks.\n\nOnly use this tool if you think it will be helpful in staying organized. If the user's request is trivial and takes less than 3 steps, it is better to NOT use this tool and just do the task directly.\n\n## When to Use This Tool\n\nUse this tool in these scenarios:\n\n1. Complex multi-step tasks - When a task requires 3 or more distinct steps or actions\n2. Non-trivial and complex tasks - Tasks that require careful planning or multiple operations\n3. User explicitly requests todo list - When the user directly asks you to use the todo list\n4. User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)\n5. The plan may need future revisions or updates based on results from the first few steps\n\n## How to Use This Tool\n\n1. When you start working on a task - Mark it as in_progress BEFORE beginning work.\n2. After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation.\n3. You can also update future tasks, such as deleting them if they are no longer necessary, or adding new tasks that are necessary. Don't change previously completed tasks.\n4. You can make several updates to the todo list at once. For example, when you complete a task, you can mark the next task you need to start as in_progress.\n\n## When NOT to Use This Tool\n\nIt is important to skip using this tool when:\n1. There is only a single, straightforward task\n2. The task is trivial and tracking it provides no benefit\n3. The task can be completed in less than 3 trivial steps\n4. The task is purely conversational or informational\n\n## Task States and Management\n\n1. **Task States**: Use these states to track progress:\n    - pending: Task not yet started\n    - in_progress: Currently working on (you can have multiple tasks in_progress at a time if they are not related to each other and can be run in parallel)\n    - completed: Task finished successfully\n\n2. **Task Management**:\n    - Update task status in real-time as you work\n    - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)\n    - Complete current tasks before starting new ones\n    - Remove tasks that are no longer relevant from the list entirely\n    - IMPORTANT: When you write this todo list, you should mark your first task (or tasks) as in_progress immediately!.\n    - IMPORTANT: Unless all tasks are completed, you should always have at least one task in_progress.\n\n3. **Task Completion Requirements**:\n    - ONLY mark a task as completed when you have FULLY accomplished it\n    - If you encounter errors, blockers, or cannot finish, keep the task as in_progress\n    - When blocked, create a new task describing what needs to be resolved\n    - Never mark a task as completed if:\n        - There are unresolved issues or errors\n        - Work is partial or incomplete\n        - You encountered blockers that prevent completion\n        - You couldn't find necessary resources or dependencies\n        - Quality standards haven't been met\n\n4. **Task Breakdown**:\n    - Create specific, actionable items\n    - Break complex tasks into smaller, manageable steps\n    - Use clear, descriptive task names\n\nBeing proactive with task management ensures you complete all requirements successfully\nRemember: If you only need to make a few tool calls to complete a task, and it is clear what you need to do, it is better to just do the task directly and NOT call this tool at all.\n\n## When You Finish\n\n`write_todos` tracks your work; it does not deliver the answer. Whatever the user asked for \u2014 computations, summaries, comparisons, data \u2014 must appear as text content in a message after your final `write_todos` call. Marking the last todo complete is not itself an answer to the user.",
+  "args": {
+   "todos": null
+  }
+ },
+ {
+  "name": "ls",
+  "description": "Lists all files in a directory.\n\nThis is useful for exploring the filesystem and finding the right file to read or edit.\nYou should almost ALWAYS use this tool before using the read_file or edit_file tools.",
+  "args": {
+   "path": "Absolute path to the directory to list. Must be absolute, not relative."
+  }
+ },
+ {
+  "name": "read_file",
+  "description": "Reads a file from the filesystem.\n\nAssume this tool is able to read all files. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- By default, it reads up to 100 lines starting from the beginning of the file\n- **IMPORTANT for large files and codebase exploration**: Use pagination with offset and limit parameters to avoid context overflow\n    - First scan: read_file(file_path=\"...\", limit=100) to see file structure\n    - Read more sections: read_file(file_path=\"...\", offset=100, limit=200) for next 200 lines\n    - Only omit limit (read full file) when necessary for editing\n- Specify offset and limit: read_file(file_path=\"...\", offset=0, limit=100) reads first 100 lines\n- Results are returned using cat -n format, with line numbers starting at 1\n- Lines longer than 5,000 characters will be split into multiple lines with continuation markers (e.g., 5.1, 5.2, etc.). `limit` applies to source lines, so continuation rows do not consume the budget.\n- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\n- Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, etc.), audio and video files, and PDFs are returned as multimodal content blocks (see https://docs.langchain.com/oss/python/langchain/messages#multimodal).\n\nFor multimodal reads (image, audio, video, PDF, etc.):\n- Use `read_file(file_path=...)`\n- Do NOT use `offset`/`limit` for images (pagination is text-only)\n- If file details were compacted from history, call `read_file` again on the same path\n\n- You should ALWAYS make sure a file has been read before editing it.",
+  "args": {
+   "file_path": "Absolute path to the file to read. Must be absolute, not relative.",
+   "offset": "Line number to start reading from (0-indexed). Use for pagination of large files.",
+   "limit": "Maximum number of lines to read. Use for pagination of large files."
+  }
+ },
+ {
+  "name": "write_file",
+  "description": "Writes to a new file in the filesystem.\n\nUsage:\n- The write_file tool will create the a new file.\n- Prefer to edit existing files (with the edit_file tool) over creating new ones when possible.",
+  "args": {
+   "file_path": "Absolute path where the file should be created. Must be absolute, not relative.",
+   "content": "The text content to write to the file. This parameter is required."
+  }
+ },
+ {
+  "name": "edit_file",
+  "description": "Performs exact string replacements in files.\n\nUsage:\n- You must read the file before editing. This tool will error if you attempt an edit without reading the file first.\n- When editing, preserve the exact indentation (tabs/spaces) from the read output. Never include line number prefixes in old_string or new_string.\n- ALWAYS prefer editing existing files over creating new ones.\n- Only use emojis if the user explicitly requests it.",
+  "args": {
+   "file_path": "Absolute path to the file to edit. Must be absolute, not relative.",
+   "old_string": "The exact text to find and replace. Must be unique in the file unless replace_all is True.",
+   "new_string": "The text to replace old_string with. Must be different from old_string.",
+   "replace_all": "If True, replace all occurrences of old_string. If False (default), old_string must be unique."
+  }
+ },
+ {
+  "name": "glob",
+  "description": "Find files matching a glob pattern.\n\nSupports standard glob patterns: `*` (any characters), `**` (any directories), `?` (single character).\nReturns a list of absolute file paths that match the pattern.\n\nExamples:\n- `**/*.py` - Find all Python files\n- `*.txt` - Find all text files in the backend's default root\n- `/subdir/**/*.md` - Find all markdown files under /subdir",
+  "args": {
+   "pattern": "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md').",
+   "path": "Base directory to search from. Defaults to the backend's default root."
+  }
+ },
+ {
+  "name": "grep",
+  "description": "Search for a text pattern across files.\n\nSearches for literal text (not regex) and returns matching files or content based on output_mode.\nSpecial characters like parentheses, brackets, pipes, etc. are treated as literal characters, not regex operators.\n\nExamples:\n- Search all files: `grep(pattern=\"TODO\")`\n- Search Python files only: `grep(pattern=\"import\", glob=\"*.py\")`\n- Show matching lines: `grep(pattern=\"error\", output_mode=\"content\")`\n- Search for code with special chars: `grep(pattern=\"def __init__(self):\")`",
+  "args": {
+   "pattern": "Text pattern to search for (literal string, not regex).",
+   "path": "Directory to search in. Defaults to current working directory.",
+   "glob": "Glob pattern to filter which files to search (e.g., '*.py').",
+   "output_mode": "Output format: 'files_with_matches' (file paths only, default), 'content' (matching lines with context), 'count' (match counts per file)."
+  }
+ },
+ {
+  "name": "view",
+  "description": "Look at real pixels. target=\"preview\" returns the latest rendered PNG;\n        target=\"asset:<asset_id>\" returns that asset's source preview thumbnail \u2014\n        a brand-kit asset, a workspace library asset, or an asset registered in\n        the current scene (including newly generated imagery). Returns image\n        content so you can judge by looking, not by guessing from metadata.\n        Optional frame_index is an explicit nonnegative integer for a GIF original\n        in this run's authorized asset context, including reference:<n> aliases.\n        It inspects one composited source frame; animation is not reviewed. The\n        original digest and decoded pixel dimensions accompany the still. Omit\n        it to retain the default preview; it is unsupported for target=\"preview\".",
+  "args": {
+   "target": null,
+   "frame_index": null
+  }
+ },
+ {
+  "name": "render_preview",
+  "description": "Render the current scene to a validated PNG (and canonical SVG) on disk\n        and return a compact text summary: artifact paths, dimensions, validation\n        status, and any export diagnostics. Seeing the pixels is view(\"preview\")'s\n        job \u2014 this tool never returns image blocks.\n\n        Requires preflight_design after any scene mutation \u2014 export refuses\n        unresolved token paints.",
+  "args": {}
+ },
+ {
+  "name": "inspect",
+  "description": "Read-only inspection of the in-memory scene. Pick `view`:\n\n        - `view=\"scene\"` \u2014 document, pages, counts, slots, effective brand.\n        - `view=\"page\"` (target=page_id) \u2014 page node tree with geometry + slot bindings.\n        - `view=\"node_tree\"` (target=page_id) \u2014 the node hierarchy for one page.\n        - `view=\"slots\"` \u2014 every slot key \u2192 bound nodes.\n        - `view=\"copy_review\"` \u2014 candidate-only, complete current exported native\n          text inventory for direction_review bindings; includes observation limits.\n        - `view=\"geometry\"` (target=node_id) \u2014 stored computed geometry + declared\n          transform/size for one node.\n        - `view=\"slot_bindings\"` (target=slot_key) \u2014 binding details for a semantic slot.\n        - `view=\"image_contrast\"` (target=asset_id, foreground_color=\"#RRGGBB\",\n          region=[left,top,right,bottom]) \u2014 measure an opaque text color over\n          actual image pixels. Region is normalized 0..1 in SOURCE coordinates;\n          account for placement cropping. Returns sampled ratios and threshold\n          checks. Excludes overlaid plates, glyphs, opacity and effects; inspect\n          the final composition too. Transparent/profiled sources return a gap.\n\n        Use it to confirm a node/page/slot id before targeting a repair. Never mutates.",
+  "args": {
+   "view": null,
+   "target": null,
+   "foreground_color": null,
+   "region": null
+  }
+ },
+ {
+  "name": "search_assets",
+  "description": "Search all frozen workspace images by type, usage, source, text or exact id.\n\n        Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,\n        then asset(action='use_brand_asset', asset_id=...) to place the chosen image.",
+  "args": {
+   "q": null,
+   "kind": null,
+   "limit": null
+  }
+ },
+ {
+  "name": "preflight_design",
+  "description": "Run canonical brand/token/layout preflight using the effective Brand Kit\n        (the kit passed by value in config \u2014 the document's attached kit \u2014 or the\n        platform default).",
+  "args": {}
+ },
+ {
+  "name": "record_gap",
+  "description": "Record a product gap instead of hiding unsupported semantics in prompts.",
+  "args": {
+   "area": null,
+   "summary": null,
+   "evidence": null,
+   "suggested_phase": null
+  }
+ },
+ {
+  "name": "validate_creative_direction",
+  "description": "Validate this run's creative-direction.json against its delivered catalog.\n\n        Checks the compact handoff and source availability, not visual quality\n        or truth of model-authored evidence excerpts. Writes no scene geometry.\n        Candidate revisions after validation need a concise revision_reason;\n        unchanged canonical content preserves the digest and existing review.",
+  "args": {
+   "revision_reason": null
+  }
+ },
+ {
+  "name": "request_clarification",
+  "description": "Ask the user up to FOUR clarifying questions, then STOP \u2014 calling this\n        ENDS THE TURN. Use it only as an OPENING MOVE on a genuinely\n        under-specified brief, before any authoring, rendering, or finalize\n        cost \u2014 never mid-design. Ask ONLY for decision-critical facts you cannot\n        derive from the prompt, conversation, document, or brand kit (asking\n        about something derivable is a failure). Read the clarify-design-brief\n        skill for the spec table and the derive-first protocol.\n\n        `questions` is a list of at most 4 objects, each:\n          - id: short stable key (e.g. \"format\", \"message_focus\")\n          - question: the question, in plain language\n          - why_it_matters: one line on why the answer changes the design\n          - options: optional list of suggested answers (chips)\n          - default: REQUIRED \u2014 the \"if you don't care, I'll do X\" fallback so\n            an unanswered question never blocks the design\n          - allow_freeform: whether a typed answer is accepted (default true)\n\n        After calling this, do NOT author, render, or finalize \u2014 the user's next\n        message answers the questions and that turn continues the design. Never\n        re-ask a question a previous turn already answered.",
+  "args": {
+   "questions": null
+  }
+ },
+ {
+  "name": "finalize_run",
+  "description": "Finalize with this run's latest registered visual review.\n\n        Missing, stale or rejected evidence still prevents acceptance. Write\n        the current review to the active round's critique.json before accepting.\n        ops_valid_through_iteration limits draft operation replay (None means\n        all ok iterations). baseline_advisory_json records pre-existing issues;\n        accommodation_json records accommodation moves. Both default to null.",
+  "args": {
+   "status": null,
+   "stop_reason": null,
+   "summary": null,
+   "ops_valid_through_iteration": null,
+   "baseline_advisory_json": null,
+   "accommodation_json": null
+  }
+ },
+ {
+  "name": "compile_dsl_block",
+  "description": "Compile a Lumen DSL block and update the scene only from core output.",
+  "args": {
+   "source": null
+  }
+ },
+ {
+  "name": "asset",
+  "description": "Generate or place a design asset. Pick `action`:\n\n        - `action=\"generate_image\"` \u2014 generate a raster image from `prompt` and\n          register it (returns its asset_id; NOT auto-placed). Pass `target_node_id`\n          (or `target_slot_id`) so the aspect is derived from that frame's geometry \u2014\n          images are cropped to fill, never stretched. Optional `aspect_ratio` /\n          `width` / `height`, `brand_notes`, `transparent_background`, `label`.\n          `reference_asset_ids` selects up to four inspected style inputs by ID\n          from this run's attachments, brand kit, workspace library or scene.\n          Omit it to use turn attachments; [] uses no references. A selection\n          replaces automatic attachments. Source pixels and their digest are\n          verified before spending; unavailable selections return an error.\n          Optional reference_roles align with selected IDs: source, treatment,\n          composition. reference_framing states what to preserve/vary; operation\n          records intent such as close_companion. These participate in caching.\n          Successful model/cache results report exact `reference_inputs` and\n          persisted provider `image_request_receipt` when available.\n          Viewing an asset alone does not attach it. Keep exact UI and logos as\n          separate source layers; this action produces a new raster component.\n        - `action=\"edit_image\"` \u2014 edit the image already placed in `node_id` with a\n          text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT\n          changing the composition; the edited result re-enters the same node with its\n          current placement preserved. Set `transparent_background=True` to remove the\n          background. Prefer this over a full regenerate when the image is right-but-flawed.\n          This source-only route does not accept reference_asset_ids, reference_roles\n          or reference_framing. For selected-reference changes, generate_image with\n          those inputs, inspect the result and place it explicitly.\n        - `action=\"crop_image\"` \u2014 extract an exact rectangle from an inspected\n          original raster `asset_id`, without a model or resampling. `crop_rect`\n          is four integers [left, top, right, bottom] in ORIGINAL source pixels,\n          half-open; right/bottom excluded. Use original dimensions, not preview\n          dimensions. Bounds must be nonempty and inside the source. Nonidentity\n          EXIF orientation and unsupported images are refused. Animated cropping\n          requires an explicit nonnegative integer `frame_index` (GIF only); use\n          view(target=\"asset:<id>\", frame_index=...) to inspect that original\n          frame first. Coordinates are its decoded composited full-frame pixels,\n          not a thumbnail or smaller GIF patch. Omitting the index refuses animation.\n          Preserves decoded pixels/alpha and original asset; returns a separate image asset\n          and crop_receipt with source digest/rect. Inspect, then explicitly place\n          it in an independent image node. Cannot recover occluded or absent UI,\n          nor remove backgrounds baked inside the selected rectangle.\n        - `action=\"generate_qr\"` \u2014 generate a deterministic QR asset from `data`\n          (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`\n          so print-scannability diagnostics can fire. Optional `ec_level`, `label`.\n        - `action=\"place\"` \u2014 place an existing asset (`asset_id`: one you generated\n          this run, or one from this workspace's asset library \u2014 a library asset is\n          registered into the scene for you)\n          into an existing image or intentionally reserved empty leaf `fr`\n          (`node_id`), or a bound image slot (`slot_id`). Raster/logo placement\n          converts the leaf to an image in place, preserving its ID and geometry;\n          path-backed vectors stay native. Containers with children cannot be\n          consumed; missing node/asset IDs remain errors. No assetless image\n          declaration is needed. Use `fit` (default cover), normalized focal point\n          (`focal_x`/`focal_y`, 0..1, default centered), `alt` text, and optional\n          `preserve_transparency`. Reversible.\n        - `action=\"use_brand_asset\"` \u2014 register one of the attached Brand Kit's assets\n          (a logo variant or brand image; `asset_id` from the brand context card's\n          inventory) into the scene with brand_guide provenance and place it into\n          the same supported `node_id` target or `slot_id` as `place`.\n          Logos place with fit `contain` (never cropped);\n          pick the variant by background (reversed on dark fields). Requires an\n          attached kit \u2014 without one this action errors.\n\n        Every action mutates the scene only through the canonical core operation path.",
+  "args": {
+   "action": null,
+   "prompt": null,
+   "aspect_ratio": null,
+   "width": null,
+   "height": null,
+   "brand_notes": null,
+   "transparent_background": null,
+   "target_node_id": null,
+   "target_slot_id": null,
+   "data": null,
+   "ec_level": null,
+   "print_media": null,
+   "target_width_mm": null,
+   "node_id": null,
+   "slot_id": null,
+   "asset_id": null,
+   "fit": null,
+   "focal_x": null,
+   "focal_y": null,
+   "alt": null,
+   "preserve_transparency": null,
+   "label": null,
+   "reference_asset_ids": null,
+   "reference_roles": null,
+   "reference_framing": null,
+   "operation": null,
+   "crop_rect": null,
+   "frame_index": null
+  }
+ },
+ {
+  "name": "fetch_logo",
+  "description": "Fetch a company's REAL logo family and register it here.\n\n        Use this whenever the design shows a company that is not us \u2014 the target\n        account, a named customer, a partner. Pass their domain\n        (`goodmancampbell.com`) or any URL on their site; pass `company_name`\n        too when you know it, because it sharpens the identity check.\n\n        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:\n        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x\n        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).\n        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and\n        `dark_mark`. Place them with `asset(action=\"place\", ...)` like any other\n        registered asset. A cell is missing when the brand publishes nothing for\n        it \u2014 that is a real answer, and it is never filled by recoloring\n        another cell.\n\n        Each cell is the best PROVEN asset from two sources \u2014 Brandfetch and a\n        scrape of the company's own site \u2014 judged by measured ink colour for the\n        surface, completeness, format and size. Every asset says which source\n        served it. `alternatives` lists every other real asset found for the\n        company (a vendor icon, a short form, a losing candidate), each\n        registered too and each saying why it is not in a cell. Use a cell\n        first; reach for an alternative only when the cell does not fit the\n        placement \u2014 for example when the dark lockup turns out to be only a\n        symbol \u2014 and say so. Results\n        are cached per workspace+company, so asking twice in a project costs\n        one fetch \u2014 pass `force_refresh=True` only when the user says the logo\n        is wrong or outdated, which refetches and replaces the cached family.\n\n`*_lockup` is the complete logo and `*_mark` is the bare symbol. Choose the\nauthentic variant for the intended identity treatment and surface, not size alone.\nA recognizable published target mark or favicon may be a primary target anchor,\neven when a complete lockup exists. Preserve an explicitly required wordmark.\nKeep each real logo independent and use native text or geometry for a separator;\nnever recolor, redraw or merge company marks into a fabricated logo.\n\n        If it comes back `needs_review`, nothing was registered because no asset\n        could be attributed to that company with confidence. Say so and ask for\n        the file. Never draw, recolor or approximate a logo.\n\n        Static fetch only on the ladder fallback: a site that builds its header\n        in JavaScript has no logo to read there, and reports that plainly.\n\n        The scene must already contain a page/artboard: on a pageless scene this\n        tool REFUSES before fetching (error `scene.page_required`) \u2014 author the\n        page first.",
+  "args": {
+   "domain": null,
+   "company_name": null,
+   "force_refresh": null
+  }
+ },
+ {
+  "name": "validate_binding_set",
+  "description": "Validate a Phase G binding set (per-recipient values, links, and\n        generated QR entries) against the current scene's slot contracts:\n        keys resolve, kinds match content types, required slots covered,\n        cardinality and max_length hold, the frozen conditional grammar\n        parses, and generated entries chain links.*.url -> qr -> UrlQr\n        slot. Returns precise LUMG diagnostics for every violation.",
+  "args": {
+   "binding_set_json": null
+  }
+ },
+ {
+  "name": "apply_structured_edit",
+  "description": "Apply a typed targeted edit through the Rust edit builder.\n\n        The input must be a JSON object matching the `apply_structured_edit`\n        helper contract, for example:\n\n        {\n          \"kind\": \"modify\",\n          \"target\": {\"kind\": \"node\", \"id\": \"headline\"},\n          \"patch\": {\"kind\": \"node\", \"value\": {\"text\": {\"content\": {\"kind\": \"set\", \"value\": \"New copy\"}}}}\n        }\n\n        Repairs for a concrete critic issue must declare their scope so the\n        engine can reject out-of-scope mutations before they happen:\n\n        {\n          \"kind\": \"modify\",\n          \"target\": {\"kind\": \"node\", \"id\": \"headline\"},\n          \"patch\": {...},\n          \"scope\": {\"mode\": \"strict\", \"allowed\": [{\"kind\": \"node\", \"id\": \"headline\"}]}\n        }",
+  "args": {
+   "edit_json": null
+  }
+ }
+]

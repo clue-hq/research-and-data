@@ -80,7 +80,8 @@ test("mounted inspector waits for the pinned typography, rehydrates on arrival, 
   const root = createRoot(dom.window.document.getElementById("root")!);
   const size = () => dom.window.document.querySelector<HTMLInputElement>("[aria-label='Font size']")!;
   const family = () => dom.window.document.querySelector<HTMLButtonElement>("[aria-label='Font family']")!;
-  const content = () => dom.window.document.querySelector<HTMLTextAreaElement>("[aria-label='Text content']")!;
+  // Founder 2026-10-19: text is edited on the canvas, so the ad text inspector has no Text field.
+  const content = () => dom.window.document.querySelector<HTMLTextAreaElement>("[aria-label='Text content']");
   const load = async (documentId: string, value: Scene) => {
     await act(async () => root.render(createElement(Harness, { documentId })));
     await act(async () => {
@@ -94,7 +95,7 @@ test("mounted inspector waits for the pinned typography, rehydrates on arrival, 
     assert.equal(size().disabled, true);
     assert.equal(size().value, "");
     assert.equal(family().disabled, true);
-    assert.equal(content().disabled, false);
+    assert.equal(content() === null, true, "the ad text inspector has no Text field");
     assert.match(dom.window.document.body.textContent ?? "", /Brand typography is unavailable/);
     assert.ok(pending.has("brand_a@1"));
     await act(async () => pending.get("brand_a@1")!(kit("Season Mix", 67.5)));
@@ -121,7 +122,7 @@ test("mounted inspector waits for the pinned typography, rehydrates on arrival, 
     await load("doc_c", scene("brand_c", 1));
     await act(async () => pending.get("brand_c@1")!(incomplete));
     assert.equal(size().disabled, true, "a missing role stays unavailable after the fetch settles");
-    assert.equal(content().disabled, false);
+    assert.equal(content() === null, true, "the ad text inspector has no Text field");
   } finally {
     await act(async () => root.unmount());
     pending.clear();

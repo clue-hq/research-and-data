@@ -45,22 +45,15 @@ def test_candidate_first_model_schema_exposes_only_registered_review_finalizer(
     ]
     assert len(finalizers) == 1
     schema = finalizers[0]["parameters"]
-    assert set(schema["properties"]) == {
-        "status",
-        "stop_reason",
-        "summary",
-        "ops_valid_through_iteration",
-        "baseline_advisory_json",
-        "accommodation_json",
-    }
+    # Harness alignment T11 (founder rulings 2026-10-18): the agent sees only these three; the
+    # runtime's own re-finalize still passes the rest to the method.
+    assert set(schema["properties"]) == {"status", "stop_reason", "summary"}
     assert schema["required"] == ["status", "stop_reason", "summary"]
+    assert all(prop.get("description") for prop in schema["properties"].values())
     # LangChain's model-facing subset drops Pydantic model_config; validation
     # still uses the explicit input schema (exercised through ToolNode below).
     bound = graph.nodes["tools"].bound.tools_by_name["finalize_run"]
     assert bound.args_schema.model_json_schema()["additionalProperties"] is False
-    assert schema["properties"]["ops_valid_through_iteration"]["default"] is None
-    assert schema["properties"]["baseline_advisory_json"]["default"] == "null"
-    assert schema["properties"]["accommodation_json"]["default"] == "null"
 
 
 @pytest.mark.parametrize("solo", [True, False])
@@ -254,7 +247,7 @@ def test_reviewed_candidate_preserves_separate_draft_channel_copy_in_final_summa
         ("edit_applied", False),
     ],
 )
-def test_candidate_nonaccepted_exit_preserves_review_draft_and_optional_arguments(
+def test_candidate_nonaccepted_exit_preserves_review_draft_and_refuses_dropped_arguments(
     tmp_path, monkeypatch, status, stale
 ):
     graph, tools, _ = candidate_graph(tmp_path, monkeypatch)
@@ -265,21 +258,13 @@ def test_candidate_nonaccepted_exit_preserves_review_draft_and_optional_argument
     tools.submit_visual_critique(json.dumps(body))
     if stale:
         _compile(tools)
-    baseline = [{"code": "baseline", "message": "Existing advisory"}]
-    accommodation = {"nudged": ["headline"]}
+    finalize = graph.nodes["tools"].bound.tools_by_name["finalize_run"]
+    # Harness alignment T11: the agent can no longer pass the three dropped arguments.
+    for dropped in ("ops_valid_through_iteration", "baseline_advisory_json", "accommodation_json"):
+        with pytest.raises(Exception):
+            finalize.invoke({**FINAL_ARGS, "status": status, "stop_reason": "x", dropped: "null"})
     result = json.loads(
-        graph.nodes["tools"]
-        .bound.tools_by_name["finalize_run"]
-        .invoke(
-            {
-                **FINAL_ARGS,
-                "status": status,
-                "stop_reason": "review_rejected",
-                "ops_valid_through_iteration": 1,
-                "baseline_advisory_json": json.dumps(baseline),
-                "accommodation_json": json.dumps(accommodation),
-            }
-        )
+        finalize.invoke({**FINAL_ARGS, "status": status, "stop_reason": "review_rejected"})
     )
     assert result["status"] == status
     assert result["stop_reason"] == "review_rejected"
@@ -292,7 +277,7 @@ def test_candidate_nonaccepted_exit_preserves_review_draft_and_optional_argument
         if status == "completed_with_warnings":
             assert body["summary"] in result["summary"]
     assert result["acceptance_receipt"] is None
-    assert result["ops_valid_through_iteration"] == 1
-    assert result["baseline_advisory"] == baseline
-    assert result["accommodation"] == accommodation
+    assert result["ops_valid_through_iteration"] is None
+    assert result["baseline_advisory"] is None
+    assert result["accommodation"] is None
     assert json.loads((tools.trace_dir / "final_scene.json").read_text()) == tools.scene

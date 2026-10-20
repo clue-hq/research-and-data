@@ -1426,7 +1426,7 @@ def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     assert editor_target_node_ids(neither) == []
 
 
-def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
+def test_editor_prompt_names_targets_as_facts_without_scope_rules() -> None:
     from lumen_api.main import editor_agent_prompt
     from lumen_api.models import AgentTurnPreviewRequest
 
@@ -1436,27 +1436,28 @@ def test_editor_prompt_scopes_to_targets_with_compensating_contract() -> None:
         target_node_ids=["node_contact_name"],
     )
     prompt = editor_agent_prompt(payload)
-    # The chipped target is named in the context and the instruction scopes to
-    # it (untouched nodes byte-identical) with the §1.6 compensating contract.
+    # Harness alignment I1: the chipped target is named as a fact; how much the turn may change is
+    # decided by the scene agent's system prompt, so no fence or compensating contract rides along.
     assert '"target_node_ids"' in prompt
     assert "node_contact_name" in prompt
-    assert "byte-identical" in prompt
-    assert "re-fit and verify" in prompt
-    assert "what you preserved" in prompt
+    assert "editor_instruction" not in prompt
+    assert "byte-identical" not in prompt
+    assert "surrounding layout must be preserved" not in prompt
 
 
-def test_editor_prompt_without_targets_uses_soft_targeting() -> None:
+def test_editor_prompt_without_targets_carries_no_scope_rules() -> None:
     from lumen_api.main import editor_agent_prompt
     from lumen_api.models import AgentTurnPreviewRequest
 
     prompt = editor_agent_prompt(
-        AgentTurnPreviewRequest(prompt="Fix overflow", scene=minimal_scene())
+        AgentTurnPreviewRequest(prompt="Make the whole ad feel more premium", scene=minimal_scene())
     )
-    # No chips: no hard byte-identical scoping, but the compensating contract
-    # still applies to every turn.
-    assert "byte-identical" not in prompt
-    assert "Prefer targeted repairs" in prompt
-    assert "what you preserved" in prompt
+    # A revamp request must not arrive with "touch as little as possible" attached.
+    assert "editor_instruction" not in prompt
+    assert "Prefer targeted repairs" not in prompt
+    assert "touch as little else as possible" not in prompt
+    # Harness alignment I11: no scene_summary copy either; the system prompt's digest has more.
+    assert "scene_summary" not in prompt
 
 
 def test_agent_instructions_round_trip_and_prompt_injection(client: TestClient) -> None:
@@ -2447,6 +2448,44 @@ def test_document_export_route_exports_with_warnings_on_advisory_diagnostics(
     assert warnings[0]["engine_severity"] == "error"
     assert "image policy" in warnings[0]["message"]
     assert payload["preflight"]["advisory_warnings"] == 1
+
+
+def text_overflow_scene(document_id: str) -> dict:
+    """A scene with a free text (bound to no slot, like the "x" between two logos) that is
+    taller than its fixed box: LUMV0903 and nothing else that blocks."""
+    scene = preflightable_scene()
+    scene["meta"]["id"] = document_id
+    separator = json.loads(json.dumps(scene["nodes"]["node_contact_name"]))
+    separator["id"] = "node_separator"
+    separator["kind"]["content"] = "x"
+    separator["size"] = {"width": {"kind": "fixed", "value": 26.0}, "height": {"kind": "fixed", "value": 4.0}}
+    scene["nodes"]["node_separator"] = separator
+    scene["pages"]["page_a4"]["children"].append("node_separator")
+    return scene
+
+
+def test_document_export_route_exports_text_that_does_not_fit_its_box(
+    client: TestClient,
+) -> None:
+    """Founder ruling 2026-10-19: text that does not fit its box renders as the canvas shows
+    it, so it never refuses a person's export. It rides the response as a warning."""
+    document = create_document(client, text_overflow_scene("doc_export_text_overflow"))
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"format": "svg", "page_ids": ["page_a4"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(
+        diagnostic["code"] == "LUMV0903" and diagnostic["severity"] == "error"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+    errors = [d["code"] for d in payload["diagnostics"]["current"] if d["severity"] == "error"]
+    assert payload["status"] == "ok", errors
+    assert payload["export"]["artifacts"], "an overflowing text must not cost the person the file"
+    assert "LUMV0903" in [warning["code"] for warning in payload["warnings"]]
 
 
 def test_document_export_route_fails_closed_before_export_on_preflight_errors(

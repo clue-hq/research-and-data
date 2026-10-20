@@ -1,5 +1,24 @@
 # Scene review
 
+Judge the result in this order, before completing the contract below:
+1. Does it do what the person asked? Read their actual message again first, not
+   your plan.
+   - For a revamp, compare with the version you looked at before changing
+     anything: the ad must be visibly reworked. If it reads as the old ad with
+     one change, the request is not met.
+   - For a new direction, judge it as a new ad.
+   - A targeted edit doesn't come here; it follows the system prompt's
+     targeted-edit routine.
+2. Is anything broken: readability, overflow, overlaps, logos, claims and
+   evidence? The checks below cover these.
+3. Does it match your plan in creative-direction.json? The plan is checked last.
+   It can't certify its own choices, and it can't excuse missing the request. If
+   your plan and the person's request disagree, the plan is wrong: revise it with
+   a revision_reason, validate it, and review again.
+
+The first item in `review_needs` is always the person's request in their own
+words. Acceptance requires it to be met.
+
 Judge the current full and compact previews before completing the contract below.
 Name the first read, its comfortably readable explanation, and what the artwork
 adds. Recognizing known words or deciphering enlarged text is not comfortable
@@ -7,7 +26,6 @@ reading. Judge paired-logo authenticity separately from palette, optical weight
 and grouping. A native button can be valid while detached from its message.
 Lost essential product content, unreadable support or a broken message group
 requires rejection and a coherent repair, not an advisory polish warning.
-The direction is a plan to assess; it cannot certify its own aesthetic choices.
 
 ## Candidate critique contract — read before writing
 
@@ -81,10 +99,14 @@ It does not certify the unreviewed remainder. Never turn unverified into met/rea
 just to register. Notes, empty gaps and schema validity are not proof of taste/truth.
 Whole acceptance also needs clean current preflight, current preview/view and a
 current registered accepted critique. A changed scene/direction needs renewed review.
-A caller-selected native_copy_review_profile also applies; no score waives a failure.
-`scoped_edit` requires a seeded validated `intent=edit` turn; review its named edit
-and relevant copy. It can support `edit_applied`, never final whole-creative `accepted`.
+The minimum text size also applies; no score waives a failure.
+A targeted edit writes no critique: it follows the system prompt's targeted-edit
+routine and finishes with `edit_applied`. Whole-creative `accepted` is for a new ad
+or a revamp.
 After registration, omit `critique_json` in `finalize_run` to reuse that current review.
+If `registered_review_current` is false, resolve `review_error` and renew the
+critique after viewing current pixels; a new view alone does not renew review.
+Don't repeat the same observation across reports; make each check concrete.
 For preflight operation details, read the returned `full_report_path`; diagnostics
 remain complete in the immediate result. Continue below for visual/source judgment.
 
@@ -121,8 +143,9 @@ treatment. Compare the reference's visual invariants against the actual rendered
 relationships, not merely matching palette or motif. Read the relevant playbook
 and shared resources again if a revision raises a new question; discovery remains
 available throughout review. A missing CTA is not a defect when the objective
-needs none; a present CTA must have the right next step, brand-supported form,
-measured label and readable local contrast. Check placement-specific overlays
+needs none; a present CTA must name this ad's real next step in words specific to
+its message, with a brand-supported form, measured label and readable local
+contrast. Check placement-specific overlays
 through `knowledge/scene/placement.md`, never a universal bottom exclusion band.
 
 Read the composite as a short visual argument: identify its first read, the
@@ -145,8 +168,8 @@ selected treatment and explicit user corrections. Use actual supplied preference
 context; do not infer that all later runs have learned a saved canvas edit.
 
 Record failures in the existing critique issues and affected direction checks,
-with the observed symptom and coherent repair. Preserve successful user-edited
-groups and source treatments. A visual repair may require replacing the chosen
+with the observed symptom and coherent repair. Preserve source
+treatments. A visual repair may require replacing the chosen
 concept or removing an optional element; adding decoration does not resolve a
 missing visual argument.
 
@@ -219,8 +242,8 @@ After a repair, the new scene needs its own render and view. Save the critique
 for that round/current scene and name unresolved blockers honestly. A blocker
 cannot be explained away as polish. Avoid retrying an identical failed treatment.
 
-The earlier controls provide negative evidence: self-accepted white-on-pale copy,
-an unsupported luminous motif, a substituted wordmark treatment, and a product
+These are examples of real failures: white copy on a pale texture accepted as
+readable, an unsupported glowing motif, a substituted wordmark, and a product
 crop too small to communicate. Each is a distinct failure. Palette similarity,
 native editability and valid export do not compensate for those failures.
 
@@ -312,30 +335,16 @@ material itself; schema validation does not verify source strings or meaning.
 Readability status is `readable`, `unreadable` or `unverified`, with a concise
 placement-specific reason covering all fragments of that occurrence. Examine
 each occurrence in the existing current full preview and feed proxy, including
-overlap, clipping, local contrast and small support/attribution. There is no
-universal font-size threshold. Whole acceptance requires complete passing copy
+overlap, clipping, local contrast and small support/attribution. Beyond the minimum text size, there is no fixed
+font-size target. Whole acceptance requires complete passing copy
 coverage, support and readability, bound to this direction, scene and preview.
 An incomplete rejected review can retain partial rows and unresolved judgments.
 
-When direction validation or the native-copy inventory reports a caller-selected
-`native_copy_review_profile` / `review_profile`, its viewing assumption is part of
-this run's contract. Check each fragment's `nominal_size_review` before accepting.
-An unavailable or below-minimum measurement blocks whole-creative acceptance;
-recompose, simplify, or remove optional copy through the checked tools and inspect
-the updated preview. The compact-feed profile uses a conservative native size
-floor at its declared display width. The stricter `legible-feed-v1` profile uses
-10px nominal em at 360px display width (30 source px for a 1080px page). It rejects
-the formerly accepted 17–25px source labels without imposing one final type size:
-hierarchy, font appearance, contrast and wrapping still need judgment.
-This is an internal review condition,
-not a platform specification, a rendered glyph measurement, or proof that copy is
-readable above the floor. It does not measure words inside images. The caller
-selects the profile; changing page units, role names or the direction cannot waive
-it. Without a profile, evaluate the actual requested viewing conditions visually.
-
-For a seeded, validated `intent=edit` turn, `scope="scoped_edit"` may review only
-the named edit and relevant copy, retaining unchanged unrelated text. Keep the
-existing target/operation scope checks and report collateral changes. A passing
-scoped review can support `edit_applied`; it never permits final `accepted` or
-claims to certify the whole creative. Reuse the registered current critique in
-`finalize_run` by omitting `critique_json`; no additional reviewer round is required.
+Minimum text size. Every native text fragment must meet the minimum text size in
+your instructions. Check each fragment's `nominal_size_review` before accepting.
+An unavailable or below-minimum measurement blocks whole-creative acceptance:
+recompose, simplify or remove optional copy through the checked tools, then
+inspect the updated preview. The minimum is a rejection floor, not the final type
+size: hierarchy, font appearance, contrast and wrapping still need judgment, and
+it doesn't measure words inside images. Changing page units, role names or the
+direction cannot waive it.

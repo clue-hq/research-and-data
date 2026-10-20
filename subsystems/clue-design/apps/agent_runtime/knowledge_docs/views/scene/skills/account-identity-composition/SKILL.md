@@ -24,8 +24,6 @@ fetched originals and traceable crops remain usable; a prior generated ad is not
 logo authority. Then use `fetch_logo(domain, company_name)` for missing or
 unsuitable variants. Fetch the exact advertiser too when its kit only has an
 unsuitable social avatar.
-On a pageless scene, compile page dimensions only, fetch and view sources, then
-validate the complete direction before creative nodes or imagery spend.
 Inspect returned provenance, missing cells, `cache_hit` and visible identity.
 Refresh only under the tool's wrong/outdated-logo condition. `needs_review`
 registers nothing. View relevant returned lockups with `view(target="asset:<id>")`;
@@ -90,14 +88,8 @@ local contrast; for separate regions, keep their content clear. Where a generate
 image meets the neighbouring field, decide its edge under
 `/.deepagent/skills/generative-imagery/SKILL.md`, or use a deliberate frame or bleed
 supported by the references. View their boundary in the composite before accepting it.
-Satisfy the caller-selected review profile as well as visual hierarchy. Its floor
+Meet the minimum text size as well as visual hierarchy. Its floor
 is a rejection threshold, not the final size or proof that every face reads well.
-
-For a no-CTA request, compose without an action region. For an awareness pitch
-without an explicit next step, start without an artwork CTA; add one only when
-campaign intent and relevant ad evidence support the action. Website navigation
-shows a possible destination, not a requirement for a button in an ad. Reclaim
-that space; do not leave a detached action island or an empty button reservation.
 
 Choose one visual idea that supports the evidenced proposition. An attractive
 unrelated product card is not proof of a different workflow. For a new concept,
