@@ -40,7 +40,17 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   with `after` cursor; SOQL 36 records done). Composio's tool search is narrow ("search deals"
   returned only `HUBSPOT_SEARCH_DEALS`) — the Task 11 manual should list the key actions by name.
 
+- Task 9: `brand_knowledge_writes.py` is now the one brand-document writer (`lock_brand`,
+  `next_brand_version`, `store_document_bytes`, `retire_older_versions`,
+  `render_brand_document`, `write_brand_document_version`; folder = path's first segment);
+  `product_management` calls it through thin wrappers stamped `brand_product_management`
+  (behaviour unchanged, its tests green). `write_brand_document@1` (`brand_document_tool.py`):
+  `company|proof/<slug>.md`; kind required only for a new path, an existing path keeps its kind
+  and front matter (like the Brand-context editor) plus `written_by {user_id, turn_id}`;
+  identical bytes → `unchanged: true` (its replay identity); `from_file` under `outputs/` via
+  `SandboxWorkspaces`. Pinned counts 155 names / 181 addresses.
+
 ## Next
-Task 9 (`write_brand_document@1`), Task 10, Task 11 (catalog; skill text to founder first,
+Task 10, Task 11 (catalog; skill text to founder first,
 uncommitted until trial), then Task 12 founder test on the local stack (gate before Phase 2),
 then deploy reads (R-2.4).
