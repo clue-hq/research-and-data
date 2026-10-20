@@ -6,11 +6,13 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 (Composio spike) done; both test CRMs connected but empty (seeding pending founder OK)._
+_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–2 done; next Task 3 (Composio gateway)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
-- ⬜ Connection table (provider-generic) and Composio setup with development apps
+- ✅ Configuration (Task 1, `be7883485`): Composio key, flag, auth config ids, pinned toolkit versions, Salesforce share
+- ✅ Migration (Task 2): `workspace_integration_connection`, `crm_connect_request`, `crm_connected` derivation (revision `3b800d603402`; db-smoke green)
+- ✅ Composio setup with development apps (dev project, managed auth configs for HubSpot and Salesforce)
 - ⬜ Connect card in chat, connect-link and callback routes, `crm_connected` wake
 - ⬜ `find_crm_actions` / `run_crm_action` (reads; results to `reads/` files)
 - ⬜ Salesforce API-budget check before large pulls (10% default share)
@@ -20,7 +22,7 @@ _Last updated: 2026-10-20 — Task 0 (Composio spike) done; both test CRMs conne
 - ⬜ CRM customers merged into `proof/customers.md`; onboarding refresh keeps CRM rows
 - ⬜ Manual path (no CRM): same document from the user's answers
 
-- 🔨 Test CRMs ready (both created and connected; seeding pending): HubSpot developer test account + Salesforce Developer Edition org, seeded with sample deals, companies and contacts
+- ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)
 - ⬜ **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — Phase 2 waits for this
 
 - ⬜ **Deploy the reads** (R-2.4). Before any real customer connects on the deployed platform

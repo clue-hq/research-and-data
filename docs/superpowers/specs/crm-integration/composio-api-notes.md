@@ -76,4 +76,4 @@ notes win.
 
 ## Test data
 Both test CRMs start **empty** (HubSpot 0 deals; the new Salesforce Developer Edition org 0
-opportunities — no sample data). Seeding is needed before the analysis can be exercised.
+opportunities — no sample data). Seeding is needed before the analysis can be exercised. (Seeded 2026-10-20: see `status.md`.) HubSpot rejects contact emails on the reserved `.test` domain (`INVALID_EMAIL`), so seeded contacts use `@<name>.example.com` while company domains stay `<name>.test`.
