@@ -193,7 +193,8 @@ Sample-size wording follows the learning pass: under 5 deals "not enough to say"
 ### 5.4 Writing the results (brand context)
 
 - **`company/sales-motion.md`** — the sales-motion document: definitions used, window, metrics each
-  with its source (CRM computation, the user, or "not available"), win patterns, committee mapping,
+  with its source (CRM computation — naming the saved script and table in `outputs/` it came from,
+  R-3.12 — the user, or "not available"), win patterns, committee mapping,
   sales-led pricing, gaps. Brand-level, under `company/` so the Brand Context page shows and edits it
   without frontend changes.
 - **`proof/customers.md`** — companies closed-won in the window are merged in, keeping the existing

@@ -83,6 +83,13 @@ Related documents:
   `crm_connect_request`) **and one constraint change** (`crm_connected` turn type); no gate change.
 - **R-3.11 (2026-10-20)** Composio is called over its **REST API with plain HTTP**, not its Python SDK.
 
+- **R-3.12 (2026-10-20)** **The agent shows its work:** it saves its final analysis script and the
+  computed tables in `outputs/`, and `company/sales-motion.md` notes what each number was computed
+  from, so the numbers are auditable and easy to re-run.
+- **R-3.13 (2026-10-20)** The sandbox's **Python runs per turn are raised to 75 in local
+  development** (`CLUE_SANDBOX_MAX_RUNS_PER_TURN=75` in the dev `.env`); the code default and
+  production stay at 10 for now.
+
 ## 4. Customers
 
 - **R-4.1 (2026-10-18)** The customer list **is in the first slice**: built from closed-won deals
