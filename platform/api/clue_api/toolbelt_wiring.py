@@ -92,6 +92,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
+from clue_api.crm.tools import build_crm_tools
 from clue_api.design_leg_tools import build_design_leg_tools
 from clue_api.design_tools import build_design_tools, is_default_design_tool
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
@@ -3161,6 +3162,12 @@ def build_toolbelt(
     # `preconditions`, never by absence. Registered UNGRANTED here: the grants are the reviewed
     # `head-of-abm@v62` and `design@v3` bumps, never a dict edit.
     for tool in build_web_search_tools(secrets=secrets):
+        registry.register(tool, make_default=True)
+    # CRM integration (spec docs/superpowers/specs/crm-integration/): always registered; the
+    # tools refuse until the flag, the Composio key and an auth config are configured.
+    for tool in build_crm_tools(
+        settings=resolved_settings, secrets=secrets, conn_factory=conn_factory
+    ):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
     # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,

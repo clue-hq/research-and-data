@@ -173,7 +173,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # until the design profile bump (148 -> 149).
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address) (149 -> 150).
     # Product management (2026-10-15, main): `manage_products@1` (+1) (150 -> 151).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 151
+    # CRM integration Phase 1: `connect_crm@1`, registered ungranted until Task 11 (151 -> 152).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 152
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
