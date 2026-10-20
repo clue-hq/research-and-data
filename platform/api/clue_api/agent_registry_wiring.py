@@ -525,6 +525,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # CRM integration Phase 1: registered now, granted to the Head of ABM by the reviewed profile
     # bump in Task 11 (docs/superpowers/plans/2026-10-20-crm-integration-phase-1-reads.md).
     "connect_crm": (),
+    "find_crm_actions": (),
+    "run_crm_action": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -861,6 +863,8 @@ _RESERVED_REASON: dict[str, str] = {
     "estimate_project": "post_stage0_not_admitted",
     "import_accounts": "post_stage0_not_admitted",
     "connect_crm": "crm_integration_pending_profile_grant",
+    "find_crm_actions": "crm_integration_pending_profile_grant",
+    "run_crm_action": "crm_integration_pending_profile_grant",
     "retry_ingestion": "replay_not_certified",
     "reverse_profile": "superseded_by_governed_stage0_recon",
     "score_accounts": "post_stage0_not_admitted",

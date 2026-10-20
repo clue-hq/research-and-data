@@ -42,6 +42,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.deep import ProfileAccountFn
 from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.sandbox.workspaces import SandboxWorkspaces
@@ -451,6 +452,9 @@ class AgentPlatformComponents:
     #: composed none — every HTTP root, and every deployment with the sandbox off — leaves it
     #: ``None``, the conversation engine registers nothing, and the tool refuses by name.
     sandbox_workspaces: SandboxWorkspaces | None = None
+    #: Where ``run_crm_action@1`` finds a turn's ``reads/`` folder: the same object the toolbelt
+    #: was built with, for the same reason as ``sandbox_workspaces``. ``None`` = no CRM reads.
+    crm_read_sinks: CrmReadSinks | None = None
 
 
 def build_agent_platform_components(
@@ -462,6 +466,7 @@ def build_agent_platform_components(
     tools: ToolRegistry,
     conn_factory: ConnFactory = transaction,
     sandbox_workspaces: SandboxWorkspaces | None = None,
+    crm_read_sinks: CrmReadSinks | None = None,
 ) -> AgentPlatformComponents:
     """Build every common C6 production adapter at the API root; fail before model spend.
 
@@ -509,6 +514,7 @@ def build_agent_platform_components(
         head_of_abm_turn_timeout_s=settings.head_of_abm_turn_timeout_s or None,
         agent_long_turn_alert_s=settings.agent_long_turn_alert_s or None,
         sandbox_workspaces=sandbox_workspaces,
+        crm_read_sinks=crm_read_sinks,
     )
 
 

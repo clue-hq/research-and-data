@@ -321,8 +321,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (175 -> 176).
     # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
     # (176 -> 177).
-    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178).
-    assert len(by_address) == 178
+    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178);
+    # find_crm_actions@1 and run_crm_action@1 likewise (178 -> 180).
+    assert len(by_address) == 180
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -453,8 +454,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + manage_products@1 (2026-10-15, main), granted at head-of-abm@v71.
     # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
     # (176 -> 177).
-    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178).
-    assert len(by_address) == 178  # + read_account_research@3 (2026-10-05)
+    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178);
+    # find_crm_actions@1 and run_crm_action@1 likewise (178 -> 180).
+    assert len(by_address) == 180  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",

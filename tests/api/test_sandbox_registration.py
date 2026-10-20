@@ -29,6 +29,7 @@ from clue_agents import (
 )
 from clue_api import conversation_turns as engine_module
 from clue_api.conversation_turns import ConversationTurnEngine
+from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_core import ExecutionId
 from tests.agents.conftest import artifact, constitution
@@ -64,9 +65,16 @@ class _Contexts:
 class _Components:
     """Only the attributes ``execute`` touches on this path."""
 
-    def __init__(self, *, workspaces: Any, sandbox_workspaces: SandboxWorkspaces | None) -> None:
+    def __init__(
+        self,
+        *,
+        workspaces: Any,
+        sandbox_workspaces: SandboxWorkspaces | None,
+        crm_read_sinks: CrmReadSinks | None = None,
+    ) -> None:
         self.workspaces = workspaces
         self.sandbox_workspaces = sandbox_workspaces
+        self.crm_read_sinks = crm_read_sinks
         self.turns = _Turns()
         self.history = _History()
         self.artifacts: Any = None
@@ -319,3 +327,31 @@ def test_a_process_with_no_sandbox_registry_runs_the_turn_unchanged(
         factory.close()
 
     assert result.outcome.status is AgentExecutionStatus.FAILED
+
+
+def test_the_turns_crm_read_sink_is_bound_for_the_turn_and_released_after(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_crm_action@1`` writes into the turn's own ``reads/``, found by execution id."""
+
+    factory, lease = _lease(tmp_path, MountRequest())
+    sinks = CrmReadSinks()
+    components = _Components(workspaces=factory, sandbox_workspaces=None, crm_read_sinks=sinks)
+    seen: dict[str, Any] = {}
+
+    class _Runtime:
+        async def run(self, **_: Any) -> AgentTurnOutcome:
+            seen["sink"] = sinks.sink_for(EXECUTION_ID)
+            raise RuntimeError("turn exploded")
+
+    engine = _engine(components=components, runtime=_Runtime(), monkeypatch=monkeypatch)
+    try:
+        with pytest.raises(RuntimeError, match="turn exploded"):
+            asyncio.run(engine.execute(request=_request(), lease=lease, budget_limit_millicents=1))
+    finally:
+        lease.backend.close()
+        factory.close()
+
+    assert seen["sink"] is lease.backend
+    assert sinks.sink_for(EXECUTION_ID) is None

@@ -100,6 +100,7 @@ from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
 from clue_api.conversation_naming import build_conversation_namer
+from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -1088,6 +1089,9 @@ async def _serve() -> None:
             if settings.sandbox_enabled
             else None
         )
+        # The CRM reads' one registry, for the same two-sided reason: ``run_crm_action@1`` looks
+        # the turn's ``reads/`` folder up in it, and the conversation engine binds it there.
+        crm_read_sinks = CrmReadSinks()
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -1127,6 +1131,7 @@ async def _serve() -> None:
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
             sandbox_workspaces=sandbox_workspaces,
+            crm_read_sinks=crm_read_sinks,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -1235,6 +1240,7 @@ async def _serve() -> None:
                 storage=storage,
                 tools=registry,
                 sandbox_workspaces=sandbox_workspaces,
+                crm_read_sinks=crm_read_sinks,
             )
         if settings.chat_enabled and platform_components is not None:
             assert memory is not None

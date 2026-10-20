@@ -1,20 +1,31 @@
 """The CRM agent tools (CRM integration Tasks 7–8). ``connect_crm@1``: report the workspace's
-connection, or open one connect card per presenting turn (R-3.10)."""
+connection, or open one connect card per presenting turn (R-3.10). ``find_crm_actions@1`` /
+``run_crm_action@1``: reads only, every result written to ``reads/``, the Salesforce budget kept."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import text
 
-from clue_api.crm.connections import activate_from_attempt, start_attempt
-from clue_api.crm.tools import ConnectCrmInput, ConnectCrmTool
+from clue_api.crm.composio_gateway import ComposioError, ExecuteResult, ToolInfo
+from clue_api.crm.connections import activate_from_attempt, latest_connection, start_attempt
+from clue_api.crm.read_sinks import CrmReadSinks
+from clue_api.crm.tools import (
+    ConnectCrmInput,
+    ConnectCrmTool,
+    FindCrmActionsInput,
+    FindCrmActionsTool,
+    RunCrmActionInput,
+    RunCrmActionTool,
+)
 from clue_api.turn_action import derive_turn_action_ref
 from clue_config import Settings
-from clue_core import new_operation_id
-from clue_toolbelt import ToolContext
+from clue_core import new_execution_id, new_operation_id
+from clue_toolbelt import PreconditionFailed, ToolContext
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -205,3 +216,284 @@ def test_not_configured_refuses(
         assert codes == ["crm_not_configured"]
 
     _run(tmp_path, f"notconfigured-{configured}", body)
+
+
+# --- reads (Task 8) -------------------------------------------------------------------------
+
+_DEALS = {"results": [{"id": "1", "properties": {"dealname": "Acme"}}], "total": 1}
+
+
+class _FakeComposio:
+    def __init__(
+        self,
+        *,
+        result: ExecuteResult | None = None,
+        error: ComposioError | None = None,
+        limits: dict[str, Any] | None = None,
+        tools: list[ToolInfo] | None = None,
+    ) -> None:
+        self.result = result or ExecuteResult(successful=True, data=_DEALS, error=None)
+        self.error = error
+        self.limits = limits or {"DailyApiRequests": {"Max": 15000, "Remaining": 14000}}
+        self.tools = tools or []
+        self.executed: list[dict[str, Any]] = []
+
+    async def search_tools(self, **_: Any) -> list[ToolInfo]:
+        return self.tools
+
+    async def execute(self, **kwargs: Any) -> ExecuteResult:
+        self.executed.append(kwargs)
+        if kwargs["slug"] == "SALESFORCE_GET_ORG_LIMITS":
+            return ExecuteResult(successful=True, data=self.limits, error=None)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class _Sink:
+    def __init__(self) -> None:
+        self.files: dict[str, bytes] = {}
+
+    def write_spill(self, operation_id: str, data: bytes) -> str:
+        self.files[operation_id] = data
+        return f"reads/{operation_id}.json"
+
+
+def _reader(conn: Any, gateway: _FakeComposio, sinks: CrmReadSinks | None) -> RunCrmActionTool:
+    return RunCrmActionTool(
+        settings=_settings(),
+        gateway=gateway,  # type: ignore[arg-type]
+        read_sinks=sinks,
+        conn_factory=conn_session_factory(conn),
+    )
+
+
+def _turn_ctx(conn: Any, workspace_id: str, sinks: CrmReadSinks) -> tuple[ToolContext, _Sink]:
+    execution_id = new_execution_id()
+    sink = _Sink()
+    sinks.register(execution_id, sink)
+    ctx = ToolContext(
+        workspace_id=workspace_id,
+        actor="agent",
+        conn_factory=conn_session_factory(conn),
+        operation_id=new_operation_id(),
+        execution_id=execution_id,
+    )
+    return ctx, sink
+
+
+async def _codes(tool: RunCrmActionTool, slug: str, ctx: ToolContext) -> list[str]:
+    inputs = RunCrmActionInput(slug=slug, arguments={})
+    failures = list(await tool.preconditions(inputs, ctx))
+    if failures:
+        return [failure.reason_code for failure in failures]
+    try:
+        await tool.invoke(inputs, ctx)
+    except PreconditionFailed as exc:
+        return list(exc.reason_codes)
+    return []
+
+
+def test_run_writes_reads_file_even_when_small(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        sinks = CrmReadSinks()
+        ctx, sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        gateway = _FakeComposio()
+        tool = _reader(conn, gateway, sinks)
+        inputs = RunCrmActionInput(slug="HUBSPOT_SEARCH_DEALS", arguments={"limit": 100})
+        assert await tool.preconditions(inputs, ctx) == ()
+        refs = (await tool.invoke(inputs, ctx)).references
+        assert refs["path"] == f"reads/{ctx.operation_id}.json"
+        assert json.loads(sink.files[str(ctx.operation_id)]) == _DEALS
+        assert refs["record_count"] == 1 and refs["total"] == 1 and refs["done"] is True
+        assert refs["fields"] == ["id", "properties.dealname"]
+        assert "Acme" not in json.dumps(refs)  # the model never gets the records
+        assert gateway.executed[0]["version"] == "20261020_01"
+        assert gateway.executed[0]["user_id"] == f"ws_{seeded.workspace_id}"
+
+    _run(tmp_path, "read-small", body)
+
+
+def test_unlisted_action_and_missing_sink_refuse(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        gateway = _FakeComposio()
+        tool = _reader(conn, gateway, sinks)
+        assert await _codes(tool, "HUBSPOT_CREATE_CONTACT", ctx) == ["crm_action_not_allowed"]
+        unbound = _reader(conn, gateway, CrmReadSinks())
+        assert await _codes(unbound, "HUBSPOT_SEARCH_DEALS", ctx) == ["crm_reads_unavailable"]
+        assert gateway.executed == []
+
+    _run(tmp_path, "read-refused", body)
+
+
+def test_no_connection_refuses(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        tool = _reader(conn, _FakeComposio(), sinks)
+        assert await _codes(tool, "HUBSPOT_SEARCH_DEALS", ctx) == ["crm_not_connected"]
+
+    _run(tmp_path, "read-unconnected", body)
+
+
+def test_expired_connection_marks_row_and_refuses(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        expired = ComposioError("connection_expired", 410, "Connected account is EXPIRED")
+        tool = _reader(conn, _FakeComposio(error=expired), sinks)
+        assert await _codes(tool, "HUBSPOT_SEARCH_DEALS", ctx) == ["crm_connection_expired"]
+        current = await latest_connection(conn, workspace_id=seeded.workspace_id)
+        assert current is not None and current.status == "expired"
+        # connect_crm now offers a reconnect card
+        refs = (
+            await _tool(conn).invoke(_input(seeded), _ctx(conn, seeded.workspace_id))
+        ).references
+        assert refs["mode"] == "reconnect"
+
+    _run(tmp_path, "read-expired", body)
+
+
+def test_a_failed_read_returns_the_crms_reason(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        sinks = CrmReadSinks()
+        ctx, sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        failed = ExecuteResult(successful=False, data=None, error="Property 'x' does not exist")
+        tool = _reader(conn, _FakeComposio(result=failed), sinks)
+        inputs = RunCrmActionInput(slug="HUBSPOT_SEARCH_DEALS", arguments={})
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(inputs, ctx)
+        assert refused.value.reason_codes == ("crm_action_failed",)
+        assert "Property 'x' does not exist" in refused.value.failures[0].message
+        assert sink.files == {}
+
+    _run(tmp_path, "read-failed", body)
+
+
+async def _calls_today(conn: Any, workspace_id: str) -> int:
+    return int(
+        (
+            await conn.execute(
+                text(
+                    "SELECT api_calls_count FROM workspace_integration_connection "
+                    "WHERE workspace_id = :ws AND status = 'active'"
+                ),
+                {"ws": workspace_id},
+            )
+        ).scalar_one()
+    )
+
+
+def test_salesforce_reads_are_counted(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id, "salesforce")
+        sinks = CrmReadSinks()
+        gateway = _FakeComposio(
+            result=ExecuteResult(successful=True, data={"records": [], "done": True}, error=None)
+        )
+        tool = _reader(conn, gateway, sinks)
+        for _ in range(2):
+            ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+            assert await _codes(tool, "SALESFORCE_RUN_SOQL_QUERY", ctx) == []
+        # one limits lookup (cached for the second read) + two reads
+        assert await _calls_today(conn, seeded.workspace_id) == 3
+        assert [call["slug"] for call in gateway.executed].count("SALESFORCE_GET_ORG_LIMITS") == 1
+        assert gateway.executed[-1]["version"] == "20261018_00"
+
+    _run(tmp_path, "sf-counted", body)
+
+
+def test_salesforce_share_exhausted_refuses(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id, "salesforce")
+        sinks = CrmReadSinks()
+        # 10% of Max = 10 calls; the limits lookup is call 1, then nine reads fit.
+        gateway = _FakeComposio(limits={"DailyApiRequests": {"Max": 100, "Remaining": 90}})
+        tool = _reader(conn, gateway, sinks)
+        for _ in range(9):
+            ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+            assert await _codes(tool, "SALESFORCE_RUN_SOQL_QUERY", ctx) == []
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        assert await _codes(tool, "SALESFORCE_RUN_SOQL_QUERY", ctx) == [
+            "salesforce_api_share_exhausted"
+        ]
+        assert await _calls_today(conn, seeded.workspace_id) == 10
+
+    _run(tmp_path, "sf-share", body)
+
+
+def test_salesforce_org_low_remaining_refuses(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id, "salesforce")
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        gateway = _FakeComposio(limits={"DailyApiRequests": {"Max": 15000, "Remaining": 1499}})
+        tool = _reader(conn, gateway, sinks)
+        assert await _codes(tool, "SALESFORCE_RUN_SOQL_QUERY", ctx) == [
+            "salesforce_api_share_exhausted"
+        ]
+        assert [call["slug"] for call in gateway.executed] == ["SALESFORCE_GET_ORG_LIMITS"]
+
+    _run(tmp_path, "sf-org-low", body)
+
+
+def test_salesforce_without_api_access_refuses_plainly(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id, "salesforce")
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        disabled = ExecuteResult(
+            successful=False, data=None, error="API_DISABLED_FOR_ORG: API is not enabled"
+        )
+        gateway = _FakeComposio(result=disabled)
+        gateway.limits = {}  # the limits lookup fails too on such an org
+        original = gateway.execute
+
+        async def execute(**kwargs: Any) -> ExecuteResult:
+            if kwargs["slug"] == "SALESFORCE_GET_ORG_LIMITS":
+                gateway.executed.append(kwargs)
+                return disabled
+            return await original(**kwargs)
+
+        gateway.execute = execute  # type: ignore[method-assign]
+        tool = _reader(conn, gateway, sinks)
+        inputs = RunCrmActionInput(slug="SALESFORCE_RUN_SOQL_QUERY", arguments={})
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(inputs, ctx)
+        assert refused.value.reason_codes == ("salesforce_api_disabled",)
+        assert "Professional Edition" in refused.value.failures[0].message
+
+    _run(tmp_path, "sf-disabled", body)
+
+
+def test_find_filters_to_read_allowlist(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        tools = [
+            ToolInfo("HUBSPOT_SEARCH_DEALS", "Search deals", {"type": "object"}, ("readOnlyHint",)),
+            ToolInfo("HUBSPOT_CREATE_DEAL", "Create a deal", {}, ()),
+            ToolInfo("HUBSPOT_SEARCH_DEALS_FROM_NL", "Ask in words", {}, ("readOnlyHint",)),
+            ToolInfo("HUBSPOT_LIST_DEALS", "List deals", {}, ("readOnlyHint",)),
+        ]
+        find = FindCrmActionsTool(
+            gateway=_FakeComposio(tools=tools),  # type: ignore[arg-type]
+            conn_factory=conn_session_factory(conn),
+        )
+        ctx = _ctx(conn, seeded.workspace_id)
+        inputs = FindCrmActionsInput(query="deals", limit=10)
+        assert await find.preconditions(inputs, ctx) == ()
+        refs = (await find.invoke(inputs, ctx)).references
+        assert refs["provider"] == "hubspot"
+        assert [action["slug"] for action in refs["actions"]] == [
+            "HUBSPOT_SEARCH_DEALS",
+            "HUBSPOT_LIST_DEALS",
+        ]
+        assert refs["actions"][0]["input_schema"] == {"type": "object"}
+
+    _run(tmp_path, "find", body)

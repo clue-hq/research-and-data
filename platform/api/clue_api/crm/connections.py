@@ -251,17 +251,25 @@ async def mark_expired(conn: AsyncConnection, *, connection_id: UUID) -> None:
     )
 
 
-async def count_salesforce_call(conn: AsyncConnection, *, connection_id: UUID, today: date) -> int:
-    """Count one Clue API call against the connection for ``today`` (UTC); returns the new count."""
+async def count_salesforce_call(
+    conn: AsyncConnection, *, connection_id: UUID, today: date, allowed: int | None = None
+) -> int | None:
+    """Count one Clue API call against the connection for ``today`` (UTC); returns the new count.
+
+    With ``allowed``, the call is counted only while today's count is below it, in the same
+    statement (two turns cannot both take the last call), and ``None`` means the share is used up.
+    """
     count = (
         await conn.execute(
             text(
                 "UPDATE workspace_integration_connection SET "
                 "api_calls_count = CASE WHEN api_calls_day = :today "
                 "THEN api_calls_count + 1 ELSE 1 END, api_calls_day = :today "
-                "WHERE connection_id = :id RETURNING api_calls_count"
+                "WHERE connection_id = :id AND (CAST(:allowed AS integer) IS NULL "
+                "OR api_calls_day IS DISTINCT FROM :today OR api_calls_count < :allowed) "
+                "RETURNING api_calls_count"
             ),
-            {"today": today, "id": connection_id},
+            {"today": today, "id": connection_id, "allowed": allowed},
         )
-    ).scalar_one()
-    return int(count)
+    ).scalar_one_or_none()
+    return None if count is None else int(count)

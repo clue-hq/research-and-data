@@ -475,6 +475,11 @@ class ConversationTurnEngine:
                         attachments=mounts.attachments,
                     ),
                 )
+            # CRM reads (spec crm-integration §5): ``run_crm_action@1`` writes every result into
+            # this turn's ``reads/`` folder, found by execution id like the sandbox above.
+            crm_sinks = self.components.crm_read_sinks
+            if crm_sinks is not None:
+                crm_sinks.register(constitution.execution_id, lease.backend)
             try:
                 execution = build_head_of_abm_stage0_execution(
                     request=request,
@@ -522,6 +527,8 @@ class ConversationTurnEngine:
                 # released tree is exactly what this registry exists to prevent.
                 if bound_sandbox is not None:
                     bound_sandbox.release(constitution.execution_id)
+                if crm_sinks is not None:
+                    crm_sinks.release(constitution.execution_id)
         else:
             outcome = committed
         return await self._result_from_outcome(
