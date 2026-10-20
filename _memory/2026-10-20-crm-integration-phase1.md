@@ -29,6 +29,18 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
 - The founder's Composio dev API key was printed once in a tool output (failed masking);
   founder advised to rotate it.
 
+- Task 8 (reads): `crm/read_actions.py` (allowlist + summary), `crm/read_sinks.py`
+  (`CrmReadSinks`, built in `fleet_main`, passed to `build_toolbelt(crm_read_sinks=)` and
+  `AgentPlatformComponents.crm_read_sinks`; `conversation_turns` registers `lease.backend` per
+  execution and releases in the sandbox's `finally`), `crm/salesforce_budget.py`
+  (`SalesforceBudget.take_call`; org limits cached 5 min; `count_salesforce_call(allowed=)` is an
+  atomic conditional increment). `find_crm_actions@1` (READ) and `run_crm_action@1` (SPEND,
+  AT_LEAST_ONCE) registered ungranted; pinned counts 154 names / 180 addresses.
+  Live check 2026-10-20 on the seeded CRMs: summaries parse real shapes (HubSpot search total 36
+  with `after` cursor; SOQL 36 records done). Composio's tool search is narrow ("search deals"
+  returned only `HUBSPOT_SEARCH_DEALS`) — the Task 11 manual should list the key actions by name.
+
 ## Next
-Task 6 (frontend connect card + callback page; show founder a preview, non-blocking), Tasks 7–11,
-then Task 12 founder test on the local stack (gate before Phase 2), then deploy reads (R-2.4).
+Task 9 (`write_brand_document@1`), Task 10, Task 11 (catalog; skill text to founder first,
+uncommitted until trial), then Task 12 founder test on the local stack (gate before Phase 2),
+then deploy reads (R-2.4).

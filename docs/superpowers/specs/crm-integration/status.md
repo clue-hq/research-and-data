@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–7 done; next Task 8 (read tools)._
+_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–8 done; next Task 9 (`write_brand_document`)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -18,8 +18,8 @@ _Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks
 - ✅ Connect-link, callback-completion and status routes; `crm_connected` wake of every waiting chat (Task 5)
 - ✅ Connect card in chat and callback page (Task 6, frontend) — preview screenshot owed once `connect_crm` exists (Task 7); visuals to be polished later (R-3.9)
 - ✅ `connect_crm` tool (Task 7; registered, granted in Task 11)
-- ⬜ `find_crm_actions` / `run_crm_action` (reads; results to `reads/` files)
-- ⬜ Salesforce API-budget check before large pulls (10% default share)
+- ✅ `find_crm_actions` / `run_crm_action` (Task 8; reads only, every result to a `reads/` file, the model gets a summary; registered, granted in Task 11; checked live on both test CRMs)
+- ✅ Salesforce API-budget check before every read (Task 8; 10% default share of the org's daily calls, stop when the org has under 10% left)
 - ⬜ `write_brand_document` (`company/`, `proof/` only)
 - ⬜ `crm-sales-analysis` skill (substance reviewed by founder first) and interview step
 - ⬜ `company/sales-motion.md`
