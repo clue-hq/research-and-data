@@ -396,6 +396,7 @@ def _handler(
     catalog_regenerator: Any = None,
     domain_caller: Any = None,
     domain_checker: Any = None,
+    current_document: Any = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
     return OnboardingRunWorkHandler(
@@ -414,6 +415,7 @@ def _handler(
         catalog_regenerator=catalog_regenerator,
         domain_caller=domain_caller or _scripted_domain_caller([]),
         domain_checker=domain_checker or _no_domain_checks,
+        current_document=current_document,
     )
 
 

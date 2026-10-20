@@ -82,6 +82,7 @@ from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     CatalogRegenerator,
+    CurrentDocumentReader,
     IcpRef,
     IcpSynthesisOutcome,
     OnboardingRunWorkHandler,
@@ -94,6 +95,7 @@ from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCata
 from clue_api.arv2.read_tools import DbArv2ReadService
 from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2_wiring import register_arv2_wiring
+from clue_api.brand_knowledge_writes import current_brand_version
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
@@ -151,7 +153,7 @@ from clue_api.onboarding_synthesis_wiring import (
 )
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
-from clue_api.product_management import regenerate_catalog
+from clue_api.product_management import read_brand_document, regenerate_catalog
 from clue_api.product_page_writer import build_product_page_handler
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -728,6 +730,7 @@ def _build_onboarding_handler(
         synthesis=synthesis,
         reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
         catalog_regenerator=_catalog_regenerator(storage),
+        current_document=_current_brand_document(storage),
     )
 
 
@@ -740,6 +743,29 @@ def _catalog_regenerator(storage: StorageBackend) -> CatalogRegenerator:
         )
 
     return regenerate
+
+
+def _current_brand_document(storage: StorageBackend) -> CurrentDocumentReader:
+    """R-4.5: the customers step reads the current ``proof/customers.md`` to keep its CRM rows."""
+
+    async def read(
+        conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str
+    ) -> str | None:
+        current = await current_brand_version(
+            conn, workspace_id=workspace_id, brand_id=brand_id, path=path
+        )
+        if current is None:
+            return None
+        found = await read_brand_document(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            document_id=current.document_id,
+        )
+        return None if found is None else found[1]
+
+    return read
 
 
 def _build_catalog_reconciler_factory(

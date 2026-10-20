@@ -11,6 +11,7 @@ another writer on the same brand lock the brand row first (:func:`lock_brand`).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -22,6 +23,8 @@ from clue_storage import StorageBackend, artifact_key, content_address, record_a
 
 __all__ = [
     "RETIRABLE_STATUSES",
+    "BrandDocumentVersion",
+    "current_brand_version",
     "SERVABLE_STATUSES",
     "lock_brand",
     "next_brand_version",
@@ -34,6 +37,48 @@ __all__ = [
 SERVABLE_STATUSES = ("ready", "proposed", "confirmed")
 #: Versions a write may retire.
 RETIRABLE_STATUSES = ("ready", "proposed")
+
+
+@dataclass(frozen=True)
+class BrandDocumentVersion:
+    document_id: UUID
+    kind: str
+    version: int
+    artifact_sha256: str | None
+
+
+async def current_brand_version(
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str
+) -> BrandDocumentVersion | None:
+    """The newest servable brand-level version of ``path`` (what Brand context shows)."""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT document_id, kind, version, artifact_sha256 "
+                    "FROM brand_knowledge_document WHERE workspace_id = :ws AND brand_id = :brand "
+                    "AND path = :path AND project_id IS NULL AND status IN :servable "
+                    "ORDER BY version DESC LIMIT 1"
+                ).bindparams(bindparam("servable", expanding=True)),
+                {
+                    "ws": workspace_id,
+                    "brand": brand_id,
+                    "path": path,
+                    "servable": list(SERVABLE_STATUSES),
+                },
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return None
+    return BrandDocumentVersion(
+        document_id=row["document_id"],
+        kind=str(row["kind"]),
+        version=int(row["version"]),
+        artifact_sha256=row["artifact_sha256"],
+    )
 
 
 async def lock_brand(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> bool:

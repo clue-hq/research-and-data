@@ -23,12 +23,12 @@ from typing import Annotated, Any, ClassVar
 from uuid import UUID
 
 from pydantic import Field, StringConstraints
-from sqlalchemy import bindparam, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.manual import tool_manual_link
 from clue_api.brand_knowledge_writes import (
-    SERVABLE_STATUSES,
+    current_brand_version,
     lock_brand,
     render_brand_document,
     write_brand_document_version,
@@ -107,14 +107,6 @@ class _Scope:
     brand_id: str
     user_id: str
     turn_id: UUID
-
-
-@dataclass(frozen=True)
-class _Current:
-    document_id: UUID
-    kind: str
-    version: int
-    sha256: str | None
 
 
 def _check_input(inputs: WriteBrandDocumentInput) -> None:
@@ -227,7 +219,9 @@ class WriteBrandDocumentTool(Tool):
         workspace_id = ctx.workspace_id
         if not await lock_brand(conn, workspace_id=workspace_id, brand_id=scope.brand_id):
             raise _Refused("brand_unavailable", "The project's brand is unavailable.")
-        current = await _current(conn, workspace_id, scope.brand_id, inputs.path)
+        current = await current_brand_version(
+            conn, workspace_id=workspace_id, brand_id=scope.brand_id, path=inputs.path
+        )
         front: dict[str, Any] = {}
         if current is not None:
             if inputs.kind is not None and inputs.kind != current.kind:
@@ -251,7 +245,7 @@ class WriteBrandDocumentTool(Tool):
         front.setdefault("kind", kind)
         front["written_by"] = {"user_id": scope.user_id, "turn_id": str(scope.turn_id)}
         data = render_brand_document(path=inputs.path, kind=kind, front=front, body=body)
-        if current is not None and current.sha256 == content_address(data):
+        if current is not None and current.artifact_sha256 == content_address(data):
             return WriteBrandDocumentOutput(
                 document_id=str(current.document_id),
                 path=inputs.path,
@@ -326,39 +320,6 @@ class WriteBrandDocumentTool(Tool):
         return _Scope(
             brand_id=str(project.brand_id), user_id=turn.submitted_by_user_id, turn_id=turn_id
         )
-
-
-async def _current(
-    conn: AsyncConnection, workspace_id: str, brand_id: str, path: str
-) -> _Current | None:
-    row = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT document_id, kind, version, artifact_sha256 "
-                    "FROM brand_knowledge_document WHERE workspace_id = :ws AND brand_id = :brand "
-                    "AND path = :path AND project_id IS NULL AND status IN :servable "
-                    "ORDER BY version DESC LIMIT 1"
-                ).bindparams(bindparam("servable", expanding=True)),
-                {
-                    "ws": workspace_id,
-                    "brand": brand_id,
-                    "path": path,
-                    "servable": list(SERVABLE_STATUSES),
-                },
-            )
-        )
-        .mappings()
-        .first()
-    )
-    if row is None:
-        return None
-    return _Current(
-        document_id=row["document_id"],
-        kind=str(row["kind"]),
-        version=int(row["version"]),
-        sha256=row["artifact_sha256"],
-    )
 
 
 def build_brand_document_tools(
