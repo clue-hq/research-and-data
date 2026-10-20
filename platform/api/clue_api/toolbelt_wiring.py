@@ -81,6 +81,7 @@ from clue_api.arv2.read_tools import (
     build_arv2_read_tools,
 )
 from clue_api.auth_tool_context import require_human_authority
+from clue_api.brand_document_tool import build_brand_document_tools
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
     build_client_knowledge_tools,
@@ -3024,6 +3025,13 @@ def build_toolbelt(
     registry.register(
         ManageProductsTool(conn_factory=conn_factory, storage=storage), make_default=True
     )
+    # CRM integration (Task 9): the Head of ABM publishes a Brand-context document under
+    # company/ or proof/ (the sales motion, the CRM's customers), through the same brand writer.
+    # ``sandbox_workspaces`` lets it take the body from a file the agent wrote in outputs/.
+    for tool in build_brand_document_tools(
+        storage=storage, sandbox_workspaces=sandbox_workspaces, conn_factory=conn_factory
+    ):
+        registry.register(tool, make_default=True)
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected
