@@ -6,9 +6,10 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — nothing built yet; design in founder review._
+_Last updated: 2026-10-20 — Task 0 (Composio spike) done; both test CRMs connected but empty (seeding pending founder OK)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
+- ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
 - ⬜ Connection table (provider-generic) and Composio setup with development apps
 - ⬜ Connect card in chat, connect-link and callback routes, `crm_connected` wake
 - ⬜ `find_crm_actions` / `run_crm_action` (reads; results to `reads/` files)
@@ -19,7 +20,7 @@ _Last updated: 2026-10-20 — nothing built yet; design in founder review._
 - ⬜ CRM customers merged into `proof/customers.md`; onboarding refresh keeps CRM rows
 - ⬜ Manual path (no CRM): same document from the user's answers
 
-- ⬜ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, seeded with sample deals, companies and contacts
+- 🔨 Test CRMs ready (both created and connected; seeding pending): HubSpot developer test account + Salesforce Developer Edition org, seeded with sample deals, companies and contacts
 - ⬜ **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — Phase 2 waits for this
 
 - ⬜ **Deploy the reads** (R-2.4). Before any real customer connects on the deployed platform

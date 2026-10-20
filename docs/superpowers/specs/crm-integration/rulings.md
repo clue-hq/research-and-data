@@ -74,6 +74,15 @@ Related documents:
   **(1) from the connected CRM** (real deal amounts), or **(2) by asking the user** for the details.
   (This is the "two options" on the founder's whiteboard.)
 
+- **R-3.9 (2026-10-20)** The connect card is **shown to the founder as a preview** when built; this
+  is **not a blocker**, and the card's visuals will be improved later.
+
+- **R-3.10 (2026-10-20)** The **connect card is drawn from the `connect_crm` tool's result**, not an
+  agent gate; a `crm_connect_request` table records which chats are waiting and each login attempt.
+  Database for Phase 1 is therefore **two tables** (`workspace_integration_connection`,
+  `crm_connect_request`) **and one constraint change** (`crm_connected` turn type); no gate change.
+- **R-3.11 (2026-10-20)** Composio is called over its **REST API with plain HTTP**, not its Python SDK.
+
 ## 4. Customers
 
 - **R-4.1 (2026-10-18)** The customer list **is in the first slice**: built from closed-won deals

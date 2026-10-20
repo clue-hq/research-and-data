@@ -96,8 +96,10 @@ directly. Composio holds the CRM tokens and executes the calls (R-5.2).
 
 ### 4.1 From the chat (R-3.7)
 
-- **`connect_crm@1`** reports the existing connection, or opens a **connect card** (a new gate kind,
-  `crm_connection`) and ends the turn on it.
+- **`connect_crm@1`** reports the existing connection, or shows a **connect card** and ends the
+  turn. The card is drawn from the tool's own result (not an agent gate, R-3.10); the tool writes a
+  `crm_connect_request` row recording the waiting chat, the turn that showed the card, who asked, and
+  the mode.
   - Already connected: says which CRM, since when, by whom.
   - The connection is `expired`: opens the card in its *reconnect* state.
   - The user wants a different CRM: opens the card in its *switch* state. One active CRM per
@@ -408,7 +410,10 @@ Alembic conventions apply (random-hash ids, reversible, named CHECKs, one head).
 - **Daily roll-up and cap counters** for flood control: per account per day (and per rep for tasks).
 
 ### 7.2 Changed
-- `agent_gate` kinds: add `crm_connection` and `crm_write_permission` (code, DB CHECK, frontend).
+- **`crm_connect_request`** (Phase 1, R-3.10) — one row per card: workspace, project, thread, turn,
+  requested by, mode (`connect` | `reconnect` | `switch`), status (`open` | `fulfilled` |
+  `cancelled`), and the pending login attempt (Composio account id, provider, who clicked, when).
+- `agent_gate` kinds: add `crm_write_permission` (code, DB CHECK, frontend) — Phase 2.
 - `agent_turn_submission.derivation`: add `crm_connected` and `crm_writes_finished`.
 - Fleet task kind: add `crm_write` (the executor).
 - Onboarding's customers document writer: carry CRM rows forward (5.4).
@@ -567,3 +572,5 @@ checks against HubSpot and Salesforce developer accounts:
 14. In multi-brand workspaces the agent asks how to separate the brands' deals and writes to the
     current project's brand.
 15. Any workspace member's agent may read the CRM once it is connected.
+16. *(approved by the founder 2026-10-20, R-3.10 / R-3.11)* The connect card is a tool-result card
+    with a `crm_connect_request` table, not a gate; Composio is called over REST with `httpx`.
