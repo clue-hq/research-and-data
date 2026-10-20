@@ -48,8 +48,8 @@ async def _request(conn: AsyncConnection, workspace: str, *, mode: str = "connec
     return await open_connect_request(
         conn,
         workspace_id=workspace,
-        project_id=uuid.uuid4(),
-        thread_id=uuid.uuid4(),
+        project_id=f"prj-{uuid.uuid4().hex[:8]}",
+        thread_id=f"thr-{uuid.uuid4().hex[:8]}",
         turn_id=uuid.uuid4(),
         requested_by_user_id="user-asker",
         mode=mode,
@@ -61,8 +61,8 @@ def test_a_connect_request_is_one_per_turn() -> None:
         turn = uuid.uuid4()
         kwargs = {
             "workspace_id": workspace,
-            "project_id": uuid.uuid4(),
-            "thread_id": uuid.uuid4(),
+            "project_id": "prj-1",
+            "thread_id": "thr-1",
             "turn_id": turn,
             "requested_by_user_id": "user-asker",
             "mode": "connect",

@@ -86,8 +86,8 @@ def upgrade() -> None:
         CREATE TABLE crm_connect_request (
             request_id uuid NOT NULL,
             workspace_id text NOT NULL,
-            project_id uuid NOT NULL,
-            thread_id uuid NOT NULL,
+            project_id text NOT NULL,
+            thread_id text NOT NULL,
             turn_id uuid NOT NULL,
             requested_by_user_id text NOT NULL,
             mode text NOT NULL,

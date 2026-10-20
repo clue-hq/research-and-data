@@ -87,8 +87,8 @@ def test_connect_request_mode_and_status_are_checked(mode: str, status: str) -> 
                 {
                     "id": uuid.uuid4(),
                     "ws": WS,
-                    "p": uuid.uuid4(),
-                    "t": uuid.uuid4(),
+                    "p": "prj-1",
+                    "t": "thr-1",
                     "turn": uuid.uuid4(),
                     "mode": mode,
                     "status": status,

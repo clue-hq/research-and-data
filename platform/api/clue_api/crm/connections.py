@@ -51,8 +51,8 @@ class CrmConnection:
 class ConnectRequest:
     request_id: UUID
     workspace_id: str
-    project_id: UUID
-    thread_id: UUID
+    project_id: str
+    thread_id: str
     turn_id: UUID
     requested_by_user_id: str
     mode: str
@@ -98,8 +98,8 @@ async def open_connect_request(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    project_id: UUID,
-    thread_id: UUID,
+    project_id: str,
+    thread_id: str,
     turn_id: UUID,
     requested_by_user_id: str,
     mode: str,
