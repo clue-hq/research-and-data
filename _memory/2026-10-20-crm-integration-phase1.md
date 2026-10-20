@@ -58,6 +58,16 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   `product_management.read_brand_document`); a failed read fails the customers step rather than
   dropping rows. CRM rows the agent writes MUST put `CRM: <HubSpot|Salesforce> …` in Source.
 
-## Next Task 11 (catalog; skill text to founder first,
-uncommitted until trial), then Task 12 founder test on the local stack (gate before Phase 2),
-then deploy reads (R-2.4).
+- Task 11 (UNCOMMITTED until the founder's trial, R-3.14): head-of-abm v76 (four tools granted,
+  `crm-sales-analysis@v1`, `stage0-interview@v49` with section 2b, `manual-*@v22`), recipe
+  `recipe0-stage0-v36.json` (CONVERSATION_RECIPE_VERSION 36), pins (connect_crm/write_brand_document
+  from the presenting turn; find_crm_actions/run_crm_action from the execution — find_crm_actions
+  gained `pin_requirements=("project",)` because the recipe audit requires a pin), tool notes for
+  the four tools, CRM tools withheld on the Stage-0 trial surface, skills-block budget 5120 -> 5632
+  (one resource joined). Manual v22 hand-written chapters = v21 with paths repointed, plus one
+  sentence in gates-authority and workspace (and stage0 v49 §10) naming write_brand_document as
+  the one exception to "brand/ is read only". Kept uncommitted as ONE unit: committing the wiring
+  without the profile/skill files would leave HEAD unable to resolve head-of-abm@v76.
+
+## Next
+Task 12: founder trial on the local stack (gate before Phase 2); then commit Task 11 as one unit (or revise the skill), then deploy reads (R-2.4).

@@ -89,6 +89,18 @@ Related documents:
 - **R-3.13 (2026-10-20)** The sandbox's **Python runs per turn are raised to 75 in local
   development** (`CLUE_SANDBOX_MAX_RUNS_PER_TURN=75` in the dev `.env`); the code default and
   production stay at 10 for now.
+- **R-3.14 (2026-10-20)** The `crm-sales-analysis` skill (v1) and the `stage0-interview` change
+  (v49) are **approved as drafted for now**, to be revised after trials if needed. With them, four
+  points proposed by Claude and accepted:
+  - `company/sales-motion.md` holds **no person's name or email**, only titles and roles, and no
+    list of individual deals.
+  - The analysis window **widens when the 3-month window holds fewer than about 15 closed deals**
+    (offered to the person), and runs **6–12 months for long-cycle industries**.
+  - The CRM step sits at **question 2 of the interview** (the last closed-won deals), **offered,
+    not forced**; a recent `company/sales-motion.md` is used instead of re-running it.
+  - A CRM customer row in `proof/customers.md` reads: How they buy `direct`, Evidence
+    `closed-won deal`, Domain check and Quote empty, Source `CRM: <HubSpot|Salesforce>
+    (closed-won <date>)` (see R-4.6).
 
 ## 4. Customers
 
@@ -101,6 +113,9 @@ Related documents:
   not every closed-won company ever.
 - **R-4.5 (2026-10-18)** When onboarding refreshes `proof/customers.md`, it **keeps the CRM rows**
   and merges new website findings around them by domain.
+- **R-4.6 (2026-10-20)** A **CRM row is recognised by `CRM:` in its Source cell**; when a website
+  row and a CRM customer share a domain, the website row is kept and ` · CRM: …` is added to its
+  Source (approved with R-3.14).
 
 ## 5. Data handling (Composio)
 

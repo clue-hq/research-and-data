@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks 1–10 done; next Task 11 (agent catalog: grants, manual, skill text for founder review)._brand_document`)._
+_Last updated: 2026-10-20 — Tasks 0–10 done; Task 11 (agent catalog: head-of-abm v76, skills, manual v22, recipe 36) built and green but **uncommitted until the founder's trial**; next Task 12 (founder test on the local stack)._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -21,10 +21,10 @@ _Last updated: 2026-10-20 — Task 0 done; test CRMs connected and seeded; Tasks
 - ✅ `find_crm_actions` / `run_crm_action` (Task 8; reads only, every result to a `reads/` file, the model gets a summary; registered, granted in Task 11; checked live on both test CRMs)
 - ✅ Salesforce API-budget check before every read (Task 8; 10% default share of the org's daily calls, stop when the org has under 10% left)
 - ✅ `write_brand_document` (Task 9; `company/`, `proof/` only; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file; registered, granted in Task 11)
-- ⬜ `crm-sales-analysis` skill (substance reviewed by founder first) and interview step
-- ⬜ `company/sales-motion.md`
+- 🔨 `crm-sales-analysis` skill v1 and interview step (stage0-interview v49, section 2b) — approved by the founder (R-3.14), written, **uncommitted until the trial**; Head of ABM v76 grants the four tools (recipe 36, manual v22)
+- 🔨 `company/sales-motion.md` — the skill writes it; first real one comes from the trial
 - 🔨 CRM customers merged into `proof/customers.md` (the agent's merge comes with the Task 11 skill); ✅ onboarding refresh keeps CRM rows (Task 10: rows whose Source has `CRM:` are carried, merged by domain)
-- ⬜ Manual path (no CRM): same document from the user's answers
+- 🔨 Manual path (no CRM): same document from the user's answers — in the skill (section 11); proven at the trial
 
 - ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)
 - ⬜ **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — Phase 2 waits for this
