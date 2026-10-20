@@ -17,7 +17,6 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, ConfigDict
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.crm.composio_gateway import (
@@ -34,6 +33,7 @@ from clue_api.crm.connections import (
     start_attempt,
 )
 from clue_api.crm.wake import queue_crm_connected_turns
+from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
 from clue_auth.policy import Permission
@@ -51,16 +51,14 @@ PERMISSION: Permission = "workspace.manage_settings"
 CALLBACK_PATH = "/integrations/crm/callback"
 
 
-class ConnectLinkBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ConnectLinkBody(WireModel):
+    """Wire casing is camelCase (``requestId``); snake_case is accepted too."""
 
     request_id: UUID
     provider: CrmProvider
 
 
-class CompleteBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CompleteBody(WireModel):
     request_id: UUID
     status: str
     connected_account_id: str

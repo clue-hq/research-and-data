@@ -18,7 +18,9 @@ import { MessageResponse } from "@/components/ai-elements/message-response";
 import { ClarificationHistoryCard } from "@/features/chat-shell/components/clarification-card";
 import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
+import { crmConnectCard, type CrmProvider } from "@/features/integrations/model/crm";
 import { ChatGateCard } from "./chat-gate-card";
+import { CrmConnectCard } from "./crm-connect-card";
 import { ChatResearchTask } from "./chat-research-task";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
@@ -41,6 +43,10 @@ export interface ChatPartActions {
     input: GateDecisionInput,
   ): void;
   onGateRecovery(card: GateCardModel): void;
+  /** Send a plain chat message (e.g. the CRM card's "I'll give the numbers myself"). */
+  onSendMessage?: (message: string) => void;
+  /** The CRM connect card's action: a fresh login link (R-3.10). */
+  onCrmConnect?: (requestId: string, provider: CrmProvider) => Promise<string>;
 }
 
 export function ChatMessagePartView({
@@ -70,10 +76,19 @@ export function ChatMessagePartView({
       // Reasoning is consolidated at the message level. Activity receipts stay
       // in the stream/inspector, without duplicating the same rounds in chat.
       return null;
-    case "tool":
+    case "tool": {
       // Tool receipts remain in the event history, but per-step activity rows
-      // are not part of the chat UI (release cleanup, 2026-09-20).
-      return null;
+      // are not part of the chat UI (release cleanup, 2026-09-20). The one
+      // exception is a finished `connect_crm` call that asked for a connect
+      // card (CRM integration, R-3.10): the card IS that tool's result.
+      if (part.toolName !== "connect_crm" || part.state !== "output-available") return null;
+      const card = crmConnectCard(part.output);
+      return card ? <CrmConnectCard
+          card={card}
+          onConnect={actions.onCrmConnect}
+          onSendMessage={actions.onSendMessage}
+        /> : null;
+    }
     case "task":
       return <ChatResearchTask part={part} />;
     case "plan":
