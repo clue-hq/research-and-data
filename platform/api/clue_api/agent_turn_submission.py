@@ -57,6 +57,7 @@ if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so
 
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
+    "DERIVATION_CRM_CONNECTED",
     "DERIVATION_DESIGN_LEG_FIRST_TURN",
     "DERIVATION_DESIGN_LEG_REDELIVERY",
     "DERIVATION_DISCOVERY_FINISHED",
@@ -95,6 +96,9 @@ DERIVATION_DESIGN_LEG_FIRST_TURN = "design_leg_first_turn"
 #: Spec 2026-09-30 §4 "The wake": the Head of ABM's turn at the end of a discovery run, in the
 #: thread that launched it. Its message is the run's summary, which the platform wrote.
 DERIVATION_DISCOVERY_FINISHED = "discovery_finished"
+#: The workspace's CRM connection became active: the chat that showed the connect card resumes
+#: by itself (CRM integration, R-3.10). Same shape as ``discovery_finished``.
+DERIVATION_CRM_CONNECTED = "crm_connected"
 
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
