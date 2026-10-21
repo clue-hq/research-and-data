@@ -222,7 +222,11 @@ def test_no_cursor_starts_at_the_tail(tmp_path: Path) -> None:
                 thread_id=thread_id,
                 cursor=None,
             )
-            assert _frame(await anext(frames))[1] == "stream.hello"
+            tail = await _tail(conn, workspace_id=ws, thread_id=thread_id)
+            hello_id, hello, _ = _frame(await anext(frames))
+            # The hello names the start point, so a client that reconnects before any turn frame
+            # still resumes from here rather than from a later tail (review finding #1).
+            assert (hello_id, hello) == (tail, "stream.hello")
             turn_id = await _submit_turn(
                 conn,
                 project=project,
@@ -266,6 +270,7 @@ def test_a_cursor_older_than_the_horizon_resets(tmp_path: Path) -> None:
                 )
             frames = _parse_sse(response.text)
             assert [event for _, event, _ in frames] == ["stream.hello", "stream.reset"]
+            assert frames[0][0] == cursor, "after a reset the hello names the tail"
             assert frames[1][2] == {
                 "schema_version": "1",
                 "type": "stream.reset",
@@ -367,3 +372,50 @@ def test_the_lifecycle_vocabulary_is_the_turn_events() -> None:
         == LIFECYCLE_EVENT_TYPES
     )
     assert json.dumps(sorted(LIFECYCLE_EVENT_TYPES))
+
+
+def test_a_reconnect_from_the_hello_cursor_misses_nothing(tmp_path: Path) -> None:
+    """A tab hidden before any turn frame reopens from the hello id and sees what ran since."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-thread-stream-hello", name="Thread stream hello")
+            ws, pid = project.workspace_id, project.project_id
+            thread_id = await _thread(conn, workspace_id=ws, project_id=pid, label="ts-hello")
+            storage = FsStorage(tmp_path / "artifacts")
+            await _a_turn(
+                conn, project=project, thread_id=thread_id, key="k-before", storage=storage
+            )
+            app = _app(conn, settings=_settings(), storage=storage)
+            async with _client(app) as client:
+                token = await _mint_thread_token(
+                    client, workspace_id=ws, project_id=pid, thread_id=thread_id
+                )
+                opened = await _open_thread(
+                    client, workspace_id=ws, project_id=pid, thread_id=thread_id, token=token
+                )
+                hello_id = _parse_sse(opened.text)[0][0]
+                assert hello_id is not None
+                # The tab is hidden; a turn runs to completion.
+                missed = await _a_turn(
+                    conn, project=project, thread_id=thread_id, key="k-hidden", storage=storage
+                )
+                token = await _mint_thread_token(
+                    client, workspace_id=ws, project_id=pid, thread_id=thread_id
+                )
+                reopened = await _open_thread(
+                    client,
+                    workspace_id=ws,
+                    project_id=pid,
+                    thread_id=thread_id,
+                    token=token,
+                    last_event_id=hello_id,
+                )
+            again = _parse_sse(reopened.text)
+            assert [(event, data["turn_id"]) for _, event, data in again[1:]] == [
+                ("turn.accepted", str(missed)),
+                ("turn.started", str(missed)),
+                ("turn.completed", str(missed)),
+            ]
+
+    run_async(scenario())

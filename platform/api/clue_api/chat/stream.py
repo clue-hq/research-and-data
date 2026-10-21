@@ -207,7 +207,8 @@ async def thread_event_frames(
     teammate started — and the chat then attaches that turn's own stream for its parts and text.
 
     * **No cursor** (a fresh open): start at the thread's tail. The chat has just read the thread,
-      so nothing older is news.
+      so nothing older is news. ``stream.hello`` carries the start point as its ``id``, so the
+      client always holds a cursor to reconnect from.
     * **A cursor**: replay the lifecycle frames after it, or, when it is older than the replay
       horizon (or unknown), send ``stream.reset`` and start at the tail — the chat re-reads the
       thread on a reset, so replaying old frames would only repeat what that read returns.
@@ -245,7 +246,11 @@ async def thread_event_frames(
             last_seen = await _thread_tail(conn, workspace_id=workspace_id, thread_id=thread_id)
     # The start point is fixed before hello, so a turn that begins while the client reads hello
     # is still ahead of the cursor.
-    yield _sse_frame(event="stream.hello", data={**envelope, "type": "stream.hello"})
+    # Its ``id`` is the start point, so a client that reconnects before any turn frame arrives
+    # (a tab hidden at once, a proxy cut) resumes from here and misses nothing in between.
+    yield _sse_frame(
+        event="stream.hello", data={**envelope, "type": "stream.hello"}, event_id=last_seen
+    )
     if reset:
         yield _sse_frame(
             event="stream.reset",

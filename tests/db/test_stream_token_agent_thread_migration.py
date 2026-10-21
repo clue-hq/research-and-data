@@ -85,3 +85,34 @@ def test_agent_thread_tokens_are_allowed_and_the_downgrade_removes_them() -> Non
     run_async(_insert_thread_token())
     assert run_async(_thread_tokens()) == 1
     run_async(_clear())
+
+
+_INDEX_PREVIOUS = "8c3e73eb83b2"
+
+
+async def _lifecycle_index() -> str | None:
+    async with db_lifespan() as engine, engine.connect() as conn:
+        return (
+            await conn.execute(
+                text(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE indexname = 'agent_turn_event_stream_thread_lifecycle'"
+                )
+            )
+        ).scalar_one_or_none()
+
+
+@pytest.mark.usefixtures("require_db")
+def test_the_thread_stream_poll_has_a_lifecycle_index() -> None:
+    """The thread stream's poll reads only turn.* frames; a partial index keeps it from scanning
+    every text delta of a long turn once a second per open chat (review finding #4)."""
+
+    cfg = _alembic_config()
+    command.upgrade(cfg, "head")
+    index = run_async(_lifecycle_index())
+    assert index is not None
+    assert "(workspace_id, thread_id, event_id)" in index
+    assert "turn.accepted" in index and "text.delta" not in index
+    command.downgrade(cfg, _INDEX_PREVIOUS)
+    assert run_async(_lifecycle_index()) is None
+    command.upgrade(cfg, "head")
