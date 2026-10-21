@@ -966,6 +966,13 @@ class Settings(BaseSettings):
     # SSE poll cadence of the turn stream's live tail. The outbox is the buffer (§3.3(7)); a slow
     # or absent consumer never touches model execution. Env: ``CLUE_CHAT_STREAM_POLL_INTERVAL_S``.
     chat_stream_poll_interval_s: float = 0.25
+    # The thread stream (CRM trial 1, F2): one per open, visible chat, sending only the turn
+    # lifecycle frames of any turn in the thread, so a chat follows turns it did not start. It
+    # polls more slowly than a turn stream (it only has to notice that a turn began), and sends an
+    # SSE comment when it has been quiet this long so no proxy cuts an idle connection.
+    # Env: ``CLUE_CHAT_THREAD_STREAM_POLL_INTERVAL_S`` / ``CLUE_CHAT_THREAD_STREAM_KEEPALIVE_S``.
+    chat_thread_stream_poll_interval_s: float = 1.0
+    chat_thread_stream_keepalive_s: float = 15.0
 
     # --- FI Lane D "dev-lens" mini-slice (prompt/skill tuning; DEV-ONLY BY CONSTRUCTION) ------
     # Two developer lenses onto a turn. Both are refused at process start outside a dev/local

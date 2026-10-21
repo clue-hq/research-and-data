@@ -28,6 +28,7 @@ Two identifiers, two jobs (§3.2):
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -41,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
 
 __all__ = [
+    "LIFECYCLE_EVENT_TYPES",
     "TERMINAL_TURN_EVENTS",
     "TURN_EVENT_TYPES",
     "TurnEventRow",
@@ -123,6 +125,20 @@ TERMINAL_TURN_EVENTS: Final = frozenset(
         TurnEventType.TURN_FAILED,
         TurnEventType.TURN_CANCELLED,
         TurnEventType.TURN_AWAITING_INPUT,
+    }
+)
+
+#: A turn's lifecycle frames — the only frames a thread stream sends (CRM trial 1, F2). They say
+#: that a turn exists and where it is; its parts, text and tools stay on the turn's own stream.
+LIFECYCLE_EVENT_TYPES: Final = frozenset(
+    {
+        TurnEventType.TURN_ACCEPTED.value,
+        TurnEventType.TURN_STARTED.value,
+        TurnEventType.TURN_AWAITING_INPUT.value,
+        TurnEventType.TURN_COMPLETED.value,
+        TurnEventType.TURN_FAILED.value,
+        TurnEventType.TURN_CANCELLED.value,
+        TurnEventType.TURN_RETRYING.value,
     }
 )
 
@@ -275,12 +291,14 @@ async def list_turn_events(
     thread_id: str | None = None,
     after_event_id: int = 0,
     limit: int = 1000,
+    event_types: Collection[str] | None = None,
 ) -> tuple[TurnEventRow, ...]:
     """Read a tenant's turn frames in cursor order — the replay surface.
 
     Scoped in SQL on ``workspace_id`` on every statement: a cross-workspace read returns nothing,
     never another tenant's conversation. ``turn_id`` narrows to one turn's stream; ``thread_id``
-    narrows to a whole conversation. Read-only.
+    narrows to a whole conversation; ``event_types`` keeps only those frames (filtered in SQL, so
+    ``limit`` counts only the frames returned). Read-only.
     """
 
     clauses = ""
@@ -295,6 +313,9 @@ async def list_turn_events(
     if thread_id is not None:
         clauses += "AND thread_id = :thread_id "
         params["thread_id"] = thread_id
+    if event_types is not None:
+        clauses += "AND event_type = ANY(:event_types) "
+        params["event_types"] = sorted(event_types)
     rows = (
         (
             await conn.execute(
@@ -358,6 +379,7 @@ async def plan_turn_replay(
     horizon_s: float,
     now: datetime | None = None,
     limit: int = 1000,
+    event_types: Collection[str] | None = None,
 ) -> TurnReplayPlan:
     """Plan a consumer's replay from its ``Last-Event-ID`` cursor (§3.6).
 
@@ -384,6 +406,7 @@ async def plan_turn_replay(
         thread_id=thread_id,
         after_event_id=effective_cursor,
         limit=limit,
+        event_types=event_types,
     )
     return TurnReplayPlan(reset=reset, backlog=backlog, effective_cursor=effective_cursor)
 

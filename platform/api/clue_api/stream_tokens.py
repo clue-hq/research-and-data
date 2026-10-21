@@ -17,6 +17,7 @@ line, moved to the one owner at the merge, re-exported for its pre-merge importe
 from __future__ import annotations
 
 from clue_execution.stream_tokens import (
+    AGENT_THREAD_SUBJECT_KIND,
     PROJECT_RUN_SUBJECT_KIND,
     consume_stream_token,
     consume_subject_stream_token,
@@ -26,6 +27,7 @@ from clue_execution.stream_tokens import (
 )
 
 __all__ = [
+    "AGENT_THREAD_SUBJECT_KIND",
     "PROJECT_RUN_SUBJECT_KIND",
     "consume_stream_token",
     "consume_subject_stream_token",

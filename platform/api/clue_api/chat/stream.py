@@ -45,6 +45,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 from uuid import UUID, uuid5
@@ -94,6 +95,7 @@ from clue_api.chat.turn_controls import (
     lock_turn_control,
 )
 from clue_api.chat.turn_events import (
+    LIFECYCLE_EVENT_TYPES,
     TERMINAL_TURN_EVENTS,
     TURN_STREAM_SCHEMA_VERSION,
     TurnEventRow,
@@ -101,7 +103,13 @@ from clue_api.chat.turn_events import (
     plan_turn_replay,
 )
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
-from clue_api.stream_tokens import consume_turn_stream_token, mint_turn_stream_token
+from clue_api.stream_tokens import (
+    AGENT_THREAD_SUBJECT_KIND,
+    consume_stream_token,
+    consume_turn_stream_token,
+    mint_stream_token,
+    mint_turn_stream_token,
+)
 from clue_api.thread_store import get_thread
 from clue_auth import Permission
 from clue_config import Settings
@@ -120,6 +128,7 @@ log = get_logger("clue_api.chat.stream")
 __all__ = [
     "build_chat_stream_router",
     "install_chat_stream_surface",
+    "thread_event_frames",
 ]
 
 PrincipalDep = Annotated[RequestPrincipal, Depends(chat_principal_resolver)]
@@ -162,6 +171,116 @@ def _is_terminal_event(row: TurnEventRow) -> bool:
     """Whether ``row`` is the last frame a turn stream may serve."""
 
     return row.event_type in TERMINAL_TURN_EVENTS
+
+
+_KEEPALIVE_COMMENT = ": keepalive\n\n"
+
+
+async def _thread_tail(conn: Any, *, workspace_id: str, thread_id: str) -> int:
+    """The thread's newest frame id of any type (``0`` for a thread with none)."""
+
+    return int(
+        await conn.scalar(
+            text(
+                "SELECT coalesce(max(event_id), 0) FROM agent_turn_event_stream "
+                "WHERE workspace_id = :workspace AND thread_id = :thread"
+            ),
+            {"workspace": workspace_id, "thread": thread_id},
+        )
+    )
+
+
+async def thread_event_frames(
+    *,
+    conn_factory: ConnFactory,
+    settings: Settings,
+    workspace_id: str,
+    project_id: str,
+    thread_id: str,
+    cursor: int | None,
+    live_tail: bool = True,
+) -> AsyncIterator[str]:
+    """The thread stream's frames: hello, then the lifecycle frames of any turn in the thread.
+
+    CRM trial 1, F2 (R-10.1). Only ``turn.*`` frames travel here (:data:`LIFECYCLE_EVENT_TYPES`);
+    they tell an open chat that a turn exists — one the server queued, another tab sent, or a
+    teammate started — and the chat then attaches that turn's own stream for its parts and text.
+
+    * **No cursor** (a fresh open): start at the thread's tail. The chat has just read the thread,
+      so nothing older is news.
+    * **A cursor**: replay the lifecycle frames after it, or, when it is older than the replay
+      horizon (or unknown), send ``stream.reset`` and start at the tail — the chat re-reads the
+      thread on a reset, so replaying old frames would only repeat what that read returns.
+
+    There is no terminal frame: a thread outlives its turns, and the stream ends when the client
+    disconnects. While nothing happens it sends an SSE comment every
+    ``chat_thread_stream_keepalive_s`` so no proxy closes an idle connection. Everything is read
+    from Postgres on each poll, so any API process can serve any chat.
+    """
+
+    envelope: dict[str, JsonValue] = {
+        "schema_version": TURN_STREAM_SCHEMA_VERSION,
+        "thread_id": thread_id,
+        "project_id": project_id,
+    }
+    reset = False
+    backlog: tuple[TurnEventRow, ...] = ()
+    async with conn_factory() as conn:
+        if cursor is not None:
+            plan = await plan_turn_replay(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=None,
+                thread_id=thread_id,
+                last_event_id=cursor,
+                horizon_s=settings.sse_replay_horizon_s,
+                limit=settings.sse_replay_page_limit,
+                event_types=LIFECYCLE_EVENT_TYPES,
+            )
+            reset = plan.reset
+            if not reset:
+                backlog = plan.backlog
+                last_seen = plan.effective_cursor
+        if cursor is None or reset:
+            last_seen = await _thread_tail(conn, workspace_id=workspace_id, thread_id=thread_id)
+    # The start point is fixed before hello, so a turn that begins while the client reads hello
+    # is still ahead of the cursor.
+    yield _sse_frame(event="stream.hello", data={**envelope, "type": "stream.hello"})
+    if reset:
+        yield _sse_frame(
+            event="stream.reset",
+            data={
+                **envelope,
+                "type": "stream.reset",
+                "reason": "cursor_older_than_horizon",
+                "rehydrate": "transcript",
+            },
+        )
+    for row in backlog:
+        yield _event_frame(row)
+        last_seen = row.event_id
+    if not live_tail:
+        return
+    last_sent = time.monotonic()
+    while True:
+        await asyncio.sleep(settings.chat_thread_stream_poll_interval_s)
+        async with conn_factory() as conn:
+            fresh = await list_turn_events(
+                conn,
+                workspace_id=workspace_id,
+                thread_id=thread_id,
+                after_event_id=last_seen,
+                event_types=LIFECYCLE_EVENT_TYPES,
+            )
+        for row in fresh:
+            yield _event_frame(row)
+            last_seen = row.event_id
+        now = time.monotonic()
+        if fresh:
+            last_sent = now
+        elif now - last_sent >= settings.chat_thread_stream_keepalive_s:
+            yield _KEEPALIVE_COMMENT
+            last_sent = now
 
 
 def build_chat_stream_router(
@@ -562,6 +681,84 @@ def build_chat_stream_router(
                         return
 
         return StreamingResponse(_stream(), media_type="text/event-stream")
+
+    # --- the thread stream (CRM trial 1, F2) ----------------------------------------------------
+
+    @router.post("/projects/{project_id}/threads/{thread_id}/stream_token")
+    async def mint_thread_token_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+    ) -> dict[str, JsonValue]:
+        _require(who, PERMISSION_THREAD_READ)
+        await _scope(who=who, project_id=project_id, thread_id=thread_id)
+        async with conn_factory() as conn:
+            token = await mint_stream_token(
+                conn,
+                workspace_id=who.workspace_id,
+                subject_kind=AGENT_THREAD_SUBJECT_KIND,
+                subject_id=thread_id,
+                ttl_s=settings.chat_stream_token_ttl_s,
+            )
+        return {
+            "data": {
+                "schema_version": TURN_STREAM_SCHEMA_VERSION,
+                "stream_token": str(token),
+                "thread_id": thread_id,
+            }
+        }
+
+    @router.get("/projects/{project_id}/threads/{thread_id}/events")
+    async def thread_events_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+        stream_token: Annotated[str, Query()],
+        last_event_id_header: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+        last_event_id_query: Annotated[int | None, Query(alias="last_event_id")] = None,
+    ) -> StreamingResponse:
+        _require(who, PERMISSION_THREAD_READ)
+        await _scope(who=who, project_id=project_id, thread_id=thread_id)
+        try:
+            token = UUID(stream_token)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise _refuse(
+                status_code=401,
+                code="INVALID_STREAM_TOKEN",
+                message="invalid stream token",
+            ) from exc
+        # A per-turn token never opens this stream: the consume statement requires
+        # ``turn_id IS NULL``, and a token minted for another thread names another subject.
+        async with conn_factory() as conn:
+            consumed = await consume_stream_token(
+                conn,
+                token=token,
+                workspace_id=who.workspace_id,
+                subject_kind=AGENT_THREAD_SUBJECT_KIND,
+                subject_id=thread_id,
+            )
+        if not consumed:
+            raise _refuse(
+                status_code=401,
+                code="INVALID_STREAM_TOKEN",
+                message="invalid or already-used stream token",
+            )
+        cursor: int | None = last_event_id_query
+        if last_event_id_header is not None:
+            with contextlib.suppress(ValueError):
+                cursor = int(last_event_id_header)
+        return StreamingResponse(
+            thread_event_frames(
+                conn_factory=conn_factory,
+                settings=settings,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+                thread_id=thread_id,
+                cursor=cursor,
+                live_tail=live_tail,
+            ),
+            media_type="text/event-stream",
+        )
 
     # --- controls (§3.5) -----------------------------------------------------------------------
 
