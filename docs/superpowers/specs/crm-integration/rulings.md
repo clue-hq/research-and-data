@@ -228,6 +228,15 @@ Related documents:
   live write card per chat (a new proposal replaces an unanswered one); the asking card shows the
   CRM's logo.
 
+- **R-6.23 (2026-10-22)** **Write actions are found the same way as reads.** The agent searches
+  Composio (`find_crm_actions`) and picks the write action itself, guided by the `crm-writing`
+  skill; proposing writes by a fixed list of "kinds" was considered and rejected (one generic
+  mechanism, judgement in the prompt). Safety stays in code: only allowlisted write actions can run,
+  and each carries data we maintain (kind of change, object and fields, plain-words label) that
+  drives the permission scope, the card's groups, the before-values and the write log. In trial 1
+  the search missed one named read action (F5) but the agent still finished correctly; on Salesforce
+  it found everything first time.
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched
