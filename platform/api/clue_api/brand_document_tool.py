@@ -1,13 +1,19 @@
 """``write_brand_document@1``: the Head of ABM publishes a Brand-context document.
 
 Spec: docs/superpowers/specs/crm-integration/2026-10-20-crm-integration-first-release-design.md
-§6. The CRM sales analysis lands as ``company/sales-motion.md``, and recent closed-won customers
-are merged into ``proof/customers.md``; both are ordinary brand-level documents the person can read
-and edit in Brand context. The tool writes only under ``company/`` and ``proof/``, only to the
-brand of the conversation's project, and always as a new version: older versions are superseded,
-never changed, and a project's confirmed pin is never touched.
+§6; founder ruling R-3.15. The agent may edit any Brand-context document (``company/``,
+``product/``, ``audience/``, ``proof/``) except the generated product catalog, which only
+``manage_products`` changes - and only when the person asks or a skill says to. It writes only to
+the brand of the conversation's project, and always as a new version: older versions are
+superseded, never changed, and a project's confirmed pin is never touched.
 
-The body comes inline or from a file the agent wrote in the code sandbox's ``outputs/`` folder (a
+Two writers never silently overwrite each other: the call names the version it read
+(``based_on_version``, from ``brand/index.json``), and a document that has moved on since is
+refused ``document_changed`` - the rule a person's save in Brand context already follows. Nothing
+is locked. The brand row lock serializes the write itself.
+
+The Markdown comes inline (``markdown``) or from a file the agent wrote in the code sandbox's
+``outputs/`` folder (a
 long document is easier to build there). An existing document keeps its front matter, as the
 Brand-context editor does; ``written_by`` records the person and turn. Writing bytes identical to
 the current version publishes nothing and returns that version, so a replayed call is harmless.
@@ -65,7 +71,9 @@ __all__ = [
 ]
 
 SOURCE_KEY = "brand_document_agent_write"
-_PATH = re.compile(r"^(company|proof)/[a-z0-9][a-z0-9-]*\.md$")
+_PATH = re.compile(r"^(company|product|audience|proof)/[a-z0-9][a-z0-9-]*\.md$")
+#: Generated from the brand's product list; ``manage_products`` is its only writer.
+_CATALOG_PATH = "product/catalog.md"
 _FROM_FILE = re.compile(r"^outputs/(?:[A-Za-z0-9_][A-Za-z0-9._-]*/)*[A-Za-z0-9_][A-Za-z0-9._-]*$")
 _KIND = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _MAX_BODY_CHARS = 1_000_000
@@ -73,15 +81,19 @@ _MAX_FILE_BYTES = 2_000_000
 
 
 class WriteBrandDocumentInput(ToolInput):
-    #: ``company/<name>.md`` or ``proof/<name>.md``, lower-case letters, digits and hyphens.
+    #: ``<company|product|audience|proof>/<name>.md``, lower-case letters, digits and hyphens.
     path: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     #: What the document is, e.g. ``sales-motion``. Needed only for a new document; an existing
     #: document keeps its kind.
     kind: str | None = None
-    #: The Markdown body, without front matter. Give this or ``from_file``, not both.
-    body: str | None = Field(default=None, max_length=_MAX_BODY_CHARS)
+    #: The document's Markdown, without front matter. Give this or ``from_file``, not both.
+    #: Never name an input ``body``/``content``/``text``…: the agent's plan validator refuses any
+    #: binding with one of those names (``clue_execution.graph._RAW_BODY_KEYS``), trial 1 F4.
+    markdown: str | None = Field(default=None, max_length=_MAX_BODY_CHARS)
     #: A Markdown file you wrote in the sandbox, e.g. ``outputs/sales-motion.md``.
     from_file: str | None = None
+    #: The version you read, from ``brand/index.json``. Leave it out only for a new document.
+    based_on_version: int | None = Field(default=None, ge=1)
     source_turn_ref: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
@@ -113,11 +125,18 @@ def _check_input(inputs: WriteBrandDocumentInput) -> None:
     if not _PATH.fullmatch(inputs.path):
         raise _Refused(
             "path_not_allowed",
-            "Only company/<name>.md and proof/<name>.md can be written, with a name of lower-case "
-            "letters, digits and hyphens (e.g. company/sales-motion.md).",
+            "Only company/, product/, audience/ and proof/ documents can be written, named "
+            "<folder>/<name>.md with lower-case letters, digits and hyphens "
+            "(e.g. company/sales-motion.md).",
         )
-    if (inputs.body is None) == (inputs.from_file is None):
-        raise _Refused("body_or_file_required", "Give exactly one of body or from_file.")
+    if inputs.path == _CATALOG_PATH:
+        raise _Refused(
+            "document_generated",
+            "The product catalog is generated from the product list; change the products with "
+            "manage_products instead.",
+        )
+    if (inputs.markdown is None) == (inputs.from_file is None):
+        raise _Refused("markdown_or_file_required", "Give exactly one of markdown or from_file.")
     if inputs.kind is not None and not _KIND.fullmatch(inputs.kind):
         raise _Refused("kind_invalid", "kind is lower-case letters, digits and hyphens.")
     if inputs.from_file is not None and (
@@ -130,11 +149,11 @@ def _check_input(inputs: WriteBrandDocumentInput) -> None:
 
 def _check_body(body: str) -> str:
     if not body.strip():
-        raise _Refused("body_empty", "The document body is empty.")
+        raise _Refused("markdown_empty", "The document is empty.")
     if body.startswith("---\n"):
         raise _Refused(
             "front_matter_not_allowed",
-            "Write the body only, without a front-matter block; the platform keeps that.",
+            "Write the Markdown only, without a front-matter block; the platform keeps that.",
         )
     return body
 
@@ -143,13 +162,16 @@ class WriteBrandDocumentTool(Tool):
     name = "write_brand_document"
     version = "1"
     model_description = (
-        "Publish a Brand-context document under company/ or proof/ (for example "
-        "company/sales-motion.md, or an updated proof/customers.md). It becomes the brand's "
-        "current version of that document, which the person can read and edit in Brand context; "
-        "the previous version is kept in its history. Write the whole document, not a change: "
-        "to update one, read the current version from brand/ and write it back with your "
-        "changes. Give the Markdown body inline, or from_file for a file you wrote under "
-        "outputs/ with run_python. " + tool_manual_link("write_brand_document")
+        "Publish a new version of a Brand-context document under company/, product/, audience/ "
+        "or proof/ (for example company/sales-motion.md, or an updated proof/customers.md). Use "
+        "it only when the person asks you to change a brand document, or a skill tells you to; "
+        "never on your own initiative. The previous version is kept in its history, and the "
+        "person can read and edit the document in Brand context. Write the whole document, not a "
+        "change: read the current version from brand/, pass the version you read as "
+        "based_on_version (from brand/index.json; leave it out only for a new document), and "
+        "write it back with your changes. The product catalog cannot be written here. Give the "
+        "document as markdown, or from_file for a file you wrote under outputs/ with run_python. "
+        + tool_manual_link("write_brand_document")
     )
     input_model: ClassVar[type[ToolInput]] = WriteBrandDocumentInput
     output_model: ClassVar[type[ToolOutput]] = WriteBrandDocumentOutput
@@ -161,7 +183,9 @@ class WriteBrandDocumentTool(Tool):
         ),
         external_boundary=ExternalReplayBoundary.NONE,
     )
-    parameter_policy = JournalParameterPolicy(safe_display_fields=("path", "kind", "from_file"))
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("path", "kind", "from_file", "based_on_version")
+    )
     pin_requirements = ("project",)
 
     def __init__(
@@ -224,12 +248,6 @@ class WriteBrandDocumentTool(Tool):
         )
         front: dict[str, Any] = {}
         if current is not None:
-            if inputs.kind is not None and inputs.kind != current.kind:
-                raise _Refused(
-                    "kind_mismatch",
-                    f"{inputs.path} is a {current.kind} document; leave kind out to keep it.",
-                )
-            kind = current.kind
             read = await read_brand_document(
                 conn,
                 storage,
@@ -238,6 +256,17 @@ class WriteBrandDocumentTool(Tool):
                 document_id=current.document_id,
             )
             front = dict(read[0]) if read is not None else {}
+            if front.get("generated") is True:
+                raise _Refused(
+                    "document_generated",
+                    f"{inputs.path} is generated by the platform and cannot be edited.",
+                )
+            if inputs.kind is not None and inputs.kind != current.kind:
+                raise _Refused(
+                    "kind_mismatch",
+                    f"{inputs.path} is a {current.kind} document; leave kind out to keep it.",
+                )
+            kind = current.kind
         elif inputs.kind is None:
             raise _Refused("kind_required", f"{inputs.path} is new: say what it is with kind.")
         else:
@@ -251,6 +280,24 @@ class WriteBrandDocumentTool(Tool):
                 path=inputs.path,
                 version=current.version,
                 unchanged=True,
+            )
+        current_version = current.version if current is not None else None
+        if inputs.based_on_version != current_version:
+            raise _Refused(
+                "document_changed",
+                f"{inputs.path} "
+                + (
+                    f"is now at version {current_version}"
+                    if current_version is not None
+                    else "has no current version"
+                )
+                + (
+                    f", not the version {inputs.based_on_version} you read"
+                    if inputs.based_on_version is not None
+                    else " and you did not say which version you read"
+                )
+                + ". Someone saved it after this turn began; your brand/ files show it from the "
+                "next turn. Nothing was written.",
             )
         document_id = await write_brand_document_version(
             conn,
@@ -279,8 +326,8 @@ class WriteBrandDocumentTool(Tool):
         return self._storage
 
     def _read_body(self, inputs: WriteBrandDocumentInput, ctx: ToolContext) -> str:
-        if inputs.body is not None:
-            return _check_body(inputs.body)
+        if inputs.markdown is not None:
+            return _check_body(inputs.markdown)
         assert inputs.from_file is not None
         mounts = (
             None
@@ -291,7 +338,7 @@ class WriteBrandDocumentTool(Tool):
         if outputs is None:
             raise _Refused(
                 "sandbox_unavailable",
-                "This turn has no sandbox outputs/ folder; give the document as body instead.",
+                "This turn has no sandbox outputs/ folder; give the document as markdown instead.",
             )
         root = Path(outputs).resolve()
         target = (root / inputs.from_file.removeprefix("outputs/")).resolve()

@@ -649,7 +649,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "write_brand_document": {
             "path": "company/sales-motion.md",
             "kind": "sales-motion",
-            "body": "# Sales motion\n",
+            "markdown": "# Sales motion\n",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {

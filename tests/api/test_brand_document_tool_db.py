@@ -90,13 +90,15 @@ def test_writes_new_version_and_supersedes_previous(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
         ws = seeded.workspace_id
         first = _input(
-            seeded, path="company/sales-motion.md", kind="sales-motion", body="# Sales\n\nv1\n"
+            seeded, path="company/sales-motion.md", kind="sales-motion", markdown="# Sales\n\nv1\n"
         )
         assert await _codes(tool, first, _ctx(conn, ws)) == []
         one = (await tool.invoke(first, _ctx(conn, ws))).references
         assert one["version"] == 1 and one["unchanged"] is False
         # an existing document keeps its kind, so kind may be left out
-        second = _input(seeded, path="company/sales-motion.md", body="# Sales\n\nv2\n")
+        second = _input(
+            seeded, path="company/sales-motion.md", markdown="# Sales\n\nv2\n", based_on_version=1
+        )
         two = (await tool.invoke(second, _ctx(conn, ws))).references
         assert two["version"] == 2
         assert await _versions(conn, ws, "company/sales-motion.md") == [
@@ -139,7 +141,12 @@ def test_an_existing_document_keeps_its_front_matter(tmp_path: Path) -> None:
         )
         refs = (
             await tool.invoke(
-                _input(seeded, path="proof/customers.md", body="# Existing customers\n\nmore\n"),
+                _input(
+                    seeded,
+                    path="proof/customers.md",
+                    markdown="# Existing customers\n\nmore\n",
+                    based_on_version=1,
+                ),
                 _ctx(conn, ws),
             )
         ).references
@@ -155,7 +162,13 @@ def test_an_existing_document_keeps_its_front_matter(tmp_path: Path) -> None:
         ]
         with pytest.raises(PreconditionFailed) as exc:
             await tool.invoke(
-                _input(seeded, path="proof/customers.md", kind="other", body="# B\n"),
+                _input(
+                    seeded,
+                    path="proof/customers.md",
+                    kind="other",
+                    markdown="# B\n",
+                    based_on_version=2,
+                ),
                 _ctx(conn, ws),
             )
         assert exc.value.reason_codes == ("kind_mismatch",)
@@ -166,23 +179,87 @@ def test_an_existing_document_keeps_its_front_matter(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "audience/persona.md",
-        "product/catalog.md",
+        "design/brief.md",
+        "project/plan.md",
         "company/../product/catalog.md",
         "company/Sales Motion.md",
         "company/sales-motion.txt",
         "proof/nested/customers.md",
     ],
 )
-def test_audience_and_product_paths_refused(tmp_path: Path, path: str) -> None:
+def test_paths_outside_brand_context_are_refused(tmp_path: Path, path: str) -> None:
     async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
-        inputs = _input(seeded, path=path, kind="x", body="# X\n")
+        inputs = _input(seeded, path=path, kind="x", markdown="# X\n")
         assert await _codes(tool, inputs, _ctx(conn, seeded.workspace_id)) == ["path_not_allowed"]
 
     _run(tmp_path, f"path-{abs(hash(path)) % 10_000}", body)
 
 
-def test_exactly_one_of_body_or_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "path", ["audience/icp-gi.md", "audience/persona-gi.md", "product/aura-scribe.md"]
+)
+def test_audience_and_product_documents_can_be_written(tmp_path: Path, path: str) -> None:
+    async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
+        inputs = _input(seeded, path=path, kind="x", markdown="# X\n")
+        refs = (await tool.invoke(inputs, _ctx(conn, seeded.workspace_id))).references
+        assert refs["version"] == 1 and refs["path"] == path
+
+    _run(tmp_path, f"ok-{abs(hash(path)) % 10_000}", body)
+
+
+def test_generated_documents_are_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
+        ws = seeded.workspace_id
+        catalog = _input(seeded, path="product/catalog.md", kind="product-catalog", markdown="# C\n")
+        assert await _codes(tool, catalog, _ctx(conn, ws)) == ["document_generated"]
+        await write_brand_document_version(
+            conn,
+            storage,
+            workspace_id=ws,
+            brand_id=await _brand(conn, seeded),
+            path="company/generated-thing.md",
+            kind="x",
+            front={"kind": "x", "generated": True},
+            body="# G\n",
+            source_key="test",
+        )
+        with pytest.raises(PreconditionFailed) as exc:
+            await tool.invoke(
+                _input(seeded, path="company/generated-thing.md", markdown="# Y\n", based_on_version=1),
+                _ctx(conn, ws),
+            )
+        assert exc.value.reason_codes == ("document_generated",)
+
+    _run(tmp_path, "generated", body)
+
+
+def test_a_document_saved_since_you_read_it_is_not_overwritten(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
+        ws = seeded.workspace_id
+        path = "company/sales-motion.md"
+        await tool.invoke(
+            _input(seeded, path=path, kind="sales-motion", markdown="# v1\n"), _ctx(conn, ws)
+        )
+        # another chat (or a person) saves version 2
+        await tool.invoke(
+            _input(seeded, path=path, markdown="# v2 by someone else\n", based_on_version=1),
+            _ctx(conn, ws),
+        )
+        for stale in (
+            _input(seeded, path=path, markdown="# mine, built on v1\n", based_on_version=1),
+            # leaving the version out on a document that exists is refused too
+            _input(seeded, path=path, markdown="# mine\n"),
+        ):
+            with pytest.raises(PreconditionFailed) as exc:
+                await tool.invoke(stale, _ctx(conn, ws))
+            assert exc.value.reason_codes == ("document_changed",)
+            assert "version 2" in exc.value.failures[0].message
+        assert [v for v, _status, _kind in await _versions(conn, ws, path)] == [1, 2]
+
+    _run(tmp_path, "stale", body)
+
+
+def test_exactly_one_of_markdown_or_file(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, tool: WriteBrandDocumentTool, storage: Any) -> None:
         ctx = _ctx(conn, seeded.workspace_id)
         neither = _input(seeded, path="company/sales-motion.md", kind="sales-motion")
@@ -190,16 +267,16 @@ def test_exactly_one_of_body_or_file(tmp_path: Path) -> None:
             seeded,
             path="company/sales-motion.md",
             kind="sales-motion",
-            body="# X\n",
+            markdown="# X\n",
             from_file="outputs/x.md",
         )
-        assert await _codes(tool, neither, ctx) == ["body_or_file_required"]
-        assert await _codes(tool, both, ctx) == ["body_or_file_required"]
+        assert await _codes(tool, neither, ctx) == ["markdown_or_file_required"]
+        assert await _codes(tool, both, ctx) == ["markdown_or_file_required"]
         front_matter = _input(
-            seeded, path="company/sales-motion.md", kind="sales-motion", body="---\na: 1\n---\nx"
+            seeded, path="company/sales-motion.md", kind="sales-motion", markdown="---\na: 1\n---\nx"
         )
         assert await _codes(tool, front_matter, ctx) == ["front_matter_not_allowed"]
-        new_without_kind = _input(seeded, path="company/sales-motion.md", body="# X\n")
+        new_without_kind = _input(seeded, path="company/sales-motion.md", markdown="# X\n")
         with pytest.raises(PreconditionFailed) as exc:
             await tool.invoke(new_without_kind, ctx)
         assert exc.value.reason_codes == ("kind_required",)
@@ -258,7 +335,7 @@ def test_no_storage_refuses(tmp_path: Path) -> None:
         bare = WriteBrandDocumentTool(
             storage=None, sandbox_workspaces=None, conn_factory=conn_session_factory(conn)
         )
-        inputs = _input(seeded, path="company/x.md", kind="x", body="# X\n")
+        inputs = _input(seeded, path="company/x.md", kind="x", markdown="# X\n")
         assert await _codes(bare, inputs, _ctx(conn, seeded.workspace_id)) == [
             "storage_unavailable"
         ]
