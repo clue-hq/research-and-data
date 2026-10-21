@@ -43,7 +43,7 @@ agent, not only the CRM work.
 - **AW-6 (2026-10-21)** **Interim (stopgap A):** until AW-1 lands, `outputs/` is no longer emptied at
   the end of a turn — it is saved as artifacts, then reopened with its files for the chat's later
   turns (`f799a9830`). The files still go with the thread folder 24 h after the chat's last turn.
-- **AW-7 (2026-10-21)** **F3 is built in its own worktree and branch**, stacked on
+- **AW-7 (2026-10-21)** **F3 is built in its own worktree and branch** — the `dushanbe` workspace (founder, 2026-10-21) — stacked on
   `feat/crm-integration` and merging it in periodically so conflicts surface early; when either lane
   changes something the other relies on, it messages the other session. Tests use one throwaway test
   database for the F3 lane; its live checks run on the nashville stack while that lane is idle (no
