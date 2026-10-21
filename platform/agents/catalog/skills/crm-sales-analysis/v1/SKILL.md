@@ -15,7 +15,7 @@ tools:
   - name: find_crm_actions
     version: "1"
     input_schema_sha256: 20fa09f6729c71065926a620dc20aee770993516b7f83298187e2bc3333575c0
-    output_schema_sha256: bfe72d1b0a151cad21edd00cc8faf791772138e3071674a78c3b4d73b9dd0604
+    output_schema_sha256: effb910afc51b18957479533d8ce879483165961cb26e785856e279630cbeab6
   - name: run_crm_action
     version: "1"
     input_schema_sha256: d44424cce9834552b7785cf81a0e6a84c6f1c570cf21272368b9a20e04e9743d

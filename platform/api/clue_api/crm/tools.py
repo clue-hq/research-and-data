@@ -5,9 +5,11 @@ card is drawn by the chat from this tool's own result, and the person's login ha
 tab; when the connection becomes active every chat waiting on a card is woken with a
 ``crm_connected`` turn, so after showing a card the agent simply ends its turn.
 
-``find_crm_actions@1`` searches the connected CRM's read actions, and ``run_crm_action@1`` runs
-one. A read's whole result is written to ``reads/<operation_id>.json`` in the thread's workspace,
-however small, and the model is told only where it is and what it holds (§5): the records are
+``find_crm_actions@1`` searches the connected CRM's actions — the read ones, and the write ones
+on Clue's allowlist (``write_actions.py``), each marked by its ``access`` — and ``run_crm_action@1``
+runs a read; it refuses a write, which is proposed with ``propose_crm_changes`` instead. A
+read's whole result is written to ``reads/<operation_id>.json`` in the thread's workspace, however
+small, and the model is told only where it is and what it holds (§5): the records are
 analysed in the code sandbox, never pasted into the conversation.
 
 Composio account ids never reach the model; it sees the CRM name, the status and when/by whom.
@@ -44,6 +46,7 @@ from clue_api.crm.salesforce_budget import (
     SalesforceBudget,
     is_api_disabled,
 )
+from clue_api.crm.write_actions import is_write
 from clue_api.turn_action import TurnActionUnresolvable, load_turn_identity, parse_turn_action_ref
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_auth import get_workspace_membership, permissions_for_role
@@ -267,6 +270,8 @@ class FindCrmActionsInput(ToolInput):
 
 class CrmActionView(BaseModel):
     slug: str
+    #: ``read``: run it with run_crm_action. ``write``: propose it with propose_crm_changes.
+    access: Literal["read", "write"]
     description: str
     input_schema: dict[str, Any]
 
@@ -314,10 +319,12 @@ class FindCrmActionsTool(Tool):
     name = "find_crm_actions"
     version = "1"
     model_description = (
-        "Search the connected CRM's read actions by what you want to read, e.g. 'search deals', "
-        "'deal pipeline stages', 'contacts of a company', 'run a SOQL query'. Returns each "
-        "action's name and its input schema; run one with run_crm_action. Only read actions are "
-        "listed. " + tool_manual_link("find_crm_actions")
+        "Search the connected CRM's actions by what you want to do, e.g. 'search deals', "
+        "'deal pipeline stages', 'contacts of a company', 'run a SOQL query', 'update a company'. "
+        "Returns each action's name, its input schema and its access: run a 'read' action with "
+        "run_crm_action; a 'write' action is never run directly, propose it with "
+        "propose_crm_changes so the person can approve it. Only reads and the writes Clue allows "
+        "are listed. " + tool_manual_link("find_crm_actions")
     )
     input_model: ClassVar[type[ToolInput]] = FindCrmActionsInput
     output_model: ClassVar[type[ToolOutput]] = FindCrmActionsOutput
@@ -358,7 +365,8 @@ class FindCrmActionsTool(Tool):
         gateway = _require_gateway(self._gateway)
         connection = await _active_connection(self._conn_factory, ctx.workspace_id)
         try:
-            # Ask for more than the limit: the search is over every action, writes included.
+            # Ask for more than the limit: the search is over every action, most of them neither
+            # an allowed read nor an allowed write.
             found = await gateway.search_tools(
                 toolkit=connection.provider, query=inputs.query, limit=min(inputs.limit * 4, 100)
             )
@@ -368,10 +376,14 @@ class FindCrmActionsTool(Tool):
             ) from exc
         actions = [
             CrmActionView(
-                slug=tool.slug, description=tool.description, input_schema=dict(tool.input_schema)
+                slug=tool.slug,
+                access="read" if is_readable(connection.provider, tool.slug) else "write",
+                description=tool.description,
+                input_schema=dict(tool.input_schema),
             )
             for tool in found
             if is_readable(connection.provider, tool.slug)
+            or is_write(connection.provider, tool.slug)
         ][: inputs.limit]
         output = FindCrmActionsOutput(provider=connection.provider, actions=actions)
         return ToolResult(
@@ -553,6 +565,12 @@ def _require_gateway(gateway: ComposioGateway | None) -> ComposioGateway:
 
 
 def _require_readable(provider: CrmProvider, slug: str) -> None:
+    if is_write(provider, slug):
+        raise _Refused(
+            "crm_action_is_a_write",
+            f"{slug} changes the CRM, so it is not run directly: propose it with "
+            "propose_crm_changes and the person approves it.",
+        )
     if not is_readable(provider, slug):
         raise _Refused(
             "crm_action_not_allowed",

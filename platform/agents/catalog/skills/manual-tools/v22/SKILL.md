@@ -1166,7 +1166,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## find_crm_actions@1
 
-**What it does.** Search the connected CRM's read actions by what you want to read, e.g. 'search deals', 'deal pipeline stages', 'contacts of a company', 'run a SOQL query'. Returns each action's name and its input schema; run one with run_crm_action. Only read actions are listed. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#find_crm_actions
+**What it does.** Search the connected CRM's actions by what you want to do, e.g. 'search deals', 'deal pipeline stages', 'contacts of a company', 'run a SOQL query', 'update a company'. Returns each action's name, its input schema and its access: run a 'read' action with run_crm_action; a 'write' action is never run directly, propose it with propose_crm_changes so the person can approve it. Only reads and the writes Clue allows are listed. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#find_crm_actions
 
 - Effect class: `read`.
 - Spends: no.
@@ -1195,6 +1195,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | Field | Type | What it is |
 | --- | --- | --- |
 | `slug` | `str` | — |
+| `access` | `Literal['read', 'write']` | `read`: run it with run_crm_action. `write`: propose it with propose_crm_changes. |
 | `description` | `str` | — |
 | `input_schema` | `dict[str, Any]` | — |
 

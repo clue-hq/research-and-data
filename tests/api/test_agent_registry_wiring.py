@@ -178,7 +178,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # manual@v21.
         # v76 (2026-10-20, CRM integration Phase 1): four CRM-integration tools granted; the new
         # `crm-sales-analysis@v1`, stage0-interview@v49 and manual@v22.
-        AgentRole.HEAD_OF_ABM: ("f832c5467ee7bb5a257281d18aaa6782615635072e840efcf16190de9f63efad"),
+        AgentRole.HEAD_OF_ABM: ("bed66d6619a1461f6a4285d62cb64263625621d9bb7401441168c7a0bc0c3aea"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

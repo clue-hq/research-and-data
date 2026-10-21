@@ -76,7 +76,7 @@ skills:
   sha256: c4c9383e26d4921ecde44e495f569cd2af38df9e06831f16c13b5df5b4f4820a
 - name: crm-sales-analysis
   version: v1
-  sha256: ff958b09551441da5849cce548ff7c08f3749348b25c7cb1fcb13e41dd4933e4
+  sha256: 81362041253345e67706918935d45484d38c9a85f534070115b0f89b266adae8
 - name: manual-index
   version: v22
   sha256: 4ca6a3c97c40ca4e14784af6208fe0012529d72e4db9bf6da209de797ab03ee8
@@ -88,7 +88,7 @@ skills:
   sha256: b7797049a99efe558a041207998bcbfd50f93cabbf09efb9a1b07f13997a622d
 - name: manual-tools
   version: v22
-  sha256: e212ab3a4e7aacd2cfd6d84d76908cf866aa9955612059781c16eac5ffffb812
+  sha256: c2f7b4b479d1fd40ea7b5f6d7ba1a549bde5db4749b58b2a6929ab6c5717c1ef
 - name: manual-fields
   version: v22
   sha256: bc6d39126d02a194cd6bc74e23da9fb987f0d6cae089835cc608677ac1e0ee71
@@ -226,7 +226,7 @@ tools:
 - name: find_crm_actions
   version: '1'
   input_schema_sha256: 20fa09f6729c71065926a620dc20aee770993516b7f83298187e2bc3333575c0
-  output_schema_sha256: bfe72d1b0a151cad21edd00cc8faf791772138e3071674a78c3b4d73b9dd0604
+  output_schema_sha256: effb910afc51b18957479533d8ce879483165961cb26e785856e279630cbeab6
 - name: run_crm_action
   version: '1'
   input_schema_sha256: d44424cce9834552b7785cf81a0e6a84c6f1c570cf21272368b9a20e04e9743d
