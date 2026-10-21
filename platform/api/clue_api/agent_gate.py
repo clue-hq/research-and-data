@@ -41,6 +41,7 @@ __all__ = [
     "DEFAULT_GATE_CURRENCY",
     "GATE_KINDS",
     "GATE_OBJECT_TYPE",
+    "KIND_CRM_WRITE_PERMISSION",
     "KIND_DIRECTIVE_CONFIRMATION",
     "KIND_ICP_CONFIRMATION",
     "KIND_PRODUCT_SELECTION",
@@ -78,6 +79,10 @@ KIND_PRODUCT_SELECTION = "product_selection"
 #: gate names its choices in ``decision_payload["selected_option_refs"]`` rather than in the
 #: single-valued ``selected_option_ref``; the answer trigger enforces membership per element.
 KIND_PRODUCT_SET_SELECTION = "product_set_selection"
+#: CRM integration Phase 2: a person's permission for the agent's proposed CRM writes. Its answer
+#: carries ``decision_payload`` ``{"selected_write_ids": [...], "always_allow": [...]}`` on
+#: approval (both arrays, nothing else) and nothing on rejection; the answer trigger enforces it.
+KIND_CRM_WRITE_PERMISSION = "crm_write_permission"
 GATE_KINDS = (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
@@ -85,6 +90,7 @@ GATE_KINDS = (
     KIND_PRODUCT_SET_SELECTION,
     "plan_approval",
     "budget_approval",
+    KIND_CRM_WRITE_PERMISSION,
 )
 
 #: What a human may answer. ``revised`` is not a soft ``rejected``: it records "I want changes",

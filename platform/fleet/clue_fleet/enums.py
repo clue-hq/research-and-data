@@ -78,6 +78,9 @@ class FleetTaskKind(StrEnum):
     # Product management (spec 2026-10-15 §6): one task per pending product page — a person's
     # add or merge in Brand context is written in the background. Appended, never inserted.
     PRODUCT_PAGE_WRITE = "product_page_write"
+    # CRM integration Phase 2: one task per proposal — sends its covered writes to the CRM in order
+    # and reads each one back. Appended, never inserted.
+    CRM_WRITE = "crm_write"
 
 
 class FleetTaskStatus(StrEnum):

@@ -58,6 +58,7 @@ if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
     "DERIVATION_CRM_CONNECTED",
+    "DERIVATION_CRM_WRITES_FINISHED",
     "DERIVATION_DESIGN_LEG_FIRST_TURN",
     "DERIVATION_DESIGN_LEG_REDELIVERY",
     "DERIVATION_DISCOVERY_FINISHED",
@@ -99,6 +100,10 @@ DERIVATION_DISCOVERY_FINISHED = "discovery_finished"
 #: The workspace's CRM connection became active: the chat that showed the connect card resumes
 #: by itself (CRM integration, R-3.10). Same shape as ``discovery_finished``.
 DERIVATION_CRM_CONNECTED = "crm_connected"
+#: A CRM write proposal finished (every covered write succeeded, failed or was skipped): the chat
+#: that proposed it resumes by itself with the outcome (CRM integration Phase 2). Same shape as
+#: ``crm_connected``.
+DERIVATION_CRM_WRITES_FINISHED = "crm_writes_finished"
 
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
