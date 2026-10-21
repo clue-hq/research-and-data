@@ -43,6 +43,7 @@ from deepagents.backends.protocol import (
 
 from clue_agents.contracts import ArtifactRef, WorkspacePolicy, normalize_virtual_path
 from clue_agents.ports import AgentArtifactSink, WorkspaceEntry
+from clue_agents.tree_sync import TreeSyncReport, sync_directory
 from clue_agents.versioned_root import (
     VersionedRootWriter,
     VersionedWriteOutcome,
@@ -1023,65 +1024,42 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             for prefix in _MATERIALIZED_PREFIXES:
                 self._freeze_tree(prefix)
 
-    def reset_materialized_trees(self) -> None:
-        """Empty the three trusted trees so this turn can write its own pinned bytes.
+    def sync_materialized_trees(
+        self, trees: Mapping[str, Mapping[str, bytes]]
+    ) -> Mapping[str, TreeSyncReport]:
+        """Bring ``.deepagent/ inputs/ context/`` to exactly this turn's pinned bytes (WS-36).
 
-        The thread directory persists across turns, so last turn's resources, inputs and
-        context are still frozen on disk. Resetting restores owner-write and removes every
-        file and subdirectory below the three prefixes, leaving the folders themselves in
-        place and writable. ``scratch``/``reads``/``work``/``outputs`` are never touched.
+        ``trees`` maps each of the three trusted prefixes to its files (paths relative to the
+        prefix). Only new or changed files are written, files the pins no longer name are removed,
+        and the trees end frozen. Every path is checked like a trusted platform write and every
+        body must be UTF-8. ``scratch``/``reads``/``work``/``outputs`` are never touched.
         """
 
-        with self._filesystem_lock(exclusive=True):
-            for prefix in _MATERIALIZED_PREFIXES:
-                self._reset_tree(prefix)
-
-    def _reset_tree(self, name: str) -> None:
-        """Unfreeze and empty one top-level folder, keeping the folder itself at 0700."""
-
-        try:
-            metadata = os.stat(name, dir_fd=self._root_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            os.mkdir(name, _DIRECTORY_MODE, dir_fd=self._root_fd)
-            return
-        except OSError as exc:
-            raise WorkspaceSecurityError("workspace tree could not be reset") from exc
-        if not stat.S_ISDIR(metadata.st_mode):
-            raise WorkspaceSecurityError("workspace tree is not a directory")
-        try:
-            # O_NOFOLLOW | O_DIRECTORY refuses a swapped symlink; the frozen 0500 mode is
-            # restored top-down so the children below it can be unlinked.
-            directory_fd = os.open(name, _DIR_FLAGS, dir_fd=self._root_fd)
-            try:
-                os.fchmod(directory_fd, _DIRECTORY_MODE)
-                _validate_private_directory(directory_fd)
-                self._empty_directory(directory_fd)
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        except WorkspaceError:
-            raise
-        except OSError as exc:
-            raise WorkspaceSecurityError("workspace tree could not be reset") from exc
-
-    @classmethod
-    def _empty_directory(cls, directory_fd: int) -> None:
-        """Remove every entry below one already-writable directory, refusing odd entries."""
-
-        for child in os.listdir(directory_fd):
-            child_metadata = os.stat(child, dir_fd=directory_fd, follow_symlinks=False)
-            if stat.S_ISDIR(child_metadata.st_mode):
-                child_fd = os.open(child, _DIR_FLAGS, dir_fd=directory_fd)
+        if set(trees) != set(_MATERIALIZED_PREFIXES):
+            raise WorkspaceSecurityError("materialized trees must be exactly the trusted prefixes")
+        for prefix, files in trees.items():
+            for relative, data in files.items():
+                self._validate_path(f"{prefix}/{relative}", write=True, trusted=(prefix,))
                 try:
-                    os.fchmod(child_fd, _DIRECTORY_MODE)
-                    cls._empty_directory(child_fd)
-                finally:
-                    os.close(child_fd)
-                os.rmdir(child, dir_fd=directory_fd)
-            elif stat.S_ISREG(child_metadata.st_mode):
-                os.unlink(child, dir_fd=directory_fd)
-            else:
-                raise WorkspaceSecurityError("workspace reset found a link or special file")
+                    data.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise WorkspaceSecurityError(
+                        "materialized agent resources must be UTF-8 text"
+                    ) from exc
+        reports: dict[str, TreeSyncReport] = {}
+        with self._filesystem_lock(exclusive=True):
+            # The trusted trees count against the policy quota like every other file, as their
+            # one-by-one writes did: what is kept elsewhere plus what these trees will hold.
+            kept = [f for f in self._quota_files() if not _is_under(f[0], _MATERIALIZED_PREFIXES)]
+            planned = [
+                (f"{prefix}/{relative}", len(data), _READ_ONLY_FILE_MODE)
+                for prefix, files in trees.items()
+                for relative, data in files.items()
+            ]
+            self._validate_current_quota([*kept, *planned])
+            for prefix in _MATERIALIZED_PREFIXES:
+                reports[prefix] = sync_directory(self._root_fd, prefix, trees[prefix], frozen=True)
+        return reports
 
     def _freeze_tree(self, prefix: str) -> None:
         self._chmod_tree(

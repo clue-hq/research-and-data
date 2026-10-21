@@ -112,6 +112,8 @@ class WorkspaceSeedFile:
 
 #: The readiness marker, written last and verified first.
 _MANIFEST_PATH = ".deepagent/manifest.json"
+#: The three folders a turn writes from its pins (``workspace._MATERIALIZED_PREFIXES``).
+_TRUSTED_TREES = (".deepagent", "inputs", "context")
 
 
 def _resource_path(ref: AgentResourceRef) -> str:
@@ -334,19 +336,23 @@ class AgentResourceMaterializer:
         snapshot: AgentResourceSnapshot,
         seed_files: tuple[WorkspaceSeedFile, ...],
     ) -> None:
-        """Reset the trusted trees, write this turn's bytes, freeze them, verify every digest."""
+        """Sync the trusted trees to this turn's bytes (only what changed), verify every digest."""
 
-        lease.backend.reset_materialized_trees()
-        for path, content in snapshot.materialized_entries():
-            lease.backend.materialize_bytes(path, content)
-        for seed in sorted(seed_files, key=lambda item: item.path):
-            lease.backend.materialize_bytes(seed.path, seed.content)
-
-        # Manifest-last is the readiness marker: its presence means every referenced byte was
-        # copied successfully. It includes digests and addresses, never prompt/context bodies.
+        trees: dict[str, dict[str, bytes]] = {prefix: {} for prefix in _TRUSTED_TREES}
+        entries = [
+            *snapshot.materialized_entries(),
+            *((seed.path, seed.content) for seed in sorted(seed_files, key=lambda s: s.path)),
+        ]
+        # The manifest is written with the rest; it is still the readiness marker, because the
+        # verification below re-reads every referenced byte before the turn may use any of them.
         manifest_bytes = _canonical_manifest_bytes(snapshot.manifest)
-        lease.backend.materialize_bytes(_MANIFEST_PATH, manifest_bytes)
-        lease.backend.freeze_materialized_trees()
+        entries.append((_MANIFEST_PATH, manifest_bytes))
+        for path, content in entries:
+            prefix, _, relative = path.partition("/")
+            if prefix not in trees or not relative:
+                raise WorkspaceSecurityError(f"{path} is outside the trusted trees")
+            trees[prefix][relative] = content
+        lease.backend.sync_materialized_trees(trees)
 
         for path, content in snapshot.materialized_entries():
             entry = lease.backend.stat_entry_sync(path)
