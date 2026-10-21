@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 35
+    assert CONVERSATION_RECIPE_VERSION == 36
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -998,6 +998,9 @@ def test_operation_id_requirements_are_explicit() -> None:
         # operation; AT_LEAST_ONCE like `exa_search_evidence@1`, since a retried search cannot
         # converge on one provider call.
         "web_search@1",
+        # run_crm_action@1 (2026-10-20): operation-bound because its reads/ file is named by the
+        # operation; AT_LEAST_ONCE, since a retried CRM read cannot converge on one provider call.
+        "run_crm_action@1",
         "start_recon@1",
         "submit_onboarding_input@1",
         "synthesize_icps@3",
@@ -1010,6 +1013,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "start_recon@1",
         "exa_search_evidence@1",
         "web_search@1",
+        "run_crm_action@1",
     }
 
 
@@ -1030,3 +1034,42 @@ def test_narrow_recipe_step_requires_an_exact_tool_version() -> None:
                 "input_refs": {},
             }
         )
+
+
+def test_crm_integration_mints_recipe_v36_without_rewriting_v35() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v35 = json.loads((root / "recipe0-stage0-v35.json").read_text())
+    v36 = json.loads((root / "recipe0-stage0-v36.json").read_text())
+    # Four addresses JOIN and none leaves: the CRM reads and the brand-document write, which
+    # `head-of-abm@v76` grants.
+    added = {
+        ("connect_crm", "1"),
+        ("find_crm_actions", "1"),
+        ("run_crm_action", "1"),
+        ("write_brand_document", "1"),
+    }
+    addresses = {f"{key}@{version}" for key, version in added}
+    v35_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v35.json")
+    assert SYSTEM_RECIPE_FILENAMES[v35_index : v35_index + 2] == (
+        "recipe0-stage0-v35.json",
+        "recipe0-stage0-v36.json",
+    )
+    assert set(v35["graph"]["tool_allowlist"]) | addresses == set(v36["graph"]["tool_allowlist"])
+    slot = next(node for node in v36["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v35_slot = next(
+        node for node in v35["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v35_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v35_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v35["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v36["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v35["version"], v36["version"]) == (35, 36)
+    assert slot["dynamic_pin_kinds"] == v35_slot["dynamic_pin_kinds"]

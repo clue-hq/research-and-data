@@ -130,6 +130,14 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # brand's products when the person asks. Granted at `head-of-abm@v71`; a WRITE with the same
     # ``project`` pin as its siblings, resolved from the presenting turn.
     "manage_products@1",
+    # CRM integration Phase 1 (recipe0-stage0@36), granted at `head-of-abm@v76`. `connect_crm@1`
+    # and `write_brand_document@1` are WRITEs resolved from the presenting turn; `run_crm_action@1`
+    # is a SPEND and `find_crm_actions@1` an effect-free read, both with the execution's
+    # ``project`` pin.
+    "connect_crm@1",
+    "find_crm_actions@1",
+    "run_crm_action@1",
+    "write_brand_document@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

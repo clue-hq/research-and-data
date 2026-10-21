@@ -209,7 +209,10 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # ``manage_products@1``, granted by `head-of-abm@v71`.
 # Revision 35 (discovery excludes the seller's customers, 2026-10-16) RE-PINS one address and adds
 # none: ``launch_arv2_discovery@3``, whose brief carries ``exclude``, granted by `head-of-abm@v72`.
-CONVERSATION_RECIPE_VERSION = 35
+# Revision 36 (CRM integration Phase 1, 2026-10-20) admits four addresses and removes none:
+# ``connect_crm@1``, ``find_crm_actions@1``, ``run_crm_action@1`` and ``write_brand_document@1``,
+# granted by `head-of-abm@v76`.
+CONVERSATION_RECIPE_VERSION = 36
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

@@ -78,6 +78,10 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: the manual re-mint both of them carry lives in the path this block prints, not in the summary
 #: it measures.
 #: Unmoved at head-of-abm@v61: no disclosed resource joins (a tool grant is not a resource).
+#:
+#: Unmoved at `head-of-abm@v76` (2026-10-20, CRM integration Phase 1), by founder decision: one
+#: RESOURCE joins (`crm-sales-analysis@v1`), and the Stage-0 skill's summary was shortened in its
+#: new version (v49) to make room, so the block stays inside the same budget.
 SKILLS_BLOCK_MAX_BYTES = 5120
 
 #: The hand-written skill that teaches `run_python@1`. It is not a manual chapter — it carries a

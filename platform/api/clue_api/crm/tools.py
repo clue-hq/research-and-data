@@ -328,6 +328,9 @@ class FindCrmActionsTool(Tool):
         external_boundary=ExternalReplayBoundary.NONE,
     )
     parameter_policy = JournalParameterPolicy(safe_display_fields=("query", "limit"))
+    #: The execution's own project, like every tool of the conversation recipe (its body is a
+    #: search text and names no project).
+    pin_requirements = ("project",)
 
     def __init__(
         self, *, gateway: ComposioGateway | None, conn_factory: ConnFactory = transaction
