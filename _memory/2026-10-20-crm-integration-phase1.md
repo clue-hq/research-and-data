@@ -69,5 +69,38 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   the one exception to "brand/ is read only". Kept uncommitted as ONE unit: committing the wiring
   without the profile/skill files would leave HEAD unable to resolve head-of-abm@v76.
 
+- 2026-10-20 later: R-3.15 — write_brand_document now takes any company/product/audience/proof
+  document except product/catalog.md (and any front matter `generated: true`), only when asked or a
+  skill says so; optimistic `based_on_version` check (refuse `document_changed`; identical bytes
+  still return unchanged first, so replays pass). Agent's brand/ mount is fixed per turn, so a
+  `document_changed` is retried NEXT turn. R-3.16 — skills-block budget kept at 5120: stage0 v49
+  summary shortened (block now 5070 bytes). Both uncommitted with Task 11.
+
+- 2026-10-21 trial 1 (local stack, Conduit AI workspace, HubSpot test account): card (Figma
+  redesign, uncommitted) works in all 3 states; connect + reads + analysis correct; publishing
+  BLOCKED — `clue_execution/graph.py::_RAW_BODY_KEYS` rejects any plan binding named `body` (even
+  null), so `write_brand_document` is uncallable by the agent (fix = rename the field + a test through
+  plan validation). Other findings F1–F9 in
+  `docs/superpowers/specs/crm-integration/2026-10-21-trial-1-findings.md`; founder wants to discuss
+  before fixing. Uncommitted: the card + `rereadThread()` (F2) + `connectedByName` on the route.
+
+- 2026-10-21: F4 fixed (`1e88e9242`): input `markdown`; `tests/api/test_tool_input_names.py`
+  guards every tool's input names against `_RAW_BODY_KEYS` (exception `write_project_document@1`)
+  and runs write_brand_document through `_plan_graph_and_parameters` + `validate_graph`. F2 plan:
+  `docs/superpowers/plans/2026-10-21-chat-thread-stream.md` (R-10.1). Skill/profile/manual hashes
+  refreshed (uncommitted with Task 11).
+
+- 2026-10-21: F2 built and live-checked (plan `docs/superpowers/plans/2026-10-21-chat-thread-stream.md`,
+  commits b3c4882b7, a17124c52, f3dda2920 + review fixes 7a14ca5ad, 99a7530a1). Thread SSE route
+  `…/threads/{id}/stream_token|events`, `agent_thread` stream-token subject (migration 8c3e73eb83b2),
+  lifecycle partial index (c87ba03cfc4e), hello carries the start cursor, frontend `chat-sse.ts`
+  (shared reader, `reconnectDelay`, thread stream retries forever), controller opens it while
+  visible; discovery 5 s timer replaced (30 s thread-list safety re-read while held). The CRM card
+  nudge is removed from the working tree; card files stay uncommitted with the redesign. Stack DB
+  `clue_nashville_pm` at c87ba03cfc4e. `make db-smoke` cannot run on clue_nashville_crm_test (an old
+  M8D R2 downgrade guard trips on leftover fleet tasks). New finding F10: an 11-minute reasoning
+  loop on a test turn (stopped by hand). Owed: the server-started wake turn live, together with the
+  F4 publish re-check, with the founder watching.
+
 ## Next
 Task 12: founder trial on the local stack (gate before Phase 2); then commit Task 11 as one unit (or revise the skill), then deploy reads (R-2.4).

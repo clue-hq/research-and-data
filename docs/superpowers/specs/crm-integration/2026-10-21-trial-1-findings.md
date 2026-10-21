@@ -66,7 +66,7 @@ founder asked to record first and discuss before acting.
   (the request id + Composio's own account check already prove the attempt), or have the backend
   confirm pending attempts itself (Composio webhook, or check the account when the card is next
   read), so the link can be opened anywhere.
-- **F2 — A turn the server starts is not shown in an open chat until reload.** *Decided 2026-10-21 (R-10.1): live thread stream, open while the tab is visible; plan `docs/superpowers/plans/2026-10-21-chat-thread-stream.md`.* The chat re-reads a
+- **F2 — A turn the server starts is not shown in an open chat until reload.** *Fixed 2026-10-21 (R-10.1; commits `b3c4882b7`, `a17124c52`, `f3dda2920`, review fixes `7a14ca5ad`, `99a7530a1`): a thread-level SSE stream sends every turn's lifecycle frames; an open, visible chat re-reads the thread once for a turn it has not seen and attaches it. Live check on the trial chat in two tabs: a message sent in tab 1 appeared in tab 2 within 3 s (queued → thinking → answer) with no reload; hiding tab 2 closed its stream, a turn ran meanwhile, and showing it reopened from its cursor and caught up; a tab hidden before any turn frame reopened from the hello's start point (`Last-Event-ID: 10073`). A server-started wake turn was proven by `test_a_server_queued_wake_turn_is_announced`, not live (it would have made the agent publish the brand documents unattended) — to run with the F4 re-check. The discovery 5 s re-read is replaced by the stream, with a 30 s thread-list safety re-read only while a discovery holds the thread (a run released with nobody to wake writes no turn frame).* The chat re-reads a
   thread on a timer only while a discovery holds it; the `crm_connected` wake ran on the worker, but
   the page showed nothing until it was reloaded. **Uncommitted change already made** (before the
   founder asked to pause): the card asks the chat to re-read the thread once when it sees the CRM
@@ -95,6 +95,15 @@ founder asked to record first and discuss before acting.
   stage), so "where deals stall" and "where demos come from" were honestly "not available". The
   test CRM's companies (software, finance…) do not match Conduit's ICP — the agent rightly flagged
   it. A seed that mirrors the test brand's ICP and walks deals through stages would exercise more.
+
+- **F10 — A turn can reason for over 11 minutes with nothing to stop it** (found during the F2
+  live check, 2026-10-21). A test message saying "do not call any tools" clashed with the required
+  `finalize_turn` step; Grok 4.6 reasoned about the conflict, then kept generating unrelated
+  reasoning ("count the units in groups of twenty…") for 11+ minutes until it was stopped by hand.
+  The recorded spend for the two test turns is $0.19 (the cancelled call is likely not counted).
+  To discuss: whether a single model call needs a time or token ceiling (the standing ruling is no
+  pre-emptive caps), and whether a message that forbids tools should be told that the turn's own
+  finish step is not a tool in that sense.
 
 ### Not exercised in this trial
 - Salesforce (budget guard, SOQL paging) — covered by offline tests and the Task 8 live read check
