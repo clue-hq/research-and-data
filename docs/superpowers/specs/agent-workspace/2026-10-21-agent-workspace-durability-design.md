@@ -111,7 +111,7 @@ the decision).
 | D-5 | Restore only when the local copy is not that exact version (compare versions, not "is the folder there") | roadmap P1 | WS-6 | P1 | as discussed |
 | D-6 | Upload only changed files | roadmap P1 | WS-3, WS-8 | P1 | as discussed |
 | D-7 | `outputs/` is never emptied again | roadmap P1; AW-6 (stopgap) | WS-4 | P1 | as discussed |
-| D-8 | Turn start takes a database lease, replacing file locks and in-memory maps | roadmap P1 | WS-13 | P1 | **differs: Q2** |
+| D-8 | Turn start takes a database lease, replacing file locks and in-memory maps | roadmap P1 | WS-13 | P1 | decided 2026-10-22 (Q2, AW-10): the existing lease is reused |
 | D-9 | Replace today's cleanup job, its crash bug and its gap for chats waiting on an answer | roadmap P1 | WS-15–WS-17 | P1 | as discussed |
 | D-10 | `run_python` and CRM reads keep working unchanged | roadmap P1 | WS-6, WS-14 | P1 | as discussed |
 | D-11 | Absorb the CRM reads registry (`CrmReadSinks`); no new in-memory path registries | AW-8.2 | WS-14 | P1 | as discussed |
@@ -201,7 +201,7 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q2–Q6 (Q1 is decided).
+phase starts, but P1's plan needs Q3–Q6 (Q1 and Q2 are decided).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -217,7 +217,7 @@ phase starts, but P1's plan needs Q2–Q6 (Q1 is decided).
   exactly as AW-1 says, and deletes an idle chat's whole folder (WS-16). No cleanup ever looks at
   another worker's files.
 
-**Q2. The lease** [P1] *(differs from the roadmap)*
+**Q2. The lease** [P1]: **decided 2026-10-22 (AW-10): reuse the existing lease.**
 - **The roadmap said:** take a database lease at turn start, replacing file locks and in-memory
   maps.
 - **What already exists:** the fleet already holds a database lease for every chat turn
@@ -283,8 +283,10 @@ phase starts, but P1's plan needs Q2–Q6 (Q1 is decided).
 
 **Q10. Default values** [P1, P2]
 - **Raw-input window: 48 hours.** This is your ruling (AW-2).
-- **Proposed by me:** a cache folder is removed after 30 minutes idle; the cache is capped at
-  10 GiB per machine; the expiry job runs hourly.
+- **Decided 2026-10-22 (AW-11):** a cache folder is removed after **30 minutes** idle. I had
+  proposed 24 hours once it was clear production runs one chat worker; you kept 30 minutes.
+- **Proposed by me, still open:** the cache is capped at 10 GiB per worker area; the expiry job
+  runs hourly.
 
 **Q11. Should the person ever see or download these files?** [—] *(not discussed)*
 - **My recommendation:** keep it out of scope for now. The snapshot makes it easy to add later.
@@ -495,7 +497,7 @@ What lands in the agent folders today:
   A factory built without a snapshot store keeps today's local-only behaviour. This applies to unit
   tests and the developer Stage-0 trial command (**Q8**). Production composition roots always give
   it one.
-- **WS-13 [P1] Safety rests on Postgres only** (**Claude's call, Q2**). Correctness across machines
+- **WS-13 [P1] Safety rests on Postgres only** (founder, Q2, AW-10). Correctness across machines
   rests on three things only:
   - one turn per chat (Postgres);
   - the fleet lease generation;
@@ -862,3 +864,5 @@ and WS-28's list contents for live and expired files (P2).
   own copy of the brand and project files instead of shared folders (WS-37, new). WS-6, WS-13,
   WS-17, WS-19 and WS-22 updated to match; D-35, test 14 and the §10 restart row added; test 8
   rewritten.
+- 2026-10-22: Q2 decided (AW-10): reuse the fleet `work_lease`, no new lease. Q10 partly decided
+  (AW-11): cache idle window 30 minutes.

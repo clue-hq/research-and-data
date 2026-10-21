@@ -45,6 +45,15 @@ agent, not only the CRM work.
   the first proposal (keep shared folders, skip ones Postgres says are in use) too risky; decided
   after researching ChatGPT, Claude.ai, Manus, Perplexity Projects, Cursor and Claude Code / Codex
   cloud, which all give each chat its own space. Spec: WS-15, WS-16, WS-37.
+- **AW-10 (2026-10-22)** **No new lease.** A chat turn's save reuses the lease the work queue
+  already holds for every turn (`work_lease`): the save goes through only while the worker still
+  holds that lease at the same generation and the snapshot version is still the one the turn
+  started from. File locks and in-memory maps remain only as guards inside one worker. Spec WS-8,
+  WS-13.
+- **AW-11 (2026-10-22)** **A chat's folder on a worker is deleted after 30 minutes idle.** Only the
+  disk copy goes; the next turn restores it from R2. Kept at 30 minutes after the founder heard
+  that production runs one chat worker and a longer window (24 h) would keep more returns warm.
+  Spec WS-16, `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S=1800`.
 
 ## Scope, order and interim
 
