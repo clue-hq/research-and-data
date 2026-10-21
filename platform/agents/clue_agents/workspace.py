@@ -356,7 +356,6 @@ class AgentWorkspaceLease:
         self._resources_frozen = False
         self._materialized = False
         self._materialization_failed = False
-        self._cleanup_authorized = False
         #: The fleet lease a save must still hold (WS-8, AW-10); set by ``acquire_restored``.
         self.fence: LeaseFence | None = None
         #: What this turn's restore did, and the version a save moves from (WS-6, WS-8).
@@ -428,10 +427,6 @@ class AgentWorkspaceLease:
     def materialization_failed(self) -> bool:
         return self._materialization_failed
 
-    @property
-    def cleanup_authorized(self) -> bool:
-        return self._cleanup_authorized
-
     def mark_resources_frozen(self) -> None:
         """Record that the materialized trees are frozen again after this turn's write."""
 
@@ -467,19 +462,6 @@ class AgentWorkspaceLease:
         """End this turn's hold on the thread. Nothing on disk is removed."""
 
         self._factory.release(self)
-
-    def authorize_cleanup(self, *, finalization_ref: ArtifactRef) -> None:
-        """Record that outputs are durably snapshotted under a same-workspace finalization.
-
-        Since the thread workspace persists, this no longer gates a deletion; it stays the
-        turn's honest statement that nothing unsaved is being dropped when the lease ends.
-        """
-
-        if finalization_ref.workspace_id != self.identity.workspace_id:
-            raise WorkspaceSecurityError("finalization artifact belongs to another workspace")
-        if not self.backend.outputs_snapshotted:
-            raise WorkspaceSecurityError("outputs must be durably snapshotted before cleanup")
-        self._cleanup_authorized = True
 
     def usage_snapshot(self) -> WorkspaceUsageSnapshot:
         return self.backend.usage_snapshot()
@@ -1740,7 +1722,41 @@ class AgentWorkspaceFactory:
         with self._lock:
             if key in self._active:
                 raise WorkspaceConflict("this thread already has a live workspace lease")
+        chat = ChatScope(
+            workspace_id=workspace_segment, project_id=project_segment, thread_id=thread_segment
+        )
+        # Marked in use *before* the folder is opened, under the area's guard: the area's cache
+        # sweep checks and deletes under the same guard, so it can never remove a folder a turn of
+        # this worker is opening (WS-16).
+        if self._area is not None:
+            self._area.mark_in_use(chat)
+        try:
+            return self._create_marked(
+                key=key,
+                chat=chat,
+                identity=identity,
+                execution_id=execution_id,
+                policy=policy,
+                mounts=mounts,
+                artifact_sink=artifact_sink,
+            )
+        except BaseException:
+            if self._area is not None:
+                self._area.mark_idle(chat)
+            raise
 
+    def _create_marked(
+        self,
+        *,
+        key: tuple[str, str, str],
+        chat: ChatScope,
+        identity: WorkspaceIdentity,
+        execution_id: ExecutionId,
+        policy: WorkspacePolicy,
+        mounts: MountRequest,
+        artifact_sink: AgentArtifactSink | None,
+    ) -> AgentWorkspaceLease:
+        workspace_segment, project_segment, thread_segment = key
         with self._root_lock():
             thread_fd = self._open_thread_root(
                 workspace_segment=workspace_segment,
@@ -1783,11 +1799,6 @@ class AgentWorkspaceFactory:
                 execution_id=execution_id,
                 mounts=mounts,
             )
-        chat = ChatScope(
-            workspace_id=workspace_segment, project_id=project_segment, thread_id=thread_segment
-        )
-        if self._area is not None:
-            self._area.mark_in_use(chat)
         self._touch_last_used(chat)
         return self._lease(
             identity=identity,
@@ -2214,24 +2225,6 @@ class AgentWorkspaceFactory:
             if not self._closed:
                 self._touch_last_used(lease.chat)
 
-    def cleanup(self, lease: AgentWorkspaceLease) -> None:
-        """End the turn's hold on the thread. Kept under its old name for the runtime wiring."""
-
-        self.release(lease)
-
-    def discard_failed_materialization(self, lease: AgentWorkspaceLease) -> None:
-        """Release a lease whose materialization failed before the model ever ran.
-
-        The thread workspace itself survives: the next turn's materialization resets and
-        rewrites the trusted trees from its own pinned snapshot.
-        """
-
-        if not lease.materialization_failed or lease.resources_frozen:
-            raise WorkspaceSecurityError(
-                "only a pre-model materialization failure may be discarded without finalization"
-            )
-        self.release(lease)
-
     def remove_chat(self, chat: ChatScope) -> bool:
         """Delete this chat's whole folder. Idempotent; returns whether it existed.
 
@@ -2250,49 +2243,13 @@ class AgentWorkspaceFactory:
                 self._area.mark_idle(chat)
         return self._delete_chat(workspace_segment, project_segment, thread_segment)
 
-    def purge_thread(
-        self,
-        *,
-        workspace_id: str,
-        project_id: str,
-        thread_id: str,
-    ) -> bool:
-        """Remove one thread's whole chat folder (see :meth:`remove_chat`)."""
+    async def forget_chat(self, chat: ChatScope) -> bool:
+        """A privacy erasure: delete this worker's copy of the chat and the chat's version record.
 
-        return self.remove_chat(
-            ChatScope(workspace_id=workspace_id, project_id=project_id, thread_id=thread_id)
-        )
-
-    def erase_for_privacy(
-        self,
-        *,
-        workspace_id: str,
-        project_id: str,
-        thread_id: str,
-    ) -> bool:
-        """Privileged, idempotent DSAR deletion of a thread workspace.
-
-        Unlike ordinary release this removes the bytes: retaining materialized personal data
-        after an erasure request would be the unsafe outcome. Returns whether it existed.
+        Returns whether a local folder existed. Without a snapshotter only the local folder goes.
         """
 
-        return self.purge_thread(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            thread_id=thread_id,
-        )
-
-    def purge_terminal(
-        self,
-        *,
-        workspace_id: str,
-        project_id: str,
-        thread_id: str,
-    ) -> bool:
-        """Remove a thread workspace after the caller verifies durable retention policy."""
-
-        return self.purge_thread(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            thread_id=thread_id,
-        )
+        removed = self.remove_chat(chat)
+        if self._snapshotter is not None:
+            await self._snapshotter.forget(chat)
+        return removed

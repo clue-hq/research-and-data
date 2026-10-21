@@ -21,6 +21,7 @@ import shutil
 import stat
 import threading
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -54,7 +55,9 @@ class ChatScope:
 class WorkerArea:
     """A claimed area: its path, the lock that proves it is ours, and the chats in use in it."""
 
-    def __init__(self, *, name: str, path: Path, lock_fd: int) -> None:
+    def __init__(self, *, name: str, path: Path, lock_fd: int | None) -> None:
+        # ``lock_fd`` is None only for the ``local`` folder of the snapshots-off switch, which
+        # every process shares and nobody claims; the in-use tracking still works per process.
         self.name = name
         self.path = path
         self._lock_fd: int | None = lock_fd
@@ -75,6 +78,20 @@ class WorkerArea:
     def in_use(self) -> frozenset[ChatScope]:
         with self._guard:
             return frozenset(self._uses)
+
+    def remove_if_idle(self, chat: ChatScope, remove: Callable[[], None]) -> bool:
+        """Run ``remove`` for ``chat`` unless this process is using it; True when it ran.
+
+        The check and the removal are one step under the area's guard, and a factory marks a chat
+        in use under the same guard before it opens the chat's folder, so the cache sweep can
+        never delete a folder a turn of this worker is opening or using.
+        """
+
+        with self._guard:
+            if self._uses.get(chat, 0) > 0:
+                return False
+            remove()
+            return True
 
     def close(self) -> None:
         """Give the area up (the process is ending). Its files stay for the next claimer to wipe."""

@@ -13,7 +13,7 @@ from clue_agents import (
 )
 from clue_agents.contracts import normalize_virtual_path
 from clue_agents.ports import TurnBinding
-from clue_agents.worker_area import process_worker_area
+from clue_agents.worker_area import WorkerArea, process_worker_area
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -99,6 +99,9 @@ def build_agent_workspace_factory(
         return AgentWorkspaceFactory(
             prepared_root=PreparedWorkspaceRoot(path=local),
             artifact_sink=DurableAgentArtifactStore(storage=storage),
+            # Unlocked: every process shares ``local``. It lets the cache sweep skip the chats
+            # this process is using; nothing else about the area applies.
+            area=WorkerArea(name=LOCAL_DIR, path=local, lock_fd=None),
             turn_bindings=turn_bindings,
         )
     area = process_worker_area(prepared.path)

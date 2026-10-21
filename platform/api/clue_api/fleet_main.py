@@ -45,14 +45,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import shutil
+import stat
+import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.ports import AgentModelProvider
-from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_agents.worker_area import WorkerArea
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.agent_platform_wiring import (
@@ -67,6 +73,7 @@ from clue_api.agent_turn_fleet_wiring import (
     sweep_turn_stream_retention,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
@@ -184,6 +191,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.sandbox.docker_runner import kill_area_containers
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep_if_due
@@ -241,6 +249,10 @@ def _require_registered(phases: frozenset[ProjectPhase]) -> None:
 
 #: How often the fleet prunes ended work leases (on the maintenance clock below).
 _WORK_LEASE_PRUNE_EVERY = timedelta(days=1)
+#: With snapshots off a chat folder is the only copy, so it stays a day unused (the old purge).
+_LOCAL_IDLE_S = 86400.0
+#: A media download's temp folder older than this belongs to a process that died.
+_MEDIA_TEMP_MAX_AGE_S = 6 * 3600.0
 
 
 async def _orphan_sweep_loop(
@@ -373,40 +385,88 @@ def _start_chat_sweep(settings: Settings) -> asyncio.Task[None] | None:
     return asyncio.create_task(_chat_sweep_loop(settings))
 
 
-async def _agent_cleanup_loop(
-    settings: Settings,
-    job: AgentWorkspaceCleanupJob,
+async def _workspace_cache_sweep_loop(
+    interval_s: float,
+    job: AgentWorkspaceCacheJob,
     *,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
 ) -> None:
     while True:
-        await sleep(settings.agent_cleanup_interval_s)
+        await sleep(interval_s)
         try:
-            result = await job.run_once()
-            if result.considered:
-                log.info(
-                    "fleet.agent_cleanup.completed",
-                    considered=result.considered,
-                    removed=result.removed,
-                    already_absent=result.already_absent,
-                )
-        except Exception as exc:  # noqa: BLE001 — cleanup failure must not sink run execution
-            log.warning("fleet.agent_cleanup.error", exc_info=True)
+            # Deleting folders is blocking file work; keep it off the event loop.
+            await asyncio.to_thread(job.run_once)
+        except Exception as exc:  # noqa: BLE001 — a cleanup fault must not sink run execution
+            log.warning("fleet.workspace_cache_sweep.error", exc_info=True)
             capture(exc)
 
 
-def _start_agent_cleanup(
-    settings: Settings,
-    job: AgentWorkspaceCleanupJob | None,
+def _workspace_cache_job(settings: Settings, area: WorkerArea) -> AgentWorkspaceCacheJob:
+    """The sweep for this worker's area (WS-16, WS-17; AW-11, AW-17).
+
+    With snapshots off a deleted folder is gone for good, so the idle window is a day, like the
+    old purge, instead of the 30 minutes a restorable copy can afford.
+    """
+
+    idle_s = (
+        settings.agent_workspace_cache_idle_s
+        if settings.agent_workspace_snapshots_enabled
+        else _LOCAL_IDLE_S
+    )
+    return AgentWorkspaceCacheJob(
+        area=area, idle_s=idle_s, max_bytes=settings.agent_workspace_cache_max_bytes
+    )
+
+
+def _start_workspace_cache_sweep(
+    settings: Settings, area: WorkerArea | None
 ) -> asyncio.Task[None] | None:
-    if (
-        job is None
-        or settings.agent_cleanup_interval_s <= 0
-        or settings.agent_workspace_root is None
-    ):
-        log.info("fleet.agent_cleanup.disabled")
+    if area is None:
+        log.info("fleet.workspace_cache_sweep.disabled")
         return None
-    return asyncio.create_task(_agent_cleanup_loop(settings, job))
+    return asyncio.create_task(
+        _workspace_cache_sweep_loop(
+            settings.agent_workspace_cache_sweep_interval_s,
+            _workspace_cache_job(settings, area),
+        )
+    )
+
+
+def _remove_stale_media_dirs(temp_root: Path, *, now: float | None = None) -> int:
+    """Remove ``arv2-media-*`` temp folders this user left over 6 hours ago; return how many.
+
+    A media download that died with its process leaves its ``TemporaryDirectory`` behind. Run at
+    start-up only; a live download's folder is never that old.
+    """
+
+    cutoff = (time.time() if now is None else now) - _MEDIA_TEMP_MAX_AGE_S
+    removed = 0
+    for folder in temp_root.glob("arv2-media-*"):
+        try:
+            metadata = folder.lstat()
+        except OSError:
+            continue
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_mtime >= cutoff
+        ):
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        removed += 1
+    return removed
+
+
+def _clean_up_at_start(settings: Settings, area: WorkerArea | None) -> None:
+    """What a worker's previous process may have left running or on disk (plan Task 10)."""
+
+    if area is not None and settings.agent_workspace_snapshots_enabled and settings.sandbox_enabled:
+        killed = kill_area_containers(area.name)
+        if killed:
+            log.info("fleet.sandbox.leftover_containers_killed", area=area.name, count=killed)
+    removed = _remove_stale_media_dirs(Path(tempfile.gettempdir()))
+    if removed:
+        log.info("fleet.media_temp.removed", count=removed)
 
 
 async def _external_research_wake_loop(
@@ -1066,7 +1126,7 @@ async def _serve() -> None:
         # project's library once their write has committed, so the settled state the frontend reads
         # is the state the tool just wrote rather than the state of the last turn. The factory is
         # this worker's own, on the shared root — the tree replace is atomic across processes — and
-        # it is the same one the workspace cleanup job closes below. Without a configured workspace
+        # it is the same one the workspace cache sweep cleans below. Without a configured workspace
         # root there is no refresher and both hooks are no-ops.
         agent_workspace_factory = (
             build_agent_workspace_factory(storage=storage, settings=settings)
@@ -1482,17 +1542,11 @@ async def _serve() -> None:
             interval_s=settings.design_run_event_prune_interval_s,
             retention_s=settings.design_run_event_retention_s,
         )
-        agent_cleanup = _start_agent_cleanup(
-            settings,
-            (
-                AgentWorkspaceCleanupJob(
-                    settings=settings,
-                    workspaces=agent_workspace_factory,
-                )
-                if agent_workspace_factory is not None
-                else None
-            ),
+        workspace_area = (
+            agent_workspace_factory.area if agent_workspace_factory is not None else None
         )
+        _clean_up_at_start(settings, workspace_area)
+        workspace_cache_sweep = _start_workspace_cache_sweep(settings, workspace_area)
         exa_discovery = _start_exa_discovery(
             settings,
             secrets=secrets,
@@ -1518,7 +1572,7 @@ async def _serve() -> None:
                 token_sweep,
                 design_reaper,
                 design_event_pruner,
-                agent_cleanup,
+                workspace_cache_sweep,
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,

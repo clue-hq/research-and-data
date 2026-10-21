@@ -156,7 +156,7 @@ def test_failed_materialization_never_writes_readiness_manifest_and_is_discardab
         assert not harness.lease.resources_frozen
         assert not (harness.thread_path / ".deepagent/manifest.json").exists()
 
-        harness.factory.discard_failed_materialization(harness.lease)
+        harness.factory.release(harness.lease)
         # The thread workspace persists; only this turn's lease is dropped, and the next
         # turn's materialization resets and rewrites the trusted trees.
         assert harness.thread_path.exists()

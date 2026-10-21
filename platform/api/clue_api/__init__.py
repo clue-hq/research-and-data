@@ -53,7 +53,6 @@ from clue_api.account_research_wiring import (
     GovernedAccountProfiler,
     build_account_research_execution,
 )
-from clue_api.agent_cleanup import AgentCleanupResult, AgentWorkspaceCleanupJob
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -295,14 +294,12 @@ __all__ = [
     "AgentCanaryAssessment",
     "AgentCanarySample",
     "AgentCanaryThresholds",
-    "AgentCleanupResult",
     "AgentOwner",
     "AgentOwnershipRouter",
     "AgentPlatformComponents",
     "AgentRouteDecision",
     "AgentRuntimeNotComposed",
     "AgentRuntimeSurface",
-    "AgentWorkspaceCleanupJob",
     "DbAgentOwnershipRouter",
     "RoutedAccountProfiler",
     "build_agent_context_assembler",

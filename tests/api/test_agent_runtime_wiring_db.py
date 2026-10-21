@@ -345,7 +345,6 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                 )
                 == ref
             )
-            assert harness.lease.cleanup_authorized
             assert (
                 await conn.execute(
                     text(

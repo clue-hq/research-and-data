@@ -280,6 +280,11 @@ class WorkspaceSnapshotter:
         )
         return folder if folder.is_dir() and not folder.is_symlink() else None
 
+    async def forget(self, chat: ChatScope) -> None:
+        """Delete the chat's version record (a privacy erasure, WS-27)."""
+
+        await self._store.forget(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
+
     # --- save ---------------------------------------------------------------------------------
 
     async def save(self, lease: AgentWorkspaceLease) -> SaveReport:

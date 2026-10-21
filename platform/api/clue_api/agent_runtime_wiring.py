@@ -848,7 +848,6 @@ class AgentFinalizationAuthority:
                 workspace_id=workspace_id,
                 usage=self._lease.usage_snapshot(),
             )
-            self._lease.authorize_cleanup(finalization_ref=existing)
             return existing
         # Snapshot-then-reopen: the first call of the turn persists ``outputs/`` and hands it
         # back writable, with its files, for the thread's next turn (F3 stopgap); any later
@@ -909,7 +908,6 @@ class AgentFinalizationAuthority:
             execution_id=envelope.execution_id,
             node_key=None,
         )
-        self._lease.authorize_cleanup(finalization_ref=envelope_ref)
         return envelope_ref
 
     async def _existing(

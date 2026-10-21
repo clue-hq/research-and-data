@@ -200,19 +200,11 @@ def test_privacy_erasure_closes_live_backend_and_removes_materialized_tree(
     backend = harness.lease.backend
     backend.materialize_bytes("context/contact.md", b"personal context")
     try:
-        assert harness.factory.erase_for_privacy(
-            workspace_id=harness.lease.identity.workspace_id,
-            project_id=harness.lease.identity.project_id,
-            thread_id=harness.lease.identity.thread_id,
-        )
+        assert harness.factory.remove_chat(harness.lease.chat)
         assert not harness.thread_path.exists()
         with pytest.raises(WorkspaceSecurityError, match="closed"):
             backend.read_text_sync("context/contact.md")
-        assert not harness.factory.erase_for_privacy(
-            workspace_id=harness.lease.identity.workspace_id,
-            project_id=harness.lease.identity.project_id,
-            thread_id=harness.lease.identity.thread_id,
-        )
+        assert not harness.factory.remove_chat(harness.lease.chat)
     finally:
         harness.close()
 
@@ -463,16 +455,8 @@ def test_output_snapshot_is_single_flight_and_release_keeps_the_thread(tmp_path:
         with pytest.raises(WorkspaceConflict):
             backend.edit_text_sync("outputs/report.md", old="final", new="changed")
 
-        finalization = ArtifactRef(
-            workspace_id="ws-1",
-            artifact_key="ws-1/finalization",
-            sha256="f" * 64,
-            media_type="application/json",
-            byte_count=2,
-        )
-        harness.lease.authorize_cleanup(finalization_ref=finalization)
         # Releasing the lease ends the turn; the persistent thread directory survives it.
-        harness.factory.cleanup(harness.lease)
+        harness.factory.release(harness.lease)
         assert harness.thread_path.exists()
         assert (harness.thread_path / "outputs/report.md").exists()
         with pytest.raises(WorkspaceSecurityError, match="closed"):
@@ -511,8 +495,7 @@ def test_output_snapshot_keeps_the_files_for_the_next_turn(tmp_path: Path) -> No
         assert len(sink.records) == 2
 
         # The next turn of the chat reads and rewrites what this turn produced.
-        harness.lease.authorize_cleanup(finalization_ref=refs[0])
-        harness.factory.cleanup(harness.lease)
+        harness.factory.release(harness.lease)
         later = harness.factory.create(
             workspace_id="ws-1",
             project_id="project-1",
@@ -543,16 +526,6 @@ def test_output_snapshot_rejects_untrusted_artifact_refs(
         with pytest.raises(WorkspaceSecurityError):
             asyncio.run(harness.lease.backend.snapshot_outputs())
         assert not harness.lease.backend.outputs_snapshotted
-        with pytest.raises(WorkspaceSecurityError):
-            harness.lease.authorize_cleanup(
-                finalization_ref=ArtifactRef(
-                    workspace_id="ws-1",
-                    artifact_key="ws-1/finalization",
-                    sha256="f" * 64,
-                    media_type="application/json",
-                    byte_count=2,
-                )
-            )
     finally:
         harness.close()
 
@@ -1025,28 +998,20 @@ def test_one_live_lease_per_thread(tmp_path: Path) -> None:
         factory.close()
 
 
-def test_purge_thread_removes_the_directory_and_reports_absence_the_second_time(
+def test_remove_chat_removes_the_directory_and_reports_absence_the_second_time(
     tmp_path: Path,
 ) -> None:
     harness = make_workspace(tmp_path)
     try:
         harness.lease.backend.write_text_sync("scratch/notes.md", "one\n")
-        assert harness.factory.purge_thread(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-        )
+        assert harness.factory.remove_chat(harness.lease.chat)
         assert not harness.thread_path.exists()
         # The now-empty scope levels go with it, up to the prepared root itself.
         assert not (harness.root / "chats").exists()
         assert harness.root.is_dir()
         with pytest.raises(WorkspaceSecurityError, match="closed"):
             harness.lease.backend.read_text_sync("scratch/notes.md")
-        assert not harness.factory.purge_thread(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-        )
+        assert not harness.factory.remove_chat(harness.lease.chat)
     finally:
         harness.factory.close()
 

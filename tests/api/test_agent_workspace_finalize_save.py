@@ -51,9 +51,6 @@ class _Lease:
     def usage_snapshot(self) -> object:
         return object()
 
-    def authorize_cleanup(self, **_: Any) -> None:
-        return None
-
     async def save_snapshot(self) -> SaveReport:
         self._calls.append("save_snapshot")
         if isinstance(self._save_status, Exception):

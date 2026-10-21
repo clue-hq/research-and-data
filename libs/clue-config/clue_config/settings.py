@@ -817,13 +817,10 @@ class Settings(BaseSettings):
     # clamps this to the account's durable research budget when one exists.
     # Env: ``CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS``.
     agent_account_plan_budget_limit_millicents: int = Field(default=1_000_000, ge=0)
-    # Terminal isolated workspaces are retained briefly for operator inspection, then purged by
-    # the C6.8 cleanup job. Zero is allowed for tests/immediate cleanup.
-    # Env: ``CLUE_AGENT_WORKSPACE_RETENTION_S``.
+    # Since F3 nothing purges by this number any more (the worker-area cache sweep below replaced
+    # the C6.8 job); it survives only because the agent manual still quotes it, and that text
+    # waits for a founder-reviewed rewrite. Env: ``CLUE_AGENT_WORKSPACE_RETENTION_S``.
     agent_workspace_retention_s: float = Field(default=86400.0, ge=0)
-    # Periodic worker cadence. Non-positive disables scheduling without weakening the job itself.
-    # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
-    agent_cleanup_interval_s: float = 3600.0
     # F3 (spec docs/superpowers/specs/agent-workspace/, WS-21): a chat's agent folders are saved as
     # a versioned snapshot in the artifact store and a worker's disk is only a cache. Off is the
     # emergency switch only: local folders, no snapshots, a 24-hour idle window.

@@ -56,6 +56,7 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
 from clue_api.conversation_continuation import thread_message_refs
@@ -2264,10 +2265,16 @@ class AgentPrivacyService:
 
         purged_roots: list[str] = []
         for turn in turns:
-            removed = self._workspaces.erase_for_privacy(
-                workspace_id=workspace_id,
-                project_id=turn["project_id"],
-                thread_id=turn["thread_id"],
+            # F3 (WS-27, partly; WS-16): the chat's folder on this worker goes, and so does its
+            # version record — a copy on any other worker can then never match a record again and
+            # is deleted by that worker's own sweep. The snapshot's bytes in storage are released
+            # here and erased in Phase 2.
+            removed = await self._workspaces.forget_chat(
+                ChatScope(
+                    workspace_id=workspace_id,
+                    project_id=turn["project_id"],
+                    thread_id=turn["thread_id"],
+                )
             )
             if removed:
                 purged_roots.append(turn["workspace_root_id"])

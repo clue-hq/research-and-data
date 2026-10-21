@@ -314,3 +314,55 @@ def test_forget_deletes_the_record(tmp_path: Path) -> None:
         assert await store.current(workspace_id=ws, thread_id="thr-1") is None
 
     _scenario(body, tmp_path)
+
+
+def test_privacy_erase_forgets_the_version_record(tmp_path: Path) -> None:
+    """WS-27 (Phase 1 part) through the factory: the record and this worker's folder both go, so
+    a cached copy on any other worker can never match a record again."""
+
+    from uuid import UUID
+
+    from clue_agents.worker_area import ChatScope
+    from clue_agents.workspace import AgentWorkspaceFactory
+    from clue_agents.workspace_policy import PreparedWorkspaceRoot, WorkspaceRootPolicy
+    from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
+    from clue_core import ExecutionId
+    from tests.agents.workspace_helpers import RecordingArtifactSink, policy
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        for name in ("source", "home"):
+            (tmp_path / name).mkdir(mode=0o700)
+        prepared = WorkspaceRootPolicy(
+            configured_root=tmp_path / "root",
+            source_root=tmp_path / "source",
+            home_root=tmp_path / "home",
+        ).prepare()
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        factory = AgentWorkspaceFactory(
+            prepared_root=PreparedWorkspaceRoot(path=prepared.path),
+            artifact_sink=RecordingArtifactSink(),
+            snapshotter=WorkspaceSnapshotter(store=store, concurrency=4),
+        )
+        chat = ChatScope(workspace_id=ws, project_id="prj-1", thread_id="thr-1")
+        try:
+            lease = await factory.acquire_restored(
+                workspace_id=ws,
+                project_id="prj-1",
+                thread_id="thr-1",
+                execution_id=ExecutionId(UUID("00000000-0000-0000-0000-000000000901")),
+                policy=policy(max_total_bytes=100_000, max_file_bytes=10_000, max_file_count=20),
+            )
+            lease.backend.write_text_sync("scratch/personal.md", "erase me")
+            assert (await lease.save_snapshot()).status == "saved"
+            await factory.release_saved(lease)
+            assert await store.current(workspace_id=ws, thread_id="thr-1") is not None
+
+            assert await factory.forget_chat(chat) is True
+            assert await store.current(workspace_id=ws, thread_id="thr-1") is None
+            assert not factory.chat_host_path(chat).exists()
+            # Idempotent: a second erasure finds nothing and does not fail.
+            assert await factory.forget_chat(chat) is False
+        finally:
+            factory.close()
+
+    _scenario(body, tmp_path)
