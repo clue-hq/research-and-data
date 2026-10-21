@@ -35,6 +35,7 @@ _Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and
   public callback URL and Composio keys in that environment.
 
 ## Phase 2 — write foundation
+- 📝 Design reviewed 2026-10-22 (R-6.21–R-6.25, R-8.7); card spec current (R-6.22); plan `docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md` awaiting founder review
 - ⬜ `propose_crm_changes`: classification, find-before-create, before-values, overwrite marker
 - ⬜ Write log, idempotency keys, executor (fleet task), `crm_writes_finished` wake with per-record results
 - ⬜ Retry rule (automatic for temporary failures only) and per-workspace throttle
