@@ -213,7 +213,8 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts. Q1–Q6, which Phase 1's plan needs, are decided; Q7–Q11 come up in later phases.
+phase starts. Q1–Q6 are decided. Phase 1's plan also needs Q9 and the cache size limit in Q10;
+Q7, Q8 and Q11 come up in later phases.
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -888,4 +889,4 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: Q5 decided (AW-14): `work/` is kept for the chat's whole life as a work product,
   apart from its two compaction folders (raw inputs). WS-4, WS-6, WS-23 and WS-32 updated.
 - 2026-10-22: Q6 decided (AW-15): a save that still fails after retries fails the turn, and the
-  fleet retries it. All decisions Phase 1 needs (Q1–Q6) are now made.
+  fleet retries it. Q1–Q6 are now decided.
