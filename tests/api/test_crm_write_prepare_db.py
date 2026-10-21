@@ -92,7 +92,10 @@ class _FakeCrm:
         *,
         records: Mapping[str, Mapping[str, Any]] | None = None,
         lists: Mapping[str, list[str]] | None = None,
+        malformed: frozenset[str] = frozenset(),
     ) -> None:
+        #: Reads answered with a body of an unexpected shape.
+        self.malformed = malformed
         self.records = {key: dict(value) for key, value in (records or {}).items()}
         self.lists = dict(lists or {})
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -108,6 +111,8 @@ class _FakeCrm:
     ) -> ExecuteResult:
         del connected_account_id, user_id, version
         self.calls.append((slug, dict(arguments)))
+        if slug in self.malformed:
+            return ExecuteResult(True, {"data": {"message": "unexpected"}}, None)
         return ExecuteResult(True, {"data": self._answer(slug, arguments)}, None)
 
     def _answer(self, slug: str, arguments: Mapping[str, Any]) -> Any:
@@ -536,3 +541,87 @@ def test_proposal_status_and_record_links_are_kept(tmp_path: Path) -> None:
         assert tuple(row.one()) == (entity, True)  # Clue created it, whatever a later link says
 
     _run(tmp_path, "status", body)
+
+
+def _remove_from_list(record: str, list_id: str = "9") -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        {"list_id": list_id, "operation": "remove", "record_ids": [record]},
+        "no longer on the committee",
+    )
+
+
+def test_clue_removes_only_members_it_added(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(lists={"p1": ["9"], "p2": ["9"]})
+        # p1 was added to list 9 by a person: removing it is refused, and nothing is logged.
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(conn, gateway, connection, proposal_id, [_remove_from_list("p1")])
+        assert refused.value.reason_code == "crm_removal_not_allowed"
+        assert "only removes members it added" in str(refused.value)
+        assert await _write_count(conn, seeded.workspace_id) == 0
+
+        # p2 was added by Clue: the removal is prepared.
+        await writes.record_membership_link(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            list_ref="9",
+            record_ref="p2",
+            write_id=None,
+        )
+        (removal,) = await _prepare(
+            conn, gateway, connection, proposal_id, [_remove_from_list("p2")]
+        )
+        assert removal.scope_key == "kind:list_removal"
+        assert removal.before is True and removal.after is False
+        # Clue's link to p2 in list 9 says nothing about list 10.
+        with pytest.raises(WriteRefused):
+            await _prepare(conn, gateway, connection, proposal_id, [_remove_from_list("p2", "10")])
+
+    _run(tmp_path, "removal", body)
+
+
+def test_a_salesforce_record_the_read_does_not_return_is_refused_not_shown_as_empty(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"001A": {"Industry": None}})
+        changes = [
+            ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT", {"account_id": rid, "industry": "Hospitality"}, "x"
+            )
+            for rid in ("001A", "001Z")
+        ]
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway))
+        assert refused.value.reason_code == "crm_read_failed"
+        assert "001Z" in str(refused.value) and "001A" not in str(refused.value)
+
+    _run(tmp_path, "sfmissing", body, provider="salesforce")
+
+
+@pytest.mark.parametrize(
+    ("malformed", "change"),
+    [
+        ("HUBSPOT_READ_CRM_OBJECT_BY_ID", _set_company("101", "icp_tier", "Tier 1")),
+        ("HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS", _add_to_list("p1")),
+        (
+            "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
+            ProposedChange("HUBSPOT_CREATE_CONTACT", {"email": "a@acme.example.com"}, "x"),
+        ),
+        ("HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE", _set_company("101", "icp_tier", "Tier 1")),
+    ],
+)
+def test_an_answer_of_an_unexpected_shape_is_refused_not_read_as_empty(
+    tmp_path: Path, malformed: str, change: ProposedChange
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={"101": {"icp_tier": "Tier 3"}}, malformed=frozenset({malformed})
+        )
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(conn, gateway, connection, proposal_id, [change])
+        assert refused.value.reason_code == "crm_read_failed"
+
+    _run(tmp_path, "shape", body)

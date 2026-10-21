@@ -23,7 +23,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Grant",
+    "MEMBERSHIP_LINK_OBJECT",
+    "clue_added_members",
     "clue_wrote_current_value",
+    "membership_link_id",
+    "record_membership_link",
     "covering_grant",
     "grant_scope_key",
     "insert_grant",
@@ -346,3 +350,54 @@ async def record_link(
         ),
         params,
     )
+
+
+#: A list (HubSpot) or campaign (Salesforce) membership Clue added is remembered as a record link
+#: of this object, its ``crm_id`` being :func:`membership_link_id`. Clue removes only members it
+#: added itself (R-6.25 call 12), so a removal is proposed only when this link exists.
+MEMBERSHIP_LINK_OBJECT = "list_member"
+
+
+def membership_link_id(list_ref: str, record_ref: str) -> str:
+    return f"{list_ref}:{record_ref}"
+
+
+async def record_membership_link(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    connection_id: UUID,
+    list_ref: str,
+    record_ref: str,
+    write_id: UUID | None,
+) -> None:
+    """Remember that Clue added this member to this list or campaign (the executor calls it
+    when an add succeeds)."""
+    await record_link(
+        conn,
+        workspace_id=workspace_id,
+        connection_id=connection_id,
+        crm_object=MEMBERSHIP_LINK_OBJECT,
+        crm_id=membership_link_id(list_ref, record_ref),
+        created_by_clue=True,
+        created_by_write_id=write_id,
+    )
+
+
+async def clue_added_members(
+    conn: AsyncConnection, *, connection_id: UUID, pairs: Sequence[tuple[str, str]]
+) -> set[tuple[str, str]]:
+    """Which (list, record) memberships of this connection Clue added itself."""
+    wanted = {
+        membership_link_id(list_ref, record): (list_ref, record) for list_ref, record in pairs
+    }
+    if not wanted:
+        return set()
+    rows = await conn.execute(
+        text(
+            "SELECT crm_id FROM crm_record_link WHERE connection_id = :connection_id "
+            "AND crm_object = :object AND created_by_clue AND crm_id = ANY(:ids)"
+        ),
+        {"connection_id": connection_id, "object": MEMBERSHIP_LINK_OBJECT, "ids": list(wanted)},
+    )
+    return {wanted[crm_id] for (crm_id,) in rows}

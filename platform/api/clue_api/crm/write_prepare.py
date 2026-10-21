@@ -42,6 +42,7 @@ from clue_api.crm.write_actions import (
 )
 from clue_api.crm.writes import (
     Grant,
+    clue_added_members,
     clue_wrote_current_value,
     covering_grant,
     live_grants,
@@ -96,8 +97,10 @@ class WriteRefused(Exception):
 
     ``reason_code``: ``crm_write_not_allowed`` (not on the allowlist), ``crm_write_not_parsable``,
     ``crm_field_forbidden`` (consent, phone, or a person field outside R-8.7),
-    ``crm_value_not_allowed`` (not one of the field's picklist values), ``crm_read_failed``
-    (the CRM did not answer a read needed to show the change).
+    ``crm_value_not_allowed`` (not one of the field's picklist values),
+    ``crm_removal_not_allowed`` (a list or campaign member Clue did not add, R-6.25 call 12),
+    ``crm_read_failed`` (the CRM's answer to a read needed to show the change was an error or not
+    the expected shape; an unreadable value is never taken as empty).
     """
 
     def __init__(self, reason_code: str, message: str) -> None:
@@ -271,9 +274,21 @@ def _unwrap(data: Any) -> Any:
     return data
 
 
-def _list(body: Any, key: str) -> list[Mapping[str, Any]]:
+def _unreadable(what: str) -> WriteRefused:
+    return WriteRefused(
+        "crm_read_failed",
+        f"Could not read {what} from the CRM, so the change cannot be shown safely. Nothing "
+        "was proposed; try again, or ask the person to check the record.",
+    )
+
+
+def _list(body: Any, key: str, what: str) -> list[Mapping[str, Any]]:
+    """The answer's list of records; an answer of any other shape refuses the batch (an
+    unreadable answer is never taken as "empty")."""
     items = body.get(key) if isinstance(body, Mapping) else None
-    return [item for item in items or [] if isinstance(item, Mapping)]
+    if not isinstance(items, list) or not all(isinstance(item, Mapping) for item in items):
+        raise _unreadable(what)
+    return items
 
 
 async def _field_metas(
@@ -286,7 +301,7 @@ async def _field_metas(
             "HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE",
             {"objectType": _HUBSPOT_OBJECT_TYPES[object_name]},
         )
-        for prop in _list(body, "results"):
+        for prop in _list(body, "results", f"the {object_name} fields"):
             options = None
             if prop.get("type") == "enumeration":
                 options = tuple(
@@ -303,7 +318,7 @@ async def _field_metas(
     body = await reader.read(
         "SALESFORCE_GET_ALL_FIELDS_FOR_OBJECT", {"object_name": _SALESFORCE_SOBJECTS[object_name]}
     )
-    for field in _list(body, "fields"):
+    for field in _list(body, "fields", f"the {object_name} fields"):
         kind = field.get("type")
         options = None
         if kind in ("picklist", "multipicklist"):
@@ -345,7 +360,9 @@ async def _hubspot_field_values(
         },
     )
     properties = body.get("properties") if isinstance(body, Mapping) else None
-    return properties if isinstance(properties, Mapping) else {}
+    if not isinstance(properties, Mapping):
+        raise _unreadable(f"the {object_name} {record_ref}")
+    return properties
 
 
 async def _salesforce_field_values(
@@ -362,9 +379,12 @@ async def _salesforce_field_values(
             f"WHERE Id IN ({', '.join(_soql_text(_salesforce_id(i)) for i in chunk)})"
         )
         body = await reader.read("SALESFORCE_RUN_SOQL_QUERY", {"query": query})
-        for record in _list(body, "records"):
+        for record in _list(body, "records", f"the {object_name} records"):
             found[_sf_key(record.get("Id"))] = record
-    return {record_ref: found.get(_sf_key(record_ref), {}) for record_ref in ids}
+    missing = [record_ref for record_ref in ids if _sf_key(record_ref) not in found]
+    if missing:
+        raise _unreadable(f"the {object_name} {', '.join(missing)}")
+    return {record_ref: found[_sf_key(record_ref)] for record_ref in ids}
 
 
 async def _memberships(
@@ -378,7 +398,7 @@ async def _memberships(
                 "HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS",
                 {"object_type_id": _HUBSPOT_CONTACT_OBJECT_TYPE_ID, "record_id": record_ref},
             )
-            for membership in _list(body, "results"):
+            for membership in _list(body, "results", f"the lists of contact {record_ref}"):
                 members.add((str(membership.get("listId")), record_ref))
         return members
     by_campaign: dict[str, set[str]] = {}
@@ -394,7 +414,8 @@ async def _memberships(
                 f"({', '.join(_soql_text(_salesforce_id(c)) for c in chunk)})"
             )
             body = await reader.read("SALESFORCE_RUN_SOQL_QUERY", {"query": query})
-            in_campaign = {_sf_key(r.get("ContactId")) for r in _list(body, "records")}
+            records = _list(body, "records", f"the members of campaign {campaign}")
+            in_campaign = {_sf_key(r.get("ContactId")) for r in records}
             members.update((campaign, c) for c in chunk if _sf_key(c) in in_campaign)
     return members
 
@@ -420,17 +441,22 @@ async def _find_existing(
                 "limit": 2,
             },
         )
-        results = _list(body, "results")
+        results = _list(body, "results", f"the {item.parsed.object} search")
         if not results:
             return None
         properties = results[0].get("properties")
-        return str(results[0].get("id")), properties if isinstance(properties, Mapping) else {}
+        if not isinstance(properties, Mapping) or results[0].get("id") is None:
+            raise _unreadable(f"the {item.parsed.object} search")
+        return str(results[0]["id"]), properties
     query = (
         f"SELECT Id, {', '.join(fields)} FROM {_SALESFORCE_SOBJECTS[item.parsed.object]} "
         f"WHERE {key} = {_soql_text(value)} LIMIT 2"
     )
-    records = _list(await reader.read(slug, {"query": query}), "records")
-    return (str(records[0].get("Id")), records[0]) if records else None
+    what = f"the {item.parsed.object} search"
+    records = _list(await reader.read(slug, {"query": query}), "records", what)
+    if records and records[0].get("Id") is None:
+        raise _unreadable(what)
+    return (str(records[0]["Id"]), records[0]) if records else None
 
 
 # --- preparing -----------------------------------------------------------------------------
@@ -474,6 +500,31 @@ def _check_once_per_record_field(items: Sequence[_Item]) -> None:
                     f"{parsed.label} is changed twice in one batch; propose each field once.",
                 )
             seen.add(key)
+
+
+async def _check_removals(
+    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+) -> None:
+    """Clue removes only members it added itself (R-6.25 call 12)."""
+    removals = [
+        (str(item.parsed.list_ref), str(item.parsed.record_ref), item.parsed.label)
+        for item in items
+        if item.parsed.change_kind(item.spec) == "list_removal"
+    ]
+    added = await clue_added_members(
+        conn,
+        connection_id=connection.connection_id,
+        pairs=[(list_ref, record) for list_ref, record, _ in removals],
+    )
+    for list_ref, record, label in removals:
+        if (list_ref, record) not in added:
+            target = "list" if connection.provider == "hubspot" else "campaign"
+            raise WriteRefused(
+                "crm_removal_not_allowed",
+                f"Clue only removes members it added itself, and it did not add {label} to the "
+                f"{target} {list_ref}. Ask the person to remove it in "
+                f"{_CRM_NAMES[connection.provider]} if they want it gone.",
+            )
 
 
 class _Builder:
@@ -602,6 +653,7 @@ async def prepare_changes(
         metas[object_name] = await _field_metas(reader, provider, object_name)
     for item in items:
         _check_fields(provider, item, metas)
+    await _check_removals(conn, connection, items)
 
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
