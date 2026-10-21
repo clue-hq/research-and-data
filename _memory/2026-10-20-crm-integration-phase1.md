@@ -102,5 +102,18 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   loop on a test turn (stopped by hand). Owed: the server-started wake turn live, together with the
   F4 publish re-check, with the founder watching.
 
+- 2026-10-21: F4 live re-check PASSED in the trial chat — sales-motion v1 + customers v3 published
+  (7 min, $1.09, 0 tool errors); outputs/ kept after the turn (AW-6 stopgap f799a9830 live after a
+  worker restart). New F11: CRM skill asks for outputs/sales-analysis.py but the sandbox deletes .py.
+  F3 now lives in docs/superpowers/specs/agent-workspace/ (AW-1..AW-8), built in the dushanbe lane.
+
 ## Next
+- **OWED (founder asked to note, 2026-10-21): the F2 live test of a server-started wake turn.** Not
+  run yet. Options put to the founder: (A) real reconnect through the card (HubSpot sign-in in the
+  in-app browser, not Arc — F1), (B) a one-off script calling `queue_crm_connected_turns` for the
+  trial chat `thr_5a44dd39b5df5ee0ae0c0b7a8759c1fe` (recommended, combined with the F4 publish
+  re-check, founder watching — "continue where we left off" will make the agent rebuild and publish
+  company/sales-motion.md + proof/customers.md, ~8 min), or a fresh chat with nothing pending.
+  Watch: the wake turn appears in both open tabs within ~2 s, and its turn.accepted has
+  `"source": "worker"`. Nothing is running on the stack (checked 2026-10-21 after F2).
 Task 12: founder trial on the local stack (gate before Phase 2); then commit Task 11 as one unit (or revise the skill), then deploy reads (R-2.4).
