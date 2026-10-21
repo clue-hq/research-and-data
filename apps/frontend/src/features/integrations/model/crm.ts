@@ -108,12 +108,25 @@ export function crmConnectionAnswersCard(
   connection: CrmConnectionResponse,
 ): CrmConnectedState | null {
   if (connection.status !== "active") return null;
-  if (beforeStatus === "active" && beforeConnectedAt === connection.connectedAt) return null;
+  if (beforeStatus === "active" && sameMoment(beforeConnectedAt, connection.connectedAt)) {
+    return null;
+  }
   return {
     provider: connection.provider,
     connectedAt: connection.connectedAt,
     connectedByName: connection.connectedByName ?? null,
   };
+}
+
+/**
+ * Whether two timestamps name the same moment. The tool's snapshot and the connection route
+ * write UTC differently ("…Z" and "…+00:00"), so text equality is not enough.
+ */
+function sameMoment(a: string | null, b: string): boolean {
+  if (a === null) return false;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  return Number.isFinite(left) && Number.isFinite(right) ? left === right : a === b;
 }
 
 /** What the callback tab tells an open connect card (same browser, `BroadcastChannel`). */

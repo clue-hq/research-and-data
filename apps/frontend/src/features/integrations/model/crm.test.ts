@@ -51,3 +51,14 @@ test("a switch card is answered only by a connection other than the one it was s
   const switched = { ...ACTIVE, provider: "salesforce" as const, connectedAt: "2026-10-20T11:00:00+00:00" };
   assert.equal(crmConnectionAnswersCard("active", ACTIVE.connectedAt, switched)?.provider, "salesforce");
 });
+
+test("the connection a switch card was shown with does not answer it, whatever its time format", () => {
+  // Found in the Garner trial: the tool's snapshot says "…Z" (pydantic JSON) while the
+  // connection route says "…+00:00" (isoformat), so a text comparison treated the same
+  // connection as new and showed a switch card as already connected.
+  const shownWith = "2026-10-21T18:49:53.984463Z";
+  const sameMomentFromRoute = { ...ACTIVE, connectedAt: "2026-10-21T18:49:53.984463+00:00" };
+  assert.equal(crmConnectionAnswersCard("active", shownWith, sameMomentFromRoute), null);
+  const later = { ...ACTIVE, connectedAt: "2026-10-21T19:05:00.000000+00:00" };
+  assert.equal(crmConnectionAnswersCard("active", shownWith, later)?.connectedAt, later.connectedAt);
+});
