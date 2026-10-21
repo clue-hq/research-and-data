@@ -101,6 +101,18 @@ Related documents:
   - A CRM customer row in `proof/customers.md` reads: How they buy `direct`, Evidence
     `closed-won deal`, Domain check and Quote empty, Source `CRM: <HubSpot|Salesforce>
     (closed-won <date>)` (see R-4.6).
+- **R-3.15 (2026-10-20)** The Head of ABM **may edit any Brand-context document**, not only
+  `company/` and `proof/`: everything under `company/`, `product/`, `audience/` and `proof/`
+  (including ICP documents — a project keeps the exact ICP version it confirmed) **except the
+  generated `product/catalog.md`**, which only `manage_products` changes. It does so **only when the
+  person asks or a skill says to, never on its own initiative**, and only through
+  `write_brand_document` (its file tools still cannot write `brand/`). Concurrent edits are guarded
+  by a **version check at save, not a lock**: the agent names the version it read, and a document
+  someone saved since is refused `document_changed` — the same rule a person's save follows.
+  Replaces the "company/ and proof/ only" scope of Task 9.
+- **R-3.16 (2026-10-20)** The **disclosed-skills budget stays at 5,120 bytes**; it is not raised
+  for the CRM skill. Room is made by shortening the Stage-0 skill's summary in its new version
+  (v49). (Claude had raised it to 5,632 without asking; reverted.)
 
 ## 4. Customers
 
@@ -250,3 +262,14 @@ Related documents:
 - **What personal data Clue may write into the customer's CRM** (which person fields; verified
   work email only; no phone; no personal research details in notes; how EU people are handled) —
   asked 2026-10-20, not yet answered.
+
+## 10. Trial 1 findings — decisions
+
+- **R-10.1 (2026-10-21)** **F2 (an open chat misses turns it did not start) is fixed with a live
+  thread stream** (approach 4): a thread-level SSE stream of turn lifecycle events read from
+  `agent_turn_event_stream` by `thread_id`, single-use `agent_thread` stream tokens, keep-alive, and
+  reconnect from the cursor — multi-process safe (all state in Postgres) and multi-tab. **Option
+  (a):** the stream is open only while the tab is visible. The discovery 5 s timer and the CRM card's
+  re-read nudge are removed. Plan: `docs/superpowers/plans/2026-10-21-chat-thread-stream.md`.
+- **R-10.2 (2026-10-21)** **Intermediate progress messages during long tasks** (like Claude Code /
+  Codex) are wanted; the founder will take this up separately ("mid-tasks"), not in the CRM work.

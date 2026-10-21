@@ -10,6 +10,7 @@ group. Add a line here whenever a new document is written.
 | [`status.md`](status.md) | Build status: what is built, in progress, not started, or parked — one line per feature | Live — updated whenever a feature changes state |
 | [`composio-api-notes.md`](composio-api-notes.md) | Verified Composio REST v3.1 shapes, errors and versions from the Task 0 spike | Live — amend when Composio behaviour changes |
 | [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md) | First end-to-end trial of the reads on the local stack: what happened, findings F1–F9, what was not exercised | Record — findings to be discussed before fixing |
+| [`../../plans/2026-10-21-chat-thread-stream.md`](../../plans/2026-10-21-chat-thread-stream.md) | Plan for F2: the live thread stream (R-10.1) | Plan — awaiting founder review |
 | [`rulings.md`](rulings.md) | Every founder decision, numbered (R-x.y) and dated; superseded rulings struck through | Live — updated after every decision |
 | [`2026-10-20-crm-integration-first-release-design.md`](2026-10-20-crm-integration-first-release-design.md) | The first-release design: HubSpot and Salesforce, read and write, through Composio | Draft for founder review |
 | [`../../plans/2026-10-20-crm-integration-phase-1-reads.md`](../../plans/2026-10-20-crm-integration-phase-1-reads.md) | Phase 1 (reads) implementation plan: 13 tasks, ending with the founder's local test | Draft for founder review |

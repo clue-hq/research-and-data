@@ -66,7 +66,7 @@ founder asked to record first and discuss before acting.
   (the request id + Composio's own account check already prove the attempt), or have the backend
   confirm pending attempts itself (Composio webhook, or check the account when the card is next
   read), so the link can be opened anywhere.
-- **F2 — A turn the server starts is not shown in an open chat until reload.** The chat re-reads a
+- **F2 — A turn the server starts is not shown in an open chat until reload.** *Decided 2026-10-21 (R-10.1): live thread stream, open while the tab is visible; plan `docs/superpowers/plans/2026-10-21-chat-thread-stream.md`.* The chat re-reads a
   thread on a timer only while a discovery holds it; the `crm_connected` wake ran on the worker, but
   the page showed nothing until it was reloaded. **Uncommitted change already made** (before the
   founder asked to pause): the card asks the chat to re-read the thread once when it sees the CRM
