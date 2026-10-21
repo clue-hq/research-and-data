@@ -22,7 +22,6 @@ from clue_agents import (
     AnchoredAgentWorkspaceBackend,
     ArtifactRef,
     LibraryFile,
-    LibraryTree,
     MountMode,
     MountRequest,
     VersionedWriteOutcome,
@@ -34,6 +33,9 @@ from clue_agents import (
     WorkspaceRootPolicy,
     WorkspaceSecurityError,
 )
+from clue_agents.tree_sync import sync_directory
+from clue_agents.worker_area import ChatScope, claim_worker_area
+from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_core import ExecutionId
 from tests.agents.workspace_helpers import (
     DEFAULT_READABLE_PREFIXES,
@@ -415,7 +417,7 @@ def test_concurrent_quota_decisions_are_serialized(tmp_path: Path) -> None:
 def test_factory_rejects_unexpected_entries_between_scope_levels(tmp_path: Path) -> None:
     harness = make_workspace(tmp_path)
     other_id = ExecutionId(UUID("00000000-0000-0000-0000-000000000613"))
-    unexpected = harness.root / "ws-1/unexpected.txt"
+    unexpected = harness.root / "chats/ws-1/unexpected.txt"
     unexpected.write_text("not a project directory")
     try:
         with pytest.raises(WorkspaceSecurityError):
@@ -859,7 +861,7 @@ def test_the_factory_roots_the_workspace_at_the_thread(tmp_path: Path) -> None:
             execution_id=EXECUTION_ID,
             policy=policy(),
         )
-        thread = root / "ws_a" / "projects" / "prj_a" / "threads" / "thr_a"
+        thread = root / "chats" / "ws_a" / "prj_a" / "thr_a" / "agent"
         assert sorted(path.name for path in thread.iterdir()) == [
             ".deepagent",
             "context",
@@ -896,7 +898,7 @@ def test_scratch_and_reads_survive_across_turns_of_the_thread(tmp_path: Path) ->
         )
         first.backend.write_text_sync("scratch/notes.md", "one\n")
         # ``reads/`` is a trusted-writer folder: the policy's writable prefixes exclude it.
-        read_back = root / "ws-1/projects/project-1/threads/thread-1/reads/account.md"
+        read_back = root / "chats/ws-1/project-1/thread-1/agent/reads/account.md"
         read_back.write_text("read-back\n")
         os.chmod(read_back, 0o600)
         first.backend.write_text_sync("outputs/report.md", "final\n")
@@ -917,7 +919,7 @@ def test_scratch_and_reads_survive_across_turns_of_the_thread(tmp_path: Path) ->
         assert second.backend.read_text_sync("scratch/notes.md") == "one\n"
         assert second.backend.read_text_sync("reads/account.md") == "read-back\n"
         second.backend.edit_text_sync("scratch/notes.md", old="one\n", new="one\ntwo\n")
-        assert (root / "ws-1/projects/project-1/threads/thread-1/scratch/notes.md").read_text() == (
+        assert (root / "chats/ws-1/project-1/thread-1/agent/scratch/notes.md").read_text() == (
             "one\ntwo\n"
         )
     finally:
@@ -942,7 +944,7 @@ def test_a_partially_frozen_thread_reopens_unfrozen_and_is_rebuilt(tmp_path: Pat
         first.release()
         # The crash: ``context/`` was frozen and the other two never were, so the three
         # trusted trees disagree and ``materialized_trees_frozen`` refuses to answer.
-        thread_root = root / "ws-1/projects/project-1/threads/thread-1"
+        thread_root = root / "chats/ws-1/project-1/thread-1/agent"
         os.chmod(thread_root / "inputs", 0o700)
         os.chmod(thread_root / ".deepagent", 0o700)
 
@@ -1003,7 +1005,7 @@ def test_one_live_lease_per_thread(tmp_path: Path) -> None:
             policy=policy(),
         )
         assert sibling.backend is not first.backend
-        assert (root / "ws-1/projects/project-1/threads/thread-2").is_dir()
+        assert (root / "chats/ws-1/project-1/thread-2/agent").is_dir()
         # Releasing the first lease frees the thread for the next turn, and releasing twice
         # is a no-op rather than an error.
         first.release()
@@ -1036,7 +1038,7 @@ def test_purge_thread_removes_the_directory_and_reports_absence_the_second_time(
         )
         assert not harness.thread_path.exists()
         # The now-empty scope levels go with it, up to the prepared root itself.
-        assert not (harness.root / "ws-1").exists()
+        assert not (harness.root / "chats").exists()
         assert harness.root.is_dir()
         with pytest.raises(WorkspaceSecurityError, match="closed"):
             harness.lease.backend.read_text_sync("scratch/notes.md")
@@ -1061,7 +1063,7 @@ def test_a_thread_id_is_validated_like_every_other_segment(tmp_path: Path, threa
                 execution_id=EXECUTION_ID,
                 policy=policy(),
             )
-        assert not (root / "ws-1" / "projects" / "project-1" / "threads").exists()
+        assert not (root / "chats" / "ws-1" / "project-1").exists()
     finally:
         factory.close()
 
@@ -1082,10 +1084,10 @@ def test_a_mount_request_opens_the_brand_and_project_libraries_read_only(
     tmp_path: Path,
 ) -> None:
     root, factory, _sink = make_factory(tmp_path)
-    brand = _library(root, "ws-1", "library", "brand", "brand-1", "v3")
+    brand = _library(root, "chats", "ws-1", "project-1", "thread-1", "brand")
     (brand / "kit.md").write_text("# Kit\n")
     os.chmod(brand / "kit.md", 0o400)
-    project = _library(root, "ws-1", "projects", "project-1", "library")
+    project = _library(root, "chats", "ws-1", "project-1", "thread-1", "project")
     (project / "brief.md").write_text("# Brief\n")
     os.chmod(project / "brief.md", 0o400)
     active = policy(
@@ -1108,7 +1110,7 @@ def test_a_mount_request_opens_the_brand_and_project_libraries_read_only(
         with pytest.raises(WorkspaceSecurityError):
             lease.backend.write_text_sync("project/new.md", "nope")
         # The mounts are outside the thread root and are never copied into it.
-        assert not (root / "ws-1/projects/project-1/threads/thread-1/brand").exists()
+        assert not (root / "chats/ws-1/project-1/thread-1/agent/brand").exists()
     finally:
         factory.close()
 
@@ -1138,57 +1140,9 @@ def test_a_mount_request_for_an_unmaterialized_library_is_refused(
         factory.close()
 
 
-def test_a_named_project_tree_is_mounted_as_project_and_can_be_removed(tmp_path: Path) -> None:
-    """One turn's own tree, beside the project's library, under the same virtual name.
-
-    A turn whose pinned library generation is no longer the installed one materializes that
-    generation beside the library and mounts it instead, so ``project/`` means "what this turn
-    pinned" and every path the model was told to read still resolves. Two rules make that safe and
-    are asserted here: the name is a segment the factory validates (never a path), and the shared
-    library is not something a turn may remove.
-    """
-
-    root, factory, _sink = make_factory(tmp_path)
-    _library(root, "ws-1", "projects", "project-1", "library")
-    pinned = _library(root, "ws-1", "projects", "project-1", "pinned-0123456789ab")
-    (pinned / "status.md").write_text("# Pinned\n")
-    os.chmod(pinned / "status.md", 0o400)
-    active = policy(readable=(*DEFAULT_READABLE_PREFIXES, "project"))
-    try:
-        lease = factory.create(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-            execution_id=EXECUTION_ID,
-            policy=active,
-            mounts=MountRequest(project_library=True, project_library_name="pinned-0123456789ab"),
-        )
-        assert lease.backend.read_text_sync("project/status.md") == "# Pinned\n"
-        lease.release()
-
-        # The project's shared library belongs to every thread of the project: no turn removes it.
-        with pytest.raises(WorkspaceConfigurationError):
-            factory.remove_project_tree("ws-1", "project-1", "library")
-        # …and the name is one segment, never a path out of the project.
-        with pytest.raises(WorkspaceConfigurationError):
-            factory.remove_project_tree("ws-1", "project-1", "../library")
-        assert (root / "ws-1/projects/project-1/library").is_dir()
-
-        # …and the tree's own superseded/crashed-build residue goes with it: nothing else ever
-        # replaces a per-turn tree, so nothing else would ever reclaim it.
-        residue = _library(root, "ws-1", "projects", "project-1", "pinned-0123456789ab.old-999")
-        factory.remove_project_tree("ws-1", "project-1", "pinned-0123456789ab")
-        assert not pinned.exists()
-        assert not residue.exists()
-        # Idempotent: the turn's ``finally`` runs whether or not the tree was ever built.
-        factory.remove_project_tree("ws-1", "project-1", "pinned-0123456789ab")
-    finally:
-        factory.close()
-
-
 def test_reacquiring_a_live_thread_with_another_mount_request_conflicts(tmp_path: Path) -> None:
     root, factory, _sink = make_factory(tmp_path)
-    _library(root, "ws-1", "projects", "project-1", "library")
+    _library(root, "chats", "ws-1", "project-1", "thread-1", "project")
     active = policy(readable=(*DEFAULT_READABLE_PREFIXES, "project"))
     try:
         first = factory.create(
@@ -1268,12 +1222,11 @@ def _install(factory: AgentWorkspaceFactory, writer: _RecordingWriter) -> None:
     """Install the writer's current documents as the project library's live generation."""
 
     files = _generation(writer.bodies, writer.versions)
-    digest = json.loads(bytes(files[-1].content))["library_sha256"]
-    parent_fd = factory.project_parent_fd("ws-1", "project-1")
+    chat_fd = factory.chat_dir_fd(ChatScope("ws-1", "project-1", "thread-1"))
     try:
-        LibraryTree(parent_fd=parent_fd, name="library").replace(files, digest=digest)
+        sync_directory(chat_fd, "project", {f.path: bytes(f.content) for f in files}, frozen=True)
     finally:
-        os.close(parent_fd)
+        os.close(chat_fd)
 
 
 @dataclass
@@ -1561,77 +1514,6 @@ def test_the_library_parents_refuse_a_hostile_segment(tmp_path: Path, segment: s
         factory.close()
 
 
-def test_a_frozen_library_beside_threads_does_not_break_the_scope_audit(tmp_path: Path) -> None:
-    """A materialized 0500 project library must not lock every thread out of its project."""
-
-    root, factory, _sink = make_factory(tmp_path)
-    try:
-        first = factory.create(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-            execution_id=EXECUTION_ID,
-            policy=policy(),
-        )
-        library = root / "ws-1/projects/project-1/library"
-        library.mkdir(mode=0o700)
-        (library / "brief.md").write_text("# Brief\n")
-        os.chmod(library / "brief.md", 0o400)
-        os.chmod(library, 0o500)
-
-        sibling = factory.create(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-2",
-            execution_id=ExecutionId(UUID("00000000-0000-0000-0000-0000000006f1")),
-            policy=policy(),
-        )
-        assert sibling.identity.thread_id == "thread-2"
-        first.release()
-        resumed = factory.acquire(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-            execution_id=EXECUTION_ID,
-            policy=policy(),
-        )
-        assert resumed.identity.thread_id == "thread-1"
-        os.close(factory.project_parent_fd("ws-1", "project-1"))
-    finally:
-        factory.close()
-
-
-@pytest.mark.parametrize("mode", [0o600, 0o755, 0o770])
-def test_any_other_sibling_directory_mode_is_still_refused(tmp_path: Path, mode: int) -> None:
-    root, factory, _sink = make_factory(tmp_path)
-    try:
-        factory.create(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-            execution_id=EXECUTION_ID,
-            policy=policy(),
-        )
-        odd = root / "ws-1/projects/project-1/library"
-        odd.mkdir(mode=0o700)
-        os.chmod(odd, mode)
-        try:
-            with pytest.raises(WorkspaceSecurityError):
-                factory.create(
-                    workspace_id="ws-1",
-                    project_id="project-1",
-                    thread_id="thread-2",
-                    execution_id=ExecutionId(UUID("00000000-0000-0000-0000-0000000006f2")),
-                    policy=policy(),
-                )
-            with pytest.raises(WorkspaceSecurityError):
-                factory.project_parent_fd("ws-1", "project-1")
-        finally:
-            os.chmod(odd, 0o700)
-    finally:
-        factory.close()
-
-
 _SPILL_OPERATION = "00000000-0000-0000-0000-0000000006aa"
 
 
@@ -1723,3 +1605,97 @@ def test_a_spill_is_refused_where_the_policy_cannot_even_read_it(tmp_path: Path)
             harness.lease.backend.write_spill(_SPILL_OPERATION, b"{}")
     finally:
         harness.close()
+
+
+# --- F3 Phase 1, plan Task 6 (spec WS-15, WS-37; AW-9): one private folder per chat ---------
+
+
+def _chat_policy_lease(factory, thread: str, execution: ExecutionId):  # type: ignore[no-untyped-def]
+    return factory.create(
+        workspace_id="ws-1",
+        project_id="project-1",
+        thread_id=thread,
+        execution_id=execution,
+        policy=policy(),
+    )
+
+
+def test_thread_root_is_inside_its_chat_folder(tmp_path: Path) -> None:
+    root, factory, _ = make_factory(tmp_path)
+    try:
+        lease = _chat_policy_lease(factory, "thread-1", EXECUTION_ID)
+        chat = ChatScope(workspace_id="ws-1", project_id="project-1", thread_id="thread-1")
+        assert lease.chat == chat
+        assert factory.chat_host_path(chat) == root / "chats" / "ws-1" / "project-1" / "thread-1"
+        assert factory.thread_host_path("ws-1", "project-1", "thread-1") == (
+            factory.chat_host_path(chat) / "agent"
+        )
+        assert (factory.chat_host_path(chat) / "agent" / "scratch").is_dir()
+        lease.release()
+    finally:
+        factory.close()
+
+
+def test_two_chats_of_one_project_get_separate_folders(tmp_path: Path) -> None:
+    root, factory, _ = make_factory(tmp_path)
+    try:
+        first = _chat_policy_lease(factory, "thread-1", EXECUTION_ID)
+        second = _chat_policy_lease(
+            factory, "thread-2", ExecutionId(UUID("00000000-0000-0000-0000-0000000000f2"))
+        )
+        first.backend.write_text_sync("scratch/a.md", "chat one")
+        assert not (root / "chats/ws-1/project-1/thread-2/agent/scratch/a.md").exists()
+        first.release()
+        second.release()
+    finally:
+        factory.close()
+
+
+def test_remove_chat_removes_its_whole_folder_only(tmp_path: Path) -> None:
+    root, factory, _ = make_factory(tmp_path)
+    try:
+        lease = _chat_policy_lease(factory, "thread-1", EXECUTION_ID)
+        lease.backend.write_text_sync("scratch/a.md", "x")
+        other = _chat_policy_lease(
+            factory, "thread-2", ExecutionId(UUID("00000000-0000-0000-0000-0000000000f2"))
+        )
+        other.release()
+        chat = ChatScope(workspace_id="ws-1", project_id="project-1", thread_id="thread-1")
+        assert factory.remove_chat(chat) is True
+        assert not (root / "chats/ws-1/project-1/thread-1").exists()
+        assert (root / "chats/ws-1/project-1/thread-2/agent").is_dir()
+        assert factory.remove_chat(chat) is False
+    finally:
+        factory.close()
+
+
+def test_factory_marks_its_chats_in_use_in_the_area(tmp_path: Path) -> None:
+    area_root = tmp_path / "workspaces"
+    area_root.mkdir(mode=0o700)
+    area = claim_worker_area(area_root)
+    factory = AgentWorkspaceFactory(
+        prepared_root=PreparedWorkspaceRoot(path=area.path),
+        artifact_sink=RecordingArtifactSink(),
+        area=area,
+    )
+    chat = ChatScope(workspace_id="ws-1", project_id="project-1", thread_id="thread-1")
+    try:
+        lease = _chat_policy_lease(factory, "thread-1", EXECUTION_ID)
+        assert area.in_use() == frozenset({chat})
+        assert (area.path / "chats/ws-1/project-1/thread-1/last-used").is_file()
+        lease.release()
+        assert area.in_use() == frozenset()
+    finally:
+        factory.close()
+        area.close()
+
+
+def test_chat_folder_refuses_an_unexpected_entry(tmp_path: Path) -> None:
+    root, factory, _ = make_factory(tmp_path)
+    try:
+        _chat_policy_lease(factory, "thread-1", EXECUTION_ID).release()
+        (root / "chats/ws-1/project-1/thread-1/unexpected.txt").write_text("x")
+        with pytest.raises(WorkspaceSecurityError):
+            _chat_policy_lease(factory, "thread-1", EXECUTION_ID)
+    finally:
+        factory.close()

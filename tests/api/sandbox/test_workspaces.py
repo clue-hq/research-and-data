@@ -103,8 +103,8 @@ def test_sandbox_mounts_for_lease_names_the_leases_own_host_directories(tmp_path
         active_policy = policy(readable=(*DEFAULT_READABLE_PREFIXES, "attachments"))
         lease = _acquire(factory, active_policy)
         try:
-            thread = root / _WORKSPACE_ID / "projects" / _PROJECT_ID / "threads" / _THREAD_ID
-            project = root / _WORKSPACE_ID / "projects" / _PROJECT_ID
+            chat = root / "chats" / _WORKSPACE_ID / _PROJECT_ID / _THREAD_ID
+            thread = chat / "agent"
 
             mounts = sandbox_mounts_for_lease(
                 lease,
@@ -129,10 +129,11 @@ def test_sandbox_mounts_for_lease_names_the_leases_own_host_directories(tmp_path
             assert all(path.is_dir() for path in mounts.read_only.values())
             assert mounts.policy == active_policy
 
-            (project / "attachments").mkdir(mode=0o700)
-            (project / "library").mkdir(mode=0o700)
-            brand = root / _WORKSPACE_ID / "library" / "brand" / "brand-1" / "v1"
-            brand.mkdir(mode=0o700, parents=True)
+            # The chat's own copies sit beside its agent folder (F3, WS-37).
+            (chat / "attachments").mkdir(mode=0o700)
+            (chat / "project").mkdir(mode=0o700)
+            brand = chat / "brand"
+            brand.mkdir(mode=0o700)
 
             mounts = sandbox_mounts_for_lease(
                 lease,
@@ -141,8 +142,8 @@ def test_sandbox_mounts_for_lease_names_the_leases_own_host_directories(tmp_path
                 project_library=True,
                 attachments=True,
             )
-            assert mounts.read_only["attachments"] == project / "attachments"
-            assert mounts.read_only["project"] == project / "library"
+            assert mounts.read_only["attachments"] == chat / "attachments"
+            assert mounts.read_only["project"] == chat / "project"
             assert mounts.read_only["brand"] == brand
 
             # The mount map is read-only: a caller cannot widen one turn's container.
@@ -177,58 +178,13 @@ def test_an_attachments_symlink_is_not_mounted(tmp_path: Path) -> None:
         try:
             elsewhere = tmp_path / "elsewhere"
             elsewhere.mkdir(mode=0o700)
-            project = root / _WORKSPACE_ID / "projects" / _PROJECT_ID
-            (project / "attachments").symlink_to(elsewhere, target_is_directory=True)
+            chat = root / "chats" / _WORKSPACE_ID / _PROJECT_ID / _THREAD_ID
+            (chat / "attachments").symlink_to(elsewhere, target_is_directory=True)
 
             mounts = sandbox_mounts_for_lease(
                 lease, factory, brand=None, project_library=False, attachments=True
             )
             assert "attachments" not in mounts.read_only
-        finally:
-            lease.release()
-    finally:
-        factory.close()
-
-
-def test_a_pinned_project_tree_is_the_tree_the_sandbox_mounts(tmp_path: Path) -> None:
-    """A replayed turn mounts its pinned generation, never the live library.
-
-    The fleet materializes a superseded generation beside the library as ``pinned-<turn>`` and
-    passes that name on ``MountRequest.project_library_name``; the script has to read the same
-    tree the model's own file tools read, or the two would see different projects.
-    """
-
-    root, factory, _sink = make_factory(tmp_path)
-    try:
-        lease = _acquire(factory, policy())
-        try:
-            project = root / _WORKSPACE_ID / "projects" / _PROJECT_ID
-            mounts = sandbox_mounts_for_lease(
-                lease,
-                factory,
-                brand=None,
-                project_library=True,
-                project_library_name="pinned-0123456789ab",
-                attachments=False,
-            )
-            assert mounts.read_only["project"] == project / "pinned-0123456789ab"
-            # The default is the project's shared library, which is what an ordinary turn reads.
-            assert (
-                sandbox_mounts_for_lease(
-                    lease, factory, brand=None, project_library=True, attachments=False
-                ).read_only["project"]
-                == project / "library"
-            )
-            # The tree name is one validated segment, so it can never become a path.
-            with pytest.raises(WorkspaceConfigurationError):
-                sandbox_mounts_for_lease(
-                    lease,
-                    factory,
-                    brand=None,
-                    project_library=True,
-                    project_library_name="../escape",
-                    attachments=False,
-                )
         finally:
             lease.release()
     finally:

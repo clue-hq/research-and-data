@@ -36,6 +36,7 @@ __all__ = [
     "SandboxLimits",
     "SandboxRun",
     "build_command",
+    "kill_area_containers",
     "docker_available",
     "run_script",
 ]
@@ -46,6 +47,9 @@ _CONTAINER_WORKSPACE: Final = "/workspace"
 #: Label key the timeout path kills by. A run that overran has already outlived its ``docker run``
 #: client, so the container is found by label rather than by a pid we no longer have.
 _LABEL_KEY: Final = "clue.execution"
+#: Label key naming the worker area that started a container (F3, AW-19): a worker that starts
+#: kills every container still carrying its own area, left by a run it was in when it died.
+_AREA_LABEL_KEY: Final = "clue.worker-area"
 #: Docker label values are free-form; ours are derived from ids, so anything outside this class is
 #: dropped rather than quoted — an id that needed quoting is an id we should not be running under.
 _LABEL_ALLOWED: Final = re.compile(r"[^A-Za-z0-9_.-]")
@@ -97,7 +101,11 @@ def _worker_user() -> str:
 
 
 def build_command(
-    mounts: SandboxMounts, limits: SandboxLimits, *, label: str | None = None
+    mounts: SandboxMounts,
+    limits: SandboxLimits,
+    *,
+    label: str | None = None,
+    area: str | None = None,
 ) -> list[str]:
     """The exact ``docker run`` argv for one script.
 
@@ -109,6 +117,8 @@ def build_command(
     label_flags: list[str] = []
     if label is not None:
         label_flags = ["--label", f"{_LABEL_KEY}={_sanitise_label(label)}"]
+    if area is not None:
+        label_flags += ["--label", f"{_AREA_LABEL_KEY}={_sanitise_label(area)}"]
     mount_flags: list[str] = []
     for name, host_path in sorted(mounts.read_only.items()):
         mount_flags += ["-v", f"{host_path}:{_CONTAINER_WORKSPACE}/{name}:ro"]
@@ -186,6 +196,32 @@ def docker_available(image: str) -> tuple[bool, str]:
     )
 
 
+def kill_area_containers(area: str) -> int:
+    """Kill every container a run of this worker area left behind; return how many were found.
+
+    Called once when a worker starts, right after it claims its area: nothing of its own can be
+    running yet, so whatever still carries the area's label belongs to a run its previous process
+    was in when it died. Best effort, like ``_kill_by_label``.
+    """
+
+    try:
+        listed = subprocess.run(
+            ["docker", "ps", "-q", "--filter", f"label={_AREA_LABEL_KEY}={_sanitise_label(area)}"],
+            capture_output=True,
+            timeout=_DAEMON_TIMEOUT_S,
+        )
+        container_ids = listed.stdout.decode(errors="replace").split()
+        if container_ids:
+            subprocess.run(
+                ["docker", "kill", *container_ids],
+                capture_output=True,
+                timeout=_DAEMON_TIMEOUT_S,
+            )
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    return len(container_ids)
+
+
 def _kill_by_label(label: str) -> None:
     """Kill whatever survived the timeout, best effort.
 
@@ -226,6 +262,7 @@ def run_script(
     limits: SandboxLimits,
     timeout_s: float,
     label: str | None = None,
+    area: str | None = None,
 ) -> SandboxRun:
     """Run one script in one container and return what it did. **Blocking** — call it in a thread.
 
@@ -243,7 +280,7 @@ def run_script(
         # has not been opened yet; a missing rw path would otherwise be created by the daemon as
         # root-owned.
         host_path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    command = build_command(mounts, limits, label=label)
+    command = build_command(mounts, limits, label=label, area=area)
     # Resolve with the worker's installation path before removing its environment.
     # Docker Desktop/Homebrew may live outside the restricted child PATH.
     command[0] = shutil.which(command[0]) or command[0]

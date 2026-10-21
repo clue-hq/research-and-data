@@ -147,7 +147,7 @@ def make_workspace(
         factory=factory,
         sink=recording_sink,
         lease=lease,
-        thread_path=root / workspace_id / "projects" / project_id / "threads" / thread_id,
+        thread_path=root / "chats" / workspace_id / project_id / thread_id / "agent",
     )
 
 

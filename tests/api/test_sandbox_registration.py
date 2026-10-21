@@ -27,6 +27,7 @@ from clue_agents import (
     AgentTurnRequest,
     MountRequest,
 )
+from clue_agents.worker_area import ChatScope
 from clue_api import conversation_turns as engine_module
 from clue_api.conversation_turns import ConversationTurnEngine
 from clue_api.crm.read_sinks import CrmReadSinks
@@ -152,11 +153,12 @@ def _make_private(root: Path, path: Path) -> None:
 
 def _lease(tmp_path: Path, mounts: MountRequest) -> tuple[Any, Any]:
     _root, factory, _sink = make_factory(tmp_path)
-    project_root = factory.project_host_path(WORKSPACE_ID, PROJECT_ID)
+    # The chat's own copies sit in its own folder, beside its agent root (F3, WS-37).
+    chat_dir = factory.chat_host_path(ChatScope(WORKSPACE_ID, PROJECT_ID, THREAD_ID))
     if mounts.project_library:
-        _make_private(factory.root_path, project_root / mounts.project_library_name)
+        _make_private(factory.root_path, chat_dir / "project")
     if mounts.attachments:
-        _make_private(factory.root_path, project_root / "attachments")
+        _make_private(factory.root_path, chat_dir / "attachments")
     lease = factory.acquire(
         workspace_id=WORKSPACE_ID,
         project_id=PROJECT_ID,

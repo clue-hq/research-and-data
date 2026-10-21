@@ -49,6 +49,7 @@ from clue_agents.versioned_root import (
     VersionedWriteOutcome,
     VersionedWriteRefused,
 )
+from clue_agents.worker_area import ChatScope, WorkerArea
 from clue_agents.workspace_policy import (
     PreparedWorkspaceRoot,
     WorkspaceConfigurationError,
@@ -61,13 +62,16 @@ from clue_agents.workspace_policy import (
 from clue_core import ExecutionId
 
 __all__ = [
+    "AGENT_DIR",
     "ATTACHMENTS_DIR",
+    "CHATS_DIR",
     "LIBRARY_DIR",
     "PROJECTS_DIR",
     "THREADS_DIR",
     "AgentWorkspaceFactory",
     "AgentWorkspaceLease",
     "AnchoredAgentWorkspaceBackend",
+    "ChatScope",
     "MountMode",
     "MountRequest",
     "WorkspaceIdentity",
@@ -81,6 +85,16 @@ __all__ = [
 LIBRARY_DIR: Final = "library"
 PROJECTS_DIR: Final = "projects"
 THREADS_DIR: Final = "threads"
+#: F3 (spec WS-15, WS-37; AW-9): every chat owns one private folder,
+#: ``<root>/chats/<ws>/<project>/<thread>/``. The agent's own root is its ``agent/`` folder; the
+#: chat's own copies of the brand and project files sit beside it, with the chat's local version
+#: note and its last-used stamp. Deleting a chat is deleting that one folder.
+CHATS_DIR: Final = "chats"
+AGENT_DIR: Final = "agent"
+LAST_USED_FILE: Final = "last-used"
+SNAPSHOT_NOTE_FILE: Final = "snapshot-note.json"
+_CHAT_DIRECTORIES: Final = frozenset({AGENT_DIR, "brand", "project", "attachments"})
+_CHAT_FILES: Final = frozenset({LAST_USED_FILE, SNAPSHOT_NOTE_FILE})
 #: The project's uploaded files, beside its ``library``: every attachment a human sent in a
 #: project chat, byte for byte, read-only to the agent.
 ATTACHMENTS_DIR: Final = "attachments"
@@ -352,6 +366,16 @@ class AgentWorkspaceLease:
         """The validated directory segment this lease's thread workspace lives under."""
 
         return self._thread_segment
+
+    @property
+    def chat(self) -> ChatScope:
+        """The chat this lease's folder belongs to."""
+
+        return ChatScope(
+            workspace_id=self._workspace_segment,
+            project_id=self._project_segment,
+            thread_id=self._thread_segment,
+        )
 
     @property
     def resources_frozen(self) -> bool:
@@ -1397,10 +1421,11 @@ def _workspace_root_id(
 class AgentWorkspaceFactory:
     """Open, hold and remove one persistent workspace per chat thread below a prepared root.
 
-    The layout is ``<root>/<workspace>/projects/<project>/threads/<thread>/``. A thread
-    directory is created once and reopened by every later turn of that thread, so the agent's
-    ``scratch/`` and ``reads/`` folders survive between turns. At most one lease is live per
-    thread at a time, matching the one-turn-per-thread queue.
+    The layout is ``<root>/chats/<workspace>/<project>/<thread>/agent/`` (F3, WS-15/WS-37): one
+    private folder per chat, reopened by every later turn of that chat on this machine. With a
+    :class:`~clue_agents.worker_area.WorkerArea` the root is this worker's own area and the factory
+    records which chats it is using, so the area's idle cleanup skips them. At most one lease is
+    live per thread at a time, matching the one-turn-per-thread queue.
     """
 
     def __init__(
@@ -1408,7 +1433,9 @@ class AgentWorkspaceFactory:
         *,
         prepared_root: PreparedWorkspaceRoot,
         artifact_sink: AgentArtifactSink,
+        area: WorkerArea | None = None,
     ) -> None:
+        self._area = area
         self._root_fd = os.open(prepared_root.path, _DIR_FLAGS)
         _validate_private_directory(self._root_fd)
         self._root_path = prepared_root.path
@@ -1439,13 +1466,31 @@ class AgentWorkspaceFactory:
             / validate_workspace_segment(project_id, label="project_id")
         )
 
-    def thread_host_path(self, workspace_id: str, project_id: str, thread_id: str) -> Path:
-        """``<root>/<ws>/projects/<project>/threads/<thread>`` on the host."""
+    @property
+    def area(self) -> WorkerArea | None:
+        """The worker area this factory's root is, when it has one."""
+
+        return self._area
+
+    def chat_host_path(self, chat: ChatScope) -> Path:
+        """``<root>/chats/<ws>/<project>/<thread>`` on the host, from validated segments only."""
 
         return (
-            self.project_host_path(workspace_id, project_id)
-            / THREADS_DIR
-            / validate_workspace_segment(thread_id, label="thread_id")
+            self._root_path
+            / CHATS_DIR
+            / validate_workspace_segment(chat.workspace_id, label="workspace_id")
+            / validate_workspace_segment(chat.project_id, label="project_id")
+            / validate_workspace_segment(chat.thread_id, label="thread_id")
+        )
+
+    def thread_host_path(self, workspace_id: str, project_id: str, thread_id: str) -> Path:
+        """The agent's own root, ``<chat folder>/agent``, on the host."""
+
+        return (
+            self.chat_host_path(
+                ChatScope(workspace_id=workspace_id, project_id=project_id, thread_id=thread_id)
+            )
+            / AGENT_DIR
         )
 
     def close(self) -> None:
@@ -1611,6 +1656,87 @@ class AgentWorkspaceFactory:
         finally:
             os.close(parent_fd)
 
+    def chat_dir_fd(self, chat: ChatScope) -> int:
+        """Ensure this chat's private folder and return its descriptor. The caller closes it.
+
+        The seam a library sync uses to write the chat's own ``brand/``, ``project/`` and
+        ``attachments/`` beside its ``agent/`` folder (WS-37).
+        """
+
+        with self._root_lock():
+            return self._open_chat_dir(chat)
+
+    def _open_chat_dir(self, chat: ChatScope) -> int:
+        """Ensure ``chats/<ws>/<project>/<thread>`` and return its audited descriptor.
+
+        Caller holds the root lock and owns the returned descriptor.
+        """
+
+        chain = (
+            CHATS_DIR,
+            validate_workspace_segment(chat.workspace_id, label="workspace_id"),
+            validate_workspace_segment(chat.project_id, label="project_id"),
+        )
+        thread_segment = validate_workspace_segment(chat.thread_id, label="thread_id")
+        parent_fd = self._root_fd
+        opened: list[int] = []
+        try:
+            for segment in chain:
+                child_fd = self._ensure_directory(parent_fd, segment)
+                opened.append(child_fd)
+                self._audit_scope_directories(child_fd)
+                parent_fd = child_fd
+            chat_fd = self._ensure_directory(parent_fd, thread_segment)
+            try:
+                self._audit_chat_dir(chat_fd)
+            except BaseException:
+                os.close(chat_fd)
+                raise
+            return chat_fd
+        finally:
+            for descriptor in opened:
+                os.close(descriptor)
+
+    @staticmethod
+    def _audit_chat_dir(chat_fd: int) -> None:
+        """A chat folder holds only its known folders and files (plus a write in progress)."""
+
+        for entry in os.listdir(chat_fd):
+            metadata = os.stat(entry, dir_fd=chat_fd, follow_symlinks=False)
+            if entry in _CHAT_DIRECTORIES and stat.S_ISDIR(metadata.st_mode):
+                if metadata.st_mode & 0o077:
+                    raise WorkspaceSecurityError("chat folder holds a non-private directory")
+                continue
+            if (entry in _CHAT_FILES or entry.startswith(".clue-tmp-")) and stat.S_ISREG(
+                metadata.st_mode
+            ):
+                continue
+            raise WorkspaceSecurityError("chat folder has an unexpected entry")
+
+    def _touch_last_used(self, chat: ChatScope) -> None:
+        """Stamp the chat folder's last use; the area's idle cleanup reads this time."""
+
+        try:
+            with self._root_lock():
+                chat_fd = self._open_chat_dir(chat)
+                try:
+                    descriptor = os.open(
+                        LAST_USED_FILE,
+                        os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+                        _FILE_MODE,
+                        dir_fd=chat_fd,
+                    )
+                    try:
+                        os.utime(descriptor)
+                    finally:
+                        os.close(descriptor)
+                finally:
+                    os.close(chat_fd)
+        except (FileNotFoundError, WorkspaceError):
+            # A stamp is bookkeeping: an unsafe chat folder is refused by the next turn's open,
+            # and ending this turn must not fail over it.
+            return
+
     def create(
         self,
         *,
@@ -1658,8 +1784,11 @@ class AgentWorkspaceFactory:
             try:
                 mount_table = self._open_mounts(
                     request=mounts,
-                    workspace_segment=workspace_segment,
-                    project_segment=project_segment,
+                    chat=ChatScope(
+                        workspace_id=workspace_segment,
+                        project_id=project_segment,
+                        thread_id=thread_segment,
+                    ),
                 )
             except BaseException:
                 os.close(thread_fd)
@@ -1688,6 +1817,12 @@ class AgentWorkspaceFactory:
                 execution_id=execution_id,
                 mounts=mounts,
             )
+        chat = ChatScope(
+            workspace_id=workspace_segment, project_id=project_segment, thread_id=thread_segment
+        )
+        if self._area is not None:
+            self._area.mark_in_use(chat)
+        self._touch_last_used(chat)
         return self._lease(
             identity=identity,
             backend=backend,
@@ -1790,21 +1925,21 @@ class AgentWorkspaceFactory:
         project_segment: str,
         thread_segment: str,
     ) -> int:
-        """Ensure ``<ws>/projects/<project>/threads/<thread>`` and return its descriptor.
+        """Ensure the chat folder's ``agent/`` root and return its descriptor.
 
         Caller holds the root lock and owns the returned descriptor.
         """
 
-        chain = (workspace_segment, PROJECTS_DIR, project_segment, THREADS_DIR)
-        parent_fd = self._root_fd
-        opened: list[int] = []
+        chat_fd = self._open_chat_dir(
+            ChatScope(
+                workspace_id=workspace_segment,
+                project_id=project_segment,
+                thread_id=thread_segment,
+            )
+        )
+        opened: list[int] = [chat_fd]
         try:
-            for segment in chain:
-                child_fd = self._ensure_directory(parent_fd, segment)
-                opened.append(child_fd)
-                self._audit_scope_directories(child_fd)
-                parent_fd = child_fd
-            thread_fd = self._ensure_directory(parent_fd, thread_segment)
+            thread_fd = self._ensure_directory(chat_fd, AGENT_DIR)
             try:
                 existing = set(os.listdir(thread_fd))
                 for directory in _LAYOUT:
@@ -1839,40 +1974,33 @@ class AgentWorkspaceFactory:
         self,
         *,
         request: MountRequest,
-        workspace_segment: str,
-        project_segment: str,
+        chat: ChatScope,
     ) -> tuple[WorkspaceMount, ...]:
-        """Open the requested durable libraries read-only. Caller holds the root lock."""
+        """Open the chat's own copies of the requested libraries (WS-37). Caller holds the lock.
 
+        Each mount is a folder in the chat's own folder, written there before the turn from the
+        turn's pins: ``brand/``, ``project/`` and ``attachments/``. No folder is shared with
+        another chat.
+        """
+
+        chat_segments = (
+            CHATS_DIR,
+            validate_workspace_segment(chat.workspace_id, label="workspace_id"),
+            validate_workspace_segment(chat.project_id, label="project_id"),
+            validate_workspace_segment(chat.thread_id, label="thread_id"),
+        )
         opened: list[WorkspaceMount] = []
         try:
             if request.brand is not None:
                 brand_id, knowledge_version = request.brand
-                directory_fd = self._open_library(
-                    (
-                        workspace_segment,
-                        LIBRARY_DIR,
-                        "brand",
-                        validate_workspace_segment(brand_id, label="brand_id"),
-                        validate_workspace_segment(knowledge_version, label="brand_version"),
-                    ),
-                    name="brand",
-                )
+                validate_workspace_segment(brand_id, label="brand_id")
+                validate_workspace_segment(knowledge_version, label="brand_version")
+                directory_fd = self._open_library((*chat_segments, "brand"), name="brand")
                 opened.append(
                     WorkspaceMount(name="brand", directory_fd=directory_fd, mode="read_only")
                 )
             if request.project_library:
-                directory_fd = self._open_library(
-                    (
-                        workspace_segment,
-                        PROJECTS_DIR,
-                        project_segment,
-                        validate_workspace_segment(
-                            request.project_library_name, label="project_library_name"
-                        ),
-                    ),
-                    name="project",
-                )
+                directory_fd = self._open_library((*chat_segments, "project"), name="project")
                 if request.project_writer is None:
                     opened.append(
                         WorkspaceMount(name="project", directory_fd=directory_fd, mode="read_only")
@@ -1885,17 +2013,16 @@ class AgentWorkspaceFactory:
                             mode="versioned",
                             writer=request.project_writer,
                             versions=_mounted_versions(directory_fd, mount_name="project"),
-                            reopen=self._project_library_reopen(workspace_segment, project_segment),
+                            reopen=self._chat_folder_reopen((*chat_segments, "project")),
                         )
                     )
             if request.attachments:
-                # Unlike a library, an absent attachments directory is not a misconfiguration:
-                # it is a project with no uploads. The mount is then simply not there, and the
-                # model's own ``ls`` says so.
+                # Unlike a library, an absent attachments folder is not a misconfiguration: it is
+                # a project with no uploads. The mount is then simply not there, and the model's
+                # own ``ls`` says so.
                 try:
                     directory_fd = self._open_library(
-                        (workspace_segment, PROJECTS_DIR, project_segment, ATTACHMENTS_DIR),
-                        name="attachments",
+                        (*chat_segments, ATTACHMENTS_DIR), name="attachments"
                     )
                 except WorkspaceConfigurationError:
                     pass
@@ -1914,31 +2041,16 @@ class AgentWorkspaceFactory:
             raise
         return tuple(opened)
 
-    def _project_library_reopen(
-        self,
-        workspace_segment: str,
-        project_segment: str,
-    ) -> Callable[[], int]:
-        """Build the callable a versioned ``project`` mount re-reads its tree through.
+    def _chat_folder_reopen(self, segments: Sequence[str]) -> Callable[[], int]:
+        """Build the callable a versioned ``project`` mount re-reads its folder through.
 
-        It always opens the project's *shared* ``library``, whatever tree the mount was opened on.
-        A turn pinned to a superseded generation reads that generation — but the moment it writes,
-        the write lands in the live library, and what it must then see is the library, not the
-        frozen snapshot it started from. The one honest view after a write is the current one.
-
-        :class:`~clue_agents.library_tree.LibraryTree` is imported here rather than at module
-        scope because it imports this module: the dependency runs one way, and this is the single
-        place the backend needs to reach back the other.
+        After a write the writer refreshes the chat's own ``project/`` copy (WS-37), and the mount
+        reopens that same folder so the model sees what it just wrote.
         """
 
         def reopen() -> int:
-            from clue_agents.library_tree import LibraryTree
-
-            parent_fd = self.project_parent_fd(workspace_segment, project_segment)
-            try:
-                return LibraryTree(parent_fd=parent_fd, name=LIBRARY_DIR).open_fd()
-            finally:
-                os.close(parent_fd)
+            with self._root_lock():
+                return self._open_library(segments, name="project")
 
         return reopen
 
@@ -2000,15 +2112,15 @@ class AgentWorkspaceFactory:
             return False
         return True
 
-    def _delete_thread(
+    def _delete_chat(
         self,
         workspace_segment: str,
         project_segment: str,
         thread_segment: str,
     ) -> bool:
-        """Remove one thread directory and every scope level it leaves empty behind it."""
+        """Remove one chat folder and every scope level it leaves empty behind it."""
 
-        chain = (workspace_segment, PROJECTS_DIR, project_segment, THREADS_DIR)
+        chain = (CHATS_DIR, workspace_segment, project_segment)
         with self._root_lock():
             parent_fd = self._root_fd
             parents = [self._root_fd]
@@ -2043,11 +2155,18 @@ class AgentWorkspaceFactory:
         """Drop this turn's lease and close its backend. Nothing on disk is removed."""
 
         key = (lease._workspace_segment, lease._project_segment, lease._thread_segment)
+        released = False
         with self._lock:
             active = self._active.get(key)
             if active is not None and active.backend is lease.backend:
                 del self._active[key]
+                released = True
         lease.backend.close()
+        if released:
+            if self._area is not None:
+                self._area.mark_idle(lease.chat)
+            if not self._closed:
+                self._touch_last_used(lease.chat)
 
     def cleanup(self, lease: AgentWorkspaceLease) -> None:
         """End the turn's hold on the thread. Kept under its old name for the runtime wiring."""
@@ -2067,6 +2186,24 @@ class AgentWorkspaceFactory:
             )
         self.release(lease)
 
+    def remove_chat(self, chat: ChatScope) -> bool:
+        """Delete this chat's whole folder. Idempotent; returns whether it existed.
+
+        Any live backend this process holds for the chat is closed first so it cannot keep writing
+        through an unlinked directory descriptor; empty scope folders left behind are removed too.
+        """
+
+        workspace_segment = validate_workspace_segment(chat.workspace_id, label="workspace_id")
+        project_segment = validate_workspace_segment(chat.project_id, label="project_id")
+        thread_segment = validate_workspace_segment(chat.thread_id, label="thread_id")
+        with self._lock:
+            active = self._active.pop((workspace_segment, project_segment, thread_segment), None)
+        if active is not None:
+            active.backend.close()
+            if self._area is not None:
+                self._area.mark_idle(chat)
+        return self._delete_chat(workspace_segment, project_segment, thread_segment)
+
     def purge_thread(
         self,
         *,
@@ -2074,23 +2211,11 @@ class AgentWorkspaceFactory:
         project_id: str,
         thread_id: str,
     ) -> bool:
-        """Remove one thread's persistent workspace. Idempotent; returns whether it existed.
+        """Remove one thread's whole chat folder (see :meth:`remove_chat`)."""
 
-        Any live backend this process holds for the thread is closed first so it cannot keep
-        writing through an unlinked directory descriptor.
-        """
-
-        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
-        project_segment = validate_workspace_segment(project_id, label="project_id")
-        thread_segment = validate_workspace_segment(thread_id, label="thread_id")
-        with self._lock:
-            active = self._active.pop(
-                (workspace_segment, project_segment, thread_segment),
-                None,
-            )
-        if active is not None:
-            active.backend.close()
-        return self._delete_thread(workspace_segment, project_segment, thread_segment)
+        return self.remove_chat(
+            ChatScope(workspace_id=workspace_id, project_id=project_id, thread_id=thread_id)
+        )
 
     def erase_for_privacy(
         self,

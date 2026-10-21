@@ -471,7 +471,6 @@ class ConversationTurnEngine:
                         self.components.workspaces,
                         brand=mounts.brand,
                         project_library=mounts.project_library,
-                        project_library_name=mounts.project_library_name,
                         attachments=mounts.attachments,
                     ),
                 )
