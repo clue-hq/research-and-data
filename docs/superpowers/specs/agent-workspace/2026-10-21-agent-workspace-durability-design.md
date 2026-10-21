@@ -213,7 +213,7 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q4–Q6 (Q1–Q3 are decided).
+phase starts, but P1's plan needs Q5–Q6 (Q1–Q4 are decided).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -250,7 +250,7 @@ not built now; recorded as future scope in §2.4, with what triggers each.**
   second, against a model call of 15–25 seconds. Phase 1's live check measures it (WS-20). If it
   misses the target, we add early restore first, then routing. The third point is Q4.
 
-**Q4. CRM reads are copied into the snapshot, not pointed to** [P1] *(differs from what I said)*
+**Q4. CRM reads are copied into the snapshot, not pointed to** [P1]: **decided 2026-10-22 (AW-13).**
 - **I said:** CRM reads and large tool results are already stored, so the snapshot can point to
   them.
 - **That is only half true.** Large tool results are stored in full (`result_ref`). CRM reads are
@@ -671,7 +671,7 @@ What lands in the agent folders today:
   (`record_artifact` refuses it). **Required, and tested:** reading identical bytes again after a raw
   input expired must work.
 - **WS-27 [P2] Large tool results may be rebuilt.** A spill whose full result is already stored
-  (`result_ref`) may be restored from that artifact instead of being stored twice (**Q4**). This is
+  (`result_ref`) may be restored from that artifact instead of being stored twice (Q4, AW-13). This is
   the builder's call. Either way, the agent sees the same file while it is within its window.
 
 ### 8.2 What the agent is told
@@ -882,3 +882,5 @@ and WS-28's list contents for live and expired files (P2).
   (AW-11): cache idle window 30 minutes.
 - 2026-10-22: Q3 decided (AW-12): routing and early restore not built now; added §2.4 Future scope
   (F-1 routing, F-2 early restore, F-3 design follow-up spec) with their triggers.
+- 2026-10-22: Q4 decided (AW-13): CRM reads are stored in the snapshot as raw inputs; large tool
+  results may point to their existing `result_ref` copy (builder's call).

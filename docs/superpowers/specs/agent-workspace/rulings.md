@@ -59,6 +59,11 @@ agent, not only the CRM work.
   chat, are not built in Phases 1–3. They stay in the spec's future scope (§2.4, F-1 and F-2):
   routing when production runs more than one chat worker, early restore if measured cold restores
   miss their targets (WS-19, WS-20).
+- **AW-13 (2026-10-22)** **CRM reads are stored in the snapshot.** Their raw records exist nowhere
+  else (only the action, parameters, time and record count are durable), so the snapshot copies
+  them into R2 as raw inputs: removed 48 hours after the chat's last activity, receipts kept (AW-2).
+  Large tool results, already stored in full, may point to that copy instead of being stored twice
+  (builder's call). Spec WS-4, WS-23, WS-27.
 
 ## Scope, order and interim
 
