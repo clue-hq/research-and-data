@@ -40,10 +40,12 @@ __all__ = [
     "WriteActionSpec",
     "WriteKind",
     "WriteNotParsable",
+    "field_update_spec",
     "forbidden_fields",
     "is_forbidden_field",
     "is_write",
     "scope_key",
+    "single_field_arguments",
     "write_spec",
 ]
 
@@ -732,3 +734,35 @@ def scope_key(spec: WriteActionSpec, parsed: ParsedChange, field: str | None) ->
     if field is not None:
         raise ValueError(f"A {kind} change sets no field to scope by.")
     return f"kind:{kind}"
+
+
+def single_field_arguments(
+    spec: WriteActionSpec, record_ref: str, field: str, value: object
+) -> dict[str, Any]:
+    """The arguments of ``spec`` (a field update) that set one field on one record.
+
+    A proposal that sets three fields is logged as three writes, each carrying only its own field,
+    so every logged write can be sent, retried and undone on its own.
+    """
+    if spec.kind != "field_update":
+        raise ValueError(f"{spec.slug} is not a field update.")
+    if spec.slug == "HUBSPOT_UPDATE_COMPANY":
+        return {"companyId": record_ref, "properties": {field: value}}
+    if spec.slug == "HUBSPOT_UPDATE_CONTACTS":
+        return {"inputs": [{"id": record_ref, "properties": {field: value}}]}
+    names, id_arg = {
+        "SALESFORCE_UPDATE_ACCOUNT": (_SALESFORCE_ACCOUNT_ARGS, "account_id"),
+        "SALESFORCE_UPDATE_CONTACT": (_SALESFORCE_CONTACT_ARGS, "contact_id"),
+    }[spec.slug]
+    argument = next((arg for arg, api_name in names.items() if api_name == field), None)
+    if argument is None:
+        return {id_arg: record_ref, "custom_fields": {field: value}}
+    return {id_arg: record_ref, argument: value}
+
+
+def field_update_spec(provider: CrmProvider, object: str) -> WriteActionSpec:  # noqa: A002
+    """The allowlisted field update of this CRM object (a create that finds its record uses it)."""
+    for spec in _SPECS:
+        if spec.provider == provider and spec.object == object and spec.kind == "field_update":
+            return spec
+    raise LookupError(f"No field update for {provider} {object}.")
