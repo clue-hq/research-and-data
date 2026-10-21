@@ -52,6 +52,7 @@ from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_auth import get_workspace_membership, permissions_for_role
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory, transaction
+from clue_fleet import WorkQueue
 from clue_spine import get_project
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -479,7 +480,7 @@ class RunCrmActionTool(Tool):
                 version=self._version(connection.provider),
             )
         except ComposioError as exc:
-            raise await self._composio_refusal(exc, connection) from exc
+            raise await composio_refusal(self._conn_factory, exc, connection) from exc
         if not result.successful:
             if connection.provider == "salesforce" and is_api_disabled(result.error):
                 raise _refuse("salesforce_api_disabled", API_DISABLED_MESSAGE)
@@ -538,22 +539,24 @@ class RunCrmActionTool(Tool):
         if refusal is not None:
             raise _refuse(refusal.reason_code, str(refusal))
 
-    async def _composio_refusal(
-        self, exc: ComposioError, connection: CrmConnection
-    ) -> PreconditionFailed:
-        if exc.kind == "connection_expired":
-            async with self._conn_factory() as conn:
-                await mark_expired(conn, connection_id=connection.connection_id)
-            return _refuse(
-                "crm_connection_expired",
-                "The CRM connection has expired or was revoked. Call connect_crm to ask the "
-                "person to reconnect it.",
-            )
-        if exc.kind == "rate_limited":
-            return _refuse("crm_rate_limited", "The CRM is rate-limiting reads; try again shortly.")
-        if exc.kind == "unavailable":
-            return _refuse("crm_unavailable", f"The CRM could not be reached: {exc.message}")
-        return _refuse("crm_action_failed", f"The CRM read failed: {exc.message}")
+
+async def composio_refusal(
+    conn_factory: ConnFactory, exc: ComposioError, connection: CrmConnection
+) -> PreconditionFailed:
+    """The refusal for a CRM call Composio could not make; an expired connection is marked so."""
+    if exc.kind == "connection_expired":
+        async with conn_factory() as conn:
+            await mark_expired(conn, connection_id=connection.connection_id)
+        return _refuse(
+            "crm_connection_expired",
+            "The CRM connection has expired or was revoked. Call connect_crm to ask the "
+            "person to reconnect it.",
+        )
+    if exc.kind == "rate_limited":
+        return _refuse("crm_rate_limited", "The CRM is rate-limiting reads; try again shortly.")
+    if exc.kind == "unavailable":
+        return _refuse("crm_unavailable", f"The CRM could not be reached: {exc.message}")
+    return _refuse("crm_action_failed", f"The CRM read failed: {exc.message}")
 
 
 def _require_gateway(gateway: ComposioGateway | None) -> ComposioGateway:
@@ -586,13 +589,18 @@ def build_crm_tools(
     secrets: Secrets | None,
     conn_factory: ConnFactory = transaction,
     read_sinks: CrmReadSinks | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> tuple[Tool, ...]:
     """The CRM tools, always registered (one registry shape); they refuse when not configured.
 
     ``read_sinks`` is the registry the conversation engine binds each turn's workspace into; it
     exists only where turns are driven (the fleet worker), and ``run_crm_action`` refuses
-    ``crm_reads_unavailable`` everywhere else.
+    ``crm_reads_unavailable`` everywhere else. ``work_queue`` is where ``propose_crm_changes``
+    offers the write executor (the fleet queue when none is given).
     """
+    # Imported here: the write tool reuses this module's connection and refusal helpers.
+    from clue_api.crm.write_tools import ProposeCrmChangesTool
+
     gateway = build_composio_gateway(settings=settings, secrets=secrets)
     return (
         ConnectCrmTool(
@@ -601,5 +609,8 @@ def build_crm_tools(
         FindCrmActionsTool(gateway=gateway, conn_factory=conn_factory),
         RunCrmActionTool(
             settings=settings, gateway=gateway, read_sinks=read_sinks, conn_factory=conn_factory
+        ),
+        ProposeCrmChangesTool(
+            settings=settings, gateway=gateway, conn_factory=conn_factory, work_queue=work_queue
         ),
     )

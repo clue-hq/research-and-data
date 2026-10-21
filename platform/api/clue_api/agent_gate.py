@@ -50,6 +50,7 @@ __all__ = [
     "AgentGateRow",
     "AgentGateSubjectBinding",
     "GateAlreadyAnswered",
+    "crm_write_permission_gate_id",
     "directive_confirmation_gate_id",
     "product_selection_gate_id",
     "product_set_selection_gate_id",
@@ -110,6 +111,7 @@ _PRODUCT_SET_SELECTION_GATE_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:arv2:onboarding:product-set-selection-gate"
 )
 _ICP_ARTIFACT_GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:arv2:onboarding:icp-artifact-gate")
+_CRM_WRITE_PERMISSION_GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:crm:write-permission-gate")
 
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
@@ -292,6 +294,17 @@ def icp_artifact_gate_id(
         for part in (workspace_id, project_id, subject_ref, expected_subject_sha256)
     )
     return uuid5(_ICP_ARTIFACT_GATE_NAMESPACE, framed)
+
+
+def crm_write_permission_gate_id(*, workspace_id: str, proposal_id: UUID) -> UUID:
+    """Derive the one permission card of one CRM write proposal (CRM integration Phase 2).
+
+    The proposal id is itself derived from the presenting turn and the exact proposed batch, so a
+    replayed ``propose_crm_changes`` call presents the same card instead of a second one.
+    """
+
+    framed = "".join(f"{len(part)}:{part}" for part in (workspace_id, str(proposal_id)))
+    return uuid5(_CRM_WRITE_PERMISSION_GATE_NAMESPACE, framed)
 
 
 async def insert_gate(
