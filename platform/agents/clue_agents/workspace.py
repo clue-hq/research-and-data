@@ -1084,6 +1084,26 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 raise WorkspaceSecurityError("workspace reset found a link or special file")
 
     def _freeze_tree(self, prefix: str) -> None:
+        self._chmod_tree(
+            prefix,
+            directory_mode=_READ_ONLY_DIRECTORY_MODE,
+            file_mode=_READ_ONLY_FILE_MODE,
+            failure="resource tree could not be frozen",
+        )
+
+    def _thaw_tree(self, prefix: str) -> None:
+        """Make a frozen tree owner-writable again, keeping every file in it."""
+
+        self._chmod_tree(
+            prefix,
+            directory_mode=_DIRECTORY_MODE,
+            file_mode=_FILE_MODE,
+            failure="resource tree could not be reopened",
+        )
+
+    def _chmod_tree(
+        self, prefix: str, *, directory_mode: int, file_mode: int, failure: str
+    ) -> None:
         current = os.dup(self._root_fd)
         try:
             for component in prefix.split("/"):
@@ -1091,28 +1111,28 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 os.close(current)
                 current = next_fd
 
-            def freeze(directory_fd: int) -> None:
+            def walk(directory_fd: int) -> None:
                 for name in os.listdir(directory_fd):
                     metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                     if stat.S_ISDIR(metadata.st_mode):
                         child_fd = os.open(name, _DIR_FLAGS, dir_fd=directory_fd)
                         try:
-                            freeze(child_fd)
-                            os.fchmod(child_fd, _READ_ONLY_DIRECTORY_MODE)
+                            walk(child_fd)
+                            os.fchmod(child_fd, directory_mode)
                         finally:
                             os.close(child_fd)
                     else:
                         _validate_regular_file(metadata)
                         file_fd = os.open(name, _READ_FLAGS, dir_fd=directory_fd)
                         try:
-                            os.fchmod(file_fd, _READ_ONLY_FILE_MODE)
+                            os.fchmod(file_fd, file_mode)
                         finally:
                             os.close(file_fd)
 
-            freeze(current)
-            os.fchmod(current, _READ_ONLY_DIRECTORY_MODE)
+            walk(current)
+            os.fchmod(current, directory_mode)
         except OSError as exc:
-            raise WorkspaceSecurityError("resource tree could not be frozen") from exc
+            raise WorkspaceSecurityError(failure) from exc
         finally:
             os.close(current)
 
@@ -1186,11 +1206,14 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
     async def edit_text(self, path: str, *, old: str, new: str) -> WorkspaceEntry:
         return await asyncio.to_thread(self.edit_text_sync, path, old=old, new=new)
 
-    async def snapshot_outputs(self, *, empty_after: bool = False) -> Sequence[ArtifactRef]:
-        """Persist ``outputs/`` durably, optionally emptying it for the thread's next turn.
+    async def snapshot_outputs(self, *, reopen_after: bool = False) -> Sequence[ArtifactRef]:
+        """Persist ``outputs/`` durably, optionally handing it back for the thread's next turn.
 
-        With ``empty_after``, the folder itself survives — writable and empty — while the
-        snapshot refs stay this turn's durable answer for the single-flight replay.
+        The snapshot freezes the folder. With ``reopen_after`` its files stay and it becomes
+        writable again, so a later turn of the chat can read and build on them (CRM trial 1, F3
+        stopgap; ruling R-10.4 replaces this with a versioned snapshot of the agent's files). The
+        snapshot refs stay this turn's durable answer for the single-flight replay; a write to
+        ``outputs/`` later in the same turn is still refused.
         """
 
         async with self._snapshot_lock:
@@ -1232,11 +1255,10 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 refs.append(ref)
             self._snapshot_refs = tuple(refs)
             self._outputs_snapshotted = True
-            if empty_after:
-                # Only after every byte is durable: the folder is emptied, never removed,
-                # and nothing outside outputs/ is touched.
+            if reopen_after:
+                # Only after every byte is durable; nothing outside outputs/ is touched.
                 with self._filesystem_lock(exclusive=True):
-                    self._reset_tree("outputs")
+                    self._thaw_tree("outputs")
             return self._snapshot_refs
 
     # --- deepagents BackendProtocol compatibility -----------------------------------------

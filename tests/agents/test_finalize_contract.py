@@ -547,8 +547,8 @@ class _FreezingBackend(_EmptyOutputBackend):
     def __init__(self) -> None:
         self.snapshots = 0
 
-    async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
-        del empty_after
+    async def snapshot_outputs(self, *, reopen_after: bool = False) -> tuple[ArtifactRef, ...]:
+        del reopen_after
         self.snapshots += 1
         return ()
 

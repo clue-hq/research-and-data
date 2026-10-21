@@ -336,8 +336,8 @@ class _EmptyOutputBackend:
 
     written_documents: tuple[VersionedWriteOutcome, ...] = ()
 
-    async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
-        del empty_after
+    async def snapshot_outputs(self, *, reopen_after: bool = False) -> tuple[ArtifactRef, ...]:
+        del reopen_after
         return ()
 
 

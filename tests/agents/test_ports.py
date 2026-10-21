@@ -66,7 +66,7 @@ class _WorkspacePort:
     async def edit_text(self, path: str, *, old: str, new: str) -> WorkspaceEntry:
         raise NotImplementedError
 
-    async def snapshot_outputs(self, *, empty_after: bool = False) -> Sequence[ArtifactRef]:
+    async def snapshot_outputs(self, *, reopen_after: bool = False) -> Sequence[ArtifactRef]:
         raise NotImplementedError
 
 

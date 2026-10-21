@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -479,7 +479,10 @@ def test_output_snapshot_is_single_flight_and_release_keeps_the_thread(tmp_path:
         harness.factory.close()
 
 
-def test_output_snapshot_can_empty_the_folder_for_the_next_turn(tmp_path: Path) -> None:
+def test_output_snapshot_keeps_the_files_for_the_next_turn(tmp_path: Path) -> None:
+    """CRM trial 1, F3 stopgap (R-10.4 interim): a later turn of the chat builds on this turn's
+    outputs, so the snapshot keeps them and hands the folder back writable."""
+
     sink = RecordingArtifactSink()
     harness = make_workspace(tmp_path, sink=sink)
     backend = harness.lease.backend
@@ -488,23 +491,37 @@ def test_output_snapshot_can_empty_the_folder_for_the_next_turn(tmp_path: Path) 
     backend.write_text_sync("scratch/notes.md", "kept across turns")
     outputs = harness.thread_path / "outputs"
     try:
-        refs = asyncio.run(backend.snapshot_outputs(empty_after=True))
+        refs = asyncio.run(backend.snapshot_outputs(reopen_after=True))
         assert [record[1] for record in sink.records] == [
             "outputs/drafts/note.md",
             "outputs/report.md",
         ]
         assert len(refs) == 2
         assert backend.outputs_snapshotted
-        # The durable copies are made; the turn's folder starts the next turn empty and writable.
-        assert tuple(outputs.iterdir()) == ()
+        # The durable copies are made and the files stay, writable again for the next turn.
+        assert (outputs / "report.md").read_text() == "final"
         assert stat.S_IMODE(outputs.stat().st_mode) == 0o700
+        assert stat.S_IMODE((outputs / "drafts").stat().st_mode) == 0o700
+        assert stat.S_IMODE((outputs / "report.md").stat().st_mode) == 0o600
 
-        replay = asyncio.run(backend.snapshot_outputs(empty_after=True))
+        replay = asyncio.run(backend.snapshot_outputs(reopen_after=True))
         assert list(replay) == list(refs)
         assert len(sink.records) == 2
 
-        # Nothing outside outputs/ is touched.
-        assert backend.read_text_sync("scratch/notes.md") == "kept across turns"
+        # The next turn of the chat reads and rewrites what this turn produced.
+        harness.lease.authorize_cleanup(finalization_ref=refs[0])
+        harness.factory.cleanup(harness.lease)
+        later = harness.factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=ExecutionId(uuid4()),
+            policy=policy(),
+        )
+        assert later.backend.read_text_sync("outputs/drafts/note.md") == "draft"
+        later.backend.edit_text_sync("outputs/report.md", old="final", new="revised")
+        assert later.backend.read_text_sync("outputs/report.md") == "revised"
+        assert later.backend.read_text_sync("scratch/notes.md") == "kept across turns"
     finally:
         harness.close()
 

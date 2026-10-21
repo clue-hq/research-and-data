@@ -167,7 +167,7 @@ def test_real_output_can_be_snapshotted_without_permission_repair(tmp_path: Path
         assert output.stat().st_uid == os.getuid()
         assert stat.S_IMODE(output.stat().st_mode) == 0o600
         assert stat.S_IMODE(output.parent.stat().st_mode) == 0o700
-        refs = asyncio.run(workspace.lease.backend.snapshot_outputs(empty_after=True))
+        refs = asyncio.run(workspace.lease.backend.snapshot_outputs(reopen_after=True))
         assert len(refs) == 1
         assert workspace.sink.records == [
             (
@@ -177,7 +177,9 @@ def test_real_output_can_be_snapshotted_without_permission_repair(tmp_path: Path
                 "application/octet-stream",
             )
         ]
-        assert not output.exists()
+        # The file stays for the chat's next turn, writable again (F3 stopgap).
+        assert output.read_bytes() == b"account,acv\nExample,12\n"
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
     finally:
         workspace.close()
 
