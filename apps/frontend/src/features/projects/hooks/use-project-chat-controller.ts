@@ -115,6 +115,17 @@ import {
  * orchestrator.
  */
 
+/** The newest frame cursor among the turns of the last thread read, or `null` if none has one. */
+function newestTurnCursor(turns: readonly ChatTurn[]): number | null {
+  let newest: number | null = null;
+  for (const turn of turns) {
+    if (turn.lastEventId !== null && (newest === null || turn.lastEventId > newest)) {
+      newest = turn.lastEventId;
+    }
+  }
+  return newest;
+}
+
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
 
@@ -1412,7 +1423,10 @@ export function useProjectChatController({
     const handle = repositories.threadStream.open({
       projectId,
       threadId,
-      lastEventId: threadCursor.current.get(threadId) ?? null,
+      // A first open starts from the page's last read of the thread, not from the thread's
+      // tail: a tab loaded hidden (or in the background) opens only when shown, and a turn that
+      // began in between would otherwise be skipped.
+      lastEventId: threadCursor.current.get(threadId) ?? newestTurnCursor(turnsRef.current),
       onCursor(eventId) {
         if (open) threadCursor.current.set(threadId, eventId);
       },

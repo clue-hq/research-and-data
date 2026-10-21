@@ -24,9 +24,9 @@ const TIMESTAMP = "2026-10-21T12:00:00Z";
  * readers and the controller's effects run for real. Each thread starts with
  * one finished turn ("done"); the server can add turns the chat never sent.
  */
-function harness() {
+function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
   const dom = new JSDOM("<div id='root'></div>");
-  let visibility: "visible" | "hidden" = "visible";
+  let visibility: "visible" | "hidden" = startHidden ? "hidden" : "visible";
   Object.defineProperty(dom.window.document, "visibilityState", {
     configurable: true,
     get: () => visibility,
@@ -44,8 +44,8 @@ function harness() {
   const oldFetch = globalThis.fetch;
   const encoder = new TextEncoder();
   const server = {
-    turns: new Map<string, Array<{ turn_id: string; state: string }>>([
-      [THREAD_A, [{ turn_id: "done", state: "completed" }]],
+    turns: new Map<string, Array<{ turn_id: string; state: string; last_event_id?: number }>>([
+      [THREAD_A, [{ turn_id: "done", state: "completed", last_event_id: 7 }]],
       [THREAD_B, [{ turn_id: "done-b", state: "completed" }]],
     ]),
     turnReads: new Map<string, number>(),
@@ -109,9 +109,9 @@ function harness() {
     if (turnsList) {
       const threadId = turnsList[1]!;
       server.turnReads.set(threadId, (server.turnReads.get(threadId) ?? 0) + 1);
-      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state }) => ({
+      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state, last_event_id }) => ({
         turn_id, thread_id: threadId, project_id: PROJECT, state,
-        requested_at: TIMESTAMP, last_event_id: null, generation_attempts: 1, submission_message: null,
+        requested_at: TIMESTAMP, last_event_id: last_event_id ?? null, generation_attempts: 1, submission_message: null,
       })), meta: { thread_status: "idle" } });
     }
     if (/\/threads\/[^/]+\/(messages|gates)$/.test(path)) {
@@ -142,7 +142,7 @@ function harness() {
     }
   }
   const unexpectedNavigation = () => assert.fail("no navigation is expected");
-  async function mount(threadId: string) {
+  async function mount(threadId: string, { awaitStream = true }: { awaitStream?: boolean } = {}) {
     await act(async () => {
       root.render(createElement(AppRouterContext.Provider, {
         value: {
@@ -158,6 +158,10 @@ function harness() {
         }),
       )));
     });
+    if (!awaitStream) {
+      await flushUntil(() => (server.turnReads.get(threadId) ?? 0) > 0, `${threadId} read`);
+      return;
+    }
     await flushUntil(
       () => threadOpens.some((open) => open.threadId === threadId && !open.signal?.aborted),
       `the thread stream of ${threadId} open`,
@@ -319,6 +323,23 @@ test("test_a_tab_hidden_before_any_turn_frame_reopens_from_the_hello", async () 
     await h.setVisibility("visible");
     await h.flushUntil(() => h.threadOpens.length === opens + 1, "reopened when shown");
     assert.equal(h.threadOpens.at(-1)?.lastEventId, "5");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_tab_loaded_hidden_opens_from_its_last_read", async () => {
+  // Found live (Garner Salesforce trial): a chat loaded in a hidden tab opened its first stream
+  // at the thread's tail when shown, so a wake turn that began in between was skipped. The
+  // first open must start from the page's last read of the thread (its newest turn cursor).
+  const h = harness({ startHidden: true });
+  try {
+    await h.mount(THREAD_A, { awaitStream: false });
+    await h.settle();
+    assert.equal(h.threadOpens.length, 0, "a hidden tab opens no stream");
+    await h.setVisibility("visible");
+    await h.flushUntil(() => h.threadOpens.length === 1, "opened when first shown");
+    assert.equal(h.threadOpens[0]?.lastEventId, "7", "from the newest cursor of the last read");
   } finally {
     await h.teardown();
   }
