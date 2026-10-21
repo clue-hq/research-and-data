@@ -772,12 +772,10 @@ class CrmWriteHandler:
             await self._read_back(crm, accepted)
 
     async def _read_back(self, crm: _Crm, accepted: Sequence[_Write]) -> None:
-        try:
-            back = await _read(crm, accepted)
-        except _Stop as stop:
-            if await self._read_stopped(accepted, stop):
-                raise
-            return
+        """Confirm the changes the CRM accepted. A stop here leaves them ``sending`` — sent,
+        awaiting confirmation — with their attempt neither counted again nor failed: the next
+        run's check confirms them without sending them again."""
+        back = await _read(crm, accepted)
         await self._record(
             crm,
             accepted,
@@ -785,19 +783,20 @@ class CrmWriteHandler:
         )
 
     async def _read_stopped(self, writes: Sequence[_Write], stop: _Stop) -> bool:
-        """A read met a rate limit or an unreachable CRM: that counts as an attempt of each
-        undecided change it was for (so the back-off grows), and a change past
-        ``MAX_ATTEMPTS`` fails ``retryable``. ``True`` when the run must stop."""
+        """The check before sending met a rate limit or an unreachable CRM: that counts as an
+        attempt of each change still waiting to be sent (so the back-off grows), and one past
+        ``MAX_ATTEMPTS`` fails ``retryable``. A change already sent (``sending``, awaiting
+        confirmation) is never counted or failed here. ``True`` when the run must stop."""
         if stop.kind not in ("rate_limited", "unavailable"):
             return True
+        ids = [write.write_id for write in writes]
         async with self._conn_factory() as conn:
             rows = await conn.execute(
                 text(
                     "UPDATE crm_write SET attempts = attempts + 1 WHERE write_id = ANY(:ids) "
-                    "AND status NOT IN ('succeeded', 'failed', 'skipped') "
-                    "RETURNING write_id, attempts"
+                    "AND status = 'queued' RETURNING write_id, attempts"
                 ),
-                {"ids": [write.write_id for write in writes]},
+                {"ids": ids},
             )
             counted = rows.all()
             spent = [
@@ -818,7 +817,14 @@ class CrmWriteHandler:
                         "message": stop.message,
                     },
                 )
-        return len(spent) < len(counted)
+            undecided = await conn.scalar(
+                text(
+                    "SELECT count(*) FROM crm_write WHERE write_id = ANY(:ids) "
+                    "AND status NOT IN ('succeeded', 'failed', 'skipped')"
+                ),
+                {"ids": ids},
+            )
+        return bool(undecided)
 
     async def _send(
         self, crm: _Crm, spec: WriteActionSpec, writes: Sequence[_Write]
@@ -907,10 +913,22 @@ class CrmWriteHandler:
                 },
             )
             return []
+        # The record exists from now on: its id and the "Clue created it" link are kept at once,
+        # whatever happens to the read-back.
+        connection = crm.connection
         async with self._conn_factory() as conn:
             await conn.execute(
                 text("UPDATE crm_write SET crm_id = :crm_id WHERE write_id = :id"),
                 {"crm_id": created.crm_id, "id": write.write_id},
+            )
+            await record_link(
+                conn,
+                workspace_id=connection.workspace_id,
+                connection_id=connection.connection_id,
+                crm_object=write.object,
+                crm_id=created.crm_id,
+                created_by_clue=True,
+                created_by_write_id=write.write_id,
             )
         return [created]
 
@@ -1026,17 +1044,8 @@ class CrmWriteHandler:
                     )
 
     async def _stopped(self, crm: _Crm, proposal_id: UUID, stop: _Stop) -> WorkResult:
+        # Changes sent but not yet confirmed stay ``sending``: the next run's check confirms them.
         references: dict[str, Any] = {"proposal_id": str(proposal_id), "reason": stop.kind}
-        async with self._conn_factory() as conn:
-            # Changes sent but not yet read back wait too; the next run's conflict check finds
-            # whether they landed.
-            await conn.execute(
-                text(
-                    "UPDATE crm_write SET status = 'queued' "
-                    "WHERE proposal_id = :id AND status = 'sending'"
-                ),
-                {"id": proposal_id},
-            )
         if stop.kind in ("rate_limited", "unavailable"):
             async with self._conn_factory() as conn:
                 await set_proposal_status(conn, proposal_id=proposal_id, status="queued")

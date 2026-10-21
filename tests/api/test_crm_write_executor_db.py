@@ -719,8 +719,8 @@ def test_changes_the_crm_accepted_before_a_stop_keep_their_real_outcome(tmp_path
         await _handle(_handler(conn, tmp_path, gateway), connection)
 
         logged = await _writes(conn, proposal_id)
-        # 101 landed: its send is kept, so it is never taken for "already held, nothing sent".
-        assert (logged["101"]["status"], logged["101"]["attempts"]) == ("queued", 1)
+        # 101 landed: it stays sent-awaiting-confirmation, never "already held, nothing sent".
+        assert (logged["101"]["status"], logged["101"]["attempts"]) == ("sending", 1)
         assert (logged["102"]["status"], logged["102"]["attempts"]) == ("queued", 0)
 
         await _reactivate(conn, connection)
@@ -743,6 +743,57 @@ def test_changes_the_crm_accepted_before_a_stop_keep_their_real_outcome(tmp_path
         assert (logged["104"]["status"], logged["104"]["attempts"]) == ("queued", 1)
 
     _run(tmp_path, "fallback", body)
+
+
+def test_a_rate_limited_read_back_never_fails_a_change_the_crm_accepted(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        limited = ComposioError("rate_limited", 429, "Too many requests")
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
+        handler = _handler(conn, tmp_path, gateway, crm_write_max_attempts=2)
+        gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [limited]
+        await _handle(handler, connection)  # send 1 of 2 is rate limited
+
+        # Send 2 — the last allowed — lands; the read-back right after is rate limited.
+        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [None, limited]
+        result = await _handle(handler, connection)
+
+        assert result.requeue
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["attempts"], change["failure_kind"]) == (
+            "sending",
+            2,
+            None,
+        )
+        assert gateway.records["101"]["icp_tier"] == "Tier 1"
+
+        # The next run confirms it by reading, and sends nothing.
+        await _handle(handler, connection)
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["attempts"]) == ("succeeded", 2)
+        assert len(gateway.writes) == 2
+
+        # A create whose only allowed send lands and whose read-back is rate limited: its id and
+        # its "Clue created it" link are kept at once, and the next run confirms it.
+        created = await _propose(conn, seeded, connection, gateway, _create("ana@new.co"))
+        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [limited]
+        once = _handler(conn, tmp_path, gateway, crm_write_max_attempts=1)
+        assert (await _handle(once, connection)).requeue
+        change = await _created(conn, created)
+        assert (change["status"], change["crm_id"]) == ("sending", "501")
+        linked = await conn.scalar(
+            text(
+                "SELECT created_by_clue FROM crm_record_link WHERE connection_id = :c "
+                "AND crm_id = '501' AND created_by_write_id = :w"
+            ),
+            {"c": connection.connection_id, "w": change["write_id"]},
+        )
+        assert linked is True
+        await _handle(once, connection)
+        assert (await _created(conn, created))["status"] == "succeeded"
+        assert [slug for slug, _ in gateway.writes].count("HUBSPOT_CREATE_CONTACT") == 1
+
+    _run(tmp_path, "readback", body)
 
 
 def test_a_rate_limited_read_counts_as_an_attempt(tmp_path: Path) -> None:
