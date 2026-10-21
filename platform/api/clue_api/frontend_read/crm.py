@@ -17,6 +17,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Request
+from sqlalchemy import text
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.crm.composio_gateway import (
@@ -183,6 +184,14 @@ def register_crm_routes(
         principal_for(request, workspace_id)
         async with conn_factory() as conn:
             current = await latest_connection(conn, workspace_id=workspace_id)
+            name = (
+                None
+                if current is None
+                else await conn.scalar(
+                    text("SELECT display_name FROM platform_user WHERE user_id = :id"),
+                    {"id": current.connected_by_user_id},
+                )
+            )
         if current is None:
             return {"status": "none"}
         status: Literal["active", "expired", "disconnected"] = current.status  # type: ignore[assignment]
@@ -191,4 +200,6 @@ def register_crm_routes(
             "status": status,
             "connectedAt": current.connected_at.isoformat(),
             "connectedBy": current.connected_by_user_id,
+            # The connect card's footer says who connected it ("Connected by …").
+            "connectedByName": name,
         }

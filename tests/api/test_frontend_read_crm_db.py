@@ -318,6 +318,11 @@ def test_completion_activates_and_wakes_every_waiting_chat_once(tmp_path: Any) -
         assert len(await _wake_turns(conn, project.workspace_id)) == 2
         status = await client.get(f"{CRM}/connection", headers=_headers(project))
         assert status.json()["provider"] == "hubspot" and status.json()["status"] == "active"
+        # The connect card's footer names who connected it.
+        named = await conn.scalar(
+            text("SELECT display_name FROM platform_user WHERE user_id = :id"), {"id": USER_ID}
+        )
+        assert status.json()["connectedByName"] == named
 
     _run(tmp_path, "owner", body)
 

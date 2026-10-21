@@ -31,6 +31,13 @@ export const ConnectCrmOutputSchema = z.object({
 });
 export type ConnectCrmOutput = z.infer<typeof ConnectCrmOutputSchema>;
 
+/** The workspace's connection as the card first saw it (the tool's own snapshot). */
+export interface CrmConnectionSnapshot {
+  provider: CrmProvider;
+  status: string;
+  connectedAt: string;
+}
+
 /** The card's own data, when a finished `connect_crm` call asked for one. */
 export interface CrmConnectCardModel {
   requestId: string;
@@ -38,6 +45,8 @@ export interface CrmConnectCardModel {
   providers: CrmProvider[];
   canConnect: boolean;
   currentProvider: CrmProvider | null;
+  /** What was connected when the card was shown; a switch is done only once this changes. */
+  initialConnection: CrmConnectionSnapshot | null;
 }
 
 /**
@@ -59,7 +68,60 @@ export function crmConnectCard(output: unknown): CrmConnectCardModel | null {
     providers: parsed.data.providers,
     canConnect: parsed.data.can_connect,
     currentProvider: parsed.data.connection?.provider ?? null,
+    initialConnection: parsed.data.connection
+      ? {
+          provider: parsed.data.connection.provider,
+          status: parsed.data.connection.status,
+          connectedAt: parsed.data.connection.connected_at,
+        }
+      : null,
   };
+}
+
+/** `GET /frontend/v1/crm/connection`: the workspace's CRM connection, if any. */
+export const CrmConnectionResponseSchema = z.union([
+  z.object({ status: z.literal("none") }),
+  z.object({
+    provider: CrmProviderSchema,
+    status: z.enum(["active", "expired", "disconnected"]),
+    connectedAt: z.string(),
+    connectedBy: z.string(),
+    connectedByName: z.string().nullable().optional(),
+  }),
+]);
+export type CrmConnectionResponse = z.infer<typeof CrmConnectionResponseSchema>;
+
+/** A connection the card can show as done. */
+export interface CrmConnectedState {
+  provider: CrmProvider;
+  connectedAt: string;
+  connectedByName: string | null;
+}
+
+/**
+ * Whether this connection answers this card. Connect and reconnect cards are answered by any
+ * active connection; a switch card only by one that differs from the connection it was shown for.
+ */
+export function crmConnectionAnswersCard(
+  beforeStatus: string | null,
+  beforeConnectedAt: string | null,
+  connection: CrmConnectionResponse,
+): CrmConnectedState | null {
+  if (connection.status !== "active") return null;
+  if (beforeStatus === "active" && beforeConnectedAt === connection.connectedAt) return null;
+  return {
+    provider: connection.provider,
+    connectedAt: connection.connectedAt,
+    connectedByName: connection.connectedByName ?? null,
+  };
+}
+
+/** What the callback tab tells an open connect card (same browser, `BroadcastChannel`). */
+export const CRM_CONNECT_CHANNEL = "clue-crm-connect";
+export interface CrmConnectBroadcast {
+  requestId: string;
+  outcome: CompleteResponse["outcome"];
+  provider: CrmProvider | null;
 }
 
 export const ConnectLinkResponseSchema = z.object({

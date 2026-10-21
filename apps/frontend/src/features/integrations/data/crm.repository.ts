@@ -2,7 +2,9 @@ import {
   CompleteResponseSchema,
   ConnectLinkResponseSchema,
   CrmConnectError,
+  CrmConnectionResponseSchema,
   type CompleteResponse,
+  type CrmConnectionResponse,
   type CrmProvider,
 } from "../model/crm";
 
@@ -62,4 +64,16 @@ export async function completeConnection(
     return { outcome: "failed" };
   }
   return CompleteResponseSchema.parse(await response.json());
+}
+
+/** The workspace's CRM connection, as any member may read it. */
+export async function fetchCrmConnection(
+  clueFetch: typeof fetch = fetch,
+): Promise<CrmConnectionResponse> {
+  const response = await clueFetch(`${CRM_PATH}/connection`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`HTTP_${response.status}`);
+  return CrmConnectionResponseSchema.parse(await response.json());
 }
