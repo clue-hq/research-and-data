@@ -86,6 +86,8 @@ import {
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { useNamingCatchUp } from "./use-naming-catch-up";
+import { usePageVisible } from "./use-page-visible";
+import { TERMINAL_TURN_EVENTS } from "../model/chat-events";
 import type { ChatAttachmentRef } from "../model/chat-attachments";
 import {
   applyTurnStateOverrides,
@@ -115,15 +117,6 @@ import {
 
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
-
-/**
- * How often a thread held by a discovery re-reads itself.
- *
- * The turn stream is per turn, so nothing streams while the run searches. The
- * run ends by queueing a wake turn this controller has never seen; only a read
- * finds it, and once it is attached its own frames take over.
- */
-const DISCOVERY_HOLD_REREAD_MS = 5000;
 
 export interface ChatAccessState {
   code: string;
@@ -1369,16 +1362,74 @@ export function useProjectChatController({
     discoveryHeldRef.current = discoveryRunId !== null;
   }, [discoveryRunId]);
 
+  // --- the thread stream (CRM trial 1, F2) -------------------------------
+  //
+  // Each turn has its own stream, but only a turn this chat knows about gets
+  // attached. The thread stream tells it about the others — a wake turn the
+  // server queued (a discovery that finished, a CRM that connected), a message
+  // sent from another tab, a teammate — by sending every turn's lifecycle
+  // frames. A frame for a turn the chat has not seen re-reads the thread once,
+  // and the turns effect above attaches it. Held only while the tab is
+  // visible; a hidden tab closes it and reopens it from its cursor.
+
+  const pageVisible = usePageVisible();
+  const threadCursor = useRef(new Map<string, number>());
+  const rereadForTurn = useRef(new Set<string>());
+  const threadReaders = useRef({ loadThreads, loadConversation, report });
   useEffect(() => {
-    if (!activeThreadId || discoveryRunId === null) return;
-    const timer = window.setInterval(() => {
-      void Promise.all([
-        loadThreads(),
-        loadConversation(activeThreadId),
-      ]).catch(report);
-    }, DISCOVERY_HOLD_REREAD_MS);
-    return () => window.clearInterval(timer);
-  }, [activeThreadId, discoveryRunId, loadConversation, loadThreads, report]);
+    threadReaders.current = { loadThreads, loadConversation, report };
+  }, [loadConversation, loadThreads, report]);
+
+  useEffect(() => {
+    if (!activeThreadId || !pageVisible) return;
+    const threadId = activeThreadId;
+    let open = true;
+    const reread = () => {
+      const readers = threadReaders.current;
+      void Promise.all([readers.loadThreads(), readers.loadConversation(threadId)]).catch(
+        readers.report,
+      );
+    };
+    const handle = repositories.threadStream.open({
+      projectId,
+      threadId,
+      lastEventId: threadCursor.current.get(threadId) ?? null,
+      onTurnEvent(event) {
+        if (!open || !mounted.current) return;
+        if (event.eventId !== null) threadCursor.current.set(threadId, event.eventId);
+        const known =
+          attachments.current.has(event.turnId) ||
+          attached.current.has(event.turnId) ||
+          rereadForTurn.current.has(event.turnId);
+        if (!known) {
+          rereadForTurn.current.add(event.turnId);
+          reread();
+          return;
+        }
+        if (TERMINAL_TURN_EVENTS.has(event.type) && discoveryHeldRef.current) {
+          // The hold may have ended with this turn; only the thread list says so.
+          void threadReaders.current.loadThreads().catch(() => undefined);
+        }
+      },
+      onReset() {
+        if (!open || !mounted.current) return;
+        threadCursor.current.delete(threadId);
+        reread();
+      },
+      onError(failure) {
+        if (!open || !mounted.current) return;
+        if (isAccessError(failure)) {
+          threadReaders.current.report(failure);
+          return;
+        }
+        globalThis.console.warn("The thread stream stopped", { projectId, threadId, failure });
+      },
+    });
+    return () => {
+      open = false;
+      handle.close();
+    };
+  }, [activeThreadId, pageVisible, projectId, repositories]);
 
   const stopDiscovery = useCallback(async () => {
     if (
