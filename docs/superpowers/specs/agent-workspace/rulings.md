@@ -54,6 +54,11 @@ agent, not only the CRM work.
   disk copy goes; the next turn restores it from R2. Kept at 30 minutes after the founder heard
   that production runs one chat worker and a longer window (24 h) would keep more returns warm.
   Spec WS-16, `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S=1800`.
+- **AW-12 (2026-10-22)** **Measure first; two speed measures are future scope.** Sending a chat's
+  next turn to the worker that ran it last, and restoring files early when the person opens the
+  chat, are not built in Phases 1–3. They stay in the spec's future scope (§2.4, F-1 and F-2):
+  routing when production runs more than one chat worker, early restore if measured cold restores
+  miss their targets (WS-19, WS-20).
 
 ## Scope, order and interim
 

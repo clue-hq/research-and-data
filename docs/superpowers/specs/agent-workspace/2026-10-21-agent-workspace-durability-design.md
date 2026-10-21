@@ -116,7 +116,7 @@ the decision).
 | D-10 | `run_python` and CRM reads keep working unchanged | roadmap P1 | WS-6, WS-14 | P1 | as discussed |
 | D-11 | Absorb the CRM reads registry (`CrmReadSinks`); no new in-memory path registries | AW-8.2 | WS-14 | P1 | as discussed |
 | D-12 | A resumed chat runs on the current profile and skills, keeping its own files and conversation | AW-3 | WS-18 | P1 | as discussed (already true today; kept true and tested) |
-| D-13 | Not slower for the person | your words: *"i hope of all of this will not make our experience very slow for the user right?"* | WS-19, WS-20 | P1 | **differs: Q3** |
+| D-13 | Not slower for the person | your words: *"i hope of all of this will not make our experience very slow for the user right?"* | WS-19, WS-20; §2.4 | P1 | decided 2026-10-22 (Q3, AW-12): measure first; two speed measures kept as future scope |
 | D-14 | Production-grade robustness: no half-written snapshots, no silent overwrites, integrity checks, safe retries, nothing left behind, one place to erase, proven by tests | your words: *"production grade robustness and efficiency"*; my 7 properties of 2026-10-21 | see §2.1 | P1–P3 | as discussed |
 | D-15 | Existing chats are not migrated; a chat's current folder becomes its first snapshot | AW-5 | WS-22 | P1 | as discussed |
 | D-16 | Rollout behind a flag | roadmap P3 | WS-21 | P1 (flag), P3 (rollout) | as discussed; the flag must exist from the first code (env parity rule) |
@@ -176,6 +176,18 @@ These are the seven properties I promised on 2026-10-21. Each one maps to requir
 - A noticeably slower first reply, or a turn that fails because a cache was cleaned.
 - Erased personal data survives in a snapshot, a cache folder or a forgotten stored file.
 
+### 2.4 Future scope (decided not to build now)
+
+Each item below was discussed and deliberately left out of Phases 1–3. It stays on the list, with
+what should trigger it. A plan picks it up when its trigger is met; WS-20's measurements are the
+evidence for the first two.
+
+| Item | What it does | Build it when | Source |
+|---|---|---|---|
+| **F-1 Send a chat back to the worker that ran it last** | when a chat's next turn is queued, prefer the worker whose area already holds its folder, if that worker has a free slot | production runs **more than one chat worker** (today it runs one, so every turn already lands on the same worker) | Q3, AW-12 |
+| **F-2 Restore early** | start restoring a chat's files when the person opens the chat or starts typing, not when the turn starts | WS-20 shows cold restores **missing the WS-19 targets** (typical chat p95 over 1 s) or people noticing a slower first reply | Q3, AW-12 |
+| **F-3 The design follow-up spec** | design ad and web sessions move from "restore when missing" to the version check; their logs and asset cache get cleaned | after Phase 1 lands | AW-5 |
+
 ---
 
 ## 3. The phases
@@ -201,7 +213,7 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q3–Q6 (Q1 and Q2 are decided).
+phase starts, but P1's plan needs Q4–Q6 (Q1–Q3 are decided).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -227,7 +239,8 @@ phase starts, but P1's plan needs Q3–Q6 (Q1 and Q2 are decided).
   generation, and the version check catches the rest. File locks and in-memory maps stay only as
   same-machine guards, and nothing relies on them for safety across machines (WS-13).
 
-**Q3. Speed measures I mentioned but this spec does not build** [P1] *(differs from what I said)*
+**Q3. Speed measures I mentioned but this spec does not build** [P1]: **decided 2026-10-22 (AW-12):
+not built now; recorded as future scope in §2.4, with what triggers each.**
 - **On 2026-10-21 I listed three things that keep it fast:**
   1. send a chat's next turn to the machine that ran its last one;
   2. start restoring files when the person opens the chat;
@@ -578,7 +591,8 @@ What lands in the agent folders today:
   - **Transfer concurrency:** `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` (default 16).
   - **First turn of a chat on a worker:** also writes its copy of the brand and project files
     (about 1 MB, local disk), counted in the cold-restore target.
-  - Early restore and machine routing are not built (**Q3**).
+  - Early restore and machine routing are not built now (AW-12); they are future scope (§2.4),
+    triggered by these targets and the measurements of WS-20.
 - **WS-20 [P1] Speed is measured.**
   - Every restore and save records whether the cache was warm, the files and bytes moved, and how
     long it took. These go in the existing usage record or a sibling.
@@ -866,3 +880,5 @@ and WS-28's list contents for live and expired files (P2).
   rewritten.
 - 2026-10-22: Q2 decided (AW-10): reuse the fleet `work_lease`, no new lease. Q10 partly decided
   (AW-11): cache idle window 30 minutes.
+- 2026-10-22: Q3 decided (AW-12): routing and early restore not built now; added §2.4 Future scope
+  (F-1 routing, F-2 early restore, F-3 design follow-up spec) with their triggers.
