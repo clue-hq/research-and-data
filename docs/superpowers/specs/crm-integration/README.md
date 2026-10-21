@@ -7,7 +7,7 @@ group. Add a line here whenever a new document is written.
 
 | Document | What it is | Status |
 |---|---|---|
-| [`2026-10-22-crm-write-permission-card-design.md`](2026-10-22-crm-write-permission-card-design.md) | Phase 2 permission card for Figma: states (asking, sending, done, not allowed, replaced, paused), grouping, wording, data | Draft for founder review |
+| [`2026-10-22-crm-write-permission-card-design.md`](2026-10-22-crm-write-permission-card-design.md) | Phase 2 permission card for Figma: states (asking, sending, done, not allowed, replaced, paused), grouping, wording, data | Current card (R-6.22) |
 | [`status.md`](status.md) | Build status: what is built, in progress, not started, or parked — one line per feature | Live — updated whenever a feature changes state |
 | [`composio-api-notes.md`](composio-api-notes.md) | Verified Composio REST v3.1 shapes, errors and versions from the Task 0 spike | Live — amend when Composio behaviour changes |
 | [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md) | First end-to-end trial of the reads on the local stack: what happened, findings F1–F11, what was not exercised | Record — F2 and F4 fixed; F3 moved to agent-workspace |

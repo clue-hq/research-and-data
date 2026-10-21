@@ -223,6 +223,11 @@ Related documents:
   that **overwrite a value a person set are never grouped** — each is listed on its own, unticked by
   default. Card spec: `2026-10-22-crm-write-permission-card-design.md`.
 
+- **R-6.22 (2026-10-22)** **The card spec is the current card**; planning and building do not
+  wait for a Figma design. "Fully automatic" lives on the settings page, not on the card; only one
+  live write card per chat (a new proposal replaces an unanswered one); the asking card shows the
+  CRM's logo.
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched

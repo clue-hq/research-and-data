@@ -6,6 +6,9 @@ standing permission covers, and the agent's turn ends on it.
 
 It reuses the connect card's frame (Figma node 2251:5348) so the two read as one family.
 
+**Status (2026-10-22, R-6.22):** this spec *is* the current card. Planning and building do not wait
+for a Figma design; if one comes later, it refines this.
+
 ## 1. Frame and shared parts
 
 - Width 520 px max (full width below that), padding 20, gap 20 between sections, radius 8,
@@ -57,8 +60,7 @@ approves every one explicitly (R-6.5).
 ```
 
 **Header**
-- Title: **"Clue wants to update {HubSpot | Salesforce}"**. Icon: the CRM's logo in the tile, or a
-  generic "edit" icon — designer's choice.
+- Title: **"Clue wants to update {HubSpot | Salesforce}"**. Icon: the CRM's logo in the tile.
 - Description: **"For "{project name}". Nothing is sent until you allow it."**
 
 **Group line** (one per group)
@@ -92,7 +94,7 @@ approves every one explicitly (R-6.5).
 - Ticking one makes it a standing permission when the person presses Allow; next time those changes
   skip the card. Revoked through chat ("stop setting ICP tier without asking") or the future
   Settings → Integrations page.
-- **"Fully automatic"** is *not* on the card — it belongs on the settings page (to confirm, §7).
+- **"Fully automatic"** is *not* on the card — it lives on the settings page (§7).
 
 **Footer**
 - Caption, left: **"Any member of this workspace can answer."** (R-6.8)
@@ -155,8 +157,7 @@ approves every one explicitly (R-6.5).
 ### E. Replaced
 
 - When the agent proposes again before this card was answered, this card collapses to
-  **"Replaced by a newer proposal"** (muted, no buttons) — only one live write card per chat (to
-  confirm, §7).
+  **"Replaced by a newer proposal"** (muted, no buttons) — only one live write card per chat (§7).
 
 ### F. Paused
 
@@ -199,9 +200,9 @@ are written as digits. Singular when {n} is 1 ("Create 1 contact").
 - `outcome` (sending / done / paused): counts, per-group results, failed changes with the CRM's
   message, skipped changes with the reason, answered by and when.
 
-## 7. To confirm with the founder
+## 7. Decided (founder, 2026-10-22, R-6.22)
 
-1. **"Fully automatic"** lives on the settings page, not on every card.
+1. **"Fully automatic"** lives on the settings page, not on the card.
 2. **One live write card per chat:** a new proposal before the old one is answered replaces it
    (state E).
-3. Header icon in the asking state: the CRM's logo, or a generic edit icon.
+3. **Header icon** in the asking state: the CRM's logo (HubSpot or Salesforce) in the symbol tile.
