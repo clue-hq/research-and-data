@@ -824,6 +824,23 @@ class Settings(BaseSettings):
     # Periodic worker cadence. Non-positive disables scheduling without weakening the job itself.
     # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
     agent_cleanup_interval_s: float = 3600.0
+    # F3 (spec docs/superpowers/specs/agent-workspace/, WS-21): a chat's agent folders are saved as
+    # a versioned snapshot in the artifact store and a worker's disk is only a cache. Off is the
+    # emergency switch only: local folders, no snapshots, a 24-hour idle window.
+    # Env: ``CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED``.
+    agent_workspace_snapshots_enabled: bool = True
+    # A chat's folder on a worker is deleted after this long unused (AW-11); the next turn
+    # restores it from its snapshot. Env: ``CLUE_AGENT_WORKSPACE_CACHE_IDLE_S``.
+    agent_workspace_cache_idle_s: float = Field(default=1800.0, gt=0)
+    # Each worker's area is capped at this many bytes; over it, idle chat folders go oldest first
+    # (AW-17). Env: ``CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES``.
+    agent_workspace_cache_max_bytes: int = Field(default=10737418240, gt=0)
+    # Parallel uploads and downloads for one restore or save (WS-19).
+    # Env: ``CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY``.
+    agent_workspace_transfer_concurrency: int = Field(default=16, ge=1)
+    # How often a worker checks its area for idle chat folders.
+    # Env: ``CLUE_AGENT_WORKSPACE_CACHE_SWEEP_INTERVAL_S``.
+    agent_workspace_cache_sweep_interval_s: float = Field(default=300.0, gt=0)
 
     # --- C7 structured research-view activation -------------------------------------------
     # Each externally reachable capability is independently default-off. Deployments can canary
