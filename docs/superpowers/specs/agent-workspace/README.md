@@ -5,6 +5,7 @@ Newest first. Add a line whenever a document is written.
 
 | Document | What it is | Status |
 |---|---|---|
+| [`2026-10-21-agent-workspace-durability-design.md`](2026-10-21-agent-workspace-durability-design.md) | The F3 spec: snapshot of the agent's files in R2 + version row in Postgres, cache-only disk, tiers, receipts, eviction, erasure, verification (WS-1…WS-32) | Draft — founder review |
 | [`rulings.md`](rulings.md) | Founder decisions AW-1… (AW-1–AW-5 moved from CRM R-10.4–R-10.8) | Live — updated after every decision |
 | [`2026-10-21-workspace-footprint-findings.md`](2026-10-21-workspace-footprint-findings.md) | What every agent job leaves in Postgres, R2 and on the machine; single-machine assumptions; how other products do it | Record — input to the F3 spec |
 

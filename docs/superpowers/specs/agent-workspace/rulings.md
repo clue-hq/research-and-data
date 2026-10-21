@@ -46,8 +46,9 @@ agent, not only the CRM work.
 - **AW-7 (2026-10-21)** **F3 is built in its own worktree and branch** — the `dushanbe` workspace (founder, 2026-10-21) — stacked on
   `feat/crm-integration` and merging it in periodically so conflicts surface early; when either lane
   changes something the other relies on, it messages the other session. Tests use one throwaway test
-  database for the F3 lane; its live checks run on the nashville stack while that lane is idle (no
-  second stack database).
+  database for the F3 lane. *Amended 2026-10-21 (founder):* the dushanbe lane runs on its own existing
+  stack database (`clue_nashville_pm_clone`), migrated in place to the `feat/crm-integration` head
+  (`c87ba03cfc4e`); F3's live checks run on the dushanbe stack — still no new database.
 - **AW-8 (2026-10-21)** **Rules for other lanes until F3 lands** (guidance, and they must not hold up
   other work — e.g. CRM Phases 2 and 3):
   1. No new state that lives only on a worker's disk: anything the agent must find again goes in the
