@@ -133,7 +133,7 @@ the decision).
 | D-27 | Research runs: their reconciliation step reads the source run's snapshot, not local disk | roadmap P3 | WS-33 | P3 | as discussed |
 | D-28 | Delegated sub-agents get the same mechanism | roadmap P3 | WS-12, WS-34 | P1 (mechanism), P3 (checked) | as discussed |
 | D-29 | Stage-0 trial workspaces get the same mechanism | roadmap P3 | WS-12 | — | **differs: Q8** |
-| D-30 | Robustness tests: kill a worker mid-turn, two workers on one chat, restore on a clean machine | roadmap P3 | §11 | P1 (basic), P3 (full) | **timing differs: Q9** |
+| D-30 | Robustness tests: kill a worker mid-turn, two workers on one chat, restore on a clean machine | roadmap P3 | §11 | P1 (basic), P3 (full) | decided 2026-10-22 (Q9, AW-16) |
 | D-31 | A live measurement of restore time | roadmap P3; my caveat "we should measure it, not assume it" | WS-20, §11 | P1 (first), P3 (final) | as discussed |
 | D-32 | One comprehensive spec for chats and research runs; design ad and web sessions in a short follow-up spec | AW-5; your words: *"well defined and very comprehensive"* | this document; §2.2 | P0 | as discussed |
 | D-33 | Other lanes follow AW-8 meanwhile, and F3 must not hinder CRM Phases 2 and 3 | AW-8; your words | WS-14, §12 | all | as discussed |
@@ -213,8 +213,8 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts. Q1–Q6 are decided. Phase 1's plan also needs Q9 and the cache size limit in Q10;
-Q7, Q8 and Q11 come up in later phases.
+phase starts. Everything Phase 1's plan needs is decided (Q1–Q6, Q9, Q10's cache values). Still
+open, for later phases: Q7, Q8, Q11 and Q10's expiry-job timing.
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -288,7 +288,7 @@ for the chat's whole life, like `scratch/`.**
   `/tmp`. They are never part of a customer chat.
 - **My recommendation:** leave them out. They keep today's local-only behaviour (WS-12).
 
-**Q9. Some robustness tests move to Phase 1** [P1, P3] *(timing differs from the roadmap)*
+**Q9. Some robustness tests move to Phase 1** [P1, P3]: **decided 2026-10-22 (AW-16).**
 - **The roadmap put all robustness tests in Phase 3.**
 - **Why move some:** Phase 1 claims "any machine can continue any chat", and that claim needs
   proof before it is merged.
@@ -300,8 +300,9 @@ for the chat's whole life, like `scratch/`.**
 - **Raw-input window: 48 hours.** This is your ruling (AW-2).
 - **Decided 2026-10-22 (AW-11):** a cache folder is removed after **30 minutes** idle. I had
   proposed 24 hours once it was clear production runs one chat worker; you kept 30 minutes.
-- **Proposed by me, still open:** the cache is capped at 10 GiB per worker area; the expiry job
-  runs hourly.
+- **Decided 2026-10-22 (AW-17):** each worker area is capped at **10 GiB**; over it, idle chat
+  folders are deleted, oldest first.
+- **Proposed by me, still open (Phase 2):** the expiry job runs hourly.
 
 **Q11. Should the person ever see or download these files?** [—] *(not discussed)*
 - **My recommendation:** keep it out of scope for now. The snapshot makes it easy to add later.
@@ -890,3 +891,6 @@ and WS-28's list contents for live and expired files (P2).
   apart from its two compaction folders (raw inputs). WS-4, WS-6, WS-23 and WS-32 updated.
 - 2026-10-22: Q6 decided (AW-15): a save that still fails after retries fails the turn, and the
   fleet retries it. Q1–Q6 are now decided.
+- 2026-10-22: Q9 decided (AW-16): Phase 1 carries tests 1–4, 8, 13, 14 and a first live check;
+  Phase 3 keeps the clean-machine restore, research reconciliation and the final live timing.
+  Q10's cache cap decided (AW-17): 10 GiB per worker area.

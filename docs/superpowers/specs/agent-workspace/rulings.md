@@ -73,6 +73,14 @@ agent, not only the CRM work.
   retried a few times; if storage is still unreachable, the turn fails and the work queue runs it
   again, as it does today when `outputs/` cannot be saved. A turn never finishes with its files
   unsaved, so no later turn can silently restore an older version. Spec WS-9, §10.
+- **AW-16 (2026-10-22)** **Phase 1 carries its own robustness proofs.** Two workers on one chat, a
+  warm second turn that downloads nothing, kill mid-turn before and after the save, a refused
+  zombie save, cleanup never touching another worker's area, two chats never sharing a folder, and
+  a first live check on the dushanbe stack. Phase 3 keeps the clean-machine restore, the research
+  reconciliation test and the final live timing. Spec §11.
+- **AW-17 (2026-10-22)** **Each worker area is capped at 10 GiB.** Over the cap, idle chat folders are
+  deleted, oldest first; a safety net behind the 30-minute rule (AW-11).
+  `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES=10737418240`.
 
 ## Scope, order and interim
 
