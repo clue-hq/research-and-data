@@ -34,6 +34,13 @@ from clue_agents.contracts import (
     ValidatedPlan,
     normalize_virtual_path,
 )
+from clue_agents.workspace_snapshot import (
+    LeaseFence,
+    SaveStatus,
+    SnapshotEntry,
+    SnapshotManifest,
+    SnapshotPointer,
+)
 from clue_core import ExecutionId
 
 INTERRUPTED_ASSISTANT_NOTICE = (
@@ -55,6 +62,7 @@ __all__ = [
     "HistoryMessageRef",
     "OperationFailure",
     "SpillSink",
+    "WorkspaceSnapshotStore",
     "WorkspaceEntry",
 ]
 
@@ -191,6 +199,43 @@ class SpillSink(Protocol):
     """
 
     def write_spill(self, operation_id: str, data: bytes) -> str: ...
+
+
+@runtime_checkable
+class WorkspaceSnapshotStore(Protocol):
+    """Where a chat's agent-folder snapshots live: a version record plus content-addressed files.
+
+    F3 (spec WS-1–WS-3, WS-8): ``save`` moves the record with a compare-and-set on the version the
+    turn restored, and only while the fence still holds the chat's fleet lease. Implemented over
+    Postgres and the artifact store in ``clue_api.agent_workspace_snapshots``.
+    """
+
+    async def current(self, *, workspace_id: str, thread_id: str) -> SnapshotPointer | None: ...
+
+    async def read_manifest(
+        self, *, workspace_id: str, pointer: SnapshotPointer
+    ) -> SnapshotManifest: ...
+
+    async def read_file(self, *, workspace_id: str, entry: SnapshotEntry) -> bytes: ...
+
+    async def store_files(
+        self, *, workspace_id: str, files: Sequence[tuple[SnapshotEntry, bytes]]
+    ) -> int: ...
+
+    async def save(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        expected_version: int | None,
+        manifest: SnapshotManifest,
+        fence: LeaseFence | None,
+    ) -> tuple[SaveStatus, SnapshotPointer | None]: ...
+
+    async def touch(self, *, workspace_id: str, thread_id: str) -> None: ...
+
+    async def forget(self, *, workspace_id: str, thread_id: str) -> None: ...
 
 
 @runtime_checkable
