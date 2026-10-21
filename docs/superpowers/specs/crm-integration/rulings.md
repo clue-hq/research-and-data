@@ -257,11 +257,20 @@ Related documents:
 - **R-8.6 (2026-10-20, final)** Clue **may add opted-out people** to lists or campaigns, even ones
   the customer's automations might email.
 
+- **R-8.7 (2026-10-22)** **What personal data Clue may write into the customer's CRM.** First and
+  last name, job title and the company/account link: yes. Work email: **only verified** (no verified
+  email, no contact created — design call 6). Buying/committee role: yes. LinkedIn profile URL: yes,
+  when identity-bound. **Phone numbers: no.** **Personal research details** (interests, posts,
+  resonance facts) **never go into the CRM**; they stay in Clue behind its own checks. **Sensitive
+  data: never.** **EU and every other person:** the same rules, and every person written must also
+  pass Clue's existing identity-binding and jurisdiction/use-class check — a field Clue may not use
+  for that person in outreach is never written to the CRM. Each write records the claim it came
+  from in the write log, so a privacy erasure in Clue can list what was written into the customer's
+  CRM (Clue never deletes it there, R-6.13).
+
 ## 9. Open — not yet decided
 
-- **What personal data Clue may write into the customer's CRM** (which person fields; verified
-  work email only; no phone; no personal research details in notes; how EU people are handled) —
-  asked 2026-10-20, not yet answered.
+- *(none — the personal-data question was answered 2026-10-22, R-8.7)*
 
 ## 10. Trial 1 findings — decisions
 
