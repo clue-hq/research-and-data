@@ -111,6 +111,9 @@ class WriteCounts:
     not_chosen: int
     #: Chosen changes not yet sent.
     waiting: int
+    #: Chosen changes closed because the CRM was reconnected or switched (also counted in
+    #: ``skipped``, or in ``failed`` when sent but not confirmed).
+    reconnected: int = 0
 
 
 async def get_proposal(conn: AsyncConnection, *, proposal_id: UUID) -> WriteProposal | None:
@@ -135,7 +138,9 @@ async def proposal_counts(conn: AsyncConnection, *, proposal_id: UUID) -> WriteC
                 "count(*) FILTER (WHERE status = 'skipped' AND selected) AS skipped, "
                 "count(*) FILTER (WHERE NOT selected) AS not_chosen, "
                 "count(*) FILTER (WHERE selected AND status NOT IN "
-                "('succeeded', 'failed', 'skipped')) AS waiting "
+                "('succeeded', 'failed', 'skipped')) AS waiting, "
+                "count(*) FILTER (WHERE selected AND status IN ('skipped', 'failed') "
+                "AND failure_kind = 'connection_expired') AS reconnected "
                 "FROM crm_write WHERE proposal_id = :id"
             ),
             {"id": proposal_id},

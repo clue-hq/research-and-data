@@ -5,8 +5,9 @@ Spec: docs/superpowers/specs/crm-integration/2026-10-20-crm-integration-first-re
 ``connect-link`` for a fresh Composio link on each click — links live about ten minutes, so none is
 stored for reuse. Composio sends the browser back to the frontend's callback page, which calls
 ``complete``: the connection is activated only when Composio reports it ACTIVE and it is exactly
-the attempt this request recorded, and then every chat waiting on the connection is woken and the
-CRM changes an expired connection paused are offered to the new connection's write executor.
+the attempt this request recorded, and then every chat waiting on the connection is woken, and
+the CRM changes the replaced connection had not sent are closed (never sent on the new one) and
+their chats asked to propose them again.
 
 Connecting requires ``workspace.manage_settings`` (owners and admins); any member may read the
 connection's status.
@@ -35,14 +36,13 @@ from clue_api.crm.connections import (
     start_attempt,
 )
 from clue_api.crm.wake import queue_crm_connected_turns
-from clue_api.crm.write_executor import offer_resumable_crm_writes
+from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
 from clue_auth.policy import Permission
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
-from clue_fleet import DbWorkQueue
 from clue_obs import get_logger
 from clue_storage import StorageBackend
 
@@ -180,13 +180,14 @@ def register_crm_routes(
                 await queue_crm_connected_turns(
                     conn, artifacts, requests=waiting, provider=provider
                 )
-        # CRM changes an expired connection paused continue on the new one. The connection is
-        # already active, so a failed offer is logged, not refused (the next proposal re-offers).
-        queue = getattr(request.app.state, "crm_work_queue", None) or DbWorkQueue()
-        try:
-            await offer_resumable_crm_writes(conn_factory, queue, connection)
-        except Exception:
-            log.warning("crm.complete.write_offer_failed", exc_info=True)
+            # CRM changes the replaced connection had not sent are never sent on this one (it
+            # may be another portal or org): they are closed and their chats asked to re-propose.
+            await close_replaced_connection_proposals(
+                conn,
+                artifacts,
+                workspace_id=workspace_id,
+                active_connection_id=connection.connection_id,
+            )
         return {"outcome": "connected", "provider": provider}
 
     @router.get("/crm/connection")

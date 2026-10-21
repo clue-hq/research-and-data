@@ -129,6 +129,11 @@ def _log_hint(proposal_id: UUID) -> str:
 
 def crm_writes_finished_message(proposal_id: UUID, counts: WriteCounts) -> str:
     message = f"The CRM changes are finished: {_tally(counts)} — {_log_hint(proposal_id)}."
+    if counts.reconnected:
+        message += (
+            f" {counts.reconnected} were not sent (or not confirmed) because the CRM was "
+            "reconnected or switched: they must be proposed again."
+        )
     if counts.not_chosen:
         message += f" {counts.not_chosen} not chosen on the card were not sent."
     return message

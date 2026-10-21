@@ -26,11 +26,16 @@ A refusal fails the change with ``failure_kind`` read from the CRM's own error c
 (:func:`failure_kind`) and the CRM's message kept verbatim; it is never retried. A rate limit or an
 unreachable CRM puts the change back to ``queued`` and requeues the task after
 ``CLUE_CRM_WRITE_RETRY_BASE_S * 2**(attempt-1)`` seconds, until ``CLUE_CRM_WRITE_MAX_ATTEMPTS``
-sends, then fails it ``retryable``. An expired connection is marked expired and the proposal
-``paused``; after a reconnect (a new connection row of the same CRM) the new connection's task
-takes the paused proposal over and continues it in order. Salesforce's API budget running out
-pauses the proposal too, without touching the connection. A finished proposal — and a paused one —
-wakes the chat that proposed it (:mod:`clue_api.crm.wake`).
+sends, then fails it ``retryable``; a rate limit met by a read counts as an attempt the same way.
+An expired connection is marked expired and the proposal ``paused``; a connection Composio refuses
+(401/403, or a connected account it no longer knows) pauses it without touching the connection, as
+does Salesforce's API budget running out. A paused proposal resumes only on its own connection: it
+is never sent on another one, because a reconnect may be to a different portal or org (founder
+ruling, Task 6 review). When a new connection becomes active, the connect callback closes the
+other connections' unsent proposals (:func:`close_replaced_connection_proposals`) and their chats
+are asked to propose again. A finished proposal — and a paused one — wakes the chat that proposed
+it (:mod:`clue_api.crm.wake`). A change whose action is no longer allowlisted fails on its own and
+never blocks the queue.
 
 Declined and replaced proposals are never picked up: only ``queued`` ones, plus ``sending`` (a run
 that died) and ``paused`` (waiting on a reconnect or the budget).
@@ -39,6 +44,7 @@ that died) and ``paused`` (waiting on a reconnect or the budget).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -62,7 +68,7 @@ from clue_api.crm.connections import CrmConnection, get_connection
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
 from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
-from clue_api.crm.write_actions import WriteActionSpec, write_spec
+from clue_api.crm.write_actions import WriteActionSpec, WriteNotParsable, write_spec
 from clue_api.crm.write_prepare import (
     _CRM_NAMES,
     _HUBSPOT_CONTACT_OBJECT_TYPE_ID,
@@ -72,7 +78,6 @@ from clue_api.crm.write_prepare import (
     _soql_text,
     _unwrap,
 )
-from clue_api.crm.write_tools import crm_write_dedup_key
 from clue_api.crm.writes import (
     WriteProposal,
     forget_membership_link,
@@ -84,14 +89,14 @@ from clue_api.crm.writes import (
 )
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory, transaction
-from clue_fleet import FleetTaskKind, WorkContext, WorkId, WorkQueue, WorkResult
+from clue_fleet import FleetTaskKind, WorkContext, WorkResult
 from clue_obs import get_logger
 
 __all__ = [
     "CrmWriteHandler",
     "build_crm_write_handler",
+    "close_replaced_connection_proposals",
     "failure_kind",
-    "offer_resumable_crm_writes",
 ]
 
 log = get_logger("clue_api.crm.write_executor")
@@ -107,6 +112,12 @@ _RESUMABLE = ("queued", "sending", "paused")
 
 NOT_APPLIED_MESSAGE = "The CRM reported success but the value did not change."
 NOT_CHOSEN_MESSAGE = "Not chosen on the permission card, so it was not sent."
+NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sent."
+RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
+UNCONFIRMED_MESSAGE = (
+    "The CRM was reconnected or switched after this was sent, so Clue could not confirm it; "
+    "check the CRM, and propose again if it is missing."
+)
 
 FailureKind = Literal[
     "validation_rule",
@@ -158,15 +169,26 @@ def failure_kind(message: str | None) -> FailureKind:
 _TEMPORARY_CODES = ("REQUEST_LIMIT_EXCEEDED", '"category":"RATE_LIMITS"')
 
 
-def _temporary(result: ExecuteResult) -> Literal["rate_limited", "unavailable"] | None:
-    """A refused call that is a rate limit or an unreachable CRM rather than a refusal."""
+def _status_code(result: ExecuteResult) -> int | None:
+    """The CRM's HTTP status Composio reports inside a refused call's ``data``."""
     body = result.data
-    status = None
     for _ in range(2):
         if isinstance(body, Mapping) and isinstance(body.get("status_code"), int):
-            status = body["status_code"]
-            break
+            return int(body["status_code"])
         body = body.get("data") if isinstance(body, Mapping) else None
+    return None
+
+
+def _refusal_kind(result: ExecuteResult) -> FailureKind:
+    """A refused call's ``failure_kind``: the CRM's 404 for a record is ``not_found``."""
+    if _status_code(result) == 404:
+        return "not_found"
+    return failure_kind(result.error)
+
+
+def _temporary(result: ExecuteResult) -> Literal["rate_limited", "unavailable"] | None:
+    """A refused call that is a rate limit or an unreachable CRM rather than a refusal."""
+    status = _status_code(result)
     if status == 429 or any(code in (result.error or "") for code in _TEMPORARY_CODES):
         return "rate_limited"
     if isinstance(status, int) and status >= 500:
@@ -184,11 +206,12 @@ class _Budget(Protocol):
 
 
 class _Stop(Exception):
-    """The run cannot go on: a temporary failure, an expired connection or the budget."""
+    """The run cannot go on: a temporary failure, an expired connection, a connection Composio
+    refuses (``auth``: Clue's key, or the connected account, is not accepted) or the budget."""
 
     def __init__(
         self,
-        kind: Literal["rate_limited", "unavailable", "connection_expired", "budget"],
+        kind: Literal["rate_limited", "unavailable", "connection_expired", "auth", "budget"],
         message: str,
         *,
         error: ComposioError | None = None,
@@ -199,6 +222,8 @@ class _Stop(Exception):
         self.message = message
         self.error = error
         self.budget_code = budget_code
+        #: Changes the CRM accepted in this call before it stopped (the one-at-a-time resend).
+        self.accepted: list[_Write] = []
 
 
 @dataclass(frozen=True)
@@ -310,9 +335,9 @@ class _Crm:
                 version=self._version,
             )
         except ComposioError as exc:
-            if exc.kind in ("rate_limited", "unavailable", "connection_expired"):
-                raise self._stop(exc) from exc
-            return ExecuteResult(False, None, exc.message)
+            if exc.kind == "bad_request":  # Composio's own argument check: this change only
+                return ExecuteResult(False, None, exc.message)
+            raise self._stop(exc) from exc
         if not result.successful:
             temporary = _temporary(result)
             if temporary is not None:
@@ -325,8 +350,13 @@ class _Crm:
 
     @staticmethod
     def _stop(exc: ComposioError) -> _Stop:
+        """A Composio error that is about the connection, not one change. Its 401/403 (``auth``)
+        and 404 (``not_found``: the connected account or tool is gone) pause the proposal; a
+        CRM's 404 for one record comes back inside a refused result instead."""
         if exc.kind in ("connection_expired", "rate_limited"):
             return _Stop(exc.kind, exc.message, error=exc)
+        if exc.kind in ("auth", "not_found"):
+            return _Stop("auth", exc.message, error=exc)
         return _Stop("unavailable", exc.message, error=exc)
 
 
@@ -364,7 +394,9 @@ async def _read_fields(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]
             properties = body.get("properties") if isinstance(body, Mapping) else None
             for write in group:
                 if not result.successful:
-                    seen[write.write_id] = _Seen(error=result.error or "No answer.")
+                    seen[write.write_id] = _Seen(
+                        error=result.error or "No answer.", kind=_refusal_kind(result)
+                    )
                 elif not isinstance(properties, Mapping):
                     seen[write.write_id] = _unreadable(crm, f"the {object_name} {record_ref}")
                 else:
@@ -582,6 +614,7 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
                 crm_message=(
                     f"{crm.name} already has a matching {write.object} ({seen.value}), so it "
                     "was not created again."
+                    + (" It may be the one an earlier send created." if write.attempts else "")
                 ),
             )
         return None
@@ -717,7 +750,12 @@ class CrmWriteHandler:
         return None
 
     async def _send_chunk(self, crm: _Crm, spec: WriteActionSpec, chunk: Sequence[_Write]) -> None:
-        seen = await _read(crm, chunk)
+        try:
+            seen = await _read(crm, chunk)
+        except _Stop as stop:
+            if await self._read_stopped(chunk, stop):
+                raise
+            return  # every change of the chunk has used up its attempts and failed
         to_send: list[_Write] = []
         decided: dict[UUID, _Outcome] = {}
         for write in chunk:
@@ -730,14 +768,57 @@ class CrmWriteHandler:
         if not to_send:
             return
         accepted = await self._send(crm, spec, to_send)
-        if not accepted:
+        if accepted:
+            await self._read_back(crm, accepted)
+
+    async def _read_back(self, crm: _Crm, accepted: Sequence[_Write]) -> None:
+        try:
+            back = await _read(crm, accepted)
+        except _Stop as stop:
+            if await self._read_stopped(accepted, stop):
+                raise
             return
-        back = await _read(crm, accepted)
         await self._record(
             crm,
             accepted,
             {write.write_id: _after_send(write, back[write.write_id]) for write in accepted},
         )
+
+    async def _read_stopped(self, writes: Sequence[_Write], stop: _Stop) -> bool:
+        """A read met a rate limit or an unreachable CRM: that counts as an attempt of each
+        undecided change it was for (so the back-off grows), and a change past
+        ``MAX_ATTEMPTS`` fails ``retryable``. ``True`` when the run must stop."""
+        if stop.kind not in ("rate_limited", "unavailable"):
+            return True
+        async with self._conn_factory() as conn:
+            rows = await conn.execute(
+                text(
+                    "UPDATE crm_write SET attempts = attempts + 1 WHERE write_id = ANY(:ids) "
+                    "AND status NOT IN ('succeeded', 'failed', 'skipped') "
+                    "RETURNING write_id, attempts"
+                ),
+                {"ids": [write.write_id for write in writes]},
+            )
+            counted = rows.all()
+            spent = [
+                row.write_id
+                for row in counted
+                if int(row.attempts) >= self._settings.crm_write_max_attempts
+            ]
+            if spent:
+                await conn.execute(
+                    text(
+                        "UPDATE crm_write SET status = 'failed', failure_kind = :kind, "
+                        "crm_message = :message, retryable = true, finished_at = now() "
+                        "WHERE write_id = ANY(:ids)"
+                    ),
+                    {
+                        "ids": spent,
+                        "kind": "rate_limited" if stop.kind == "rate_limited" else "other",
+                        "message": stop.message,
+                    },
+                )
+        return len(spent) < len(counted)
 
     async def _send(
         self, crm: _Crm, spec: WriteActionSpec, writes: Sequence[_Write]
@@ -756,7 +837,17 @@ class CrmWriteHandler:
             try:
                 accepted.extend(await self._call(crm, spec, call))
             except _Stop as stop:
-                if await self._put_back(call, stop):
+                # Changes the CRM already accepted keep their send: they are read back now
+                # (when the CRM can still be read), else settled by the next run's check.
+                accepted.extend(stop.accepted)
+                landed = {write.write_id for write in stop.accepted}
+                waiting = await self._put_back(
+                    [write for write in call if write.write_id not in landed], stop
+                )
+                if waiting or stop.kind not in ("rate_limited", "unavailable"):
+                    if accepted and stop.kind in ("rate_limited", "unavailable"):
+                        with contextlib.suppress(_Stop):
+                            await self._read_back(crm, accepted)
                     raise
                 # Every change of this call has used up its sends and failed: go on.
         return accepted
@@ -771,12 +862,18 @@ class CrmWriteHandler:
                 # so the others go through and the refusal names its own record.
                 accepted: list[_Write] = []
                 for write in call:
-                    await crm.reserve()
-                    accepted.extend(await self._call(crm, spec, [write]))
+                    try:
+                        await crm.reserve()
+                        accepted.extend(await self._call(crm, spec, [write]))
+                    except _Stop as stop:
+                        stop.accepted.extend(accepted)
+                        raise
                 return accepted
             if not result.successful:
                 await self._record(
-                    crm, call, {call[0].write_id: _failed(result.error or "Refused.")}
+                    crm,
+                    call,
+                    {call[0].write_id: _failed(result.error or "Refused.", _refusal_kind(result))},
                 )
                 return []
             items = spec.batch.split(result.data, arguments)
@@ -791,7 +888,8 @@ class CrmWriteHandler:
         result = await crm.execute(spec.slug, write.arguments)
         refused = _refused_inside(result.data) if result.successful else result.error or "Refused."
         if refused is not None:
-            await self._record(crm, call, {write.write_id: _failed(refused)})
+            kind = None if result.successful else _refusal_kind(result)
+            await self._record(crm, call, {write.write_id: _failed(refused, kind)})
             return []
         if write.kind not in _CREATES:
             return [write]
@@ -960,7 +1058,20 @@ class CrmWriteHandler:
             assert stop.error is not None
             await composio_refusal(self._conn_factory, stop.error, crm.connection)
             reason = f"the {crm.name} connection has expired or was revoked"
-            resumes = "once the person reconnects the CRM (call connect_crm to show them the card)"
+            resumes = (
+                "once this connection works again; if the person connects the CRM anew, these "
+                "changes are not sent and must be proposed again"
+            )
+        elif stop.kind == "auth":
+            # Clue's Composio key or the connected account is not accepted: a deployment fault
+            # or a deleted account, never a reason to fail the person's changes for good.
+            log.error(
+                "crm_write.composio_refused_connection",
+                connection_id=str(crm.connection.connection_id),
+                detail=stop.message,
+            )
+            reason = f"Clue could not use the {crm.name} connection ({stop.message})"
+            resumes = "once the connection works again (the next approved change retries it)"
         else:
             reason = stop.message
             resumes = f"when {crm.name}'s daily API allowance allows it again"
@@ -997,9 +1108,8 @@ class CrmWriteHandler:
 _NEXT_PROPOSAL = """
     SELECT p.proposal_id FROM crm_write_proposal p
     JOIN workspace_integration_connection c ON c.connection_id = p.connection_id
-    WHERE p.workspace_id = :ws AND p.status = ANY(:statuses)
-      AND (p.connection_id = :connection_id
-           OR (c.status = 'expired' AND c.provider = :provider))
+    WHERE p.connection_id = :connection_id AND c.status = 'active'
+      AND p.status = ANY(:statuses)
       AND p.proposal_id <> ALL(CAST(:exclude AS uuid[]))
     ORDER BY p.created_at, p.proposal_id
     LIMIT 1
@@ -1013,15 +1123,14 @@ async def _next_proposal(
     exclude: Sequence[UUID],
     statuses: Sequence[str] = _RESUMABLE,
 ) -> UUID | None:
-    """The oldest proposal this connection sends next: its own, or one an expired connection of
-    the same CRM paused (a reconnect makes a new connection row)."""
+    """The oldest proposal this connection sends next. Only its own, and only while it is
+    active: a proposal is never sent on another connection (a reconnect may be to another
+    portal or org — founder ruling, Task 6 review)."""
     value = await conn.scalar(
         text(_NEXT_PROPOSAL),
         {
-            "ws": connection.workspace_id,
             "statuses": list(statuses),
             "connection_id": connection.connection_id,
-            "provider": connection.provider,
             "exclude": list(exclude),
         },
     )
@@ -1031,23 +1140,9 @@ async def _next_proposal(
 async def _start_proposal(
     conn: AsyncConnection, connection: CrmConnection, proposal_id: UUID
 ) -> list[_Write]:
-    """Mark the proposal ``sending`` (taking it over from an expired connection when it was
-    paused there), skip the changes the person did not choose, queue the chosen ones, and load
-    those not yet decided in order."""
-    await conn.execute(
-        text(
-            "UPDATE crm_write_proposal SET connection_id = :connection_id "
-            "WHERE proposal_id = :id AND connection_id <> :connection_id"
-        ),
-        {"id": proposal_id, "connection_id": connection.connection_id},
-    )
-    await conn.execute(
-        text(
-            "UPDATE crm_write SET connection_id = :connection_id WHERE proposal_id = :id "
-            "AND status NOT IN ('succeeded', 'failed', 'skipped')"
-        ),
-        {"id": proposal_id, "connection_id": connection.connection_id},
-    )
+    """Mark the proposal ``sending``, skip the changes the person did not choose, queue the
+    chosen ones, and load those not yet decided in order. A change whose action is no longer
+    allowlisted fails here and the rest go on."""
     await set_proposal_status(conn, proposal_id=proposal_id, status="sending")
     await conn.execute(
         text(
@@ -1075,12 +1170,24 @@ async def _start_proposal(
         {"id": proposal_id},
     )
     writes = []
-    for row in rows:
+    for row in rows.all():
         spec = write_spec(connection.provider, row.slug)
-        if spec is None:  # the allowlist changed since the card: never send it
-            raise RuntimeError(f"crm_write {row.write_id}: {row.slug} is not allowlisted")
         arguments = json.loads(row.arguments)
-        parsed = spec.parse(arguments)
+        try:
+            if spec is None:
+                raise WriteNotParsable(row.slug)
+            parsed = spec.parse(arguments)
+        except WriteNotParsable:
+            # The allowlist changed since the card: never send it, and never block the queue.
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET status = 'failed', failure_kind = 'other', "
+                    "crm_message = :message, retryable = false, finished_at = now() "
+                    "WHERE write_id = :id"
+                ),
+                {"id": row.write_id, "message": NO_LONGER_ALLOWED_MESSAGE},
+            )
+            continue
         writes.append(
             _Write(
                 write_id=row.write_id,
@@ -1115,22 +1222,54 @@ def _chunks(writes: Sequence[_Write]) -> list[tuple[WriteActionSpec, list[_Write
     return chunks
 
 
-async def offer_resumable_crm_writes(
-    conn_factory: ConnFactory, queue: WorkQueue, connection: CrmConnection
-) -> bool:
-    """After a (re)connect: offer the connection's write executor when a proposal of this CRM
-    waits to be sent (one paused by the expired connection it replaces)."""
-    async with conn_factory() as conn:
-        waiting = await _next_proposal(conn, connection, exclude=())
-    if waiting is None:
-        return False
-    await queue.enqueue(
-        kind=FleetTaskKind.CRM_WRITE,
-        work_id=WorkId(connection.connection_id),
-        dedup_key=crm_write_dedup_key(connection.connection_id),
-        reopen_terminal=True,
+async def close_replaced_connection_proposals(
+    conn: AsyncConnection,
+    artifacts: DurableAgentArtifactStore | None,
+    *,
+    workspace_id: str,
+    active_connection_id: UUID,
+) -> list[UUID]:
+    """A new connection became active: the proposals other connections of the workspace still
+    had to send are closed, never sent on the new one (it may be another portal or org).
+
+    Every undecided change is ``skipped`` with ``failure_kind = 'connection_expired'`` — or
+    ``failed`` when it had been sent and could not be confirmed — the proposal is ``finished``,
+    and its chat is woken once to propose again. Writes only through ``conn``."""
+    rows = await conn.execute(
+        text(
+            "SELECT proposal_id FROM crm_write_proposal WHERE workspace_id = :ws "
+            "AND connection_id <> :active AND status IN ('queued', 'sending', 'paused') "
+            "ORDER BY created_at, proposal_id FOR UPDATE"
+        ),
+        {"ws": workspace_id, "active": active_connection_id},
     )
-    return True
+    closed = [UUID(str(row.proposal_id)) for row in rows.all()]
+    for proposal_id in closed:
+        await conn.execute(
+            text(
+                "UPDATE crm_write SET finished_at = now(), "
+                "status = CASE WHEN NOT selected THEN 'skipped' "
+                "WHEN attempts > 0 THEN 'failed' ELSE 'skipped' END, "
+                "failure_kind = CASE WHEN selected THEN 'connection_expired' END, "
+                "crm_message = CASE WHEN NOT selected THEN :not_chosen "
+                "WHEN attempts > 0 THEN :unconfirmed ELSE :reconnected END "
+                "WHERE proposal_id = :id AND status NOT IN ('succeeded', 'failed', 'skipped')"
+            ),
+            {
+                "id": proposal_id,
+                "not_chosen": NOT_CHOSEN_MESSAGE,
+                "unconfirmed": UNCONFIRMED_MESSAGE,
+                "reconnected": RECONNECTED_MESSAGE,
+            },
+        )
+        await set_proposal_status(conn, proposal_id=proposal_id, status="finished")
+        proposal = await get_proposal(conn, proposal_id=proposal_id)
+        assert proposal is not None
+        if artifacts is not None:
+            await queue_crm_writes_finished_turn(conn, artifacts, proposal=proposal)
+    if closed:
+        log.info("crm_write.closed_on_reconnect", proposals=len(closed))
+    return closed
 
 
 def build_crm_write_handler(

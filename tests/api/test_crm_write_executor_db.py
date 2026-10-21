@@ -34,12 +34,12 @@ from clue_api.crm.salesforce_budget import CrmBudgetExhausted
 from clue_api.crm.wake import queue_crm_writes_finished_turn
 from clue_api.crm.write_executor import (
     CrmWriteHandler,
+    close_replaced_connection_proposals,
     failure_kind,
-    offer_resumable_crm_writes,
 )
 from clue_api.crm.write_prepare import ProposedChange, prepare_changes
 from clue_config import Settings
-from clue_fleet import FleetTaskKind, WorkContext, WorkId, WorkResult
+from clue_fleet import WorkContext, WorkId, WorkResult
 from clue_storage import FsStorage
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_prepare_db import _FakeBudget, _FakeCrm
@@ -91,13 +91,24 @@ class _WritingCrm(_FakeCrm):
         return [call for call in self.calls if call[0] in _WRITE_SLUGS]
 
     async def execute(self, *, slug: str, arguments: Mapping[str, Any], **kwargs: Any) -> Any:
+        queued = self.failures.get(slug)
+        failure = queued.pop(0) if queued else None
         if slug not in _WRITE_SLUGS:
+            if isinstance(failure, ComposioError):
+                self.calls.append((slug, dict(arguments)))
+                raise failure
+            if isinstance(failure, ExecuteResult):
+                self.calls.append((slug, dict(arguments)))
+                return failure
+            if slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID" and str(arguments["objectId"]) not in (
+                self.records
+            ):
+                self.calls.append((slug, dict(arguments)))
+                return _NOT_FOUND
             return await super().execute(slug=slug, arguments=arguments, **kwargs)
         self.calls.append((slug, dict(arguments)))
         if self.on_write is not None:
             await self.on_write(slug, dict(arguments))
-        queued = self.failures.get(slug)
-        failure = queued.pop(0) if queued else None
         if isinstance(failure, ComposioError):
             raise failure
         if isinstance(failure, ExecuteResult):
@@ -108,6 +119,11 @@ class _WritingCrm(_FakeCrm):
         return ExecuteResult(True, {"data": answer}, None)
 
     def _write(self, slug: str, arguments: Mapping[str, Any]) -> Any:
+        if slug == "HUBSPOT_CREATE_CONTACT":
+            record_id = str(500 + len(self.records))
+            self.records[record_id] = dict(arguments)
+            # The created object, as the notes give it: {id, properties, createdAt, ...}.
+            return {"id": record_id, "properties": dict(arguments), "createdAt": "2026-10-22"}
         if slug in ("HUBSPOT_UPDATE_COMPANIES", "HUBSPOT_UPDATE_CONTACTS"):
             for item in arguments["inputs"]:
                 record = self.records.setdefault(str(item["id"]), {})
@@ -150,7 +166,21 @@ _WRITE_SLUGS = frozenset(
         "HUBSPOT_UPDATE_CONTACTS",
         "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
         "SALESFORCE_PATCH_COMPOSITE_SOBJECTS",
+        "HUBSPOT_CREATE_CONTACT",
     }
+)
+
+#: HubSpot's answer for a record that is not there (HTTP 404 inside a refused call).
+_NOT_FOUND = ExecuteResult(
+    False,
+    {"http_error": "404", "status_code": 404, "message": "Not Found"},
+    '{"status":"error","message":"resource not found","category":"OBJECT_NOT_FOUND"}',
+)
+_INVALID_OPTION = ExecuteResult(
+    False,
+    {"http_error": "400", "status_code": 400},
+    '{"status":"error","message":"Property values were not valid","errors":[{"code":'
+    '"INVALID_OPTION"}],"category":"VALIDATION_ERROR"}',
 )
 
 _HUBSPOT_DUPLICATE = (
@@ -268,6 +298,13 @@ async def _propose(
             {"id": proposal_id, "records": sorted(unselect)},
         )
     await writes.set_proposal_status(conn, proposal_id=proposal_id, status=status)
+    # One test transaction gives every row the same now(): order proposals as they were made.
+    await conn.execute(
+        text(
+            "UPDATE crm_write_proposal SET created_at = clock_timestamp() WHERE proposal_id = :id"
+        ),
+        {"id": proposal_id},
+    )
     return proposal_id
 
 
@@ -330,6 +367,14 @@ async def _reconnect(conn: Any, workspace_id: str) -> CrmConnection:
     )
     assert activated is not None
     return activated[0]
+
+
+async def _wake_message(conn: Any, tmp_path: Path, key: str) -> str:
+    artifact_key = await conn.scalar(
+        text("SELECT message_artifact_key FROM agent_turn_submission WHERE idempotency_key = :k"),
+        {"k": key},
+    )
+    return (await FsStorage(tmp_path / "wake-artifacts").get(artifact_key)).decode()
 
 
 async def _handle(handler: CrmWriteHandler, connection: CrmConnection) -> WorkResult:
@@ -526,6 +571,26 @@ def test_a_rate_limit_requeues_with_backoff_and_a_refusal_is_not_retried(tmp_pat
     _run(tmp_path, "ratelimit", body)
 
 
+async def _connection_status(conn: Any, connection: CrmConnection) -> str:
+    return str(
+        await conn.scalar(
+            text("SELECT status FROM workspace_integration_connection WHERE connection_id = :id"),
+            {"id": connection.connection_id},
+        )
+    )
+
+
+async def _reactivate(conn: Any, connection: CrmConnection) -> None:
+    """The same connection row works again (Composio refreshed the connected account)."""
+    await conn.execute(
+        text(
+            "UPDATE workspace_integration_connection SET status = 'active' "
+            "WHERE connection_id = :id"
+        ),
+        {"id": connection.connection_id},
+    )
+
+
 def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         expired = ComposioError("connection_expired", 410, "Connected account expired")
@@ -540,11 +605,7 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
         result = await _handle(_handler(conn, tmp_path, gateway), connection)
 
         assert result.outcome == "crm_connection_expired" and not result.requeue
-        status = await conn.scalar(
-            text("SELECT status FROM workspace_integration_connection WHERE connection_id = :id"),
-            {"id": connection.connection_id},
-        )
-        assert status == "expired"
+        assert await _connection_status(conn, connection) == "expired"
         assert await _proposal_status(conn, proposal_id) == "paused"
         logged = await _writes(conn, proposal_id)
         assert logged["101"]["status"] == "succeeded"
@@ -552,30 +613,14 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
         assert await _wake_messages(conn, seeded.workspace_id) == [
             f"crm-writes-paused:{proposal_id}:1"
         ]
+        # While the connection is expired its task sends nothing.
+        assert (await _handle(_handler(conn, tmp_path, gateway), connection)).outcome == (
+            "connection_not_active"
+        )
 
-        # The person reconnects (a new connection row): its task picks the paused proposal up.
-        reconnected = await _reconnect(conn, seeded.workspace_id)
-        assert reconnected.connection_id != connection.connection_id
-
-        class _Queue:
-            offers: list[dict[str, Any]] = []
-
-            async def enqueue(self, **kwargs: Any) -> bool:
-                self.offers.append(kwargs)
-                return True
-
-        queue = _Queue()
-        assert await offer_resumable_crm_writes(conn_session_factory(conn), queue, reconnected)  # type: ignore[arg-type]
-        assert queue.offers == [
-            {
-                "kind": FleetTaskKind.CRM_WRITE,
-                "work_id": reconnected.connection_id,
-                "dedup_key": f"crm-write:{reconnected.connection_id}",
-                "reopen_terminal": True,
-            }
-        ]
-
-        result = await _handle(_handler(conn, tmp_path, gateway), reconnected)
+        # The same connection works again: its task picks the paused proposal up, in order.
+        await _reactivate(conn, connection)
+        result = await _handle(_handler(conn, tmp_path, gateway), connection)
 
         assert result.outcome == "done"
         logged = await _writes(conn, proposal_id)
@@ -586,17 +631,288 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
             "HUBSPOT_UPDATE_CONTACTS",
         ]
         assert await _proposal_status(conn, proposal_id) == "finished"
-        owner = await conn.scalar(
-            text("SELECT connection_id FROM crm_write_proposal WHERE proposal_id = :id"),
-            {"id": proposal_id},
-        )
-        assert owner == reconnected.connection_id
         assert await _wake_messages(conn, seeded.workspace_id) == [
             f"crm-writes-finished:{proposal_id}",
             f"crm-writes-paused:{proposal_id}:1",
         ]
 
     _run(tmp_path, "expired", body)
+
+
+def test_a_paused_proposal_is_never_sent_on_a_different_connection(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        expired = ComposioError("connection_expired", 410, "Connected account expired")
+        gateway = _WritingCrm(
+            records={"101": {"icp_tier": None}, "201": {"jobtitle": None}, "202": {}},
+            failures={"HUBSPOT_UPDATE_CONTACTS": [expired]},
+        )
+        paused = await _propose(
+            conn, seeded, connection, gateway, _tier("101", "Tier 1"), _title("201", "CFO")
+        )
+        queued = await _propose(conn, seeded, connection, gateway, _title("202", "CTO"))
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        assert await _proposal_status(conn, paused) == "paused"
+        sent = len(gateway.writes)
+
+        # The person connects again: a new connection row, maybe another portal. The connect
+        # callback closes what the old connection had not sent.
+        reconnected = await _reconnect(conn, seeded.workspace_id)
+        artifacts = DurableAgentArtifactStore(
+            storage=FsStorage(tmp_path / "wake-artifacts"), conn_factory=conn_session_factory(conn)
+        )
+        closed = await close_replaced_connection_proposals(
+            conn,
+            artifacts,
+            workspace_id=seeded.workspace_id,
+            active_connection_id=reconnected.connection_id,
+        )
+        assert set(closed) == {paused, queued}
+
+        result = await _handle(_handler(conn, tmp_path, gateway), reconnected)
+
+        assert result.references == {"proposals": 0}
+        assert len(gateway.writes) == sent  # nothing was sent on the new connection
+        for proposal_id, record in ((paused, "201"), (queued, "202")):
+            assert await _proposal_status(conn, proposal_id) == "finished"
+            change = (await _writes(conn, proposal_id))[record]
+            assert change["status"] == "skipped"
+            assert change["failure_kind"] == "connection_expired"
+            assert change["crm_message"] == (
+                "The CRM was reconnected or switched, so this was not sent; propose again."
+            )
+        assert (await _writes(conn, paused))["101"]["status"] == "succeeded"
+        assert await _wake_messages(conn, seeded.workspace_id) == sorted(
+            [
+                f"crm-writes-finished:{paused}",
+                f"crm-writes-finished:{queued}",
+                f"crm-writes-paused:{paused}:1",
+            ]
+        )
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{paused}")
+        assert message == (
+            "The CRM changes are finished: 1 done, 0 failed, 1 skipped — read the details with "
+            f"crm_write_log(proposal_id={paused}). 1 were not sent (or not confirmed) because the "
+            "CRM was reconnected or switched: they must be proposed again."
+        )
+        # Closing again finds nothing and wakes nobody twice.
+        assert not await close_replaced_connection_proposals(
+            conn,
+            artifacts,
+            workspace_id=seeded.workspace_id,
+            active_connection_id=reconnected.connection_id,
+        )
+
+    _run(tmp_path, "switched", body)
+
+
+def test_changes_the_crm_accepted_before_a_stop_keep_their_real_outcome(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        # The batch is refused whole, so each change is sent alone; the second meets the stop.
+        expired = ComposioError("connection_expired", 410, "Connected account expired")
+        gateway = _WritingCrm(
+            records={"101": {"icp_tier": None}, "102": {"icp_tier": None}},
+            failures={"HUBSPOT_UPDATE_COMPANIES": [_INVALID_OPTION, None, expired]},
+        )
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _tier("101", "Tier 1"), _tier("102", "Tier 2")
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        # 101 landed: its send is kept, so it is never taken for "already held, nothing sent".
+        assert (logged["101"]["status"], logged["101"]["attempts"]) == ("queued", 1)
+        assert (logged["102"]["status"], logged["102"]["attempts"]) == ("queued", 0)
+
+        await _reactivate(conn, connection)
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == logged["102"]["status"] == "succeeded"
+        assert logged["101"]["attempts"] == 1  # not sent again
+
+        # A rate limit instead: the change already accepted is read back at once.
+        limited = ComposioError("rate_limited", 429, "Too many requests")
+        gateway.records.update({"103": {"icp_tier": None}, "104": {"icp_tier": None}})
+        later = await _propose(
+            conn, seeded, connection, gateway, _tier("103", "Tier 1"), _tier("104", "Tier 2")
+        )
+        gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [_INVALID_OPTION, None, limited]
+        result = await _handle(_handler(conn, tmp_path, gateway), connection)
+        assert result.requeue
+        logged = await _writes(conn, later)
+        assert logged["103"]["status"] == "succeeded"
+        assert (logged["104"]["status"], logged["104"]["attempts"]) == ("queued", 1)
+
+    _run(tmp_path, "fallback", body)
+
+
+def test_a_rate_limited_read_counts_as_an_attempt(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
+        limited = ComposioError("rate_limited", 429, "Too many requests")
+        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [limited, limited, limited]
+        handler = _handler(conn, tmp_path, gateway, crm_write_max_attempts=3)
+
+        first = await _handle(handler, connection)
+        second = await _handle(handler, connection)
+        assert (first.requeue_after, second.requeue_after) == (
+            timedelta(seconds=30),
+            timedelta(seconds=60),
+        )
+        third = await _handle(handler, connection)
+
+        assert not third.requeue
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["failure_kind"], change["retryable"]) == (
+            "failed",
+            "rate_limited",
+            True,
+        )
+        assert change["attempts"] == 3
+        assert gateway.writes == []
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "readlimit", body)
+
+
+def test_a_refused_connection_pauses_and_a_missing_record_fails_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}, "102": {"icp_tier": None}})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _tier("101", "Tier 1"), _tier("102", "Tier 2")
+        )
+        # Clue's Composio key is refused (401): nothing fails for good, the proposal pauses.
+        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [
+            ComposioError("auth", 401, "Invalid API key")
+        ]
+        result = await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert result.outcome == "crm_auth" and not result.requeue
+        assert await _proposal_status(conn, proposal_id) == "paused"
+        assert {c["status"] for c in (await _writes(conn, proposal_id)).values()} == {"queued"}
+        assert await _connection_status(conn, connection) == "active"
+        assert await _wake_messages(conn, seeded.workspace_id) == [
+            f"crm-writes-paused:{proposal_id}:0"
+        ]
+
+        # The key works again; meanwhile record 102 was deleted in the CRM (its read is a 404).
+        del gateway.records["102"]
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == "succeeded"
+        assert (logged["102"]["status"], logged["102"]["failure_kind"]) == ("failed", "not_found")
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "auth", body)
+
+
+def test_a_change_no_longer_allowed_fails_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}, "102": {"icp_tier": None}})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _tier("101", "Tier 1"), _tier("102", "Tier 2")
+        )
+        gateway.records["201"] = {"jobtitle": None}
+        later = await _propose(conn, seeded, connection, gateway, _title("201", "CFO"))
+        # The allowlist changed between the card and the send.
+        await conn.execute(
+            text(
+                "UPDATE crm_write SET slug = 'HUBSPOT_MERGE_COMPANIES' "
+                "WHERE proposal_id = :id AND record_ref = '102'"
+            ),
+            {"id": proposal_id},
+        )
+
+        result = await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert result.outcome == "done"
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == "succeeded"
+        assert (logged["102"]["status"], logged["102"]["failure_kind"]) == ("failed", "other")
+        assert logged["102"]["crm_message"] == (
+            "This action is no longer allowed, so it was not sent."
+        )
+        assert (await _writes(conn, later))["201"]["status"] == "succeeded"
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "disallowed", body)
+
+
+def _create(email: str) -> ProposedChange:
+    return ProposedChange(
+        slug="HUBSPOT_CREATE_CONTACT",
+        arguments={"email": email, "firstname": "Ana"},
+        reason="A buying-committee member Clue found.",
+    )
+
+
+async def _created(conn: Any, proposal_id: UUID) -> dict[str, Any]:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT status, failure_kind, crm_message, crm_id, attempts, write_id "
+                "FROM crm_write WHERE proposal_id = :id"
+            ),
+            {"id": proposal_id},
+        )
+    ).one()
+    return dict(row._mapping)
+
+
+def test_a_create_stores_its_id_and_is_linked_as_created_by_clue(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create("ana@new.co"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["crm_id"]) == ("succeeded", "500")
+        assert gateway.records["500"]["email"] == "ana@new.co"
+        link = (
+            await conn.execute(
+                text(
+                    "SELECT crm_object, created_by_clue, created_by_write_id FROM crm_record_link "
+                    "WHERE connection_id = :c AND crm_id = '500'"
+                ),
+                {"c": connection.connection_id},
+            )
+        ).one()
+        assert (link.crm_object, link.created_by_clue) == ("contact", True)
+        assert link.created_by_write_id == change["write_id"]
+        # The create was looked for first (R-7.1), then read back by the id the CRM gave.
+        assert [slug for slug, _ in gateway.calls] == [
+            "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
+            "HUBSPOT_CREATE_CONTACT",
+            "HUBSPOT_READ_CRM_OBJECT_BY_ID",
+        ]
+
+    _run(tmp_path, "create", body)
+
+
+def test_a_create_is_never_made_twice(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        # The worker dies right after the CRM created the contact, before its id was stored.
+        gateway = _WritingCrm(records={}, failures={"HUBSPOT_CREATE_CONTACT": ["crash"]})
+        crashed = await _propose(conn, seeded, connection, gateway, _create("ana@new.co"))
+        with pytest.raises(RuntimeError):
+            await _handle(_handler(conn, tmp_path, gateway), connection)
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, crashed)
+        assert (change["status"], change["failure_kind"]) == ("skipped", "conflict")
+        assert "(500)" in change["crm_message"]
+        # Someone created the record between the card and the send: it is not created again.
+        racing = await _propose(conn, seeded, connection, gateway, _create("bo@new.co"))
+        gateway.records["777"] = {"email": "bo@new.co"}
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        change = await _created(conn, racing)
+        assert (change["status"], change["failure_kind"]) == ("skipped", "conflict")
+        assert "(777)" in change["crm_message"]
+        assert [slug for slug, _ in gateway.writes] == ["HUBSPOT_CREATE_CONTACT"]
+
+    _run(tmp_path, "createonce", body)
 
 
 def test_a_finished_proposal_wakes_its_chat_once(tmp_path: Path) -> None:
