@@ -1,398 +1,782 @@
 # Machine-independent agent workspace — design (F3)
 
-**Status:** draft for founder review, 2026-10-21. Branch `feat/agent-workspace-durability`
+**Status:** draft v2 for founder review, 2026-10-22. Branch `feat/agent-workspace-durability`
 (dushanbe), stacked on `feat/crm-integration`.
-**Authority:** rulings AW-1–AW-8 in [`rulings.md`](rulings.md). Evidence:
+**Built from:** the founder's F3 discussion of 2026-10-21, the rulings AW-1–AW-8 in
+[`rulings.md`](rulings.md), the roadmap agreed the same day (Phases 0–3), and the evidence in
 [`2026-10-21-workspace-footprint-findings.md`](2026-10-21-workspace-footprint-findings.md).
-**Scope:** every agent that runs in a platform thread workspace — Head of ABM chats, ARV2 research
-runs (and their reconciliation step), delegated specialists, account-research turns and onboarding
-synthesis. Design ad/web sessions get a separate, shorter follow-up spec (AW-5).
+**Covers:** every agent that works in a platform thread folder: Head of ABM chats, ARV2 research
+runs (including their reconciliation step), delegated sub-agents, account-research turns and
+onboarding synthesis. Design ad and web sessions get their own short follow-up spec (AW-5).
 
-Requirement ids (`WS-n`) are stable so plans, tests and reviews can cite them. Where this document
-says *builder's call*, any sensible choice that meets the stated requirement is fine. Decisions
-made by Claude rather than the founder are marked **(Claude's call)** so they can be checked.
+---
+
+## 0. How to read this spec
+
+**This one spec covers all three build phases.** It is Phase 0 of the roadmap: the agreed text
+that every phase is built from. Each build phase then gets its own implementation plan, written
+when that phase starts. The shared definitions (the snapshot, the save rules) live here once, so
+the phases cannot drift apart.
+
+| Section | What it tells you |
+|---|---|
+| §1 Why | the problem, in plain words |
+| §2 What you asked for | every requirement from our discussion, and where this spec meets it |
+| §3 The phases | what each phase builds, what it delivers on its own, how we know it is done |
+| §4 Decisions I need from you | every place where this spec goes beyond or differs from what we discussed, with my recommendation |
+| §5–§6 | how things work today, and the design in one picture |
+| §7–§9 | the requirements of Phase 1, Phase 2 and Phase 3, each in its own section |
+| §10–§11 | what a person experiences when things fail, and the tests |
+| §12–§14 | notes for the builder, what is left to the builder, change log |
+
+**Labels used throughout**
+- **[P1] [P2] [P3]**: the phase a requirement is built in.
+- **WS-n**: a requirement's id. Plans, tests and reviews cite these ids.
+- **Ruling AW-n**: a founder decision recorded in `rulings.md`.
+- **Your words**: something the founder said in the discussion, quoted.
+- **Claude's call**: a choice Claude made that the founder has not confirmed yet. Every one is
+  listed in §4.
+- **Builder's call**: any sensible choice that meets the requirement is fine.
+
+**Words used in this spec**
+
+| Word | Meaning |
+|---|---|
+| thread folder | a chat's folder on a worker's disk: `<root>/<ws>/projects/<p>/threads/<t>/` |
+| recipe folders | `.deepagent/ inputs/ context/` plus the mounted `brand/ project/ attachments/`. Rebuilt every turn from database pins, as today |
+| agent folders | `scratch/ reads/ work/ outputs/`: the files the agent makes or reads for itself. **These are what this spec makes durable** |
+| snapshot | one saved version of a chat's agent folders: a file list in R2 plus the stored files it names |
+| version record | one row per chat in Postgres naming the chat's current snapshot version (technical name: pointer row) |
+| file list | the JSON document describing one snapshot version (technical name: manifest) |
+| stored file | one file's bytes in R2, stored once under its content hash (technical name: blob) |
+| local version note | a small file on the worker that says which snapshot version its copy of the folder holds (technical name: marker) |
+| restore | at turn start, making the worker's copy of the agent folders equal to the current snapshot |
+| save | at turn end, storing the agent folders as a new snapshot version |
+| cache | the worker's copy of a thread folder. Deleting it never loses anything |
+| receipt | a short record of a raw read that stays after the read's bytes expire: what it was, when, how many records, its hash, how to read it again |
 
 ---
 
 ## 1. Why
 
-Every chat thread's agent has a folder on one machine's disk. Four of its subfolders hold what the
-agent made or read for itself — `scratch/` (its notebook), `outputs/` (deliverables), `reads/` (CRM
-reads and large tool results), `work/` (compaction history and in-turn files). Nothing copies them
-anywhere: the next turn simply reopens the folder on the same disk. So:
+Every chat has a folder on one machine's disk. Four of its subfolders hold what the agent made or
+read for itself:
 
-- A turn that runs on another machine (a second worker, autoscaling, a VM replacement) loses the
-  agent's notes, drafts and reads, while its conversation — durable in Postgres — still refers to
-  them (CRM trial 1, F3; findings §1).
-- The folders are deleted 24 hours after a chat goes quiet, so a chat resumed the next day has
-  lost them too; and the cleanup has gaps and a crash bug, leaving residue on disk (findings §1).
-- Locks and registries assume one machine (`flock`, in-memory maps).
+| Folder | What is in it |
+|---|---|
+| `scratch/` | the agent's notebook |
+| `outputs/` | its deliverables (analysis tables, drafts) |
+| `reads/` | CRM reads and large tool results |
+| `work/` | conversation offloads from compaction, and files made during a turn |
 
-The founder wants (2026-10-21): any chat — new or a year old — to find the same workspace when it
-is continued, on whichever machine picks it up; the copy on the machine to stay only while it is
-useful and then disappear without residue; and none of this to make the product feel slower.
+Nothing copies these folders anywhere. The next turn simply reopens the folder on the same disk.
+That causes three problems.
 
-## 2. Goals, non-goals, anti-goals
+- **Another machine cannot continue the chat.** A turn that runs on a second worker, after
+  autoscaling or after a VM replacement, loses the agent's notes, drafts and reads. Its
+  conversation, which is durable in Postgres, still refers to them (CRM trial 1, finding F3).
+- **The files vanish after a day, and residue stays behind.** The folders are deleted 24 hours
+  after a chat goes quiet, so a chat continued the next day has lost them too. The cleanup job also
+  has gaps and a crash bug, and leaves leftovers on disk (findings §1).
+- **Safety depends on one machine.** File locks and in-memory registries only work inside one
+  machine or one process.
 
-**Goals**
-1. **Any machine can continue any chat** with the same files the agent left (within the retention
-   tiers), with no dependency on which machine ran the previous turn.
-2. **A worker's disk holds only a cache**: deleting it at any time loses nothing; idle copies are
-   removed automatically; a fresh machine starts empty and fills itself on demand.
-3. **Honest memory**: the agent always knows what files it has from earlier, how old they are, and
-   what has expired and how to read it again (AW-2, AW-4).
-4. **No user-visible slowdown**: a turn on the machine that holds the current copy costs one
-   database read; a cold restore of a typical chat costs well under a second.
-5. **One place to erase**: deleting a chat or a privacy erasure removes its rows and blobs; no
-   machine has to be visited.
+What the founder asked for, in their words (2026-10-21): *"any chat thread's workspace whether its
+an year old one or a new one, is assembled, when the user continues a chat in it, stays for
+sometime, but then also removed, with no remaining residual footprints, but then when its continued
+again in another vm instance (think from pov of autoscaling), it has the same agent workspace and
+environment, as if nothing ever changed."*
 
-**Non-goals (this spec)**
-- Design ad/web/site sessions (`LUMEN_AGENT_WORKSPACE_ROOT`) — follow-up spec.
-- The checkpoint growth (each turn copies the whole conversation into its own checkpoint, findings
-  §2) — a separate item; nothing here makes it worse.
-- A retention policy for chats themselves (there is none; work products follow whatever is adopted
-  later — AW-2).
-- Moving `run_python` to a hosted sandbox; routing a chat to the machine that last ran it.
-- F11 (`.py` files refused in the sandbox) — owned by the CRM lane.
+How other products do it (researched 2026-10-21: Claude Code cloud, Codex cloud, Cursor cloud
+agents, Devin, E2B, the Anthropic and OpenAI code-execution containers): no machine owns anything.
+The environment is rebuilt from a recipe, durable state lives off the machine with a record saying
+which version is current, and the local disk is a cache that can be deleted at any time. This spec
+applies that to the one piece we are missing: the agent's own files.
 
-**Anti-goals** (failure even if it "works")
+---
+
+## 2. What you asked for, and where this spec meets it
+
+Every requirement from the discussion and the rulings, with the phase and the requirements that
+meet it. The **Status** column says whether the spec meets it as discussed, or differs (then §4 has
+the decision).
+
+| # | What you asked for | Source | Met by | Phase | Status |
+|---|---|---|---|---|---|
+| D-1 | Any chat, new or a year old, continued on any machine, finds the same files the agent left | your words; AW-1 | WS-1–WS-11 | P1 | as discussed |
+| D-2 | The copy on a machine stays only while useful, then is removed with no residue | your words; AW-1 | WS-15–WS-17 | P1 | **differs in one detail: Q1** |
+| D-3 | A chat's workspace = its recipe + one versioned snapshot in R2 with its version record in Postgres + its conversation; the disk is only a cache | AW-1 | WS-1–WS-3, WS-6 | P1 | as discussed |
+| D-4 | A new version is written only if the previous one is still current (the design site-turn check) | AW-1 | WS-8 | P1 | as discussed |
+| D-5 | Restore only when the local copy is not that exact version (compare versions, not "is the folder there") | roadmap P1 | WS-6 | P1 | as discussed |
+| D-6 | Upload only changed files | roadmap P1 | WS-3, WS-8 | P1 | as discussed |
+| D-7 | `outputs/` is never emptied again | roadmap P1; AW-6 (stopgap) | WS-4 | P1 | as discussed |
+| D-8 | Turn start takes a database lease, replacing file locks and in-memory maps | roadmap P1 | WS-13 | P1 | **differs: Q2** |
+| D-9 | Replace today's cleanup job, its crash bug and its gap for chats waiting on an answer | roadmap P1 | WS-15–WS-17 | P1 | as discussed |
+| D-10 | `run_python` and CRM reads keep working unchanged | roadmap P1 | WS-6, WS-14 | P1 | as discussed |
+| D-11 | Absorb the CRM reads registry (`CrmReadSinks`); no new in-memory path registries | AW-8.2 | WS-14 | P1 | as discussed |
+| D-12 | A resumed chat runs on the current profile and skills, keeping its own files and conversation | AW-3 | WS-18 | P1 | as discussed (already true today; kept true and tested) |
+| D-13 | Not slower for the person | your words: *"i hope of all of this will not make our experience very slow for the user right?"* | WS-19, WS-20 | P1 | **differs: Q3** |
+| D-14 | Production-grade robustness: no half-written snapshots, no silent overwrites, integrity checks, safe retries, nothing left behind, one place to erase, proven by tests | your words: *"production grade robustness and efficiency"*; my 7 properties of 2026-10-21 | see §2.1 | P1–P3 | as discussed |
+| D-15 | Existing chats are not migrated; a chat's current folder becomes its first snapshot | AW-5 | WS-22 | P1 | as discussed |
+| D-16 | Rollout behind a flag | roadmap P3 | WS-21 | P1 (flag), P3 (rollout) | as discussed; the flag must exist from the first code (env parity rule) |
+| D-17 | Which folder belongs to which tier | roadmap P0 | WS-4, WS-5, WS-23 | P1 (folders), P2 (tiers) | **differs in one detail: Q5** |
+| D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | as discussed |
+| D-19 | Raw inputs (CRM reads, large tool results, conversation offloads) deleted 48 hours after the chat's last activity | AW-2; your words: *"48 hours after the long activity i think is good enough"* | WS-23, WS-24, WS-26 | P2 | as discussed |
+| D-20 | A receipt for every raw input, kept for the chat's lifetime: what, when, how many records, content hash, how to read it again | AW-2 | WS-25 | P2 | as discussed |
+| D-21 | The agent is told at turn start what files exist from earlier, how old they are, and what has expired | roadmap P0/P2; my proposal of 2026-10-21 | WS-28 | P2 | as discussed |
+| D-22 | The agent checks how old its numbers and source data are before relying on them after a gap, decides itself whether to read again, and need not tell the person | AW-4; your words: *"the agent need not explicitly state the user, but yes it must check the staleness of its numbers"* | WS-29 | P2 | as discussed |
+| D-23 | Your case: the agent did an analysis, the chat sat idle a week, the input files are gone, but the agent's state says "done". It must not build on files that are gone without knowing | your words (2026-10-21) | WS-25, WS-28, WS-29 | P2 | as discussed |
+| D-24 | Privacy erasure covers snapshots | roadmap P2 | WS-31 | P2 | **timing differs: Q7** |
+| D-25 | Stored files that no snapshot points to anymore are deleted | roadmap P2 | WS-30 | P2 | as discussed |
+| D-26 | Skill and manual text reviewed by you before it is written | standing rule; roadmap P0 | WS-29, WS-32 | P2 | as discussed |
+| D-27 | Research runs: their reconciliation step reads the source run's snapshot, not local disk | roadmap P3 | WS-33 | P3 | as discussed |
+| D-28 | Delegated sub-agents get the same mechanism | roadmap P3 | WS-12, WS-34 | P1 (mechanism), P3 (checked) | as discussed |
+| D-29 | Stage-0 trial workspaces get the same mechanism | roadmap P3 | WS-12 | — | **differs: Q8** |
+| D-30 | Robustness tests: kill a worker mid-turn, two workers on one chat, restore on a clean machine | roadmap P3 | §11 | P1 (basic), P3 (full) | **timing differs: Q9** |
+| D-31 | A live measurement of restore time | roadmap P3; my caveat "we should measure it, not assume it" | WS-20, §11 | P1 (first), P3 (final) | as discussed |
+| D-32 | One comprehensive spec for chats and research runs; design ad and web sessions in a short follow-up spec | AW-5; your words: *"well defined and very comprehensive"* | this document; §2.2 | P0 | as discussed |
+| D-33 | Other lanes follow AW-8 meanwhile, and F3 must not hinder CRM Phases 2 and 3 | AW-8; your words | WS-14, §12 | all | as discussed |
+
+### 2.1 The seven production-grade properties
+
+These are the seven properties I promised on 2026-10-21. Each one maps to requirements and tests.
+
+| Property | Requirements | Tests (§11) |
+|---|---|---|
+| No half-written snapshots: files are stored before the version record moves | WS-8 | 3 |
+| No silent overwrites: a version is written only if the previous one is still current | WS-8, WS-10 | 4 |
+| Integrity: every restored file is checked against its hash | WS-6 | 1, 9 |
+| Safe retries: save and restore can be repeated after a crash | WS-11 | 3 |
+| Nothing left behind: disk is a cache; stored files nothing points to are deleted | WS-15–WS-17, WS-30 | 6, 8 |
+| One place to erase | WS-31 | 7 |
+| Proven, not assumed: kill mid-turn, two workers, clean machine, live timing, flag | WS-20, WS-21, WS-35, §11 | all |
+
+### 2.2 Not in this spec
+
+- **Design ad, web and site sessions.** These use a different folder (`LUMEN_AGENT_WORKSPACE_ROOT`)
+  and are covered by the follow-up spec (AW-5). It will move them from "restore when missing" to
+  the version check that site turns already use, and clean up their logs and asset cache.
+- **The checkpoint growth.** Each turn copies the whole conversation into its own checkpoint
+  (findings §2). This is a separate item, and nothing here makes it worse.
+- **A retention policy for chats themselves.** There is none today. Work products follow whatever
+  policy is adopted later (AW-2).
+- **A hosted sandbox for `run_python`.** It keeps using each worker's own Docker, since the files
+  are local again after a restore.
+- **F11** (`.py` files refused in the sandbox) is owned by the CRM lane.
+
+### 2.3 Failures even if it "works"
+
 - A turn silently runs with an empty or stale workspace when its real files exist.
-- The agent tells the person something is done, or quotes numbers, from files that are gone, without
-  knowing they are gone.
+- The agent tells the person something is done, or quotes numbers, from files that are gone,
+  without knowing they are gone.
 - Two workers' saves interleave and corrupt a chat's files.
 - A noticeably slower first reply, or a turn that fails because a cache was cleaned.
-- Erased personal data survives in a snapshot, a cache folder or a forgotten blob.
+- Erased personal data survives in a snapshot, a cache folder or a forgotten stored file.
 
-## 3. Current state (what this changes)
+---
 
-Facts below are from the code on this branch; file references are for the builder.
+## 3. The phases
+
+| Phase | What it builds | What it delivers on its own | Requirements | Done when |
+|---|---|---|---|---|
+| **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
+| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22 | §11 tests 1–4, 6, 8, 10, 11 pass; the first live check passes with timings recorded |
+| **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting stored files nothing points to | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
+| **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
+| **Follow-up spec** | design ad and web sessions | — | separate document | — |
+
+**Release rule (Claude's call, Q7):** P1 can be built, merged into the branch and tested on its
+own. **It does not reach production without P2.** P1 alone would keep raw CRM records in R2 with no
+expiry and outside privacy erasure, which is worse than today's 24 hours on one disk.
+
+**Size (estimate from 2026-10-21):** three plans, each the size of F2 or a bit larger. Phase 1 is
+the biggest: about two F2s.
+
+---
+
+## 4. Decisions I need from you
+
+Each item below is a place where this spec differs from what we discussed, or settles something
+we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
+phase starts, but P1's plan needs Q1–Q6.
+
+**Q1. Cleaning the cache when a worker starts** [P1] *(differs from AW-1)*
+- **AW-1 says:** the cache is emptied when a chat goes idle *and when the worker starts*.
+- **The problem:** on our VM, every worker container shares one disk (`/srv/clue/workspaces`). A
+  worker that restarts and empties the whole cache would delete folders that other workers are
+  using mid-turn.
+- **My recommendation:** at start-up, a worker deletes every cached folder that is not in use right
+  now, checked in Postgres. On a new machine this deletes everything, so it has the same result as
+  AW-1. On a shared disk it skips only folders with a live turn.
+
+**Q2. The lease** [P1] *(differs from the roadmap)*
+- **The roadmap said:** take a database lease at turn start, replacing file locks and in-memory
+  maps.
+- **What already exists:** the fleet already holds a database lease for every chat turn
+  (`work_lease`). Its generation number goes up on every takeover, and Postgres already allows only
+  one turn per chat.
+- **My recommendation:** don't add a second lease. Every save checks the existing lease's
+  generation, and the version check catches the rest. File locks and in-memory maps stay only as
+  same-machine guards, and nothing relies on them for safety across machines (WS-13).
+
+**Q3. Speed measures I mentioned but this spec does not build** [P1] *(differs from what I said)*
+- **On 2026-10-21 I listed three things that keep it fast:**
+  1. send a chat's next turn to the machine that ran its last one;
+  2. start restoring files when the person opens the chat;
+  3. don't copy what is already stored.
+- **My recommendation:** build none of the first two now. Today all workers share one VM's disk,
+  so every turn already finds a warm copy. A cold restore of a typical chat is targeted at under 1
+  second, against a model call of 15–25 seconds. Phase 1's live check measures it (WS-20). If it
+  misses the target, we add early restore first, then routing. The third point is Q4.
+
+**Q4. CRM reads are copied into the snapshot, not pointed to** [P1] *(differs from what I said)*
+- **I said:** CRM reads and large tool results are already stored, so the snapshot can point to
+  them.
+- **That is only half true.** Large tool results are stored in full (`result_ref`). CRM reads are
+  not: only their action, parameters, time and record count are stored. The raw records exist only
+  in `reads/`.
+- **My recommendation:** the snapshot stores CRM reads as files, and they expire after 48 hours as
+  raw inputs (WS-23). A large tool result may instead be rebuilt from its stored copy, at the
+  builder's choice (WS-27).
+
+**Q5. `work/` becomes per turn** [P1] *(not discussed)*
+- **The change:** `work/` is emptied at every turn start, except its two compaction folders
+  (`work/conversation_history/`, `work/large_tool_results/`), which are saved as raw inputs.
+- **Why:** the agent's own manual already describes `work/` as the turn's scratch space ("Nothing
+  is persisted from it"). Today its files only happen to survive on the same machine.
+- **The alternative:** save all of `work/` as a work product. That is simpler to explain to the
+  agent, but it keeps in-turn scratch files for the chat's lifetime.
+
+**Q6. A save that cannot reach storage fails the turn** [P1] *(not discussed)*
+- **What happens:** the save is retried. If it still fails, the turn fails and the fleet retries
+  it. This matches what happens today when `outputs/` cannot be saved.
+- **The alternative:** finish the turn without its files saved. That is faster for the person in
+  that moment, but the next turn on another machine would silently miss the files, which is one of
+  the §2.3 failures.
+
+**Q7. Erasure timing and the release rule** [P2]
+- **The roadmap put erasure in Phase 2.** I kept it there, with the release rule in §3: P1 does
+  not reach production without P2.
+- **The alternative:** move erasure into P1, so that P1 can ship alone. It would still keep raw
+  reads without expiry until P2.
+
+**Q8. Stage-0 trial workspaces stay local only** [—] *(differs from the roadmap's P3)*
+- **What they are:** they come from a developer-only command (`stage0-trial`) whose folder lives in
+  `/tmp`. They are never part of a customer chat.
+- **My recommendation:** leave them out. They keep today's local-only behaviour (WS-12).
+
+**Q9. Some robustness tests move to Phase 1** [P1, P3] *(timing differs from the roadmap)*
+- **The roadmap put all robustness tests in Phase 3.**
+- **Why move some:** Phase 1 claims "any machine can continue any chat", and that claim needs
+  proof before it is merged.
+- **My recommendation:** Phase 1 includes the two-machine, kill-mid-turn and zombie-save tests
+  (§11, tests 1–4). Phase 3 adds the clean-machine restore, research reconciliation and the final
+  live measurement.
+
+**Q10. Default values** [P1, P2]
+- **Raw-input window: 48 hours.** This is your ruling (AW-2).
+- **Proposed by me:** a cache folder is removed after 30 minutes idle; the cache is capped at
+  10 GiB per machine; the expiry job runs hourly.
+
+**Q11. Should the person ever see or download these files?** [—] *(not discussed)*
+- **My recommendation:** keep it out of scope for now. The snapshot makes it easy to add later.
+
+---
+
+## 5. Today (what this changes)
+
+From the code on this branch. File references are for the builder.
 
 | Piece | Today | Reference |
 |---|---|---|
-| Thread folder | `<root>/<ws>/projects/<p>/threads/<t>/` with exactly `.deepagent inputs context scratch reads work outputs`; top level audited | `platform/agents/clue_agents/workspace.py:105,1808-1846` |
-| Recipe folders | `.deepagent/ inputs/ context/` rebuilt and frozen every turn from pins; brand/project/attachments mounted from shared libraries | `workspace.py:1021-1037`, `resources.py:251-330`, `agent_turn_fleet_wiring.py:657-798` |
-| Agent folders | `scratch/ reads/ work/ outputs/` left on disk between turns; `outputs/` snapshotted to artifacts and (since `f799a9830`) kept | `workspace.py:1209-1262` |
-| Lease | `AgentWorkspaceFactory.acquire/create/release`; in-memory `_active` per factory; `flock` on root and thread descriptors | `workspace.py:1434-1806,1482-1491,515-524` |
-| One turn per thread | enforced in Postgres: advisory lock + one queued/claimed task; fleet `work_lease` per thread with a generation that increases on every takeover | `agent_turn_submission.py:693-794`, `platform/fleet/clue_fleet/lease.py` |
-| Cleanup | hourly job purges a thread folder 24 h after its newest turn ended; skips `awaiting_input`; receipt id collides on a second purge | `platform/api/clue_api/agent_cleanup.py` |
-| Artifact store | content-addressed `ws/sha256` blobs in R2 with an `artifact` row; `retain_artifact`/`release_artifacts` per owner; 48 h sweep purges expired/erased/orphan blobs | `libs/clue-storage/clue_storage/artifacts.py` |
-| Versioned-folder precedent | design site turns: pointer row `(workspace, document) → (version, manifest_sha256)`, compare-and-set update, local marker, restore-if-stale | `clue_design/sessions.py:122-157`, `lumen_api/main.py:12093-12340`, `lumen_agent/session_sync.py` |
+| Thread folder | exactly `.deepagent inputs context scratch reads work outputs`; the top level is audited | `platform/agents/clue_agents/workspace.py:105,1808-1846` |
+| Recipe folders | rebuilt and frozen every turn from pins; brand, project and attachments mounted from shared libraries | `workspace.py:1021-1037`, `resources.py:251-330`, `agent_turn_fleet_wiring.py:657-798` |
+| Agent folders | left on disk between turns; `outputs/` saved to artifacts and, since `f799a9830`, kept | `workspace.py:1209-1262` |
+| Lease | `AgentWorkspaceFactory.acquire/create/release`; an in-memory `_active` map per factory; `flock` on the root and the thread | `workspace.py:1434-1806,1482-1491,515-524` |
+| One turn per chat | enforced in Postgres: an advisory lock plus one queued or claimed task; the fleet `work_lease` per chat has a generation that goes up on every takeover | `agent_turn_submission.py:693-794`, `platform/fleet/clue_fleet/lease.py` |
+| Profile per turn | each turn starts a new execution of the currently promoted conversation recipe and profile | `agent_turn_fleet_wiring.py:~800-840` |
+| CRM reads registry | `CrmReadSinks`: a per-process map from a turn to its `reads/` folder, filled while the turn holds the lease | `platform/api/clue_api/crm/read_sinks.py`, `fleet_main.py:1120` |
+| Cleanup | an hourly job deletes a thread folder 24 h after its newest turn ended; it skips `awaiting_input`; its receipt id collides on a second purge | `platform/api/clue_api/agent_cleanup.py` |
+| Artifact store | files stored in R2 under `ws/sha256` with an `artifact` row; owners hold references (`retain_artifact`/`release_artifacts`); a 48 h sweep deletes expired, erased or unreferenced files | `libs/clue-storage/clue_storage/artifacts.py` |
+| The precedent | design site turns: a version record `(workspace, document) → (version, manifest_sha256)`, a compare-and-set update, a local version note, restore when stale | `clue_design/sessions.py:122-157`, `lumen_api/main.py:12093-12340`, `lumen_agent/session_sync.py` |
 
-What lands in the agent folders today (findings, and the second code survey):
-- `reads/<plan-op>.json` — oversized tool-result spills; the full result is also durable as the
-  `result_ref` artifact (`agent_execution_wiring.py:1910-1992`), so a spill can be rebuilt.
-- `reads/<exec-op>.json` — CRM reads, always written; the raw payload is **not** durable anywhere;
-  the action, parameters, time and record count are (parameter snapshot + `agent_tool_result`).
-- `reads/<op>.stdout.txt|.stderr.txt` — `run_python` output over 16 KB, written outside the quota.
-- `work/conversation_history/<execution>.md` (+ `media/`) — compaction renderings; the history
-  itself stays in the checkpoint, so these can be rebuilt. `work/large_tool_results/<id>` — the
-  summariser's overflow clips (only the checkpoint holds them otherwise).
-- `scratch/`, `outputs/` and other `work/` files — written by the agent and its sandbox runs,
-  including binary formats (`.csv .xlsx .docx .pptx .pdf .png`).
+What lands in the agent folders today:
+- `reads/<plan-op>.json`: oversized tool results. The full result is also stored as the
+  `result_ref` artifact (`agent_execution_wiring.py:1910-1992`), so this file can be rebuilt.
+- `reads/<exec-op>.json`: CRM reads, always written. **The raw records are stored nowhere else.**
+  The action, parameters, time and record count are (a parameter snapshot plus `agent_tool_result`).
+- `reads/<op>.stdout.txt|.stderr.txt`: `run_python` output over 16 KB, written outside the quota.
+- `work/conversation_history/<execution>.md` (plus `media/`): compaction offloads. The history
+  itself stays in the checkpoint, so these can be rebuilt. `work/large_tool_results/<id>`: the
+  summariser's overflow clips.
+- `scratch/`, `outputs/` and other `work/` files: written by the agent and its sandbox runs,
+  including binary files (`.csv .xlsx .docx .pptx .pdf .png`).
 
-## 4. The design in one picture
+---
+
+## 6. The design in one picture
 
 ```
-            ┌──────────── Postgres ────────────┐        ┌──────── R2 (artifact store) ────────┐
-            │ agent_workspace_snapshot          │        │ manifest  ws/<sha>  (JSON)           │
- turn start │  (workspace, thread) → version,   │──────▶ │ file blobs ws/<sha> (content-addr.)  │
- ──────────▶│   manifest key/sha, activity time │        └──────────────────────────────────────┘
-            │ fleet work_lease (generation)     │                     ▲ upload changed files,
-            └───────────────────────────────────┘                     │ then manifest, then CAS
-                    │ version matches local marker?                    │ the pointer (turn end)
-                    ▼ yes: use cache   no: wipe + restore              │
-            ┌──────────── worker disk (cache) ───────────────────────────────────────┐
-            │ thread folder: recipe folders (rebuilt from pins, as today)             │
-            │               agent folders  (= snapshot version N, marker file aside)  │
-            │ evicted when idle; wiped when the pointer is gone; never the only copy  │
-            └──────────────────────────────────────────────────────────────────────────┘
+            ┌──────────── Postgres ─────────────┐        ┌──────── R2 (artifact store) ─────────┐
+            │ version record per chat:          │        │ file list   ws/<sha>  (JSON)         │
+ turn start │  (workspace, thread) → version,   │──────▶ │ stored files ws/<sha> (by content)   │
+ ──────────▶│  file list hash, last activity    │        └──────────────────────────────────────┘
+            │ fleet work_lease (generation)     │                     ▲  turn end: store changed
+            └───────────────────────────────────┘                     │  files, then the file list,
+                    │ same version as the local note?                  │  then move the version
+                    ▼ yes: use the cache   no: empty and restore       │  record (only if current)
+            ┌──────────── worker disk (cache) ────────────────────────────────────────┐
+            │ thread folder: recipe folders (rebuilt from pins, as today)              │
+            │               agent folders  (= snapshot version N; local note kept aside)│
+            │ removed when idle; removed when its chat is erased; never the only copy  │
+            └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 5. Requirements
+**A turn, start to end:**
+1. The fleet gives the turn to a worker. Postgres already guarantees one turn per chat.
+2. The worker rebuilds the recipe folders from pins, as today.
+3. It reads the chat's version record. If its local copy holds that version, it uses it.
+   Otherwise it empties the agent folders and restores the snapshot from R2.
+4. The agent works. Its files are ordinary local files, so `run_python` and CRM reads work
+   unchanged.
+5. At the end, the worker stores the files that changed, then the new file list, then moves the
+   version record. It moves it only if the version is still the one it restored and it still holds
+   the lease.
+6. Later, when the chat has been idle for a while, the worker deletes its copy. The snapshot in R2
+   is the real copy.
 
-### 5.1 The snapshot (what is durable)
+---
 
-- **WS-1 Pointer row.** A new table (name builder's call; `agent_workspace_snapshot` below) holds one
-  row per thread workspace: `workspace_id`, `thread_id`, `project_id`, `version` (int ≥ 1),
-  `manifest_artifact_key`, `manifest_sha256`, `last_activity_at`, `updated_at`. Primary key
-  `(workspace_id, thread_id)`. Hand-written, reversible Alembic migration with named constraints
-  (repo conventions).
-- **WS-2 Manifest.** Each version is one JSON manifest stored as an artifact (its own media type,
-  e.g. `application/vnd.clue.agent-workspace-manifest+json`). It lists every snapshotted file:
-  logical path, `sha256`, size, media type, **tier** (WS-9), `written_at` (when this content first
-  appeared in the workspace), and for raw inputs a **receipt** (WS-11). It also carries the receipts
-  of raw inputs that have expired (WS-12), so receipts live as long as the chat. `schema_version` field
-  from the start.
-- **WS-3 File blobs.** Each file's bytes are stored once as a content-addressed artifact in the
-  workspace's namespace, reusing the platform artifact store (`DurableAgentArtifactStore` /
-  `clue_storage`). Unchanged files are not uploaded again (their address is already recorded).
-  Binary files are supported.
-- **WS-4 Retention references.** The snapshot owns its blobs and manifest through the artifact
-  store's reference mechanism (`retain_artifact` / `release_artifacts` or an equivalent owner table),
-  so a blob is deleted only when no live snapshot version references it. Expiry is a property of a
-  **manifest entry**, never of `artifact.expires_at` — that field is per content address (a raw read
-  and a draft with identical bytes would share it) and an expired-and-erased row can never be
-  recorded again (`record_artifact` refuses it). **Required:** re-reading identical bytes after a raw
-  entry expired must work (tested).
-- **WS-5 Which folders are snapshotted.**
-  - `scratch/` and `outputs/`: everything, tier *work product*.
-  - `reads/`: everything, tier *raw input*.
-  - `work/conversation_history/` (incl. `media/`) and `work/large_tool_results/`: tier *raw input*.
-  - Any other path under `work/`: **not snapshotted** — `work/` is the turn's own scratch space, as
-    the agent's manual already says ("Nothing is persisted from it"); it is emptied at turn start.
-    **(Claude's call — see open question Q1.)**
-  - Recipe folders (`.deepagent inputs context`) and mounts (`brand project attachments`) are never
-    snapshotted; they are rebuilt from pins as today.
+## 7. Phase 1 requirements: the core [P1]
 
-### 5.2 Turn start: getting the right files onto this machine
+### 7.1 The snapshot: what is stored
 
-- **WS-6 Hydrate.** Before the agent or any tool touches the agent folders (and before
-  `run_python` registers its mounts — `conversation_turns.py:464`), the workspace layer:
-  1. reads the pointer row (one indexed read);
-  2. compares `(version, manifest_sha256)` with the thread's **local marker**;
-  3. if equal, uses the local copy as is — no download;
-  4. if different or the marker is missing, empties the four agent folders, downloads the
-     manifest and every live entry in parallel (bounded concurrency), checks each blob's sha256,
-     writes files with the workspace's normal ownership and modes (owner uid, 0600 files / 0700
-     dirs, no links), then writes the marker last;
-  5. if there is no pointer row: a brand-new thread starts empty; a thread that predates this change
-     keeps whatever is on this machine's disk, and its first save becomes version 1 (AW-5, no
-     migration). `work/` is emptied in every case except its two raw sub-folders.
-- **WS-7 Where the marker lives.** Outside the agent-visible thread folder (the top-level audit
-  refuses unknown entries there and the agent must not read or forge it) — e.g. a sibling cache-state
-  folder under the root. Builder's call on the exact place.
-- **WS-8 One hook for every agent.** Hydrate and save live in the workspace layer (the factory /
-  lease), not in each caller, so chats, research runs, delegations, account-research turns and
-  onboarding synthesis all get them. A factory built without a snapshot store (unit tests, the dev
-  Stage-0 trial CLI) keeps today's local-only behaviour. Production composition roots always inject
-  it.
+- **WS-1 [P1] Version record.** A new table (name is the builder's call; `agent_workspace_snapshot`
+  below) holds one row per chat folder:
+  - columns: `workspace_id`, `thread_id`, `project_id`, `version` (integer ≥ 1),
+    `manifest_artifact_key`, `manifest_sha256`, `last_activity_at`, `updated_at`;
+  - primary key `(workspace_id, thread_id)`;
+  - a hand-written, reversible Alembic migration with named constraints, per the repo conventions.
+- **WS-2 [P1] File list.** Each version is one JSON file list, stored as an artifact with its own
+  media type (e.g. `application/vnd.clue.agent-workspace-manifest+json`).
+  - **Each entry:** the file's path, `sha256`, size, media type, tier (WS-23), and `written_at`
+    (when this content first appeared in the workspace).
+  - **Fields Phase 2 fills:** an entry's receipt (WS-25) and its `expired_at` (WS-26). The file list
+    also keeps the receipts of expired raw inputs, so they last as long as the chat.
+  - **`schema_version`** is present from the first version. Phase 2 adds fields without breaking
+    Phase 1 file lists.
+- **WS-3 [P1] Stored files.**
+  - Each file's bytes are stored once, under their content hash, in the workspace's namespace of the
+    existing artifact store (`DurableAgentArtifactStore` / `clue_storage`).
+  - A file whose hash is already stored is not uploaded again.
+  - Binary files are supported.
+- **WS-4 [P1] Folders that are saved.**
 
-### 5.3 Tiers, receipts and expiry
+  | Folder | Saved? | Tier (applied in P2) |
+  |---|---|---|
+  | `scratch/` | everything | work product |
+  | `outputs/` | everything; never emptied again | work product |
+  | `reads/` | everything | raw input |
+  | `work/conversation_history/` (with `media/`), `work/large_tool_results/` | everything | raw input |
+  | any other path under `work/` | **not saved**; `work/` is emptied at turn start apart from the two folders above (**Claude's call, Q5**) | — |
+  | recipe folders and mounts | never; rebuilt from pins as today | — |
 
-- **WS-9 Tiers** (AW-2).
-  - *Work product* (`scratch/`, `outputs/`): kept for the chat's lifetime.
-  - *Raw input* (`reads/`, `work/conversation_history/`, `work/large_tool_results/`): its bytes are
-    removed **48 hours after the thread's last activity** (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`,
-    default 172800). Its receipt stays for the chat's lifetime.
-  - Outcomes (published documents, designs, research claims) are untouched — already durable.
-- **WS-10 Last activity** = the newest of: a turn submission, a turn reaching a terminal or
-  awaiting-input state, a save. Kept in `last_activity_at` on the pointer row.
-- **WS-11 Receipts.** Every raw-input entry carries a receipt built at save time from durable rows
-  already written by the turn:
-  - what produced it: tool address and operation id (the file name is the operation id: CRM reads
-    use the executor operation id, spills the plan operation id — both resolvable through
-    `execution_node` / `agent_tool_result`);
-  - for CRM reads: provider, action slug, a reference to the parameter snapshot artifact, record
-    count, total, whether more pages exist;
-  - when it was produced, its size and sha256;
-  - **how to read it again**, in plain words (e.g. "run_crm_action HUBSPOT_SEARCH_DEALS with the same
-    parameters", or "rebuilt from this conversation's history" for compaction files);
-  - a file with no matching durable row still gets a receipt with source "unknown" — never dropped
-    silently.
-- **WS-12 Expiry sweep.** A periodic fleet job (interval `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S`,
-  default 3600, single-runner like the storage sweep) finds threads whose raw entries are past their
-  window and **no turn is queued or running**, writes a new snapshot version without those entries'
-  bytes (receipts kept, marked `expired_at`), using the same compare-and-set as a turn's save, and
-  releases the blob references. A thread with a live turn is skipped and retried next cycle.
-- **WS-13 Spills can be rebuilt.** Governed spills whose full result is durable (`result_ref`) may be
-  restored from that artifact instead of being stored twice — builder's call; either way the agent
-  sees the same file while it is within its window.
+- **WS-5 [P1] Tier recorded from the start.** Phase 1 writes each entry's tier into the file list,
+  even though nothing expires until Phase 2. This way Phase 2 needs no migration of file lists.
 
-### 5.4 Turn end: saving
+### 7.2 Turn start: getting the right files onto this machine
 
-- **WS-14 Save.** At the end of every turn that ran (completed, awaiting input, failed after the
-  agent wrote files, or stopped), the workspace layer:
-  1. walks the four agent folders (WS-5 paths only);
-  2. uploads blobs not already stored (content addressed, parallel, bounded);
-  3. builds the manifest (tiers, `written_at` carried forward for unchanged content, receipts for new
-     raw entries) and stores it;
-  4. moves the pointer with a **compare-and-set**: `version = version + 1 WHERE version = <the version
-     this turn hydrated>` (insert for version 1), **and only while this worker still holds the
-     thread's fleet `work_lease` generation** (`hold_work_lease`, as design saves do — the turn
-     runner must receive `WorkContext.lease_generation`, which it does not today);
-  5. writes the local marker.
-  The pointer moves only after every blob and the manifest are durable, so a pointer never names
-  missing bytes.
-- **WS-15 Save inside finalize.** For a turn that finalizes, the save happens inside the
-  finalization authority, after the outputs snapshot and before the finalization commit
-  (`agent_runtime_wiring.py:829-903`), so a finalized turn always has its files saved. Transient
-  storage errors are retried; if the save still fails, finalization fails and the turn is retried by
-  the fleet — the same behaviour as today when the outputs snapshot cannot reach storage. **(Claude's
-  call — open question Q3.)** Turns that end without finalizing save best-effort when the lease is
-  released.
-- **WS-16 Stale save.** If the compare-and-set finds a newer version (a takeover already saved) or
-  the lease generation is gone, nothing is written, the event is logged loudly with both versions,
-  and the local marker is cleared so the next turn on this machine restores the winner. This should
-  never happen under the one-turn-per-thread rule; it exists so a zombie worker cannot overwrite.
-- **WS-17 Retries and crashes.** A re-claimed turn hydrates again: if its earlier attempt saved, it
-  sees that version; if not, it sees the previous one. A crash between the save and the finalization
-  commit leaves a newer version with the turn's files — the retry starts from it and saves again
-  with the new expected version. Saves are idempotent for identical content.
+- **WS-6 [P1] Restore.** Before the agent or any tool touches the agent folders, and before
+  `run_python` registers its mounts (`conversation_turns.py:464`), the workspace layer does the
+  following:
+  1. Read the version record. This is one indexed read.
+  2. Compare its `(version, manifest_sha256)` with the local version note.
+  3. **If they match:** use the local copy as it is. Nothing is downloaded.
+  4. **If they differ, or there is no note:**
+     - empty the four agent folders;
+     - download the file list and every live entry in parallel, with bounded concurrency;
+     - check each file's sha256, and stop loudly on a mismatch;
+     - write each file with the workspace's normal ownership and modes (owner uid, 0600 for files,
+       0700 for folders, no links);
+     - write the local note last.
+  5. **If there is no version record:**
+     - a new chat starts empty;
+     - a chat from before this change keeps whatever is on this machine's disk, and its first save
+       becomes version 1 (WS-22).
+  6. In every case, `work/` is emptied except its two compaction folders (WS-4).
+- **WS-7 [P1] Local version note.** The note lives outside the agent-visible thread folder, for
+  example in a sibling cache-state folder under the root. The top-level audit refuses unknown entries
+  in the thread folder, and the agent must not be able to read or forge the note. The exact place is
+  the builder's call.
 
-### 5.5 What the agent is told
+### 7.3 Turn end: saving
 
-- **WS-18 Turn-start workspace card.** Each turn's context includes a bounded card listing the
-  agent's earlier files from the snapshot: path, folder, size, age (from `written_at`), tier; and for
-  expired raw inputs their receipt (what it was, when it was read, how many records, how to read it
-  again). Composed from the pointer row and manifest (not from the disk), added with the other
-  project-context artifacts (`agent_turn_fleet_wiring.py:_compose_project_context`, L3 — re-sent on
-  continued turns) and the research equivalent (`account_research_turn_wiring.py:555-684`). Large
-  workspaces are summarised by folder beyond a bound (builder's call; it must say what was left out).
-- **WS-19 Staleness (AW-4).** The skills tell the agent to check the age of its numbers and their
-  source data before relying on them after a gap, and to decide itself whether to read again,
-  without having to tell the person. This is skill text (founder review), not a code check.
-- **WS-20 Manual.** The workspace chapter of the manual is rewritten to match: what each folder keeps
-  and for how long, that `outputs/` and `scratch/` persist for the chat, that `work/` is per turn
-  apart from compaction history, that `reads/` expire with receipts, and where the card is. Skill and
-  manual text is presented to the founder before it is written (standing rule).
+- **WS-8 [P1] Save.** At the end of every turn that ran (completed, awaiting input, failed after the
+  agent wrote files, or stopped), the workspace layer does the following:
+  1. Walk the saved folders (WS-4).
+  2. Store the files that are not stored yet, in parallel, with bounded concurrency.
+  3. Build the file list and store it. `written_at` carries forward for unchanged content.
+  4. Move the version record with a compare-and-set:
+     - `version = version + 1 WHERE version = <the version this turn restored>`;
+     - an insert for version 1;
+     - only while this worker still holds the chat's fleet `work_lease` generation
+       (`hold_work_lease`, as design saves do).
 
-### 5.6 The local cache: present only while useful, never residue
+     The turn runner must be given `WorkContext.lease_generation`, which it is not today.
+  5. Write the local note.
 
-- **WS-21 Idle eviction.** A periodic job on each worker removes cached thread folders (and their
-  markers) not used for `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (default 1800) whose thread has no queued
-  or running turn (checked in Postgres, so it is safe with several processes sharing one disk), and
-  removes the oldest idle folders first when the cache root exceeds `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES`
-  (default 10 GiB). The marker is removed before the files, so a racing turn re-hydrates rather than
-  trusting a half-deleted folder. "In use" is decided from the fleet's own state — a queued or claimed
-  task for the thread, or a live work lease — not from `agent_turn` rows: today's cleanup reads the
-  newest turn row, but a worker opens the folder before that row exists
-  (`agent_turn_fleet_wiring.py:842` vs `conversation_turns.py:435`), so a thread idle for a day could
-  lose its folder to the cleanup in that gap.
-- **WS-22 Orphans.** The same job removes cached folders whose pointer row no longer exists (erased
-  or deleted chats), stale library swap folders (`.old-*`, `.next-*`), replay trees (`pinned-*`) and
-  brand/project library versions not used for the idle window. At worker start it runs once
-  immediately and also clears leftovers of earlier crashes in its own temp areas (e.g.
-  `/tmp/arv2-media-*`) and sandbox containers carrying the platform's execution label with no live
-  turn.
-- **WS-23 Retire the old cleanup.** The 24-hour thread purge (`agent_cleanup.py`) is replaced by
-  WS-21/22; its crash bug and its `awaiting_input` gap go with it. `CLUE_AGENT_WORKSPACE_RETENTION_S`
-  is retired (removed from settings and `.env.example`, with a note in the change log).
-- **WS-24 Locks.** Correctness across machines rests only on Postgres: one turn per thread, the work
-  lease generation and the pointer's compare-and-set. `flock` and the in-memory `_active` map may stay
-  as same-host guards; nothing may depend on them for cross-machine safety. Several factories per
-  process (findings) are acceptable for the same reason.
+  **The version record moves only after every file and the file list are stored.** A version record
+  therefore never names missing bytes.
+- **WS-9 [P1] Save inside finalize.**
+  - **For a turn that finalizes:** the save happens inside the finalization step, after the
+    `outputs/` artifact snapshot and before the finalization commit
+    (`agent_runtime_wiring.py:829-903`). A finalized turn always has its files saved.
+  - **When storage fails:** transient errors are retried. If the save still fails, finalization
+    fails and the fleet retries the turn (**Claude's call, Q6**).
+  - **For a turn that ends without finalizing:** it saves on a best-effort basis when the lease is
+    released.
+- **WS-10 [P1] A save that loses the race.** This happens when the compare-and-set finds a newer
+  version (a takeover already saved) or the lease generation has gone.
+  - nothing is written;
+  - the event is logged loudly with both versions;
+  - the local note is removed, so the next turn on this machine restores the winning version.
 
-### 5.7 Research runs and other workspaces
+  Under the one-turn-per-chat rule this should never happen. It exists so a zombie worker cannot
+  overwrite a newer version.
+- **WS-11 [P1] Retries and crashes.**
+  - A re-claimed turn restores again. If its earlier attempt saved, it sees that version; if not,
+    the previous one.
+  - If a turn crashes between the save and the finalization commit, the retry starts from the newer
+    version and saves again against it.
+  - Saving identical content twice is harmless.
 
-- **WS-25 Research reconciliation.** The reconciliation step stops copying the source run's
-  `work/ scratch/ reads/` from local disk (`quality_research_wiring.py:1084-1111`). It hydrates the
-  source thread's snapshot (or reads its manifest and blobs directly) and copies from that. If the
-  source has no snapshot, it says so in its log and in the reconciliation input instead of silently
-  copying nothing.
-- **WS-26 Delegations, account-research turns, onboarding synthesis.** Same mechanism through the
-  shared factory (WS-8), with their own thread ids. Short-lived threads expire like any other by the
-  rules above.
+### 7.4 One hook for every agent
 
-### 5.8 Erasure
+- **WS-12 [P1] Restore and save live in the shared workspace layer.** They sit in the factory or
+  lease, not in each caller, so every agent gets them:
+  - chats;
+  - research runs;
+  - delegated sub-agents;
+  - account-research turns;
+  - onboarding synthesis.
 
-- **WS-27 Privacy and project erasure.** Erasing a thread, a project or a person's data deletes the
-  pointer rows and manifests involved and releases their blobs (which the existing purge then deletes,
-  respecting other live references); cached copies on any machine are removed by WS-22 within one
-  eviction interval, and are never used again in the meantime because their marker cannot match a
-  missing pointer. The erasure tests prove no erased content remains in R2 after the purge.
+  A factory built without a snapshot store keeps today's local-only behaviour. This applies to unit
+  tests and the developer Stage-0 trial command (**Q8**). Production composition roots always give
+  it one.
+- **WS-13 [P1] Safety rests on Postgres only** (**Claude's call, Q2**). Correctness across machines
+  rests on three things only:
+  - one turn per chat (Postgres);
+  - the fleet lease generation;
+  - the version record's compare-and-set.
 
-### 5.9 Performance and limits
+  `flock` and the in-memory `_active` map may stay as same-machine guards. Nothing may rely on them
+  for safety across machines. Several factories in one process are acceptable for the same reason.
+- **WS-14 [P1] Per-turn registries come from the same hook** (AW-8.2).
+  - The CRM reads registry (`CrmReadSinks`) and the sandbox registry (`SandboxWorkspaces`) map a
+    running turn to its folder inside one process. That is correct across machines, because a turn
+    runs in one process.
+  - F3 folds their register and release into the same workspace hook (WS-12), so no caller binds
+    folders on its own.
+  - No new registry of this kind is added.
 
-- **WS-28 Targets.** Warm turn (marker matches): one indexed DB read, no storage calls. Cold restore of
-  a typical chat (≈10–50 files, < 2 MB): p95 under 1 s; the quota maximum (400 files / 20 MB): p95
-  under 5 s. Save: only changed files uploaded, in parallel; p95 under 1 s for a typical turn.
-  Concurrency for transfers: `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` (default 16).
-- **WS-29 Measured.** Every hydrate and save logs and records (in the existing usage record or a
-  sibling) whether the cache was warm, files and bytes moved, and duration; a live check reports
-  these numbers on the dev stack.
-- **WS-30 Quotas unchanged.** The profile quotas still bound the workspace (they bound the snapshot
-  too). `run_python`'s stdout spills move under the quota accounting (they bypass it today).
+### 7.5 The cache: present only while useful, never residue
 
-### 5.10 Settings and rollout
+- **WS-15 [P1] Idle removal.** A periodic job on each worker removes cached chat folders, and their
+  local notes, in two cases:
+  - **Idle:** not used for `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (default 1800).
+  - **Over the size limit:** when the cache root exceeds `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES`
+    (default 10 GiB), the oldest idle folders go first.
 
-- **WS-31 Settings** (all in `libs/clue-config`, `.env.example` and the lane `.env` with defaults, per
-  the parity rule): `CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED` (default `true` once landed — built
-  features stay on), `CLUE_AGENT_WORKSPACE_RAW_RETENTION_S=172800`,
-  `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S=3600`, `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S=1800`,
-  `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES=10737418240`, `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY=16`.
-  With snapshots disabled the system behaves as on `feat/crm-integration` (local folders only) apart
-  from the new cache eviction, which then uses today's 24-hour rule — **builder must keep this
-  fallback honest or drop it; it exists only as an emergency switch.**
-- **WS-32 Rollout.** No backfill or migration of existing chats (AW-5): the first turn on an old
-  thread saves its current folder as version 1.
+  In both cases it removes only folders whose chat has no queued or running turn. Rules:
+  - **"In use" comes from the fleet's own state in Postgres:** a queued or claimed task for the
+    chat, or a live work lease. This makes it safe when several processes share one disk.
+  - **It does not use `agent_turn` rows.** Today's cleanup reads the newest turn row, but a worker
+    opens the folder before that row exists (`agent_turn_fleet_wiring.py:842` vs
+    `conversation_turns.py:435`).
+  - **The note goes first.** The local note is removed before the files, so a turn racing the
+    removal restores instead of trusting a half-deleted folder.
+- **WS-16 [P1] Leftovers.** The same job also removes:
+  - cached folders whose version record no longer exists (erased or deleted chats);
+  - stale library swap folders (`.old-*`, `.next-*`);
+  - replay trees (`pinned-*`);
+  - brand and project library versions not used within the idle window.
 
-## 6. Failure behaviour (what a person experiences)
+  **At worker start-up** it runs once straight away (**Claude's call, Q1**). That run also clears:
+  - the worker's own temporary leftovers from earlier crashes (e.g. `/tmp/arv2-media-*`);
+  - sandbox containers carrying the platform's execution label that have no live turn.
+- **WS-17 [P1] The old cleanup is retired.**
+  - The 24-hour thread purge (`agent_cleanup.py`) is replaced by WS-15 and WS-16. Its crash bug and
+    its `awaiting_input` gap go with it.
+  - `CLUE_AGENT_WORKSPACE_RETENTION_S` is retired: removed from settings and `.env.example`, with a
+    note in the change log.
 
-| Situation | Behaviour |
+### 7.6 Profile, speed, flag and rollout
+
+- **WS-18 [P1] A resumed chat runs on the current profile** (AW-3).
+  - This is already true: each turn runs the currently promoted profile and skills.
+  - Restore brings back only the agent folders. It never pins or restores a profile, a skill or any
+    recipe folder.
+  - Tested: a chat saved under one profile version continues under a newer one, with its files.
+- **WS-19 [P1] Speed targets.**
+  - **Warm turn** (the local note matches): one indexed database read, no storage calls.
+  - **Cold restore, typical chat** (about 10–50 files, under 2 MB): p95 under 1 second.
+  - **Cold restore, quota maximum** (400 files / 20 MB): p95 under 5 seconds.
+  - **Save:** only changed files are uploaded, in parallel; p95 under 1 second for a typical turn.
+  - **Transfer concurrency:** `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` (default 16).
+  - Early restore and machine routing are not built (**Q3**).
+- **WS-20 [P1] Speed is measured.**
+  - Every restore and save records whether the cache was warm, the files and bytes moved, and how
+    long it took. These go in the existing usage record or a sibling.
+  - Phase 1's live check reports these numbers on the dushanbe stack.
+- **WS-21 [P1] Settings and the flag.** Each setting goes in `libs/clue-config`, `.env.example` and
+  the lane `.env` with its default, per the parity rule.
+
+  | Setting | Default | Phase |
+  |---|---|---|
+  | `CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED` | `true` once merged (built features stay on); the emergency switch | P1 |
+  | `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` | `1800` | P1 |
+  | `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` | `10737418240` | P1 |
+  | `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` | `16` | P1 |
+  | `CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` | `172800` | P2 |
+  | `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` | `3600` | P2 |
+
+  With snapshots switched off, the system behaves as on `feat/crm-integration`: local folders only.
+  The cache removal then uses a 24-hour idle window instead of 30 minutes, because the cache is the
+  only copy. The builder must keep this fallback honest or drop it. It exists only as an emergency
+  switch.
+- **WS-22 [P1] No migration** (AW-5). Existing chats get no backfill. The first turn on an old chat
+  saves its current folder as version 1.
+
+---
+
+## 8. Phase 2 requirements: retention and honesty [P2]
+
+### 8.1 Tiers, receipts and expiry
+
+- **WS-23 [P2] Tiers** (AW-2).
+
+  | Tier | Folders | Kept for |
+  |---|---|---|
+  | Outcomes | published documents, designs, research claims | untouched; already durable |
+  | Work product | `scratch/`, `outputs/` | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
+  | Raw input | `reads/`, `work/conversation_history/`, `work/large_tool_results/` | bytes deleted **48 hours after the chat's last activity** (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`, default 172800); the receipt stays for the chat's lifetime |
+
+- **WS-24 [P2] Last activity** is the newest of these events:
+  - a turn submission;
+  - a turn reaching a terminal or awaiting-input state;
+  - a save.
+
+  It is kept in `last_activity_at` on the version record (written from Phase 1, used from Phase 2).
+- **WS-25 [P2] Receipts.** Every raw input carries a receipt, built at save time from durable rows
+  the turn already wrote. A receipt holds:
+  - **what produced it:** the tool and operation id. The file name is the operation id: a CRM read
+    uses the executor operation id, a spill uses the plan operation id. Both can be looked up
+    through `execution_node` / `agent_tool_result`.
+  - **for a CRM read:** the provider, the action, a reference to the stored parameters, the record
+    count, the total, and whether more pages exist;
+  - **when it was produced, and its size and sha256;**
+  - **how to read it again, in plain words.** For example "run_crm_action HUBSPOT_SEARCH_DEALS with
+    the same parameters", or "rebuilt from this conversation's history" for compaction files.
+
+  A file with no matching durable row still gets a receipt, with source "unknown". It is never
+  dropped silently.
+- **WS-26 [P2] The expiry job.** A periodic fleet job runs every
+  `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (default 3600), with one runner at a time like
+  the storage sweep. It:
+  1. finds chats whose raw inputs are past their window and that have no queued or running turn;
+  2. writes a new snapshot version without those files' bytes, keeping their receipts, marked with
+     `expired_at`, and using the same compare-and-set as a turn's save;
+  3. releases its hold on the stored files.
+
+  A chat with a live turn is skipped and retried next cycle.
+
+  **Expiry belongs to a file list entry, never to the artifact row.** The artifact row's expiry
+  (`artifact.expires_at`) is per content hash, so a raw read and a draft with identical bytes would
+  share it. A row that has been expired and erased can also never be recorded again
+  (`record_artifact` refuses it). **Required, and tested:** reading identical bytes again after a raw
+  input expired must work.
+- **WS-27 [P2] Large tool results may be rebuilt.** A spill whose full result is already stored
+  (`result_ref`) may be restored from that artifact instead of being stored twice (**Q4**). This is
+  the builder's call. Either way, the agent sees the same file while it is within its window.
+
+### 8.2 What the agent is told
+
+- **WS-28 [P2] Turn-start file list for the agent.** Each turn's context includes a bounded list of
+  the agent's earlier files, built from the version record and file list, not from the disk:
+  - for each live file: its path, folder, size, age (from `written_at`) and tier;
+  - for each expired raw input: its receipt (what it was, when it was read, how many records, how to
+    read it again).
+
+  Where it goes:
+  - **chats:** added with the other project-context artifacts
+    (`agent_turn_fleet_wiring.py:_compose_project_context`, layer L3, re-sent on continued turns);
+  - **research runs:** the research equivalent (`account_research_turn_wiring.py:555-684`).
+
+  A large workspace is summarised by folder beyond a bound, and the list says what was left out. The
+  bound is the builder's call; the wording is reviewed by you.
+
+  **How this answers your case (D-23).** The agent did an analysis, the chat sat idle for a week, and
+  the CRM reads behind it expired. On the next turn the agent sees:
+  - its script and results, still there, with their age;
+  - the expired reads, with their receipts.
+
+  It knows the numbers are a week old, the source data is gone, and how to read it again.
+- **WS-29 [P2] Staleness instruction** (AW-4). The skills tell the agent:
+  - after a gap, check how old its numbers and their source data are before relying on them;
+  - decide for itself whether to read again;
+  - it does not have to tell the person.
+
+  This is skill text, not a code check. It is presented to you before it is written.
+
+### 8.3 Erasure and storage cleanup
+
+- **WS-30 [P2] Stored files are deleted when nothing points to them.**
+  - Snapshots hold their stored files and file lists through the artifact store's reference
+    mechanism (`retain_artifact` / `release_artifacts`, or an equivalent owner table).
+  - Each version holds the files it names. Replacing a version releases the files only the old
+    version used.
+  - The existing purge then deletes a stored file once no live version references it.
+  - Older versions are kept only as long as the builder needs them for the compare-and-set.
+    Builder's call: keep the current version only, or the current one plus one.
+- **WS-31 [P2] Privacy and project erasure.** Erasing a chat, a project or a person's data:
+  - deletes the version records and file lists involved, and releases their stored files, which the
+    existing purge then deletes (respecting other live references);
+  - leaves cached copies on any machine to be removed by WS-16 within one cleanup interval;
+  - never lets those cached copies be used in the meantime, because their local note cannot match a
+    missing version record.
+
+  The erasure tests prove that no erased content remains in R2 after the purge.
+
+### 8.4 The manual
+
+- **WS-32 [P2] Manual rewrite.** The workspace chapter of the agent's manual is rewritten to say:
+  - what each folder keeps, and for how long;
+  - that `outputs/` and `scratch/` last for the chat;
+  - that `work/` is per turn, apart from the compaction history;
+  - that `reads/` expire and leave receipts;
+  - where the turn-start file list is.
+
+  Today's chapter is wrong on two points: it says nothing writes to `reads/`, and that `outputs/` is
+  emptied. The text is presented to you before it is written.
+
+---
+
+## 9. Phase 3 requirements: remaining workspaces and proof [P3]
+
+- **WS-33 [P3] Research reconciliation reads the snapshot.**
+  - The reconciliation step stops copying the source run's `work/ scratch/ reads/` from local disk
+    (`quality_research_wiring.py:1084-1111`).
+  - It restores the source chat's snapshot, or reads its file list and stored files directly, and
+    copies from that.
+  - If the source has no snapshot, it says so in its log and in the reconciliation input instead of
+    silently copying nothing.
+- **WS-34 [P3] Every other caller checked.** Delegated sub-agents, account-research turns and
+  onboarding synthesis already get restore and save from Phase 1 (WS-12). Phase 3 checks each one
+  end to end, with its own thread id, and fixes any caller that bypasses the shared layer. Short-lived
+  threads expire like any other.
+- **WS-35 [P3] Proof and rollout.**
+  - The full robustness suite (§11) passes.
+  - The final live measurement of restore time is recorded.
+  - The flag's emergency path (WS-21) is exercised once.
+  - Then the feature is rolled out with its flag on.
+
+---
+
+## 10. What a person experiences when things fail
+
+| Situation | What happens |
 |---|---|
-| R2 unreachable, local copy current | turn runs normally (no storage needed to start) |
-| R2 unreachable, local copy stale or missing | turn fails with a retryable error and is retried by the fleet; it never runs on a stale or empty workspace when a snapshot exists |
-| R2 unreachable at save | retried; then the turn fails and is retried (as outputs do today) |
-| Worker dies mid-turn | the turn is re-claimed (possibly elsewhere), hydrates the last saved version, resumes its checkpoint |
-| Zombie worker saves late | refused by lease generation / compare-and-set; logged |
-| Cache deleted by hand or evicted | next turn restores; nothing lost |
-| Raw input expired | the file is gone, the card lists its receipt, the agent reads again if it needs to |
-| Disk full during restore | turn fails retryably; the half-written cache folder and its marker are removed |
-| Manifest or blob digest mismatch | turn fails loudly; never restores mismatched bytes |
+| R2 unreachable, local copy current | the turn runs normally; starting a turn needs no storage |
+| R2 unreachable, local copy stale or missing | the turn fails with a retryable error and the fleet retries it; it never runs on a stale or empty workspace when a snapshot exists |
+| R2 unreachable at save | retried; then the turn fails and is retried, as `outputs/` does today (Q6) |
+| Worker dies mid-turn | the turn is picked up again, possibly elsewhere, restores the last saved version and resumes its checkpoint |
+| A zombie worker saves late | refused by the lease generation or the compare-and-set; logged |
+| Cache deleted by hand or removed as idle | the next turn restores; nothing is lost |
+| Raw input expired [P2] | the file is gone; the turn-start list shows its receipt; the agent reads again if it needs to |
+| Disk full during restore | the turn fails retryably; the half-written folder and its note are removed |
+| A file list or stored file fails its hash check | the turn fails loudly; mismatched bytes are never restored |
 
-## 7. Verification
+---
 
-Following the founder's standing rule (business-logic scenario tests through real code paths, plus
-live checks), the plan must include at least:
+## 11. Tests
 
-1. **Two machines, one chat:** two factories with different cache roots, one database and one
-   storage; a turn on A writes `scratch/`, `outputs/` and a CRM read; the next turn on B sees exactly
-   those files; a third turn back on A detects its stale copy and restores B's version.
-2. **Warm path:** a second turn on the same root makes no storage calls.
-3. **Kill mid-turn:** a turn dies before and after the save; the retry on another root sees the right
-   version and finalizes once.
-4. **Zombie save** is refused (stale version; lost lease generation).
-5. **Raw expiry:** with a 0-second window, the sweep removes `reads/` bytes, keeps the receipt, the
-   next turn's card lists it, and re-reading identical bytes works.
-6. **Work products survive** the sweep and a cache wipe.
-7. **Erasure:** pointer, manifests and blobs gone after the purge; a cached folder on another root is
-   never used and is removed by the next eviction.
-8. **Eviction safety:** an idle folder is evicted; a folder whose thread has a running turn in another
-   process is not; boot clean-up never touches a leased thread.
-9. **Research reconciliation** across two roots reads the source run's snapshot.
-10. **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, sweep).
-11. **Migration** round trip, single Alembic head.
-12. **Live check on the dushanbe stack:** a real chat turn; delete the cache; continue the chat —
-    the agent finds its files; record warm/cold timings (WS-29).
+Per the founder's standing rule, these are scenario tests through the real code paths, plus live
+checks.
 
-## 8. Found while surveying (for the builder)
+| # | Test | Phase |
+|---|---|---|
+| 1 | **Two machines, one chat:** two factories with different cache roots, one database and one storage. A turn on A writes `scratch/`, `outputs/` and a CRM read; the next turn on B sees exactly those files; a third turn back on A notices its copy is stale and restores B's version | P1 |
+| 2 | **Warm path:** a second turn on the same root makes no storage calls | P1 |
+| 3 | **Kill mid-turn:** a turn dies before the save, and another after it; the retry on another root sees the right version and finalizes once | P1 |
+| 4 | **Zombie save** is refused, both for a stale version and for a lost lease generation | P1 |
+| 5 | **Raw expiry:** with a 0-second window, the expiry job removes the `reads/` bytes and keeps the receipt; the next turn's list shows it; reading identical bytes again works | P2 |
+| 6 | **Work products survive** a cache wipe (P1) and the expiry job (P2) | P1, P2 |
+| 7 | **Erasure:** version records, file lists and stored files are gone after the purge; a cached folder on another root is never used and is removed by the next cleanup | P2 |
+| 8 | **Cache removal is safe:** an idle folder is removed; a folder whose chat has a running turn in another process is not; the start-up run never touches a leased chat | P1 |
+| 9 | **Research reconciliation** across two roots reads the source run's snapshot | P3 |
+| 10 | **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, policy sweep) | P1 |
+| 11 | **Migration** up, down and up again, with a single Alembic head | P1 |
+| 12 | **Clean-machine restore and final live check:** on the dushanbe stack, a real chat turn; delete the whole cache root; continue the chat; the agent finds its files; warm and cold timings recorded (WS-20) | P1 (first run), P3 (final) |
 
-- **Compaction file path (unverified).** deepagents returns the path it was given, and the
-  `HistoryPathBackend` wrapper is not a composite backend, so the compaction summary may name
-  `/conversation_history/<id>.md` while the bytes sit at `work/conversation_history/` — a path the
-  agent cannot read. Check live; fix if real, since WS-5 snapshots exactly those files.
+Also tested in their phases: WS-18 (profile on resume, P1), WS-26's re-read of identical bytes (P2),
+and WS-28's list contents for live and expired files (P2).
+
+---
+
+## 12. Found while surveying (for the builder)
+
+- **The compaction file path is unverified.** deepagents returns the path it was given, and the
+  `HistoryPathBackend` wrapper is not a composite backend. The compaction summary may therefore name
+  `/conversation_history/<id>.md` while the bytes sit at `work/conversation_history/`, a path the
+  agent cannot read. Check live in Phase 1 and fix if real, since WS-4 saves exactly those files.
 - **`run_python` output spills** (`reads/<op>.stdout.txt`) are written with a raw `os.open`, outside
-  the quota, and a spilled run's result is then spilled a second time as `reads/<plan-op>.json`
-  (16 KB inline > 12 KB receipt threshold). WS-30 brings the first under the quota; the double spill
-  is harmless but wasteful.
-- **Several workspace factories per process** (chat, library refresher, one per research job): the
-  in-memory guards do not see each other — acceptable under WS-24, but the eviction job must not
-  rely on any one factory's `_active` map.
-- **Dead lifecycle code:** `authorize_cleanup`/`cleanup_authorized` gate nothing; `cleanup`,
-  `purge_terminal` and `discard_failed_materialization` have no callers. Remove or reuse while
-  rewriting this layer.
-- **Stale manual text:** the workspace chapter says nothing writes to `reads/` and that `outputs/` is
-  emptied — both wrong today (WS-20 rewrites it).
+  the quota. A spilled run's result is then spilled a second time as `reads/<plan-op>.json` (16 KB
+  inline is over the 12 KB receipt threshold). In Phase 1, bring the first under the quota. The
+  double spill is harmless but wasteful.
+- **There are several workspace factories per process:** chat, the library refresher, and one per
+  research job. Their in-memory guards do not see each other. This is acceptable under WS-13, but the
+  cleanup job must not rely on any one factory's `_active` map.
+- **Dead lifecycle code:** `authorize_cleanup` and `cleanup_authorized` gate nothing, and `cleanup`,
+  `purge_terminal` and `discard_failed_materialization` have no callers. Remove or reuse them while
+  rewriting this layer (Phase 1).
+- **Quotas are unchanged.** The profile quotas (20 MiB, 400 files, 4 MiB per file) still bound the
+  workspace, and so they also bound the snapshot.
+- **Other lanes (AW-8).** The CRM lane keeps working on `feat/crm-integration`. This branch merges it
+  in periodically, and either lane messages the other when it changes something the other relies on.
+  F3 must not ask the CRM lane to wait.
 
-## 9. Open questions for the founder
+---
 
-- **Q1** — `work/` becomes per-turn (emptied at turn start) except its compaction history and large
-  tool results, as the agent's manual already describes. Today its files happen to survive on the
-  same machine. OK?
-- **Q2** — Defaults: raw window 48 h (ruled), cache idle 30 min, cache cap 10 GiB, sweep hourly. OK?
-- **Q3** — If the save cannot reach storage, the turn fails and is retried (consistent with today's
-  outputs snapshot) rather than finishing without its files saved. OK?
-- **Q4** — Should the person ever see these files (a download in the chat)? Out of scope here unless
-  you want it; the snapshot makes it easy to add later.
+## 13. Left to the builder
 
-## 10. Left to the builder
+- table and column names;
+- where the local note lives;
+- the file list's exact shape beyond the fields above;
+- whether large tool results are stored or rebuilt from `result_ref` (WS-27);
+- how many old versions to keep (WS-30);
+- the bound on the agent's file list (its wording is reviewed by the founder);
+- how the cleanup and expiry jobs are scheduled within the fleet;
+- how the lease generation reaches the turn runner;
+- whether restore and save live in the factory, the lease or a small helper object, as long as every
+  caller gets them (WS-12).
 
-Table and column names; the marker's location; the manifest's exact shape beyond the fields above;
-whether governed spills are stored or rebuilt from `result_ref` (WS-13); the card's bound and wording
-(text reviewed by the founder); how the eviction job is scheduled within the fleet; how the lease
-generation reaches the turn runner; whether hydrate/save live in the factory, the lease or a small
-collaborator object, as long as every caller gets them (WS-8).
+---
 
-## 11. Change log
+## 14. Change log
 
-- 2026-10-21 — first draft (Claude), from rulings AW-1–AW-8 and the footprint findings.
+- 2026-10-21: first draft (Claude), from rulings AW-1–AW-8 and the footprint findings. WS-1–WS-32
+  in topic order; open questions Q1–Q4.
+- 2026-10-22: v2 (Claude), after the founder asked which phase each part belongs to.
+  - **Added:** §0 (how to read); §2, a table tracing every discussed requirement (D-1–D-33) to its
+    requirements and phase; §3, the phases, with what each delivers and when it is done; §4, one
+    list of decisions (Q1–Q11), naming every place the spec differs from the discussion or the
+    roadmap.
+  - **Reorganised:** requirements are grouped by phase and **renumbered WS-1–WS-35 in phase order**.
+    No plan cited the old numbers.
+  - **New requirements:**
+    - WS-5: the tier is recorded from Phase 1;
+    - WS-14: `CrmReadSinks`, per AW-8.2;
+    - WS-18: profile on resume, per AW-3 (it was missing);
+    - WS-34 and WS-35: checks and rollout.
+  - **Plain words used:** version record, file list, stored file, local version note.
+  - **Release rule added:** P1 does not reach production without P2.
