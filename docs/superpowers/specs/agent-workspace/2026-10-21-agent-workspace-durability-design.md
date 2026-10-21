@@ -213,7 +213,7 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q6 (Q1–Q5 are decided).
+phase starts. Q1–Q6, which Phase 1's plan needs, are decided; Q7–Q11 come up in later phases.
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -269,7 +269,7 @@ for the chat's whole life, like `scratch/`.**
   (48 hours, receipts kept).
 - The manual's description of `work/` changes in Phase 2 (WS-32).
 
-**Q6. A save that cannot reach storage fails the turn** [P1] *(not discussed)*
+**Q6. A save that cannot reach storage fails the turn** [P1]: **decided 2026-10-22 (AW-15).**
 - **What happens:** the save is retried. If it still fails, the turn fails and the fleet retries
   it. This matches what happens today when `outputs/` cannot be saved.
 - **The alternative:** finish the turn without its files saved. That is faster for the person in
@@ -480,7 +480,7 @@ What lands in the agent folders today:
     `outputs/` artifact snapshot and before the finalization commit
     (`agent_runtime_wiring.py:829-903`). A finalized turn always has its files saved.
   - **When storage fails:** transient errors are retried. If the save still fails, finalization
-    fails and the fleet retries the turn (**Claude's call, Q6**).
+    fails and the fleet retries the turn (founder, Q6, AW-15).
   - **For a turn that ends without finalizing:** it saves on a best-effort basis when the lease is
     released.
 - **WS-10 [P1] A save that loses the race.** This happens when the compare-and-set finds a newer
@@ -764,7 +764,7 @@ What lands in the agent folders today:
 |---|---|
 | R2 unreachable, local copy current | the turn runs normally; starting a turn needs no storage |
 | R2 unreachable, local copy stale or missing | the turn fails with a retryable error and the fleet retries it; it never runs on a stale or empty workspace when a snapshot exists |
-| R2 unreachable at save | retried; then the turn fails and is retried, as `outputs/` does today (Q6) |
+| R2 unreachable at save | retried; then the turn fails and is retried, as `outputs/` does today (Q6, AW-15) |
 | Worker dies mid-turn | the turn is picked up again, possibly elsewhere, restores the last saved version and resumes its checkpoint |
 | A zombie worker saves late | refused by the lease generation or the compare-and-set; logged |
 | Cache deleted by hand or removed as idle | the next turn restores; nothing is lost |
@@ -887,3 +887,5 @@ and WS-28's list contents for live and expired files (P2).
   results may point to their existing `result_ref` copy (builder's call).
 - 2026-10-22: Q5 decided (AW-14): `work/` is kept for the chat's whole life as a work product,
   apart from its two compaction folders (raw inputs). WS-4, WS-6, WS-23 and WS-32 updated.
+- 2026-10-22: Q6 decided (AW-15): a save that still fails after retries fails the turn, and the
+  fleet retries it. All decisions Phase 1 needs (Q1–Q6) are now made.

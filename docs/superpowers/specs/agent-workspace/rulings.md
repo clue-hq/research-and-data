@@ -69,6 +69,10 @@ agent, not only the CRM work.
   (`work/conversation_history/`, `work/large_tool_results/`), which stay raw inputs under AW-2. The
   agent's manual, which today calls `work/` per-turn scratch, is rewritten to match (spec WS-32).
   Spec WS-4, WS-6, WS-23.
+- **AW-15 (2026-10-22)** **A turn whose files cannot be saved fails and is retried.** The save is
+  retried a few times; if storage is still unreachable, the turn fails and the work queue runs it
+  again, as it does today when `outputs/` cannot be saved. A turn never finishes with its files
+  unsaved, so no later turn can silently restore an older version. Spec WS-9, §10.
 
 ## Scope, order and interim
 
