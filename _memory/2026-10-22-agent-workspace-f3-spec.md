@@ -27,3 +27,22 @@ Docs: `docs/superpowers/specs/agent-workspace/` — spec `2026-10-21-agent-works
   State the phase of every requirement and list every difference from what was discussed.
 - "Rebuilt every turn" described blunt current code, not a design need; check wording against the
   code before it becomes a ruling.
+
+## Closing note — Phase 1 built and live-checked (2026-10-22)
+- Plan `docs/superpowers/plans/2026-10-22-agent-workspace-phase-1-core.md` Tasks 1–12 done on
+  `feat/agent-workspace-durability`; ledger with every ruling in
+  `.superpowers/sdd/2026-10-22-agent-workspace-phase-1-core/progress.md` (deleted after review).
+- T10: cache sweep replaced the 24-hour purge; `CLUE_AGENT_CLEANUP_INTERVAL_S` retired;
+  `CLUE_AGENT_WORKSPACE_RETENTION_S` kept only because the agent manual still quotes it — its
+  sentence ("purged ... after the thread's newest turn") is now false and needs a founder-reviewed
+  rewrite (Phase 2's manual rewrite).
+- T11: nine scenario proofs pass (`tests/api/test_agent_workspace_scenarios_db.py`).
+- T12 live check on the dushanbe stack (DB `clue_nashville_pm_clone` migrated in place to
+  `cd9c1e49f6af`; dev login `aryan+clerk_test_design@…` linked to the arv2 user by a hand-inserted
+  `auth_identity` row `aid_dushanbe_design_dev_login`): new chat `thr_b32c99d4…` in Conduit AI →
+  v1 saved (2 files, 89 B, 937 ms); all areas wiped → cold restore on another worker (699 ms, agent
+  quoted both files); later cold restores 352–420 ms (no routing, AW-12: each of the 4 workers
+  restored once); warm restore 2 ms with only `inputs/user-message.txt` rewritten. 7 turns ≈ $1.39.
+- Spec §12 compaction path was real: the summary named `/conversation_history/<id>.md` while the
+  bytes went to `/work/...`. Fixed (`d2ec168d1`); a live compaction (~450k-token chat) is owed.
+- Oddity for the review: a brand-new chat's restore logs `warm=True` with `version=None`.

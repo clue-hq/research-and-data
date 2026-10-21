@@ -195,7 +195,7 @@ evidence for the first two.
 | Phase | What it builds | What it delivers on its own | Requirements | Done when |
 |---|---|---|---|---|
 | **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
-| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; each worker its own disk area and each chat its own copy of the brand and project files; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36, WS-37 | §11 tests 1–4, 6, 8, 10, 11, 13, 14 pass; the first live check passes with timings recorded |
+| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; each worker its own disk area and each chat its own copy of the brand and project files; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36, WS-37 | §11 tests 1–4, 6, 8, 10, 11, 13, 14 pass; the first live check passes with timings recorded. **Status: P1 built; live check passed 2026-10-22** (branch `feat/agent-workspace-durability`; not in production until P2) |
 | **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting stored files nothing points to | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
 | **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
@@ -821,10 +821,15 @@ and WS-28's list contents for live and expired files (P2).
   `HistoryPathBackend` wrapper is not a composite backend. The compaction summary may therefore name
   `/conversation_history/<id>.md` while the bytes sit at `work/conversation_history/`, a path the
   agent cannot read. Check live in Phase 1 and fix if real, since WS-4 saves exactly those files.
+  **Real; fixed in P1 (2026-10-22):** the summariser now writes the history under
+  `/work/conversation_history/` itself, so the path it names is the path the bytes are at. A live
+  compaction (a chat past about 450k tokens) is still owed; the manual tool refuses below the
+  threshold.
 - **`run_python` output spills** (`reads/<op>.stdout.txt`) are written with a raw `os.open`, outside
   the quota. A spilled run's result is then spilled a second time as `reads/<plan-op>.json` (16 KB
   inline is over the 12 KB receipt threshold). In Phase 1, bring the first under the quota. The
-  double spill is harmless but wasteful.
+  double spill is harmless but wasteful. **Done in P1:** spills go through the workspace backend's
+  quota-checked write; the double spill remains.
 - **There are several workspace factories per process:** chat, the library refresher, and one per
   research job. Their in-memory guards do not see each other. Under WS-15 they must all use the
   worker's own area, and the idle job must ask the worker which turns it is running, not any one
@@ -908,3 +913,10 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: Phase 1 built (plan `docs/superpowers/plans/2026-10-22-agent-workspace-phase-1-core.md`,
+  Tasks 1–12) and the first live check passed on the dushanbe stack: a new chat saved version 1
+  (2 files, 89 bytes, 937 ms); after every worker area was wiped, the follow-up restored on another
+  worker cold (2 files downloaded, 699 ms) and the agent quoted both files exactly; a turn on a
+  worker holding the current copy restored warm (2 ms, nothing downloaded) and wrote only
+  `inputs/user-message.txt` among the recipe folders. Seven turns cost about $1.39. §12's
+  compaction path was real and is fixed; a live compaction is still owed.
