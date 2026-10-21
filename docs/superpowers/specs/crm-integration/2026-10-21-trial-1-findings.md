@@ -49,7 +49,7 @@ founder asked to record first and discuss before acting.
 ## Findings
 
 ### Blocking
-- **F4 — `write_brand_document` can never be called by the agent.** *Fixed 2026-10-21 (`1e88e9242`): the input is now `markdown`; a guard test fails the build for any tool input named like raw content (one listed exception, `write_project_document@1`), and a test runs the tool through the real plan builder and validator. Live re-check (publish from the trial chat) still owed.* The plan validator
+- **F4 — `write_brand_document` can never be called by the agent.** *Fixed 2026-10-21 (`1e88e9242`): the input is now `markdown`; a guard test fails the build for any tool input named like raw content (one listed exception, `write_project_document@1`), and a test runs the tool through the real plan builder and validator. Live re-check passed 2026-10-21: asked in the trial chat to rebuild and publish, the agent re-read its CRM reads, ran `run_python` 8 times, recorded the confirmed facts and called `write_brand_document` twice with no refusal — `company/sales-motion.md` v1 and `proof/customers.md` v3 (v2 superseded; 44 rows, 12 added) are `ready` and render in Brand context; numbers match trial 1 (14/14, 50 %, median 48,500 USD, outlier 260,000 set aside, cycle 76.5 days). 7 min, 18 model calls, $1.09. The drafts and tables stayed in `outputs/` after the turn, owner-writable (AW-6 stopgap working).* The plan validator
   (`clue_execution/graph.py`, `_RAW_BODY_KEYS`) rejects any plan whose node bindings contain a key
   named `body` (also `content`, `text`, …): "raw_body_key: raw body content is forbidden". The tool's
   input has a field named `body`, and the key is present even when it is null, so **both** the
@@ -104,6 +104,14 @@ founder asked to record first and discuss before acting.
   To discuss: whether a single model call needs a time or token ceiling (the standing ruling is no
   pre-emptive caps), and whether a message that forbids tools should be told that the turn's own
   finish step is not a tool in that sense.
+
+- **F11 — The CRM skill asks for a file the workspace deletes** (found in the F4 re-check). The
+  skill says to save the analysis script as `outputs/sales-analysis.py`, but a sandbox run may only
+  leave `.json .md .txt .yaml .csv .xlsx .docx .pptx .pdf .png`, so the `.py` file is removed after
+  the run; the agent said so honestly ("The workspace would not keep a .py file"). The CSV check
+  tables were kept. Options to discuss: let the sandbox keep `.py` under `outputs/`, or have the
+  skill save the script as `.txt` / inside the document's method section. Skill wording needs
+  founder review either way.
 
 ### Not exercised in this trial
 - Salesforce (budget guard, SOQL paging) — covered by offline tests and the Task 8 live read check
