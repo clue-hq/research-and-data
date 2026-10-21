@@ -717,12 +717,18 @@ def is_forbidden_field(provider: CrmProvider, object: str, field_name: str) -> b
     return field_name.startswith(_FORBIDDEN_PREFIXES.get((provider, object), ()))
 
 
-def scope_key(spec: WriteActionSpec, field: str | None, *, kind: WriteKind | None = None) -> str:
+def scope_key(spec: WriteActionSpec, parsed: ParsedChange, field: str | None) -> str:
     """What a standing permission covers: one field of one object, or one kind of change.
 
-    Pass ``kind=parsed.change_kind(spec)``: HubSpot's list membership action adds and removes, and
-    a grant to add must never cover removing.
+    The kind is the parsed change's own (:meth:`ParsedChange.change_kind`), never the action's:
+    HubSpot's list membership action both adds and removes, and a grant to add must never cover
+    removing. A field update is scoped by its field; every other kind by the kind alone.
     """
-    if field is not None:
+    kind = parsed.change_kind(spec)
+    if kind == "field_update":
+        if not field or field not in parsed.fields:
+            raise ValueError("A field update is scoped by one of the fields it sets.")
         return f"field:{spec.object}.{field}"
-    return f"kind:{kind or spec.kind}"
+    if field is not None:
+        raise ValueError(f"A {kind} change sets no field to scope by.")
+    return f"kind:{kind}"

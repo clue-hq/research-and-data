@@ -179,16 +179,43 @@ def test_hubspot_list_removal_is_its_own_kind_and_scope() -> None:
     assert spec is not None
     parsed = spec.parse({"list_id": "9", "operation": "remove", "record_ids": ["201"]})
     assert parsed.change_kind(spec) == "list_removal"
-    assert scope_key(spec, None, kind=parsed.change_kind(spec)) == "kind:list_removal"
-    assert scope_key(spec, None) == "kind:list_membership"
+    assert scope_key(spec, parsed, None) == "kind:list_removal"
+
+
+def test_a_list_removal_never_matches_a_list_add_grant() -> None:
+    spec = write_spec("hubspot", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS")
+    assert spec is not None
+    add = spec.parse({"list_id": "9", "operation": "add", "record_ids": ["201"]})
+    remove = spec.parse({"list_id": "9", "operation": "remove", "record_ids": ["201"]})
+    add_grant = scope_key(spec, add, None)
+    assert add_grant == "kind:list_membership"
+    assert scope_key(spec, remove, None) != add_grant
+    # Salesforce's two actions agree with HubSpot's one.
+    sf_add = write_spec("salesforce", "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN")
+    sf_remove = write_spec("salesforce", "SALESFORCE_REMOVE_FROM_CAMPAIGN")
+    assert sf_add is not None and sf_remove is not None
+    assert (
+        scope_key(sf_add, sf_add.parse({"campaign_id": "7", "contact_id": "3"}), None) == add_grant
+    )
+    assert scope_key(
+        sf_remove, sf_remove.parse({"campaign_id": "7", "member_id": "3"}), None
+    ) == scope_key(spec, remove, None)
 
 
 def test_scope_keys() -> None:
     update = write_spec("hubspot", "HUBSPOT_UPDATE_COMPANY")
     create = write_spec("salesforce", "SALESFORCE_CREATE_CONTACT")
     assert update is not None and create is not None
-    assert scope_key(update, "industry") == "field:company.industry"
-    assert scope_key(create, None) == "kind:create_contact"
+    change = update.parse({"companyId": "1", "properties": {"industry": "A"}})
+    assert scope_key(update, change, "industry") == "field:company.industry"
+    new = create.parse({"last_name": "Ruiz"})
+    assert scope_key(create, new, None) == "kind:create_contact"
+    with pytest.raises(ValueError):
+        scope_key(update, change, None)  # a field update is scoped by a field it sets
+    with pytest.raises(ValueError):
+        scope_key(update, change, "name")
+    with pytest.raises(ValueError):
+        scope_key(create, new, "LastName")  # a create is scoped by its kind only
 
 
 @pytest.mark.parametrize(
