@@ -69,7 +69,8 @@ agent, not only the CRM work.
   (`work/conversation_history/`, `work/large_tool_results/`), which stay raw inputs under AW-2. The
   agent's manual, which today calls `work/` per-turn scratch, is rewritten to match (spec WS-32).
   Spec WS-4, WS-6, WS-23.
-- **AW-15 (2026-10-22)** **A turn whose files cannot be saved fails and is retried.** The save is
+- **AW-15 (2026-10-22)** **A turn whose files cannot be saved fails and is retried.** *(Amended by
+  AW-18: the save is retried, the turn is not re-run.)* The save is
   retried a few times; if storage is still unreachable, the turn fails and the work queue runs it
   again, as it does today when `outputs/` cannot be saved. A turn never finishes with its files
   unsaved, so no later turn can silently restore an older version. Spec WS-9, §10.
@@ -81,6 +82,22 @@ agent, not only the CRM work.
 - **AW-17 (2026-10-22)** **Each worker area is capped at 10 GiB.** Over the cap, idle chat folders are
   deleted, oldest first; a safety net behind the 30-minute rule (AW-11).
   `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES=10737418240`.
+- **AW-18 (2026-10-22)** **A failed save does not re-run the turn** (amends AW-15). By the time the
+  save runs the agent's work is done and the runtime has marked the turn ended, so a re-run would
+  repeat it and pay twice; and today a failed outputs snapshot fails the turn with no retry. The
+  save is retried 3 times; if storage is still unreachable the turn fails, the worker keeps its local
+  copy marked unsaved, and the chat's next turn saves it. A failed restore, which happens before the
+  agent starts, does re-run the turn. Spec WS-9, §10; plan decision 1.
+- **AW-19 (2026-10-22)** **Worker areas are claimed by lock, not named.** A worker takes the first
+  free `<root>/workers/area-<n>` by holding an exclusive lock on `area-<n>.lock` while it runs, and
+  wipes it before use; at start-up it also deletes every other area whose lock it can take. No
+  configuration; no leftover areas. Requires the workspace root on local disk (locks are unreliable
+  on network drives). Spec WS-15, WS-16; plan decision 2.
+- **AW-20 (2026-10-22)** **No shared project library on disk.** Each chat keeps its own copy (AW-9),
+  so the refresher stops writing a shared tree and the API process stops building a workspace
+  factory. A privacy erasure that changes library content without moving its digest bumps
+  `project_library_epoch`, which the digest includes, so every chat's copy resyncs next turn. Spec
+  §12; plan decision 3.
 
 ## Scope, order and interim
 

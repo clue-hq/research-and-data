@@ -273,6 +273,12 @@ for the chat's whole life, like `scratch/`.**
 **Q6. A save that cannot reach storage fails the turn** [P1]: **decided 2026-10-22 (AW-15).**
 - **What happens:** the save is retried. If it still fails, the turn fails and the fleet retries
   it. This matches what happens today when `outputs/` cannot be saved.
+- **Amended 2026-10-22 (AW-18), after the code survey for the Phase 1 plan:** a failed *save* does
+  not re-run the turn. The agent's work is already done and the runtime has marked the turn ended,
+  so a re-run would repeat it and pay twice; and today a failed outputs snapshot fails the turn
+  without a retry (the line above was wrong). Instead the save is retried 3 times; if it still
+  fails, the turn fails and the worker keeps its copy marked unsaved, which the chat's next turn
+  saves. A failed *restore*, which happens before the agent starts, does re-run the turn.
 - **The alternative:** finish the turn without its files saved. That is faster for the person in
   that moment, but the next turn on another machine would silently miss the files, which is one of
   the §2.3 failures.
@@ -481,8 +487,9 @@ What lands in the agent folders today:
   - **For a turn that finalizes:** the save happens inside the finalization step, after the
     `outputs/` artifact snapshot and before the finalization commit
     (`agent_runtime_wiring.py:829-903`). A finalized turn always has its files saved.
-  - **When storage fails:** transient errors are retried. If the save still fails, finalization
-    fails and the fleet retries the turn (founder, Q6, AW-15).
+  - **When storage fails:** transient errors are retried 3 times. If the save still fails,
+    finalization fails and the turn fails; the worker keeps its local copy marked unsaved, and the
+    chat's next turn on that worker saves it (AW-18, amending AW-15). The turn is not re-run.
   - **For a turn that ends without finalizing:** it saves on a best-effort basis when the lease is
     released.
 - **WS-10 [P1] A save that loses the race.** This happens when the compare-and-set finds a newer
@@ -538,8 +545,11 @@ What lands in the agent folders today:
     `<root>/<worker>/<ws>/projects/<p>/threads/<t>/`.
   - No other worker, and no other process, reads or writes inside it. Two workers never share a
     folder, and two chats never share a folder (WS-37).
-  - The area's name stays the same when the worker restarts, so a restarted worker finds and wipes
-    its own leftovers. How the name is set is the builder's call (§13).
+  - **Areas are claimed, not named (AW-19).** A worker takes the first free numbered area,
+    `<root>/workers/area-<n>`, by holding an exclusive lock on `area-<n>.lock` for as long as it
+    runs, and wipes it before use. The operating system frees the lock when the process dies, so
+    a restarted worker claims a free area and wipes it. This needs local disk: locks are not
+    reliable on shared network drives.
   - A chat whose next turn lands on another worker is restored there from its snapshot (WS-6).
     That is the cost of this design: a cold restore, targeted at under 1 second for a typical
     chat (WS-19).
@@ -556,8 +566,9 @@ What lands in the agent folders today:
     during the deletion restores instead of trusting a half-deleted folder.
   - **Erased chats:** a cached folder whose chat was erased is never used again, because its local
     note cannot match a missing version record, and the next idle run deletes it.
-  - **Areas of workers that no longer exist** (fewer workers after a deploy) are deleted by the
-    deploy step. On autoscaling, a removed machine takes its disk with it.
+  - **Areas of workers that no longer exist:** at start-up a worker also deletes every other area
+    whose lock it can take, since a free lock proves no live process owns it (AW-19). On
+    autoscaling, a removed machine takes its disk with it.
 - **WS-17 [P1] The old cleanup is retired.**
   - The 24-hour thread purge (`agent_cleanup.py`) is replaced by WS-15 and WS-16. Its crash bug and
     its `awaiting_input` gap go with it.
@@ -766,7 +777,7 @@ What lands in the agent folders today:
 |---|---|
 | R2 unreachable, local copy current | the turn runs normally; starting a turn needs no storage |
 | R2 unreachable, local copy stale or missing | the turn fails with a retryable error and the fleet retries it; it never runs on a stale or empty workspace when a snapshot exists |
-| R2 unreachable at save | retried; then the turn fails and is retried, as `outputs/` does today (Q6, AW-15) |
+| R2 unreachable at save | retried 3 times; then the turn fails, the worker keeps its copy marked unsaved, and the chat's next turn saves it (AW-18) |
 | Worker dies mid-turn | the turn is picked up again, possibly elsewhere, restores the last saved version and resumes its checkpoint |
 | A zombie worker saves late | refused by the lease generation or the compare-and-set; logged |
 | Cache deleted by hand or removed as idle | the next turn restores; nothing is lost |
@@ -818,10 +829,12 @@ and WS-28's list contents for live and expired files (P2).
   research job. Their in-memory guards do not see each other. Under WS-15 they must all use the
   worker's own area, and the idle job must ask the worker which turns it is running, not any one
   factory's `_active` map.
-- **Other processes that write under the root.** The project library refresher
-  (`project_library_refresh.py`) rebuilds the shared project library tree for readers that are not
-  turns. Check who reads that tree. If anything outside a turn still needs it, it gets its own area
-  or reads from Postgres instead; it must not sit in a worker's area or be shared with turns.
+- **Other processes that write under the root (settled, AW-20).** The project library refresher
+  (`project_library_refresh.py`) rebuilt a shared project library tree on disk; only turns read it,
+  and turns now keep their own copies (WS-37). The refresher stops writing to disk, and the API
+  process stops building a workspace factory. A privacy erasure that changes a library file without
+  moving its digest bumps a new `project_library_epoch` row instead, which the digest includes, so
+  every chat's copy resyncs on its next turn.
 - **Production layout.** `/srv/clue/workspaces` stays one bind mount into the containers
   (`deploy/vm/compose.yaml`); the worker areas are folders inside it. The `run_python` sandbox's
   host paths change with the folder layout.
@@ -844,8 +857,6 @@ and WS-28's list contents for live and expired files (P2).
 - whether large tool results are stored or rebuilt from `result_ref` (WS-27);
 - how many old versions to keep (WS-30);
 - the bound on the agent's file list (its wording is reviewed by the founder);
-- how each worker's area gets a name that stays the same across restarts (e.g. the container or
-  service name), and how the deploy step removes areas of workers no longer deployed;
 - how the old layout is removed after Phase 1 (WS-22);
 - how the cleanup and expiry jobs are scheduled within the fleet;
 - how the lease generation reaches the turn runner;
@@ -894,3 +905,6 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: Q9 decided (AW-16): Phase 1 carries tests 1–4, 8, 13, 14 and a first live check;
   Phase 3 keeps the clean-machine restore, research reconciliation and the final live timing.
   Q10's cache cap decided (AW-17): 10 GiB per worker area.
+- 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
+  re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
+  epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.

@@ -19,7 +19,7 @@ copy of the brand and project files. Every folder is written only where somethin
 (Phase 1: WS-1–WS-22, WS-36, WS-37) and `docs/superpowers/specs/agent-workspace/rulings.md`
 (AW-1–AW-17). Read §0, §7 and §10–§12 of the spec before Task 1.
 
-## Decisions this plan makes (founder to confirm before execution)
+## Decisions this plan makes (confirmed by the founder 2026-10-22: AW-18, AW-19, AW-20)
 
 The spec left these to the builder, or the code survey showed the spec's wording cannot hold
 exactly. Each is a choice the founder should see.
