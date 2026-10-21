@@ -278,3 +278,31 @@ Related documents:
   `text`, …) for every tool, with `write_project_document@1` the single listed exception; and the
   tool is tested through the real plan builder and validator. The platform's raw-content check
   itself is left unchanged.
+- **R-10.4 (2026-10-21)** **F3 (`outputs/` emptied every turn) is solved by a platform change, not a
+  CRM one:** the agent's workspace becomes machine-independent. A chat's workspace is (1) its recipe,
+  rebuilt every turn from database pins as today, (2) one versioned snapshot of the files the agent
+  made, stored in R2 with its version record in Postgres (written only if the previous version is
+  still current, as design site turns already do), and (3) its conversation in Postgres. A worker's
+  disk is only a cache, emptied when a chat goes idle and when the worker starts, so no machine is
+  left with residue and any machine can continue any chat. Researched against Claude Code cloud,
+  Codex cloud, Cursor cloud agents, Devin, E2B and the Anthropic/OpenAI code-execution containers.
+- **R-10.5 (2026-10-21)** **What is kept, and for how long:** outcomes (published brand and project
+  documents, designs) are already durable; **work products** (analysis tables, scripts, drafts, the
+  agent's notes) live **as long as the chat** (recommended, founder agreed the direction); **raw
+  inputs** (CRM reads, large tool results, conversation offloads) are deleted **48 hours after the
+  chat's last activity**, but a **receipt** of each (what was read, when, how many records, content
+  hash, how to read it again) is kept for the chat's lifetime, so nothing ever points at a missing
+  file without saying what it was. The platform has no chat retention policy yet (everything is kept
+  until a privacy erasure); work products will follow whatever policy is adopted.
+- **R-10.6 (2026-10-21)** **A resumed chat runs on the current profile and skills**, not the ones it
+  started with; it keeps its own files and conversation.
+- **R-10.7 (2026-10-21)** **Staleness:** after a gap, the agent **must check how old its numbers and
+  their source data are** before relying on them, and decide itself whether to read again; it does
+  not have to announce this to the person. The platform supplies the facts (ages, receipts, expired
+  files); the judgement is in the skills, not a code check.
+- **R-10.8 (2026-10-21)** **Order and scope:** F2 is built first, then F3. F3 gets one comprehensive
+  spec for Head of ABM chats and research runs (same workspace mechanism), and a short follow-up spec
+  for design ad/web sessions (their session folder is restored only when missing, so a worker can
+  reuse a stale copy). Existing chats are not migrated: a chat's current folder becomes its first
+  snapshot the next time it runs. Where the F3 work happens (this lane or a parallel worktree) is
+  decided once the spec shows its size.

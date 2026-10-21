@@ -27,7 +27,7 @@ _Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and
 - 🔨 Manual path (no CRM): same document from the user's answers — in the skill (section 11); proven at the trial
 
 - ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)
-- 🔨 **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — trial 1 done 2026-10-21: connect + reads + analysis worked; publishing was blocked by F4 (fixed `1e88e9242`, live re-check owed); F2 planned; F1, F3, F5–F9 open — Phase 2 waits for this
+- 🔨 **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — trial 1 done 2026-10-21: connect + reads + analysis worked; publishing was blocked by F4 (fixed `1e88e9242`, live re-check owed); F2 planned (built next); F3 direction decided (R-10.4–R-10.8, spec after F2); F1, F5–F9 open — Phase 2 waits for this
 - 🔨 Connect card redesigned to the founder's Figma (three states, driven by the real connection) — built and seen in the trial, uncommitted
 
 - ⬜ **Deploy the reads** (R-2.4). Before any real customer connects on the deployed platform
