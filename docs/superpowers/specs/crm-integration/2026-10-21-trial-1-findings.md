@@ -73,7 +73,7 @@ founder asked to record first and discuss before acting.
   connect (`rereadThread()` on the chat controller). To discuss: keep that, or a general mechanism
   for every server-started turn (a thread-level event stream or a short re-read while any queued
   turn exists).
-- **F3 — `outputs/` is emptied at the end of every turn (by design).** *Direction decided 2026-10-21 (R-10.4–R-10.8): a machine-independent agent workspace (versioned snapshot of agent-made files in R2, local disk only a cache), with tiered retention and receipts; spec to be written after F2.* `snapshot_outputs(empty_after=
+- **F3 — `outputs/` is emptied at the end of every turn (by design).** *Direction decided 2026-10-21 (now AW-1–AW-8 in `docs/superpowers/specs/agent-workspace/rulings.md`): a machine-independent agent workspace (versioned snapshot of agent-made files in R2, local disk only a cache), with tiered retention and receipts; built in its own worktree. Interim since `f799a9830`: `outputs/` is kept for the chat's later turns instead of emptied (AW-6).* `snapshot_outputs(empty_after=
   True)` saves the folder as artifacts, then clears it. The next turn could not find last turn's
   `won-deals.csv` or its drafts and recomputed everything (turns 4 and 5 ~11 minutes). Founder's
   view: this should not happen in general. To discuss before any change (it touches the agent

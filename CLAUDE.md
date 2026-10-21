@@ -8,6 +8,18 @@ env has solo off — check it before any design-agent work or measurement. All d
 tools, speed, quality) targets the solo path (`build_scene_solo_prompt`, the solo web prompt). Solo needs
 `LUMEN_AGENT_SCENE_SKILL_BUNDLE=candidate` and `LUMEN_AGENT_FAST_LOOP=1` (both defaults).
 
+## Agent workspace is being made machine-independent — read before touching it (2026-10-21)
+A parallel lane is redesigning the agent workspace (the per-thread folders `scratch/`, `reads/`,
+`work/`, `outputs/` under `CLUE_AGENT_WORKSPACE_ROOT`, used by Head of ABM chats and research runs):
+the agent's own files become a versioned snapshot in R2 and a worker's disk only a cache, with tiered
+retention and receipts. Findings and rulings AW-1… live in `docs/superpowers/specs/agent-workspace/`
+(start with its `README.md`). Until that lands, every lane follows AW-8 — guidance that must not hold
+up other work: (1) no new state that lives only on a worker's disk (put what the agent must find
+again in its own folders, Postgres or R2); (2) no new in-memory registries of folder paths (like
+`CrmReadSinks`); (3) no code that relies on `outputs/` being emptied or on a turn running on the same
+machine as the last one (since `f799a9830` `outputs/` is kept between turns); (4) raw reads record
+enough to repeat them (action, parameters, when, how many records).
+
 ## ARV2 work — coding agents start here (added 2026-09-04)
 If your task concerns account research, contact research, the display layer, the accounts screens,
 or anything named "ARV2", read **`docs/specs/ARV2-AGENT-BRIEFING.md`** first, then
