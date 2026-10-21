@@ -43,7 +43,7 @@ the phases cannot drift apart.
 | Word | Meaning |
 |---|---|
 | thread folder | a chat's folder on a worker's disk: `<root>/<ws>/projects/<p>/threads/<t>/` |
-| recipe folders | `.deepagent/ inputs/ context/` plus the mounted `brand/ project/ attachments/`. Rebuilt every turn from database pins, as today |
+| recipe folders | `.deepagent/ inputs/ context/` plus the mounted `brand/ project/ attachments/`. Written from database pins; from Phase 1 only the files that changed are written (WS-36) |
 | agent folders | `scratch/ reads/ work/ outputs/`: the files the agent makes or reads for itself. **These are what this spec makes durable** |
 | snapshot | one saved version of a chat's agent folders: a file list in R2 plus the stored files it names |
 | version record | one row per chat in Postgres naming the chat's current snapshot version (technical name: pointer row) |
@@ -136,6 +136,7 @@ the decision).
 | D-31 | A live measurement of restore time | roadmap P3; my caveat "we should measure it, not assume it" | WS-20, §11 | P1 (first), P3 (final) | as discussed |
 | D-32 | One comprehensive spec for chats and research runs; design ad and web sessions in a short follow-up spec | AW-5; your words: *"well defined and very comprehensive"* | this document; §2.2 | P0 | as discussed |
 | D-33 | Other lanes follow AW-8 meanwhile, and F3 must not hinder CRM Phases 2 and 3 | AW-8; your words | WS-14, §12 | all | as discussed |
+| D-34 | Recipe folders are not emptied and rebuilt every turn; only what changed is written | your words (2026-10-22) | WS-36 | P1 | as discussed |
 
 ### 2.1 The seven production-grade properties
 
@@ -180,7 +181,7 @@ These are the seven properties I promised on 2026-10-21. Each one maps to requir
 | Phase | What it builds | What it delivers on its own | Requirements | Done when |
 |---|---|---|---|---|
 | **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
-| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22 | §11 tests 1–4, 6, 8, 10, 11 pass; the first live check passes with timings recorded |
+| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36 | §11 tests 1–4, 6, 8, 10, 11, 13 pass; the first live check passes with timings recorded |
 | **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting stored files nothing points to | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
 | **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
@@ -290,7 +291,7 @@ From the code on this branch. File references are for the builder.
 | Piece | Today | Reference |
 |---|---|---|
 | Thread folder | exactly `.deepagent inputs context scratch reads work outputs`; the top level is audited | `platform/agents/clue_agents/workspace.py:105,1808-1846` |
-| Recipe folders | rebuilt and frozen every turn from pins; brand, project and attachments mounted from shared libraries | `workspace.py:1021-1037`, `resources.py:251-330`, `agent_turn_fleet_wiring.py:657-798` |
+| Recipe folders | `.deepagent/ inputs/ context/` are emptied and written again every turn, even when nothing changed, then frozen read-only; brand, project and attachments are shared libraries, written only when their content hash changes | `workspace.py:1021-1037`, `resources.py:251-330`, `agent_turn_fleet_wiring.py:657-798` |
 | Agent folders | left on disk between turns; `outputs/` saved to artifacts and, since `f799a9830`, kept | `workspace.py:1209-1262` |
 | Lease | `AgentWorkspaceFactory.acquire/create/release`; an in-memory `_active` map per factory; `flock` on the root and the thread | `workspace.py:1434-1806,1482-1491,515-524` |
 | One turn per chat | enforced in Postgres: an advisory lock plus one queued or claimed task; the fleet `work_lease` per chat has a generation that goes up on every takeover | `agent_turn_submission.py:693-794`, `platform/fleet/clue_fleet/lease.py` |
@@ -326,7 +327,7 @@ What lands in the agent folders today:
                     │ same version as the local note?                  │  then move the version
                     ▼ yes: use the cache   no: empty and restore       │  record (only if current)
             ┌──────────── worker disk (cache) ────────────────────────────────────────┐
-            │ thread folder: recipe folders (rebuilt from pins, as today)              │
+            │ thread folder: recipe folders (only changed files written, WS-36)        │
             │               agent folders  (= snapshot version N; local note kept aside)│
             │ removed when idle; removed when its chat is erased; never the only copy  │
             └───────────────────────────────────────────────────────────────────────────┘
@@ -334,7 +335,7 @@ What lands in the agent folders today:
 
 **A turn, start to end:**
 1. The fleet gives the turn to a worker. Postgres already guarantees one turn per chat.
-2. The worker rebuilds the recipe folders from pins, as today.
+2. The worker updates the recipe folders from pins, writing only the files that changed (WS-36).
 3. It reads the chat's version record. If its local copy holds that version, it uses it.
    Otherwise it empties the agent folders and restores the snapshot from R2.
 4. The agent works. Its files are ordinary local files, so `run_python` and CRM reads work
@@ -379,7 +380,7 @@ What lands in the agent folders today:
   | `reads/` | everything | raw input |
   | `work/conversation_history/` (with `media/`), `work/large_tool_results/` | everything | raw input |
   | any other path under `work/` | **not saved**; `work/` is emptied at turn start apart from the two folders above (**Claude's call, Q5**) | — |
-  | recipe folders and mounts | never; rebuilt from pins as today | — |
+  | recipe folders and mounts | never; they come from database pins (WS-36) | — |
 
 - **WS-5 [P1] Tier recorded from the start.** Phase 1 writes each entry's tier into the file list,
   even though nothing expires until Phase 2. This way Phase 2 needs no migration of file lists.
@@ -392,10 +393,12 @@ What lands in the agent folders today:
   1. Read the version record. This is one indexed read.
   2. Compare its `(version, manifest_sha256)` with the local version note.
   3. **If they match:** use the local copy as it is. Nothing is downloaded.
-  4. **If they differ, or there is no note:**
-     - empty the four agent folders;
-     - download the file list and every live entry in parallel, with bounded concurrency;
-     - check each file's sha256, and stop loudly on a mismatch;
+  4. **If they differ, or there is no note:** bring the local copy up to date, without wiping it:
+     - download the file list;
+     - keep every local file whose sha256 already matches its entry;
+     - download the entries that are missing or different, in parallel, with bounded concurrency;
+     - delete local files that are not in the file list;
+     - check each downloaded file's sha256, and stop loudly on a mismatch;
      - write each file with the workspace's normal ownership and modes (owner uid, 0600 for files,
        0700 for folders, no links);
      - write the local note last.
@@ -404,6 +407,27 @@ What lands in the agent folders today:
      - a chat from before this change keeps whatever is on this machine's disk, and its first save
        becomes version 1 (WS-22).
   6. In every case, `work/` is emptied except its two compaction folders (WS-4).
+- **WS-36 [P1] Recipe folders: write only what changed, never empty and rebuild.** (Founder,
+  2026-10-22. Numbered last so the other ids stay stable.) Today `.deepagent/ inputs/ context/` are
+  emptied and written again at every turn start (`workspace.py:1026` `reset_materialized_trees`),
+  even when nothing changed. From Phase 1:
+  - **A file that is new, or whose content differs from this turn's pin:** write it.
+  - **A file identical to this turn's pin:** leave it alone.
+  - **A file this turn's pins no longer include:** delete that one file.
+
+  What this means for each folder:
+
+  | Folder | What it holds | When it is written |
+  |---|---|---|
+  | `.deepagent/` | the agent's manual, skills and profile | only when a deployment changes them (a new profile or skill version) |
+  | `context/` | the project card, budget, library and brand indexes | only the files whose values changed, e.g. the budget after spending, the library index after a publish |
+  | `inputs/` | this turn's inputs, e.g. `user-message.txt` | the new turn's input files; an earlier turn's input file is removed (the conversation keeps every message) |
+
+  These files describe the current state, so a changed file is **replaced**, never appended to
+  (two budgets in one file would be invalid JSON and contradictory). The files stay read-only to the
+  agent, as today. Comparing by content hash is the same check the brand and project libraries
+  already use (`brand_library.py:159`, `project_library.py:564`). Tested: a second turn with no
+  changes writes nothing in these folders except its new input file.
 - **WS-7 [P1] Local version note.** The note lives outside the agent-visible thread folder, for
   example in a sibling cache-state folder under the root. The top-level audit refuses unknown entries
   in the thread folder, and the agent must not be able to read or forge the note. The exact place is
@@ -717,6 +741,7 @@ checks.
 | 10 | **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, policy sweep) | P1 |
 | 11 | **Migration** up, down and up again, with a single Alembic head | P1 |
 | 12 | **Clean-machine restore and final live check:** on the dushanbe stack, a real chat turn; delete the whole cache root; continue the chat; the agent finds its files; warm and cold timings recorded (WS-20) | P1 (first run), P3 (final) |
+| 13 | **Recipe folders updated in place:** a second turn on the same root with no changes writes only its new input file; a changed budget replaces only `budget.json`; a removed document's file is deleted; a new skill version rewrites only `.deepagent/` | P1 |
 
 Also tested in their phases: WS-18 (profile on resume, P1), WS-26's re-read of identical bytes (P2),
 and WS-28's list contents for live and expired files (P2).
@@ -780,3 +805,6 @@ and WS-28's list contents for live and expired files (P2).
     - WS-34 and WS-35: checks and rollout.
   - **Plain words used:** version record, file list, stored file, local version note.
   - **Release rule added:** P1 does not reach production without P2.
+- 2026-10-22: WS-36 added (founder): recipe folders are updated only where something changed, never
+  emptied and rebuilt every turn. WS-6 now brings a stale local copy up to date (keeps matching
+  files, downloads the rest, deletes extras) instead of emptying it. D-34 and test 13 added.

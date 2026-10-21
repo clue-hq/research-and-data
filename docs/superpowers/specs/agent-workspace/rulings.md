@@ -9,7 +9,10 @@ agent, not only the CRM work.
 ## Direction
 
 - **AW-1 (2026-10-21; was R-10.4)** **The agent's workspace no longer depends on one machine.** A
-  chat's workspace is (1) its recipe, rebuilt every turn from database pins as today; (2) one
+  chat's workspace is (1) its recipe, ~~rebuilt every turn from database pins as today~~ written from
+  database pins, where a turn writes only the files that changed — *amended 2026-10-22 (founder):*
+  nothing is emptied and rebuilt each turn; `.deepagent/` changes only after a deployment, `context/`
+  only where a value changed, `inputs/` gets the new turn's input (spec WS-36); (2) one
   versioned snapshot of the files the agent made, stored in R2 with its version record in Postgres,
   written only if the previous version is still current (the check design site turns already use);
   and (3) its conversation in Postgres. A worker's disk is only a cache, emptied when a chat goes idle
