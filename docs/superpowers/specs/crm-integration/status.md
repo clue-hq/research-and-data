@@ -20,15 +20,15 @@ _Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and
 - ✅ `connect_crm` tool (Task 7; registered, granted in Task 11)
 - ✅ `find_crm_actions` / `run_crm_action` (Task 8; reads only, every result to a `reads/` file, the model gets a summary; registered, granted in Task 11; checked live on both test CRMs)
 - ✅ Salesforce API-budget check before every read (Task 8; 10% default share of the org's daily calls, stop when the org has under 10% left)
-- ✅ `write_brand_document` (Task 9; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file) — 🔨 widened by R-3.15 (uncommitted with Task 11): any `company/`, `product/`, `audience/`, `proof/` document except the generated catalog, only when the person asks or a skill says so, and a version check at save (`based_on_version`; `document_changed`) instead of a lock
-- 🔨 `crm-sales-analysis` skill v1 and interview step (stage0-interview v49, section 2b) — approved by the founder (R-3.14), written, **uncommitted until the trial**; Head of ABM v76 grants the four tools (recipe 36, manual v22)
+- ✅ `write_brand_document` (Task 9; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file) — ✅ widened by R-3.15 (`1e88e9242`): any `company/`, `product/`, `audience/`, `proof/` document except the generated catalog, only when the person asks or a skill says so, and a version check at save (`based_on_version`; `document_changed`) instead of a lock
+- ✅ `crm-sales-analysis` skill v1 and interview step (stage0-interview v49, section 2b) — approved (R-3.14, R-10.12), committed (`a51d1022f`, `412bac3ef`); Head of ABM v76 grants the four tools (recipe 36, manual v22)
 - 🔨 `company/sales-motion.md` — the skill writes it; first real one comes from the trial
 - 🔨 CRM customers merged into `proof/customers.md` (the agent's merge comes with the Task 11 skill); ✅ onboarding refresh keeps CRM rows (Task 10: rows whose Source has `CRM:` are carried, merged by domain)
 - 🔨 Manual path (no CRM): same document from the user's answers — in the skill (section 11); proven at the trial
 
 - ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)
 - 🔨 **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — trial 1 done 2026-10-21: connect + reads + analysis worked; publishing was blocked by F4 (fixed `1e88e9242`; live re-check passed 2026-10-21 — sales-motion v1 and customers v3 published); F2 fixed (live thread stream, live-checked in two tabs); F3 direction decided (AW-1–AW-8, own worktree; `outputs/` stopgap in `f799a9830`); F1/F6/F7 dropped, F5 deferred; F11 fixed; F8–F10 open — Phase 2 waits for this
-- 🔨 Connect card redesigned to the founder's Figma (three states, driven by the real connection) — built and seen in the trial, uncommitted
+- ✅ Connect card redesigned to the founder's Figma (three states, driven by the real connection) — committed (`5d1081c7b`)
 
 - ⬜ **Deploy the reads** (R-2.4). Before any real customer connects on the deployed platform
   (R-5.2): our own HubSpot app and Salesforce connected app, Composio Zero Data Retention on, the
