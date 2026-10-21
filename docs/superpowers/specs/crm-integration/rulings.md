@@ -298,3 +298,9 @@ Related documents:
 - **R-10.13 (2026-10-22)** **F8 (callback page background), F9 (test CRM data limits) and F10 (an
   11-minute reasoning loop) are not counted as issues or defects for now.** Nothing is done about
   them; with F5 deferred, no trial finding blocks the Phase 1 gate.
+- **R-10.14 (2026-10-22)** **Changing the CRM once one is connected belongs on a settings page, not
+  in the chat.** The switch test was skipped. Found during it: a switch or reconnect card was shown
+  as already connected because the tool's snapshot and the connection route format the same time
+  differently (`…Z` vs `…+00:00`) — fixed in `ef4e96cbc` (compared as moments), still needed for
+  reconnecting an expired connection. Whether `connect_crm` should keep offering a switch from chat
+  is to be decided with the settings page.
