@@ -19,17 +19,18 @@ import {
  * header on the reconnect.
  *
  * - Frames are handed to `onFrame` in order. It decides what each means and
- *   answers `"continue"`, `"stop"` (the stream is done; no reconnect), or
- *   `"restart-cursor"` (the server reset the stream: forget the cursor, so a
- *   reconnect starts at the tail rather than past frames it was told to drop).
- *   It may throw {@link ChatStreamProtocolError} for a frame that must end the
+ *   answers `"continue"` or `"stop"` (the stream is done; no reconnect). It
+ *   may throw {@link ChatStreamProtocolError} for a frame that must end the
  *   stream.
  * - A dropped or cleanly ended connection reconnects from the highest event id
  *   delivered, with bounded backoff. A connection that stayed open for
  *   {@link HEALTHY_CONNECTION_MS} restarts the backoff, so a long-lived stream
  *   cut by a proxy now and then never runs out of retries; one that keeps
  *   failing at once gives up and calls `onError`.
- * - 401/403/404 and protocol errors are final: `onError`, no retry.
+ * - 401/403/404 and protocol errors are final: `onError`, no retry. A stream
+ *   that lives as long as its tab (`retryForever`, the thread stream) never runs
+ *   out of retries, and treats a refused token as one more reason to reconnect
+ *   with a fresh one; only an access refusal or a missing thread ends it.
  */
 
 export interface ChatStreamHandle {
@@ -52,7 +53,7 @@ export interface TokenStreamFrame {
   id: number | null;
 }
 
-export type TokenStreamVerdict = "continue" | "stop" | "restart-cursor";
+export type TokenStreamVerdict = "continue" | "stop";
 
 export interface TokenStreamOptions {
   transport: Extract<ChatTransport, { mode: "http" }>;
@@ -67,6 +68,8 @@ export interface TokenStreamOptions {
   onError(error: unknown): void;
   /** `onFrame` answered `"stop"` and the connection is closed. */
   onStopped?(): void;
+  /** Keep reconnecting for as long as the stream is open (see {@link reconnectDelay}). */
+  retryForever?: boolean;
 }
 
 const StreamTokenSchema = z
@@ -76,6 +79,26 @@ const StreamTokenSchema = z
 const MAX_RECONNECT_ATTEMPTS = 6;
 const BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000];
 export const HEALTHY_CONNECTION_MS = 10_000;
+
+/**
+ * How long to wait before reconnect attempt `attempt + 1` after `error`, or
+ * `null` when the stream must stop and report the error.
+ */
+export function reconnectDelay(
+  attempt: number,
+  error: unknown,
+  { retryForever }: { retryForever: boolean },
+): number | null {
+  if (error instanceof ChatStreamProtocolError) return null;
+  if (error instanceof ClueChatApiError && [401, 403, 404].includes(error.status)) {
+    // A token can be refused for a reason that a fresh one cures (a proxy
+    // retried the request); an access refusal or a missing thread cannot be.
+    const refusedToken = error.status === 401 && error.code === "INVALID_STREAM_TOKEN";
+    if (!(retryForever && refusedToken)) return null;
+  }
+  if (!retryForever && attempt >= MAX_RECONNECT_ATTEMPTS) return null;
+  return BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)] ?? 8000;
+}
 
 class StreamEnded extends Error {
   constructor() {
@@ -109,7 +132,7 @@ export function openTokenStream(options: TokenStreamOptions): ChatStreamHandle {
           }),
         );
         const headers = new Headers({ Accept: "text/event-stream" });
-        if (cursor !== null && cursor > 0) {
+        if (cursor !== null && cursor >= 0) {
           headers.set("Last-Event-ID", String(cursor));
         }
         const response = await fetch(
@@ -137,11 +160,7 @@ export function openTokenStream(options: TokenStreamOptions): ChatStreamHandle {
               await reader.cancel().catch(() => undefined);
               throw error;
             }
-            if (verdict === "restart-cursor") {
-              cursor = null;
-            } else if (eventId !== null) {
-              cursor = Math.max(cursor ?? 0, eventId);
-            }
+            if (eventId !== null) cursor = Math.max(cursor ?? 0, eventId);
             if (verdict === "stop") {
               // The frame itself says the stream is over. Do not wait for a
               // proxy or TCP timeout before telling the caller.
@@ -158,25 +177,17 @@ export function openTokenStream(options: TokenStreamOptions): ChatStreamHandle {
         throw new StreamEnded();
       } catch (error) {
         if (closed || isAbort(error)) return;
-        if (error instanceof ChatStreamProtocolError) {
-          options.onError(error);
-          return;
-        }
-        if (
-          error instanceof ClueChatApiError &&
-          (error.status === 401 || error.status === 403 || error.status === 404)
-        ) {
-          options.onError(error);
-          return;
-        }
         if (openedAt !== null && Date.now() - openedAt >= HEALTHY_CONNECTION_MS) {
           attempt = 0;
         }
-        if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+        const wait = reconnectDelay(attempt, error, {
+          retryForever: options.retryForever ?? false,
+        });
+        if (wait === null) {
           options.onError(error);
           return;
         }
-        await delay(BACKOFF_MS[attempt] ?? 8000);
+        await delay(wait);
         attempt += 1;
       }
     }

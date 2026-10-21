@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { JSDOM } from "jsdom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -280,5 +280,26 @@ test("test_the_hold_ends_when_the_wake_turn_completes", async () => {
     await h.flushUntil(() => h.controller().discoveryRunId === null, "the hold released");
   } finally {
     await h.teardown();
+  }
+});
+
+test("test_a_hold_released_without_a_wake_turn_still_ends", async () => {
+  // Review finding #2: a run released with nobody to wake writes no turn frame, so the thread
+  // stream has nothing to send. A slow re-read of the thread list (30 s) still ends the hold.
+  mock.timers.enable({ apis: ["setInterval"] });
+  const h = harness({ stoppable: true });
+  try {
+    await h.mount();
+    assert.equal(h.controller().discoveryRunId, RUN);
+    h.server.discovery = null;
+    const reads = h.server.threadReads;
+    mock.timers.tick(29_000);
+    await h.flushUntil(() => true, "a settled render");
+    assert.equal(h.server.threadReads, reads, "no re-read before 30 s");
+    mock.timers.tick(1_000);
+    await h.flushUntil(() => h.controller().discoveryRunId === null, "the hold released");
+  } finally {
+    await h.teardown();
+    mock.timers.reset();
   }
 });

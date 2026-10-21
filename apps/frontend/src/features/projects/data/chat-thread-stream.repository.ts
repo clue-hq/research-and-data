@@ -28,6 +28,11 @@ export interface ChatThreadStreamAttachment {
   lastEventId: number | null;
   /** A lifecycle frame of a turn in this thread. */
   onTurnEvent(event: ChatStreamEvent): void;
+  /**
+   * Every cursor the server names, including `stream.hello`'s start point:
+   * keep the latest and pass it as `lastEventId` when reopening.
+   */
+  onCursor?(eventId: number): void;
   /** The cursor was too old to replay: the caller re-reads the thread. */
   onReset(): void;
   /** The stream stopped and will not resume by itself. */
@@ -70,14 +75,17 @@ export function createHttpChatThreadStreamRepository(
         mintPath: threadPath(attachment.projectId, attachment.threadId, "/stream_token"),
         eventsPath: threadPath(attachment.projectId, attachment.threadId, "/events"),
         lastEventId: attachment.lastEventId,
+        retryForever: true,
         onFrame(frame) {
+          if (frame.id !== null) attachment.onCursor?.(frame.id);
           // The two connect frames name the thread but no turn, so they are
-          // read here rather than through the turn-frame parser.
+          // read here rather than through the turn-frame parser. A reset keeps
+          // the cursor: the hello before it already named the new start point.
           const type = frameType(frame.data);
           if (type === "stream.hello") return "continue";
           if (type === "stream.reset") {
             attachment.onReset();
-            return "restart-cursor";
+            return "continue";
           }
           const parsed = parseChatStreamEvent(frame.data, frame.event);
           if (!parsed.ok) {

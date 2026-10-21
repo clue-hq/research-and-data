@@ -118,6 +118,13 @@ import {
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
 
+/**
+ * How often a thread held by a discovery re-reads its thread list. The thread
+ * stream announces the wake turn that normally ends a hold; this only catches
+ * a run released without one.
+ */
+const DISCOVERY_HOLD_SAFETY_REREAD_MS = 30_000;
+
 export interface ChatAccessState {
   code: string;
   message: string;
@@ -1362,6 +1369,18 @@ export function useProjectChatController({
     discoveryHeldRef.current = discoveryRunId !== null;
   }, [discoveryRunId]);
 
+  // A run released with nobody to wake (or whose wake could not be queued)
+  // writes no turn frame, so the thread stream cannot announce the end of the
+  // hold. While a discovery holds the thread, re-read the thread list slowly as
+  // the safety net (final review of F2, finding #2).
+  useEffect(() => {
+    if (!activeThreadId || discoveryRunId === null) return;
+    const timer = globalThis.setInterval(() => {
+      void loadThreads().catch(() => undefined);
+    }, DISCOVERY_HOLD_SAFETY_REREAD_MS);
+    return () => globalThis.clearInterval(timer);
+  }, [activeThreadId, discoveryRunId, loadThreads]);
+
   // --- the thread stream (CRM trial 1, F2) -------------------------------
   //
   // Each turn has its own stream, but only a turn this chat knows about gets
@@ -1394,9 +1413,11 @@ export function useProjectChatController({
       projectId,
       threadId,
       lastEventId: threadCursor.current.get(threadId) ?? null,
+      onCursor(eventId) {
+        if (open) threadCursor.current.set(threadId, eventId);
+      },
       onTurnEvent(event) {
         if (!open || !mounted.current) return;
-        if (event.eventId !== null) threadCursor.current.set(threadId, event.eventId);
         const known =
           attachments.current.has(event.turnId) ||
           attached.current.has(event.turnId) ||
@@ -1413,7 +1434,6 @@ export function useProjectChatController({
       },
       onReset() {
         if (!open || !mounted.current) return;
-        threadCursor.current.delete(threadId);
         reread();
       },
       onError(failure) {

@@ -81,8 +81,9 @@ function harness() {
       return new Response(new ReadableStream<Uint8Array>({
         start(controller) {
           open.body = controller;
+          // The server names its start point on the hello (review finding #1).
           controller.enqueue(encoder.encode(
-            `event: stream.hello\ndata: {"schema_version":"1","type":"stream.hello","project_id":"${PROJECT}","thread_id":"${threadId}"}\n\n`,
+            `id: 5\nevent: stream.hello\ndata: {"schema_version":"1","type":"stream.hello","project_id":"${PROJECT}","thread_id":"${threadId}"}\n\n`,
           ));
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
@@ -300,6 +301,24 @@ test("test_a_reset_rereads_the_thread", async () => {
       () => (h.server.turnReads.get(THREAD_A) ?? 0) > reads && h.server.threadReads > threadReads,
       "the thread re-read after the reset",
     );
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_tab_hidden_before_any_turn_frame_reopens_from_the_hello", async () => {
+  // Review finding #1: hidden before any turn frame, the chat still holds the hello's cursor, so
+  // a wake turn that ran while hidden is replayed on return rather than skipped.
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    const first = h.threadOpens.at(-1)!;
+    await h.setVisibility("hidden");
+    await h.flushUntil(() => first.signal?.aborted === true, "the hidden tab closed its stream");
+    const opens = h.threadOpens.length;
+    await h.setVisibility("visible");
+    await h.flushUntil(() => h.threadOpens.length === opens + 1, "reopened when shown");
+    assert.equal(h.threadOpens.at(-1)?.lastEventId, "5");
   } finally {
     await h.teardown();
   }

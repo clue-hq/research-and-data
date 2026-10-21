@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatStreamEvent } from "../model/chat-events";
 import { createHttpChatThreadStreamRepository } from "./chat-thread-stream.repository";
+import { ClueChatApiError } from "./chat-api";
+import { reconnectDelay } from "./chat-sse";
 
 /**
  * The thread stream (CRM trial 1, F2): one per open chat, carrying the
@@ -12,8 +14,9 @@ import { createHttpChatThreadStreamRepository } from "./chat-thread-stream.repos
 const encoder = new TextEncoder();
 const TRANSPORT = { mode: "http", prefix: "/api/clue" } as const;
 
-function hello(threadId = "th1"): string {
-  return `event: stream.hello\ndata: {"schema_version":"1","type":"stream.hello","project_id":"p1","thread_id":"${threadId}"}\n\n`;
+function hello(threadId = "th1", id?: number): string {
+  const idLine = id === undefined ? "" : `id: ${id}\n`;
+  return `${idLine}event: stream.hello\ndata: {"schema_version":"1","type":"stream.hello","project_id":"p1","thread_id":"${threadId}"}\n\n`;
 }
 
 function lifecycle(eventId: number, type: string, turnId: string, threadId = "th1"): string {
@@ -219,4 +222,47 @@ test("test_frames_for_another_thread_are_dropped", async () => {
   } finally {
     fake.restore();
   }
+});
+
+test("test_the_hello_cursor_is_kept_for_a_reconnect", async () => {
+  // Review finding #1: a connection dropped before any turn frame must still resume from the
+  // start point the server named, including 0 for a thread with no frames yet.
+  const fake = fakeFetch([
+    () => eventsResponse([hello("th1", 0)], { end: true }),
+    () => eventsResponse([hello("th1", 0)]),
+  ]);
+  const cursors: number[] = [];
+  try {
+    const handle = createHttpChatThreadStreamRepository(TRANSPORT).open({
+      projectId: "p1",
+      threadId: "th1",
+      lastEventId: null,
+      onTurnEvent: () => assert.fail("no turn frame expected"),
+      onCursor: (eventId) => cursors.push(eventId),
+      onReset: () => assert.fail("no reset expected"),
+      onError: (error) => assert.fail(String(error)),
+    });
+    await until(() => fake.events.length === 2, "the reconnect");
+    handle.close();
+    assert.equal(fake.events[1]?.headers.get("Last-Event-ID"), "0");
+    assert.deepEqual(cursors.slice(0, 1), [0]);
+  } finally {
+    fake.restore();
+  }
+});
+
+test("test_the_thread_stream_never_runs_out_of_retries", () => {
+  // Review finding #3: the thread stream lives as long as the tab; a long outage or a token
+  // the server refused must not end it for good.
+  const outage = new Error("network down");
+  assert.equal(reconnectDelay(6, outage, { retryForever: false }), null);
+  assert.equal(reconnectDelay(6, outage, { retryForever: true }), 8000);
+  assert.equal(reconnectDelay(50, outage, { retryForever: true }), 8000);
+  const refusedToken = new ClueChatApiError("used", { status: 401, code: "INVALID_STREAM_TOKEN", requestId: null });
+  assert.equal(reconnectDelay(0, refusedToken, { retryForever: false }), null);
+  assert.equal(reconnectDelay(0, refusedToken, { retryForever: true }), 250);
+  const forbidden = new ClueChatApiError("no", { status: 403, code: "PERMISSION_DENIED", requestId: null });
+  assert.equal(reconnectDelay(0, forbidden, { retryForever: true }), null);
+  const gone = new ClueChatApiError("gone", { status: 404, code: "THREAD_NOT_FOUND", requestId: null });
+  assert.equal(reconnectDelay(0, gone, { retryForever: true }), null);
 });
