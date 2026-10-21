@@ -49,7 +49,7 @@ founder asked to record first and discuss before acting.
 ## Findings
 
 ### Blocking
-- **F4 — `write_brand_document` can never be called by the agent.** The plan validator
+- **F4 — `write_brand_document` can never be called by the agent.** *Fixed 2026-10-21 (`1e88e9242`): the input is now `markdown`; a guard test fails the build for any tool input named like raw content (one listed exception, `write_project_document@1`), and a test runs the tool through the real plan builder and validator. Live re-check (publish from the trial chat) still owed.* The plan validator
   (`clue_execution/graph.py`, `_RAW_BODY_KEYS`) rejects any plan whose node bindings contain a key
   named `body` (also `content`, `text`, …): "raw_body_key: raw body content is forbidden". The tool's
   input has a field named `body`, and the key is present even when it is null, so **both** the

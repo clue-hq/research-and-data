@@ -273,3 +273,8 @@ Related documents:
   re-read nudge are removed. Plan: `docs/superpowers/plans/2026-10-21-chat-thread-stream.md`.
 - **R-10.2 (2026-10-21)** **Intermediate progress messages during long tasks** (like Claude Code /
   Codex) are wanted; the founder will take this up separately ("mid-tasks"), not in the CRM work.
+- **R-10.3 (2026-10-21)** **F4 fix:** `write_brand_document`'s inline input is renamed `body` →
+  `markdown`; a build-time guard forbids tool inputs named like raw content (`body`, `content`,
+  `text`, …) for every tool, with `write_project_document@1` the single listed exception; and the
+  tool is tested through the real plan builder and validator. The platform's raw-content check
+  itself is left unchanged.
