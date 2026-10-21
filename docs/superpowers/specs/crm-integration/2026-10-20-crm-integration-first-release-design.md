@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft for founder review (2026-10-20) |
+| Status | Reviewed for Phase 2 on 2026-10-22 (R-6.21–R-6.25, R-8.7) (2026-10-20) |
 | Owner | Aryan (founder/CTO) |
 | Decisions | Every founder decision is in [`rulings.md`](rulings.md) and cited here as **R-x.y**. This document does not repeat the reasoning behind them. Choices made by Claude (not the founder) are listed in section 15 for review. |
 | Replaces | [`../2026-10-18-crm-integration-v1-design.md`](../2026-10-18-crm-integration-v1-design.md) (read-only draft). Its read-side design carries over here; the internal read-only "v1" stays a development checkpoint (R-2.1). |
@@ -252,17 +252,26 @@ Every write action in the allowlist carries a **kind**; field updates also carry
 
 - A grant is one of: **Always allow** a field (object + field), **Always allow** a kind, or **Fully
   automatic** (everything except `clue_fields_setup`).
+- Write actions are found by search like reads (R-6.23); each allowlisted write action carries our
+  data (kind, object, fields, label), which decides its scope.
 - **Overwriting a value a person set always shows the card, whatever the grants say** (R-6.5 as
   amended): grants cover filling empty fields and Clue's own items. Letting grants skip that card
   becomes a setting on the future Settings → Integrations page.
 - **Any workspace member** can grant and revoke (R-6.8, R-6.12).
-- **Starting default** (R-6.4): at connect, the user is asked once to allow Clue's own fields and its
-  own list/campaign membership; everything else starts as ask-each-time.
+- ~~**Starting default** (R-6.4): at connect, the user is asked once to allow Clue's own fields and its
+  own list/campaign membership; everything else starts as ask-each-time.~~ **Superseded by R-6.24:**
+  nothing is asked at connect; everything starts as ask-each-time, and the first permission card
+  offers "Always allow" for the kinds of change on it.
 - **One place to list and revoke** (R-6.12): through chat (`manage_crm_grants@1`: "what can Clue do
   without asking?", "stop auto-logging notes"), and on the Integrations screen once it exists.
 - Grants are per workspace and per connection; switching CRMs clears them.
 
 ### 6.4 The permission card
+
+**The current card is `2026-10-22-crm-write-permission-card-design.md` (R-6.21, R-6.22):** changes
+are shown in groups with counts, not one row each; overwrites of a person's value are listed one by
+one and start unticked; "Fully automatic" lives on the settings page; one live card per chat. The
+bullets below are the original outline.
 
 - Shows every change in the batch as a row: record, what changes, **before → after**, the reason,
   and a marker on rows that **overwrite a person's value** (R-6.5).

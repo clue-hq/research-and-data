@@ -242,6 +242,14 @@ Related documents:
   of change on it (e.g. adding contacts to Clue lists), so the person decides when a real write is
   in front of them. The connect card stays as built.
 
+- **R-6.25 (2026-10-22)** **Confirmed design calls** (design §15): writes run in a background
+  executor that wakes the chat with the results (call 4); undo is a new proposal of the reverse
+  changes through the same permissions (call 9); when the CRM cannot tell who set a value, Clue
+  assumes a person did (call 11); Clue removes only memberships, notes and tasks it created itself,
+  per its own record (call 12); standing permissions belong to the current connection and changing
+  CRMs clears them (calls 1, 8); setting up Clue's own fields always needs an owner or admin, once,
+  and is never covered by "Fully automatic" (call 7).
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched

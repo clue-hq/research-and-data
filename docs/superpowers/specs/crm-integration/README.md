@@ -14,7 +14,7 @@ group. Add a line here whenever a new document is written.
 | [`../agent-workspace/README.md`](../agent-workspace/README.md) | F3 moved to its own folder: workspace footprint findings and rulings AW-1… (was R-10.4–R-10.8) | Live |
 | [`../../plans/2026-10-21-chat-thread-stream.md`](../../plans/2026-10-21-chat-thread-stream.md) | Plan for F2: the live thread stream (R-10.1) | Done 2026-10-21 (F2 fixed) |
 | [`rulings.md`](rulings.md) | Every founder decision, numbered (R-x.y) and dated; superseded rulings struck through | Live — updated after every decision |
-| [`2026-10-20-crm-integration-first-release-design.md`](2026-10-20-crm-integration-first-release-design.md) | The first-release design: HubSpot and Salesforce, read and write, through Composio | Draft for founder review |
+| [`2026-10-20-crm-integration-first-release-design.md`](2026-10-20-crm-integration-first-release-design.md) | The first-release design: HubSpot and Salesforce, read and write, through Composio | Reviewed for Phase 2 (2026-10-22) |
 | [`../../plans/2026-10-20-crm-integration-phase-1-reads.md`](../../plans/2026-10-20-crm-integration-phase-1-reads.md) | Phase 1 (reads) implementation plan: 13 tasks, ending with the founder's local test | Draft for founder review |
 
 ## Superseded
