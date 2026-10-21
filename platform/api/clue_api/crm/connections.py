@@ -28,6 +28,7 @@ __all__ = [
     "activate_from_attempt",
     "count_salesforce_call",
     "get_connect_request",
+    "get_connection",
     "latest_connection",
     "mark_expired",
     "open_connect_request",
@@ -89,6 +90,19 @@ async def latest_connection(conn: AsyncConnection, *, workspace_id: str) -> CrmC
                 "ORDER BY (status = 'active') DESC, updated_at DESC LIMIT 1"
             ),
             {"ws": workspace_id},
+        )
+    ).first()
+    return None if row is None else _connection(row)
+
+
+async def get_connection(conn: AsyncConnection, *, connection_id: UUID) -> CrmConnection | None:
+    row = (
+        await conn.execute(
+            text(
+                f"SELECT {_CONNECTION_COLUMNS} FROM workspace_integration_connection "
+                "WHERE connection_id = :id"
+            ),
+            {"id": connection_id},
         )
     ).first()
     return None if row is None else _connection(row)

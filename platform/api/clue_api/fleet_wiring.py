@@ -395,6 +395,7 @@ def build_multi_work_worker(
     arv2_discovery_handler: WorkHandler | None = None,
     arv2_display_page_handler: WorkHandler | None = None,
     product_page_handler: WorkHandler | None = None,
+    crm_write_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -429,6 +430,9 @@ def build_multi_work_worker(
 
     ``arv2_display_page_handler`` (spec 2026-09-12) is the same shape again: optional because a
     deployment with the display flag off or no model key composes none, and kind-guarded here.
+
+    ``crm_write_handler`` (CRM integration Phase 2) is the same shape again: optional because a
+    deployment with the CRM integration off or no Composio key composes none.
 
     ``CLUE_FLEET_WORKER_CONCURRENCY`` (founder ruling 2026-09-10) is threaded here like every
     other ``CLUE_FLEET_*`` knob: it is how many tasks THIS process drives at once. Several worker
@@ -484,6 +488,8 @@ def build_multi_work_worker(
         and product_page_handler.kind is not FleetTaskKind.PRODUCT_PAGE_WRITE
     ):
         raise ValueError("product_page_handler must own product_page_write tasks")
+    if crm_write_handler is not None and crm_write_handler.kind is not FleetTaskKind.CRM_WRITE:
+        raise ValueError("crm_write_handler must own crm_write tasks")
     handlers: list[WorkHandler] = [
         # The one kind the 9d handler-safety audit found NOT safe to run concurrently on one
         # instance. Two independent reasons, both in code today:
@@ -521,6 +527,8 @@ def build_multi_work_worker(
         handlers.append(arv2_display_page_handler)
     if product_page_handler is not None:
         handlers.append(product_page_handler)
+    if crm_write_handler is not None:
+        handlers.append(crm_write_handler)
     selected = selected_worker_kinds(settings.fleet_worker_kinds)
     if selected is not None:
         handlers = [handler for handler in handlers if handler.kind in selected]

@@ -24,8 +24,13 @@ if TYPE_CHECKING:
 __all__ = [
     "Grant",
     "MEMBERSHIP_LINK_OBJECT",
+    "WriteCounts",
+    "WriteProposal",
     "clue_added_members",
     "clue_wrote_current_value",
+    "forget_membership_link",
+    "get_proposal",
+    "proposal_counts",
     "membership_link_id",
     "record_membership_link",
     "covering_grant",
@@ -83,6 +88,60 @@ async def insert_proposal(
             "status": status,
         },
     )
+
+
+@dataclass(frozen=True)
+class WriteProposal:
+    proposal_id: UUID
+    workspace_id: str
+    connection_id: UUID
+    project_id: str
+    thread_id: str
+    turn_id: UUID
+    status: str
+
+
+@dataclass(frozen=True)
+class WriteCounts:
+    done: int
+    failed: int
+    #: Chosen changes Clue did not send (the record changed, or already held the value).
+    skipped: int
+    #: Changes the person did not tick on the card.
+    not_chosen: int
+    #: Chosen changes not yet sent.
+    waiting: int
+
+
+async def get_proposal(conn: AsyncConnection, *, proposal_id: UUID) -> WriteProposal | None:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT proposal_id, workspace_id, connection_id, project_id, thread_id, turn_id, "
+                "status FROM crm_write_proposal WHERE proposal_id = :id"
+            ),
+            {"id": proposal_id},
+        )
+    ).first()
+    return None if row is None else WriteProposal(**dict(row._mapping))
+
+
+async def proposal_counts(conn: AsyncConnection, *, proposal_id: UUID) -> WriteCounts:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT count(*) FILTER (WHERE status = 'succeeded') AS done, "
+                "count(*) FILTER (WHERE status = 'failed') AS failed, "
+                "count(*) FILTER (WHERE status = 'skipped' AND selected) AS skipped, "
+                "count(*) FILTER (WHERE NOT selected) AS not_chosen, "
+                "count(*) FILTER (WHERE selected AND status NOT IN "
+                "('succeeded', 'failed', 'skipped')) AS waiting "
+                "FROM crm_write WHERE proposal_id = :id"
+            ),
+            {"id": proposal_id},
+        )
+    ).one()
+    return WriteCounts(**{key: int(value) for key, value in row._mapping.items()})
 
 
 async def set_proposal_status(
@@ -381,6 +440,25 @@ async def record_membership_link(
         crm_id=membership_link_id(list_ref, record_ref),
         created_by_clue=True,
         created_by_write_id=write_id,
+    )
+
+
+async def forget_membership_link(
+    conn: AsyncConnection, *, workspace_id: str, list_ref: str, record_ref: str
+) -> None:
+    """Forget that Clue added this member (the executor calls it when a removal succeeds), so it
+    cannot be removed twice and a later add is tracked afresh. Any connection of the workspace:
+    a removal proposed before a reconnect is sent on the new connection."""
+    await conn.execute(
+        text(
+            "DELETE FROM crm_record_link WHERE workspace_id = :ws AND crm_object = :object "
+            "AND crm_id = :crm_id"
+        ),
+        {
+            "ws": workspace_id,
+            "object": MEMBERSHIP_LINK_OBJECT,
+            "crm_id": membership_link_id(list_ref, record_ref),
+        },
     )
 
 
