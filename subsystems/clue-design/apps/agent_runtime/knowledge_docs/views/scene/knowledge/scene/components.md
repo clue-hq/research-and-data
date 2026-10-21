@@ -92,6 +92,13 @@ the same viewing scale; stop when the explanation is readable and subordinate.
    to the message it acts on. Avoid an independently floating label or detached
    action island. A text CTA needs no invented button frame; a creative without
    a CTA needs no reserved action row.
+   Build a button as an auto-layout row that hugs its content, never by placing
+   its label and icon at coordinates inside a plain frame:
+   `button al(h, x(c), y(c), g(…), pad(…)) s(hug,hug)`. The label hugs its words
+   (`s(hug,hug)`) and the icon has a fixed size. The row centres both on one line
+   and keeps the gap exact. Make the gap about a third of the label's font size,
+   and the icon about as tall as the label's capital letters. Set the button's
+   height with the vertical padding, not a fixed size.
 
 For emphasis within a sentence, prefer a supported span in one native text node
 so the phrase reflows together. The DSL's `[[phrase]]` plus `span(...)` supports
