@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-20 — Tasks 0–10 done; Task 11 (agent catalog: head-of-abm v76, skills, manual v22, recipe 36) built and green but **uncommitted until the founder's trial**; next Task 12 (founder test on the local stack)._
+_Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and analysis work; publishing blocked (F4); findings in [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md), to be discussed before fixing._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -20,14 +20,15 @@ _Last updated: 2026-10-20 — Tasks 0–10 done; Task 11 (agent catalog: head-of
 - ✅ `connect_crm` tool (Task 7; registered, granted in Task 11)
 - ✅ `find_crm_actions` / `run_crm_action` (Task 8; reads only, every result to a `reads/` file, the model gets a summary; registered, granted in Task 11; checked live on both test CRMs)
 - ✅ Salesforce API-budget check before every read (Task 8; 10% default share of the org's daily calls, stop when the org has under 10% left)
-- ✅ `write_brand_document` (Task 9; `company/`, `proof/` only; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file; registered, granted in Task 11)
+- ✅ `write_brand_document` (Task 9; new version each write, older superseded, identical bytes publish nothing; body inline or from a sandbox `outputs/` file) — 🔨 widened by R-3.15 (uncommitted with Task 11): any `company/`, `product/`, `audience/`, `proof/` document except the generated catalog, only when the person asks or a skill says so, and a version check at save (`based_on_version`; `document_changed`) instead of a lock
 - 🔨 `crm-sales-analysis` skill v1 and interview step (stage0-interview v49, section 2b) — approved by the founder (R-3.14), written, **uncommitted until the trial**; Head of ABM v76 grants the four tools (recipe 36, manual v22)
 - 🔨 `company/sales-motion.md` — the skill writes it; first real one comes from the trial
 - 🔨 CRM customers merged into `proof/customers.md` (the agent's merge comes with the Task 11 skill); ✅ onboarding refresh keeps CRM rows (Task 10: rows whose Source has `CRM:` are carried, merged by domain)
 - 🔨 Manual path (no CRM): same document from the user's answers — in the skill (section 11); proven at the trial
 
 - ✅ Test CRMs ready: HubSpot developer test account + Salesforce Developer Edition org, both connected through Composio (dev project) and seeded with the same story — 20 companies (`*.test` domains), 66 contacts, 36 deals/opportunities (14 won, 14 lost, 8 open; 2 outliers), 118 Salesforce contact roles; stage history is artificial (stamped at creation)
-- ⬜ **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — Phase 2 waits for this
+- 🔨 **Gate: founder tests the reads on the local dev stack and signs off** (R-2.3) — trial 1 done 2026-10-21: connect + reads + analysis worked; `write_brand_document` refused by the plan validator (F4), so nothing published; F1–F9 open — Phase 2 waits for this
+- 🔨 Connect card redesigned to the founder's Figma (three states, driven by the real connection) — built and seen in the trial, uncommitted
 
 - ⬜ **Deploy the reads** (R-2.4). Before any real customer connects on the deployed platform
   (R-5.2): our own HubSpot app and Salesforce connected app, Composio Zero Data Retention on, the
