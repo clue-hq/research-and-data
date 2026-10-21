@@ -217,6 +217,12 @@ Related documents:
   notes, replies, visit roll-ups, owner tasks.
 - **R-6.20 (2026-10-20)** **Creating deals** is not in the first release.
 
+- **R-6.21 (2026-10-22)** **The permission card groups changes, it does not list every change.**
+  One line per group (the same action on the same field) with a count, a summary of the values and
+  the agent's reason; opening a group lists its records, which can be unticked one by one. Changes
+  that **overwrite a value a person set are never grouped** — each is listed on its own, unticked by
+  default. Card spec: `2026-10-22-crm-write-permission-card-design.md`.
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched
