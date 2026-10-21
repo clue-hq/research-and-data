@@ -1,19 +1,17 @@
-"""The project library: one project's settled state, compiled once and refreshed when it moves.
+"""The project library: one project's settled state, compiled once and synced when it moves.
 
-The per-turn seeds this replaced compiled ``status.md``, ``decisions.md`` and every project
-document *again*, pinned them, and copied them into that one thread's workspace — once per turn,
-per thread. The library does it the other way round: the same state is compiled once, beside the
-threads, at ``<ws>/projects/<project>/library/``, and every thread of the project mounts that one
-frozen tree read-only at ``project/``. Nothing is copied into a workspace, and the project's state
-is written as many times as it *changes* rather than as many times as it is read.
+The same state is compiled from the project's rows and written into each chat's own ``project/``
+folder, beside its ``agent/`` root (F3, spec WS-37; ruling AW-9), and mounted at ``project/``. No
+folder is shared with another chat: a chat's folder can be deleted whole without touching anyone
+else's turn, and a project's library of a few dozen kilobytes is cheap to hold once per chat.
 
 Five rules make that safe:
 
 * **Digest-refreshed, not time-refreshed.** :func:`project_library_digest` hashes the rows the
-  library is compiled from — one cheap round trip per source — and the tree records that digest in
-  its ``index.json``. A turn that finds the recorded digest already in place writes nothing at
-  all, so the tree every sibling thread is holding descriptors on is not churned by a turn that
-  changed nothing.
+  library is compiled from — one cheap round trip per source, plus the project's library epoch
+  (AW-20) — and the chat's copy records that digest in its ``index.json``. A turn that finds the
+  recorded digest already in place compiles and writes nothing; one that finds a different digest
+  writes only the files that changed (WS-36).
 * **One version per path (W3).** The library is the project's *settled* state, so a document path
   holds exactly one file: the version this project **pinned** where there is a pin, the highest
   servable version otherwise. The per-turn seeds carry a superseded pin's newer sibling as a real
@@ -22,14 +20,12 @@ Five rules make that safe:
 * **Artifacts by reference (W4).** ``artifacts/index.json`` names each design document — id, kind,
   title, status, version, time, origin thread — and carries none of its scene. A design document's
   content is served by the editor, not by a markdown tree an agent reads as context.
-* **Read-only.** :class:`~clue_agents.library_tree.LibraryTree` installs each generation
-  atomically as 0400 files in 0500 directories, and the mount is opened ``read_only``.
-* **A turn reads the generation it pinned.** Because the tree is shared and refreshed whenever the
-  project moves, the live library can legitimately become a *different* tree between two attempts
-  of one turn. So a turn's ``agent_turn_project_files`` pin records this generation's files —
-  ``index.json`` among them — and a later attempt whose pinned digest no longer matches the
-  installed one rebuilds that exact generation as a tree of its own
-  (:func:`materialize_pinned_project_library`), which the wiring removes when the turn ends.
+* **Read-only to the agent.** The copy ends frozen (0400 files in 0500 folders); the agent writes
+  documents only through the versioned writer, which refreshes this copy afterwards.
+* **A turn reads the generation it pinned.** The project can move between two attempts of one
+  turn. So a turn's ``agent_turn_project_files`` pin records this generation's files —
+  ``index.json`` among them — and a later attempt syncs the chat's copy to exactly those pinned
+  files (:func:`sync_pinned_project_library`).
 
 Postgres stays the truth. This tree is a *rendering* of those rows: nothing server-side reads it
 to decide anything, and deleting it costs only the rewrite.
@@ -41,8 +37,7 @@ import asyncio
 import hashlib
 import json
 import os
-import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
@@ -51,8 +46,9 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents import AgentArtifactReader, AgentWorkspaceFactory
-from clue_agents.library_tree import LibraryFile, LibraryTree
+from clue_agents import AgentArtifactReader, AgentWorkspaceFactory, WorkspaceConflict
+from clue_agents.tree_sync import sync_directory
+from clue_agents.worker_area import ChatScope
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.project_documents import lock_project
@@ -88,26 +84,21 @@ __all__ = [
     "LIBRARY_INDEX_PATH",
     "ProjectLibrarySnapshot",
     "compile_project_library",
+    "bump_project_library_epoch",
     "ensure_project_library",
     "installed_project_library_digest",
-    "materialize_pinned_project_library",
     "pinned_library_digest",
     "project_library_digest",
+    "sync_pinned_project_library",
 ]
 
-#: The library's own directory below ``<ws>/projects/<project>/``, and the mount's reserved name.
-_LIBRARY_DIR: Final = "library"
+#: The chat folder's own ``project/`` segment, and the mount's reserved name.
+_LIBRARY_DIR: Final = "project"
 #: The tree's own manifest, inside the tree — a file of the generation like any other, so one
 #: turn's pin records it and a later attempt can rebuild the generation from the pin alone.
 LIBRARY_INDEX_PATH: Final = "index.json"
 #: Where the project's design artifacts are named, by reference.
 ARTIFACT_INDEX_PATH: Final = "artifacts/index.json"
-#: One materializer at a time in this process, for the reason the brand library takes the same
-#: lock: ``LibraryTree.replace`` reclaims residue by name prefix, so two concurrent replaces of one
-#: tree would discard each other's in-flight build. Across processes the DB row lock
-#: (:func:`~clue_api.arv2.project_documents.lock_project`) is what serializes two workers, and the
-#: install is atomic either way — the loser rewrites a tree, never half of one.
-_MATERIALIZE_LOCK: Final = threading.Lock()
 # Include compiler changes in fresh-turn cache identity. Historical pins retain
 # their exact bytes; only the next unpinned generation gets the new rendering.
 _LIBRARY_FORMAT_VERSION: Final = 2
@@ -167,6 +158,11 @@ _LATEST_PERSONA_RUN = text(
 )
 
 
+_EPOCH = text(
+    "SELECT epoch FROM project_library_epoch WHERE workspace_id = :ws AND project_id = :project"
+)
+
+
 async def project_library_digest(
     conn: AsyncConnection,
     *,
@@ -200,7 +196,9 @@ async def project_library_digest(
        ``artifacts/index.json`` names.
 
     The compiler format version also contributes: a new renderer must reach fresh turns even
-    when those rows have not changed. Historical per-turn pins keep their original file bytes.
+    when those rows have not changed. So does the project's library epoch (AW-20), which a privacy
+    erasure bumps when it changes a file's content without moving any row above. Historical
+    per-turn pins keep their original file bytes.
 
     What it deliberately does *not* watch: a discovery run's per-candidate verdicts. Those move
     ``status.md``'s verified/shown/approved tallies while a run is *running*, and the run's own
@@ -223,9 +221,12 @@ async def project_library_digest(
     research = (await conn.execute(_LATEST_RESEARCH, params)).mappings().all()
     personas = (await conn.execute(_LATEST_PERSONA_RUN, params)).mappings().first()
     design = await project_design_documents(conn, workspace_id=workspace_id, project_id=project_id)
+    epoch = (await conn.execute(_EPOCH, params)).scalar_one_or_none()
 
     facts: dict[str, Any] = {
         "format_version": _LIBRARY_FORMAT_VERSION,
+        # AW-20: an erasure that changes a file without moving any row above bumps this.
+        "epoch": int(epoch or 0),
         "documents": sorted([str(ref.document_id), ref.version, ref.status] for ref in documents),
         "icp_pin": None if pin is None else str(pin.document_id),
         "statements": [int(statements["total"]), _iso(statements["latest"])],
@@ -554,51 +555,41 @@ async def ensure_project_library(
     artifacts: AgentArtifactReader,
     workspaces: AgentWorkspaceFactory,
     *,
-    workspace_id: str,
-    project_id: str,
+    chat: ChatScope,
     snapshot: ProjectLibrarySnapshot | None = None,
-    force: bool = False,
 ) -> ProjectLibrarySnapshot:
-    """Materialize this project's library if the rows behind it have moved, and describe it.
+    """Sync this chat's ``project/`` copy if the rows behind it have moved, and describe it.
 
-    The digest comes first, and an installed tree that already records it is returned **as it
-    stands**: its own manifest is read back off disk and nothing is compiled, fetched or written.
-    That is the cheaper honest option — the alternative (recompile, compare, discard) would pay
-    the whole compile, including every document's bytes, on every turn of an unchanged project,
-    which is the cost the library exists to remove. The returned snapshot carries no file bodies
-    in that case, because nothing moved and the caller has nothing to do with them.
+    The digest comes first, and a copy that already records it is returned **as it stands**: its
+    own manifest is read back off disk and nothing is compiled, fetched or written. The returned
+    snapshot carries no file bodies in that case, because nothing moved and the caller has nothing
+    to do with them. When the digest moved, the generation is compiled and only the files that
+    changed are written (WS-36).
 
-    The rewrite is serialized two ways: the DB row lock every writer of this project takes
-    (:func:`~clue_api.arv2.project_documents.lock_project`), so a worker installing a generation
-    is not racing a document write it is rendering, and a process-local lock, because
-    ``LibraryTree.replace`` reclaims residue by name prefix. The filesystem work runs in a worker
-    thread, so the turn's event loop is never held while a tree is written.
+    The compile takes the DB row lock every writer of this project takes
+    (:func:`~clue_api.arv2.project_documents.lock_project`), so it is not racing a document write
+    it is rendering. One turn per chat is enforced in Postgres, so the copy has no concurrent
+    writer. The filesystem work runs in a worker thread.
 
     ``snapshot`` is a generation the caller has **already** compiled — the production turn compiles
     one to pin it, and paying for a second identical compile here would double the one cost this
     module exists to remove. Given it, this function only compares its digest to the installed one
-    and installs it if they differ; the digest is the caller's, taken before its own compile, so
-    the "a project that moved mid-compile leaves a tree newer than its digest" property below is
-    the caller's too.
+    and syncs it if they differ.
 
-    ``force`` skips **only** the "the installed tree already records this digest" short-circuit,
-    for the one caller whose content moved without any row the digest hashes moving with it: a
-    DSAR erasure tombstones a statement's *evidence artifact*, leaving the
-    ``volunteered_statement`` row (and therefore the digest) exactly where it was, while
-    ``decisions.md`` must lose the quote. Everything else is unchanged — the generation is
-    compiled and installed the ordinary way, and it records the same unmoved digest, so the next
-    turn is a no-op again.
+    A privacy erasure that changes a file's content without moving any row the digest reads bumps
+    the project's library epoch (:func:`bump_project_library_epoch`), which the digest includes,
+    so every chat's copy resyncs on its next turn (AW-20).
     """
 
     digest = (
         snapshot.digest
         if snapshot is not None
-        else await project_library_digest(conn, workspace_id=workspace_id, project_id=project_id)
+        else await project_library_digest(
+            conn, workspace_id=chat.workspace_id, project_id=chat.project_id
+        )
     )
-    installed = await asyncio.to_thread(
-        _read_installed_index, workspaces, workspace_id=workspace_id, project_id=project_id
-    )
-    if not force and installed is not None and installed.library_sha256 == digest:
+    installed = await asyncio.to_thread(_read_installed_index, workspaces, chat=chat)
+    if installed is not None and installed.library_sha256 == digest:
         return (
             snapshot
             if snapshot is not None
@@ -607,80 +598,118 @@ async def ensure_project_library(
 
     if snapshot is None:
         snapshot = await compile_project_library(
-            conn, storage, artifacts, workspace_id=workspace_id, project_id=project_id
+            conn,
+            storage,
+            artifacts,
+            workspace_id=chat.workspace_id,
+            project_id=chat.project_id,
         )
-    await lock_project(conn, workspace_id=workspace_id, project_id=project_id)
+    await lock_project(conn, workspace_id=chat.workspace_id, project_id=chat.project_id)
     await asyncio.to_thread(
-        _materialize_generation,
+        _sync_generation,
         workspaces,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        name=_LIBRARY_DIR,
-        files=_library_files(snapshot),
+        chat=chat,
+        files={file.path: file.body for file in snapshot.files},
         digest=snapshot.digest,
     )
     return snapshot
 
 
-def _library_files(snapshot: ProjectLibrarySnapshot) -> tuple[LibraryFile, ...]:
-    """The generation as the tree takes it — the manifest is one of the files.
+async def bump_project_library_epoch(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> int:
+    """Move the project's library epoch on, so every chat's copy resyncs; return the new epoch."""
 
-    ``LibraryTree.replace`` refuses a generation without ``index.json`` or whose index records a
-    different digest, so this mapping is the whole contract: what the snapshot carries is what the
-    tree holds, and a turn that later rebuilds the tree from its pin installs the same set.
-    """
-
-    return tuple(LibraryFile(path=file.path, content=file.body) for file in snapshot.files)
+    row = (
+        await conn.execute(
+            text(
+                "INSERT INTO project_library_epoch (workspace_id, project_id) VALUES (:ws, :p) "
+                "ON CONFLICT (workspace_id, project_id) DO UPDATE SET "
+                "epoch = project_library_epoch.epoch + 1, updated_at = now() RETURNING epoch"
+            ),
+            {"ws": workspace_id, "p": project_id},
+        )
+    ).one()
+    return int(row[0])
 
 
 def _read_installed_index(
-    workspaces: AgentWorkspaceFactory,
-    *,
-    workspace_id: str,
-    project_id: str,
+    workspaces: AgentWorkspaceFactory, *, chat: ChatScope
 ) -> ProjectLibraryIndexCard | None:
-    """The manifest of the installed generation, or None when there is nothing usable there.
+    """The manifest of the chat's installed copy, or None when there is nothing usable there.
 
-    A manifest this code cannot read — an absent tree, or a card written by a schema this build
+    A manifest this code cannot read — an absent copy, or a card written by a schema this build
     does not know — is *absence*, not an error: the answer is to compile the generation this build
-    does understand and install it over the old one.
+    does understand and sync it over the old one.
     """
 
-    document = _with_parent_fd(
-        workspaces,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        act=lambda tree: tree.read_index(),
-    )
-    if document is None:
-        return None
+    chat_fd = workspaces.chat_dir_fd(chat)
     try:
-        return ProjectLibraryIndexCard.model_validate(document)
-    except ValidationError:
+        try:
+            directory_fd = os.open(_LIBRARY_DIR, _DIR_FLAGS, dir_fd=chat_fd)
+        except FileNotFoundError:
+            return None
+        try:
+            file_fd = os.open(LIBRARY_INDEX_PATH, _READ_FLAGS, dir_fd=directory_fd)
+        except FileNotFoundError:
+            return None
+        finally:
+            os.close(directory_fd)
+        try:
+            chunks = []
+            while chunk := os.read(file_fd, 64 * 1024):
+                chunks.append(chunk)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(chat_fd)
+    try:
+        return ProjectLibraryIndexCard.model_validate(json.loads(b"".join(chunks)))
+    except (ValidationError, ValueError):
         return None
 
 
-def _with_parent_fd[T](
+def _sync_generation(
     workspaces: AgentWorkspaceFactory,
     *,
-    workspace_id: str,
-    project_id: str,
-    act: Callable[[LibraryTree], T],
-    name: str = _LIBRARY_DIR,
-) -> T:
-    """Open this project's library parent, act on a tree below it, and close the descriptor.
+    chat: ChatScope,
+    files: Mapping[str, bytes],
+    digest: str,
+) -> None:
+    """Bring ``<chat>/project`` to exactly one generation, writing only what changed.
 
-    The descriptor is anchored and is the caller's to close — one place that owns it, rather than
-    a ``try/finally`` at each call site. ``name`` is the shared library for every caller but one:
-    a turn whose pinned generation is no longer the installed one builds its own tree beside it
-    (:func:`materialize_pinned_project_library`).
+    The one writer, for the live generation and for a turn's pinned one. A generation whose own
+    ``index.json`` does not record ``digest`` is refused rather than served: a pin whose files and
+    manifest disagree must not become the agent's library.
     """
 
-    parent_fd = workspaces.project_parent_fd(workspace_id, project_id)
+    if _recorded_digest(files.get(LIBRARY_INDEX_PATH)) != digest:
+        raise WorkspaceConflict("a project library generation must record the digest it is")
+    chat_fd = workspaces.chat_dir_fd(chat)
     try:
-        return act(LibraryTree(parent_fd=parent_fd, name=name))
+        sync_directory(chat_fd, _LIBRARY_DIR, files, frozen=True)
     finally:
-        os.close(parent_fd)
+        os.close(chat_fd)
+
+
+def _recorded_digest(body: bytes | None) -> str | None:
+    if body is None:
+        return None
+    try:
+        document = json.loads(body.decode())
+    except (UnicodeDecodeError, ValueError):
+        return None
+    recorded = document.get("library_sha256") if isinstance(document, dict) else None
+    return recorded if isinstance(recorded, str) and recorded else None
+
+
+_DIR_FLAGS: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 
 
 # --- replaying one turn's pinned generation ----------------------------------------------------
@@ -716,79 +745,40 @@ def pinned_library_digest(files: Sequence[PinnedProjectFile]) -> str | None:
 
 
 async def installed_project_library_digest(
-    workspaces: AgentWorkspaceFactory,
-    *,
-    workspace_id: str,
-    project_id: str,
+    workspaces: AgentWorkspaceFactory, *, chat: ChatScope
 ) -> str | None:
-    """The digest of the generation installed at ``<ws>/projects/<project>/library``, if any.
+    """The digest of the generation installed in this chat's ``project/`` copy, if any.
 
     None means "there is nothing here I can read as a library" — absent, or carrying a manifest
-    this build does not understand — which is exactly the case where a pinned set must be
-    materialized rather than trusted to be already on disk.
+    this build does not understand — which is exactly the case where a pinned set must be synced
+    rather than trusted to be already on disk.
     """
 
-    installed = await asyncio.to_thread(
-        _read_installed_index, workspaces, workspace_id=workspace_id, project_id=project_id
-    )
+    installed = await asyncio.to_thread(_read_installed_index, workspaces, chat=chat)
     return None if installed is None else installed.library_sha256
 
 
-async def materialize_pinned_project_library(
+async def sync_pinned_project_library(
     workspaces: AgentWorkspaceFactory,
     *,
-    workspace_id: str,
-    project_id: str,
-    name: str,
+    chat: ChatScope,
     files: Sequence[PinnedProjectFile],
     digest: str,
 ) -> None:
-    """Install one turn's pinned generation as its own tree, beside the project's live library.
+    """Sync this chat's ``project/`` copy to one turn's pinned generation.
 
-    The live library belongs to every thread of the project and is refreshed whenever the project
-    moves, so it is not a turn's to rewrite: a retry whose pinned generation is no longer the
-    installed one gets a tree of its own, named for the turn, and the wiring removes it when the
-    turn ends. Nothing per-turn outlives the turn.
-
-    The bytes are the pinned ones, already verified against the pin by
+    A retry whose pinned generation is no longer the installed one syncs the chat's own copy to
+    exactly the pinned files (only what differs is written). The bytes are the pinned ones,
+    already verified against the pin by
     :func:`~clue_api.project_context_files.read_pinned_project_files`, and ``digest`` is the
-    ``library_sha256`` the pinned manifest itself records — so ``LibraryTree.replace``'s check
-    that the generation's index declares the digest it is installed under is a real check here,
-    not a formality: a pin whose files and manifest disagree is refused rather than served.
+    ``library_sha256`` the pinned manifest itself records, so a pin whose files and manifest
+    disagree is refused rather than served.
     """
 
-    generation = tuple(LibraryFile(path=file.ref.path, content=file.body) for file in files)
     await asyncio.to_thread(
-        _materialize_generation,
+        _sync_generation,
         workspaces,
-        workspace_id=workspace_id,
-        project_id=project_id,
-        name=name,
-        files=generation,
+        chat=chat,
+        files={file.ref.path: file.body for file in files},
         digest=digest,
     )
-
-
-def _materialize_generation(
-    workspaces: AgentWorkspaceFactory,
-    *,
-    workspace_id: str,
-    project_id: str,
-    name: str,
-    files: Sequence[LibraryFile],
-    digest: str,
-) -> None:
-    """Install one generation under ``<ws>/projects/<project>/<name>``, atomically.
-
-    The one installer, for both trees: the project's shared ``library`` and a turn's own pinned
-    replay tree. They differ by name and by nothing else, so they cannot install differently.
-    """
-
-    with _MATERIALIZE_LOCK:
-        _with_parent_fd(
-            workspaces,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            name=name,
-            act=lambda tree: tree.replace(files, digest=digest),
-        )

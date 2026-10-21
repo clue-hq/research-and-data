@@ -61,6 +61,7 @@ from clue_agents import (
     ProjectContextArtifact,
 )
 from clue_agents.bridge import process_bridge
+from clue_agents.worker_area import ChatScope
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_gate import gate_answer_for_turn
@@ -133,8 +134,8 @@ from clue_api.project_library import (
     compile_project_library,
     ensure_project_library,
     installed_project_library_digest,
-    materialize_pinned_project_library,
     pinned_library_digest,
+    sync_pinned_project_library,
 )
 from clue_api.project_root_writer import (
     ProjectRootWriter,
@@ -613,6 +614,12 @@ class ProjectConversationTurnRunner:
         # What this turn's workspace mounts beside its thread root. A turn that composes no
         # knowledge has no library version to name, so it mounts nothing.
         mounts = MountRequest()
+        # The chat's own folder holds its own copies of the brand and project files (F3, WS-37).
+        chat = ChatScope(
+            workspace_id=workspace_id,
+            project_id=scope.project_id,
+            thread_id=submission.thread_id,
+        )
         if self._storage is None:
             log.info(
                 "agent_turn.knowledge_not_composed",
@@ -651,11 +658,11 @@ class ProjectConversationTurnRunner:
                 documents,
                 pinned_document_id=None if icp_pin is None else icp_pin.document_id,
             )
-            # The same pinned bytes, written once per knowledge version beside the threads and
-            # mounted read-only at ``brand/`` for every thread of every project of this brand.
-            # It is materialized here, not seeded per turn: a present tree is never rewritten.
+            # The same pinned bytes, synced into this chat's own ``brand/`` folder and mounted
+            # read-only there; an unchanged brand writes nothing (WS-36, WS-37).
             brand_version = await ensure_brand_library(
                 self._engine.components.workspaces,
+                chat=chat,
                 pin=knowledge_pin,
                 documents=documents,
             )
@@ -667,8 +674,8 @@ class ProjectConversationTurnRunner:
         # generation this turn composes against is recorded in its insert-once pin, and a later
         # attempt reads the pinned set rather than whatever is installed by then.
         project_library_index: bytes | None = None
-        #: Set when this turn built a tree of its own; removed in the ``finally`` below.
-        pinned_tree_name: str | None = None
+        #: True when a later attempt synced the chat's copy to this turn's pinned generation.
+        replayed_from_pin = False
         if self._storage is not None:
             # Bound once here so the compiler below closes over a backend, not over an attribute
             # whose declared type still admits ``None``.
@@ -710,8 +717,7 @@ class ProjectConversationTurnRunner:
                         storage,
                         self._engine.artifacts,
                         self._engine.components.workspaces,
-                        workspace_id=workspace_id,
-                        project_id=scope.project_id,
+                        chat=chat,
                         snapshot=compiled,
                     )
                     library_digest: str | None = library.digest
@@ -722,23 +728,18 @@ class ProjectConversationTurnRunner:
                 None,
             )
             if not project_pin_created:
-                # A later attempt of this turn. The live library is shared and is refreshed
-                # whenever the project moves, so it may no longer be the tree this turn pinned;
-                # when it is not, the pinned generation is rebuilt as a tree of this turn's own
-                # and mounted instead, so the model re-reads the files its receipt names.
+                # A later attempt of this turn. The project may have moved since the attempt that
+                # pinned it, so the chat's copy is synced to exactly the pinned generation when it
+                # differs, and the model re-reads the files its receipt names.
                 library_digest = pinned_library_digest(project_files)
                 installed = await installed_project_library_digest(
-                    self._engine.components.workspaces,
-                    workspace_id=workspace_id,
-                    project_id=scope.project_id,
+                    self._engine.components.workspaces, chat=chat
                 )
                 if library_digest is not None and library_digest != installed:
-                    pinned_tree_name = f"pinned-{turn_id.hex[:12]}"
-                    await materialize_pinned_project_library(
+                    replayed_from_pin = True
+                    await sync_pinned_project_library(
                         self._engine.components.workspaces,
-                        workspace_id=workspace_id,
-                        project_id=scope.project_id,
-                        name=pinned_tree_name,
+                        chat=chat,
                         files=project_files,
                         digest=library_digest,
                     )
@@ -769,11 +770,10 @@ class ProjectConversationTurnRunner:
                 project_id=scope.project_id,
                 turn_id=turn_id,
                 user_id=submission.submitted_by_user_id,
+                chat=chat,
                 conn_factory=self._project_writer_conn_factory,
             )
             mounts = replace(mounts, project_library=True, project_writer=project_writer)
-            if pinned_tree_name is not None:
-                mounts = replace(mounts, project_library_name=pinned_tree_name)
             log.info(
                 "agent_turn.project_library_ready",
                 turn_id=str(turn_id),
@@ -781,7 +781,7 @@ class ProjectConversationTurnRunner:
                 library_sha256=library_digest,
                 file_count=len(project_files),
                 pin_created=project_pin_created,
-                replayed_from_pin=pinned_tree_name is not None,
+                replayed_from_pin=replayed_from_pin,
             )
         # Spec 2026-09-19 §3.2: every file attached in this project, byte for byte, beside the
         # threads. Synced here — on the worker that owns the workspace root — never by the API.
@@ -792,8 +792,7 @@ class ProjectConversationTurnRunner:
                 self._engine.components.workspaces,
                 self._engine.components.artifacts,
                 conn,
-                workspace_id=workspace_id,
-                project_id=scope.project_id,
+                chat=chat,
             )
         mounts = replace(mounts, attachments=True)
         revision = await self._recipes.get_by_identity(
@@ -1003,13 +1002,6 @@ class ProjectConversationTurnRunner:
             return result
         finally:
             lease.release()
-            if pinned_tree_name is not None:
-                # What this turn wrote, this turn removes: the replay tree exists only for the
-                # length of the attempt that needed it, and the project's shared library — which
-                # ``remove_project_tree`` refuses to touch — is untouched either way.
-                self._engine.components.workspaces.remove_project_tree(
-                    workspace_id, scope.project_id, pinned_tree_name
-                )
 
     async def _compose_project_context(
         self,

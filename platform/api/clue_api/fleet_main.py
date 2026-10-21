@@ -1073,16 +1073,9 @@ async def _serve() -> None:
             if settings.agent_workspace_root is not None
             else None
         )
-        project_library = (
-            ProjectLibraryRefresher(
-                storage=storage,
-                artifacts=DurableAgentArtifactStore(storage=storage),
-                workspaces=agent_workspace_factory,
-                conn_factory=transaction,
-            )
-            if agent_workspace_factory is not None
-            else None
-        )
+        # Since F3 (AW-20) the refresher writes nothing to disk: a forced refresh bumps the
+        # project's library epoch, and each chat resyncs its own copy on its next turn.
+        project_library = ProjectLibraryRefresher(conn_factory=transaction)
         # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
         # nothing. What it needs is the storage the knowledge documents live in, so it composes
         # where the composed backend is. Without a service the tool registers and refuses by name.

@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import ArtifactRef
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_turn_submission import insert_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.attachments import ValidatedAttachment
@@ -114,6 +115,7 @@ def test_project_attachments_sync_writes_replaces_and_removes(tmp_path: Path) ->
             seeds = await _seed(conn, storage)
             ws = str(seeds["ws"])
             project_id = str(seeds["project_id"])
+            chat = ChatScope(ws, project_id, "thread-1")
 
             await _attach(
                 conn,
@@ -128,22 +130,15 @@ def test_project_attachments_sync_writes_replaces_and_removes(tmp_path: Path) ->
             )
 
             # 1. Every family lands unconverted, as the file the human sent.
-            written = await sync_project_attachments(
-                factory, artifacts, conn, workspace_id=ws, project_id=project_id
-            )
+            written = await sync_project_attachments(factory, artifacts, conn, chat=chat)
             assert written == 3
-            root = factory.project_host_path(ws, project_id) / "attachments"
+            root = factory.chat_host_path(chat) / "attachments"
             assert (root / "r.pdf").read_bytes() == b"%PDF-1.4 x"
             assert (root / "brief.md").read_text() == "# Brief\n"
             assert (root / "shot.png").exists()
 
             # 2. Idempotent: an unchanged project rewrites nothing.
-            assert (
-                await sync_project_attachments(
-                    factory, artifacts, conn, workspace_id=ws, project_id=project_id
-                )
-                == 0
-            )
+            assert await sync_project_attachments(factory, artifacts, conn, chat=chat) == 0
 
             # 3. A re-upload of one name on a later turn replaces exactly that file.
             await _attach(
@@ -153,12 +148,7 @@ def test_project_attachments_sync_writes_replaces_and_removes(tmp_path: Path) ->
                 tag="attach-two",
                 files=(("brief.md", b"# Brief v2\n", "text/markdown", "text"),),
             )
-            assert (
-                await sync_project_attachments(
-                    factory, artifacts, conn, workspace_id=ws, project_id=project_id
-                )
-                == 1
-            )
+            assert await sync_project_attachments(factory, artifacts, conn, chat=chat) == 1
             assert (root / "brief.md").read_text() == "# Brief v2\n"
             assert (root / "r.pdf").read_bytes() == b"%PDF-1.4 x"
             names = {
@@ -175,12 +165,7 @@ def test_project_attachments_sync_writes_replaces_and_removes(tmp_path: Path) ->
                 text("UPDATE artifact SET erased_at = now() WHERE storage_key = :k"),
                 {"k": pdf_key},
             )
-            assert (
-                await sync_project_attachments(
-                    factory, artifacts, conn, workspace_id=ws, project_id=project_id
-                )
-                == 0
-            )
+            assert await sync_project_attachments(factory, artifacts, conn, chat=chat) == 0
             assert not (root / "r.pdf").exists()
             assert (root / "brief.md").read_text() == "# Brief v2\n"
             assert (root / "shot.png").exists()
@@ -191,12 +176,7 @@ def test_project_attachments_sync_writes_replaces_and_removes(tmp_path: Path) ->
             # succeed and so a turn that can never start.
             (root / "shot.png").unlink()
             (root / "shot.png").mkdir(mode=0o700)
-            assert (
-                await sync_project_attachments(
-                    factory, artifacts, conn, workspace_id=ws, project_id=project_id
-                )
-                == 1
-            )
+            assert await sync_project_attachments(factory, artifacts, conn, chat=chat) == 1
             assert (root / "shot.png").read_bytes() == b"\x89PNG\r\n\x1a\n"
             assert (root / "brief.md").read_text() == "# Brief v2\n"
 

@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from clue_agents import AgentWorkspaceFactory, VersionedWriteRefused
 from clue_agents.bridge import AsyncBridge, process_bridge
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.project_root_writer import (
@@ -153,15 +154,21 @@ class _Lane:
             project_id=self.project.project_id,
             turn_id=self.turn_id if turn_id is None else turn_id,
             user_id=USER_ID,
+            chat=self.chat,
             conn_factory=conn_session_factory(self.conn),
         )
 
     @property
-    def tree(self) -> Path:
-        """Where the mount's read-only generation is installed."""
+    def chat(self) -> ChatScope:
+        """The chat whose own ``project/`` copy the writer refreshes (F3, WS-37)."""
 
-        projects = self.root / self.project.workspace_id / "projects"
-        return projects / self.project.project_id / "library"
+        return ChatScope(self.project.workspace_id, self.project.project_id, "thread-prw")
+
+    @property
+    def tree(self) -> Path:
+        """Where the chat's own read-only copy of the library is synced."""
+
+        return self.factory.chat_host_path(self.chat) / "project"
 
     def stored_bytes(self, document_id: UUID) -> bytes:
         """The bytes of one document version, read back through its verified artifact row."""

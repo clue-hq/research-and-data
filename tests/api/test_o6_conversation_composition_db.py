@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import AgentExecutionStatus, ScriptedAgentChatModel
 from clue_agents.bridge import process_bridge
 from clue_agents.manual.build import MANUAL_CHAPTERS
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_execution_wiring import postgres_agent_checkpointer
 from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
@@ -1059,13 +1060,13 @@ def test_a_retry_mounts_the_pinned_library_after_the_live_one_moved(tmp_path: Pa
                     "index.json",
                     "status.md",
                 ]
+                chat = ChatScope(workspace_id, project.project_id, submission.thread_id)
                 await ensure_project_library(
                     conn,
                     storage,
                     artifacts,
                     stack.workspaces,
-                    workspace_id=workspace_id,
-                    project_id=project.project_id,
+                    chat=chat,
                     snapshot=pinned_snapshot,
                 )
 
@@ -1089,14 +1090,11 @@ def test_a_retry_mounts_the_pinned_library_after_the_live_one_moved(tmp_path: Pa
                     storage,
                     artifacts,
                     stack.workspaces,
-                    workspace_id=workspace_id,
-                    project_id=project.project_id,
+                    chat=chat,
                 )
                 assert live.digest != pinned_snapshot.digest
-                project_root = (
-                    tmp_path / "agent-workspaces" / workspace_id / "projects" / project.project_id
-                )
-                live_status = (project_root / "library" / "status.md").read_text()
+                chat_copy = stack.workspaces.chat_host_path(chat) / "project"
+                live_status = (chat_copy / "status.md").read_text()
                 assert "Accounts in this project: 1" in live_status
 
                 # 3. the retry. What the model is served is read from the turn's own lease,
@@ -1120,18 +1118,17 @@ def test_a_retry_mounts_the_pinned_library_after_the_live_one_moved(tmp_path: Pa
                 assert observed == [pinned_status]
                 assert "Accounts in this project: 0" in pinned_status
                 assert pinned_status != live_status
-                # …served from a tree of this turn's own, named for the turn.
-                assert stack.workspaces.mounts[-1].project_library_name == (
-                    f"pinned-{submission.turn_id.hex[:12]}"
+                # …served from the chat's own copy, synced to the pinned generation (WS-37).
+                assert stack.workspaces.mounts[-1].project_library is True
+                assert (chat_copy / "status.md").read_text() == pinned_status
+                # 4. and no per-turn tree exists anywhere: the chat's next turn syncs its copy
+                # back to the live generation.
+                assert not any(
+                    path.name.startswith("pinned-")
+                    for path in (tmp_path / "agent-workspaces").rglob("*")
                 )
-                # 4. and nothing of that turn outlives it: the per-turn tree is gone and the
-                # project's shared library is still the live generation. (``library.old-<pid>``
-                # is LibraryTree's own superseded generation, kept for its readers until the
-                # next replace — not this turn's to remove.)
-                remaining = sorted(item.name for item in project_root.iterdir())
-                assert [name for name in remaining if name.startswith("pinned-")] == []
-                assert {"library", "threads"} <= set(remaining)
-                assert (project_root / "library" / "status.md").read_text() == live_status
+                await ensure_project_library(conn, storage, artifacts, stack.workspaces, chat=chat)
+                assert (chat_copy / "status.md").read_text() == live_status
             finally:
                 stack.workspaces.close()
 
@@ -1225,15 +1222,10 @@ def test_two_turns_of_one_thread_share_one_persistent_workspace(tmp_path: Path) 
                 )
                 # 3. one conversation, one directory — the second turn reopened the thread's
                 # workspace instead of creating a per-execution one beside it.
-                threads_root = (
-                    tmp_path
-                    / "agent-workspaces"
-                    / workspace_id
-                    / "projects"
-                    / project.project_id
-                    / "threads"
+                chats_root = (
+                    stack.workspaces.root_path / "chats" / workspace_id / project.project_id
                 )
-                assert sorted(item.name for item in threads_root.iterdir()) == [first.thread_id]
+                assert sorted(item.name for item in chats_root.iterdir()) == [first.thread_id]
             finally:
                 stack.workspaces.close()
 

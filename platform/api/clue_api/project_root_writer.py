@@ -48,6 +48,7 @@ from clue_agents import (
     VersionedWriteRefused,
 )
 from clue_agents.bridge import AsyncBridge, process_bridge
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.project_documents import (
@@ -217,6 +218,8 @@ class ProjectRootWriter:
     project_id: str
     turn_id: UUID
     user_id: str
+    #: The chat whose own ``project/`` copy a write refreshes (F3, WS-37).
+    chat: ChatScope
     conn_factory: ConnFactory = bridge_transaction
 
     # --- the seam -----------------------------------------------------------------------------
@@ -243,7 +246,7 @@ class ProjectRootWriter:
         return self.bridge.run(self._write(path, content, expected_version))
 
     def refresh(self) -> dict[str, int]:
-        """Re-materialize the library and return its fresh ``path → version`` map."""
+        """Re-sync the chat's own library copy and return its fresh ``path → version`` map."""
 
         return self.bridge.run(self._refresh())
 
@@ -306,8 +309,7 @@ class ProjectRootWriter:
                 self.storage,
                 self.artifacts,
                 self.workspaces,
-                workspace_id=self.workspace_id,
-                project_id=self.project_id,
+                chat=self.chat,
             )
         return {
             entry.path.removeprefix(_MOUNT_PREFIX): entry.version

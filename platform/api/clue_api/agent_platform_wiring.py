@@ -484,14 +484,10 @@ def build_agent_platform_components(
 
         design_run_purger = build_runtime_workspace_purger()
     # A DSAR erasure takes an interview quote out of the project library's ``decisions.md`` — a
-    # compiled rendering beside the threads, which no tombstone reaches — so the privacy service
-    # rewrites the library of every project it touched once the erasure has committed.
-    library = ProjectLibraryRefresher(
-        storage=storage,
-        artifacts=artifacts,
-        workspaces=workspaces,
-        conn_factory=conn_factory,
-    )
+    # compiled rendering in each chat's own folder, which no tombstone reaches — so the privacy
+    # service bumps the library epoch of every project it touched once the erasure has committed,
+    # and every chat's copy resyncs on its next turn (F3, AW-20).
+    library = ProjectLibraryRefresher(conn_factory=conn_factory)
     return AgentPlatformComponents(
         profiles=profiles,
         models=build_agent_model_provider(config=gateway_config, secrets=secrets),

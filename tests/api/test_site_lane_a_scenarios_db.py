@@ -26,6 +26,7 @@ import pytest
 from sqlalchemy import text
 
 from clue_agents import AgentExecutionStatus, DomainObjectRef
+from clue_agents.worker_area import ChatScope
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.composer_context import (
@@ -455,14 +456,11 @@ def test_the_head_of_abm_reads_the_site_as_web(tmp_path: Path) -> None:
                 storage=storage, conn_factory=conn_session_factory(conn)
             )
             root, factory, _sink = make_factory(tmp_path)
-            snapshot = await ensure_project_library(
-                conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
-            )
+            chat = ChatScope(ws, project_id, "thread-1")
+            snapshot = await ensure_project_library(conn, storage, artifacts, factory, chat=chat)
             assert snapshot.index.artifacts == 3
             index = json.loads(
-                (
-                    root / ws / "projects" / project_id / "library" / "artifacts" / "index.json"
-                ).read_text()
+                (factory.chat_host_path(chat) / "project" / "artifacts" / "index.json").read_text()
             )
             assert {entry["id"]: entry["doc_kind"] for entry in index["artifacts"]} == {
                 SITE_ID: "web",

@@ -79,9 +79,9 @@ __all__ = [
     "WorkspaceUsageSnapshot",
 ]
 
-#: The three scope folders below the prepared root. A workspace holds its shared ``library``
-#: beside ``projects``; a project holds its own ``library`` beside ``threads``; one thread
-#: directory is one persistent agent workspace.
+#: The layout before F3: ``<root>/<ws>/library``, ``<root>/<ws>/projects/<project>/{library,
+#: attachments,threads/<thread>}``. Nothing writes it any more; the snapshotter reads an old
+#: chat's folder from it once (WS-22) and the legacy-removal script deletes it.
 LIBRARY_DIR: Final = "library"
 PROJECTS_DIR: Final = "projects"
 THREADS_DIR: Final = "threads"
@@ -271,27 +271,22 @@ class WorkspaceMount:
 class MountRequest:
     """What the caller wants mounted; the factory turns it into open descriptors.
 
-    A request names durable directories that live *beside* the thread root — never inside it —
-    so a mount is a read of already-materialized bytes, never a copy into the agent's workspace.
+    A request names the chat's own folders that sit *beside* its ``agent/`` root — never inside
+    it — synced there before the turn from the turn's pins (F3, WS-37).
     """
 
-    #: ``(brand_id, knowledge_version)`` → ``<ws>/library/brand/<brand>/<version>``, read-only.
+    #: ``(brand_id, knowledge_version)`` → ``<chat>/brand``, read-only. The pair names the pinned
+    #: version, so two requests for different versions are unequal.
     brand: tuple[str, str] | None = None
-    #: ``<ws>/projects/<project>/<project_library_name>`` → the ``project`` mount, read-only.
+    #: ``<chat>/project`` → the ``project`` mount, read-only unless ``project_writer`` is set.
     project_library: bool = False
-    #: Which tree below ``<ws>/projects/<project>/`` the ``project`` mount serves. The project's
-    #: shared library for every caller but one: a turn whose pinned generation is no longer the
-    #: installed one materializes that generation as its own tree beside the library and names it
-    #: here, so the mount is the one place the choice is made and the model's paths never move.
-    #: It is a single directory name, never a path — the factory validates it as one segment.
-    project_library_name: str = LIBRARY_DIR
     #: When set (and ``project_library`` is on), the ``project`` mount is opened ``versioned``:
     #: the model's ``write_file``/``edit_file`` under ``project/`` become document versions taken
     #: by this writer. Left ``None`` the mount stays read-only, which is the state every caller
     #: that has no documents to offer should be in — a mount is writable only on purpose.
     project_writer: VersionedRootWriter | None = None
-    #: ``<ws>/projects/<project>/attachments`` → the ``attachments`` mount, read-only, when the
-    #: directory exists (spec 2026-09-19 §3.2). The fleet's sync creates it before the acquire,
+    #: ``<chat>/attachments`` → the ``attachments`` mount, read-only, when the directory exists
+    #: (spec 2026-09-19 §3.2). The fleet's sync creates it before the acquire,
     #: so a project nobody has uploaded to simply mounts nothing — asking for it is never an
     #: error, because "no attachments yet" is the ordinary state of a new project.
     attachments: bool = False
@@ -1451,21 +1446,6 @@ class AgentWorkspaceFactory:
 
         return self._root_path
 
-    def project_host_path(self, workspace_id: str, project_id: str) -> Path:
-        """``<root>/<ws>/projects/<project>`` on the host, from validated segments only.
-
-        The descriptor-walking accessors above are the way *this* process reaches the tree. A
-        container runtime cannot be handed a descriptor, so it gets the path — built from the
-        same validated segments, so it names the same directory and can name no other.
-        """
-
-        return (
-            self._root_path
-            / validate_workspace_segment(workspace_id, label="workspace_id")
-            / PROJECTS_DIR
-            / validate_workspace_segment(project_id, label="project_id")
-        )
-
     @property
     def area(self) -> WorkerArea | None:
         """The worker area this factory's root is, when it has one."""
@@ -1575,86 +1555,6 @@ class AgentWorkspaceFactory:
         return cls._ensure_directory(
             parent_fd, validate_workspace_segment(segment, label="directory segment")
         )
-
-    def library_parent_fd(self, workspace_id: str) -> int:
-        """Ensure ``<ws>/library`` and return its descriptor. The caller owns and closes it.
-
-        This is where the workspace-wide libraries (today: ``brand/<brand>/<version>``) are
-        materialized, beside — never inside — any thread workspace.
-        """
-
-        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
-        with self._root_lock():
-            workspace_fd = self._ensure_directory(self._root_fd, workspace_segment)
-            try:
-                self._audit_scope_directories(workspace_fd)
-                library_fd = self._ensure_directory(workspace_fd, LIBRARY_DIR)
-            finally:
-                os.close(workspace_fd)
-            try:
-                self._audit_scope_directories(library_fd)
-            except BaseException:
-                os.close(library_fd)
-                raise
-            return library_fd
-
-    def project_parent_fd(self, workspace_id: str, project_id: str) -> int:
-        """Ensure ``<ws>/projects/<project>`` and return its descriptor.
-
-        The project's own ``library`` tree is written directly below it, beside ``threads``.
-        The caller owns and closes the descriptor.
-        """
-
-        chain = (
-            validate_workspace_segment(workspace_id, label="workspace_id"),
-            PROJECTS_DIR,
-            validate_workspace_segment(project_id, label="project_id"),
-        )
-        with self._root_lock():
-            parent_fd = self._root_fd
-            opened: list[int] = []
-            try:
-                for segment in chain:
-                    child_fd = self._ensure_directory(parent_fd, segment)
-                    opened.append(child_fd)
-                    self._audit_scope_directories(child_fd)
-                    parent_fd = child_fd
-                return opened.pop()
-            finally:
-                for descriptor in opened:
-                    os.close(descriptor)
-
-    def remove_project_tree(self, workspace_id: str, project_id: str, name: str) -> None:
-        """Remove one named tree below ``<ws>/projects/<project>/``. Idempotent.
-
-        The counterpart of a turn materializing its pinned generation beside the project's
-        library: what one turn writes there, that turn removes, so no per-turn state outlives the
-        turn. ``name`` is validated as a single segment and the project's own ``library`` is
-        refused outright — that tree belongs to every thread of the project and is nobody's turn
-        to delete, and an idempotent "remove whatever you were given" would make deleting it one
-        typo away.
-
-        ``LibraryTree`` keeps a superseded generation as ``<name>.old-<pid>`` and a crashed build
-        as ``<name>.next-<pid>``, reclaiming both at the *next* replace of that name — which for a
-        per-turn tree never comes. So this removes the tree and its own residue together;
-        otherwise a turn killed between materializing and this call would leave a directory behind
-        forever.
-        """
-
-        segment = validate_workspace_segment(name, label="project tree name")
-        if segment == LIBRARY_DIR:
-            raise WorkspaceConfigurationError("the project library is not a per-turn tree")
-        # The descriptor is taken first and the lock second, never nested: ``_root_lock`` is an
-        # ``flock`` on one shared descriptor, so an inner release would drop the outer holder's
-        # lock too.
-        parent_fd = self.project_parent_fd(workspace_id, project_id)
-        try:
-            with self._root_lock():
-                for entry in os.listdir(parent_fd):
-                    if entry == segment or entry.startswith(f"{segment}."):
-                        self._remove_tree(parent_fd, entry)
-        finally:
-            os.close(parent_fd)
 
     def chat_dir_fd(self, chat: ChatScope) -> int:
         """Ensure this chat's private folder and return its descriptor. The caller closes it.

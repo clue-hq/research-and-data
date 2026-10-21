@@ -1452,64 +1452,18 @@ def test_a_versioned_mount_carries_its_writer_and_reopen_or_is_refused(tmp_path:
 # --- anchored library parents -------------------------------------------------------------
 
 
-def test_the_library_parents_are_private_directories_the_scope_audit_accepts(
-    tmp_path: Path,
-) -> None:
-    root, factory, _sink = make_factory(tmp_path)
-    try:
-        library_fd = factory.library_parent_fd("ws-1")
-        try:
-            assert stat.S_IMODE(os.fstat(library_fd).st_mode) == 0o700
-            brand_fd = factory.ensure_child_directory(library_fd, "brand")
-            try:
-                assert stat.S_IMODE(os.fstat(brand_fd).st_mode) == 0o700
-            finally:
-                os.close(brand_fd)
-        finally:
-            os.close(library_fd)
-        project_fd = factory.project_parent_fd("ws-1", "project-1")
-        try:
-            assert stat.S_IMODE(os.fstat(project_fd).st_mode) == 0o700
-        finally:
-            os.close(project_fd)
-
-        assert stat.S_IMODE((root / "ws-1/library").stat().st_mode) == 0o700
-        assert stat.S_IMODE((root / "ws-1/library/brand").stat().st_mode) == 0o700
-        assert stat.S_IMODE((root / "ws-1/projects/project-1").stat().st_mode) == 0o700
-        # Both helpers are idempotent and a thread still opens beside them.
-        os.close(factory.library_parent_fd("ws-1"))
-        os.close(factory.project_parent_fd("ws-1", "project-1"))
-        lease = factory.create(
-            workspace_id="ws-1",
-            project_id="project-1",
-            thread_id="thread-1",
-            execution_id=EXECUTION_ID,
-            policy=policy(),
-        )
-        assert lease.identity.thread_id == "thread-1"
-    finally:
-        factory.close()
-
-
 @pytest.mark.parametrize("segment", ["../escape", "with space", ".hidden", "", "a/b"])
-def test_the_library_parents_refuse_a_hostile_segment(tmp_path: Path, segment: str) -> None:
+def test_the_chat_folder_refuses_a_hostile_segment(tmp_path: Path, segment: str) -> None:
     root, factory, _sink = make_factory(tmp_path)
     try:
-        with pytest.raises(WorkspaceConfigurationError):
-            factory.library_parent_fd(segment)
-        with pytest.raises(WorkspaceConfigurationError):
-            factory.project_parent_fd("ws-1", segment)
-        # Nothing on the refused path was created on the way to the refusal.
-        assert not (root / "ws-1").exists()
-
-        library_fd = factory.library_parent_fd("ws-1")
-        try:
+        for chat in (
+            ChatScope(segment, "project-1", "thread-1"),
+            ChatScope("ws-1", segment, "thread-1"),
+            ChatScope("ws-1", "project-1", segment),
+        ):
             with pytest.raises(WorkspaceConfigurationError):
-                factory.ensure_child_directory(library_fd, segment)
-        finally:
-            os.close(library_fd)
-        assert list((root / "ws-1/library").iterdir()) == []
-        assert not (root / "ws-1/projects").exists()
+                factory.chat_dir_fd(chat)
+        assert not (root / "chats").exists() or list((root / "chats").iterdir()) == []
     finally:
         factory.close()
 

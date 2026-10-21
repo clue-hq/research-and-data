@@ -1,8 +1,9 @@
-"""The project's uploaded files on disk, beside its library (spec 2026-09-19 §3.2).
+"""The project's uploaded files in each chat's own folder (spec 2026-09-19 §3.2; F3 WS-37).
 
 Every file a human attached in a project chat — text, image or document, nothing converted —
-belongs to the *project*, not to the turn that carried it, so it is written once into
-``<ws>/projects/<project>/attachments`` and read-only mounted by every turn of every thread.
+belongs to the *project*, not to the turn that carried it. Each chat holds its own copy in
+``<chat>/attachments`` (beside its ``agent/`` root, never shared with another chat; ruling AW-9),
+read-only mounted by every turn of that chat.
 
 This module is the sync: the durable attachment rows are the truth, the directory is a cache of
 them, and one call reconciles the second to the first. It runs on the **worker** that owns the
@@ -15,8 +16,8 @@ Three properties the implementation exists to keep:
   untouched, so the ordinary turn of an unchanged project does no I/O beyond one listing.
 * **Convergent.** A name the entries no longer carry — an erased or purged artifact, most of all —
   is removed. What the model can read is what the workspace still holds.
-* **Anchored.** Every write goes through the factory's project descriptor and ``O_NOFOLLOW``,
-  never through a host path string, exactly as the library materializer does.
+* **Anchored.** Every write goes through the factory's chat-folder descriptor and ``O_NOFOLLOW``,
+  never through a host path string, exactly as the library sync does.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from clue_agents import (
     ArtifactRef,
     WorkspaceSecurityError,
 )
+from clue_agents.worker_area import ChatScope
 
 __all__ = [
     "ProjectAttachmentEntry",
@@ -132,10 +134,9 @@ async def sync_project_attachments(
     artifacts: AgentArtifactReader,
     conn: AsyncConnection,
     *,
-    workspace_id: str,
-    project_id: str,
+    chat: ChatScope,
 ) -> int:
-    """Reconcile ``<project>/attachments`` with this project's attachment rows. Returns writes.
+    """Reconcile ``<chat>/attachments`` with this project's attachment rows. Returns writes.
 
     Only what moved is paid for: the directory is listed and hashed, the entries whose bytes are
     absent or different are fetched, and everything else is left exactly as it stands. A project
@@ -148,11 +149,9 @@ async def sync_project_attachments(
     """
 
     entries = await project_attachment_entries(
-        conn, workspace_id=workspace_id, project_id=project_id
+        conn, workspace_id=chat.workspace_id, project_id=chat.project_id
     )
-    installed = await asyncio.to_thread(
-        _installed_digests, workspaces, workspace_id=workspace_id, project_id=project_id
-    )
+    installed = await asyncio.to_thread(_installed_digests, workspaces, chat=chat)
     if not entries and installed is None:
         return 0
     known: Mapping[str, str] = installed or {}
@@ -175,8 +174,7 @@ async def sync_project_attachments(
     await asyncio.to_thread(
         _install,
         workspaces,
-        workspace_id=workspace_id,
-        project_id=project_id,
+        chat=chat,
         bodies=tuple(bodies),
         obsolete=obsolete,
     )
@@ -204,8 +202,7 @@ def _validated_name(filename: str) -> str:
 def _installed_digests(
     workspaces: AgentWorkspaceFactory,
     *,
-    workspace_id: str,
-    project_id: str,
+    chat: ChatScope,
 ) -> dict[str, str] | None:
     """``{filename: sha256}`` for what is on disk, or None when there is no directory at all.
 
@@ -213,7 +210,7 @@ def _installed_digests(
     match, so the next step removes it: this directory holds uploads and nothing else.
     """
 
-    parent_fd = workspaces.project_parent_fd(workspace_id, project_id)
+    parent_fd = workspaces.chat_dir_fd(chat)
     try:
         try:
             directory_fd = os.open(ATTACHMENTS_DIR, _DIR_FLAGS, dir_fd=parent_fd)
@@ -257,14 +254,13 @@ def _digest(directory_fd: int, name: str) -> str:
 def _install(
     workspaces: AgentWorkspaceFactory,
     *,
-    workspace_id: str,
-    project_id: str,
+    chat: ChatScope,
     bodies: Sequence[tuple[str, bytes]],
     obsolete: Sequence[str],
 ) -> None:
     """Write the moved files and drop the ones no live entry names. Both anchored, both by name."""
 
-    parent_fd = workspaces.project_parent_fd(workspace_id, project_id)
+    parent_fd = workspaces.chat_dir_fd(chat)
     try:
         directory_fd = workspaces.ensure_child_directory(parent_fd, ATTACHMENTS_DIR)
     finally:
