@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from clue_agents import (
@@ -11,14 +12,24 @@ from clue_agents import (
     WorkspaceRootPolicy,
 )
 from clue_agents.contracts import normalize_virtual_path
+from clue_agents.ports import TurnBinding
+from clue_agents.worker_area import process_worker_area
+from clue_agents.workspace_policy import PreparedWorkspaceRoot
+from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
 from clue_config import Settings, load_settings
+from clue_db import ConnFactory, transaction
 from clue_storage import StorageBackend, artifact_key, content_address
 
 __all__ = [
+    "LOCAL_DIR",
     "StorageAgentArtifactSink",
     "build_agent_workspace_factory",
 ]
+
+#: The emergency switch's root below the configured root (snapshots off, WS-21).
+LOCAL_DIR = "local"
 
 
 class StorageAgentArtifactSink:
@@ -58,8 +69,15 @@ def build_agent_workspace_factory(
     settings: Settings | None = None,
     source_root: Path | None = None,
     home_root: Path | None = None,
+    turn_bindings: Sequence[TurnBinding] = (),
+    conn_factory: ConnFactory = transaction,
 ) -> AgentWorkspaceFactory:
     """Build the production factory only from validated deployment configuration.
+
+    F3 (WS-15, WS-21; AW-19): with snapshots on (the default), the factory's root is this
+    process's own worker area under the configured root, claimed by lock and wiped at claim, and
+    every lease is restored from and saved to the chat's snapshot. With snapshots off — the
+    emergency switch only — the root is ``<root>/local`` and folders are local only.
 
     The returned backend exposes opaque relative paths. These host paths remain confined to the
     trusted composition root and never enter agent state, prompts, or tool results.
@@ -75,7 +93,27 @@ def build_agent_workspace_factory(
         source_root=repository_root,
         home_root=service_home,
     ).prepare()
+    if not resolved_settings.agent_workspace_snapshots_enabled:
+        local = prepared.path / LOCAL_DIR
+        local.mkdir(mode=0o700, exist_ok=True)
+        return AgentWorkspaceFactory(
+            prepared_root=PreparedWorkspaceRoot(path=local),
+            artifact_sink=DurableAgentArtifactStore(storage=storage),
+            turn_bindings=turn_bindings,
+        )
+    area = process_worker_area(prepared.path)
     return AgentWorkspaceFactory(
-        prepared_root=prepared,
+        prepared_root=PreparedWorkspaceRoot(path=area.path),
         artifact_sink=DurableAgentArtifactStore(storage=storage),
+        area=area,
+        snapshotter=WorkspaceSnapshotter(
+            store=DbWorkspaceSnapshotStore(
+                storage=storage,
+                conn_factory=conn_factory,
+                concurrency=resolved_settings.agent_workspace_transfer_concurrency,
+            ),
+            concurrency=resolved_settings.agent_workspace_transfer_concurrency,
+            legacy_root=prepared.path,
+        ),
+        turn_bindings=turn_bindings,
     )

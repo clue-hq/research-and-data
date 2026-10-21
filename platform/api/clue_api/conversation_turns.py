@@ -83,7 +83,6 @@ from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
 )
-from clue_api.sandbox.workspaces import SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_core import ContextAssembly, ExecutionId, MemoryType
 from clue_db import ConnFactory, transaction
@@ -453,81 +452,50 @@ class ConversationTurnEngine:
         if stream is not None:
             await stream.turn_started()
         if committed is None:
-            # The code sandbox's one binding (spec 2026-09-19 §3.4). ``ToolContext`` carries
-            # the execution id and nothing else, so this is where ``run_python@1`` is told which
-            # host directories this turn owns — derived from the lease the spill sink below is
-            # bound to, and from the very mount table the model's own file tools see. With no
-            # registry (the sandbox is off) or no ``MountRequest`` (a surface that acquired its
-            # own lease and named nothing) this binds nothing, and the tool refuses by name
-            # rather than running against a guessed path.
-            sandbox = self.components.sandbox_workspaces
-            bound_sandbox: SandboxWorkspaces | None = None
-            if sandbox is not None and mounts is not None:
-                bound_sandbox = sandbox
-                sandbox.register(
-                    constitution.execution_id,
-                    sandbox_mounts_for_lease(
-                        lease,
-                        self.components.workspaces,
-                        brand=mounts.brand,
-                        project_library=mounts.project_library,
-                        attachments=mounts.attachments,
-                    ),
-                )
-            # CRM reads (spec crm-integration §5): ``run_crm_action@1`` writes every result into
-            # this turn's ``reads/`` folder, found by execution id like the sandbox above.
-            crm_sinks = self.components.crm_read_sinks
-            if crm_sinks is not None:
-                crm_sinks.register(constitution.execution_id, lease.backend)
-            try:
-                execution = build_head_of_abm_stage0_execution(
-                    request=request,
-                    profiles=self.components.profiles,
-                    tools=self._tools,
-                    tool_invoker=self._tool_invoker,
-                    executor=self._executor,
-                    compatibility=self._compatibility,
-                    artifacts=self.components.artifacts,
-                    plans=self._plans,
-                    checkpointer_factory=postgres_agent_checkpointer,
-                    budget_limit_millicents=budget_limit_millicents,
-                    captured_turns=self._captured_turns,
-                    surface=self.surface,
-                    # The thread's own workspace is where a governed result too large for its
-                    # receipt lands: `reads/<operation>.json`, readable by the model, written by
-                    # nobody else.
-                    spill_sink=lease.backend,
-                    conn_factory=self._conn_factory,
-                )
-                # Continue or open fresh — decided before assembly, because a turn has exactly one
-                # opening-context receipt (spec 2026-09-29 §3.1).
-                history, continuation, continuation_config = await self._continuation_for(
-                    request=request, lease=lease, execution=execution, fresh_history=prior_history
-                )
-                context = await self._contexts.assemble(
-                    request=request,
-                    profile=self.resolved.profile,
-                    history=history,
-                    continuation=continuation,
-                )
-                outcome = await self._runtime.run(
-                    request=request,
-                    context=context,
-                    lease=lease,
-                    execution=execution,
-                    completion_guard=completion_guard,
-                    stream=stream,
-                    input_seeds=input_seeds,
-                    continuation_config=continuation_config,
-                )
-            finally:
-                # On every exit path — returned, raised, cancelled — and idempotent, because the
-                # binding must not outlive the lease it names: a later turn's script reaching a
-                # released tree is exactly what this registry exists to prevent.
-                if bound_sandbox is not None:
-                    bound_sandbox.release(constitution.execution_id)
-                if crm_sinks is not None:
-                    crm_sinks.release(constitution.execution_id)
+            # The code sandbox and the CRM read sinks are bound to this execution by the
+            # workspace factory itself, for exactly the life of the lease (F3, WS-14; AW-8.2):
+            # ``acquire_restored`` binds them and the release unbinds them, so this engine binds
+            # nothing of its own.
+            execution = build_head_of_abm_stage0_execution(
+                request=request,
+                profiles=self.components.profiles,
+                tools=self._tools,
+                tool_invoker=self._tool_invoker,
+                executor=self._executor,
+                compatibility=self._compatibility,
+                artifacts=self.components.artifacts,
+                plans=self._plans,
+                checkpointer_factory=postgres_agent_checkpointer,
+                budget_limit_millicents=budget_limit_millicents,
+                captured_turns=self._captured_turns,
+                surface=self.surface,
+                # The thread's own workspace is where a governed result too large for its
+                # receipt lands: `reads/<operation>.json`, readable by the model, written by
+                # nobody else.
+                spill_sink=lease.backend,
+                conn_factory=self._conn_factory,
+            )
+            # Continue or open fresh — decided before assembly, because a turn has exactly one
+            # opening-context receipt (spec 2026-09-29 §3.1).
+            history, continuation, continuation_config = await self._continuation_for(
+                request=request, lease=lease, execution=execution, fresh_history=prior_history
+            )
+            context = await self._contexts.assemble(
+                request=request,
+                profile=self.resolved.profile,
+                history=history,
+                continuation=continuation,
+            )
+            outcome = await self._runtime.run(
+                request=request,
+                context=context,
+                lease=lease,
+                execution=execution,
+                completion_guard=completion_guard,
+                stream=stream,
+                input_seeds=input_seeds,
+                continuation_config=continuation_config,
+            )
         else:
             outcome = committed
         return await self._result_from_outcome(

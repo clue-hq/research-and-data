@@ -62,6 +62,7 @@ from clue_agents import (
 )
 from clue_agents.bridge import process_bridge
 from clue_agents.worker_area import ChatScope
+from clue_agents.workspace_snapshot import LeaseFence, WorkspaceRestoreUnavailable
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_gate import gate_answer_for_turn
@@ -414,7 +415,9 @@ class ProjectConversationTurnRunner:
         self._stream_policy = stream_policy
         self._stop_poll_interval_s = stop_poll_interval_s
 
-    async def run(self, *, turn_id: UUID, workspace_id: str) -> ConversationTurnResult:
+    async def run(
+        self, *, turn_id: UUID, workspace_id: str, fence: LeaseFence | None = None
+    ) -> ConversationTurnResult:
         async with self._conn_factory() as conn:
             submission = await get_submission(conn, workspace_id=workspace_id, turn_id=turn_id)
             if submission is None:
@@ -838,13 +841,16 @@ class ProjectConversationTurnRunner:
             and submission.agent_profile_id != resolved_profile_id
         ):
             raise RuntimeError("the submitted agent profile is not promoted for this surface")
-        lease = self._engine.components.workspaces.acquire(
+        # F3 (WS-6, WS-8): the lease comes with the chat's agent folders brought to its current
+        # version, and its saves are fenced by this worker's fleet lease on the thread.
+        lease = await self._engine.components.workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=scope.project_id,
             thread_id=submission.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
             mounts=mounts,
+            fence=fence,
         )
         try:
             focus_ref = DomainObjectRef(
@@ -1001,7 +1007,7 @@ class ProjectConversationTurnRunner:
                 )
             return result
         finally:
-            lease.release()
+            await self._engine.components.workspaces.release_saved(lease)
 
     async def _compose_project_context(
         self,
@@ -1536,8 +1542,26 @@ class AgentTurnWorkHandler:
                 requeue=True,
                 requeue_after=timedelta(seconds=1),
             )
+        fence = LeaseFence(
+            work_id=context.work_id,
+            worker_id=context.worker_id,
+            generation=int(context.lease_generation),
+        )
         try:
-            result = await self._runner.run(turn_id=turn_id, workspace_id=workspace_id)
+            result = await self._runner.run(turn_id=turn_id, workspace_id=workspace_id, fence=fence)
+        except WorkspaceRestoreUnavailable:
+            # F3 (spec §10): the chat's files could not be brought onto this machine. Nothing has
+            # run yet — no model call, no tool — so the turn is simply offered again shortly,
+            # possibly to another worker.
+            log.warning(
+                "agent_turn.workspace_unavailable", turn_id=str(turn_id), workspace_id=workspace_id
+            )
+            return WorkResult(
+                outcome="workspace_unavailable",
+                references=references,
+                requeue=True,
+                requeue_after=timedelta(seconds=30),
+            )
         except TurnStopped:
             # A stop is an executed instruction, not an error: the task is DONE, the turn carries
             # its own ``turn.cancelled`` event, and the thread moves on to its next turn.

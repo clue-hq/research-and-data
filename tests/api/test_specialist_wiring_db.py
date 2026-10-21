@@ -164,7 +164,7 @@ class _Workspaces:
         self.leases: list[AgentWorkspaceLease] = []
         self._last: dict[str, Any] = {}
 
-    def acquire(
+    async def acquire_restored(
         self,
         *,
         workspace_id: str,
@@ -183,6 +183,9 @@ class _Workspaces:
         lease = self.factory.create(**self._last)
         self.leases.append(lease)
         return lease
+
+    async def release_saved(self, lease: AgentWorkspaceLease) -> None:
+        await self.factory.release_saved(lease)
 
     def reopen(self) -> AgentWorkspaceLease:
         """Take a fresh lease over the child thread, after the run released its own."""

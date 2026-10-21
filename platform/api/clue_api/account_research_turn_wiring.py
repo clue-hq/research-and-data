@@ -538,7 +538,7 @@ class PreparedAccountResearchTurnRunner:
         )
         await self._drive_execution(execution_id)
 
-        lease = self._workspaces.acquire(
+        lease = await self._workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=project.project_id,
             thread_id=f"account-research-{account_run_id}",
@@ -726,7 +726,7 @@ class PreparedAccountResearchTurnRunner:
             await self._complete_recipe_if_needed(outcome)
             return outcome
         finally:
-            lease.release()
+            await self._workspaces.release_saved(lease)
 
     async def _complete_recipe_if_needed(self, outcome: AgentTurnOutcome) -> None:
         if outcome.status is not AgentExecutionStatus.COMPLETED:

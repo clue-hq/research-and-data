@@ -42,7 +42,7 @@ from deepagents.backends.protocol import (
 )
 
 from clue_agents.contracts import ArtifactRef, WorkspacePolicy, normalize_virtual_path
-from clue_agents.ports import AgentArtifactSink, WorkspaceEntry
+from clue_agents.ports import AgentArtifactSink, TurnBinding, WorkspaceEntry
 from clue_agents.tree_sync import TreeSyncReport, sync_directory
 from clue_agents.versioned_root import (
     VersionedRootWriter,
@@ -142,6 +142,8 @@ _SPILL_PREFIXES: Final = ("reads",)
 #: separator-free segment (a UUID is the shape in production), so the caller's id can never become
 #: a path, a traversal, a second extension, or a hidden file.
 _SPILL_SEGMENT: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+#: A ``run_python`` output stream spilled whole: ``<operation>.stdout.txt`` / ``.stderr.txt``.
+_STREAM_SPILL_NAME: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}\.(stdout|stderr)\.txt$")
 _MEDIA_TYPES: Final = {
     ".json": "application/json",
     ".md": "text/markdown",
@@ -1066,6 +1068,28 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 self._replace_file_unlocked(logical, data, old_size=metadata.st_size)
             return logical
 
+    def write_spill_file(self, name: str, data: bytes) -> str:
+        """Park one sandbox output stream in ``reads/<name>`` and return its path (F3 §12).
+
+        The ``run_python`` counterpart of :meth:`write_spill`: a trusted write into ``reads/``
+        that counts against the policy quota like every other file, and replaces its own earlier
+        bytes when the same operation spills again.
+        """
+
+        if not _STREAM_SPILL_NAME.fullmatch(name):
+            raise WorkspaceSecurityError("an output spill is named <operation>.stdout|stderr.txt")
+        logical = self._validate_path(
+            f"{_SPILL_PREFIXES[0]}/{name}", write=True, trusted=_SPILL_PREFIXES
+        )
+        try:
+            return self._create_file(logical, data, read_only=False).path
+        except WorkspaceConflict:
+            with self._filesystem_lock(exclusive=True):
+                file_fd, metadata = self._open_file(logical)
+                os.close(file_fd)
+                self._replace_file_unlocked(logical, data, old_size=metadata.st_size)
+            return logical
+
     def materialize_bytes(self, path: str, data: bytes) -> WorkspaceEntry:
         """Trusted pre-model write into a read-only resource/context/input prefix."""
 
@@ -1468,9 +1492,11 @@ class AgentWorkspaceFactory:
         artifact_sink: AgentArtifactSink,
         area: WorkerArea | None = None,
         snapshotter: WorkspaceSnapshotter | None = None,
+        turn_bindings: Sequence[TurnBinding] = (),
     ) -> None:
         self._area = area
         self._snapshotter = snapshotter
+        self._turn_bindings = tuple(turn_bindings)
         self._root_fd = os.open(prepared_root.path, _DIR_FLAGS)
         _validate_private_directory(self._root_fd)
         self._root_path = prepared_root.path
@@ -2119,12 +2145,14 @@ class AgentWorkspaceFactory:
             artifact_sink=artifact_sink,
         )
         lease.fence = fence
-        if self._snapshotter is not None:
-            try:
+        try:
+            if self._snapshotter is not None:
                 lease.restore_report = await self._snapshotter.restore(lease)
-            except BaseException:
-                self.release(lease)
-                raise
+            for binding in self._turn_bindings:
+                binding.bind(lease.identity.execution_id, lease)
+        except BaseException:
+            self.release(lease)
+            raise
         return lease
 
     async def save_snapshot(self, lease: AgentWorkspaceLease) -> SaveReport:
@@ -2170,6 +2198,8 @@ class AgentWorkspaceFactory:
     def release(self, lease: AgentWorkspaceLease) -> None:
         """Drop this turn's lease and close its backend. Nothing on disk is removed."""
 
+        for binding in self._turn_bindings:
+            binding.unbind(lease.identity.execution_id)
         key = (lease._workspace_segment, lease._project_segment, lease._thread_segment)
         released = False
         with self._lock:

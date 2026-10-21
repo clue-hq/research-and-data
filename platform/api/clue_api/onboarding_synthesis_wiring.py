@@ -970,7 +970,7 @@ class OnboardingSynthesisLauncher:
         await self._drive_execution(execution_id)
 
         # 4. the isolated one-execution workspace ------------------------------------------------
-        lease = self._components.workspaces.acquire(
+        lease = await self._components.workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=project_id,
             thread_id=thread_id,
@@ -1107,7 +1107,7 @@ class OnboardingSynthesisLauncher:
                 "completed", None, None, cost_usd, turn_id, outcome.finalization_ref
             )
         finally:
-            lease.release()
+            await self._components.workspaces.release_saved(lease)
 
     # --- the turn ------------------------------------------------------------------------------
 

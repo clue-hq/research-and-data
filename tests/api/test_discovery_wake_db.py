@@ -292,7 +292,7 @@ class _CompletingRunner:
     def __init__(self) -> None:
         self.calls: list[UUID] = []
 
-    async def run(self, *, turn_id: UUID, workspace_id: str) -> Any:
+    async def run(self, *, turn_id: UUID, workspace_id: str, fence: Any = None) -> Any:
         del workspace_id
         self.calls.append(turn_id)
         return SimpleNamespace(

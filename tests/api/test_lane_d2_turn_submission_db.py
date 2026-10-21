@@ -993,7 +993,7 @@ class _RecordingRunner:
         self._fail = fail
         self._error = error
 
-    async def run(self, *, turn_id: UUID, workspace_id: str) -> Any:
+    async def run(self, *, turn_id: UUID, workspace_id: str, fence: Any = None) -> Any:
         del workspace_id
         self.calls.append(turn_id)
         if self._error is not None:

@@ -103,6 +103,7 @@ from clue_fleet import (
     claim_next_task,
     finish_task,
 )
+from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
 from clue_research.stage0 import submit_onboarding_input
@@ -216,7 +217,22 @@ class _RecordingWorkspaces:
         self.on_acquire: Any = None
         self._last: dict[str, Any] = {}
 
+    async def acquire_restored(self, **kwargs: Any) -> Any:
+        """The production hook (F3, WS-8): the inner factory restores, this records."""
+
+        kwargs = self._granted(kwargs)
+        lease = await self._inner.acquire_restored(**kwargs)
+        kwargs.pop("fence", None)
+        return self._record(kwargs, lease)
+
+    async def release_saved(self, lease: Any) -> None:
+        await self._inner.release_saved(lease)
+
     def acquire(self, **kwargs: Any) -> Any:
+        kwargs = self._granted(kwargs)
+        return self._record(kwargs, self._inner.acquire(**kwargs))
+
+    def _granted(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         if self.grant_project_writes:
             policy = kwargs["policy"]
             if "project" not in policy.writable_prefixes:
@@ -226,7 +242,9 @@ class _RecordingWorkspaces:
                         "writable_prefixes": (*policy.writable_prefixes, "project"),
                     }
                 )
-        lease = self._inner.acquire(**kwargs)
+        return kwargs
+
+    def _record(self, kwargs: dict[str, Any], lease: Any) -> Any:
         self._last = dict(kwargs)
         self.leases.append(lease)
         self.mounts.append(kwargs.get("mounts"))
@@ -476,6 +494,8 @@ async def _build_stack(
             settings=settings,
             source_root=source_root,
             home_root=home_root,
+            # The snapshot store joins this test's rolled-back transaction (F3).
+            conn_factory=factory,
         )
     )
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
@@ -538,6 +558,9 @@ async def _run_turn(
         project_run_id=ProjectRunId(work_id),
     )
     assert claimed is not None
+    # The fleet holds a lease on the thread for every turn; the save is fenced by it (F3, WS-8).
+    lease = await acquire_work_lease(conn, work_id=WorkId(work_id), worker_id=worker_id)
+    assert lease is not None
     handler = build_agent_turn_work_handler(
         components=stack.components,
         tools=stack.tools,
@@ -563,7 +586,7 @@ async def _run_turn(
             task_id=claimed.task_id,
             work_id=work_id,
             worker_id=worker_id,
-            lease_generation=claimed.attempts,  # type: ignore[arg-type]
+            lease_generation=lease.generation,
             payload=claimed.payload,
             stop_requested=asyncio.Event(),
             lease_lost=asyncio.Event(),

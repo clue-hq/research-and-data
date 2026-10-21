@@ -32,8 +32,7 @@ execution id and the directories the worker bound to it.
 from __future__ import annotations
 
 import asyncio
-import os
-from pathlib import Path
+from collections.abc import Callable
 from typing import ClassVar, Final
 
 from pydantic import Field
@@ -74,7 +73,6 @@ INLINE_OUTPUT_BUDGET_BYTES: Final = 16 * 1024
 #: Where a spilled stream lands. ``reads/`` is the thread's read-only-to-the-container folder, so
 #: the next script cannot overwrite the output of the last one, and the agent's own file tools can
 #: open it by the exact relative path the result reports.
-_SPILL_DIR: Final = "reads"
 
 
 class RunPythonInput(ToolInput):
@@ -125,31 +123,15 @@ def _execute(
     """
 
     before = snapshot(mounts)
-    run = run_script(code, mounts=mounts, limits=limits, timeout_s=timeout_s, label=label)
+    run = run_script(
+        code, mounts=mounts, limits=limits, timeout_s=timeout_s, label=label, area=mounts.area
+    )
     return run, sweep(mounts, before=before)
 
 
-def _spill(thread_root: Path, name: str, raw: bytes) -> str:
-    """Write one whole stream beside the thread's other reads and return its relative path.
-
-    ``O_NOFOLLOW`` and ``O_EXCL``-free ``O_TRUNC``: the name is derived from the operation id, so a
-    retry of the same operation rewrites its own file rather than failing, but a *symlink* planted
-    at that name — by an earlier script, say — is refused instead of followed out of the tree.
-    """
-
-    directory = thread_root / _SPILL_DIR
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor = os.open(
-        directory / name,
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-        0o600,
-    )
-    with os.fdopen(descriptor, "wb") as handle:
-        handle.write(raw)
-    return f"{_SPILL_DIR}/{name}"
-
-
-def _inline(raw: bytes, *, thread_root: Path, name: str) -> tuple[str, str | None]:
+def _inline(
+    raw: bytes, *, spill: Callable[[str, bytes], str] | None, name: str
+) -> tuple[str, str | None]:
     """``(what travels in the result, where the whole thing was written)``.
 
     Decoding replaces undecodable bytes rather than raising: a script that prints a binary blob
@@ -161,8 +143,11 @@ def _inline(raw: bytes, *, thread_root: Path, name: str) -> tuple[str, str | Non
     encoded = text.encode()
     if len(encoded) <= INLINE_OUTPUT_BUDGET_BYTES:
         return text, None
-    return encoded[:INLINE_OUTPUT_BUDGET_BYTES].decode(errors="ignore"), _spill(
-        thread_root, name, raw
+    # The whole stream lands in ``reads/`` through the workspace, inside its quota (F3 §12).
+    # Mounts built by hand carry no spill; their output is then reported cut, never written raw.
+    return (
+        encoded[:INLINE_OUTPUT_BUDGET_BYTES].decode(errors="ignore"),
+        None if spill is None else spill(name, raw),
     )
 
 
@@ -260,10 +245,10 @@ class RunPythonTool(Tool):
             label=str(ctx.execution_id),
         )
         stdout, stdout_spilled_to = _inline(
-            run.stdout, thread_root=mounts.thread_root, name=f"{ctx.operation_id}.stdout.txt"
+            run.stdout, spill=mounts.spill, name=f"{ctx.operation_id}.stdout.txt"
         )
         stderr, stderr_spilled_to = _inline(
-            run.stderr, thread_root=mounts.thread_root, name=f"{ctx.operation_id}.stderr.txt"
+            run.stderr, spill=mounts.spill, name=f"{ctx.operation_id}.stderr.txt"
         )
         output = RunPythonOutput(
             exit_code=run.exit_code,

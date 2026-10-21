@@ -543,7 +543,7 @@ class _Workspaces:
         self.workspaces = workspaces
         self.artifacts = artifacts
 
-    def acquire(
+    async def acquire_restored(
         self,
         *,
         workspace_id: str,
@@ -552,7 +552,7 @@ class _Workspaces:
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease:
-        return self.workspaces.acquire(
+        return await self.workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=project_id,
             thread_id=thread_id,
@@ -560,6 +560,9 @@ class _Workspaces:
             policy=resolved_profile.profile.workspace,
             artifact_sink=self.artifacts,
         )
+
+    async def release_saved(self, lease: AgentWorkspaceLease) -> None:
+        await self.workspaces.release_saved(lease)
 
 
 class _InlineChild:
@@ -991,7 +994,8 @@ class ResearchUnitRuntime:
                 }
             }
         thread = f"research-quality-{execution}"
-        lease = self.workspaces.acquire(
+        # F3 (WS-8): restored from the run's snapshot on any worker, saved at finalize.
+        lease = await self.workspaces.acquire_restored(
             workspace_id=self.scope.workspace_id,
             project_id=self.scope.project_id,
             thread_id=thread,
@@ -1082,8 +1086,9 @@ class ResearchUnitRuntime:
                 from clue_api.arv2.quality_reconciliation import ReconciliationReply
 
                 # Preserve the original workspace notes and native compaction archive.
-                # Current evidence remains a live, authorized research_backend view.
-                source_lease = self.workspaces.acquire(
+                # Current evidence remains a live, authorized research_backend view. The source
+                # run's folders are restored from its snapshot, so this works on any worker (F3).
+                source_lease = await self.workspaces.acquire_restored(
                     workspace_id=self.scope.workspace_id,
                     project_id=self.scope.project_id,
                     thread_id=f"research-quality-{source_execution}",
@@ -1108,7 +1113,7 @@ class ResearchUnitRuntime:
                                 else:
                                     await lease.backend.write_text(entry.path, content)
                 finally:
-                    source_lease.release()
+                    await self.workspaces.release_saved(source_lease)
                 for path, value in (
                     (
                         "work/reconciliation/input.json",
@@ -1315,7 +1320,7 @@ class ResearchUnitRuntime:
 
                 await asyncio.shield(settle_runtime())
                 self.runtime_owner = None
-            lease.release()
+            await self.workspaces.release_saved(lease)
 
     async def reconciliation_output(self, outcome: AgentTurnOutcome) -> dict[str, Any]:
         if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:

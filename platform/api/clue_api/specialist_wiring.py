@@ -74,7 +74,7 @@ class SpecialistWorkspaceProvider(Protocol):
     must never silently replace a prior child root with an empty workspace.
     """
 
-    def acquire(
+    async def acquire_restored(
         self,
         *,
         workspace_id: str,
@@ -83,6 +83,8 @@ class SpecialistWorkspaceProvider(Protocol):
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease: ...
+
+    async def release_saved(self, lease: AgentWorkspaceLease) -> None: ...
 
 
 class SpecialistExecutionAdapter(AgentExecutionAdapter, Protocol):
@@ -331,7 +333,7 @@ class FreshWakeSpecialistRunner:
             child_execution_id=child_execution_id,
             project_id=parent.project_id,
         )
-        lease = self._workspaces.acquire(
+        lease = await self._workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=parent.project_id,
             thread_id=f"delegation-{request.delegation_id}",
@@ -490,7 +492,7 @@ class FreshWakeSpecialistRunner:
             )
             return await self._result(request, child_execution_id, outcome)
         finally:
-            lease.release()
+            await self._workspaces.release_saved(lease)
 
     async def _result(
         self, request: DelegationRequest, child_execution_id: ExecutionId, outcome: AgentTurnOutcome

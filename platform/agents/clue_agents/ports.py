@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
@@ -62,6 +62,7 @@ __all__ = [
     "HistoryMessageRef",
     "OperationFailure",
     "SpillSink",
+    "TurnBinding",
     "WorkspaceSnapshotStore",
     "WorkspaceEntry",
 ]
@@ -199,6 +200,20 @@ class SpillSink(Protocol):
     """
 
     def write_spill(self, operation_id: str, data: bytes) -> str: ...
+
+
+@runtime_checkable
+class TurnBinding(Protocol):
+    """A per-turn, in-process registry told which workspace a running execution holds (WS-14).
+
+    The workspace factory binds every lease it hands out through ``acquire_restored`` and unbinds
+    it on release, so no caller binds a folder on its own (AW-8.2). The CRM read sinks and the
+    code sandbox's mount registry are the two today.
+    """
+
+    def bind(self, execution_id: ExecutionId, lease: Any) -> None: ...
+
+    def unbind(self, execution_id: ExecutionId) -> None: ...
 
 
 @runtime_checkable

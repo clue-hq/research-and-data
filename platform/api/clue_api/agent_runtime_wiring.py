@@ -42,6 +42,7 @@ from clue_agents import (
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
     VersionedWriteOutcome,
+    WorkspaceConflict,
 )
 from clue_agents.contracts import (
     MODEL_FORBIDDEN_AUTHORITY_KEYS,
@@ -855,6 +856,15 @@ class AgentFinalizationAuthority:
         expected_outputs = tuple(await self._lease.backend.snapshot_outputs(reopen_after=True))
         if envelope.output_refs != expected_outputs:
             raise ValueError("finalization outputs differ from the frozen workspace snapshot")
+        # F3 (WS-9, AW-18): the agent's folders are saved as the chat's next version before the
+        # turn commits, so a finalized turn always has its files saved. A save that cannot reach
+        # storage after its retries raises here and the turn fails uncommitted; a save that lost
+        # its compare-and-set or the fleet lease is a zombie, which must not commit either.
+        saved = await self._lease.save_snapshot()
+        if saved.status in {"stale", "fenced"}:
+            raise WorkspaceConflict(
+                f"the turn's workspace save was refused ({saved.status}); it must not commit"
+            )
         await self._turns.record_workspace_usage(
             turn_id=turn_id,
             workspace_id=workspace_id,

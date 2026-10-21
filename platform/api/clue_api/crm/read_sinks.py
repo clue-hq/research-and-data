@@ -11,6 +11,7 @@ never finds the turn the engine bound.
 from __future__ import annotations
 
 import threading
+from typing import Any
 
 from clue_agents.ports import SpillSink
 from clue_core import ExecutionId
@@ -36,6 +37,17 @@ class CrmReadSinks:
         """End the binding. Idempotent: the turn's cleanup runs on more than one path."""
         with self._lock:
             self._live.pop(execution_id, None)
+
+    # --- the workspace factory's turn binding (F3, WS-14; AW-8.2) -----------------------------
+
+    def bind(self, execution_id: ExecutionId, lease: Any) -> None:
+        """Bind the lease's own ``reads/`` folder; a re-acquire of the same execution rebinds."""
+
+        with self._lock:
+            self._live[execution_id] = lease.backend
+
+    def unbind(self, execution_id: ExecutionId) -> None:
+        self.release(execution_id)
 
     def sink_for(self, execution_id: ExecutionId) -> SpillSink | None:
         """This execution's sink, or ``None`` when no turn registered one."""

@@ -471,12 +471,20 @@ def build_agent_platform_components(
     """Build every common C6 production adapter at the API root; fail before model spend.
 
     ``sandbox_workspaces`` is *passed in*, never built here, and that is deliberate: the toolbelt
-    handed to ``run_python@1`` and the conversation engine that registers the turn must share one
+    handed to ``run_python@1`` and the workspace factory that binds the turn must share one
     registry instance, so the composition root that builds both owns it (the fleet worker does).
     """
 
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
-    workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
+    # The two per-turn registries are bound by the factory itself (F3, WS-14; AW-8.2): every
+    # lease from ``acquire_restored`` binds them, and its release unbinds them.
+    workspaces = build_agent_workspace_factory(
+        storage=storage,
+        settings=settings,
+        turn_bindings=tuple(
+            binding for binding in (sandbox_workspaces, crm_read_sinks) if binding is not None
+        ),
+    )
     profiles = build_agent_profile_registry(tools)
     design_run_purger = None
     if settings.design_runtime_enabled:
