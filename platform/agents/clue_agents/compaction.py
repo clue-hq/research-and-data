@@ -67,7 +67,19 @@ class CompactionSettings:
 
 
 class ClueSummarizationMiddleware(_DeepAgentsSummarizationMiddleware):
-    """deepagents' summariser under our own class, counting real tokens (module docstring)."""
+    """deepagents' summariser under our own class, counting real tokens (module docstring).
+
+    ``history_prefix`` moves the offloaded history (and its ``media/``) to that folder. deepagents
+    names the path it wrote to in the summary it leaves the agent, so the history must be WRITTEN
+    there, not redirected afterwards by the backend, or the summary points at a path the agent
+    cannot read (F3 spec §12).
+    """
+
+    def __init__(self, *args: Any, history_prefix: str | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        if history_prefix is not None:
+            self._history_path_prefix = history_prefix
+            self._media_prefix = f"{history_prefix}/media"
 
     @property
     def name(self) -> str:
@@ -167,6 +179,9 @@ def build_compaction_middleware(
         # LangChain's default of only its last 4,000 tokens. The evicted part is bounded by the
         # trigger, so it always fits the same model's window.
         trim_tokens_to_summarize=None,
+        history_prefix=(
+            "/work/conversation_history" if backend is not None and history_under_work else None
+        ),
     )
     # ``system_prompt=None``: the tool is registered and callable, but no nudge is appended to the
     # system prompt, so every agent's prompt stays byte-identical (prompt cache, manual size).
