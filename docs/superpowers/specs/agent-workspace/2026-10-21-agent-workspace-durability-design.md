@@ -120,7 +120,7 @@ the decision).
 | D-14 | Production-grade robustness: no half-written snapshots, no silent overwrites, integrity checks, safe retries, nothing left behind, one place to erase, proven by tests | your words: *"production grade robustness and efficiency"*; my 7 properties of 2026-10-21 | see §2.1 | P1–P3 | as discussed |
 | D-15 | Existing chats are not migrated; a chat's current folder becomes its first snapshot | AW-5 | WS-22 | P1 | as discussed |
 | D-16 | Rollout behind a flag | roadmap P3 | WS-21 | P1 (flag), P3 (rollout) | as discussed; the flag must exist from the first code (env parity rule) |
-| D-17 | Which folder belongs to which tier | roadmap P0 | WS-4, WS-5, WS-23 | P1 (folders), P2 (tiers) | **differs in one detail: Q5** |
+| D-17 | Which folder belongs to which tier | roadmap P0 | WS-4, WS-5, WS-23 | P1 (folders), P2 (tiers) | decided 2026-10-22 (Q5, AW-14): `work/` kept for the chat's life |
 | D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | as discussed |
 | D-19 | Raw inputs (CRM reads, large tool results, conversation offloads) deleted 48 hours after the chat's last activity | AW-2; your words: *"48 hours after the long activity i think is good enough"* | WS-23, WS-24, WS-26 | P2 | as discussed |
 | D-20 | A receipt for every raw input, kept for the chat's lifetime: what, when, how many records, content hash, how to read it again | AW-2 | WS-25 | P2 | as discussed |
@@ -213,7 +213,7 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q5–Q6 (Q1–Q4 are decided).
+phase starts, but P1's plan needs Q6 (Q1–Q5 are decided).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -260,13 +260,14 @@ not built now; recorded as future scope in §2.4, with what triggers each.**
   raw inputs (WS-23). A large tool result may instead be rebuilt from its stored copy, at the
   builder's choice (WS-27).
 
-**Q5. `work/` becomes per turn** [P1] *(not discussed)*
-- **The change:** `work/` is emptied at every turn start, except its two compaction folders
-  (`work/conversation_history/`, `work/large_tool_results/`), which are saved as raw inputs.
-- **Why:** the agent's own manual already describes `work/` as the turn's scratch space ("Nothing
-  is persisted from it"). Today its files only happen to survive on the same machine.
-- **The alternative:** save all of `work/` as a work product. That is simpler to explain to the
-  agent, but it keeps in-turn scratch files for the chat's lifetime.
+**Q5. What happens to `work/` between turns** [P1]: **decided 2026-10-22 (AW-14): `work/` is kept
+for the chat's whole life, like `scratch/`.**
+- I had proposed emptying it at every turn start, as the agent's manual describes it ("Nothing is
+  persisted from it"). You chose to keep it.
+- Everything under `work/` is a work product, except the two compaction folders
+  (`work/conversation_history/`, `work/large_tool_results/`), which stay raw inputs under AW-2
+  (48 hours, receipts kept).
+- The manual's description of `work/` changes in Phase 2 (WS-32).
 
 **Q6. A save that cannot reach storage fails the turn** [P1] *(not discussed)*
 - **What happens:** the save is retried. If it still fails, the turn fails and the fleet retries
@@ -401,7 +402,7 @@ What lands in the agent folders today:
   | `outputs/` | everything; never emptied again | work product |
   | `reads/` | everything | raw input |
   | `work/conversation_history/` (with `media/`), `work/large_tool_results/` | everything | raw input |
-  | any other path under `work/` | **not saved**; `work/` is emptied at turn start apart from the two folders above (**Claude's call, Q5**) | — |
+  | everything else under `work/` | everything; never emptied (AW-14, Q5) | work product |
   | recipe folders and mounts | never; they come from database pins (WS-36) | — |
 
 - **WS-5 [P1] Tier recorded from the start.** Phase 1 writes each entry's tier into the file list,
@@ -429,7 +430,7 @@ What lands in the agent folders today:
      - a chat from before this change takes its agent folders from its old folder outside the
        worker areas, if that folder is on this machine, and its first save becomes version 1
        (WS-22).
-  6. In every case, `work/` is emptied except its two compaction folders (WS-4).
+  6. Nothing in the agent folders is emptied at turn start; `work/` is kept like `scratch/` (AW-14).
 - **WS-36 [P1] Recipe folders: write only what changed, never empty and rebuild.** (Founder,
   2026-10-22. Numbered last so the other ids stay stable.) Today `.deepagent/ inputs/ context/` are
   emptied and written again at every turn start (`workspace.py:1026` `reset_materialized_trees`),
@@ -633,7 +634,7 @@ What lands in the agent folders today:
   | Tier | Folders | Kept for |
   |---|---|---|
   | Outcomes | published documents, designs, research claims | untouched; already durable |
-  | Work product | `scratch/`, `outputs/` | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
+  | Work product | `scratch/`, `outputs/`, and `work/` apart from its two compaction folders | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
   | Raw input | `reads/`, `work/conversation_history/`, `work/large_tool_results/` | bytes deleted **48 hours after the chat's last activity** (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`, default 172800); the receipt stays for the chat's lifetime |
 
 - **WS-24 [P2] Last activity** is the newest of these events:
@@ -727,7 +728,7 @@ What lands in the agent folders today:
 - **WS-32 [P2] Manual rewrite.** The workspace chapter of the agent's manual is rewritten to say:
   - what each folder keeps, and for how long;
   - that `outputs/` and `scratch/` last for the chat;
-  - that `work/` is per turn, apart from the compaction history;
+  - that `work/` is kept for the chat like `scratch/`, and its compaction folders expire like `reads/`;
   - that `reads/` expire and leave receipts;
   - where the turn-start file list is.
 
@@ -884,3 +885,5 @@ and WS-28's list contents for live and expired files (P2).
   (F-1 routing, F-2 early restore, F-3 design follow-up spec) with their triggers.
 - 2026-10-22: Q4 decided (AW-13): CRM reads are stored in the snapshot as raw inputs; large tool
   results may point to their existing `result_ref` copy (builder's call).
+- 2026-10-22: Q5 decided (AW-14): `work/` is kept for the chat's whole life as a work product,
+  apart from its two compaction folders (raw inputs). WS-4, WS-6, WS-23 and WS-32 updated.

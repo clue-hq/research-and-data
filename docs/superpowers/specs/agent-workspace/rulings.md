@@ -64,6 +64,11 @@ agent, not only the CRM work.
   them into R2 as raw inputs: removed 48 hours after the chat's last activity, receipts kept (AW-2).
   Large tool results, already stored in full, may point to that copy instead of being stored twice
   (builder's call). Spec WS-4, WS-23, WS-27.
+- **AW-14 (2026-10-22)** **`work/` is kept for the chat's whole life, like `scratch/`.** It is not
+  emptied between turns. Its files are work products, except the compaction offloads
+  (`work/conversation_history/`, `work/large_tool_results/`), which stay raw inputs under AW-2. The
+  agent's manual, which today calls `work/` per-turn scratch, is rewritten to match (spec WS-32).
+  Spec WS-4, WS-6, WS-23.
 
 ## Scope, order and interim
 
