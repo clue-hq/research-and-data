@@ -2225,6 +2225,25 @@ class AgentWorkspaceFactory:
             if not self._closed:
                 self._touch_last_used(lease.chat)
 
+    @contextmanager
+    def hold_chat(self, chat: ChatScope) -> Iterator[None]:
+        """Keep this worker's cache sweep off ``chat``'s folder while the block runs.
+
+        A turn syncs the chat's ``brand/``, ``project/`` and ``attachments/`` copies before it takes
+        its lease; without a hold, a chat idle past the window could be swept in the middle of that
+        (review I2). Holding also stamps the folder as used now. Holds nest with the lease's own.
+        """
+
+        if self._area is not None:
+            self._area.mark_in_use(chat)
+        try:
+            if not self._closed:
+                self._touch_last_used(chat)
+            yield
+        finally:
+            if self._area is not None:
+                self._area.mark_idle(chat)
+
     def remove_chat(self, chat: ChatScope) -> bool:
         """Delete this chat's whole folder. Idempotent; returns whether it existed.
 

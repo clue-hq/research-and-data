@@ -250,3 +250,51 @@ def test_start_up_removes_this_users_old_media_temp_folders_only(tmp_path: Path)
     assert not old.exists()
     assert new.exists()
     assert other.exists()
+
+
+# --- review I2: a turn holds its chat before the lease, while it syncs the library copies --------
+
+
+def test_a_held_chat_is_never_swept_and_is_sweepable_again_after(tmp_path: Path) -> None:
+    from clue_agents.workspace import AgentWorkspaceFactory
+    from clue_agents.workspace_policy import PreparedWorkspaceRoot
+    from tests.agents.workspace_helpers import RecordingArtifactSink
+
+    area = _area(tmp_path)
+    factory = AgentWorkspaceFactory(
+        prepared_root=PreparedWorkspaceRoot(path=area.path),
+        artifact_sink=RecordingArtifactSink(),
+        area=area,
+    )
+    try:
+        folder = _chat(area, "returning", idle_s=10 * 3600)
+        # The factory refuses a chat folder with any non-private directory in or above it.
+        for private in (folder, folder / "agent", *list(folder.parents)[:3]):
+            private.chmod(0o700)
+        chat = ChatScope("ws-1", "project-1", "returning")
+        job = AgentWorkspaceCacheJob(area=area, idle_s=1800, max_bytes=10**9)
+        with factory.hold_chat(chat):
+            # The turn is syncing brand/, project/ and attachments/ before it takes its lease.
+            assert job.run_once(now=NOW).removed == ()
+            assert folder.is_dir()
+        assert area.in_use() == frozenset()
+        # Holding stamped the folder as used just now, so it is not idle any more...
+        assert job.run_once(now=time.time()).removed == ()
+        # ...and it goes once it has been idle for the window.
+        assert job.run_once(now=time.time() + 1801).removed == ("ws-1/project-1/returning",)
+    finally:
+        factory.close()
+        area.close()
+
+
+def test_the_turn_holds_its_chat_before_syncing_the_library_copies() -> None:
+    source = (REPO / "platform/api/clue_api/agent_turn_fleet_wiring.py").read_text()
+    held = source.index("hold_chat(chat)")
+    for sync in (
+        "ensure_brand_library(",
+        "ensure_project_library(",
+        "sync_pinned_project_library(",
+        "sync_project_attachments(",
+        "acquire_restored(",
+    ):
+        assert source.index(sync) > held, sync

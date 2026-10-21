@@ -23,6 +23,7 @@ from clue_agents.workspace_snapshot import (
     SnapshotEntry,
     SnapshotManifest,
     WorkspaceRestoreUnavailable,
+    WorkspaceSaveUnavailable,
     tier_for,
 )
 from clue_api.agent_workspace_snapshots import (
@@ -57,9 +58,13 @@ class CountingStorage(FsStorage):
         super().__init__(root)
         self.puts = 0
         self.fail_gets = False
+        self.fail_next_puts = 0
 
     async def put(self, key: str, data: bytes, *, media_type: str) -> None:
         self.puts += 1
+        if self.fail_next_puts:
+            self.fail_next_puts -= 1
+            raise StorageError("storage is unreachable")
         await super().put(key, data, media_type=media_type)
 
     async def get(self, key: str) -> bytes:
@@ -364,5 +369,31 @@ def test_privacy_erase_forgets_the_version_record(tmp_path: Path) -> None:
             assert await factory.forget_chat(chat) is False
         finally:
             factory.close()
+
+    _scenario(body, tmp_path)
+
+
+def test_a_retry_after_a_failed_upload_stores_the_bytes(tmp_path: Path) -> None:
+    """Review C1: the artifact row is committed before the upload, so a failed upload leaves a
+    live row naming bytes storage never got. The retry must upload them, not trust the row."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        data = b"cycle ~42 days"
+        entry = _entry("scratch/a.md", data)
+        storage.fail_next_puts = 1
+        with pytest.raises(WorkspaceSaveUnavailable):
+            await store.store_files(workspace_id=ws, files=[(entry, data)])
+        await store.store_files(workspace_id=ws, files=[(entry, data)])
+        status, pointer = await store.save(
+            workspace_id=ws,
+            project_id="prj-1",
+            thread_id="thr-1",
+            expected_version=None,
+            manifest=SnapshotManifest(entries=(entry,)),
+            fence=None,
+        )
+        assert status == "saved" and pointer is not None
+        assert await store.read_file(workspace_id=ws, entry=entry) == data
 
     _scenario(body, tmp_path)

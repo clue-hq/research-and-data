@@ -623,391 +623,400 @@ class ProjectConversationTurnRunner:
             project_id=scope.project_id,
             thread_id=submission.thread_id,
         )
-        if self._storage is None:
-            log.info(
-                "agent_turn.knowledge_not_composed",
-                turn_id=str(turn_id),
-                workspace_id=workspace_id,
-                project_id=scope.project_id,
-                brand_id=scope.brand_id,
-            )
-        else:
-            async with self._conn_factory() as conn:
-                knowledge_pin, knowledge_pin_created = await load_or_create_knowledge_pin(
-                    conn,
+        # Review I2: the cache sweep must not delete this folder while the brand, project and
+        # attachment copies sync below, before the lease (which holds the chat itself) is taken.
+        with self._engine.components.workspaces.hold_chat(chat):
+            if self._storage is None:
+                log.info(
+                    "agent_turn.knowledge_not_composed",
+                    turn_id=str(turn_id),
                     workspace_id=workspace_id,
-                    turn_id=turn_id,
+                    project_id=scope.project_id,
                     brand_id=scope.brand_id,
-                    project_id=scope.project_id,
                 )
-                documents = await read_pinned_documents(conn, self._storage, pin=knowledge_pin)
-                product_set = await current_project_product_set(
-                    conn,
-                    workspace_id=workspace_id,
-                    project_id=scope.project_id,
-                )
-                # Spec 2026-10-15 §8: the agent hears about merged, renamed and removed products.
-                product_changes = await recent_change_lines(
-                    conn, workspace_id=workspace_id, brand_id=scope.brand_id
-                )
-                # Founder rulings 2026-09-10: what this project's ICP *is* comes from its durable
-                # pin, not from whatever the brand's documents currently claim.
-                icp_pin = await current_project_icp_pin(
-                    conn,
-                    workspace_id=workspace_id,
-                    project_id=scope.project_id,
-                )
-            confirmed_icp = confirmed_icp_for_project(
-                documents,
-                pinned_document_id=None if icp_pin is None else icp_pin.document_id,
-            )
-            # The same pinned bytes, synced into this chat's own ``brand/`` folder and mounted
-            # read-only there; an unchanged brand writes nothing (WS-36, WS-37).
-            brand_version = await ensure_brand_library(
-                self._engine.components.workspaces,
-                chat=chat,
-                pin=knowledge_pin,
-                documents=documents,
-            )
-            mounts = MountRequest(brand=(scope.brand_id, brand_version))
-        # The project's own state (spec §4.1): status.md, decisions.md, the artifact index and
-        # every document this project authored, compiled once beside the threads and mounted
-        # read-only at ``project/``. The project moves while a turn runs — a discovery run
-        # finishes, a decision is recorded, another thread's write refreshes the tree — so the
-        # generation this turn composes against is recorded in its insert-once pin, and a later
-        # attempt reads the pinned set rather than whatever is installed by then.
-        project_library_index: bytes | None = None
-        #: True when a later attempt synced the chat's copy to this turn's pinned generation.
-        replayed_from_pin = False
-        if self._storage is not None:
-            # Bound once here so the compiler below closes over a backend, not over an attribute
-            # whose declared type still admits ``None``.
-            storage = self._storage
-            compiled: ProjectLibrarySnapshot | None = None
-            async with self._conn_factory() as conn:
-
-                async def compile_library() -> Sequence[CompiledProjectFile]:
-                    # Called at most once per turn, and only on the attempt that wins the pin.
-                    # The whole generation is compiled here — the pin records the library's own
-                    # files, ``index.json`` included — and the same snapshot installs the tree
-                    # below, so one turn pays for one compile.
-                    nonlocal compiled
-                    compiled = await compile_project_library(
+            else:
+                async with self._conn_factory() as conn:
+                    knowledge_pin, knowledge_pin_created = await load_or_create_knowledge_pin(
                         conn,
-                        storage,
-                        self._engine.artifacts,
+                        workspace_id=workspace_id,
+                        turn_id=turn_id,
+                        brand_id=scope.brand_id,
+                        project_id=scope.project_id,
+                    )
+                    documents = await read_pinned_documents(conn, self._storage, pin=knowledge_pin)
+                    product_set = await current_project_product_set(
+                        conn,
                         workspace_id=workspace_id,
                         project_id=scope.project_id,
                     )
-                    return compiled.files
-
-                project_pin, project_pin_created = await load_or_create_project_files_pin(
-                    conn,
-                    self._engine.artifacts,
-                    workspace_id=workspace_id,
-                    turn_id=turn_id,
-                    project_id=scope.project_id,
-                    compile=compile_library,
-                )
-                project_files = await read_pinned_project_files(
-                    conn, self._storage, pin=project_pin
-                )
-                if project_pin_created and compiled is not None:
-                    # This attempt compiled the generation it pinned: install that exact snapshot,
-                    # skipping a second identical compile inside ``ensure``.
-                    library = await ensure_project_library(
+                    # Spec 2026-10-15 §8: the agent hears about merged, renamed and removed
+                    # products.
+                    product_changes = await recent_change_lines(
+                        conn, workspace_id=workspace_id, brand_id=scope.brand_id
+                    )
+                    # Founder rulings 2026-09-10: what this project's ICP *is* comes from its
+                    # durable pin, not from whatever the brand's documents currently claim.
+                    icp_pin = await current_project_icp_pin(
                         conn,
-                        storage,
-                        self._engine.artifacts,
-                        self._engine.components.workspaces,
-                        chat=chat,
-                        snapshot=compiled,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
                     )
-                    library_digest: str | None = library.digest
-                else:
-                    library_digest = None
-            project_library_index = next(
-                (file.body for file in project_files if file.ref.path == LIBRARY_INDEX_PATH),
-                None,
-            )
-            if not project_pin_created:
-                # A later attempt of this turn. The project may have moved since the attempt that
-                # pinned it, so the chat's copy is synced to exactly the pinned generation when it
-                # differs, and the model re-reads the files its receipt names.
-                library_digest = pinned_library_digest(project_files)
-                installed = await installed_project_library_digest(
-                    self._engine.components.workspaces, chat=chat
+                confirmed_icp = confirmed_icp_for_project(
+                    documents,
+                    pinned_document_id=None if icp_pin is None else icp_pin.document_id,
                 )
-                if library_digest is not None and library_digest != installed:
-                    replayed_from_pin = True
-                    await sync_pinned_project_library(
-                        self._engine.components.workspaces,
-                        chat=chat,
-                        files=project_files,
-                        digest=library_digest,
+                # The same pinned bytes, synced into this chat's own ``brand/`` folder and mounted
+                # read-only there; an unchanged brand writes nothing (WS-36, WS-37).
+                brand_version = await ensure_brand_library(
+                    self._engine.components.workspaces,
+                    chat=chat,
+                    pin=knowledge_pin,
+                    documents=documents,
+                )
+                mounts = MountRequest(brand=(scope.brand_id, brand_version))
+            # The project's own state (spec §4.1): status.md, decisions.md, the artifact index and
+            # every document this project authored, compiled once beside the threads and mounted
+            # read-only at ``project/``. The project moves while a turn runs — a discovery run
+            # finishes, a decision is recorded, another thread's write refreshes the tree — so the
+            # generation this turn composes against is recorded in its insert-once pin, and a later
+            # attempt reads the pinned set rather than whatever is installed by then.
+            project_library_index: bytes | None = None
+            #: True when a later attempt synced the chat's copy to this turn's pinned generation.
+            replayed_from_pin = False
+            if self._storage is not None:
+                # Bound once here so the compiler below closes over a backend, not over an attribute
+                # whose declared type still admits ``None``.
+                storage = self._storage
+                compiled: ProjectLibrarySnapshot | None = None
+                async with self._conn_factory() as conn:
+
+                    async def compile_library() -> Sequence[CompiledProjectFile]:
+                        # Called at most once per turn, and only on the attempt that wins the pin.
+                        # The whole generation is compiled here — the pin records the library's own
+                        # files, ``index.json`` included — and the same snapshot installs the tree
+                        # below, so one turn pays for one compile.
+                        nonlocal compiled
+                        compiled = await compile_project_library(
+                            conn,
+                            storage,
+                            self._engine.artifacts,
+                            workspace_id=workspace_id,
+                            project_id=scope.project_id,
+                        )
+                        return compiled.files
+
+                    project_pin, project_pin_created = await load_or_create_project_files_pin(
+                        conn,
+                        self._engine.artifacts,
+                        workspace_id=workspace_id,
+                        turn_id=turn_id,
+                        project_id=scope.project_id,
+                        compile=compile_library,
                     )
-                elif library_digest is None:
-                    # A pin with no manifest — written before the library existed. There is
-                    # nothing to replay from, so the live tree is the honest answer.
-                    library_digest = installed
-            # The mount is opened *versioned*: the model reads the project's tree as plain files
-            # and a write under it is taken by this writer as a new version of the document that
-            # path names. Exactly one writer is built per turn attempt and passed as one instance
-            # — ``MountRequest`` compares by value, and a second, equal-but-distinct writer would
-            # make two otherwise identical requests unequal.
-            #
-            # A replay attempt keeps its pinned tree *and* the writer (ruling P3-3): the pinned
-            # generation is what the model re-reads, and the first accepted write reopens the
-            # mount on the project's shared library, which is where the version it just minted
-            # actually lives.
-            project_writer = ProjectRootWriter(
-                bridge=process_bridge(),
-                storage=storage,
-                # NOT ``self._engine.artifacts`` (ruling P3-14): that reader's connections are
-                # this worker's, and ``refresh()`` reads the artifact index from the bridge loop.
-                # One reader per loop, each built from that loop's own factory.
-                artifacts=bridge_bound_artifact_reader(storage, self._project_writer_conn_factory),
-                workspaces=self._engine.components.workspaces,
-                workspace_id=workspace_id,
-                brand_id=scope.brand_id,
-                project_id=scope.project_id,
-                turn_id=turn_id,
-                user_id=submission.submitted_by_user_id,
-                chat=chat,
-                conn_factory=self._project_writer_conn_factory,
-            )
-            mounts = replace(mounts, project_library=True, project_writer=project_writer)
-            log.info(
-                "agent_turn.project_library_ready",
-                turn_id=str(turn_id),
-                project_id=scope.project_id,
-                library_sha256=library_digest,
-                file_count=len(project_files),
-                pin_created=project_pin_created,
-                replayed_from_pin=replayed_from_pin,
-            )
-        # Spec 2026-09-19 §3.2: every file attached in this project, byte for byte, beside the
-        # threads. Synced here — on the worker that owns the workspace root — never by the API.
-        # Unconditional: an attachment is the human's own file and does not depend on whether
-        # this runner composes the project's knowledge library.
-        async with self._conn_factory() as conn:
-            await sync_project_attachments(
-                self._engine.components.workspaces,
-                self._engine.components.artifacts,
-                conn,
-                chat=chat,
-            )
-        mounts = replace(mounts, attachments=True)
-        revision = await self._recipes.get_by_identity(
-            scope_type=RecipeScopeType.SYSTEM,
-            workspace_id=None,
-            recipe_key=CONVERSATION_RECIPE_KEY,
-            version=CONVERSATION_RECIPE_VERSION,
-        )
-        if revision is None:
-            raise RuntimeError(
-                f"promoted {CONVERSATION_RECIPE_KEY}@{CONVERSATION_RECIPE_VERSION} is not installed"
-            )
-        parameter_key, parameter_sha = await self._parameters.snapshot(
-            workspace_id=workspace_id,
-            parameters={},
-        )
-        # ``actor='human'`` because a human did start this: the execution exists because somebody
-        # submitted a turn, and the recipe's interaction gate declares human authority.
-        await self._starter.start(
-            workspace_id=workspace_id,
-            recipe_revision_id=revision.recipe_revision_id,
-            parameters={},
-            parameter_artifact_key=parameter_key,
-            parameter_manifest_hash=parameter_sha,
-            actor="human",
-            execution_id=execution_id,
-            project_id=scope.project_id,
-        )
-        status = await self._drive(execution_id)
-        if status is not ExecutionStatus.AWAITING_INPUT:
-            raise RuntimeError(
-                "the conversation recipe did not reach its interaction gate "
-                f"(status={status.value})"
-            )
-        resolved = self._engine.resolved
-        resolved_profile_id = f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
-        if resolved_profile_id != PROJECT_CONVERSATION_AGENT_PROFILE_ID:
-            raise RuntimeError(
-                "the advertised project-conversation profile differs from the promoted profile"
-            )
-        if (
-            submission.agent_profile_id is not None
-            and submission.agent_profile_id != resolved_profile_id
-        ):
-            raise RuntimeError("the submitted agent profile is not promoted for this surface")
-        # F3 (WS-6, WS-8): the lease comes with the chat's agent folders brought to its current
-        # version, and its saves are fenced by this worker's fleet lease on the thread.
-        lease = await self._engine.components.workspaces.acquire_restored(
-            workspace_id=workspace_id,
-            project_id=scope.project_id,
-            thread_id=submission.thread_id,
-            execution_id=execution_id,
-            policy=resolved.profile.workspace,
-            mounts=mounts,
-            fence=fence,
-        )
-        try:
-            focus_ref = DomainObjectRef(
-                workspace_id=workspace_id,
-                object_type="project",
-                object_id=scope.project_id,
-                version=None,
-            )
-            context_bundle = await self._compose_project_context(
-                submission=submission,
-                scope=scope,
-                documents=documents,
-                confirmed_icp=confirmed_icp,
-                product_set=product_set,
-                product_changes=product_changes,
-                project_library_index=project_library_index,
-                focus_refs=submission_focus_refs,
-            )
-            card_ref = await self._artifact(
-                submission,
-                scope,
-                PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
-                project_conversation_card_payload(
+                    project_files = await read_pinned_project_files(
+                        conn, self._storage, pin=project_pin
+                    )
+                    if project_pin_created and compiled is not None:
+                        # This attempt compiled the generation it pinned: install that exact
+                        # snapshot, skipping a second identical compile inside ``ensure``.
+                        library = await ensure_project_library(
+                            conn,
+                            storage,
+                            self._engine.artifacts,
+                            self._engine.components.workspaces,
+                            chat=chat,
+                            snapshot=compiled,
+                        )
+                        library_digest: str | None = library.digest
+                    else:
+                        library_digest = None
+                project_library_index = next(
+                    (file.body for file in project_files if file.ref.path == LIBRARY_INDEX_PATH),
+                    None,
+                )
+                if not project_pin_created:
+                    # A later attempt of this turn. The project may have moved since the attempt
+                    # that pinned it, so the chat's copy is synced to exactly the pinned generation
+                    # when it differs, and the model re-reads the files its receipt names.
+                    library_digest = pinned_library_digest(project_files)
+                    installed = await installed_project_library_digest(
+                        self._engine.components.workspaces, chat=chat
+                    )
+                    if library_digest is not None and library_digest != installed:
+                        replayed_from_pin = True
+                        await sync_pinned_project_library(
+                            self._engine.components.workspaces,
+                            chat=chat,
+                            files=project_files,
+                            digest=library_digest,
+                        )
+                    elif library_digest is None:
+                        # A pin with no manifest — written before the library existed. There is
+                        # nothing to replay from, so the live tree is the honest answer.
+                        library_digest = installed
+                # The mount is opened *versioned*: the model reads the project's tree as plain files
+                # and a write under it is taken by this writer as a new version of the document that
+                # path names. Exactly one writer is built per turn attempt and passed as one
+                # instance — ``MountRequest`` compares by value, and a second, equal-but-distinct
+                # writer would make two otherwise identical requests unequal.
+                #
+                # A replay attempt keeps its pinned tree *and* the writer (ruling P3-3): the pinned
+                # generation is what the model re-reads, and the first accepted write reopens the
+                # mount on the project's shared library, which is where the version it just minted
+                # actually lives.
+                project_writer = ProjectRootWriter(
+                    bridge=process_bridge(),
+                    storage=storage,
+                    # NOT ``self._engine.artifacts`` (ruling P3-14): that reader's connections are
+                    # this worker's, and ``refresh()`` reads the artifact index from the bridge
+                    # loop. One reader per loop, each built from that loop's own factory.
+                    artifacts=bridge_bound_artifact_reader(
+                        storage, self._project_writer_conn_factory
+                    ),
+                    workspaces=self._engine.components.workspaces,
                     workspace_id=workspace_id,
-                    project_id=scope.project_id,
-                    project_name=scope.name,
-                    project_status=scope.status,
                     brand_id=scope.brand_id,
-                    product_id=scope.product_id,
-                    thread_id=submission.thread_id,
-                    # Ruling D5: neither card is compiled onto this surface any more. The envelope
-                    # says so honestly rather than advertising an artifact L3 does not carry.
-                    client_knowledge_available=False,
-                    stage0_project_state_available=False,
-                ),
+                    project_id=scope.project_id,
+                    turn_id=turn_id,
+                    user_id=submission.submitted_by_user_id,
+                    chat=chat,
+                    conn_factory=self._project_writer_conn_factory,
+                )
+                mounts = replace(mounts, project_library=True, project_writer=project_writer)
+                log.info(
+                    "agent_turn.project_library_ready",
+                    turn_id=str(turn_id),
+                    project_id=scope.project_id,
+                    library_sha256=library_digest,
+                    file_count=len(project_files),
+                    pin_created=project_pin_created,
+                    replayed_from_pin=replayed_from_pin,
+                )
+            # Spec 2026-09-19 §3.2: every file attached in this project, byte for byte, beside the
+            # threads. Synced here — on the worker that owns the workspace root — never by the API.
+            # Unconditional: an attachment is the human's own file and does not depend on whether
+            # this runner composes the project's knowledge library.
+            async with self._conn_factory() as conn:
+                await sync_project_attachments(
+                    self._engine.components.workspaces,
+                    self._engine.components.artifacts,
+                    conn,
+                    chat=chat,
+                )
+            mounts = replace(mounts, attachments=True)
+            revision = await self._recipes.get_by_identity(
+                scope_type=RecipeScopeType.SYSTEM,
+                workspace_id=None,
+                recipe_key=CONVERSATION_RECIPE_KEY,
+                version=CONVERSATION_RECIPE_VERSION,
             )
-            budget_ref = await self._artifact(
-                submission,
-                scope,
-                "application/vnd.clue.agent-budget-envelope+json",
-                {
-                    "schema_version": "1",
-                    "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                    "external_research_budget_cents": "0",
-                    "scope": "conversation and Stage-0 domain writes only",
-                },
+            if revision is None:
+                raise RuntimeError(
+                    f"promoted {CONVERSATION_RECIPE_KEY}@{CONVERSATION_RECIPE_VERSION} "
+                    "is not installed"
+                )
+            parameter_key, parameter_sha = await self._parameters.snapshot(
+                workspace_id=workspace_id,
+                parameters={},
             )
-            manifest_ref = await self._artifact(
-                submission,
-                scope,
-                "application/vnd.clue.agent-resource-manifest+json",
-                resolved.resource_manifest.model_dump(mode="json"),
+            # ``actor='human'`` because a human did start this: the execution exists because
+            # somebody submitted a turn, and the recipe's interaction gate declares human authority.
+            await self._starter.start(
+                workspace_id=workspace_id,
+                recipe_revision_id=revision.recipe_revision_id,
+                parameters={},
+                parameter_artifact_key=parameter_key,
+                parameter_manifest_hash=parameter_sha,
+                actor="human",
+                execution_id=execution_id,
+                project_id=scope.project_id,
             )
-            request = AgentTurnRequest(
-                turn_id=turn_id,
+            status = await self._drive(execution_id)
+            if status is not ExecutionStatus.AWAITING_INPUT:
+                raise RuntimeError(
+                    "the conversation recipe did not reach its interaction gate "
+                    f"(status={status.value})"
+                )
+            resolved = self._engine.resolved
+            resolved_profile_id = f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
+            if resolved_profile_id != PROJECT_CONVERSATION_AGENT_PROFILE_ID:
+                raise RuntimeError(
+                    "the advertised project-conversation profile differs from the promoted profile"
+                )
+            if (
+                submission.agent_profile_id is not None
+                and submission.agent_profile_id != resolved_profile_id
+            ):
+                raise RuntimeError("the submitted agent profile is not promoted for this surface")
+            # F3 (WS-6, WS-8): the lease comes with the chat's agent folders brought to its current
+            # version, and its saves are fenced by this worker's fleet lease on the thread.
+            lease = await self._engine.components.workspaces.acquire_restored(
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
                 thread_id=submission.thread_id,
-                constitution=AgentConstitution(
+                execution_id=execution_id,
+                policy=resolved.profile.workspace,
+                mounts=mounts,
+                fence=fence,
+            )
+            try:
+                focus_ref = DomainObjectRef(
+                    workspace_id=workspace_id,
+                    object_type="project",
+                    object_id=scope.project_id,
+                    version=None,
+                )
+                context_bundle = await self._compose_project_context(
+                    submission=submission,
+                    scope=scope,
+                    documents=documents,
+                    confirmed_icp=confirmed_icp,
+                    product_set=product_set,
+                    product_changes=product_changes,
+                    project_library_index=project_library_index,
+                    focus_refs=submission_focus_refs,
+                )
+                card_ref = await self._artifact(
+                    submission,
+                    scope,
+                    PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+                    project_conversation_card_payload(
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        project_name=scope.name,
+                        project_status=scope.status,
+                        brand_id=scope.brand_id,
+                        product_id=scope.product_id,
+                        thread_id=submission.thread_id,
+                        # Ruling D5: neither card is compiled onto this surface any more. The
+                        # envelope says so honestly rather than advertising an artifact L3 does not
+                        # carry.
+                        client_knowledge_available=False,
+                        stage0_project_state_available=False,
+                    ),
+                )
+                budget_ref = await self._artifact(
+                    submission,
+                    scope,
+                    "application/vnd.clue.agent-budget-envelope+json",
+                    {
+                        "schema_version": "1",
+                        "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                        "external_research_budget_cents": "0",
+                        "scope": "conversation and Stage-0 domain writes only",
+                    },
+                )
+                manifest_ref = await self._artifact(
+                    submission,
+                    scope,
+                    "application/vnd.clue.agent-resource-manifest+json",
+                    resolved.resource_manifest.model_dump(mode="json"),
+                )
+                request = AgentTurnRequest(
+                    turn_id=turn_id,
+                    thread_id=submission.thread_id,
+                    constitution=AgentConstitution(
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        execution_id=execution_id,
+                        # The one identity rule of this module: the acting human, from the durable
+                        # row.
+                        actor_id=submission.submitted_by_user_id,
+                        role=AgentRole.HEAD_OF_ABM,
+                        brand_id=scope.brand_id,
+                        product_id=scope.product_id,
+                        client_entity_id=(
+                            None if scope.client_entity_id is None else str(scope.client_entity_id)
+                        ),
+                        workspace_root_id=lease.identity.workspace_root_id,
+                        project_card_ref=card_ref,
+                        budget_envelope_ref=budget_ref,
+                        profile_ref=resolved.profile_ref,
+                        resource_manifest_ref=manifest_ref,
+                        resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                        focus_refs=(focus_ref,),
+                        project_context_artifacts=context_bundle.artifacts,
+                    ),
+                    user_message_artifact_ref=user_message_ref,
+                    focus_refs=submission_focus_refs,
+                    attachment_refs=tuple(item.ref for item in submission_attachments),
+                    requested_at=submission.requested_at,
+                )
+                brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
+                log.info(
+                    "agent_turn.context_composed",
+                    turn_id=str(turn_id),
                     workspace_id=workspace_id,
                     project_id=scope.project_id,
-                    execution_id=execution_id,
-                    # The one identity rule of this module: the acting human, from the durable row.
-                    actor_id=submission.submitted_by_user_id,
-                    role=AgentRole.HEAD_OF_ABM,
                     brand_id=scope.brand_id,
                     product_id=scope.product_id,
                     client_entity_id=(
                         None if scope.client_entity_id is None else str(scope.client_entity_id)
                     ),
-                    workspace_root_id=lease.identity.workspace_root_id,
-                    project_card_ref=card_ref,
-                    budget_envelope_ref=budget_ref,
-                    profile_ref=resolved.profile_ref,
-                    resource_manifest_ref=manifest_ref,
-                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-                    focus_refs=(focus_ref,),
-                    project_context_artifacts=context_bundle.artifacts,
-                ),
-                user_message_artifact_ref=user_message_ref,
-                focus_refs=submission_focus_refs,
-                attachment_refs=tuple(item.ref for item in submission_attachments),
-                requested_at=submission.requested_at,
-            )
-            brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
-            log.info(
-                "agent_turn.context_composed",
-                turn_id=str(turn_id),
-                workspace_id=workspace_id,
-                project_id=scope.project_id,
-                brand_id=scope.brand_id,
-                product_id=scope.product_id,
-                client_entity_id=(
-                    None if scope.client_entity_id is None else str(scope.client_entity_id)
-                ),
-                client_kb_version=scope.client_kb_version,
-                product_kb_version=scope.product_kb_version,
-                project_card_sha256=card_ref.sha256,
-                brand_knowledge_documents=len(documents),
-                brand_knowledge_index_sha256=(
-                    None
-                    if brand_knowledge_index is None
-                    else brand_knowledge_index.artifact_ref.sha256
-                ),
-                knowledge_pin_created=knowledge_pin_created,
-                client_knowledge_available=False,
-                stage0_project_state_available=False,
-            )
-            observations = {item.card_kind: item for item in context_bundle.observations}
-            self._observe_context_card(
-                submission=submission,
-                scope=scope,
-                observation=_ContextCardObservation(
-                    card_kind="project_conversation",
-                    schema_version="2",
-                    content_sha256=card_ref.sha256,
-                    omitted_count=0,
-                ),
-            )
-            self._observe_context_card(
-                submission=submission,
-                scope=scope,
-                observation=observations.get("brand_knowledge_index"),
-                card_kind="brand_knowledge_index",
-                schema_version="1",
-            )
-            self._observe_context_card(
-                submission=submission,
-                scope=scope,
-                observation=observations.get("project_library_index"),
-                card_kind="project_library_index",
-                schema_version="1",
-            )
-            result = await self._execute_watched(
-                run=lambda: self._engine.execute(
-                    request=request,
-                    lease=lease,
-                    budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                    submitted_by_user_id=submission.submitted_by_user_id,
-                    submitted_via_membership_id=submission.submitted_via_membership_id,
-                    stream=stream,
-                    # The exact mount table this turn's lease was acquired with, so the code
-                    # sandbox binds the directories the model's own file tools see — including
-                    # a replayed turn's pinned project tree — rather than re-deriving them.
-                    mounts=mounts,
-                ),
-                submission=submission,
-                turn_id=request.turn_id,
-                stream=stream,
-            )
-            if result.outcome.status is AgentExecutionStatus.COMPLETED:
-                await self._complete_recipe(
-                    execution_id,
-                    turn_id=request.turn_id,
-                    actor_id=submission.submitted_by_user_id,
+                    client_kb_version=scope.client_kb_version,
+                    product_kb_version=scope.product_kb_version,
+                    project_card_sha256=card_ref.sha256,
+                    brand_knowledge_documents=len(documents),
+                    brand_knowledge_index_sha256=(
+                        None
+                        if brand_knowledge_index is None
+                        else brand_knowledge_index.artifact_ref.sha256
+                    ),
+                    knowledge_pin_created=knowledge_pin_created,
+                    client_knowledge_available=False,
+                    stage0_project_state_available=False,
                 )
-            return result
-        finally:
-            await self._engine.components.workspaces.release_saved(lease)
+                observations = {item.card_kind: item for item in context_bundle.observations}
+                self._observe_context_card(
+                    submission=submission,
+                    scope=scope,
+                    observation=_ContextCardObservation(
+                        card_kind="project_conversation",
+                        schema_version="2",
+                        content_sha256=card_ref.sha256,
+                        omitted_count=0,
+                    ),
+                )
+                self._observe_context_card(
+                    submission=submission,
+                    scope=scope,
+                    observation=observations.get("brand_knowledge_index"),
+                    card_kind="brand_knowledge_index",
+                    schema_version="1",
+                )
+                self._observe_context_card(
+                    submission=submission,
+                    scope=scope,
+                    observation=observations.get("project_library_index"),
+                    card_kind="project_library_index",
+                    schema_version="1",
+                )
+                result = await self._execute_watched(
+                    run=lambda: self._engine.execute(
+                        request=request,
+                        lease=lease,
+                        budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                        submitted_by_user_id=submission.submitted_by_user_id,
+                        submitted_via_membership_id=submission.submitted_via_membership_id,
+                        stream=stream,
+                        # The exact mount table this turn's lease was acquired with, so the code
+                        # sandbox binds the directories the model's own file tools see — including
+                        # a replayed turn's pinned project tree — rather than re-deriving them.
+                        mounts=mounts,
+                    ),
+                    submission=submission,
+                    turn_id=request.turn_id,
+                    stream=stream,
+                )
+                if result.outcome.status is AgentExecutionStatus.COMPLETED:
+                    await self._complete_recipe(
+                        execution_id,
+                        turn_id=request.turn_id,
+                        actor_id=submission.submitted_by_user_id,
+                    )
+                return result
+            finally:
+                await self._engine.components.workspaces.release_saved(lease)
 
     async def _compose_project_context(
         self,

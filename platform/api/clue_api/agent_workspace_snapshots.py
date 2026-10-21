@@ -225,21 +225,26 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
         key = artifact_key(workspace_id, sha256)
         async with self._conn_factory() as conn:
             existing = await get_artifact(conn, key)
-            if (
+            live = (
                 _is_live(existing)
                 and existing is not None
                 and existing.workspace_id == workspace_id
-            ):
-                return False
-            await record_artifact(
-                conn,
-                storage_key=key,
-                workspace_id=workspace_id,
-                content_sha256=sha256,
-                media_type=media_type,
-                size_bytes=len(data),
             )
+            if not live:
+                await record_artifact(
+                    conn,
+                    storage_key=key,
+                    workspace_id=workspace_id,
+                    content_sha256=sha256,
+                    media_type=media_type,
+                    size_bytes=len(data),
+                )
         try:
+            # The row is committed before the upload, so a live row alone does not prove the bytes
+            # are stored: an upload that failed (or a writer that died) leaves exactly that. Check
+            # storage before skipping, or the version record could name bytes nobody has.
+            if live and await self._storage.exists(key):
+                return False
             await self._storage.put(key, data, media_type=media_type)
         except StorageError as exc:
             raise WorkspaceSaveUnavailable(f"could not store {key}") from exc
