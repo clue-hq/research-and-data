@@ -237,6 +237,11 @@ Related documents:
   the search missed one named read action (F5) but the agent still finished correctly; on Salesforce
   it found everything first time.
 
+- **R-6.24 (2026-10-22, replaces the starting default in R-6.4)** **No permission question at
+  connect.** The first permission card asks instead: it already offers "Always allow" for the kinds
+  of change on it (e.g. adding contacts to Clue lists), so the person decides when a real write is
+  in front of them. The connect card stays as built.
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched
