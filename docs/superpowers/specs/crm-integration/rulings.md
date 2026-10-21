@@ -289,3 +289,9 @@ Related documents:
 - **R-10.10 (2026-10-21)** **F6 (slow turns) and F7 (underscores rendered as italics in chat)
   dropped.**
 - **R-10.11 (2026-10-21)** **F5 (narrow Composio action search) deferred** — to be taken up later.
+- **R-10.12 (2026-10-21)** **F11 fix — the sales motion stands on its own.** The skill no longer
+  asks the agent to save its script (the sandbox does not keep `.py`); the CSV tables are still
+  saved for later turns. The published document says in words how its numbers were computed
+  (window, definitions, deals counted, filters, deals set aside and why), and each number's Source
+  is the CRM and the day it was computed (e.g. "CRM (HubSpot), computed 21 Oct 2026"), never a file
+  in the agent's workspace. Option 1 (letting the sandbox keep `.py`) was not chosen.

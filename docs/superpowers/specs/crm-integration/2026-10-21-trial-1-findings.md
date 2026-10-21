@@ -105,7 +105,7 @@ founder asked to record first and discuss before acting.
   pre-emptive caps), and whether a message that forbids tools should be told that the turn's own
   finish step is not a tool in that sense.
 
-- **F11 — The CRM skill asks for a file the workspace deletes** (found in the F4 re-check). The
+- **F11 — The CRM skill asks for a file the workspace deletes** (found in the F4 re-check). *Fixed 2026-10-21 (R-10.12, option 2): the skill no longer asks for the script, and the sales motion explains its own computation and cites the CRM and date, never a workspace file.* The
   skill says to save the analysis script as `outputs/sales-analysis.py`, but a sandbox run may only
   leave `.json .md .txt .yaml .csv .xlsx .docx .pptx .pdf .png`, so the `.py` file is removed after
   the run; the agent said so honestly ("The workspace would not keep a .py file"). The CSV check
