@@ -36,6 +36,16 @@ agent, not only the CRM work.
   again; it does not have to announce this to the person. The platform supplies the facts (ages,
   receipts, expired files); the judgement is in the skills, not a code check.
 
+- **AW-9 (2026-10-22)** **One chat, one private space; cleanup throws away whole folders.** Each
+  worker owns its own area of the disk (`<root>/<worker>/`) that no other worker or process touches,
+  and each chat's folder in it holds its own copy of the brand and project files instead of folders
+  shared by every chat of a project. A worker wipes its whole area when it starts (as AW-1 says) and
+  deletes an idle chat's whole folder; no cleanup ever works out who else is using a folder. Cost
+  accepted: a chat whose next turn lands on another worker restores from its snapshot. Founder judged
+  the first proposal (keep shared folders, skip ones Postgres says are in use) too risky; decided
+  after researching ChatGPT, Claude.ai, Manus, Perplexity Projects, Cursor and Claude Code / Codex
+  cloud, which all give each chat its own space. Spec: WS-15, WS-16, WS-37.
+
 ## Scope, order and interim
 
 - **AW-5 (2026-10-21; was R-10.8)** **Order and scope:** F2 first (done 2026-10-21), then F3. One

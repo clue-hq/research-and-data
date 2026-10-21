@@ -42,8 +42,9 @@ the phases cannot drift apart.
 
 | Word | Meaning |
 |---|---|
-| thread folder | a chat's folder on a worker's disk: `<root>/<ws>/projects/<p>/threads/<t>/` |
-| recipe folders | `.deepagent/ inputs/ context/` plus the mounted `brand/ project/ attachments/`. Written from database pins; from Phase 1 only the files that changed are written (WS-36) |
+| worker area | one worker's own part of the disk, `<root>/<worker>/`. No other worker or process reads or writes it (WS-15) |
+| thread folder | a chat's folder inside a worker area: `<root>/<worker>/<ws>/projects/<p>/threads/<t>/` (today, before Phase 1: `<root>/<ws>/projects/<p>/threads/<t>/`) |
+| recipe folders | `.deepagent/ inputs/ context/` plus `brand/ project/ attachments/`. Written from database pins; from Phase 1 only the files that changed are written (WS-36), and each chat has its own copy of the brand and project files (WS-37) |
 | agent folders | `scratch/ reads/ work/ outputs/`: the files the agent makes or reads for itself. **These are what this spec makes durable** |
 | snapshot | one saved version of a chat's agent folders: a file list in R2 plus the stored files it names |
 | version record | one row per chat in Postgres naming the chat's current snapshot version (technical name: pointer row) |
@@ -52,7 +53,7 @@ the phases cannot drift apart.
 | local version note | a small file on the worker that says which snapshot version its copy of the folder holds (technical name: marker) |
 | restore | at turn start, making the worker's copy of the agent folders equal to the current snapshot |
 | save | at turn end, storing the agent folders as a new snapshot version |
-| cache | the worker's copy of a thread folder. Deleting it never loses anything |
+| cache | a worker's copy of a thread folder, inside its own worker area. Deleting it never loses anything |
 | receipt | a short record of a raw read that stays after the read's bytes expire: what it was, when, how many records, its hash, how to read it again |
 
 ---
@@ -104,7 +105,7 @@ the decision).
 | # | What you asked for | Source | Met by | Phase | Status |
 |---|---|---|---|---|---|
 | D-1 | Any chat, new or a year old, continued on any machine, finds the same files the agent left | your words; AW-1 | WS-1–WS-11 | P1 | as discussed |
-| D-2 | The copy on a machine stays only while useful, then is removed with no residue | your words; AW-1 | WS-15–WS-17 | P1 | **differs in one detail: Q1** |
+| D-2 | The copy on a machine stays only while useful, then is removed with no residue | your words; AW-1 | WS-15–WS-17 | P1 | decided 2026-10-22 (Q1, AW-9) |
 | D-3 | A chat's workspace = its recipe + one versioned snapshot in R2 with its version record in Postgres + its conversation; the disk is only a cache | AW-1 | WS-1–WS-3, WS-6 | P1 | as discussed |
 | D-4 | A new version is written only if the previous one is still current (the design site-turn check) | AW-1 | WS-8 | P1 | as discussed |
 | D-5 | Restore only when the local copy is not that exact version (compare versions, not "is the folder there") | roadmap P1 | WS-6 | P1 | as discussed |
@@ -137,6 +138,7 @@ the decision).
 | D-32 | One comprehensive spec for chats and research runs; design ad and web sessions in a short follow-up spec | AW-5; your words: *"well defined and very comprehensive"* | this document; §2.2 | P0 | as discussed |
 | D-33 | Other lanes follow AW-8 meanwhile, and F3 must not hinder CRM Phases 2 and 3 | AW-8; your words | WS-14, §12 | all | as discussed |
 | D-34 | Recipe folders are not emptied and rebuilt every turn; only what changed is written | your words (2026-10-22) | WS-36 | P1 | as discussed |
+| D-35 | One chat, one private space: no folder on disk is shared by two chats or two workers, so cleanup never has to work out who is using what | your words (2026-10-22): *"i think this is a little risky design"*; AW-9 | WS-15, WS-16, WS-37 | P1 | as discussed |
 
 ### 2.1 The seven production-grade properties
 
@@ -181,7 +183,7 @@ These are the seven properties I promised on 2026-10-21. Each one maps to requir
 | Phase | What it builds | What it delivers on its own | Requirements | Done when |
 |---|---|---|---|---|
 | **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
-| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36 | §11 tests 1–4, 6, 8, 10, 11, 13 pass; the first live check passes with timings recorded |
+| **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; each worker its own disk area and each chat its own copy of the brand and project files; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36, WS-37 | §11 tests 1–4, 6, 8, 10, 11, 13, 14 pass; the first live check passes with timings recorded |
 | **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting stored files nothing points to | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
 | **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
@@ -199,16 +201,21 @@ the biggest: about two F2s.
 
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
-phase starts, but P1's plan needs Q1–Q6.
+phase starts, but P1's plan needs Q2–Q6 (Q1 is decided).
 
-**Q1. Cleaning the cache when a worker starts** [P1] *(differs from AW-1)*
-- **AW-1 says:** the cache is emptied when a chat goes idle *and when the worker starts*.
-- **The problem:** on our VM, every worker container shares one disk (`/srv/clue/workspaces`). A
-  worker that restarts and empties the whole cache would delete folders that other workers are
-  using mid-turn.
-- **My recommendation:** at start-up, a worker deletes every cached folder that is not in use right
-  now, checked in Postgres. On a new machine this deletes everything, so it has the same result as
-  AW-1. On a shared disk it skips only folders with a live turn.
+**Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
+- **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
+  and project files sit in folders shared by every chat of a project. Emptying the disk at
+  start-up, as AW-1 says, would delete folders other workers are using mid-turn. My first answer
+  (skip folders that Postgres says are in use) kept the sharing and made cleanup work out who uses
+  what. You judged that risky.
+- **What other products do** (ChatGPT, Claude.ai, Manus, Perplexity Projects, Cursor, Claude Code
+  and Codex cloud): one chat, one private space; shared project material lives in central storage
+  and each chat gets its own copy; cleanup throws away a whole space.
+- **Decided:** each worker owns its own area of the disk, and each chat folder holds its own copy
+  of the brand and project files (WS-15, WS-37). A worker wipes its whole area when it starts,
+  exactly as AW-1 says, and deletes an idle chat's whole folder (WS-16). No cleanup ever looks at
+  another worker's files.
 
 **Q2. The lease** [P1] *(differs from the roadmap)*
 - **The roadmap said:** take a database lease at turn start, replacing file locks and in-memory
@@ -326,7 +333,7 @@ What lands in the agent folders today:
             └───────────────────────────────────┘                     │  files, then the file list,
                     │ same version as the local note?                  │  then move the version
                     ▼ yes: use the cache   no: empty and restore       │  record (only if current)
-            ┌──────────── worker disk (cache) ────────────────────────────────────────┐
+            ┌──────────── this worker's own area of the disk (cache) ──────────────────┐
             │ thread folder: recipe folders (only changed files written, WS-36)        │
             │               agent folders  (= snapshot version N; local note kept aside)│
             │ removed when idle; removed when its chat is erased; never the only copy  │
@@ -343,8 +350,8 @@ What lands in the agent folders today:
 5. At the end, the worker stores the files that changed, then the new file list, then moves the
    version record. It moves it only if the version is still the one it restored and it still holds
    the lease.
-6. Later, when the chat has been idle for a while, the worker deletes its copy. The snapshot in R2
-   is the real copy.
+6. Later, when the chat has been idle for a while, the worker deletes its whole folder. The
+   snapshot in R2 is the real copy. A worker that restarts wipes its whole area.
 
 ---
 
@@ -404,8 +411,9 @@ What lands in the agent folders today:
      - write the local note last.
   5. **If there is no version record:**
      - a new chat starts empty;
-     - a chat from before this change keeps whatever is on this machine's disk, and its first save
-       becomes version 1 (WS-22).
+     - a chat from before this change takes its agent folders from its old folder outside the
+       worker areas, if that folder is on this machine, and its first save becomes version 1
+       (WS-22).
   6. In every case, `work/` is emptied except its two compaction folders (WS-4).
 - **WS-36 [P1] Recipe folders: write only what changed, never empty and rebuild.** (Founder,
   2026-10-22. Numbered last so the other ids stay stable.) Today `.deepagent/ inputs/ context/` are
@@ -493,8 +501,10 @@ What lands in the agent folders today:
   - the fleet lease generation;
   - the version record's compare-and-set.
 
-  `flock` and the in-memory `_active` map may stay as same-machine guards. Nothing may rely on them
-  for safety across machines. Several factories in one process are acceptable for the same reason.
+  Inside one worker, its own area is used only by that worker's process, so a worker knows from
+  its own running turns which chat folders are in use. `flock` and the in-memory `_active` map may
+  stay as guards inside one process. Nothing may rely on them for safety across workers or
+  machines.
 - **WS-14 [P1] Per-turn registries come from the same hook** (AW-8.2).
   - The CRM reads registry (`CrmReadSinks`) and the sandbox registry (`SandboxWorkspaces`) map a
     running turn to its folder inside one process. That is correct across machines, because a turn
@@ -503,36 +513,53 @@ What lands in the agent folders today:
     folders on its own.
   - No new registry of this kind is added.
 
-### 7.5 The cache: present only while useful, never residue
+### 7.5 The cache: each worker's own area, thrown away whole (AW-9)
 
-- **WS-15 [P1] Idle removal.** A periodic job on each worker removes cached chat folders, and their
-  local notes, in two cases:
-  - **Idle:** not used for `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (default 1800).
-  - **Over the size limit:** when the cache root exceeds `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES`
-    (default 10 GiB), the oldest idle folders go first.
-
-  In both cases it removes only folders whose chat has no queued or running turn. Rules:
-  - **"In use" comes from the fleet's own state in Postgres:** a queued or claimed task for the
-    chat, or a live work lease. This makes it safe when several processes share one disk.
-  - **It does not use `agent_turn` rows.** Today's cleanup reads the newest turn row, but a worker
-    opens the folder before that row exists (`agent_turn_fleet_wiring.py:842` vs
-    `conversation_turns.py:435`).
-  - **The note goes first.** The local note is removed before the files, so a turn racing the
-    removal restores instead of trusting a half-deleted folder.
-- **WS-16 [P1] Leftovers.** The same job also removes:
-  - cached folders whose version record no longer exists (erased or deleted chats);
-  - stale library swap folders (`.old-*`, `.next-*`);
-  - replay trees (`pinned-*`);
-  - brand and project library versions not used within the idle window.
-
-  **At worker start-up** it runs once straight away (**Claude's call, Q1**). That run also clears:
-  - the worker's own temporary leftovers from earlier crashes (e.g. `/tmp/arv2-media-*`);
-  - sandbox containers carrying the platform's execution label that have no live turn.
+- **WS-15 [P1] Each worker owns its own area of the disk.**
+  - Every chat folder a worker uses lives inside that worker's area:
+    `<root>/<worker>/<ws>/projects/<p>/threads/<t>/`.
+  - No other worker, and no other process, reads or writes inside it. Two workers never share a
+    folder, and two chats never share a folder (WS-37).
+  - The area's name stays the same when the worker restarts, so a restarted worker finds and wipes
+    its own leftovers. How the name is set is the builder's call (§13).
+  - A chat whose next turn lands on another worker is restored there from its snapshot (WS-6).
+    That is the cost of this design: a cold restore, targeted at under 1 second for a typical
+    chat (WS-19).
+- **WS-16 [P1] Cleanup throws away whole folders, never pieces.**
+  - **When a worker starts:** it deletes its whole area before taking any work, exactly as AW-1
+    says. Nothing in it belongs to anyone else, so no check is needed. The same run clears the
+    worker's own temporary leftovers from earlier crashes (e.g. `/tmp/arv2-media-*`) and sandbox
+    containers carrying this worker's label.
+  - **While it runs:** a periodic job deletes a chat's whole folder, with its local note, when it
+    has not been used for `CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (default 1800), or, oldest first,
+    when the area exceeds `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` (default 10 GiB). It skips the
+    chats this worker is running a turn for right now, which the worker knows itself.
+  - **The note goes first.** The local note is deleted before the files, so a turn that starts
+    during the deletion restores instead of trusting a half-deleted folder.
+  - **Erased chats:** a cached folder whose chat was erased is never used again, because its local
+    note cannot match a missing version record, and the next idle run deletes it.
+  - **Areas of workers that no longer exist** (fewer workers after a deploy) are deleted by the
+    deploy step. On autoscaling, a removed machine takes its disk with it.
 - **WS-17 [P1] The old cleanup is retired.**
   - The 24-hour thread purge (`agent_cleanup.py`) is replaced by WS-15 and WS-16. Its crash bug and
     its `awaiting_input` gap go with it.
+  - The shared library folders turns use today (`<root>/<ws>/library/brand/...`,
+    `<root>/<ws>/projects/<p>/library/`, `.../attachments/`), their swap leftovers (`.old-*`,
+    `.next-*`) and old replay trees (`pinned-*`) are no longer used by turns (WS-37). The old
+    layout outside the worker areas is deleted once every chat has moved (WS-22).
   - `CLUE_AGENT_WORKSPACE_RETENTION_S` is retired: removed from settings and `.env.example`, with a
     note in the change log.
+
+- **WS-37 [P1] Each chat has its own copy of the brand and project files.**
+  - `brand/`, `project/` and `attachments/` are written into the chat's own folder, from the same
+    database pins and content hashes as today, following WS-36: only files that are new or changed
+    are written, and a file no longer pinned is deleted.
+  - They are no longer mounted from folders shared by every chat of a project. Measured on this
+    lane: a brand's files are about 350 KB to 1 MB, a project's about 25 to 50 KB, so a copy per
+    chat costs little.
+  - Writes the agent makes to project documents still go through the existing versioned writer to
+    Postgres, so every other chat sees them on its next turn.
+  - `run_python` mounts these folders from the chat's own folder, read-only, as today.
 
 ### 7.6 Profile, speed, flag and rollout
 
@@ -547,6 +574,8 @@ What lands in the agent folders today:
   - **Cold restore, quota maximum** (400 files / 20 MB): p95 under 5 seconds.
   - **Save:** only changed files are uploaded, in parallel; p95 under 1 second for a typical turn.
   - **Transfer concurrency:** `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` (default 16).
+  - **First turn of a chat on a worker:** also writes its copy of the brand and project files
+    (about 1 MB, local disk), counted in the cold-restore target.
   - Early restore and machine routing are not built (**Q3**).
 - **WS-20 [P1] Speed is measured.**
   - Every restore and save records whether the cache was warm, the files and bytes moved, and how
@@ -568,8 +597,14 @@ What lands in the agent folders today:
   The cache removal then uses a 24-hour idle window instead of 30 minutes, because the cache is the
   only copy. The builder must keep this fallback honest or drop it. It exists only as an emergency
   switch.
-- **WS-22 [P1] No migration** (AW-5). Existing chats get no backfill. The first turn on an old chat
-  saves its current folder as version 1.
+- **WS-22 [P1] No migration** (AW-5). Existing chats get no backfill.
+  - The first turn of an old chat (no version record yet) takes its agent folders from its old
+    folder at `<root>/<ws>/projects/<p>/threads/<t>/`, if it is on this machine, into its folder in
+    the worker area, and saves them as version 1. The old folder is then deleted.
+  - An old chat whose old folder is not on this machine starts with empty agent folders, as it
+    would today on another machine.
+  - Once Phase 1 has run for longer than the old 24-hour cleanup window, the whole old layout
+    outside the worker areas is deleted by one cleanup step (builder's call how).
 
 ---
 
@@ -716,6 +751,7 @@ What lands in the agent folders today:
 | Worker dies mid-turn | the turn is picked up again, possibly elsewhere, restores the last saved version and resumes its checkpoint |
 | A zombie worker saves late | refused by the lease generation or the compare-and-set; logged |
 | Cache deleted by hand or removed as idle | the next turn restores; nothing is lost |
+| A worker restarts | it wipes its own area; its chats restore on their next turn, on whichever worker takes it; no other worker is affected |
 | Raw input expired [P2] | the file is gone; the turn-start list shows its receipt; the agent reads again if it needs to |
 | Disk full during restore | the turn fails retryably; the half-written folder and its note are removed |
 | A file list or stored file fails its hash check | the turn fails loudly; mismatched bytes are never restored |
@@ -736,12 +772,13 @@ checks.
 | 5 | **Raw expiry:** with a 0-second window, the expiry job removes the `reads/` bytes and keeps the receipt; the next turn's list shows it; reading identical bytes again works | P2 |
 | 6 | **Work products survive** a cache wipe (P1) and the expiry job (P2) | P1, P2 |
 | 7 | **Erasure:** version records, file lists and stored files are gone after the purge; a cached folder on another root is never used and is removed by the next cleanup | P2 |
-| 8 | **Cache removal is safe:** an idle folder is removed; a folder whose chat has a running turn in another process is not; the start-up run never touches a leased chat | P1 |
+| 8 | **Cleanup stays in its own area:** a worker's start-up wipe removes its whole area and nothing in another worker's area, even while that worker runs a turn; the idle job removes an idle chat's folder and skips the chats this worker is running | P1 |
 | 9 | **Research reconciliation** across two roots reads the source run's snapshot | P3 |
 | 10 | **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, policy sweep) | P1 |
 | 11 | **Migration** up, down and up again, with a single Alembic head | P1 |
 | 12 | **Clean-machine restore and final live check:** on the dushanbe stack, a real chat turn; delete the whole cache root; continue the chat; the agent finds its files; warm and cold timings recorded (WS-20) | P1 (first run), P3 (final) |
 | 13 | **Recipe folders updated in place:** a second turn on the same root with no changes writes only its new input file; a changed budget replaces only `budget.json`; a removed document's file is deleted; a new skill version rewrites only `.deepagent/` | P1 |
+| 14 | **Chats never share a folder:** two chats of one project on one worker each get their own copy of the brand and project files; deleting one chat's folder leaves the other's turn untouched; a project document written in one chat appears in the other's next turn | P1 |
 
 Also tested in their phases: WS-18 (profile on resume, P1), WS-26's re-read of identical bytes (P2),
 and WS-28's list contents for live and expired files (P2).
@@ -759,8 +796,16 @@ and WS-28's list contents for live and expired files (P2).
   inline is over the 12 KB receipt threshold). In Phase 1, bring the first under the quota. The
   double spill is harmless but wasteful.
 - **There are several workspace factories per process:** chat, the library refresher, and one per
-  research job. Their in-memory guards do not see each other. This is acceptable under WS-13, but the
-  cleanup job must not rely on any one factory's `_active` map.
+  research job. Their in-memory guards do not see each other. Under WS-15 they must all use the
+  worker's own area, and the idle job must ask the worker which turns it is running, not any one
+  factory's `_active` map.
+- **Other processes that write under the root.** The project library refresher
+  (`project_library_refresh.py`) rebuilds the shared project library tree for readers that are not
+  turns. Check who reads that tree. If anything outside a turn still needs it, it gets its own area
+  or reads from Postgres instead; it must not sit in a worker's area or be shared with turns.
+- **Production layout.** `/srv/clue/workspaces` stays one bind mount into the containers
+  (`deploy/vm/compose.yaml`); the worker areas are folders inside it. The `run_python` sandbox's
+  host paths change with the folder layout.
 - **Dead lifecycle code:** `authorize_cleanup` and `cleanup_authorized` gate nothing, and `cleanup`,
   `purge_terminal` and `discard_failed_materialization` have no callers. Remove or reuse them while
   rewriting this layer (Phase 1).
@@ -780,6 +825,9 @@ and WS-28's list contents for live and expired files (P2).
 - whether large tool results are stored or rebuilt from `result_ref` (WS-27);
 - how many old versions to keep (WS-30);
 - the bound on the agent's file list (its wording is reviewed by the founder);
+- how each worker's area gets a name that stays the same across restarts (e.g. the container or
+  service name), and how the deploy step removes areas of workers no longer deployed;
+- how the old layout is removed after Phase 1 (WS-22);
 - how the cleanup and expiry jobs are scheduled within the fleet;
 - how the lease generation reaches the turn runner;
 - whether restore and save live in the factory, the lease or a small helper object, as long as every
@@ -808,3 +856,9 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: WS-36 added (founder): recipe folders are updated only where something changed, never
   emptied and rebuilt every turn. WS-6 now brings a stale local copy up to date (keeps matching
   files, downloads the rest, deletes extras) instead of emptying it. D-34 and test 13 added.
+- 2026-10-22: Q1 decided (founder, AW-9), after research into ChatGPT, Claude.ai, Manus, Perplexity
+  Projects, Cursor and Claude Code / Codex cloud. Each worker owns its own disk area (WS-15); cleanup
+  throws away whole folders and a worker wipes its whole area at start-up (WS-16); each chat has its
+  own copy of the brand and project files instead of shared folders (WS-37, new). WS-6, WS-13,
+  WS-17, WS-19 and WS-22 updated to match; D-35, test 14 and the §10 restart row added; test 8
+  rewritten.
