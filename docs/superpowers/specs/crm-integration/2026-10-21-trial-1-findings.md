@@ -59,7 +59,7 @@ founder asked to record first and discuss before acting.
   a test that runs the tool through plan validation. **Defect in Task 9.**
 
 ### Should fix
-- **F1 — The OAuth callback only works in a browser signed in to Clue.** Composio returns the
+- **F1 — The OAuth callback only works in a browser signed in to Clue.** *Dropped 2026-10-21 (R-10.9): works as intended.* Composio returns the
   browser to `localhost:3060/integrations/crm/callback?…`, a protected page; Arc had no Clue session,
   so it bounced to sign-in and never called `/crm/complete`. The connection stayed pending although
   Composio had it ACTIVE. Options to discuss: let the callback page finish without a Clue session
@@ -80,14 +80,14 @@ founder asked to record first and discuss before acting.
   workspace contract for every turn, not only CRM).
 
 ### Smaller
-- **F5 — Composio's action search is narrow.** The agent made 14 `find_crm_actions` calls; it did
+- **F5 — Composio's action search is narrow.** *Deferred 2026-10-21 (R-10.11).* The agent made 14 `find_crm_actions` calls; it did
   not find `HUBSPOT_GET_DEALS` (on our allowlist and named in the skill) and fell back to computing
   cycle time from create/close dates. Options: let `run_crm_action` take any allowlisted slug the
   skill names without a search (it already can — the agent assumed it must search first), and/or
   make `find_crm_actions` also match the allowlist itself.
-- **F6 — Slow turns.** Analysis 7.4 min, write attempt 8.3 min, partly from F3/F4. Most model calls
+- **F6 — Slow turns.** *Dropped 2026-10-21 (R-10.10).* Analysis 7.4 min, write attempt 8.3 min, partly from F3/F4. Most model calls
   were 15–25 s. Worth a look after F3/F4.
-- **F7 — Underscores in chat messages render as italics.** `run_python`, `write_brand_document`,
+- **F7 — Underscores in chat messages render as italics.** *Dropped 2026-10-21 (R-10.10).* `run_python`, `write_brand_document`,
   `from_file` appeared as "runpython", "writebranddocument" in both the user's and the agent's
   messages. General chat markdown, not CRM-specific.
 - **F8 — Callback page background** covers only the top part of the tab; the rest is white.

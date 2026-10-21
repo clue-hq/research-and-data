@@ -284,3 +284,8 @@ Related documents:
   (staleness), R-10.8 → AW-5 (order and scope). See
   `docs/superpowers/specs/agent-workspace/rulings.md`, which also holds AW-6 (the `outputs/` stopgap),
   AW-7 (F3 in its own worktree) and AW-8 (rules for this lane until F3 lands).
+- **R-10.9 (2026-10-21)** **F1 dropped — works as intended.** The CRM sign-in callback is a Clue page
+  and needs a browser signed in to Clue; finishing the sign-in in another browser is not supported.
+- **R-10.10 (2026-10-21)** **F6 (slow turns) and F7 (underscores rendered as italics in chat)
+  dropped.**
+- **R-10.11 (2026-10-21)** **F5 (narrow Composio action search) deferred** — to be taken up later.
