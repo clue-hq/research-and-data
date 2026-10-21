@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 from uuid import uuid4
 
 from deepagents.backends.protocol import (
@@ -59,7 +59,19 @@ from clue_agents.workspace_policy import (
     WorkspaceSecurityError,
     validate_workspace_segment,
 )
+from clue_agents.workspace_snapshot import LeaseFence
 from clue_core import ExecutionId
+from clue_obs import get_logger
+
+_log = get_logger("clue_agents.workspace")
+
+if TYPE_CHECKING:
+    from clue_agents.workspace_snapshotter import (
+        RestoreReport,
+        SaveReport,
+        SnapshotBase,
+        WorkspaceSnapshotter,
+    )
 
 __all__ = [
     "AGENT_DIR",
@@ -343,6 +355,12 @@ class AgentWorkspaceLease:
         self._materialized = False
         self._materialization_failed = False
         self._cleanup_authorized = False
+        #: The fleet lease a save must still hold (WS-8, AW-10); set by ``acquire_restored``.
+        self.fence: LeaseFence | None = None
+        #: What this turn's restore did, and the version a save moves from (WS-6, WS-8).
+        self.restore_report: RestoreReport | None = None
+        self.snapshot_base: SnapshotBase | None = None
+        self._saved = False
 
     @property
     def workspace_segment(self) -> str:
@@ -361,6 +379,26 @@ class AgentWorkspaceLease:
         """The validated directory segment this lease's thread workspace lives under."""
 
         return self._thread_segment
+
+    @property
+    def factory(self) -> AgentWorkspaceFactory:
+        """The factory this lease belongs to."""
+
+        return self._factory
+
+    @property
+    def mounts(self) -> MountRequest:
+        """The mounts this lease was acquired with."""
+
+        return self._factory.mounts_for(self)
+
+    async def save_snapshot(self) -> SaveReport:
+        """Save the agent's folders as the chat's next version (WS-8); a no-op without snapshots."""
+
+        report = await self._factory.save_snapshot(self)
+        if report.status in {"saved", "unchanged"}:
+            self._saved = True
+        return report
 
     @property
     def chat(self) -> ChatScope:
@@ -1429,8 +1467,10 @@ class AgentWorkspaceFactory:
         prepared_root: PreparedWorkspaceRoot,
         artifact_sink: AgentArtifactSink,
         area: WorkerArea | None = None,
+        snapshotter: WorkspaceSnapshotter | None = None,
     ) -> None:
         self._area = area
+        self._snapshotter = snapshotter
         self._root_fd = os.open(prepared_root.path, _DIR_FLAGS)
         _validate_private_directory(self._root_fd)
         self._root_path = prepared_root.path
@@ -2050,6 +2090,82 @@ class AgentWorkspaceFactory:
                 for descriptor in opened:
                     os.close(descriptor)
         return True
+
+    async def acquire_restored(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        execution_id: ExecutionId,
+        policy: WorkspacePolicy,
+        mounts: MountRequest = _NO_MOUNTS,
+        artifact_sink: AgentArtifactSink | None = None,
+        fence: LeaseFence | None = None,
+    ) -> AgentWorkspaceLease:
+        """Take this turn's lease and bring the agent's folders to the chat's current version.
+
+        The one hook every agent goes through (WS-8): the restore runs before the agent or any
+        tool touches the folders. A restore that fails releases the lease and raises.
+        """
+
+        lease = self.acquire(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            thread_id=thread_id,
+            execution_id=execution_id,
+            policy=policy,
+            mounts=mounts,
+            artifact_sink=artifact_sink,
+        )
+        lease.fence = fence
+        if self._snapshotter is not None:
+            try:
+                lease.restore_report = await self._snapshotter.restore(lease)
+            except BaseException:
+                self.release(lease)
+                raise
+        return lease
+
+    async def save_snapshot(self, lease: AgentWorkspaceLease) -> SaveReport:
+        """Save the lease's agent folders; without a snapshotter nothing changes."""
+
+        if self._snapshotter is None:
+            from clue_agents.workspace_snapshotter import SaveReport
+
+            return SaveReport(status="unchanged", uploaded=0, bytes=0, version=None, duration_ms=0)
+        return await self._snapshotter.save(lease)
+
+    async def release_saved(self, lease: AgentWorkspaceLease) -> None:
+        """End the turn's hold, saving first on a best-effort basis if it never saved (WS-9).
+
+        A turn that finalizes has already saved; one that stopped or failed saves here. A failed
+        save is logged and never raised: the turn is already over.
+        """
+
+        try:
+            if self._snapshotter is not None and not lease._saved:
+                try:
+                    await lease.save_snapshot()
+                except Exception as exc:  # noqa: BLE001 — best effort by design
+                    _log.warning(
+                        "agent_workspace.release_save_failed",
+                        workspace_id=lease.chat.workspace_id,
+                        thread_id=lease.chat.thread_id,
+                        error=type(exc).__name__,
+                    )
+        finally:
+            self.release(lease)
+
+    def mounts_for(self, lease: AgentWorkspaceLease) -> MountRequest:
+        """The mount request the lease's live backend was opened with."""
+
+        key = (lease._workspace_segment, lease._project_segment, lease._thread_segment)
+        with self._lock:
+            active = self._active.get(key)
+        return (
+            active.mounts if active is not None and active.backend is lease.backend else _NO_MOUNTS
+        )
 
     def release(self, lease: AgentWorkspaceLease) -> None:
         """Drop this turn's lease and close its backend. Nothing on disk is removed."""

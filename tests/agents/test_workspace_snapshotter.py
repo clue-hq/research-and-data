@@ -1,0 +1,507 @@
+"""F3 Phase 1, plan Task 8: restore and save a chat's agent folders (spec WS-6–WS-11, WS-18, WS-22;
+AW-13, AW-14, AW-18)."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from uuid import UUID
+
+import pytest
+
+from clue_agents.ports import WorkspaceSnapshotStore
+from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
+from clue_agents.workspace_policy import PreparedWorkspaceRoot, WorkspaceRootPolicy
+from clue_agents.workspace_snapshot import (
+    LeaseFence,
+    SaveStatus,
+    SnapshotCorrupt,
+    SnapshotEntry,
+    SnapshotManifest,
+    SnapshotPointer,
+    WorkspaceRestoreUnavailable,
+    WorkspaceSaveUnavailable,
+    encode_manifest,
+)
+from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
+from clue_core import ExecutionId
+from tests.agents.workspace_helpers import RecordingArtifactSink, policy
+
+WS, PROJECT, THREAD = "ws-1", "project-1", "thread-1"
+EXECUTIONS = [ExecutionId(UUID(f"00000000-0000-0000-0000-0000000008{n:02d}")) for n in range(10)]
+
+
+@dataclass
+class FakeStore(WorkspaceSnapshotStore):
+    """An in-memory snapshot store with the real store's compare-and-set rules."""
+
+    blobs: dict[str, bytes] = field(default_factory=dict)
+    pointer: SnapshotPointer | None = None
+    reads: int = 0
+    uploads: int = 0
+    touches: int = 0
+    fail_reads_after: int | None = None
+    fail_uploads: int = 0
+    fenced: bool = False
+
+    async def current(self, *, workspace_id: str, thread_id: str) -> SnapshotPointer | None:
+        return self.pointer
+
+    async def read_manifest(
+        self, *, workspace_id: str, pointer: SnapshotPointer
+    ) -> SnapshotManifest:
+        from clue_agents.workspace_snapshot import decode_manifest
+
+        return decode_manifest(self._read(pointer.manifest_sha256))
+
+    async def read_file(self, *, workspace_id: str, entry: SnapshotEntry) -> bytes:
+        data = self._read(entry.sha256)
+        if hashlib.sha256(data).hexdigest() != entry.sha256:
+            raise SnapshotCorrupt("hash mismatch")
+        return data
+
+    def _read(self, sha: str) -> bytes:
+        self.reads += 1
+        if self.fail_reads_after is not None and self.reads > self.fail_reads_after:
+            raise WorkspaceRestoreUnavailable("storage down")
+        return self.blobs[sha]
+
+    async def store_files(
+        self, *, workspace_id: str, files: Sequence[tuple[SnapshotEntry, bytes]]
+    ) -> int:
+        if self.fail_uploads:
+            self.fail_uploads -= 1
+            raise WorkspaceSaveUnavailable("storage down")
+        count = 0
+        for entry, data in files:
+            if entry.sha256 not in self.blobs:
+                self.blobs[entry.sha256] = data
+                count += 1
+        self.uploads += count
+        return count
+
+    async def save(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        expected_version: int | None,
+        manifest: SnapshotManifest,
+        fence: LeaseFence | None,
+    ) -> tuple[SaveStatus, SnapshotPointer | None]:
+        if self.fenced:
+            return "fenced", None
+        current = None if self.pointer is None else self.pointer.version
+        if current != expected_version:
+            return "stale", None
+        body = encode_manifest(manifest)
+        sha = hashlib.sha256(body).hexdigest()
+        self.blobs[sha] = body
+        self.pointer = SnapshotPointer(
+            version=(current or 0) + 1, manifest_sha256=sha, manifest_key=f"{workspace_id}/{sha}"
+        )
+        return "saved", self.pointer
+
+    async def touch(self, *, workspace_id: str, thread_id: str) -> None:
+        self.touches += 1
+
+    async def forget(self, *, workspace_id: str, thread_id: str) -> None:
+        self.pointer = None
+
+
+@dataclass
+class Machine:
+    """One worker: its own root, its own factory, sharing the store with other machines."""
+
+    root: Path
+    factory: AgentWorkspaceFactory
+    turns: int = 0
+
+    def chat_dir(self) -> Path:
+        return self.root / "chats" / WS / PROJECT / THREAD
+
+    def agent(self) -> Path:
+        return self.chat_dir() / "agent"
+
+
+def _machine(tmp_path: Path, name: str, store: FakeStore, legacy: Path | None = None) -> Machine:
+    base = tmp_path / name
+    base.mkdir()
+    (base / "source").mkdir(mode=0o700)
+    (base / "home").mkdir(mode=0o700)
+    prepared = WorkspaceRootPolicy(
+        configured_root=base / "root", source_root=base / "source", home_root=base / "home"
+    ).prepare()
+    factory = AgentWorkspaceFactory(
+        prepared_root=PreparedWorkspaceRoot(path=prepared.path),
+        artifact_sink=RecordingArtifactSink(),
+        snapshotter=WorkspaceSnapshotter(
+            store=store, concurrency=4, legacy_root=legacy, retry_delays=(0, 0, 0)
+        ),
+    )
+    return Machine(root=prepared.path, factory=factory)
+
+
+def _open(machine: Machine) -> AgentWorkspaceLease:
+    machine.turns += 1
+    return asyncio.run(
+        machine.factory.acquire_restored(
+            workspace_id=WS,
+            project_id=PROJECT,
+            thread_id=THREAD,
+            execution_id=EXECUTIONS[machine.turns],
+            policy=policy(max_total_bytes=1_000_000, max_file_bytes=500_000, max_file_count=100),
+        )
+    )
+
+
+def _write(lease: AgentWorkspaceLease, path: str, data: bytes) -> None:
+    """Write a file straight into the agent folder, as a sandbox run would."""
+
+    host = lease.factory.thread_host_path(WS, PROJECT, THREAD) / path
+    host.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    host.write_bytes(data)
+    host.chmod(0o600)
+
+
+def _turn(machine: Machine, files: dict[str, bytes], *, delete: Sequence[str] = ()) -> str:
+    lease = _open(machine)
+    try:
+        for path, data in files.items():
+            _write(lease, path, data)
+        for path in delete:
+            (machine.agent() / path).unlink()
+        return asyncio.run(lease.save_snapshot()).status
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def _note(machine: Machine) -> dict[str, object] | None:
+    path = machine.chat_dir() / "snapshot-note.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def test_new_chat_starts_empty_and_first_save_is_version_1(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    lease = _open(machine)
+    try:
+        assert list((machine.agent() / "scratch").iterdir()) == []
+        _write(lease, "scratch/notes.md", b"note")
+        report = asyncio.run(lease.save_snapshot())
+        assert (report.status, report.version, report.uploaded) == ("saved", 1, 1)
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    assert _note(machine)["version"] == 1  # type: ignore[index]
+
+
+def test_warm_restore_downloads_nothing(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/notes.md": b"note", "outputs/t.csv": b"a,b"})
+    store.reads = 0
+    lease = _open(machine)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.warm is True
+        assert store.reads == 0
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_another_machine_restores_exactly_the_saved_files(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    files = {
+        "scratch/notes.md": b"note",
+        "outputs/t.csv": b"a,b",
+        "reads/op-1.json": b"{}",
+        "work/deals_clean.csv": b"x",
+    }
+    _turn(a, files)
+    lease = _open(b)
+    try:
+        for path, data in files.items():
+            assert (b.agent() / path).read_bytes() == data
+        assert lease.restore_report is not None and lease.restore_report.downloaded == 4
+    finally:
+        asyncio.run(b.factory.release_saved(lease))
+
+
+def test_stale_copy_downloads_only_changed_files(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/1.md": b"1", "scratch/2.md": b"2", "scratch/3.md": b"3"})
+    _turn(b, {"scratch/2.md": b"two"})
+    lease = _open(a)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.downloaded == 1
+        assert (a.agent() / "scratch/2.md").read_bytes() == b"two"
+    finally:
+        asyncio.run(a.factory.release_saved(lease))
+
+
+def test_restore_deletes_files_not_in_the_manifest(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/keep.md": b"k", "scratch/gone.md": b"g"})
+    _turn(b, {}, delete=["scratch/gone.md"])
+    lease = _open(a)
+    try:
+        assert not (a.agent() / "scratch/gone.md").exists()
+        assert (a.agent() / "scratch/keep.md").read_bytes() == b"k"
+        assert lease.restore_report is not None and lease.restore_report.deleted == 1
+    finally:
+        asyncio.run(a.factory.release_saved(lease))
+
+
+def test_restore_refuses_escaping_path(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    evil = (
+        b'{"entries":[{"media_type":"text/plain","path":"scratch/../../../evil","sha256":"'
+        + hashlib.sha256(b"x").hexdigest().encode()
+        + b'","size":1,"tier":"work_product","written_at":"2026-10-22T09:30:00+00:00"}],'
+        b'"schema_version":1}'
+    )
+    sha = hashlib.sha256(evil).hexdigest()
+    store.blobs[sha] = evil
+    store.blobs[hashlib.sha256(b"x").hexdigest()] = b"x"
+    store.pointer = SnapshotPointer(version=1, manifest_sha256=sha, manifest_key=f"{WS}/{sha}")
+    with pytest.raises(SnapshotCorrupt):
+        _open(machine)
+    assert not (tmp_path / "a" / "evil").exists()
+    assert _note(machine) is None
+
+
+def test_round_trip_keeps_empty_and_binary_files(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"outputs/empty.txt": b"", "outputs/book.xlsx": b"PK\x03\x04\x00\xff"})
+    lease = _open(b)
+    try:
+        assert (b.agent() / "outputs/empty.txt").read_bytes() == b""
+        assert (b.agent() / "outputs/book.xlsx").read_bytes() == b"PK\x03\x04\x00\xff"
+    finally:
+        asyncio.run(b.factory.release_saved(lease))
+
+
+def test_failed_restore_leaves_no_note_and_releases_the_lease(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/1.md": b"1", "scratch/2.md": b"2"})
+    store.reads, store.fail_reads_after = 0, 2  # the file list and one file, then storage fails
+    with pytest.raises(WorkspaceRestoreUnavailable):
+        _open(b)
+    assert _note(b) is None
+    store.fail_reads_after = None
+    lease = _open(b)  # the thread was released, so the next turn can open it and restore
+    try:
+        assert (b.agent() / "scratch/2.md").read_bytes() == b"2"
+    finally:
+        asyncio.run(b.factory.release_saved(lease))
+
+
+def test_restore_never_touches_recipe_folders_or_libraries(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/n.md": b"n"})
+    lease = _open(b)
+    asyncio.run(b.factory.release_saved(lease))
+    (b.agent() / "inputs" / "kept.txt").write_text("recipe")
+    (b.agent() / "inputs" / "kept.txt").chmod(0o600)
+    _turn(a, {"scratch/n.md": b"n2"})
+    lease = _open(b)
+    try:
+        assert (b.agent() / "inputs" / "kept.txt").read_text() == "recipe"
+    finally:
+        asyncio.run(b.factory.release_saved(lease))
+
+
+def test_unchanged_save_only_touches(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/n.md": b"n"})
+    assert _turn(machine, {}) == "unchanged"
+    assert store.pointer is not None and store.pointer.version == 1
+    assert store.touches == 1
+
+
+def test_stale_save_removes_note(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/n.md": b"n"})
+    lease = _open(machine)
+    try:
+        _write(lease, "scratch/n.md", b"zombie")
+        store.pointer = SnapshotPointer(
+            version=9, manifest_sha256=store.pointer.manifest_sha256, manifest_key="k"
+        )  # type: ignore[union-attr]
+        assert asyncio.run(lease.save_snapshot()).status == "stale"
+        assert _note(machine) is None
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_fenced_save_removes_note(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/n.md": b"n"})
+    store.fenced = True
+    assert _turn(machine, {"scratch/n.md": b"late"}) == "fenced"
+    assert _note(machine) is None
+
+
+def test_save_storage_down_marks_unsaved_and_raises(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/n.md": b"n"})
+    store.fail_uploads = 4  # the first attempt and all three retries (AW-18)
+    lease = _open(machine)
+    try:
+        _write(lease, "scratch/n.md", b"changed")
+        with pytest.raises(WorkspaceSaveUnavailable):
+            asyncio.run(lease.save_snapshot())
+        note = _note(machine)
+        assert note is not None and note["unsaved"] is True and note["version"] == 1
+    finally:
+        machine.factory.release(lease)
+
+
+def test_unsaved_copy_is_kept_and_saved_next_turn(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/n.md": b"n"})
+    store.fail_uploads = 4  # the first attempt and all three retries (AW-18)
+    lease = _open(machine)
+    _write(lease, "scratch/n.md", b"changed")
+    with pytest.raises(WorkspaceSaveUnavailable):
+        asyncio.run(lease.save_snapshot())
+    machine.factory.release(lease)
+    store.reads = 0
+    lease = _open(machine)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.warm is True
+        assert (machine.agent() / "scratch/n.md").read_bytes() == b"changed"
+        assert asyncio.run(lease.save_snapshot()).status == "saved"
+        assert store.pointer is not None and store.pointer.version == 2
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_retries_ride_out_a_short_outage(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    store.fail_uploads = 2
+    assert _turn(machine, {"scratch/n.md": b"n"}) == "saved"
+
+
+def test_legacy_folder_is_imported_then_removed_after_save(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy"
+    old = legacy / WS / "projects" / PROJECT / "threads" / THREAD
+    (old / "scratch").mkdir(parents=True)
+    (old / "scratch" / "old-notes.md").write_bytes(b"from before F3")
+    (old / "outputs").mkdir()
+    (old / "outputs" / "t.csv").write_bytes(b"1,2")
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store, legacy=legacy)
+    lease = _open(machine)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.imported_legacy is True
+        assert (machine.agent() / "scratch/old-notes.md").read_bytes() == b"from before F3"
+        assert asyncio.run(lease.save_snapshot()).status == "saved"
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    assert not old.exists()
+
+
+def test_written_at_carries_forward_for_unchanged_files(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/a.md": b"a"})
+    first = asyncio.run(store.read_manifest(workspace_id=WS, pointer=store.pointer)).by_path()  # type: ignore[arg-type]
+    _turn(machine, {"scratch/b.md": b"b"})
+    second = asyncio.run(store.read_manifest(workspace_id=WS, pointer=store.pointer)).by_path()  # type: ignore[arg-type]
+    assert second["scratch/a.md"].written_at == first["scratch/a.md"].written_at
+    assert second["scratch/b.md"].written_at >= first["scratch/a.md"].written_at
+
+
+def test_an_erased_chat_never_reuses_its_cached_copy(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"scratch/personal.md": b"erase me"})
+    store.pointer = None  # the version record was deleted by a privacy erasure
+    lease = _open(machine)
+    try:
+        assert not (machine.agent() / "scratch/personal.md").exists()
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_without_a_snapshotter_nothing_changes(tmp_path: Path) -> None:
+    from tests.agents.workspace_helpers import make_factory
+
+    _root, factory, _sink = make_factory(tmp_path)
+    lease = asyncio.run(
+        factory.acquire_restored(
+            workspace_id=WS,
+            project_id=PROJECT,
+            thread_id=THREAD,
+            execution_id=EXECUTIONS[0],
+            policy=policy(),
+        )
+    )
+    try:
+        assert lease.restore_report is None
+        assert asyncio.run(lease.save_snapshot()).status == "unchanged"
+    finally:
+        asyncio.run(factory.release_saved(lease))
+        factory.close()
+
+
+def test_the_fence_reaches_the_store(tmp_path: Path) -> None:
+    seen: list[LeaseFence | None] = []
+
+    class Recording(FakeStore):
+        async def save(self, **kwargs):  # type: ignore[no-untyped-def,override]
+            seen.append(kwargs["fence"])
+            return await super().save(**kwargs)
+
+    store = Recording()
+    machine = _machine(tmp_path, "a", store)
+    fence = LeaseFence(work_id=UUID(int=7), worker_id="w-1", generation=3)
+    lease = asyncio.run(
+        machine.factory.acquire_restored(
+            workspace_id=WS,
+            project_id=PROJECT,
+            thread_id=THREAD,
+            execution_id=EXECUTIONS[1],
+            policy=policy(),
+            fence=fence,
+        )
+    )
+    try:
+        _write(lease, "scratch/n.md", b"n")
+        asyncio.run(lease.save_snapshot())
+        assert seen == [fence]
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_release_saved_saves_unsaved_writes_best_effort(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    lease = _open(machine)
+    _write(lease, "scratch/n.md", b"n")
+    asyncio.run(machine.factory.release_saved(lease))
+    assert store.pointer is not None and store.pointer.version == 1
+    store.fail_uploads = 5
+    lease = _open(machine)
+    _write(lease, "scratch/n.md", b"m")
+    asyncio.run(machine.factory.release_saved(lease))  # never raises
+    assert store.pointer.version == 1
+

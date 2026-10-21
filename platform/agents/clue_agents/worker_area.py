@@ -25,7 +25,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-__all__ = ["ChatScope", "WorkerArea", "claim_worker_area", "process_worker_area"]
+__all__ = [
+    "ChatScope",
+    "WorkerArea",
+    "claim_worker_area",
+    "process_worker_area",
+    "wipe_path",
+]
 
 WORKERS_DIR: Final = "workers"
 _AREA_PREFIX: Final = "area-"
@@ -109,7 +115,7 @@ def _claim_locked(workers: Path, *, max_areas: int) -> WorkerArea:
         if descriptor is None:
             continue
         path = workers / name
-        _wipe(path)
+        wipe_path(path)
         _ensure_private_directory(path)
         claimed = WorkerArea(name=name, path=path, lock_fd=descriptor)
         break
@@ -160,7 +166,7 @@ def _remove_dead_areas(workers: Path, *, keep: str) -> None:
         if descriptor is None:
             continue
         try:
-            _wipe(workers / name, remove_root=True)
+            wipe_path(workers / name, remove_root=True)
             lock_path.unlink(missing_ok=True)
         finally:
             os.close(descriptor)
@@ -175,7 +181,7 @@ def _ensure_private_directory(path: Path) -> None:
         path.chmod(_DIRECTORY_MODE)
 
 
-def _wipe(path: Path, *, remove_root: bool = False) -> None:
+def wipe_path(path: Path, *, remove_root: bool = False) -> None:
     """Remove everything below ``path`` (frozen read-only trees included), never following links."""
 
     if path.is_symlink():

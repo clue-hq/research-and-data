@@ -1,0 +1,582 @@
+"""Restore a chat's agent folders at turn start and save them at turn end.
+
+F3 Phase 1 (docs/superpowers/specs/agent-workspace/2026-10-21-agent-workspace-durability-design.md,
+WS-6–WS-11, WS-20, WS-22; rulings AW-1, AW-13, AW-14, AW-18). The agent's own folders
+(``scratch/ reads/ work/ outputs/``) are a cache of the chat's snapshot. A small local version
+note beside the agent folder (``<chat>/snapshot-note.json``, outside what the agent can see) says
+which version this machine's copy holds and carries that version's file list, so a turn on the
+machine that holds the current copy makes one database read and no storage call.
+
+Restore brings a stale copy up to date without wiping it: files whose hash already matches stay,
+missing or different ones are downloaded, files the version no longer lists are deleted. Save
+stores only new bytes, then moves the version record with a compare-and-set under the turn's fleet
+lease. A save that loses the race removes the note, so the next turn restores the winner. A save
+that cannot reach storage after its retries marks the copy *unsaved* and raises: the copy is kept
+and the chat's next turn on this machine saves it (AW-18).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import hashlib
+import json
+import mimetypes
+import os
+import secrets
+import stat
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final
+
+from clue_agents.tree_sync import read_directory, sync_directory
+from clue_agents.worker_area import ChatScope, wipe_path
+from clue_agents.workspace_policy import WorkspaceSecurityError
+from clue_agents.workspace_snapshot import (
+    SAVED_FOLDERS,
+    SaveStatus,
+    SnapshotCorrupt,
+    SnapshotEntry,
+    SnapshotManifest,
+    SnapshotPointer,
+    WorkspaceSaveUnavailable,
+    decode_manifest,
+    encode_manifest,
+    tier_for,
+    validate_snapshot_path,
+)
+from clue_obs import get_logger
+
+if TYPE_CHECKING:
+    from clue_agents.ports import WorkspaceSnapshotStore
+    from clue_agents.workspace import AgentWorkspaceLease
+
+__all__ = ["RestoreReport", "SaveReport", "WorkspaceSnapshotter"]
+
+log = get_logger("clue_agents.workspace_snapshotter")
+
+NOTE_FILE: Final = "snapshot-note.json"
+_AGENT_DIR: Final = "agent"
+_FILE_MODE: Final = 0o600
+_DIR_FLAGS: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+_DEFAULT_RETRY_DELAYS: Final = (0.5, 1.0, 2.0)
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreReport:
+    """What one restore did (WS-20)."""
+
+    warm: bool
+    downloaded: int
+    deleted: int
+    bytes: int
+    duration_ms: int
+    imported_legacy: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SaveReport:
+    """What one save did (WS-20)."""
+
+    status: SaveStatus
+    uploaded: int
+    bytes: int
+    version: int | None
+    duration_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class _Note:
+    version: int
+    manifest_sha256: str
+    unsaved: bool
+    manifest: SnapshotManifest
+
+
+@dataclass(slots=True)
+class SnapshotBase:
+    """What a turn restored: the version a save must move from, and that version's file list."""
+
+    pointer: SnapshotPointer | None
+    manifest: SnapshotManifest | None
+    legacy_folder: Path | None = None
+
+
+class WorkspaceSnapshotter:
+    """Restore and save one chat's agent folders against a :class:`WorkspaceSnapshotStore`."""
+
+    def __init__(
+        self,
+        *,
+        store: WorkspaceSnapshotStore,
+        concurrency: int,
+        legacy_root: Path | None = None,
+        retry_delays: Sequence[float] = _DEFAULT_RETRY_DELAYS,
+        sleep: Callable[[float], Any] = asyncio.sleep,
+    ) -> None:
+        self._store = store
+        self._concurrency = max(1, concurrency)
+        self._legacy_root = legacy_root
+        self._retry_delays = tuple(retry_delays)
+        self._sleep = sleep
+
+    # --- restore ------------------------------------------------------------------------------
+
+    async def restore(self, lease: AgentWorkspaceLease) -> RestoreReport:
+        """Bring this machine's copy of the chat's agent folders to the chat's current version."""
+
+        started = time.monotonic()
+        chat = lease.chat
+        pointer = await self._store.current(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id
+        )
+        note = await asyncio.to_thread(_read_note, lease)
+        try:
+            if pointer is None:
+                report = await self._restore_without_record(lease, note=note, started=started)
+            elif note is not None and (note.version, note.manifest_sha256) == (
+                pointer.version,
+                pointer.manifest_sha256,
+            ):
+                lease.snapshot_base = SnapshotBase(pointer=pointer, manifest=note.manifest)
+                report = RestoreReport(
+                    warm=True,
+                    downloaded=0,
+                    deleted=0,
+                    bytes=0,
+                    duration_ms=_elapsed(started),
+                    imported_legacy=False,
+                )
+            else:
+                report = await self._restore_version(lease, pointer=pointer, started=started)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(_remove_note, lease)
+            raise
+        log.info(
+            "agent_workspace.restore",
+            workspace_id=chat.workspace_id,
+            thread_id=chat.thread_id,
+            version=None if pointer is None else pointer.version,
+            warm=report.warm,
+            downloaded=report.downloaded,
+            deleted=report.deleted,
+            bytes=report.bytes,
+            duration_ms=report.duration_ms,
+            imported_legacy=report.imported_legacy,
+        )
+        return report
+
+    async def _restore_without_record(
+        self, lease: AgentWorkspaceLease, *, note: _Note | None, started: float
+    ) -> RestoreReport:
+        """No version record: a new chat, an old chat from before F3, or an erased one."""
+
+        if note is not None:
+            # The record this copy was a copy of is gone (a privacy erasure, a deleted chat):
+            # nothing in it may be used again (WS-27, WS-16).
+            deleted = await asyncio.to_thread(_replace_agent_folders, lease, {})
+            await asyncio.to_thread(_remove_note, lease)
+            lease.snapshot_base = SnapshotBase(pointer=None, manifest=None)
+            return RestoreReport(
+                warm=False,
+                downloaded=0,
+                deleted=deleted,
+                bytes=0,
+                duration_ms=_elapsed(started),
+                imported_legacy=False,
+            )
+        legacy = self._legacy_folder(lease.chat)
+        if legacy is not None:
+            files = await asyncio.to_thread(_read_legacy_folder, legacy)
+            current = await asyncio.to_thread(_read_agent_folders, lease)
+            await asyncio.to_thread(_replace_agent_folders, lease, {**files, **current})
+            lease.snapshot_base = SnapshotBase(pointer=None, manifest=None, legacy_folder=legacy)
+            return RestoreReport(
+                warm=False,
+                downloaded=0,
+                deleted=0,
+                bytes=sum(len(data) for data in files.values()),
+                duration_ms=_elapsed(started),
+                imported_legacy=True,
+            )
+        lease.snapshot_base = SnapshotBase(pointer=None, manifest=None)
+        return RestoreReport(
+            warm=True,
+            downloaded=0,
+            deleted=0,
+            bytes=0,
+            duration_ms=_elapsed(started),
+            imported_legacy=False,
+        )
+
+    async def _restore_version(
+        self, lease: AgentWorkspaceLease, *, pointer: SnapshotPointer, started: float
+    ) -> RestoreReport:
+        await asyncio.to_thread(_remove_note, lease)
+        chat = lease.chat
+        manifest = await self._store.read_manifest(workspace_id=chat.workspace_id, pointer=pointer)
+        for entry in manifest.entries:
+            validate_snapshot_path(entry.path)
+        local = await asyncio.to_thread(_read_agent_folders, lease)
+        wanted = {entry.path: entry for entry in manifest.entries}
+        missing = [
+            entry
+            for path, entry in wanted.items()
+            if path not in local or hashlib.sha256(local[path]).hexdigest() != entry.sha256
+        ]
+        gate = asyncio.Semaphore(self._concurrency)
+
+        async def fetch(entry: SnapshotEntry) -> tuple[str, bytes]:
+            async with gate:
+                data = await self._store.read_file(workspace_id=chat.workspace_id, entry=entry)
+            if hashlib.sha256(data).hexdigest() != entry.sha256 or len(data) != entry.size:
+                raise SnapshotCorrupt(f"{entry.path} does not match its file list entry")
+            return entry.path, data
+
+        downloaded = dict(await asyncio.gather(*(fetch(entry) for entry in missing)))
+        desired = {path: downloaded.get(path, local.get(path, b"")) for path in wanted}
+        deleted = sum(1 for path in local if path not in wanted)
+        await asyncio.to_thread(_replace_agent_folders, lease, desired)
+        await asyncio.to_thread(
+            _write_note,
+            lease,
+            _Note(
+                version=pointer.version,
+                manifest_sha256=pointer.manifest_sha256,
+                unsaved=False,
+                manifest=manifest,
+            ),
+        )
+        lease.snapshot_base = SnapshotBase(pointer=pointer, manifest=manifest)
+        return RestoreReport(
+            warm=False,
+            downloaded=len(downloaded),
+            deleted=deleted,
+            bytes=sum(len(data) for data in downloaded.values()),
+            duration_ms=_elapsed(started),
+            imported_legacy=False,
+        )
+
+    def _legacy_folder(self, chat: ChatScope) -> Path | None:
+        if self._legacy_root is None:
+            return None
+        folder = (
+            self._legacy_root
+            / chat.workspace_id
+            / "projects"
+            / chat.project_id
+            / "threads"
+            / chat.thread_id
+        )
+        return folder if folder.is_dir() and not folder.is_symlink() else None
+
+    # --- save ---------------------------------------------------------------------------------
+
+    async def save(self, lease: AgentWorkspaceLease) -> SaveReport:
+        """Save the chat's agent folders as a new version, or record that nothing changed."""
+
+        started = time.monotonic()
+        chat = lease.chat
+        base = lease.snapshot_base or SnapshotBase(pointer=None, manifest=None)
+        local = await asyncio.to_thread(_read_agent_folders, lease)
+        manifest = _manifest_for(local, previous=base.manifest)
+        if base.manifest is not None and manifest.same_files(base.manifest):
+            await self._store.touch(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
+            return self._report(
+                lease, "unchanged", uploaded=0, size=0, version=_version(base), started=started
+            )
+        if base.manifest is None and not manifest.entries and base.pointer is None:
+            return self._report(
+                lease, "unchanged", uploaded=0, size=0, version=None, started=started
+            )
+        known = {entry.sha256 for entry in (base.manifest.entries if base.manifest else ())}
+        new_files = [
+            (entry, local[entry.path]) for entry in manifest.entries if entry.sha256 not in known
+        ]
+        try:
+            uploaded, status, pointer = await self._save_with_retries(
+                lease, base=base, manifest=manifest, new_files=new_files
+            )
+        except WorkspaceSaveUnavailable:
+            if base.pointer is not None and base.manifest is not None:
+                await asyncio.to_thread(
+                    _write_note,
+                    lease,
+                    _Note(
+                        version=base.pointer.version,
+                        manifest_sha256=base.pointer.manifest_sha256,
+                        unsaved=True,
+                        manifest=base.manifest,
+                    ),
+                )
+            log.warning(
+                "agent_workspace.save_unavailable",
+                workspace_id=chat.workspace_id,
+                thread_id=chat.thread_id,
+                base_version=_version(base),
+            )
+            raise
+        if status == "saved" and pointer is not None:
+            await asyncio.to_thread(
+                _write_note,
+                lease,
+                _Note(
+                    version=pointer.version,
+                    manifest_sha256=pointer.manifest_sha256,
+                    unsaved=False,
+                    manifest=manifest,
+                ),
+            )
+            if base.legacy_folder is not None:
+                await asyncio.to_thread(wipe_path, base.legacy_folder, remove_root=True)
+            lease.snapshot_base = SnapshotBase(pointer=pointer, manifest=manifest)
+        else:
+            await asyncio.to_thread(_remove_note, lease)
+            log.warning(
+                "agent_workspace.save_refused",
+                workspace_id=chat.workspace_id,
+                thread_id=chat.thread_id,
+                status=status,
+                base_version=_version(base),
+            )
+        return self._report(
+            lease,
+            status,
+            uploaded=uploaded,
+            size=sum(len(data) for _, data in new_files),
+            version=None if pointer is None else pointer.version,
+            started=started,
+        )
+
+    async def _save_with_retries(
+        self,
+        lease: AgentWorkspaceLease,
+        *,
+        base: SnapshotBase,
+        manifest: SnapshotManifest,
+        new_files: Sequence[tuple[SnapshotEntry, bytes]],
+    ) -> tuple[int, SaveStatus, SnapshotPointer | None]:
+        chat = lease.chat
+        attempts = (*self._retry_delays, None)
+        for delay in attempts:
+            try:
+                uploaded = await self._store.store_files(
+                    workspace_id=chat.workspace_id, files=new_files
+                )
+                status, pointer = await self._store.save(
+                    workspace_id=chat.workspace_id,
+                    project_id=chat.project_id,
+                    thread_id=chat.thread_id,
+                    expected_version=_version(base),
+                    manifest=manifest,
+                    fence=lease.fence,
+                )
+                return uploaded, status, pointer
+            except WorkspaceSaveUnavailable:
+                if delay is None:
+                    raise
+                await self._sleep(delay)
+        raise WorkspaceSaveUnavailable("unreachable")  # pragma: no cover
+
+    def _report(
+        self,
+        lease: AgentWorkspaceLease,
+        status: SaveStatus,
+        *,
+        uploaded: int,
+        size: int,
+        version: int | None,
+        started: float,
+    ) -> SaveReport:
+        report = SaveReport(
+            status=status,
+            uploaded=uploaded,
+            bytes=size,
+            version=version,
+            duration_ms=_elapsed(started),
+        )
+        log.info(
+            "agent_workspace.save",
+            workspace_id=lease.chat.workspace_id,
+            thread_id=lease.chat.thread_id,
+            status=report.status,
+            uploaded=report.uploaded,
+            bytes=report.bytes,
+            version=report.version,
+            duration_ms=report.duration_ms,
+        )
+        return report
+
+
+# --- helpers ----------------------------------------------------------------------------------
+
+
+def _elapsed(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+def _version(base: SnapshotBase) -> int | None:
+    return None if base.pointer is None else base.pointer.version
+
+
+def _manifest_for(
+    local: Mapping[str, bytes], *, previous: SnapshotManifest | None
+) -> SnapshotManifest:
+    earlier = previous.by_path() if previous is not None else {}
+    now = datetime.now(UTC)
+    entries = []
+    for path, data in sorted(local.items()):
+        sha = hashlib.sha256(data).hexdigest()
+        before = earlier.get(path)
+        entries.append(
+            SnapshotEntry(
+                path=path,
+                sha256=sha,
+                size=len(data),
+                media_type=mimetypes.guess_type(path)[0] or "application/octet-stream",
+                tier=tier_for(path),
+                written_at=before.written_at
+                if before is not None and before.sha256 == sha
+                else now,
+            )
+        )
+    return SnapshotManifest(entries=tuple(entries))
+
+
+def _open_agent(lease: AgentWorkspaceLease) -> tuple[int, int]:
+    """``(chat folder fd, agent folder fd)``; the caller closes both."""
+
+    chat_fd = lease.factory.chat_dir_fd(lease.chat)
+    try:
+        agent_fd = os.open(_AGENT_DIR, _DIR_FLAGS, dir_fd=chat_fd)
+    except BaseException:
+        os.close(chat_fd)
+        raise
+    return chat_fd, agent_fd
+
+
+def _read_agent_folders(lease: AgentWorkspaceLease) -> dict[str, bytes]:
+    chat_fd, agent_fd = _open_agent(lease)
+    try:
+        files: dict[str, bytes] = {}
+        for folder in SAVED_FOLDERS:
+            for relative, data in read_directory(agent_fd, folder).items():
+                files[f"{folder}/{relative}"] = data
+        return files
+    finally:
+        os.close(agent_fd)
+        os.close(chat_fd)
+
+
+def _replace_agent_folders(lease: AgentWorkspaceLease, files: Mapping[str, bytes]) -> int:
+    """Make the saved folders hold exactly ``files``; return how many local files were deleted."""
+
+    by_folder: dict[str, dict[str, bytes]] = {folder: {} for folder in SAVED_FOLDERS}
+    for path, data in files.items():
+        folder, _, relative = validate_snapshot_path(path).partition("/")
+        by_folder[folder][relative] = data
+    chat_fd, agent_fd = _open_agent(lease)
+    try:
+        deleted = 0
+        for folder, folder_files in by_folder.items():
+            deleted += len(sync_directory(agent_fd, folder, folder_files, frozen=False).removed)
+        return deleted
+    finally:
+        os.close(agent_fd)
+        os.close(chat_fd)
+
+
+def _read_legacy_folder(folder: Path) -> dict[str, bytes]:
+    """The four agent folders of a chat's folder from before F3 (WS-22); links are skipped."""
+
+    files: dict[str, bytes] = {}
+    for name in SAVED_FOLDERS:
+        base = folder / name
+        if not base.is_dir() or base.is_symlink():
+            continue
+        for path in sorted(base.rglob("*")):
+            relative = path.relative_to(folder).as_posix()
+            if path.is_symlink() or not path.is_file() or ".clue-tmp-" in path.name:
+                continue
+            if any(part.is_symlink() for part in path.parents if folder in part.parents):
+                continue
+            try:
+                validate_snapshot_path(relative)
+            except SnapshotCorrupt:
+                continue
+            files[relative] = path.read_bytes()
+    return files
+
+
+def _read_note(lease: AgentWorkspaceLease) -> _Note | None:
+    chat_fd = lease.factory.chat_dir_fd(lease.chat)
+    try:
+        try:
+            file_fd = os.open(NOTE_FILE, _READ_FLAGS, dir_fd=chat_fd)
+        except FileNotFoundError:
+            return None
+        try:
+            if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+                raise WorkspaceSecurityError("the snapshot note is not a regular file")
+            chunks = []
+            while chunk := os.read(file_fd, 64 * 1024):
+                chunks.append(chunk)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(chat_fd)
+    try:
+        document = json.loads(b"".join(chunks))
+        return _Note(
+            version=int(document["version"]),
+            manifest_sha256=str(document["manifest_sha256"]),
+            unsaved=bool(document["unsaved"]),
+            manifest=decode_manifest(json.dumps(document["manifest"]).encode()),
+        )
+    except (ValueError, KeyError, TypeError, SnapshotCorrupt):
+        # An unreadable note is no note: the next restore reconciles from the record.
+        return None
+
+
+def _write_note(lease: AgentWorkspaceLease, note: _Note) -> None:
+    body = json.dumps(
+        {
+            "version": note.version,
+            "manifest_sha256": note.manifest_sha256,
+            "unsaved": note.unsaved,
+            "manifest": json.loads(encode_manifest(note.manifest)),
+        },
+        sort_keys=True,
+    ).encode()
+    chat_fd = lease.factory.chat_dir_fd(lease.chat)
+    try:
+        temporary = f".clue-tmp-{secrets.token_hex(8)}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        file_fd = os.open(temporary, flags, _FILE_MODE, dir_fd=chat_fd)
+        try:
+            os.write(file_fd, body)
+            os.fsync(file_fd)
+        finally:
+            os.close(file_fd)
+        os.replace(temporary, NOTE_FILE, src_dir_fd=chat_fd, dst_dir_fd=chat_fd)
+    finally:
+        os.close(chat_fd)
+
+
+def _remove_note(lease: AgentWorkspaceLease) -> None:
+    chat_fd = lease.factory.chat_dir_fd(lease.chat)
+    try:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(NOTE_FILE, dir_fd=chat_fd)
+    finally:
+        os.close(chat_fd)

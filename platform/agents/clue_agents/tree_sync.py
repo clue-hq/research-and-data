@@ -26,7 +26,7 @@ from typing import Final
 
 from clue_agents.workspace_policy import WorkspaceSecurityError
 
-__all__ = ["TreeSyncReport", "sync_directory"]
+__all__ = ["TreeSyncReport", "read_directory", "sync_directory"]
 
 _DIRECTORY_MODE: Final = 0o700
 _FROZEN_DIRECTORY_MODE: Final = 0o500
@@ -93,6 +93,43 @@ def sync_directory(
     finally:
         os.close(root_fd)
     return TreeSyncReport(written=tuple(written), removed=tuple(removed), unchanged=unchanged)
+
+
+def read_directory(parent_fd: int, name: str) -> dict[str, bytes]:
+    """Every file below ``<parent_fd>/<name>`` (relative path → bytes); ``{}`` when it is absent.
+
+    The same checks as :func:`sync_directory`: a link, a special file or a non-private folder is
+    refused, never followed.
+    """
+
+    _check_segment(name)
+    try:
+        root_fd = _open_dir(parent_fd, name)
+    except WorkspaceSecurityError:
+        try:
+            os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return {}
+        raise
+    try:
+        files: dict[str, bytes] = {}
+        for path, _size in list(_walk_files(root_fd, "")):
+            parent, leaf = _open_parent(root_fd, path, create=False)
+            try:
+                file_fd = os.open(leaf, _READ_FLAGS, dir_fd=parent)
+            finally:
+                os.close(parent)
+            try:
+                _check_file(os.fstat(file_fd))
+                chunks = []
+                while chunk := os.read(file_fd, 64 * 1024):
+                    chunks.append(chunk)
+            finally:
+                os.close(file_fd)
+            files[path] = b"".join(chunks)
+        return files
+    finally:
+        os.close(root_fd)
 
 
 # --- validation ---------------------------------------------------------------------------------
