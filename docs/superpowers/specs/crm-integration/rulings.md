@@ -295,3 +295,6 @@ Related documents:
   (window, definitions, deals counted, filters, deals set aside and why), and each number's Source
   is the CRM and the day it was computed (e.g. "CRM (HubSpot), computed 21 Oct 2026"), never a file
   in the agent's workspace. Option 1 (letting the sandbox keep `.py`) was not chosen.
+- **R-10.13 (2026-10-22)** **F8 (callback page background), F9 (test CRM data limits) and F10 (an
+  11-minute reasoning loop) are not counted as issues or defects for now.** Nothing is done about
+  them; with F5 deferred, no trial finding blocks the Phase 1 gate.

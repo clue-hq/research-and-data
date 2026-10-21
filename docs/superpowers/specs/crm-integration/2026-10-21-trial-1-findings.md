@@ -90,13 +90,13 @@ founder asked to record first and discuss before acting.
 - **F7 — Underscores in chat messages render as italics.** *Dropped 2026-10-21 (R-10.10).* `run_python`, `write_brand_document`,
   `from_file` appeared as "runpython", "writebranddocument" in both the user's and the agent's
   messages. General chat markdown, not CRM-specific.
-- **F8 — Callback page background** covers only the top part of the tab; the rest is white.
-- **F9 — Seed data limits.** Stage history is artificial (deals created straight into their final
+- **F8 — Callback page background** *Not counted as an issue for now (R-10.13).* covers only the top part of the tab; the rest is white.
+- **F9 — Seed data limits.** *Not counted as an issue for now (R-10.13).* Stage history is artificial (deals created straight into their final
   stage), so "where deals stall" and "where demos come from" were honestly "not available". The
   test CRM's companies (software, finance…) do not match Conduit's ICP — the agent rightly flagged
   it. A seed that mirrors the test brand's ICP and walks deals through stages would exercise more.
 
-- **F10 — A turn can reason for over 11 minutes with nothing to stop it** (found during the F2
+- **F10 — A turn can reason for over 11 minutes with nothing to stop it** *Not counted as an issue for now (R-10.13).* (found during the F2
   live check, 2026-10-21). A test message saying "do not call any tools" clashed with the required
   `finalize_turn` step; Grok 4.6 reasoned about the conflict, then kept generating unrelated
   reasoning ("count the units in groups of twenty…") for 11+ minutes until it was stopped by hand.
