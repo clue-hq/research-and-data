@@ -538,6 +538,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # catalog bump (docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md,
     # Task 10) grants it to the Head of ABM.
     "propose_crm_changes": (),
+    # `crm_write_log` and `manage_crm_grants` (Task 8) likewise, until the same bump.
+    "crm_write_log": (),
+    "manage_crm_grants": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge

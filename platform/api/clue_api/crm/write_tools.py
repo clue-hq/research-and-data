@@ -1,5 +1,7 @@
 """``propose_crm_changes@1``: the agent's only way to change the connected CRM (CRM integration
-Phase 2, spec docs/superpowers/specs/crm-integration/ §6.1).
+Phase 2, spec docs/superpowers/specs/crm-integration/ §6.1). Beside it, ``crm_write_log@1`` reads
+what Clue changed (with the before values an undo proposes again) and ``manage_crm_grants@1`` lists
+and revokes the standing permissions; granting happens only on the permission card.
 
 The agent proposes a batch; :func:`~clue_api.crm.write_prepare.prepare_changes` checks it against
 the allowlist and reads what the CRM holds today, and the batch is logged as one
@@ -18,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -46,10 +49,17 @@ from clue_api.crm.write_prepare import (
     PreparedChange,
     ProposedChange,
     WriteRefused,
+    _noun,
     card_snapshot,
     prepare_changes,
 )
-from clue_api.crm.writes import insert_proposal, insert_writes, set_proposal_status
+from clue_api.crm.writes import (
+    insert_proposal,
+    insert_writes,
+    live_grants,
+    revoke_grant,
+    set_proposal_status,
+)
 from clue_api.turn_action import TurnActionUnresolvable, load_turn_identity, parse_turn_action_ref
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import Settings
@@ -74,6 +84,14 @@ from clue_toolbelt import (
 __all__ = [
     "CrmChangeInput",
     "CrmChangeGroup",
+    "CrmGrantView",
+    "CrmLoggedWrite",
+    "CrmWriteLogInput",
+    "CrmWriteLogOutput",
+    "CrmWriteLogTool",
+    "ManageCrmGrantsInput",
+    "ManageCrmGrantsOutput",
+    "ManageCrmGrantsTool",
     "ProposeCrmChangesInput",
     "ProposeCrmChangesOutput",
     "ProposeCrmChangesTool",
@@ -429,3 +447,381 @@ async def _stored_output(
         groups=groups,
         overwrites=sum(group.count for group in groups if group.overwrites_person),
     )
+
+
+# --- the write log ---------------------------------------------------------------------------
+
+_LOG_DEFAULT_DAYS = 7
+_LOG_MAX_ROWS = 200
+
+
+class CrmWriteLogInput(ToolInput):
+    #: One proposal's changes, however long ago (the week's window does not apply).
+    proposal_id: UUID | None = None
+    #: A record's CRM id, or part of its name.
+    record: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+        | None
+    ) = None
+    status: Literal["proposed", "queued", "sending", "succeeded", "failed", "skipped"] | None = None
+    since_days: int = Field(default=_LOG_DEFAULT_DAYS, ge=1, le=3_650)
+    limit: int = Field(default=50, ge=1, le=_LOG_MAX_ROWS)
+
+
+class CrmLoggedWrite(BaseModel):
+    write_id: str
+    when: datetime
+    record_label: str
+    record_ref: str | None
+    field: str | None
+    before: Any
+    after: Any
+    status: str
+    failure_kind: str | None
+    crm_message: str | None
+    reason: str
+    proposal_id: str
+
+
+class CrmWriteLogOutput(ToolOutput):
+    writes: list[CrmLoggedWrite]
+
+
+class CrmWriteLogTool(Tool):
+    name = "crm_write_log"
+    version = "1"
+    model_description = (
+        "Read what Clue changed (or tried to change) in the CRM, newest first: each change's "
+        "record, field, the value before and after, its status and the CRM's message when it "
+        "failed. By default the last 7 days; narrow by proposal_id (any age), record (its CRM id "
+        "or part of its name), status or since_days. To undo a change, propose the before value "
+        "again with propose_crm_changes and set reverses_write_id to its write_id. "
+        + tool_manual_link("crm_write_log")
+    )
+    input_model: ClassVar[type[ToolInput]] = CrmWriteLogInput
+    output_model: ClassVar[type[ToolOutput]] = CrmWriteLogOutput
+    effect_class = ToolEffectClass.READ
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="none: reading the write log writes nothing",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    #: The log names CRM records (people and companies), so only the filters' shape is shown.
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("status", "since_days", "limit"))
+    pin_requirements = ("project",)
+
+    def __init__(
+        self, *, gateway: ComposioGateway | None, conn_factory: ConnFactory = transaction
+    ) -> None:
+        self._gateway = gateway
+        self._conn_factory = conn_factory
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        del inputs, ctx
+        try:
+            _require_gateway(self._gateway)
+        except _Refused as exc:
+            return (PreconditionFailure(reason_code=exc.reason_code, message=str(exc)),)
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, CrmWriteLogInput)
+        try:
+            _require_gateway(self._gateway)
+        except _Refused as exc:
+            raise _refuse(exc.reason_code, str(exc)) from exc
+        # Every connection of the workspace: the history outlives a reconnect.
+        where = ["w.workspace_id = :ws"]
+        params: dict[str, Any] = {"ws": ctx.workspace_id, "limit": inputs.limit}
+        if inputs.proposal_id is not None:
+            where.append("w.proposal_id = :proposal_id")
+            params["proposal_id"] = inputs.proposal_id
+        else:
+            where.append(f"{_WHEN} >= now() - make_interval(days => :days)")
+            params["days"] = inputs.since_days
+        if inputs.record is not None:
+            where.append(
+                "(w.record_ref = :record OR w.record_label ILIKE '%' || :record_like || '%')"
+            )
+            params["record"] = inputs.record
+            params["record_like"] = _escape_like(inputs.record)
+        if inputs.status is not None:
+            where.append("w.status = :status")
+            params["status"] = inputs.status
+        async with self._conn_factory() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        f"SELECT w.write_id, {_WHEN} AS logged_at, w.record_label, "  # noqa: S608
+                        "w.record_ref, w.field, w.before_value::text AS before_value, "
+                        "w.after_value::text AS after_value, w.status, w.failure_kind, "
+                        "w.crm_message, w.reason, w.proposal_id "
+                        "FROM crm_write w JOIN crm_write_proposal p "
+                        "ON p.proposal_id = w.proposal_id "
+                        f"WHERE {' AND '.join(where)} "
+                        f"ORDER BY {_WHEN} DESC, p.created_at DESC, w.ordinal LIMIT :limit"
+                    ),
+                    params,
+                )
+            ).all()
+        output = CrmWriteLogOutput(
+            writes=[
+                CrmLoggedWrite(
+                    write_id=str(row.write_id),
+                    when=row.logged_at,
+                    record_label=row.record_label,
+                    record_ref=row.record_ref,
+                    field=row.field,
+                    before=_json_value(row.before_value),
+                    after=_json_value(row.after_value),
+                    status=row.status,
+                    failure_kind=row.failure_kind,
+                    crm_message=row.crm_message,
+                    reason=row.reason,
+                    proposal_id=str(row.proposal_id),
+                )
+                for row in rows
+            ]
+        )
+        return ToolResult(
+            tool=self.name, version=self.version, references=output.model_dump(mode="json")
+        )
+
+
+#: When a change happened: when it finished, else when it was sent, else when it was proposed.
+_WHEN = "COALESCE(w.finished_at, w.sent_at, p.created_at)"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _json_value(raw: str | None) -> Any:
+    return None if raw is None else json.loads(raw)
+
+
+# --- standing permissions ----------------------------------------------------------------------
+
+
+class ManageCrmGrantsInput(ToolInput):
+    action: Literal["list", "revoke"]
+    #: The grant to revoke (from a list).
+    grant_id: UUID | None = None
+    source_turn_ref: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+
+
+class CrmGrantView(BaseModel):
+    grant_id: str
+    #: What the person reads, e.g.
+    #: "Always allow setting “ICP tier” on companies — by Aryan, 22 Oct".
+    phrase: str
+    scope_kind: str
+    kind: str | None
+    object: str | None
+    field: str | None
+    granted_by_user_id: str
+    granted_at: datetime
+
+
+class ManageCrmGrantsOutput(ToolOutput):
+    #: The live standing permissions of the connected CRM (after a revoke, the ones left).
+    grants: list[CrmGrantView]
+    revoked: CrmGrantView | None
+
+
+class ManageCrmGrantsTool(Tool):
+    name = "manage_crm_grants"
+    version = "1"
+    model_description = (
+        "List or revoke the standing permissions ('Always allow') the person gave on CRM "
+        "permission cards: action 'list' returns each one in plain words; action 'revoke' with "
+        "its grant_id withdraws it, so those changes ask again. Permissions are given only on "
+        "the card, never with this tool. " + tool_manual_link("manage_crm_grants")
+    )
+    input_model: ClassVar[type[ToolInput]] = ManageCrmGrantsInput
+    output_model: ClassVar[type[ToolOutput]] = ManageCrmGrantsOutput
+    effect_class = ToolEffectClass.WRITE
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "crm_write_grant.revoked_at: a grant is revoked once (a second revoke is refused); "
+            "a list writes nothing"
+        ),
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("action", "grant_id"))
+    pin_requirements = ("project",)
+
+    def __init__(
+        self, *, gateway: ComposioGateway | None, conn_factory: ConnFactory = transaction
+    ) -> None:
+        self._gateway = gateway
+        self._conn_factory = conn_factory
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ManageCrmGrantsInput)
+        try:
+            self._check(inputs)
+            await _person(self._conn_factory, inputs.source_turn_ref, ctx)
+            await _active_connection(self._conn_factory, ctx.workspace_id)
+        except _Refused as exc:
+            return (PreconditionFailure(reason_code=exc.reason_code, message=str(exc)),)
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ManageCrmGrantsInput)
+        try:
+            self._check(inputs)
+            person = await _person(self._conn_factory, inputs.source_turn_ref, ctx)
+            connection = await _active_connection(self._conn_factory, ctx.workspace_id)
+            revoked = None
+            async with self._conn_factory() as conn:
+                if inputs.action == "revoke":
+                    assert inputs.grant_id is not None
+                    revoked = await _revoke(
+                        conn, ctx.workspace_id, inputs.grant_id, person, connection.provider
+                    )
+                grants = await _grant_views(conn, connection)
+        except _Refused as exc:
+            raise _refuse(exc.reason_code, str(exc)) from exc
+        output = ManageCrmGrantsOutput(grants=grants, revoked=revoked)
+        return ToolResult(
+            tool=self.name, version=self.version, references=output.model_dump(mode="json")
+        )
+
+    def _check(self, inputs: ManageCrmGrantsInput) -> None:
+        _require_gateway(self._gateway)
+        if inputs.action == "revoke" and inputs.grant_id is None:
+            raise _Refused(
+                "crm_grant_not_named",
+                "Name the permission to revoke by its grant_id (list them first).",
+            )
+
+
+async def _person(conn_factory: ConnFactory, source_turn_ref: str, ctx: ToolContext) -> str:
+    """The person whose turn this is (a revoke is stamped with them)."""
+    try:
+        turn_id = parse_turn_action_ref(source_turn_ref)
+    except TurnActionUnresolvable as exc:
+        raise _Refused("crm_turn_not_found", "The current turn is unavailable.") from exc
+    async with conn_factory() as conn:
+        turn = await load_turn_identity(conn, workspace_id=ctx.workspace_id, turn_id=turn_id)
+    if turn is None or not turn.submitted_by_user_id:
+        raise _Refused("crm_turn_not_found", "The current turn has no person.")
+    return str(turn.submitted_by_user_id)
+
+
+_GRANT_COLUMNS = (
+    "g.grant_id, g.scope_kind, g.kind, g.object, g.field, g.granted_by_user_id, g.granted_at, "
+    "g.revoked_at, g.workspace_id, u.display_name AS granted_by_name"
+)
+
+
+async def _revoke(
+    conn: AsyncConnection,
+    workspace_id: str,
+    grant_id: UUID,
+    person: str,
+    provider: str,
+) -> CrmGrantView:
+    row = (
+        await conn.execute(
+            text(
+                f"SELECT {_GRANT_COLUMNS} FROM crm_write_grant g "  # noqa: S608
+                "LEFT JOIN platform_user u ON u.user_id = g.granted_by_user_id "
+                "WHERE g.grant_id = :id AND g.workspace_id = :ws FOR UPDATE OF g"
+            ),
+            {"id": grant_id, "ws": workspace_id},
+        )
+    ).first()
+    if row is None:
+        raise _Refused(
+            "crm_grant_not_found",
+            "There is no such permission in this workspace; list the permissions to find it.",
+        )
+    view = _grant_view(row, provider)
+    if row.revoked_at is not None or not await revoke_grant(
+        conn, grant_id=grant_id, revoked_by_user_id=person
+    ):
+        raise _Refused(
+            "crm_grant_already_revoked",
+            f"This permission was already revoked, so nothing changed: {view.phrase}.",
+        )
+    return view
+
+
+async def _grant_views(conn: AsyncConnection, connection: CrmConnection) -> list[CrmGrantView]:
+    """The active connection's live grants: a new connection starts with none."""
+    live = {
+        grant.grant_id for grant in await live_grants(conn, connection_id=connection.connection_id)
+    }
+    if not live:
+        return []
+    rows = (
+        await conn.execute(
+            text(
+                f"SELECT {_GRANT_COLUMNS} FROM crm_write_grant g "  # noqa: S608
+                "LEFT JOIN platform_user u ON u.user_id = g.granted_by_user_id "
+                "WHERE g.grant_id = ANY(:ids) ORDER BY g.granted_at, g.grant_id"
+            ),
+            {"ids": list(live)},
+        )
+    ).all()
+    return [_grant_view(row, connection.provider) for row in rows]
+
+
+def _grant_view(row: Any, provider: str) -> CrmGrantView:
+    granted_at: datetime = row.granted_at
+    by = row.granted_by_name or row.granted_by_user_id
+    phrase = (
+        f"Always allow {_grant_phrase(provider, row.scope_kind, row.kind, row.object, row.field)}"
+        f" — by {by}, {granted_at.day} {granted_at:%b}"
+    )
+    return CrmGrantView(
+        grant_id=str(row.grant_id),
+        phrase=phrase,
+        scope_kind=row.scope_kind,
+        kind=row.kind,
+        object=row.object,
+        field=row.field,
+        granted_by_user_id=row.granted_by_user_id,
+        granted_at=granted_at,
+    )
+
+
+def _grant_phrase(
+    provider: str, scope_kind: str, kind: str | None, object_name: str | None, field: str | None
+) -> str:
+    """The card's "Always allow" wording (card spec §5). A grant records no field label, so a
+    field is named by its CRM field name."""
+    if scope_kind == "fully_automatic":
+        return "every change Clue proposes"
+    if scope_kind == "field":
+        return f"setting “{field}” on {_noun(str(object_name), 2)}"
+    target = "lists" if provider == "hubspot" else "campaigns"
+    if kind == "list_membership":
+        return f"adding contacts to Clue {target}"
+    if kind == "list_removal":
+        return f"removing contacts from Clue {target}"
+    if kind == "create_contact":
+        return "creating contacts"
+    if kind == "create_company":
+        return "creating companies" if provider == "hubspot" else "creating accounts"
+    if kind == "link_duplicate":
+        return "marking possible duplicates"
+    return f"{kind} changes"

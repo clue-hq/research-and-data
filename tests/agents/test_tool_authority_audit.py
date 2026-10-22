@@ -177,8 +177,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `find_crm_actions@1` and `run_crm_action@1` likewise (152 -> 154), and
     # `write_brand_document@1` (154 -> 155).
     # CRM integration Phase 2: `propose_crm_changes@1`, ungranted until the catalog bump
-    # (155 -> 156).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 156
+    # (155 -> 156); `crm_write_log@1` and `manage_crm_grants@1` likewise (156 -> 158).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 158
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at

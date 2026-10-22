@@ -599,7 +599,11 @@ def build_crm_tools(
     offers the write executor (the fleet queue when none is given).
     """
     # Imported here: the write tool reuses this module's connection and refusal helpers.
-    from clue_api.crm.write_tools import ProposeCrmChangesTool
+    from clue_api.crm.write_tools import (
+        CrmWriteLogTool,
+        ManageCrmGrantsTool,
+        ProposeCrmChangesTool,
+    )
 
     gateway = build_composio_gateway(settings=settings, secrets=secrets)
     return (
@@ -613,4 +617,6 @@ def build_crm_tools(
         ProposeCrmChangesTool(
             settings=settings, gateway=gateway, conn_factory=conn_factory, work_queue=work_queue
         ),
+        CrmWriteLogTool(gateway=gateway, conn_factory=conn_factory),
+        ManageCrmGrantsTool(gateway=gateway, conn_factory=conn_factory),
     )
