@@ -193,3 +193,81 @@ Salesforce errors seen (verbatim `ExecuteResult.error`):
 - **Permission (profile / field-level security) refusal: not observed** — the connected user is
   the org admin. Expect `INSUFFICIENT_ACCESS_OR_READONLY` / `INVALID_FIELD_FOR_INSERT_UPDATE` (the
   read-only text above already names "security settings of this field").
+
+## Phase 3 shapes (Task 1 spike, 2026-10-23)
+
+Checked live through `HttpComposioGateway.execute` at the pinned versions (hubspot `20261020_01`,
+salesforce `20261018_00`) with `scripts/crm_phase3_spike.py` (re-runnable; `hubspot` or
+`salesforce` to run one half). **HubSpot is verified end to end. Salesforce stopped at campaign
+create** (see below) — the Salesforce half is owed once the org is fixed.
+
+### HubSpot ABM properties (`HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE` ✔)
+Answer `data = {results: [property…]}` (companies 244 properties, contacts 404). Option values are
+the wire values to write; labels are display only. All three are HubSpot-defined
+(`readOnlyDefinition: true`) but writable (`readOnlyValue: false`).
+
+| Object | Property | Type / fieldType | Options (value → label) |
+|---|---|---|---|
+| company | `hs_ideal_customer_profile` ("Ideal Customer Profile Tier") | `enumeration` / `radio` (single) | `tier_1` → Tier 1, `tier_2` → Tier 2, `tier_3` → Tier 3 |
+| company | `hs_is_target_account` ("Target Account") | `bool` / `booleancheckbox` | `true` → True, `false` → False |
+| contact | `hs_buying_role` ("Buying Role") | `enumeration` / **`checkbox` = multi-select** | `BLOCKER` → Blocker, `BUDGET_HOLDER` → Budget Holder, `CHAMPION` → Champion, `DECISION_MAKER` → Decision Maker, `END_USER` → End User, `EXECUTIVE_SPONSOR` → Executive Sponsor, `INFLUENCER` → Influencer, `LEGAL_AND_COMPLIANCE` → Legal & Compliance, `OTHER` → Other |
+
+- `hs_ideal_customer_profile` and `hs_is_target_account` are company properties (group
+  `targetaccountsinformation`); `hs_buying_role` is a contact property (group `deal_information`).
+- `hs_buying_role` is multi-select: HubSpot stores several values `;`-separated (e.g.
+  `CHAMPION;INFLUENCER`). A write replaces the whole value, so adding Clue's role must keep the
+  roles already there (read, union, write) — not probed by a write in this spike.
+- **R-12.6 confirmed** with these exact values: champion → `CHAMPION`, economic buyer →
+  `BUDGET_HOLDER`, technical evaluator → `INFLUENCER`, blocker → `BLOCKER`, user → `END_USER`.
+  (`DECISION_MAKER` and `EXECUTIVE_SPONSOR` exist too but are not used by R-12.6.)
+- R-12.1 tiers write as `tier_1` / `tier_2` / `tier_3` (lower case), not "Tier 1".
+
+### HubSpot lists (company list = object type `0-2`)
+| Action | Slug | Arguments | Answer (`data`) |
+|---|---|---|---|
+| find lists | `HUBSPOT_SEARCH_CRM_LISTS` ✔ | `objectTypeId: "0-2"`, `count` (1–500), `offset`, optional `query`, `processingTypes[]`, `listIds[]` | `{lists: [], total: 0, offset: 0, hasMore: false}` on the empty portal |
+| find one by name | `HUBSPOT_GET_CRM_LIST_BY_NAME` ✔ | `object_type_id`, `list_name` (matched case-insensitively), optional `include_filters` | `{list: {listId, name, objectTypeId, processingType, processingStatus, listVersion, size, createdAt, updatedAt, …}}`; missing → `successful: false`, 404 (below) |
+| create | `HUBSPOT_CREATE_LIST` ✔ | `name` (portal-wide unique), `object_type_id: "0-2"`, `processing_type: "MANUAL"` | `{list: {listId: "17", name, objectTypeId: "0-2", processingType: "MANUAL", processingStatus: "COMPLETE", listVersion: 1, listPermissions, membershipSettings, createdAt, …}}` (no `size` on create) |
+| add / remove | `HUBSPOT_UPDATE_LIST_MEMBERSHIPS` ✔ | `list_id` (string), `operation: "add"\|"remove"`, `record_ids[]` (company ids) | add: `{recordsIdsAdded: [id]}` (sic, "records"); remove: `{recordIdsRemoved: [id]}`; **adding an existing member: `successful: true`, `data = {}`** (no error, no id listed) |
+| a record's lists | `HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS` ✔ | `object_type_id: "0-2"`, `record_id` | `{results: [{listId, listVersion, isPublicList, firstAddedTimestamp, lastAddedTimestamp}]}`; `{results: []}` after removal |
+
+- **Company lists work with the planned actions** (R-12.3 holds); no other action needed.
+- `processingType` values: `MANUAL` (seen live on the created list), `SNAPSHOT`, `DYNAMIC` (the
+  tool's enum; a dynamic list was not created). Membership changes are allowed only on `MANUAL` /
+  `SNAPSHOT` lists (tool description), so Clue must check `processingType == "MANUAL"` before
+  reusing a list it finds by name.
+- Note the field-name inconsistency: `listId` / `objectTypeId` on answers, snake_case
+  `list_id` / `object_type_id` in most arguments, but `objectTypeId` in `SEARCH_CRM_LISTS`.
+
+HubSpot list errors seen (verbatim `ExecuteResult.error`; `data` = `{http_error, message, status_code: 404}`):
+- **List id does not exist** (add to `999999999`) — `{"status":"error","message":"List does not exist with ID 999999999.","correlationId":"…","context":{"listId":["999999999"]},"category":"OBJECT_NOT_FOUND","subCategory":"ListError.LIST_ID_DOES_NOT_EXIST"}`.
+- **List name does not exist** (`GET_CRM_LIST_BY_NAME`) — `{"status":"error","message":"List does not exist with name Clue: spike and object type ID 0-2.","correlationId":"…","context":{"listName":["Clue: spike"],"objectTypeId":["0-2"]},"category":"OBJECT_NOT_FOUND","subCategory":"ListError.LIST_NAME_DOES_NOT_EXIST"}` — the normal "not made yet" answer, not a failure.
+
+### Salesforce campaigns — BLOCKED at create (needs the founder)
+- `SALESFORCE_CREATE_CAMPAIGN` ✔ exists (`name` required; optional `type`, `status`,
+  `is_active`, `start_date`, `end_date`, `parent_id`, `description`, cost fields,
+  `custom_fields{}`). Called with `name: "Clue: spike"` it was **refused**:
+  `successful: false`, `data.status_code: 400`, error
+  `[{"message":"entity type cannot be inserted: Campaign","errorCode":"CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY","fields":[]}]`.
+- Cause (read-only checks): the connected user (`SALESFORCE_WHO_AM_I` →
+  `data.data.user_id`) is a System Administrator with **`User.UserPermissionsMarketingUser =
+  false`**. Salesforce lets only Marketing Users create campaigns. The org has 0 campaigns, so
+  member add/remove and `CampaignMemberStatus` could not be checked either.
+- **Product consequence:** a customer's connected Salesforce user must have "Marketing User"
+  ticked, or campaign create fails with the error above — Clue should recognise
+  `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` on `Campaign` and say so plainly.
+- Still owed after the fix (re-run `scripts/crm_phase3_spike.py salesforce`): the create answer
+  (`{id, success, errors[]}` per schema), the SOQL `SELECT Id, Name, IsActive, Status FROM
+  Campaign WHERE Name = 'Clue: spike'` answer, the default `CampaignMember.Status` and the allowed
+  statuses (`SELECT Label, IsDefault, HasResponded, SortOrder FROM CampaignMemberStatus WHERE
+  CampaignId = …`), `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` (`campaign_id`, `contact_id`, optional
+  `status`) answer and its already-a-member error, `SALESFORCE_REMOVE_FROM_CAMPAIGN`
+  (`campaign_id` + `member_id` or `campaign_member_id`; it deletes the CampaignMember row) answer.
+- Other campaign slugs present at this version (not probed): `SALESFORCE_GET_CAMPAIGN`,
+  `SALESFORCE_LIST_CAMPAIGNS`, `SALESFORCE_SEARCH_CAMPAIGNS`, `SALESFORCE_UPDATE_CAMPAIGN`,
+  `SALESFORCE_ADD_LEAD_TO_CAMPAIGN`, `SALESFORCE_DELETE_CAMPAIGN` (never allowlist).
+
+### Left in the test CRMs
+- HubSpot (Conduit test portal): manual company list **"Clue: spike"** (list id `17`), empty —
+  Aldercare was added and removed again. Clue never deletes (R-6.13); delete by hand if wanted.
+- Salesforce (Garner test org): nothing (the campaign was refused).
