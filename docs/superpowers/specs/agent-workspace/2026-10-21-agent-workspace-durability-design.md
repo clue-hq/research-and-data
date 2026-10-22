@@ -121,7 +121,7 @@ the decision).
 | D-15 | Existing chats are not migrated; a chat's current folder becomes its first snapshot | AW-5 | WS-22 | P1 | as discussed |
 | D-16 | Rollout behind a flag | roadmap P3 | WS-21 | P1 (flag), P3 (rollout) | as discussed; the flag must exist from the first code (env parity rule) |
 | D-17 | Which folder belongs to which tier | roadmap P0 | WS-4, WS-5, WS-23 | P1 (folders), P2 (tiers) | decided 2026-10-22 (Q5, AW-14): `work/` kept for the chat's life |
-| D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | as discussed |
+| D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | **changed 2026-10-22 (AW-22):** `outputs/` for the chat's life; `scratch/` and `work/` 30 days after last activity |
 | D-19 | Raw inputs (CRM reads, large tool results, conversation offloads) deleted 48 hours after the chat's last activity | AW-2; your words: *"48 hours after the long activity i think is good enough"* | WS-23, WS-24, WS-26 | P2 | as discussed |
 | D-20 | A receipt for every raw input, kept for the chat's lifetime: what, when, how many records, content hash, how to read it again | AW-2 | WS-25 | P2 | as discussed |
 | D-21 | The agent is told at turn start what files exist from earlier, how old they are, and what has expired | roadmap P0/P2; my proposal of 2026-10-21 | WS-28 | P2 | as discussed |
@@ -406,11 +406,11 @@ What lands in the agent folders today:
 
   | Folder | Saved? | Tier (applied in P2) |
   |---|---|---|
-  | `scratch/` | everything | work product |
+  | `scratch/` | everything | working file (AW-22) |
   | `outputs/` | everything; never emptied again | work product |
   | `reads/` | everything | raw input |
   | `work/conversation_history/` (with `media/`), `work/large_tool_results/` | everything | raw input |
-  | everything else under `work/` | everything; never emptied (AW-14, Q5) | work product |
+  | everything else under `work/` | everything; never emptied (AW-14, Q5) | working file (AW-22) |
   | recipe folders and mounts | never; they come from database pins (WS-36) | — |
 
 - **WS-5 [P1] Tier recorded from the start.** Phase 1 writes each entry's tier into the file list,
@@ -621,6 +621,7 @@ What lands in the agent folders today:
   | `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` | `10737418240` | P1 |
   | `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` | `16` | P1 |
   | `CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` | `172800` | P2 |
+  | `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` | `2592000` (30 days, AW-22) | P2 |
   | `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` | `3600` | P2 |
 
   With snapshots switched off, the system behaves as on `feat/crm-integration`: local folders only.
@@ -647,7 +648,8 @@ What lands in the agent folders today:
   | Tier | Folders | Kept for |
   |---|---|---|
   | Outcomes | published documents, designs, research claims | untouched; already durable |
-  | Work product | `scratch/`, `outputs/`, and `work/` apart from its two compaction folders | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
+  | Work product | `outputs/` | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
+  | Working file (AW-22) | `scratch/`, and `work/` apart from its two compaction folders | bytes deleted **30 days after the chat's last activity** (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S`, default 2592000); the entry stays, marked expired |
   | Raw input | `reads/`, `work/conversation_history/`, `work/large_tool_results/` | bytes deleted **48 hours after the chat's last activity** (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`, default 172800); the receipt stays for the chat's lifetime |
 
 - **WS-24 [P2] Last activity** is the newest of these events:
@@ -672,7 +674,8 @@ What lands in the agent folders today:
 - **WS-26 [P2] The expiry job.** A periodic fleet job runs every
   `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (default 3600), with one runner at a time like
   the storage sweep. It:
-  1. finds chats whose raw inputs are past their window and that have no queued or running turn;
+  1. finds chats with raw inputs (48 hours) or working files (30 days, AW-22) past their window and
+     no queued or running turn;
   2. writes a new snapshot version without those files' bytes, keeping their receipts, marked with
      `expired_at`, and using the same compare-and-set as a turn's save;
   3. releases its hold on the stored files.
@@ -684,6 +687,10 @@ What lands in the agent folders today:
   share it. A row that has been expired and erased can also never be recorded again
   (`record_artifact` refuses it). **Required, and tested:** reading identical bytes again after a raw
   input expired must work.
+
+  **Phase 1 file lists label `scratch/` and `work/` files `work_product`** (Phase 1 has two tiers).
+  The expiry job decides a file's window from its path (`tier_for`), not from the stored label, so
+  Phase 1 file lists need no migration; Phase 2 adds the `working_file` label for new saves.
 - **WS-27 [P2] Large tool results may be rebuilt.** A spill whose full result is already stored
   (`result_ref`) may be restored from that artifact instead of being stored twice (Q4, AW-13). This is
   the builder's call. Either way, the agent sees the same file while it is within its window.
@@ -920,6 +927,9 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: AW-22 (founder): `scratch/` and `work/` are deleted 30 days after the chat's last
+  activity; `outputs/` stays for the chat's life. D-18 changed; WS-4, WS-23, WS-26 and the flag
+  table updated. Compared with ChatGPT, Claude.ai and Manus first.
 - 2026-10-22: AW-21 (founder): privacy erasure covers the records about a person, not mentions in
   chat files. D-24 decided; WS-31 narrowed to chat and project erasure; WS-31a added (an erased
   file is skipped, not fatal — the review's I1). Snapshot storage stays shared per content hash.
