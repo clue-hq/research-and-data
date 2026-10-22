@@ -382,3 +382,12 @@ Related documents:
   HubSpot list but cannot look lists up or create one (live check L5); the list-lookup read and the
   create-list write (and the Salesforce campaign equivalents) arrive with the target-accounts
   feature in Phase 3.
+- **R-11.9 (2026-10-22)** **Salesforce field coverage stays at Composio's named arguments for now.**
+  `SALESFORCE_UPDATE_ACCOUNT` / `_UPDATE_CONTACT` accept only the fields Composio names (plus
+  `custom_fields`), so a standard field outside that list (live check L10: `Rating`) cannot be
+  proposed, although the composite patch that actually sends every Salesforce update could set it.
+  Nothing in Phases 3–4 needs such a field. **Noted for later (design A):** accept any field by its
+  Salesforce API name on the existing action, checked at proposal time against the org's field
+  definitions (exists, updateable, not forbidden; label and picklist labels from the same read),
+  sent through the composite patch as today — about a day with its live test. Not chosen:
+  allowlisting `SALESFORCE_UPDATE_RECORD` as a second action.
