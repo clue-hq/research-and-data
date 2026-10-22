@@ -135,17 +135,26 @@ agent, not only the CRM work.
   the snapshot stays internal. **Stage-0 trial workspaces are left as they are for now** (Q8): no
   change in Phase 2 (they currently compose with snapshots on, review minor M2). Founder: *"NO THEY
   CANT SEE or download them"*; *"yeah let them be for now."*
-- **AW-26 (2026-10-23)** **No automatic deletion of stored files that nothing references — WS-30
-  leaves Phase 2.** Stored files are held from about 110 places (uploads, turn `outputs/` copies,
-  research receipts …) while the existing "is it referenced?" check counts two, and a chat or a
-  project being archived must never take with it the artifacts a person made on purpose for a
-  campaign. Deciding which unreferenced files may be swept needs its own careful discussion once
-  the system has matured. Founder: *"this ws-30's scope is too big, let's keep this out of phase 2
-  … let the system get a little more mature and then we will see."* **Consequence, recorded:**
-  Phase 2's expiry removes a raw input (or a 7-day-old working file) from the chat — the agent no
-  longer sees it, only its receipt — but its bytes stay in R2; so does every file of an old
-  version and of an erased chat. Snapshot storage stays shared per content hash (AW-21), so WS-31a
-  (skip a privacy-erased file) stays in Phase 2.
+- **AW-26 (2026-10-23, amended the same day)** **Only a chat's own working files are swept;
+  nothing a person or another system owns is ever deleted automatically.**
+  - *Never swept automatically:* uploads, artifacts people made in the Gallery, the `outputs/`
+    copies saved at each turn's end, research final outputs (claims, results, receipts), provider
+    data. Whether any of these may ever be swept needs its own careful discussion once the system
+    has matured. Founder: *"this ws-30's scope is too big … let the system get a little more
+    mature"*; *"even the final research and its claim as well you dont delete them … you can
+    delete all their scratch and rough work but not their final output."*
+  - *Swept in Phase 2:* a file that lives only in a chat's (or a run's) agent folders — `scratch/`,
+    `work/`, `reads/`, old versions' files, an erased chat's files — has its bytes deleted from R2
+    once no snapshot holds it: on expiry (48 h raw inputs, 7 d working files), on a newer version
+    dropping it, on erasure. Founder: *"i only meant them for other stray files, not files that
+    came under work/ scratch/ and other things limited to just a chat thread."*
+  - *How it is made safe (WS-30):* snapshot files get their own storage area,
+    `<workspace>/agent-workspace/<sha256>`, as design sessions have `<workspace>/design/<sha256>`.
+    Only snapshots ever write there, so "nothing holds it" is one check over snapshot holds and a
+    deletion can never touch an upload, a Gallery artifact or a research output even when the
+    bytes are identical. Amends AW-21's first consequence (snapshot files no longer share storage
+    with other kinds of file; chats still share identical files with each other). WS-31a is
+    dropped: a privacy erasure of research or provider data can no longer land on a chat's file.
 - **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
   the release rule of spec §3 (Q7) is dropped: until Phase 2 lands, nothing in a chat's snapshot is
   deleted (raw inputs included), and stored files of old versions are kept. **Order:** the CRM branch
