@@ -183,6 +183,51 @@ test("wording follows the CRM (list vs campaign, company vs account, singular)",
   assert.equal(salesforce.title, "Clue wants to update Salesforce");
 });
 
+test("a list Clue creates and a company list are worded by what they hold (Phase 3)", () => {
+  const base = snapshot("hubspot").groups[0]!;
+  const create = (crm: "hubspot" | "salesforce") =>
+    crmWriteCard({
+      ...snapshot(crm),
+      groups: [
+        {
+          ...base,
+          kind: "list_create",
+          object: crm === "hubspot" ? "list" : "campaign",
+          list_ref: null,
+          title: `Create the ${crm === "hubspot" ? "list" : "campaign"} "Clue: Q4"`,
+          count: 1,
+          records: [{ write_id: W(9), record_ref: null, name: "Clue: Q4", after: { name: "Clue: Q4" } }],
+          scope_key: "kind:list_create",
+          always_allow: `creating Clue ${crm === "hubspot" ? "lists" : "campaigns"}`,
+        },
+        { ...base, object: "company", list_ref: "17", title: 'Add 2 companies to the list "17"' },
+      ],
+    });
+  const hubspot = create("hubspot");
+  const salesforce = create("salesforce");
+  assert.ok(hubspot && salesforce);
+  const one = { chosen: 1, done: 1, failed: 0, skipped: 0, pending: 0 };
+  const two = { chosen: 2, done: 2, failed: 0, skipped: 0, pending: 0 };
+
+  assert.equal(hubspot.groups[0]!.title, 'Create the list "Clue: Q4"');
+  assert.equal(hubspot.groups[0]!.alwaysAllowPhrase, "creating Clue lists");
+  assert.equal(salesforce.groups[0]!.title, 'Create the campaign "Clue: Q4"');
+  assert.equal(salesforce.groups[0]!.alwaysAllowPhrase, "creating Clue campaigns");
+  assert.equal(crmWriteDoneLine("hubspot", hubspot.groups[0]!, one), 'Created the list "Clue: Q4"');
+  assert.equal(
+    crmWriteDoneLine("salesforce", salesforce.groups[0]!, one),
+    'Created the campaign "Clue: Q4"',
+  );
+  assert.equal(crmWriteRecordsCaption(hubspot.groups[0]!), "1 list");
+  assert.equal(crmWriteRecordsCaption(salesforce.groups[0]!), "1 campaign");
+  // A HubSpot company list holds companies, not contacts.
+  assert.equal(
+    crmWriteDoneLine("hubspot", hubspot.groups[1]!, two),
+    'Added 2 companies to the list "17"',
+  );
+  assert.equal(crmWriteRecordsCaption(hubspot.groups[1]!), "2 companies");
+});
+
 test("a group where nothing succeeded is shown as failed, with its count", () => {
   const model = card();
   assert.deepEqual(

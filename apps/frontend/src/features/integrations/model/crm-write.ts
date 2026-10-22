@@ -241,6 +241,8 @@ const NOUNS: Readonly<Record<string, readonly [string, string]>> = {
   account: ["account", "accounts"],
   contact: ["contact", "contacts"],
   lead: ["lead", "leads"],
+  list: ["list", "lists"],
+  campaign: ["campaign", "campaigns"],
 };
 
 function noun(object: string, count: number): string {
@@ -252,11 +254,14 @@ function changes(count: number): string {
   return `${count} ${count === 1 ? "change" : "changes"}`;
 }
 
-/** The caption above an opened group's records: "48 contacts". */
+/**
+ * The caption above an opened group's records: "48 contacts". A group's `object` is what its
+ * records are: the list's members (a HubSpot list holds companies or contacts), or "list" /
+ * "campaign" for a list Clue creates.
+ */
 export function crmWriteRecordsCaption(group: CrmWriteGroup): string {
   const count = group.records.length;
-  const object = group.kind === "list_membership" || group.kind === "list_removal" ? "contact" : group.object;
-  return `${count} ${noun(object, count)}`;
+  return `${count} ${noun(group.object, count)}`;
 }
 
 /**
@@ -305,10 +310,12 @@ export function crmWriteDoneLine(
   const people = noun("contact", tally.chosen);
   const things = noun(group.object, tally.chosen);
   switch (group.kind) {
+    case "list_create":
+      return `Created the ${target} "${group.records[0]?.name ?? ""}"`;
     case "list_membership":
-      return `Added ${count} ${people} to the ${target} "${group.listRef ?? ""}"`;
+      return `Added ${count} ${things} to the ${target} "${group.listRef ?? ""}"`;
     case "list_removal":
-      return `Removed ${count} ${people} from the ${target} "${group.listRef ?? ""}"`;
+      return `Removed ${count} ${things} from the ${target} "${group.listRef ?? ""}"`;
     case "field_update":
       return `Set "${group.fieldLabel ?? "a field"}" on ${count} ${things}`;
     case "create_contact":
