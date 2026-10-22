@@ -49,7 +49,7 @@ _Last updated: 2026-10-22 — Phase 2 built and live-checked on both test CRMs; 
 - ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 
 ## Phase 3 — first writes (a few at a time)
-- ⬜ Target accounts → Clue list (HubSpot) / campaign (Salesforce)
+- ⬜ Target accounts → Clue list (HubSpot) / campaign (Salesforce) — design R-11.11: Clue creates its own list or finds the person's by name, stores the id (one list, many projects), recovers by name; allowlist list lookup + create-list / create-campaign after a live check
 - ⬜ HubSpot Target account + ICP tier fields
 - ⬜ Buying-committee contacts (Salesforce: Contacts only); missing companies/accounts
 - ⬜ Duplicate tagging and "possible duplicate" links (nothing written when a link isn't possible)

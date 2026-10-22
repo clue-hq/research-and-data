@@ -378,10 +378,10 @@ Related documents:
   card finds that a record does not exist (HubSpot 404), that change is refused as
   `crm_record_not_found` and the rest of the batch goes on the card; the agent tells the person
   which record was missing. (Live check L6: the whole proposal was refused.)
-- **R-11.8 (2026-10-22)** **List lookup and creation wait for Phase 3.** Clue can add contacts to a
+- ~~**R-11.8 (2026-10-22)** **List lookup and creation wait for Phase 3.** Clue can add contacts to a
   HubSpot list but cannot look lists up or create one (live check L5); the list-lookup read and the
   create-list write (and the Salesforce campaign equivalents) arrive with the target-accounts
-  feature in Phase 3.
+  feature in Phase 3.~~ *(replaced by R-11.11)*
 - **R-11.9 (2026-10-22)** **Salesforce field coverage stays at Composio's named arguments for now.**
   `SALESFORCE_UPDATE_ACCOUNT` / `_UPDATE_CONTACT` accept only the fields Composio names (plus
   `custom_fields`), so a standard field outside that list (live check L10: `Rating`) cannot be
@@ -398,3 +398,18 @@ Related documents:
   Resuming on a same-portal / same-org reconnect (stamping the org id at activation, carrying the
   queued changes and the record of members Clue added) is not chosen for now. This replaces the
   "resume in order" part of R-7.2.
+- **R-11.11 (2026-10-23, replaces R-11.8)** **Clue keeps the ids of its CRM lists and campaigns
+  itself (Phase 3).** A CRM assigns a list's or campaign's id when it is created; Clue cannot choose
+  it, so Clue stores it. (1) **Clue's own list:** the first time a project writes, the agent proposes
+  "Create the list 'Clue: <project name>'" (HubSpot: a *manual* list; Salesforce: a campaign) on the
+  normal card; the returned id is stored as a CRM record of Clue's, marked created by Clue. (2) **A
+  list the person already has:** the person names it; the agent finds it by exact name and Clue
+  stores its id, marked not created by Clue (Clue never removes members it did not add; a
+  rule-based HubSpot list cannot take members and is refused). (3) **A list belongs to many
+  projects:** the stored list is one row, and a separate link records every project that uses it.
+  (4) **Recovery:** if the stored id stops working (HubSpot "List does not exist with ID …"), Clue
+  looks the list up by its exact name, and proposes creating it again only if it is truly gone.
+  Needs Clue's allowlists widened — reads `HUBSPOT_GET_CRM_LIST_BY_NAME`, `HUBSPOT_SEARCH_CRM_LISTS`;
+  writes `HUBSPOT_CREATE_LIST`, `SALESFORCE_CREATE_CAMPAIGN` — each verified live on both test CRMs
+  first. (Live check L5: the agent could not find a list because these actions were never on Clue's
+  allowlist; the HubSpot grant itself already allows lists.)
