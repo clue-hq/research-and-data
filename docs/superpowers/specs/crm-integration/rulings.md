@@ -438,3 +438,11 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   Budget holder, technical evaluator → Influencer, blocker → Blocker, user → End user — confirmed
   against the portal's own options before anything is built on it. No role is written to
   Salesforce in Phase 3 (no standard field).
+- **R-12.7 (2026-10-23)** **Creating Clue's list and adding to it is one card.** The first time a
+  project writes, one permission card says "Create the list 'Clue: <project>'" and "Add N companies
+  to it" (Salesforce: the campaign and its contacts). Clue sends the create first, then fills the new
+  list's id into the adds of the same batch. (Found in Task 3: an add needs the list's CRM id, which
+  exists only after the create.)
+- **R-12.8 (2026-10-23)** **"Always allow" for list membership stays one permission (R-6.7) and is
+  worded neutrally:** "Always allow adding records to Clue lists and campaigns", on the card and in
+  the permissions list.
