@@ -1337,7 +1337,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 - Effect class: `write`.
 - Spends: no.
-- Opens a human gate: yes, whose kind the output names. Put the gate id it returns into `open_gate_refs` when you finalize, or the human never sees the card.
+- Opens a human gate: yes, whose kind the output names. Put it into `open_gate_refs` as `{object_type: "agent_gate", object_id: <the gate id it returns>}` when you finalize, or the human never sees the card.
 - Replay identity: one crm_write_proposal per presenting turn and exact batch (proposal_id = uuid5 of the turn ref and the input digest).
 - Pins the call is bound to: `project`.
 - Journal-safe input fields: none.

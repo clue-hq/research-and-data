@@ -97,6 +97,7 @@ A refused finalization is not committed and the turn is not over. The message na
 | `cannot carry a failure_code; only 'failed' may` | Remove the failure_code, or change the status to failed if the turn really did fail. |
 | `status 'completed' must carry a user_message` | Write the message the human should read, and finalize again. |
 | `must identify what it is waiting for` | Add a next_actions item, an open_gate_refs entry, or a user_message that asks the human for what you need. |
+| `is a card; link it as` | That id is a card the human must answer. Put it into open_gate_refs again with object_type "agent_gate" and the same object_id, and finalize again. |
 | `completed specialist turn requires its non-empty role output file` | Not reachable in this role, which has no required output file; if you ever read it, write that file and finalize again. |
 
 ## Two strings the runtime itself produces

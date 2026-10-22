@@ -529,8 +529,9 @@ def _gate_line(gate: str | None) -> str:
         return "- Opens a human gate: no."
     kind = f", of kind `{gate}`" if gate else ", whose kind the output names"
     return (
-        f"- Opens a human gate: yes{kind}. Put the gate id it returns into `open_gate_refs` "
-        "when you finalize, or the human never sees the card."
+        f"- Opens a human gate: yes{kind}. Put it into `open_gate_refs` as "
+        '`{object_type: "agent_gate", object_id: <the gate id it returns>}` when you finalize, '
+        "or the human never sees the card."
     )
 
 

@@ -176,3 +176,16 @@ def _sections(body: str) -> dict[str, str]:
         elif current is not None:
             sections[current].append(line)
     return {key: "\n".join(value) for key, value in sections.items()}
+
+
+@pytest.mark.parametrize("gate", ["crm_write_permission", ""])
+def test_a_tool_that_opens_a_card_spells_out_the_link_the_chat_recognises(gate: str) -> None:
+    """The chat draws a card only for ``object_type == "agent_gate"`` (CRM card, 2026-10-22)."""
+
+    line = manual._gate_line(gate)
+
+    assert line.startswith("- Opens a human gate: yes")
+    assert (
+        'Put it into `open_gate_refs` as `{object_type: "agent_gate", object_id: <the gate id it '
+        "returns>}` when you finalize, or the human never sees the card." in line
+    )

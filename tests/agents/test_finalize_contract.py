@@ -218,8 +218,8 @@ class _RecordingFinalization:
         self.envelopes.append(envelope)
         return artifact("finalization-envelope.json")
 
-    async def check_finalizable(self, *, status: Any) -> None:
-        del status
+    async def check_finalizable(self, *, status: Any, open_gate_refs: Any = ()) -> None:
+        del status, open_gate_refs
 
 
 def test_the_model_is_told_the_status_contract_it_will_be_held_to() -> None:
@@ -532,7 +532,8 @@ class _RefuseOnceExecutionAdapter(_FinalizingExecutionAdapter):
         super().__init__()
         self.checks = 0
 
-    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+    async def check_finalizable(self, *, status: FinalizeStatus, open_gate_refs: Any = ()) -> None:
+        del open_gate_refs
         self.checks += 1
         if status is FinalizeStatus.COMPLETED and self.checks == 1:
             raise ValueError(
@@ -582,3 +583,57 @@ def test_a_refused_finalize_freezes_nothing_and_the_repaired_finalize_completes(
     assert backend.snapshots == 1
     assert guard_calls == [FinalizeStatus.COMPLETED]
     assert [e.status for e in execution.envelopes] == [FinalizeStatus.COMPLETED]
+
+
+# --- a card link must say agent_gate (CRM write card live check, 2026-10-22) --------------------
+
+
+class _GateLinkCheckingAdapter(_FinalizingExecutionAdapter):
+    """Refuses a gate linked under another type, as the C5 adapter does against the gate table."""
+
+    def __init__(self, gate_id: str) -> None:
+        super().__init__()
+        self.gate_id = gate_id
+
+    async def check_finalizable(self, *, status: FinalizeStatus, open_gate_refs: Any = ()) -> None:
+        del status
+        for ref in open_gate_refs:
+            if ref.object_id == self.gate_id and ref.object_type != "agent_gate":
+                raise ValueError(
+                    f"open_gate_refs: {self.gate_id} is a card; link it as "
+                    f'{{object_type: "agent_gate", object_id: "{self.gate_id}"}}'
+                )
+
+
+def test_a_card_linked_under_its_kind_is_repaired_in_the_same_turn() -> None:
+    gate_id = "6f1f8a52-9a0e-5d0b-8f3c-6c1f2b7e9a10"
+
+    def gate_ref(object_type: str) -> dict[str, str]:
+        return {"workspace_id": "ws-1", "object_type": object_type, "object_id": gate_id}
+
+    execution = _GateLinkCheckingAdapter(gate_id)
+    outcome, recorded, calls = _run(
+        (
+            _finalize_call(
+                "finalize-wrong-link",
+                status="awaiting_input",
+                user_message="Please review the changes on the card.",
+                open_gate_refs=[gate_ref("crm_write_permission")],
+            ),
+            _finalize_call(
+                "finalize-right-link",
+                status="awaiting_input",
+                user_message="Please review the changes on the card.",
+                open_gate_refs=[gate_ref("agent_gate")],
+            ),
+        ),
+        execution=execution,
+    )
+
+    assert recorded is execution
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    feedback = str(calls.batches[1][-1].content)
+    assert f"{gate_id} is a card" in feedback
+    assert '{object_type: "agent_gate"' in feedback
+    [envelope] = execution.envelopes
+    assert [ref.object_type for ref in envelope.open_gate_refs] == ["agent_gate"]

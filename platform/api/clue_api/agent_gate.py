@@ -64,6 +64,7 @@ __all__ = [
     "money_text",
     "open_gates_for_thread",
     "redact_gate_snapshots_for_subject",
+    "refuse_misnamed_gate_links",
 ]
 
 #: The ``DomainObjectRef.object_type`` flavour a finalization's ``open_gate_refs`` carries. The
@@ -424,6 +425,50 @@ async def get_gate(
         return None
     answer = await _answer_row(conn, workspace_id=workspace_id, gate_id=gate_id)
     return GateView(gate=gate, answer=answer)
+
+
+async def refuse_misnamed_gate_links(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    links: Sequence[tuple[str, str]],
+) -> None:
+    """Refuse a finalization link that points at a gate of this workspace under another type.
+
+    ``links`` are ``(object_type, object_id)`` pairs from ``open_gate_refs``. The chat draws a
+    card only for ``object_type == "agent_gate"``; a gate linked under any other type (the live
+    case: its kind, ``crm_write_permission``) shows the human an incomplete card they cannot
+    answer. Raises ``ValueError`` in words the agent can act on. A link whose id is not a gate row
+    of this workspace — a server-written ``design_leg``, anything else — is not this check's
+    business and passes untouched.
+    """
+
+    candidates: dict[UUID, str] = {}
+    for object_type, object_id in links:
+        if object_type == GATE_OBJECT_TYPE:
+            continue
+        try:
+            candidates[UUID(object_id)] = object_id
+        except ValueError:
+            continue
+    if not candidates:
+        return
+    found = (
+        await conn.execute(
+            text(
+                "SELECT gate_id FROM agent_gate "
+                "WHERE workspace_id = :workspace_id AND gate_id = ANY(:gate_ids)"
+            ),
+            {"workspace_id": workspace_id, "gate_ids": list(candidates)},
+        )
+    ).scalars()
+    gate_ids = sorted(str(gate_id) for gate_id in found)
+    if gate_ids:
+        gate_id = gate_ids[0]
+        raise ValueError(
+            f"open_gate_refs: {gate_id} is a card; link it as "
+            f'{{object_type: "{GATE_OBJECT_TYPE}", object_id: "{gate_id}"}}'
+        )
 
 
 async def insert_gate_answer(

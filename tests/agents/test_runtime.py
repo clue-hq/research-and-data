@@ -323,8 +323,8 @@ class _FinalizingExecution:
     def __init__(self) -> None:
         self.envelope: object | None = None
 
-    async def check_finalizable(self, *, status: object) -> None:
-        del status
+    async def check_finalizable(self, *, status: object, open_gate_refs: object = ()) -> None:
+        del status, open_gate_refs
 
     async def finalize(self, *, envelope: object) -> ArtifactRef:
         self.envelope = envelope
