@@ -42,6 +42,7 @@ from clue_api.crm.writes import (
     WriteProposal,
     proposal_counts,
     proposal_created_records,
+    proposal_linked_records,
 )
 from clue_spine import get_project
 
@@ -144,14 +145,20 @@ def crm_writes_finished_message(
     *,
     allowed: str | None = None,
     created: Sequence[tuple[str, str]] = (),
+    linked: int = 0,
 ) -> str:
-    """``created`` is ``(label, new CRM id)`` of each record the proposal's creates made."""
+    """``created`` is ``(label, new CRM id)`` of each record the proposal's creates made;
+    ``linked`` is how many existing CRM records its updates linked to their Clue records."""
     message = (
         f"{_opening(allowed)}The CRM changes are finished: {_tally(counts)} — "
         f"{_log_hint(proposal_id)}."
     )
     if created:
         message += " Created " + ", ".join(f"{label} ({crm_id})" for label, crm_id in created) + "."
+    if linked == 1:
+        message += " Linked 1 Clue record to its CRM record."
+    elif linked:
+        message += f" Linked {linked} Clue records to their CRM records."
     if counts.reconnected:
         message += (
             f" {counts.reconnected} were not sent (or not confirmed) because the CRM was "
@@ -201,6 +208,7 @@ async def queue_crm_writes_finished_turn(
             counts,
             allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
             created=await proposal_created_records(conn, proposal_id=proposal.proposal_id),
+            linked=await proposal_linked_records(conn, proposal_id=proposal.proposal_id),
         ),
     )
 

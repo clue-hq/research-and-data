@@ -18,8 +18,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_obs import get_logger
+
 if TYPE_CHECKING:
     from clue_api.crm.write_prepare import PreparedChange
+
+log = get_logger("clue_api.crm.writes")
 
 __all__ = [
     "Grant",
@@ -31,6 +35,7 @@ __all__ = [
     "forget_membership_link",
     "get_proposal",
     "proposal_counts",
+    "proposal_linked_records",
     "membership_link_id",
     "record_membership_link",
     "covering_grant",
@@ -164,6 +169,21 @@ async def proposal_created_records(
         {"id": proposal_id},
     )
     return [(str(row.record_label), str(row.record_ref)) for row in rows]
+
+
+async def proposal_linked_records(conn: AsyncConnection, *, proposal_id: UUID) -> int:
+    """How many existing CRM records the proposal's succeeded updates linked to their Clue
+    entities (Task 6): links an update made, not ones that were there already."""
+    count = await conn.scalar(
+        text(
+            "SELECT count(*) FROM crm_record_link l JOIN crm_write w "
+            "ON w.write_id = l.created_by_write_id WHERE w.proposal_id = :id "
+            "AND w.kind = 'field_update' AND w.status = 'succeeded' AND NOT l.created_by_clue "
+            "AND l.clue_entity_id IS NOT NULL"
+        ),
+        {"id": proposal_id},
+    )
+    return int(count or 0)
 
 
 async def set_proposal_status(
@@ -413,7 +433,11 @@ async def record_link(
     created_by_write_id: UUID | None = None,
 ) -> None:
     """Remember which CRM record a Clue entity is. A later link fills a missing entity id but
-    never forgets that Clue created the record."""
+    never forgets that Clue created the record.
+
+    A CRM record's link is never overwritten (Task 6 policy): a record already linked to another
+    Clue entity keeps that entity, and the attempt is logged. One Clue entity may be linked to
+    several records (through creates or finds); reads take its most recent link."""
     params: dict[str, Any] = {
         "workspace_id": workspace_id,
         "connection_id": connection_id,
@@ -423,7 +447,7 @@ async def record_link(
         "created_by_clue": created_by_clue,
         "created_by_write_id": created_by_write_id,
     }
-    await conn.execute(
+    result = await conn.execute(
         text(
             "INSERT INTO crm_record_link (workspace_id, connection_id, crm_object, crm_id, "
             "clue_entity_id, created_by_clue, created_by_write_id) VALUES (:workspace_id, "
@@ -432,11 +456,25 @@ async def record_link(
             "clue_entity_id = COALESCE(crm_record_link.clue_entity_id, "
             "EXCLUDED.clue_entity_id), "
             "created_by_clue = crm_record_link.created_by_clue OR EXCLUDED.created_by_clue, "
-            "created_by_write_id = COALESCE(crm_record_link.created_by_write_id, "
-            "EXCLUDED.created_by_write_id)"
+            # The write that made the link: a link that already named its entity keeps
+            # whatever it had (an update of an already-linked record links nothing new).
+            "created_by_write_id = CASE WHEN crm_record_link.clue_entity_id IS NULL "
+            "THEN COALESCE(crm_record_link.created_by_write_id, EXCLUDED.created_by_write_id) "
+            "ELSE crm_record_link.created_by_write_id END "
+            "RETURNING clue_entity_id"
         ),
         params,
     )
+    kept = result.scalar_one()
+    if clue_entity_id is not None and kept is not None and kept != clue_entity_id:
+        log.warning(
+            "crm.record_link.kept_existing_entity",
+            connection_id=str(connection_id),
+            crm_object=crm_object,
+            crm_id=crm_id,
+            kept=str(kept),
+            offered=str(clue_entity_id),
+        )
 
 
 #: A list (HubSpot) or campaign (Salesforce) membership Clue added is remembered as a record link

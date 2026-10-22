@@ -328,6 +328,9 @@ class _Write:
     label: str | None = None
     #: The project of the change's proposal (a list Clue creates is kept for it).
     project_id: str | None = None
+    #: The Clue contact or account the change is about (Task 5): its CRM record is linked to it
+    #: once the change succeeds (Task 6).
+    clue_entity_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1223,6 +1226,7 @@ class CrmWriteHandler:
                 crm_id=created.crm_id,
                 created_by_clue=True,
                 created_by_write_id=write.write_id,
+                clue_entity_id=_entity(write),
             )
         return [created]
 
@@ -1377,6 +1381,25 @@ class CrmWriteHandler:
                         crm_id=outcome.crm_id,
                         created_by_clue=True,
                         created_by_write_id=write_id,
+                        clue_entity_id=_entity(write),
+                    )
+                elif (
+                    write.kind == "field_update"
+                    and write.record_ref is not None
+                    and _entity(write) is not None
+                ):
+                    # An update links an existing CRM record to the Clue entity it was checked
+                    # against (Task 6); Clue did not create it. The write that made the link is
+                    # kept, so the finished message can say how many records were linked.
+                    await record_link(
+                        conn,
+                        workspace_id=connection.workspace_id,
+                        connection_id=connection.connection_id,
+                        crm_object=write.object,
+                        crm_id=write.record_ref,
+                        created_by_clue=False,
+                        created_by_write_id=write_id,
+                        clue_entity_id=_entity(write),
                     )
                 elif write.kind == "list_membership":
                     await record_membership_link(
@@ -1607,6 +1630,16 @@ async def _skip_adds_to_lists_not_made(
     )
 
 
+def _entity(write: _Write) -> UUID | None:
+    """The change's Clue entity as a link stores it; ``None`` when it names none."""
+    if write.clue_entity_id is None:
+        return None
+    try:
+        return UUID(write.clue_entity_id)
+    except ValueError:
+        return None
+
+
 async def _load_writes(
     conn: AsyncConnection, connection: CrmConnection, proposal_id: UUID
 ) -> list[_Write]:
@@ -1619,7 +1652,7 @@ async def _load_writes(
         text(
             "SELECT write_id, ordinal, slug, arguments::text AS arguments, kind, object, "
             "record_ref, record_label, field, before_value::text AS before_value, "
-            "after_value::text AS after_value, attempts, crm_id FROM crm_write "
+            "after_value::text AS after_value, attempts, crm_id, clue_entity_id FROM crm_write "
             "WHERE proposal_id = :id AND selected "
             "AND status NOT IN ('succeeded', 'failed', 'skipped') ORDER BY ordinal"
         ),
@@ -1661,6 +1694,7 @@ async def _load_writes(
                 crm_id=row.crm_id,
                 label=row.record_label,
                 project_id=None if project_id is None else str(project_id),
+                clue_entity_id=row.clue_entity_id,
             )
         )
     return writes

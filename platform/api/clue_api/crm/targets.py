@@ -213,7 +213,7 @@ _LINKS = text(
     "SELECT clue_entity_id, crm_id FROM crm_record_link "
     "WHERE connection_id = :connection AND crm_object = :object "
     "AND clue_entity_id = ANY(CAST(:ids AS uuid[])) "
-    "ORDER BY linked_at, crm_id"
+    "ORDER BY linked_at DESC, crm_id"
 )
 
 
@@ -379,7 +379,8 @@ def _fit_score(claim: Claim | None) -> float | None:
 async def _links(
     conn: AsyncConnection, connection_id: UUID | None, crm_object: str, ids: Sequence[EntityId]
 ) -> dict[str, str]:
-    """``{entity id: crm id}`` for the entities this connection already links (oldest link)."""
+    """``{entity id: crm id}`` for the entities this connection already links: an entity linked
+    to several records (through creates or finds) is read by its most recent link."""
     if connection_id is None or not ids:
         return {}
     links: dict[str, str] = {}

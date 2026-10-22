@@ -2171,3 +2171,200 @@ def test_the_missing_in_progress_status_is_said_plainly() -> None:
     assert crm_reply(other)[0] == (
         "bad value for restricted picklist field: Big (INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST)"
     )
+
+
+# --- Task 6: Clue remembers which CRM record each account and contact is ----------------------
+
+
+async def _links(conn: Any, connection: CrmConnection) -> dict[str, tuple[Any, ...]]:
+    rows = await conn.execute(
+        text(
+            "SELECT crm_object, crm_id, clue_entity_id, created_by_clue, created_by_write_id "
+            "FROM crm_record_link WHERE connection_id = :c AND crm_object <> 'list_member'"
+        ),
+        {"c": connection.connection_id},
+    )
+    return {
+        row.crm_id: (
+            row.crm_object,
+            None if row.clue_entity_id is None else str(row.clue_entity_id),
+            row.created_by_clue,
+            row.created_by_write_id,
+        )
+        for row in rows
+    }
+
+
+def test_a_created_contact_is_linked_to_its_clue_contact(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from clue_api.crm.targets import project_targets
+        from tests.api.test_crm_write_prepare_db import _create_person, _researched
+
+        world = await _researched(conn, seeded)
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_person(
+                {"firstname": "Nick", "lastname": "Fisher", "email": "nick@zafran.io"},
+                world.nick,
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert change["status"] == "succeeded"
+        assert (await _links(conn, connection))[change["crm_id"]] == (
+            "contact",
+            str(world.nick),
+            True,
+            change["write_id"],
+        )
+        # The targets read now knows Nick's CRM record (Task 4's producer).
+        page = await project_targets(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            settings=Settings(_env_file=None),
+        )
+        nick = next(c for c in page.contacts if c.contact_entity_id == str(world.nick))
+        assert nick.crm_record_id == change["crm_id"]
+
+    _run(tmp_path, "linkcreate", body)
+
+
+def test_an_updated_company_is_linked_but_not_marked_created_by_clue(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from tests.api.test_crm_write_prepare_db import _researched
+
+        world = await _researched(conn, seeded)
+        gateway = _WritingCrm(
+            records={"101": {"hs_ideal_customer_profile": None, "domain": "zafran.io"}}
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": "101", "properties": {"hs_ideal_customer_profile": "tier_1"}},
+                "tier",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        (write,) = (await _writes(conn, proposal_id)).values()
+        assert write["status"] == "succeeded"
+        crm_object, entity, created_by_clue, write_id = (await _links(conn, connection))["101"]
+        assert (crm_object, entity, created_by_clue) == ("company", str(world.zafran), False)
+        assert write_id is not None
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{proposal_id}")
+        assert "Linked 1 Clue record to its CRM record." in message
+
+        # Updating it again links nothing new, and says nothing about linking.
+        again = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": "101", "properties": {"hs_is_target_account": True}},
+                "target",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{again}")
+        assert "Linked" not in message
+
+    _run(tmp_path, "linkupdate", body)
+
+
+def test_a_failed_write_links_nothing(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from tests.api.test_crm_write_prepare_db import _researched
+
+        world = await _researched(conn, seeded)
+        refusal = ExecuteResult(False, {"http_error": "400", "status_code": 400}, "Bad request")
+        gateway = _WritingCrm(
+            records={"101": {"hs_ideal_customer_profile": None, "domain": "zafran.io"}},
+            failures={"HUBSPOT_UPDATE_COMPANIES": [refusal]},
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": "101", "properties": {"hs_ideal_customer_profile": "tier_1"}},
+                "tier",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        (write,) = (await _writes(conn, proposal_id)).values()
+        assert write["status"] == "failed"
+        assert await _links(conn, connection) == {}
+
+    _run(tmp_path, "linkfail", body)
+
+
+def test_a_crm_record_linked_to_one_clue_entity_is_never_relinked(tmp_path: Path) -> None:
+    """The link policy: an existing link of a CRM record is never overwritten; an entity linked
+    to several records (through creates or finds) is read by its most recent link."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from clue_api.crm import writes as crm_writes
+        from clue_api.crm.targets import project_targets
+        from tests.api.test_crm_write_prepare_db import _researched
+
+        world = await _researched(conn, seeded)
+        for crm_id, entity in (("101", world.zafran), ("101", world.nick)):
+            await crm_writes.record_link(
+                conn,
+                workspace_id=seeded.workspace_id,
+                connection_id=connection.connection_id,
+                crm_object="company",
+                crm_id=crm_id,
+                created_by_clue=False,
+                clue_entity_id=UUID(str(entity)),
+            )
+        assert (await _links(conn, connection))["101"][1] == str(world.zafran)
+
+        for crm_id in ("201", "202"):
+            await crm_writes.record_link(
+                conn,
+                workspace_id=seeded.workspace_id,
+                connection_id=connection.connection_id,
+                crm_object="contact",
+                crm_id=crm_id,
+                created_by_clue=True,
+                clue_entity_id=UUID(str(world.nick)),
+            )
+            await conn.execute(
+                text(
+                    "UPDATE crm_record_link SET linked_at = now() + make_interval(secs => :s) "
+                    "WHERE crm_id = :id AND connection_id = :c"
+                ),
+                {"s": int(crm_id) - 200, "id": crm_id, "c": connection.connection_id},
+            )
+        page = await project_targets(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            settings=Settings(_env_file=None),
+        )
+        nick = next(c for c in page.contacts if c.contact_entity_id == str(world.nick))
+        assert nick.crm_record_id == "202"
+
+    _run(tmp_path, "linkpolicy", body)
