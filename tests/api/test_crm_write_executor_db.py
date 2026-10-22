@@ -11,6 +11,7 @@ that can fail chosen calls; the database is the lane's test DB.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import timedelta
 from pathlib import Path
@@ -35,6 +36,7 @@ from clue_api.crm.wake import queue_crm_writes_finished_turn
 from clue_api.crm.write_executor import (
     CrmWriteHandler,
     close_replaced_connection_proposals,
+    crm_reply,
     failure_kind,
 )
 from clue_api.crm.write_prepare import ProposedChange, prepare_changes
@@ -311,8 +313,8 @@ async def _propose(
 async def _writes(conn: Any, proposal_id: UUID) -> dict[str, dict[str, Any]]:
     rows = await conn.execute(
         text(
-            "SELECT record_ref, status, failure_kind, crm_message, retryable, attempts, "
-            "sent_at IS NOT NULL AS sent, crm_id FROM crm_write WHERE proposal_id = :id"
+            "SELECT record_ref, status, failure_kind, crm_message, crm_response, retryable, "
+            "attempts, sent_at IS NOT NULL AS sent, crm_id FROM crm_write WHERE proposal_id = :id"
         ),
         {"id": proposal_id},
     )
@@ -552,7 +554,13 @@ def test_a_rate_limit_requeues_with_backoff_and_a_refusal_is_not_retried(tmp_pat
             "duplicate_rule",
             False,
         )
-        assert logged["201"]["crm_message"] == _HUBSPOT_DUPLICATE
+        # The card and the log show HubSpot's message; its whole answer is kept beside it.
+        assert logged["201"]["crm_message"] == (
+            "Cannot set PropertyValueCoordinates{portalId=1, objectTypeId=ObjectTypeId"
+            "{legacyObjectType=CONTACT}, propertyName=email, value=a@b.co} on 201. 202 already "
+            "has that value."
+        )
+        assert logged["201"]["crm_response"] == json.loads(_HUBSPOT_DUPLICATE)
         assert await _proposal_status(conn, proposal_id) == "finished"
 
         # A third run sends nothing: neither the refusal nor the spent change is retried.
@@ -942,6 +950,34 @@ def test_a_create_stores_its_id_and_is_linked_as_created_by_clue(tmp_path: Path)
     _run(tmp_path, "create", body)
 
 
+def test_a_refused_create_shows_the_crm_message_and_keeps_its_answer(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        refusal = ExecuteResult(
+            False, {"http_error": "400", "status_code": 400}, _HUBSPOT_INVALID_EMAIL
+        )
+        gateway = _WritingCrm(records={}, failures={"HUBSPOT_CREATE_CONTACT": [refusal]})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create("ana@new.test"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT status, crm_message, crm_response, record_ref, crm_id "
+                    "FROM crm_write WHERE proposal_id = :id"
+                ),
+                {"id": proposal_id},
+            )
+        ).one()
+        assert row.status == "failed"
+        assert row.crm_message == "Email address ana@new.test is invalid"
+        assert row.crm_response == json.loads(_HUBSPOT_INVALID_EMAIL)
+        # Nothing was created, so the write names no record.
+        assert (row.record_ref, row.crm_id) == (None, None)
+
+    _run(tmp_path, "createrefused", body)
+
+
 def test_a_create_is_never_made_twice(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         # The worker dies right after the CRM created the contact, before its id was stored.
@@ -1137,7 +1173,12 @@ def test_salesforce_hidden_failures_fail_and_every_call_takes_the_budget(tmp_pat
         assert logged["001A"]["status"] == "succeeded"
         assert logged["001B"]["status"] == "failed"
         assert logged["001B"]["failure_kind"] == "validation_rule"
-        assert "Tier accounts need an owner." in logged["001B"]["crm_message"]
+        assert logged["001B"]["crm_message"] == (
+            "Tier accounts need an owner. (FIELD_CUSTOM_VALIDATION_EXCEPTION)"
+        )
+        assert logged["001B"]["crm_response"][0]["statusCode"] == (
+            "FIELD_CUSTOM_VALIDATION_EXCEPTION"
+        )
         # One composite call carried both; the read before and the read back were batched too,
         # and each of the three calls was taken from the budget before it was made.
         assert [slug for slug, _ in gateway.calls] == [
@@ -1187,3 +1228,60 @@ def test_salesforce_hidden_failures_fail_and_every_call_takes_the_budget(tmp_pat
 )  # fmt: skip
 def test_failure_kinds_come_from_the_crm_error_code(message: str | None, kind: str) -> None:
     assert failure_kind(message) == kind
+
+
+#: The live check's two refusals (2026-10-22): HubSpot's invalid email, Salesforce's bad number.
+_HUBSPOT_INVALID_EMAIL = (
+    '{"status":"error","message":"Property values were not valid: [{\\"isValid\\":false,'
+    '\\"message\\":\\"Email address ana@new.test is invalid\\",\\"error\\":'
+    '\\"INVALID_EMAIL\\",\\"name\\":\\"email\\"}]","correlationId":"c1",'
+    '"errors":[{"message":"Email address ana@new.test is invalid","code":"INVALID_EMAIL",'
+    '"context":{"propertyName":["email"]}}],"category":"VALIDATION_ERROR"}'
+)
+_SALESFORCE_JSON_PARSER = (
+    '[{"fields": [], "message": "Cannot deserialize instance of int from VALUE_STRING value '
+    'about fifty or request may be missing a required field at [line:1, column:42]", '
+    '"statusCode": "JSON_PARSER_ERROR"}]'
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (_HUBSPOT_INVALID_EMAIL, "Email address ana@new.test is invalid"),
+        (
+            '{"status":"error","message":"List does not exist with ID 9.","category":"OBJECT_NOT_FOUND"}',  # noqa: E501
+            "List does not exist with ID 9.",
+        ),
+        (
+            '{"status":"error","message":"Two were wrong","errors":[{"message":"First is bad"},{"message":"Second is bad"}]}',  # noqa: E501
+            "First is bad; Second is bad",
+        ),
+        (
+            _SALESFORCE_JSON_PARSER,
+            "Cannot deserialize instance of int from VALUE_STRING value about fifty or request "
+            "may be missing a required field at [line:1, column:42] (JSON_PARSER_ERROR)",
+        ),
+        (
+            '[{"errorCode":"FIELD_CUSTOM_VALIDATION_EXCEPTION","message":"Industry is required when Type is Customer"},{"errorCode":"REQUIRED_FIELD_MISSING","message":"Required fields are missing: [Name]"}]',  # noqa: E501
+            "Industry is required when Type is Customer (FIELD_CUSTOM_VALIDATION_EXCEPTION); "
+            "Required fields are missing: [Name] (REQUIRED_FIELD_MISSING)",
+        ),
+    ],
+)
+def test_the_crm_message_is_its_text_and_the_body_is_kept(body: str, message: str) -> None:
+    assert crm_reply(body) == (message, json.loads(body))
+
+
+def test_an_unreadable_crm_answer_is_shown_as_it_came() -> None:
+    plain = "Invalid request data provided\n- Following fields are missing: {'account_id'}"
+    # Short text is the message itself; nothing more to keep.
+    assert crm_reply(plain) == (plain, None)
+    # A long one is cut for the card; the whole answer is kept.
+    long = "x" * 600
+    assert crm_reply(long) == ("x" * 500, long)
+    # JSON with no message in it: the body as it came, kept whole.
+    shapeless = '{"output":{"fieldErrors":{"Name":[{"duplicateRecordError":{"matchResults":[]}}]}}}'
+    assert crm_reply(shapeless) == (shapeless, json.loads(shapeless))
+    # Clue's own sentences pass through untouched.
+    assert crm_reply("Refused.") == ("Refused.", None)

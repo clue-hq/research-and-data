@@ -166,6 +166,50 @@ def failure_kind(message: str | None) -> FailureKind:
     return "other"
 
 
+#: The longest CRM answer shown as it came, when no message can be read out of it.
+_MESSAGE_MAX = 500
+
+
+def _crm_text(body: Any) -> str | None:
+    """The message text in a CRM's JSON error body: HubSpot's ``errors[].message`` (else its
+    ``message``), Salesforce's ``message (errorCode)`` for each error. ``None`` when it has none."""
+    if isinstance(body, Mapping):
+        errors = body.get("errors")
+        items = errors if isinstance(errors, list) else []
+        texts = [
+            str(item["message"])
+            for item in items
+            if isinstance(item, Mapping) and item.get("message")
+        ]
+        if not texts and body.get("message"):
+            texts = [str(body["message"])]
+    elif isinstance(body, list):
+        texts = []
+        for item in body:
+            if isinstance(item, Mapping) and item.get("message"):
+                code = item.get("errorCode") or item.get("statusCode")
+                texts.append(f"{item['message']} ({code})" if code else str(item["message"]))
+    else:
+        return None
+    return "; ".join(texts) or None
+
+
+def crm_reply(body: str) -> tuple[str, Any]:
+    """What a CRM answered, as ``(crm_message, crm_response)``: the message text to show, and
+    the answer it came from — its JSON body, or the raw text when it is cut for showing. The
+    response is ``None`` when the message is the whole answer (Clue's own sentences)."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, Mapping | list):
+        message = _crm_text(parsed) or body
+        return message[:_MESSAGE_MAX], parsed
+    if len(body) > _MESSAGE_MAX:
+        return body[:_MESSAGE_MAX], body
+    return body, None
+
+
 _TEMPORARY_CODES = ("REQUEST_LIMIT_EXCEEDED", '"category":"RATE_LIMITS"')
 
 
@@ -260,15 +304,31 @@ class _Outcome:
     crm_message: str | None = None
     retryable: bool | None = None
     crm_id: str | None = None
+    #: The CRM's answer behind ``crm_message``, when the message is not the whole of it.
+    crm_response: Any = None
 
 
 def _failed(message: str, kind: FailureKind | None = None, *, retryable: bool = False) -> _Outcome:
+    """A failed change. ``message`` may be a CRM's raw answer: its kind is read from the raw
+    answer, the card shows its message text, and the raw answer is kept."""
+    shown, response = crm_reply(message)
     return _Outcome(
         "failed",
         failure_kind=kind or failure_kind(message),
-        crm_message=message,
+        crm_message=shown,
         retryable=retryable,
+        crm_response=response,
     )
+
+
+def _response_param(response: Any) -> str | None:
+    return None if response is None else json.dumps(response, default=str)
+
+
+def _stop_message(stop: _Stop) -> dict[str, str | None]:
+    """The ``:message`` / ``:response`` of a change failed by a stop (its CRM answer, if any)."""
+    message, response = crm_reply(stop.message)
+    return {"message": message, "response": _response_param(response)}
 
 
 def _display(value: object) -> str:
@@ -808,13 +868,13 @@ class CrmWriteHandler:
                 await conn.execute(
                     text(
                         "UPDATE crm_write SET status = 'failed', failure_kind = :kind, "
-                        "crm_message = :message, retryable = true, finished_at = now() "
-                        "WHERE write_id = ANY(:ids)"
+                        "crm_message = :message, crm_response = CAST(:response AS jsonb), "
+                        "retryable = true, finished_at = now() WHERE write_id = ANY(:ids)"
                     ),
                     {
                         "ids": spent,
                         "kind": "rate_limited" if stop.kind == "rate_limited" else "other",
-                        "message": stop.message,
+                        **_stop_message(stop),
                     },
                 )
             undecided = await conn.scalar(
@@ -976,13 +1036,14 @@ class CrmWriteHandler:
                 await conn.execute(
                     text(
                         "UPDATE crm_write SET status = 'failed', failure_kind = :kind, "
-                        "crm_message = :message, retryable = true, finished_at = now() "
+                        "crm_message = :message, crm_response = CAST(:response AS jsonb), "
+                        "retryable = true, finished_at = now() "
                         "WHERE write_id = ANY(:ids) AND status = 'sending'"
                     ),
                     {
                         "ids": exhausted,
                         "kind": "rate_limited" if stop.kind == "rate_limited" else "other",
-                        "message": stop.message,
+                        **_stop_message(stop),
                     },
                 )
         return bool(waiting)
@@ -1000,8 +1061,9 @@ class CrmWriteHandler:
                 await conn.execute(
                     text(
                         "UPDATE crm_write SET status = :status, failure_kind = :kind, "
-                        "crm_message = :message, retryable = :retryable, "
-                        "crm_id = COALESCE(:crm_id, crm_id), finished_at = now() "
+                        "crm_message = :message, crm_response = CAST(:response AS jsonb), "
+                        "retryable = :retryable, crm_id = COALESCE(:crm_id, crm_id), "
+                        "finished_at = now() "
                         "WHERE write_id = :id AND status NOT IN ('succeeded', 'failed', 'skipped')"
                     ),
                     {
@@ -1009,6 +1071,7 @@ class CrmWriteHandler:
                         "status": outcome.status,
                         "kind": outcome.failure_kind,
                         "message": outcome.crm_message,
+                        "response": _response_param(outcome.crm_response),
                         "retryable": outcome.retryable,
                         "crm_id": outcome.crm_id,
                     },
