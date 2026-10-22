@@ -271,3 +271,73 @@ def test_conflicting_content_hashes_still_refuse_the_same_version() -> None:
     from tests.db.conftest import run_async
 
     run_async(scenario())
+
+
+# --- a pin digest must not depend on the process (live takeover failure, 2026-10-22) ---------
+# A payload holding a set was hashed in Python's per-process set order, so two workers computed
+# different digests for the same policy; a turn retried on another worker then failed with
+# ExecutionConflict ("execution id was replayed with a different ... parameters").
+
+_DIGESTS_IN_A_FRESH_PROCESS = """
+from pydantic import BaseModel
+from clue_config.ingestion import DEFAULT_INGESTION_POLICY
+from clue_config.proposals import DEFAULT_PROPOSAL_POLICY
+from clue_execution import canonical_payload_digest
+
+class Nested(BaseModel):
+    tags: frozenset[str]
+
+print(canonical_payload_digest(DEFAULT_PROPOSAL_POLICY))
+print(canonical_payload_digest(DEFAULT_INGESTION_POLICY))
+print(canonical_payload_digest({"names": frozenset({"alpha", "beta", "gamma", "delta", "eps"})}))
+print(canonical_payload_digest({"items": [Nested(tags=frozenset({"x", "y", "z", "w", "v"}))]}))
+"""
+
+
+def _digests_under_hash_seed(seed: int) -> list[str]:
+    import os
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", _DIGESTS_IN_A_FRESH_PROCESS],
+        env={**os.environ, "PYTHONHASHSEED": str(seed)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.split()
+
+
+def test_a_digest_is_the_same_in_every_process() -> None:
+    digests = {tuple(_digests_under_hash_seed(seed)) for seed in (1, 2, 3, 4, 5, 6)}
+    assert len(digests) == 1
+
+
+def test_a_payload_without_sets_keeps_its_digest() -> None:
+    """Only set-bearing payloads change: every other pin and stored hash stays valid."""
+    import hashlib
+    import json
+
+    from pydantic import BaseModel
+
+    class Plain(BaseModel):
+        name: str
+        values: tuple[int, ...]
+        nested: dict[str, list[str]]
+
+    payload = Plain(name="n", values=(3, 1, 2), nested={"b": ["y", "x"], "a": []})
+    old = hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json", exclude_none=False),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+    ).hexdigest()
+    assert canonical_payload_digest(payload) == old
+    plain = {"z": [1, {"k": "v"}], "a": None}
+    old_plain = hashlib.sha256(
+        json.dumps(plain, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+    assert canonical_payload_digest(plain) == old_plain

@@ -97,12 +97,46 @@ class CompatibilityReport(_FrozenModel):
 
 
 def canonical_payload_digest(payload: object) -> str:
+    """The same digest for the same payload in every process.
+
+    A set has no order, and Python iterates one in a per-process order (hash randomization), so
+    a set is hashed as its items sorted. Without this, two workers pinned the same policy under
+    different digests and a turn retried on another worker failed as a conflicting replay. A
+    payload with no set inside hashes exactly as it always did.
+    """
     if isinstance(payload, BaseModel):
-        value: object = payload.model_dump(mode="json", exclude_none=False)
+        value: object = _sort_sets(
+            payload.model_dump(mode="json", exclude_none=False),
+            payload.model_dump(mode="python", exclude_none=False),
+        )
     else:
-        value = payload
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(encoded.encode()).hexdigest()
+        value = _sort_sets(payload, payload)
+    return hashlib.sha256(_dumps(value).encode()).hexdigest()
+
+
+def _dumps(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _sort_sets(value: object, shape: object) -> object:
+    """``value`` with every set in ``shape`` (its Python-mode twin) turned into a sorted list."""
+
+    if isinstance(shape, BaseModel):
+        if value is shape:  # a model inside a plain payload: hash its JSON, not its repr
+            value = shape.model_dump(mode="json", exclude_none=False)
+        return _sort_sets(value, shape.model_dump(mode="python", exclude_none=False))
+    if isinstance(shape, (set, frozenset)):
+        # The JSON dump lists a set's items in the same order the set iterates in this process.
+        items = value if isinstance(value, (list, tuple)) else list(shape)
+        twins = list(shape)
+        return sorted(
+            (_sort_sets(item, twin) for item, twin in zip(items, twins, strict=True)), key=_dumps
+        )
+    if isinstance(value, dict) and isinstance(shape, dict):
+        return {key: _sort_sets(item, shape.get(key)) for key, item in value.items()}
+    if isinstance(value, (list, tuple)) and isinstance(shape, (list, tuple)):
+        return [_sort_sets(item, twin) for item, twin in zip(value, shape, strict=True)]
+    return value
 
 
 def _sort_key(request: PinRequest) -> tuple[str, str, str, str]:
