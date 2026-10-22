@@ -76,3 +76,12 @@ Chats: Conduit `thr_65d4c3d4…` (new, legacy-planted) and `thr_b32c99d4…`. To
 - Pre-existing test failures seen (unchanged by the fix): test_recipes.py::test_latest_recipe0_…
   (test DB recipe rows) and six in tests/stage0/test_phase_c5_recipe0.py (ValidationError in
   confirm_project_product).
+
+## Failed turns now end visibly (2026-10-22, commit 0f44c610a)
+- The handler's failure branch writes `turn.failed` (no code → the chat's existing "Response
+  failed") via `end_unended_turn_as_failed`, only after its own finish was accepted and only if the
+  turn has no ending yet. Typed reasons wait for the person-facing error registry (founder will
+  scope it separately).
+- Live check: worker frozen mid-run_python → takeover gave up (engine rule) → owner wrote one
+  `turn.failed` → chat shows "Response failed" after reload; the unfrozen stale worker was fenced
+  and wrote no second ending; snapshot stayed at v4.
