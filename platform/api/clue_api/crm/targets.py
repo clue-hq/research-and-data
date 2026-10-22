@@ -29,7 +29,7 @@ committees hold, and ``contacts_note`` says so in words when some were cut.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
@@ -230,12 +230,14 @@ async def project_targets(
     offset: int = 0,
     limit: int = 200,
     contacts_limit: int = MAX_TARGET_CONTACTS,
+    contact_ids: Collection[str] | None = None,
 ) -> ProjectTargets:
     """One page of the project's accounts and, with ``include_contacts``, their committees.
 
     ``account_ids`` narrows to those accounts (an id that is not the project's is not served;
-    a malformed one raises :class:`ValueError`). Without a connection, no CRM record id is known;
-    without a provider, no tier or buying role is offered.
+    a malformed one raises :class:`ValueError`). ``contact_ids`` keeps only those committee
+    contacts (what a proposed change names), before the limit. Without a connection, no CRM
+    record id is known; without a provider, no tier or buying role is offered.
     """
     params: dict[str, Any] = {"ws": workspace_id, "project": project_id}
     account_filter = ""
@@ -306,6 +308,7 @@ async def project_targets(
             scope=scope,
             settings=settings,
             contacts_limit=contacts_limit,
+            contact_ids=contact_ids,
         )
         if total_contacts > len(contacts):
             note = (
@@ -423,6 +426,7 @@ async def _committee_contacts(
     scope: WorkspaceScope,
     settings: Settings,
     contacts_limit: int,
+    contact_ids: Collection[str] | None = None,
 ) -> tuple[list[TargetContact], int]:
     """The page's committee contacts (at most ``contacts_limit``) and how many there are."""
     committees = await committee_members_for_accounts(
@@ -432,20 +436,23 @@ async def _committee_contacts(
     members = [member for account in account_ids for member in committees.get(account, [])]
     # A person with no name cannot be written into a CRM: they are not a target.
     members = [member for member in members if member.name.strip()]
+    if contact_ids is not None:
+        wanted = {str(contact_id) for contact_id in contact_ids}
+        members = [member for member in members if member.id in wanted]
     total = len(members)
     members = members[:contacts_limit]
     if not members:
         return [], total
-    contact_ids = [EntityId(uuid.UUID(member.id)) for member in members]
+    entity_ids = [EntityId(uuid.UUID(member.id)) for member in members]
     linkedin = {
         str(row.id): row.linkedin_url
         for row in await conn.execute(
-            _LINKEDIN, {"ws": workspace_id, "ids": [UUID(str(i)) for i in contact_ids]}
+            _LINKEDIN, {"ws": workspace_id, "ids": [UUID(str(i)) for i in entity_ids]}
         )
     }
-    links = await _links(conn, connection_id, "contact", contact_ids)
+    links = await _links(conn, connection_id, "contact", entity_ids)
     claims_by_contact: dict[str, list[Claim]] = {}
-    for claim in await claims_for_entities(conn, contact_ids, _CONTACT_KEYS, scope=scope):
+    for claim in await claims_for_entities(conn, entity_ids, _CONTACT_KEYS, scope=scope):
         claims_by_contact.setdefault(str(claim.entity_id), []).append(claim)
 
     contacts: list[TargetContact] = []

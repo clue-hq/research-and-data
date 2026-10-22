@@ -31,6 +31,8 @@ from clue_api.crm.write_prepare import (
     card_snapshot,
     prepare_changes,
 )
+from clue_config import Settings
+from tests.api._crm_people import clear_people
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
 from tests.db.conftest import run_async
@@ -38,6 +40,8 @@ from tests.profiling.conftest import (
     migrated_db,  # noqa: F401 -- exposes the fixture to this test module
     rollback_conn,
 )
+
+SETTINGS = Settings(_env_file=None)
 
 
 @pytest.fixture(autouse=True)
@@ -70,12 +74,42 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
             ],
         },
         {"name": "x_flag", "label": "Do not call", "type": "bool", "fieldType": "booleancheckbox"},
+        {"name": "domain", "label": "Company domain name", "type": "string", "fieldType": "text"},
+        {
+            "name": "hs_is_target_account",
+            "label": "Target Account",
+            "type": "bool",
+            "fieldType": "booleancheckbox",
+        },
         {"name": "clue_marketing_consent", "label": "Marketing", "type": "string"},
     ],
     "contacts": [
         {"name": "email", "label": "Email", "type": "string", "fieldType": "text"},
         {"name": "jobtitle", "label": "Job title", "type": "string", "fieldType": "text"},
         {"name": "firstname", "label": "First name", "type": "string", "fieldType": "text"},
+        {"name": "lastname", "label": "Last name", "type": "string", "fieldType": "text"},
+        {
+            "name": "hs_linkedin_url",
+            "label": "LinkedIn URL",
+            "type": "string",
+            "fieldType": "text",
+        },
+        {
+            "name": "hs_buying_role",
+            "label": "Buying Role",
+            "type": "enumeration",
+            "fieldType": "checkbox",
+            "options": [
+                {"label": label, "value": value}
+                for value, label in (
+                    ("BUDGET_HOLDER", "Budget Holder"),
+                    ("CHAMPION", "Champion"),
+                    ("BLOCKER", "Blocker"),
+                    ("END_USER", "End User"),
+                    ("INFLUENCER", "Influencer"),
+                )
+            ],
+        },
         {"name": "city", "label": "City", "type": "string", "fieldType": "text"},
     ],
 }
@@ -199,6 +233,15 @@ class _FakeCrm:
                 if rec.get("email") == wanted
             ]
             return {"results": found, "total": len(found)}
+        if slug == "HUBSPOT_SEARCH_COMPANIES":
+            # HubSpot keeps a company's domain as the bare host and matches it exactly.
+            wanted = arguments["filterGroups"][0]["filters"][0]["value"]
+            found = [
+                {"id": rid, "properties": {k: rec.get(k) for k in arguments["properties"]}}
+                for rid, rec in self.records.items()
+                if rec.get("domain") == wanted
+            ]
+            return {"results": found, "total": len(found)}
         if slug == "SALESFORCE_GET_ALL_FIELDS_FOR_OBJECT":
             return {"fields": _SALESFORCE_FIELDS[arguments["object_name"]]}
         if slug == "SALESFORCE_RUN_SOQL_QUERY":
@@ -299,6 +342,7 @@ async def _prepare_batch(
         project_id=project.scalar_one(),
         changes=changes,
         version="v-test",
+        settings=SETTINGS,
         **pause,
     )
 
@@ -479,7 +523,9 @@ def test_a_create_that_finds_the_record_becomes_an_update(tmp_path: Path) -> Non
             {"email": "ana@acme.example.com", "firstname": "Ana", "jobtitle": "COO"},
             "committee",
         )
-        prepared = await _prepare(conn, gateway, connection, proposal_id, [create])
+        prepared = await _prepare(
+            conn, gateway, connection, proposal_id, await clear_people(conn, seeded, [create])
+        )
         assert len(prepared) == 1  # email and first name already match: nothing to change
         (change,) = prepared
         assert change.spec.slug == "HUBSPOT_UPDATE_CONTACTS"
@@ -491,11 +537,14 @@ def test_a_create_that_finds_the_record_becomes_an_update(tmp_path: Path) -> Non
         same = ProposedChange(
             "HUBSPOT_CREATE_CONTACT", {"email": "ana@acme.example.com", "firstname": "Ana"}, "x"
         )
-        assert await _prepare(conn, gateway, connection, proposal_id, [same]) == []
+        same_people = await clear_people(conn, seeded, [same])
+        assert await _prepare(conn, gateway, connection, proposal_id, same_people) == []
 
         # Nothing found: it stays a create, scoped by its kind.
         new = ProposedChange("HUBSPOT_CREATE_CONTACT", {"email": "bo@acme.example.com"}, "x")
-        (created,) = await _prepare(conn, gateway, connection, proposal_id, [new])
+        (created,) = await _prepare(
+            conn, gateway, connection, proposal_id, await clear_people(conn, seeded, [new])
+        )
         assert created.spec.slug == "HUBSPOT_CREATE_CONTACT" and created.field is None
         assert created.scope_key == "kind:create_contact"
 
@@ -821,7 +870,14 @@ def test_a_batch_whose_every_record_is_missing_prepares_nothing_and_lists_each(
             gateway,
             connection,
             proposal_id,
-            [_set_company("901", "icp_tier", "Tier 1"), _set_contact("902", {"jobtitle": "COO"})],
+            await clear_people(
+                conn,
+                seeded,
+                [
+                    _set_company("901", "icp_tier", "Tier 1"),
+                    _set_contact("902", {"jobtitle": "COO"}),
+                ],
+            ),
         )
         assert batch.changes == []
         assert batch.refused == [
@@ -867,9 +923,10 @@ def test_a_read_that_fails_for_any_other_reason_still_refuses_the_whole_batch(
             records={"101": {"icp_tier": None}, "201": {"jobtitle": None}},
             failing=dict.fromkeys(_RECORD_READS, failure),
         )
-        for change in (
-            _set_company("101", "icp_tier", "Tier 1"),
-            _set_contact("201", {"jobtitle": "COO"}),
+        for change in await clear_people(
+            conn,
+            seeded,
+            [_set_company("101", "icp_tier", "Tier 1"), _set_contact("201", {"jobtitle": "COO"})],
         ):
             with pytest.raises(WriteRefused) as refused:
                 await _prepare_batch(conn, gateway, connection, proposal_id, [change])
@@ -933,7 +990,14 @@ def test_prepare_pauses_between_its_reads(tmp_path: Path) -> None:
             gateway,
             connection,
             proposal_id,
-            [_set_company("101", "icp_tier", "Tier 1"), _set_contact("201", {"jobtitle": "COO"})],
+            await clear_people(
+                conn,
+                seeded,
+                [
+                    _set_company("101", "icp_tier", "Tier 1"),
+                    _set_contact("201", {"jobtitle": "COO"}),
+                ],
+            ),
             min_interval_s=0.25,
             sleep=sleep,
         )
@@ -975,7 +1039,9 @@ def test_an_answer_of_an_unexpected_shape_is_refused_not_read_as_empty(
             records={"101": {"icp_tier": "Tier 3"}}, malformed=frozenset({malformed})
         )
         with pytest.raises(WriteRefused) as refused:
-            await _prepare(conn, gateway, connection, proposal_id, [change])
+            await _prepare(
+                conn, gateway, connection, proposal_id, await clear_people(conn, seeded, [change])
+            )
         assert refused.value.reason_code == "crm_read_failed"
 
     _run(tmp_path, "shape", body)
@@ -1004,13 +1070,17 @@ def test_an_update_names_its_records_from_the_read_not_by_their_ids(tmp_path: Pa
             gateway,
             connection,
             proposal_id,
-            [
-                _set_company("101", "icp_tier", "Tier 1"),
-                _set_company("102", "icp_tier", "Tier 1"),
-                _set_company("103", "icp_tier", "Tier 1"),
-                _set_contact("201", {"jobtitle": "COO"}),
-                _set_contact("202", {"jobtitle": "CFO"}),
-            ],
+            await clear_people(
+                conn,
+                seeded,
+                [
+                    _set_company("101", "icp_tier", "Tier 1"),
+                    _set_company("102", "icp_tier", "Tier 1"),
+                    _set_company("103", "icp_tier", "Tier 1"),
+                    _set_contact("201", {"jobtitle": "COO"}),
+                    _set_contact("202", {"jobtitle": "CFO"}),
+                ],
+            ),
         )
         labels = {p.parsed.record_ref: p.parsed.label for p in prepared}
         assert labels == {
@@ -1107,7 +1177,12 @@ def test_salesforce_records_are_named_by_their_name_then_email(tmp_path: Path) -
             for rid in ("003A", "003B")
         ]
         prepared = await _prepare(
-            conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway)
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            await clear_people(conn, seeded, changes),
+            _FakeBudget(gateway),
         )
         labels = {p.parsed.record_ref: p.parsed.label for p in prepared}
         assert labels == {
@@ -1734,3 +1809,355 @@ def test_a_campaign_is_proposed_active_and_in_progress(tmp_path: Path) -> None:
         assert row.arguments == row.after_value == expected
 
     _run(tmp_path, "campaignactive", body, provider="salesforce")
+
+
+# --- a person value reaches the CRM only as Clue researched and cleared it (Phase 3, Task 5) ---
+
+
+async def _researched(conn: Any, seeded: Any) -> Any:
+    """Zafran in this project, scored High (tier_1), with two researched committee members:
+    Nick (champion, verified email, title, LinkedIn) and Vari (a catch-all email)."""
+    from clue_api.arv2.catalog_seed import load_arv2_pack
+    from clue_research.profiling.committee.fields import load_committee_pack
+    from tests.api.test_crm_targets_db import _World
+
+    await load_committee_pack(conn)
+    await load_arv2_pack(conn)
+    world: Any = _World(conn, seeded)
+    world.zafran = await world.account("Zafran Security", "zafran.io")
+    await world.fit("fit", world.zafran, 0.81, world.project_id)
+    world.nick = await world.person(
+        world.zafran, "Nick Fisher", linkedin="https://www.linkedin.com/in/nickfisher"
+    )
+    await world.claim("nick_persona", world.nick, "contact.persona", "champion")
+    await world.claim("nick_title", world.nick, "contact.current_title", "VP Marketing")
+    await world.claim(
+        "nick_email",
+        world.nick,
+        "core.work_email",
+        {"address": "nick@zafran.io", "status": "verified_smtp"},
+    )
+    world.vari = await world.person(world.zafran, "Vari Bindra")
+    await world.claim("vari_persona", world.vari, "contact.persona", "user")
+    await world.claim(
+        "vari_email",
+        world.vari,
+        "core.work_email",
+        {"address": "vari@zafran.io", "status": "catch_all_valid"},
+    )
+    return world
+
+
+def _create_person(fields: Mapping[str, object], clue_entity_id: object | None) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_CREATE_CONTACT",
+        dict(fields),
+        "the buying committee",
+        clue_entity_id=None if clue_entity_id is None else str(clue_entity_id),
+    )
+
+
+_NICK = {
+    "firstname": "Nick",
+    "lastname": "Fisher",
+    "jobtitle": "VP Marketing",
+    "email": "nick@zafran.io",
+    "hs_buying_role": "CHAMPION",
+    "hs_linkedin_url": "https://www.linkedin.com/in/nickfisher",
+}
+
+
+def _refusal(batch: PreparedBatch) -> list[tuple[int, str]]:
+    return [(r.index, r.reason_code) for r in batch.refused]
+
+
+def test_a_person_change_without_a_clue_contact_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"101": {"icp_tier": None}, "201": {"jobtitle": None}})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company("101", "icp_tier", "Tier 1"), _set_contact("201", {"jobtitle": "CEO"})],
+        )
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+        assert batch.refused[0].message == "Name the Clue contact this is about."
+        assert [c.field for c in batch.changes] == ["icp_tier"]
+
+    _run(tmp_path, "nocontact", body)
+
+
+def test_an_email_the_agent_typed_is_refused_but_the_rest_proposes(tmp_path: Path) -> None:
+    """Review Focus 5: one wrong value refuses its own change; the matching one goes on."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        typed = {**_NICK, "email": "n.fisher@zafran.io"}
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_person(typed, world.nick),
+                _create_person({**_NICK, "email": "NICK@zafran.io "}, world.nick),
+            ],
+        )
+        assert _refusal(batch) == [(0, "crm_personal_data_not_allowed")]
+        message = batch.refused[0].message
+        assert "email" in message and "not what Clue researched" in message
+        assert "n.fisher" not in message  # the rejected value is never echoed
+        (created,) = batch.changes
+        assert created.spec.slug == "HUBSPOT_CREATE_CONTACT"
+
+    _run(tmp_path, "typedemail", body)
+
+
+def test_a_catch_all_email_is_refused_with_its_reason(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_person(
+                    {"firstname": "Vari", "lastname": "Bindra", "email": "vari@zafran.io"},
+                    world.vari,
+                )
+            ],
+        )
+        assert _refusal(batch) == [(0, "crm_personal_data_not_allowed")]
+        assert "not verified (catch_all_valid)" in batch.refused[0].message
+        assert "vari@zafran.io" not in batch.refused[0].message
+        assert batch.changes == []
+
+    _run(tmp_path, "catchall", body)
+
+
+def test_a_matching_contact_create_proposes_with_its_claim_ids(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        (created,) = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [_create_person({**_NICK, "lastname": " Fisher  "}, world.nick)],
+        )
+        assert created.clue_entity_id == str(world.nick)
+        assert set(created.source_claim_ids) == {
+            world.claims["nick_persona"],
+            world.claims["nick_title"],
+            world.claims["nick_email"],
+        }
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=[created],
+        )
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT source_claim_ids, clue_entity_id FROM crm_write WHERE proposal_id = :p"
+                ),
+                {"p": proposal_id},
+            )
+        ).one()
+        assert set(row.source_claim_ids) == set(created.source_claim_ids)
+        assert row.clue_entity_id == str(world.nick)
+
+    _run(tmp_path, "matching", body)
+
+
+def test_a_contact_update_cites_only_its_own_fields_claims(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"201": {"jobtitle": None, "email": "nick@zafran.io"}})
+        change = ProposedChange(
+            "HUBSPOT_UPDATE_CONTACTS",
+            {"inputs": [{"id": "201", "properties": {"jobtitle": "VP Marketing"}}]},
+            "title",
+            clue_entity_id=str(world.nick),
+        )
+        (update,) = await _prepare(conn, gateway, connection, proposal_id, [change])
+        assert update.source_claim_ids == (world.claims["nick_title"],)
+        assert update.clue_entity_id == str(world.nick)
+
+        wrong = ProposedChange(
+            "HUBSPOT_UPDATE_CONTACTS",
+            {"inputs": [{"id": "201", "properties": {"jobtitle": "Chief Everything"}}]},
+            "title",
+            clue_entity_id=str(world.nick),
+        )
+        batch = await _prepare_batch(conn, gateway, connection, proposal_id, [wrong])
+        assert _refusal(batch) == [(0, "crm_personal_data_not_allowed")]
+        assert "Chief Everything" not in batch.refused[0].message
+
+    _run(tmp_path, "contactupdate", body)
+
+
+def test_the_buying_role_is_added_and_never_removes_one(tmp_path: Path) -> None:
+    """hs_buying_role is multi-select (Task 1 ledger ruling): Clue writes the union of the roles
+    the contact already has and its own, and a value that drops a role is refused."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={
+                "201": {"hs_buying_role": "BLOCKER;END_USER"},
+                "202": {"hs_buying_role": "BLOCKER;END_USER"},
+                "203": {"hs_buying_role": "CHAMPION"},
+            }
+        )
+
+        def role(record: str, value: str) -> ProposedChange:
+            return ProposedChange(
+                "HUBSPOT_UPDATE_CONTACTS",
+                {"inputs": [{"id": record, "properties": {"hs_buying_role": value}}]},
+                "role",
+                clue_entity_id=str(world.nick),
+            )
+
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [role("201", "CHAMPION"), role("202", "CHAMPION;END_USER"), role("203", "CHAMPION")],
+        )
+        # Clue's role alone is composed with the roles already there; the same role already
+        # held is no change.
+        (added,) = batch.changes
+        assert added.parsed.record_ref == "201"
+        assert added.after == "BLOCKER;END_USER;CHAMPION"
+        assert added.arguments == {
+            "inputs": [{"id": "201", "properties": {"hs_buying_role": "BLOCKER;END_USER;CHAMPION"}}]
+        }
+        assert added.source_claim_ids == (world.claims["nick_persona"],)
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+        assert "never removes one" in batch.refused[0].message
+
+        other = await _prepare_batch(
+            conn, gateway, connection, proposal_id, [role("201", "BUDGET_HOLDER")]
+        )
+        assert _refusal(other) == [(0, "crm_personal_data_not_allowed")]
+        assert "not what Clue researched" in other.refused[0].message
+
+    _run(tmp_path, "buyingrole", body)
+
+
+def test_a_company_tier_must_match_the_fit_band(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={
+                "101": {"hs_ideal_customer_profile": None, "hs_is_target_account": None},
+                "102": {"hs_ideal_customer_profile": None},
+                "103": {"hs_is_target_account": "true"},
+            }
+        )
+
+        def company(record: str, fields: Mapping[str, object]) -> ProposedChange:
+            return ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": record, "properties": dict(fields)},
+                "tiers",
+                clue_entity_id=str(world.zafran),
+            )
+
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                company(
+                    "101", {"hs_ideal_customer_profile": "tier_1", "hs_is_target_account": True}
+                ),
+                company("102", {"hs_ideal_customer_profile": "tier_2"}),
+                company("103", {"hs_is_target_account": False}),
+            ],
+        )
+        assert _refusal(batch) == [
+            (1, "crm_personal_data_not_allowed"),
+            (2, "crm_personal_data_not_allowed"),
+        ]
+        assert all("tier_2" not in r.message for r in batch.refused)
+        tier = next(c for c in batch.changes if c.field == "hs_ideal_customer_profile")
+        assert tier.after == "tier_1"
+        assert tier.source_claim_ids == (world.claims["fit"],)
+        assert tier.clue_entity_id == str(world.zafran)
+        target = next(c for c in batch.changes if c.field == "hs_is_target_account")
+        assert target.source_claim_ids == ()
+
+    _run(tmp_path, "tier", body)
+
+
+def test_a_contact_of_another_workspace_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _researched(conn, seeded)
+        theirs = await _seed(conn, tmp_path, workspace_id="ws-crmw-theirs", label="theirs")
+        their_world = await _researched(conn, theirs)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_person(_NICK, their_world.nick),
+                _create_person({**_NICK, "email": "nick.f@zafran.io"}, "not-a-uuid"),
+            ],
+        )
+        assert _refusal(batch) == [
+            (0, "crm_personal_data_not_allowed"),
+            (1, "crm_personal_data_not_allowed"),
+        ]
+        assert batch.changes == []
+
+    _run(tmp_path, "otherws", body)
+
+
+def test_a_domain_spelled_differently_finds_the_existing_company(tmp_path: Path) -> None:
+    """Review Focus 2, HubSpot: the search uses the host HubSpot keeps in ``domain``."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"501": {"domain": "acme.com", "name": "Acme"}})
+        for spelling in ("https://www.Acme.com/", "www.acme.com", "acme.com/"):
+            create = ProposedChange(
+                "HUBSPOT_CREATE_COMPANY", {"name": "Acme", "domain": spelling}, "x"
+            )
+            assert await _prepare(conn, gateway, connection, proposal_id, [create]) == []
+        searches = [a for slug, a in gateway.calls if slug == "HUBSPOT_SEARCH_COMPANIES"]
+        assert {s["filterGroups"][0]["filters"][0]["value"] for s in searches} == {"acme.com"}
+
+    _run(tmp_path, "hsdomain", body)
+
+
+def test_a_salesforce_website_spelled_differently_finds_the_existing_account(
+    tmp_path: Path,
+) -> None:
+    """Review Focus 2, Salesforce: the I-5 host match."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"001A": {"Name": "Acme", "Website": "https://acme.com"}})
+        budget = _FakeBudget(gateway)
+        for spelling in ("www.Acme.com/", "http://acme.com/about"):
+            assert (
+                await _prepare(
+                    conn,
+                    gateway,
+                    connection,
+                    proposal_id,
+                    [_create_account("Acme", spelling)],
+                    budget,
+                )
+                == []
+            )
+
+    _run(tmp_path, "sfdomain", body, provider="salesforce")

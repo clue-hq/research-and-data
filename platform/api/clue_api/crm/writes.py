@@ -214,12 +214,14 @@ async def insert_writes(
                 "INSERT INTO crm_write (write_id, proposal_id, workspace_id, connection_id, "
                 "ordinal, slug, arguments, kind, object, record_ref, record_label, field, "
                 "before_value, after_value, overwrites_person, reason, source_ref, "
-                "reverses_write_id, scope_key, covered_by, selected, status, idempotency_key) "
+                "reverses_write_id, scope_key, covered_by, selected, status, idempotency_key, "
+                "source_claim_ids, clue_entity_id) "
                 "VALUES (:write_id, :proposal_id, :workspace_id, :connection_id, :ordinal, :slug, "
                 "CAST(:arguments AS jsonb), :kind, :object, :record_ref, :record_label, :field, "
                 "CAST(:before AS jsonb), CAST(:after AS jsonb), :overwrites_person, :reason, "
                 ":source_ref, :reverses_write_id, :scope_key, :covered_by, :selected, "
-                "'proposed', :idempotency_key)"
+                "'proposed', :idempotency_key, CAST(:source_claim_ids AS uuid[]), "
+                ":clue_entity_id)"
             ),
             {
                 "write_id": change.write_id,
@@ -245,6 +247,9 @@ async def insert_writes(
                 "covered_by": change.covered_by,
                 "selected": not change.overwrites_person,
                 "idempotency_key": f"crm_write:{change.write_id}",
+                # R-8.7: the claims the value came from, so an erasure can list what Clue wrote.
+                "source_claim_ids": list(change.source_claim_ids),
+                "clue_entity_id": change.clue_entity_id,
             },
         )
 

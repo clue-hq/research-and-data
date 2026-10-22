@@ -55,6 +55,7 @@ from clue_core import new_operation_id
 from clue_projections import open_gate_kinds_for_threads, thread_gates
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
+from tests.api._crm_people import clear_people
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_prepare_db import _FakeCrm
 from tests.api.test_lane_d4_agent_gate_db import OTHER_USER_ID, USER_ID, _seed
@@ -175,7 +176,8 @@ async def _propose(conn: Any, seeded: Any, *changes: CrmChangeInput) -> dict[str
         work_queue=_FakeQueue(),  # type: ignore[arg-type]
     )
     inputs = ProposeCrmChangesInput(
-        changes=list(changes), source_turn_ref=derive_turn_action_ref(seeded.turn_id)
+        changes=await clear_people(conn, seeded, changes),
+        source_turn_ref=derive_turn_action_ref(seeded.turn_id),
     )
     ctx = ToolContext(
         workspace_id=seeded.workspace_id,

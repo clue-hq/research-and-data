@@ -598,6 +598,7 @@ propose_crm_changes:
     crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
     crm_record_not_found: Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed.
     crm_field_unknown: The CRM has no field by that name. Look up the field's real name in the CRM's field list, and propose that change again; the other changes are on the card. When every change was refused this way, nothing was proposed.
+    crm_personal_data_not_allowed: That change wrote a person value (or a company's ICP tier) that is not what Clue researched and cleared, or it named no Clue contact. Read read_crm_targets, name the contact (or account) as clue_entity_id, and write only the values it offers; leave out a field it lists as withheld. For a buying role, give only Clue's role; Clue adds it to the roles already there and never removes one. The other changes are on the card.
     crm_nothing_to_change: Tell the person the CRM already holds those values, so there is nothing to change.
     crm_action_failed: Check the action's input schema against the CRM's message, fix the arguments, and propose again.
     crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.

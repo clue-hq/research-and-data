@@ -26,6 +26,7 @@ from clue_api.crm.lists import (
     store_list,
 )
 from clue_api.crm.write_prepare import ProposedChange, WriteRefused, prepare_changes
+from clue_config import Settings
 from tests._workspace import seed_project
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_prepare_db import _added_by, _FakeCrm
@@ -235,6 +236,7 @@ def test_members_added_for_one_project_are_not_removable_as_anothers(tmp_path: P
                 project_id=project_id,
                 changes=[_remove("p1")],
                 version="v-test",
+                settings=Settings(_env_file=None),
             )
 
         # The second project shares the list but never added p1: its removal is refused.

@@ -339,3 +339,75 @@ def test_an_unconnected_workspace_is_refused(tmp_path: Path) -> None:
             assert [f.reason_code for f in failures] == ["crm_not_connected"]
 
     run_async(scenario())
+
+
+def test_a_person_value_is_proposed_only_as_clue_researched_it(tmp_path: Path) -> None:
+    """Phase 3 Task 5 through the tool: the change naming its Clue contact with the researched
+    title goes on the card with its claim id; one with a title the agent made up is refused on
+    its own, without its value; a person change naming no contact is refused too."""
+    from tests.api.test_crm_write_prepare_db import _researched
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"101": {"icp_tier": None}, "201": {"jobtitle": None}})
+
+        def title(value: str, clue_entity_id: str | None) -> CrmChangeInput:
+            return CrmChangeInput(
+                slug="HUBSPOT_UPDATE_CONTACTS",
+                arguments={"inputs": [{"id": "201", "properties": {"jobtitle": value}}]},
+                reason="The title Clue found.",
+                clue_entity_id=clue_entity_id,
+            )
+
+        refs = (
+            await _tool(conn, gateway, _FakeQueue()).invoke(
+                _input(
+                    seeded,
+                    _set_tier("101", "Tier 1"),
+                    title("Head of Everything", str(world.nick)),
+                    CrmChangeInput(
+                        slug="HUBSPOT_UPDATE_CONTACTS",
+                        arguments={"inputs": [{"id": "202", "properties": {"jobtitle": "X"}}]},
+                        reason="x",
+                    ),
+                ),
+                _ctx(conn, seeded.workspace_id),
+            )
+        ).references
+        assert [(r["index"], r["reason_code"]) for r in refs["refused"]] == [
+            (1, "crm_personal_data_not_allowed"),
+            (2, "crm_personal_data_not_allowed"),
+        ]
+        assert "Head of Everything" not in str(refs["refused"])
+
+        cleared = (
+            await _tool(conn, gateway, _FakeQueue()).invoke(
+                _input(seeded, title("VP Marketing", str(world.nick))),
+                _ctx(conn, seeded.workspace_id),
+            )
+        ).references
+        assert cleared["refused"] == []
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT source_claim_ids, clue_entity_id FROM crm_write WHERE proposal_id = :p"
+                ),
+                {"p": UUID(cleared["proposal_id"])},
+            )
+        ).one()
+        assert row.source_claim_ids == [world.claims["nick_title"]]
+        assert row.clue_entity_id == str(world.nick)
+
+    _run(tmp_path, "persongate", body)
+
+
+def test_a_change_naming_no_clue_entity_keeps_its_proposal_id() -> None:
+    """``clue_entity_id`` joins a change's identity only when given, so a batch proposed before
+    the field existed derives the same proposal id on replay."""
+    from clue_api.crm.write_tools import _identity, proposal_id_for
+
+    change = _set_tier("101", "Tier 1")
+    named = change.model_copy(update={"clue_entity_id": "00000000-0000-0000-0000-000000000001"})
+    ref = "turn-action:00000000-0000-0000-0000-000000000002"
+    assert "clue_entity_id" not in _identity(change)
+    assert proposal_id_for(ref, [change]) != proposal_id_for(ref, [named])

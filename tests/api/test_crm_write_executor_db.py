@@ -46,6 +46,7 @@ from clue_api.crm.write_tools import CrmWriteLogInput
 from clue_config import Settings
 from clue_fleet import WorkContext, WorkId, WorkResult
 from clue_storage import FsStorage
+from tests.api._crm_people import clear_people
 from tests.api.test_crm_propose_db import _ctx
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_log_tools_db import _log_tool
@@ -404,8 +405,9 @@ async def _propose(
         connection=connection,
         proposal_id=proposal_id,
         project_id=seeded.project_id,
-        changes=list(changes),
+        changes=await clear_people(conn, seeded, changes),
         version="v",
+        settings=Settings(_env_file=None),
     )
     assert batch.refused == []
     prepared = batch.changes

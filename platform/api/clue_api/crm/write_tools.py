@@ -120,6 +120,12 @@ class CrmChangeInput(BaseModel):
     ) = None
     #: The logged write this change undoes, when it is an undo.
     reverses_write_id: UUID | None = None
+    #: The Clue contact (or account) this change is about, from read_crm_targets. A change that
+    #: creates or updates a person must name it; each person value must be the one offered.
+    clue_entity_id: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
 
 
 class ProposeCrmChangesInput(ToolInput):
@@ -169,13 +175,22 @@ def proposal_id_for(source_turn_ref: str, changes: Sequence[CrmChangeInput]) -> 
     """One proposal per presenting turn and exact batch."""
     digest = hashlib.sha256(
         json.dumps(
-            [change.model_dump(mode="json") for change in changes],
+            [_identity(change) for change in changes],
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode()
     ).hexdigest()
     return uuid5(_PROPOSAL_NAMESPACE, f"{len(source_turn_ref)}:{source_turn_ref}{digest}")
+
+
+def _identity(change: CrmChangeInput) -> dict[str, Any]:
+    """A change as its proposal id is derived from. ``clue_entity_id`` joins only when given, so
+    a batch proposed before it existed keeps its id."""
+    dumped = change.model_dump(mode="json")
+    if dumped.get("clue_entity_id") is None:
+        dumped.pop("clue_entity_id", None)
+    return dumped
 
 
 def crm_write_dedup_key(connection_id: UUID) -> str:
@@ -290,10 +305,12 @@ class ProposeCrmChangesTool(Tool):
                                 reason=change.reason,
                                 source_ref=change.source_ref,
                                 reverses_write_id=change.reverses_write_id,
+                                clue_entity_id=change.clue_entity_id,
                             )
                             for change in inputs.changes
                         ],
                         version=self._version(connection),
+                        settings=self._settings,
                         min_interval_s=self._settings.crm_write_min_interval_s,
                     )
                 except (WriteRefused, ComposioError, CrmBudgetExhausted) as exc:

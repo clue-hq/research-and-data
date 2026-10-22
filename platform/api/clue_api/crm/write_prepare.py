@@ -30,6 +30,7 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.crm.composio_gateway import (
@@ -40,6 +41,7 @@ from clue_api.crm.composio_gateway import (
 )
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.lists import live_list_named, stored_list
+from clue_api.crm.targets import TargetAccount, TargetContact, TargetValue, project_targets
 from clue_api.crm.write_actions import (
     CLUE_CAMPAIGN_SETTINGS,
     HUBSPOT_OBJECT_TYPE_IDS,
@@ -62,14 +64,17 @@ from clue_api.crm.writes import (
     live_grants,
     same_value,
 )
+from clue_config import Settings
 
 __all__ = [
+    "PERSONAL_DATA_NOT_ALLOWED",
     "PreparedBatch",
     "PreparedChange",
     "ProposedChange",
     "RefusedChange",
     "WriteRefused",
     "card_snapshot",
+    "check_against_targets",
     "prepare_changes",
 ]
 
@@ -83,6 +88,8 @@ class ProposedChange:
     reason: str
     source_ref: str | None = None
     reverses_write_id: UUID | None = None
+    #: The Clue contact or account this change is about (a person change must name one).
+    clue_entity_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +116,10 @@ class PreparedChange:
     #: Each picklist field's option labels by internal value, for the card only (R-11.5); what
     #: is stored, compared and sent stays the internal value.
     option_labels: Mapping[str, Mapping[str, str]] = dataclasses.field(default_factory=dict)
+    #: The Clue contact or account the change is about, when the agent named one.
+    clue_entity_id: str | None = None
+    #: The claims the written value came from (R-8.7: an erasure can list what reached the CRM).
+    source_claim_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,7 +133,8 @@ class RefusedChange:
     #: ``crm_record_not_found``: the read before the card found no such record;
     #: ``crm_field_unknown``: the object has no such field (final review M-2);
     #: ``crm_list_not_kept`` / ``crm_list_gone``: a HubSpot list Clue does not keep, or a kept
-    #: one HubSpot no longer has.
+    #: one HubSpot no longer has; ``crm_personal_data_not_allowed``: a person value (or a
+    #: company's ICP tier) that is not what Clue researched and cleared (R-8.7).
     reason_code: str
     message: str
 
@@ -225,6 +237,11 @@ class _Item:
     proposed: ProposedChange
     spec: WriteActionSpec
     parsed: ParsedChange
+    #: Each written field's claim ids, once the targets check cleared the change.
+    claims: Mapping[str, tuple[UUID, ...]] = dataclasses.field(default_factory=dict)
+    #: The buying role Clue offers this contact, when the change writes one (composed with the
+    #: roles the CRM contact already has once its value is read).
+    buying_role: tuple[str, str] | None = None  # (field, Clue's role)
 
 
 def _words(*names: str) -> str:
@@ -692,11 +709,14 @@ async def _find_existing(
         return None
     fields = sorted(item.parsed.fields)
     if provider == "hubspot":
+        # HubSpot keeps a company's ``domain`` as its bare host: look for that host, so
+        # "https://www.acme.com/" finds the company kept as "acme.com" (Review Focus 2).
+        wanted = website_host(value) if key in _HOST_KEYS else str(value)
         body = await reader.read(
             slug,
             {
                 "filterGroups": [
-                    {"filters": [{"propertyName": key, "operator": "EQ", "value": str(value)}]}
+                    {"filters": [{"propertyName": key, "operator": "EQ", "value": wanted}]}
                 ],
                 "properties": fields,
                 "limit": 2,
@@ -718,6 +738,327 @@ async def _find_existing(
         raise _unreadable(what)
     match = salesforce_match(key, value, records)
     return (str(match["Id"]), match) if match is not None else None
+
+
+# --- what Clue researched and cleared (R-8.7 in code, Phase 3 Task 5) -----------------------
+
+PERSONAL_DATA_NOT_ALLOWED = "crm_personal_data_not_allowed"
+_NAME_THE_CONTACT = "Name the Clue contact this is about."
+_NOT_RESEARCHED = "not what Clue researched"
+_NEVER_REMOVES = "Clue only adds its buying role; it never removes one"
+_TARGET_CHUNK = 200
+
+#: Each person field Clue may write, the :class:`TargetContact` value it must equal, and the
+#: word ``withheld`` names it by.
+_PERSON_TARGETS: Mapping[CrmProvider, Mapping[str, tuple[str, str]]] = {
+    "hubspot": {
+        "firstname": ("first_name", "first name"),
+        "lastname": ("last_name", "last name"),
+        "jobtitle": ("job_title", "title"),
+        "email": ("work_email", "email"),
+        "work_email": ("work_email", "email"),
+        "hs_linkedin_url": ("linkedin_url", "LinkedIn"),
+        "hs_buying_role": ("buying_role", "buying role"),
+    },
+    "salesforce": {
+        "FirstName": ("first_name", "first name"),
+        "LastName": ("last_name", "last name"),
+        "Title": ("job_title", "title"),
+        "Email": ("work_email", "email"),
+    },
+}
+#: The field that links a person to their company: it must be the company Clue knows them by.
+_COMPANY_LINK_FIELDS = frozenset({"associatedcompanyid", "AccountId"})
+#: A custom person field R-8.7 allows, by the words in its name or label.
+_CUSTOM_PERSON_TARGETS = (
+    ("linkedinurl", ("linkedin_url", "LinkedIn")),
+    ("buyingrole", ("buying_role", "buying role")),
+    ("buyingcommittee", ("buying_role", "buying role")),
+    ("committeerole", ("buying_role", "buying role")),
+)
+_ICP_TIER_FIELD = "hs_ideal_customer_profile"
+_TARGET_ACCOUNT_FIELD = "hs_is_target_account"
+
+
+def _person_change(item: _Item) -> bool:
+    return item.parsed.object in _PERSON_OBJECTS and item.parsed.change_kind(item.spec) in (
+        "create_contact",
+        "field_update",
+    )
+
+
+def _company_change(item: _Item) -> bool:
+    return item.parsed.object in ("company", "account") and item.parsed.change_kind(item.spec) in (
+        "create_company",
+        "field_update",
+    )
+
+
+def _normalised(value: object) -> str:
+    return " ".join(str(value).split())
+
+
+def _roles(value: object) -> list[str]:
+    """A multi-select value's options, in order, without repeats."""
+    if value is None:
+        return []
+    return list(dict.fromkeys(part.strip() for part in str(value).split(";") if part.strip()))
+
+
+def _uuid(value: str | None) -> UUID | None:
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return None
+
+
+def _withheld_reason(withheld: Sequence[str], word: str) -> str:
+    prefix = f"{word}: "
+    return next((w[len(prefix) :] for w in withheld if w.startswith(prefix)), _NOT_RESEARCHED)
+
+
+async def _owned_entities(
+    conn: AsyncConnection, workspace_id: str, ids: set[UUID]
+) -> tuple[dict[str, str], set[str]]:
+    """``({contact id: its account id}, {account ids})`` of these ids that are live entities of
+    this workspace; an id of another workspace (or a merged-away one) is in neither."""
+    if not ids:
+        return {}, set()
+    params = {"ws": workspace_id, "ids": sorted(ids)}
+    contacts = {
+        str(row.id): str(row.account_entity_id)
+        for row in await conn.execute(
+            text(
+                "SELECT id, account_entity_id FROM contact_entity WHERE workspace_id = :ws "
+                "AND merged_into IS NULL AND id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            params,
+        )
+    }
+    accounts = {
+        str(row.id)
+        for row in await conn.execute(
+            text(
+                "SELECT id FROM account_entity WHERE workspace_id = :ws "
+                "AND merged_into IS NULL AND id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            params,
+        )
+    }
+    return contacts, accounts
+
+
+async def _targets(
+    conn: AsyncConnection,
+    *,
+    connection: CrmConnection,
+    project_id: str,
+    settings: Settings,
+    account_ids: set[str],
+    contact_ids: set[str],
+) -> tuple[dict[str, TargetAccount], dict[str, TargetContact]]:
+    """What :func:`~clue_api.crm.targets.project_targets` offers for exactly these accounts and
+    contacts of the project: the same gate the agent read, never a second copy of it."""
+    accounts: dict[str, TargetAccount] = {}
+    contacts: dict[str, TargetContact] = {}
+    ordered = sorted(account_ids)
+    for start in range(0, len(ordered), _TARGET_CHUNK):
+        page = await project_targets(
+            conn,
+            workspace_id=connection.workspace_id,
+            project_id=project_id,
+            connection_id=connection.connection_id,
+            provider=connection.provider,
+            settings=settings,
+            account_ids=ordered[start : start + _TARGET_CHUNK],
+            include_contacts=bool(contact_ids),
+            limit=_TARGET_CHUNK,
+            contacts_limit=max(1, len(contact_ids)),
+            contact_ids=contact_ids,
+        )
+        accounts.update({a.account_entity_id: a for a in page.accounts})
+        contacts.update({c.contact_entity_id: c for c in page.contacts})
+    return accounts, contacts
+
+
+def _refused(index: int, item: _Item, message: str) -> RefusedChange:
+    return RefusedChange(
+        index=index,
+        slug=item.proposed.slug,
+        record_ref=item.parsed.record_ref,
+        reason_code=PERSONAL_DATA_NOT_ALLOWED,
+        message=message,
+    )
+
+
+def _person_target(provider: CrmProvider, field: str, label: str) -> tuple[str, str] | None:
+    known = _PERSON_TARGETS[provider].get(field)
+    if known is not None:
+        return known
+    words = _words(field, label)
+    return next((target for word, target in _CUSTOM_PERSON_TARGETS if word in words), None)
+
+
+def _check_person(
+    provider: CrmProvider,
+    item: _Item,
+    contact: TargetContact,
+    account: TargetAccount | None,
+    metas: Mapping[str, _FieldMeta],
+) -> _Item | str:
+    """The change with each field's claim ids, or why it may not be written."""
+    claims: dict[str, tuple[UUID, ...]] = {}
+    buying_role: tuple[str, str] | None = None
+    for field, value in item.parsed.fields.items():
+        meta = metas.get(field)
+        label = meta.label if meta else field
+        named = f"{label} ({field})"
+        if field in _COMPANY_LINK_FIELDS:
+            known = account.crm_record_id if account is not None else None
+            if known is not None and _sf_key(known) != _sf_key(str(value).strip()):
+                return f"{named}: not the company Clue knows this person by."
+            continue
+        target = _person_target(provider, field, label)
+        if target is None:
+            return f"{named}: {_NOT_RESEARCHED}."
+        attribute, word = target
+        offered: TargetValue | None = getattr(contact, attribute)
+        if offered is None:
+            return f"{named}: {_withheld_reason(contact.withheld, word)}."
+        if attribute == "buying_role":
+            if offered.value not in _roles(value):
+                return f"{named}: {_NOT_RESEARCHED}."
+            buying_role = (field, offered.value)
+        elif attribute == "work_email":
+            if str(value).strip().lower() != offered.value.strip().lower():
+                return f"{named}: {_NOT_RESEARCHED}."
+        elif _normalised(value) != _normalised(offered.value):
+            return f"{named}: {_NOT_RESEARCHED}."
+        claims[field] = offered.claim_ids
+    return dataclasses.replace(item, claims=claims, buying_role=buying_role)
+
+
+def _check_company(
+    item: _Item, account: TargetAccount, metas: Mapping[str, _FieldMeta]
+) -> _Item | str:
+    claims: dict[str, tuple[UUID, ...]] = {}
+    for field, value in item.parsed.fields.items():
+        meta = metas.get(field)
+        named = f"{meta.label if meta else field} ({field})"
+        if field == _ICP_TIER_FIELD:
+            tier = account.hubspot_icp_tier
+            if tier is None:
+                reason = next(
+                    (w.split(": ", 1)[1] for w in account.withheld),
+                    "Clue has no fit for this account in this project",
+                )
+                return f"{named}: {reason}."
+            if str(value).strip() != tier.value:
+                return f"{named}: not the tier of Clue's fit for this account."
+            claims[field] = tier.claim_ids
+        elif field == _TARGET_ACCOUNT_FIELD and not (
+            value is True or str(value).strip().lower() == "true"
+        ):
+            return f"{named}: Clue only sets it to true."
+    return dataclasses.replace(item, claims=claims)
+
+
+async def check_against_targets(
+    conn: AsyncConnection,
+    *,
+    connection: CrmConnection,
+    project_id: str,
+    settings: Settings,
+    items: Mapping[int, _Item],
+    metas: Mapping[str, Mapping[str, _FieldMeta]],
+) -> tuple[dict[int, _Item], list[RefusedChange]]:
+    """R-8.7 in code. A change that creates or updates a person must name the Clue contact it is
+    about, and each person value it writes must be the one ``read_crm_targets`` offers for that
+    contact in this project (an email compared without case, everything else with its spaces
+    normalised). A company change that names its Clue account may set the ICP tier only to the
+    tier of the project's fit, and the target-account flag only to true. Each change that is not
+    is refused on its own, naming the field and why, never the value. The rest go on, carrying
+    the claim ids their values came from."""
+    provider = connection.provider
+    named = {
+        uid
+        for item in items.values()
+        if (_person_change(item) or _company_change(item))
+        and (uid := _uuid(item.proposed.clue_entity_id)) is not None
+    }
+    owned_contacts, owned_accounts = await _owned_entities(conn, connection.workspace_id, named)
+    person_ids = {
+        str(_uuid(item.proposed.clue_entity_id))
+        for item in items.values()
+        if _person_change(item) and str(_uuid(item.proposed.clue_entity_id)) in owned_contacts
+    }
+    company_ids = {
+        str(_uuid(item.proposed.clue_entity_id))
+        for item in items.values()
+        if _company_change(item) and str(_uuid(item.proposed.clue_entity_id)) in owned_accounts
+    }
+    accounts, contacts = await _targets(
+        conn,
+        connection=connection,
+        project_id=project_id,
+        settings=settings,
+        account_ids={owned_contacts[c] for c in person_ids} | company_ids,
+        contact_ids=person_ids,
+    )
+
+    cleared: dict[int, _Item] = {}
+    refused: list[RefusedChange] = []
+    for index, item in items.items():
+        entity = _uuid(item.proposed.clue_entity_id)
+        entity_id = str(entity) if entity is not None else None
+        object_metas = metas.get(item.parsed.object, {})
+        checked: _Item | str = item
+        if _person_change(item):
+            if item.proposed.clue_entity_id is None:
+                checked = _NAME_THE_CONTACT
+            elif entity_id not in owned_contacts:
+                checked = "The Clue contact named is not a contact of this workspace."
+            elif entity_id not in contacts:
+                checked = "That Clue contact is not one of this project's researched contacts."
+            else:
+                contact = contacts[entity_id]
+                checked = _check_person(
+                    provider, item, contact, accounts.get(contact.account_entity_id), object_metas
+                )
+        elif _company_change(item) and item.proposed.clue_entity_id is not None:
+            if entity_id not in owned_accounts:
+                checked = "The Clue account named is not an account of this workspace."
+            elif entity_id not in accounts:
+                checked = "That Clue account is not one of this project's accounts."
+            else:
+                checked = _check_company(item, accounts[entity_id], object_metas)
+        if isinstance(checked, str):
+            refused.append(_refused(index, item, checked))
+        else:
+            cleared[index] = checked
+    return cleared, refused
+
+
+def _with_buying_role(
+    index: int, item: _Item, current: Mapping[str, object]
+) -> _Item | RefusedChange:
+    """The change with its buying role composed: the roles the CRM contact already has, then
+    Clue's own (Task 1 ruling: the field is multi-select, and Clue only adds). The agent may give
+    Clue's role alone, or the whole value; a value that names a role neither Clue nor the CRM has,
+    or leaves out one the contact has, is refused."""
+    if item.buying_role is None:
+        return item
+    field, role = item.buying_role
+    proposed = _roles(item.parsed.fields.get(field))
+    held = _roles(current.get(field))
+    named = f"Buying role ({field})"
+    if role not in proposed or any(r != role and r not in held for r in proposed):
+        return _refused(index, item, f"{named}: {_NOT_RESEARCHED}.")
+    if proposed != [role] and any(r not in proposed for r in held):
+        return _refused(index, item, f"{named}: {_NEVER_REMOVES}.")
+    composed = ";".join([*held, *([] if role in held else [role])])
+    fields = {**item.parsed.fields, field: composed}
+    return dataclasses.replace(item, parsed=dataclasses.replace(item.parsed, fields=fields))
 
 
 # --- preparing -----------------------------------------------------------------------------
@@ -1013,6 +1354,12 @@ class _Builder:
                 field_label=field_label,
                 reverses_write_id=item.proposed.reverses_write_id,
                 option_labels=option_labels,
+                clue_entity_id=item.proposed.clue_entity_id,
+                source_claim_ids=(
+                    item.claims.get(field, ())
+                    if field is not None
+                    else tuple(dict.fromkeys(cid for ids in item.claims.values() for cid in ids))
+                ),
             )
         )
 
@@ -1027,6 +1374,7 @@ async def prepare_changes(
     project_id: str,
     changes: Sequence[ProposedChange],
     version: str,
+    settings: Settings,
     min_interval_s: float = 0,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> PreparedBatch:
@@ -1037,6 +1385,8 @@ async def prepare_changes(
     that project's proposals added). ``version`` is the pinned Composio toolkit version of the
     connection's CRM; ``min_interval_s`` is the pause between its CRM reads
     (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the same pause the executor keeps between its calls).
+    ``settings`` holds the fit bands and verification posture the targets read uses: a person
+    value, and a company's ICP tier, is written only as :mod:`clue_api.crm.targets` offers it.
     Writes nothing but the Salesforce budget's call count; the caller logs the result with
     :func:`clue_api.crm.writes.insert_writes` under ``proposal_id``.
     """
@@ -1083,6 +1433,18 @@ async def prepare_changes(
             kept[index] = item
         else:
             refused.append(_field_unknown(provider, index, item, unknown))
+    # R-8.7 in code: a person value (and a company's ICP tier) only as Clue researched and
+    # cleared it. Each change that is not is refused on its own; the rest go on.
+    cleared, person_refused = await check_against_targets(
+        conn,
+        connection=connection,
+        project_id=project_id,
+        settings=settings,
+        items=kept,
+        metas=metas,
+    )
+    kept = cleared
+    refused.extend(person_refused)
 
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
@@ -1141,6 +1503,11 @@ async def prepare_changes(
                 refused.append(_record_not_found(provider, index, item, record_ref))
                 continue
             values = current[(item.parsed.object, record_ref)]
+            composed = _with_buying_role(index, item, values)
+            if isinstance(composed, RefusedChange):
+                refused.append(composed)
+                continue
+            item = composed
             # Named by what the record is called today; its id only when the read holds nothing.
             label = _display_name(provider, item.parsed.object, values) or item.parsed.label
             item = dataclasses.replace(item, parsed=dataclasses.replace(item.parsed, label=label))
@@ -1174,6 +1541,11 @@ async def prepare_changes(
             builder.whole(item, before=None, after=after)
         elif kind in ("create_contact", "create_company"):
             found = await _find_existing(reader, provider, item)
+            composed = _with_buying_role(index, item, found[1] if found is not None else {})
+            if isinstance(composed, RefusedChange):
+                refused.append(composed)
+                continue
+            item = composed
             if found is None:
                 builder.whole(item, before=None, after=dict(item.parsed.fields))
                 continue
