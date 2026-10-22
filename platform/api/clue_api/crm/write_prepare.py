@@ -8,9 +8,10 @@ permission covers), R-6.25 call 11 (when the CRM cannot tell who set a value, a 
 person carries only name, job title, company link, work email, buying role and LinkedIn URL).
 
 :func:`prepare_changes` refuses the whole batch (:class:`WriteRefused`) when any change may not be
-written, so nothing reaches a card or the write log. The one exception is a record the CRM does
-not have (R-11.7): that change alone is left out as a :class:`RefusedChange`
-(``crm_record_not_found``) and the rest go on. Otherwise it returns one :class:`PreparedChange`
+written, so nothing reaches a card or the write log. The exceptions are a record the CRM does not
+have (R-11.7) and a field the object does not have (final review M-2): that change alone is left
+out as a :class:`RefusedChange` (``crm_record_not_found`` / ``crm_field_unknown``) and the rest
+go on. Otherwise it returns one :class:`PreparedChange`
 per (record, field) — a change setting three fields is three — each with the value the CRM holds
 today. A change that would not change anything is dropped. Reading before-values is the only CRM
 traffic here: batched by object where the CRM has a batch read (R-7.4), paused between calls
@@ -113,7 +114,8 @@ class RefusedChange:
     index: int
     slug: str
     record_ref: str | None
-    #: ``crm_record_not_found``: the read before the card found no such record.
+    #: ``crm_record_not_found``: the read before the card found no such record;
+    #: ``crm_field_unknown``: the object has no such field (final review M-2).
     reason_code: str
     message: str
 
@@ -953,12 +955,23 @@ async def prepare_changes(
         _check_fields(provider, item, metas)
     await _check_removals(conn, connection, items)
 
+    # A field the object does not have refuses only its own change (final review M-2), as a
+    # missing record does (R-11.7): the agent learns it before any card, the rest go on.
+    refused: list[RefusedChange] = []
+    kept: dict[int, _Item] = {}
+    for index, item in enumerate(items):
+        unknown = next((f for f in item.parsed.fields if f not in metas[item.parsed.object]), None)
+        if unknown is None:
+            kept[index] = item
+        else:
+            refused.append(_field_unknown(provider, index, item, unknown))
+
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
 
     # Before-values: field updates in batches per object where the CRM has a batch read
     # (HubSpot companies, every Salesforce object), else per record (HubSpot contacts).
-    updates = [item for item in items if item.parsed.change_kind(item.spec) == "field_update"]
+    updates = [i for i in kept.values() if i.parsed.change_kind(i.spec) == "field_update"]
     current: dict[tuple[str, str], Mapping[str, object]] = {}
     if provider == "hubspot":
         by_record: dict[str, dict[str, list[str]]] = {}
@@ -991,7 +1004,7 @@ async def prepare_changes(
 
     memberships_proposed = [
         item
-        for item in items
+        for item in kept.values()
         if item.parsed.change_kind(item.spec) in ("list_membership", "list_removal")
     ]
     members = (
@@ -1000,8 +1013,7 @@ async def prepare_changes(
         else set()
     )
 
-    refused: list[RefusedChange] = []
-    for index, item in enumerate(items):
+    for index, item in kept.items():
         kind = item.parsed.change_kind(item.spec)
         if kind == "field_update":
             record_ref = str(item.parsed.record_ref)
@@ -1035,7 +1047,18 @@ async def prepare_changes(
                 await builder.field(item, update, record_ref, field, held, after)
         else:  # link_duplicate has no action until Phase 3
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
-    return PreparedBatch(builder.prepared, refused)
+    return PreparedBatch(builder.prepared, sorted(refused, key=lambda r: r.index))
+
+
+def _field_unknown(provider: CrmProvider, index: int, item: _Item, field: str) -> RefusedChange:
+    what = "property" if provider == "hubspot" else "field"
+    return RefusedChange(
+        index=index,
+        slug=item.proposed.slug,
+        record_ref=item.parsed.record_ref,
+        reason_code="crm_field_unknown",
+        message=(f"{_CRM_NAMES[provider]} {_noun(item.parsed.object, 2)} have no {what} {field}."),
+    )
 
 
 def _record_not_found(

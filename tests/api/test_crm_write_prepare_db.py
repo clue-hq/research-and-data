@@ -83,6 +83,7 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
 _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
     "Account": [
         {"name": "Name", "label": "Account Name", "type": "string", "custom": False},
+        {"name": "Website", "label": "Website", "type": "url", "custom": False},
         {
             "name": "Industry",
             "label": "Industry",
@@ -1237,3 +1238,59 @@ def test_two_creates_of_one_record_in_a_batch_are_refused(
         assert gateway.calls == []  # refused before any read
 
     _run(tmp_path, f"twice{provider}", body, provider=provider)
+
+
+def test_a_field_the_crm_does_not_have_refuses_only_its_own_change(tmp_path: Path) -> None:
+    """Final review M-2: a typo'd property is refused before the card, not at send."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"101": {}, "102": {"icp_tier": None}})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company("101", "zz_foo", "x"), _set_company("102", "icp_tier", "Tier 2")],
+        )
+        assert batch.refused == [
+            RefusedChange(
+                index=0,
+                slug="HUBSPOT_UPDATE_COMPANY",
+                record_ref="101",
+                reason_code="crm_field_unknown",
+                message="HubSpot companies have no property zz_foo.",
+            )
+        ]
+        assert [(p.parsed.record_ref, p.field) for p in batch.changes] == [("102", "icp_tier")]
+
+    _run(tmp_path, "unknownfield", body)
+
+
+def test_a_salesforce_field_the_org_does_not_have_refuses_only_its_own_change(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"001A": {"Industry": None}, "001B": {"Industry": None}})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_UPDATE_ACCOUNT",
+                    {"account_id": "001A", "custom_fields": {"Zz__c": "x"}},
+                    "x",
+                ),
+                ProposedChange(
+                    "SALESFORCE_UPDATE_ACCOUNT", {"account_id": "001B", "industry": "Retail"}, "x"
+                ),
+            ],
+            _FakeBudget(gateway),
+        )
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (0, "crm_field_unknown", "Salesforce accounts have no field Zz__c.")
+        ]
+        assert [(p.parsed.record_ref, p.field) for p in batch.changes] == [("001B", "Industry")]
+
+    _run(tmp_path, "sfunknownfield", body, provider="salesforce")
