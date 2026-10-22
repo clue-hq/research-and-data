@@ -1,35 +1,46 @@
-"""F3 Phase 1, plan Task 11: the Phase 1 proofs (ruling AW-16; spec §11 tests 1–4, 8, 10, 13, 14
-and WS-18).
+"""The agent-workspace proofs (ruling AW-16; spec §11 tests 1–8, 10, 13, 14 and WS-18).
+
+F3 Phase 1, plan Task 11: tests 1–4, 8, 10, 13, 14 and WS-18.
+F3 Phase 2, plan Task 7: tests 5, 6 and 7 — a cold chat's raw inputs lose their bytes and the next
+turn is told so, finished work survives every window, and an erasure leaves nothing anywhere.
 
 Each scenario runs the real pieces end to end: one database (the lane's throwaway test database),
 one filesystem storage standing in for R2, and two or three worker areas claimed from one
 temporary root — each area with its own factory and snapshotter, which is what two machines are.
 Rows are committed (the store opens its own transactions), so every scenario uses its own
 workspace id and removes what it wrote.
+
+The Phase 2 scenarios assert on storage as well as on the file list: an entry marked expired that
+still has its bytes in R2 has expired nothing.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import stat
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy import text
 
+from clue_agents.ports import ReceiptSource
 from clue_agents.resources import AgentResourceMaterializer
 from clue_agents.worker_area import ChatScope, WorkerArea, claim_worker_area
 from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
-from clue_agents.workspace_snapshot import LeaseFence
+from clue_agents.workspace_snapshot import LeaseFence, Receipt, SnapshotManifest
 from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
+from clue_api.agent_workspace_files_card import build_workspace_files_card
+from clue_api.agent_workspace_retention import AgentWorkspaceRetentionJob
 from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
 from clue_api.sandbox.policy_sweep import snapshot as sweep_snapshot
 from clue_api.sandbox.policy_sweep import sweep
@@ -37,13 +48,50 @@ from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
 from clue_core import ExecutionId
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
-from clue_storage import FsStorage
+from clue_storage import FsStorage, agent_workspace_key
 from tests.agents.workspace_helpers import RecordingArtifactSink, policy, resource_snapshot
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 PROJECT, THREAD = "project-1", "thread-1"
+#: The production windows (``.env.example``): a raw input's bytes go after 48 hours, a working
+#: file's after 7 days, a work product's never.
+RAW_S = 172800.0
+WORKING_S = 604800.0
+
+
+class CountingStorage(FsStorage):
+    """The filesystem backend, recording which blobs it was asked to delete."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.deletes: list[str] = []
+
+    async def delete(self, key: str) -> None:
+        self.deletes.append(key)
+        await super().delete(key)
+
+
+@dataclass
+class StubReceipts(ReceiptSource):
+    """A tool that says what it wrote, so an expired file still tells the agent how to get it.
+
+    Stands in for :class:`~clue_api.agent_workspace_receipts.DbReceiptSource`, whose own joins are
+    proven in ``tests/api/test_agent_workspace_receipts_db.py``. What these scenarios need from it
+    is only that whatever it answers survives the save, the expiry and the card.
+    """
+
+    read_again: str = "These bytes are gone. Call run_crm_action again."
+
+    async def receipt_for(self, *, workspace_id: str, thread_id: str, path: str) -> Receipt:
+        return Receipt(
+            source="run_crm_action",
+            operation_id="11111111-2222-3333-4444-555555555555",
+            produced_at=datetime(2026, 10, 22, 9, 30, tzinfo=UTC),
+            details={"action": "list_contacts", "path": path},
+            read_again=self.read_again,
+        )
 
 
 def _policy():  # type: ignore[no-untyped-def]
@@ -63,11 +111,11 @@ class Machine:
 class World:
     ws: str
     root: Path
-    storage: FsStorage
+    storage: CountingStorage
     machines: list[Machine]
     work_id: uuid.UUID
 
-    def machine(self) -> Machine:
+    def machine(self, *, receipts: ReceiptSource | None = None) -> Machine:
         area = claim_worker_area(self.root)
         machine = Machine(
             area=area,
@@ -79,11 +127,73 @@ class World:
                     store=DbWorkspaceSnapshotStore(storage=self.storage),
                     concurrency=8,
                     retry_delays=(0, 0, 0),
+                    receipts=receipts,
                 ),
             ),
         )
         self.machines.append(machine)
         return machine
+
+    def store(self) -> DbWorkspaceSnapshotStore:
+        """A reader of the chat's snapshots, over the same storage the machines save through."""
+
+        return DbWorkspaceSnapshotStore(storage=self.storage)
+
+    def chat(self, thread: str = THREAD) -> ChatScope:
+        return ChatScope(self.ws, PROJECT, thread)
+
+    def key(self, data: bytes) -> str:
+        """Where this chat's snapshot stores these bytes (its own area, ruling AW-26)."""
+
+        return agent_workspace_key(self.ws, hashlib.sha256(data).hexdigest())
+
+    def job(self, *, raw_s: float, working_s: float) -> AgentWorkspaceRetentionJob:
+        return AgentWorkspaceRetentionJob(
+            store=self.store(), conn_factory=transaction, raw_s=raw_s, working_s=working_s
+        )
+
+    async def manifest(self, thread: str = THREAD) -> SnapshotManifest:
+        store = self.store()
+        pointer = await store.current(workspace_id=self.ws, thread_id=thread)
+        assert pointer is not None
+        return await store.read_manifest(workspace_id=self.ws, pointer=pointer)
+
+    async def age(self, *, days: float, thread: str = THREAD) -> None:
+        """Push the chat's last activity ``days`` into the past, rather than waiting for it."""
+
+        async with transaction() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE agent_workspace_snapshot SET last_activity_at = :t "
+                    "WHERE workspace_id = :ws AND thread_id = :th"
+                ),
+                {"t": datetime.now(UTC) - timedelta(days=days), "ws": self.ws, "th": thread},
+            )
+
+    async def erasure(self, key: str) -> tuple[bool, bool]:
+        """``(erased, purged)`` of the artifact row for ``key`` — the row itself must exist."""
+
+        async with transaction() as conn:
+            row = (
+                await conn.execute(
+                    text("SELECT erased_at, purged_at FROM artifact WHERE storage_key = :k"),
+                    {"k": key},
+                )
+            ).first()
+        assert row is not None, f"no artifact row for {key}"
+        return row[0] is not None, row[1] is not None
+
+    async def gone_from_storage(self, key: str) -> bool:
+        """The bytes are erased, purged, deleted through the backend, and no longer readable."""
+
+        return (
+            await self.erasure(key) == (True, True)
+            and key in self.storage.deletes
+            and await self.storage.exists(key) is False
+        )
+
+    async def stored(self, key: str) -> bool:
+        return await self.erasure(key) == (False, False) and await self.storage.exists(key)
 
     async def fence(self, worker: str) -> LeaseFence:
         """Take the thread's fleet lease the way a worker claiming the turn does."""
@@ -108,7 +218,7 @@ async def _world(tmp_path: Path) -> AsyncIterator[World]:
     world = World(
         ws=ws,
         root=root,
-        storage=FsStorage(tmp_path / "r2"),
+        storage=CountingStorage(tmp_path / "r2"),
         machines=[],
         work_id=uuid.uuid4(),
     )
@@ -177,6 +287,35 @@ async def _turn(
 
 def _bytes(machine: Machine, ws: str, path: str) -> bytes:
     return (machine.agent(ws) / path).read_bytes()
+
+
+def _has(machine: Machine, ws: str, path: str) -> bool:
+    return (machine.agent(ws) / path).exists()
+
+
+def _card(lease: AgentWorkspaceLease) -> dict[str, JsonValue]:
+    """The turn-start card this turn's agent is handed, built exactly as the fleet builds it."""
+
+    base = lease.snapshot_base
+    return build_workspace_files_card(
+        None if base is None else base.manifest, now=datetime.now(UTC)
+    )
+
+
+def _section(card: dict[str, JsonValue], section: str) -> list[dict[str, JsonValue]]:
+    """One list of the card — ``live`` or ``expired`` — as the agent is shown it."""
+
+    entries = card[section]
+    assert isinstance(entries, list)
+    listed: list[dict[str, JsonValue]] = []
+    for entry in entries:
+        assert isinstance(entry, dict)
+        listed.append(entry)
+    return listed
+
+
+def _paths(card: dict[str, JsonValue], section: str) -> list[str]:
+    return [str(entry["path"]) for entry in _section(card, section)]
 
 
 def test_1_two_machines_one_chat(tmp_path: Path) -> None:
@@ -284,6 +423,184 @@ def test_4_a_zombie_save_is_refused(tmp_path: Path) -> None:
             _write(stale, {"scratch/n.md": b"stale"})
             assert (await stale.save_snapshot()).status == "stale"
             a.factory.release(stale)
+
+    run_async(scenario())
+
+
+def test_5_raw_expiry_removes_bytes_keeps_receipt_and_the_next_turn_sees_it(
+    tmp_path: Path,
+) -> None:
+    """§11 test 5: a cold chat's raw input loses its bytes, and the next turn is told exactly."""
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            receipts = StubReceipts()
+            a, b = world.machine(receipts=receipts), world.machine(receipts=receipts)
+            raw = b'{"deals": 28}'
+            rough = b"cycle ~42 days"
+            assert await _turn(world, a, {"reads/r.json": raw, "scratch/a.md": rough}) == "saved"
+            await world.age(days=3)
+
+            report = await world.job(raw_s=RAW_S, working_s=WORKING_S).run_once()
+
+            assert (report.chats_checked, report.chats_expired, report.files_expired) == (1, 1, 1)
+            assert (report.skipped_busy, report.stale) == (0, 0)
+            manifest = await world.manifest()
+            expired = manifest.by_path()["reads/r.json"]
+            assert expired.expired_at is not None
+            assert expired.receipt is not None
+            assert expired.receipt.read_again == receipts.read_again
+            assert [entry.path for entry in manifest.live()] == ["scratch/a.md"]
+            # The point of the job: the raw bytes are gone from storage, not merely unlisted.
+            assert await world.gone_from_storage(world.key(raw))
+            # The agent's own rough work is still within its 7 days and is untouched.
+            assert await world.stored(world.key(rough))
+
+            # The chat's next turn, on another machine.
+            lease = await _open(world, b, fence=await world.fence("worker-b"))
+            try:
+                assert not _has(b, world.ws, "reads/r.json")
+                assert _bytes(b, world.ws, "scratch/a.md") == rough
+                card = _card(lease)
+                assert _paths(card, "live") == ["scratch/a.md"]
+                assert _paths(card, "expired") == ["reads/r.json"]
+                gone_entry = _section(card, "expired")[0]
+                assert gone_entry["tier"] == "raw_input"
+                assert gone_entry["receipt"] == {
+                    "source": "run_crm_action",
+                    "operation_id": "11111111-2222-3333-4444-555555555555",
+                    "produced_at": "2026-10-22T09:30:00+00:00",
+                    "details": {"action": "list_contacts", "path": "reads/r.json"},
+                    "read_again": receipts.read_again,
+                }
+                # WS-26: the agent reads the same thing again and saves it. The erased row is
+                # resurrected and the blob put back — an erasure must never poison a key.
+                _write(lease, {"reads/r2.json": raw})
+                assert (await lease.save_snapshot()).status == "saved"
+            finally:
+                await b.factory.release_saved(lease)
+            assert await world.stored(world.key(raw))
+
+            # The machine that still had the expired copy on disk loses it on its next restore.
+            assert _has(a, world.ws, "reads/r.json")
+            lease = await _open(world, a, fence=await world.fence("worker-a"))
+            try:
+                assert lease.restore_report is not None
+                assert (lease.restore_report.deleted, lease.restore_report.downloaded) == (1, 1)
+                assert not _has(a, world.ws, "reads/r.json")
+                assert _bytes(a, world.ws, "reads/r2.json") == raw
+                assert _paths(_card(lease), "expired") == ["reads/r.json"]
+            finally:
+                await a.factory.release_saved(lease)
+
+    run_async(scenario())
+
+
+def test_6_work_products_survive_the_expiry_job(tmp_path: Path) -> None:
+    """§11 test 6: ``outputs/`` outlives a cache wipe and every window (AW-2)."""
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            a, b = world.machine(), world.machine()
+            finished = b"deal,amount\nA,10\n"
+            rough = b"my own notes"
+            raw = b'{"deals": 28}'
+            files = {"outputs/o.csv": finished, "scratch/a.md": rough, "reads/r.json": raw}
+            assert await _turn(world, a, files) == "saved"
+            # The worker's copy is only a cache (AW-23): its whole folder goes.
+            AgentWorkspaceCacheJob(area=a.area, idle_s=0, max_bytes=0).run_once()
+            assert not a.factory.chat_host_path(world.chat()).exists()
+
+            report = await world.job(raw_s=0.0, working_s=WORKING_S).run_once()
+
+            assert (report.chats_expired, report.files_expired) == (1, 1)
+            manifest = await world.manifest()
+            assert [entry.path for entry in manifest.live()] == ["outputs/o.csv", "scratch/a.md"]
+            assert [entry.path for entry in manifest.expired()] == ["reads/r.json"]
+            assert await world.stored(world.key(finished))
+            assert await world.stored(world.key(rough))
+
+            # A turn on another machine gets both of them back from the snapshot.
+            lease = await _open(world, b, fence=await world.fence("worker-b"))
+            try:
+                assert _bytes(b, world.ws, "outputs/o.csv") == finished
+                assert _bytes(b, world.ws, "scratch/a.md") == rough
+                assert not _has(b, world.ws, "reads/r.json")
+                assert _paths(_card(lease), "live") == ["outputs/o.csv", "scratch/a.md"]
+            finally:
+                await b.factory.release_saved(lease)
+
+            # AW-2: no window expires finished work — not even one that has passed for
+            # everything else, on a chat nobody has touched for over a year.
+            await world.age(days=400)
+
+            second = await world.job(raw_s=0.0, working_s=0.0).run_once()
+
+            assert (second.chats_expired, second.files_expired) == (1, 1)
+            manifest = await world.manifest()
+            assert [entry.path for entry in manifest.live()] == ["outputs/o.csv"]
+            assert {entry.path for entry in manifest.expired()} == {"reads/r.json", "scratch/a.md"}
+            kept = manifest.by_path()["outputs/o.csv"]
+            assert kept.expired_at is None and kept.tier == "work_product"
+            assert await world.store().read_file(workspace_id=world.ws, entry=kept) == finished
+            assert await world.gone_from_storage(world.key(rough))
+
+    run_async(scenario())
+
+
+def test_7_erasing_a_chat_leaves_nothing_in_storage_and_no_root_reuses_its_copy(
+    tmp_path: Path,
+) -> None:
+    """§11 test 7: a privacy erasure (WS-27, WS-31) takes the record, the bytes and every copy."""
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            a, b = world.machine(), world.machine()
+            files = {
+                "outputs/o.csv": b"deal,amount\nA,10\n",
+                "scratch/a.md": b"cycle ~42 days",
+                "reads/r.json": b'{"deals": 28}',
+            }
+            assert await _turn(world, a, files) == "saved"
+            # The chat's next turn runs on B, so two machines hold a copy of it.
+            lease = await _open(world, b, fence=await world.fence("worker-b"))
+            try:
+                for path, data in files.items():
+                    assert _bytes(b, world.ws, path) == data
+            finally:
+                b.factory.release(lease)
+            store = world.store()
+            pointer = await store.current(workspace_id=world.ws, thread_id=THREAD)
+            assert pointer is not None
+            keys = {pointer.manifest_key, *(world.key(data) for data in files.values())}
+
+            assert await a.factory.forget_chat(world.chat()) is True
+
+            assert await store.current(workspace_id=world.ws, thread_id=THREAD) is None
+            for key in sorted(keys):
+                assert await world.gone_from_storage(key), key
+            assert not a.factory.chat_host_path(world.chat()).exists()
+
+            # B's copy survives the erasure on disk — until B opens the chat again, which finds
+            # no record and empties the folder rather than letting a byte of it be used (WS-16).
+            assert _bytes(b, world.ws, "outputs/o.csv") == files["outputs/o.csv"]
+            lease = await _open(world, b)
+            try:
+                assert lease.restore_report is not None
+                assert lease.restore_report.deleted == len(files)
+                assert lease.snapshot_base is not None
+                assert lease.snapshot_base.manifest is None
+                for path in files:
+                    assert not _has(b, world.ws, path)
+                card = _card(lease)
+                assert (card["live"], card["expired"], card["omitted"]) == ([], [], {})
+            finally:
+                b.factory.release(lease)
+
+            swept = AgentWorkspaceCacheJob(area=b.area, idle_s=0, max_bytes=0).run_once()
+
+            assert f"{world.ws}/{PROJECT}/{THREAD}" in swept.removed
+            assert not b.factory.chat_host_path(world.chat()).exists()
 
     run_async(scenario())
 
