@@ -46,3 +46,14 @@ Docs: `docs/superpowers/specs/agent-workspace/` — spec `2026-10-21-agent-works
 - Spec §12 compaction path was real: the summary named `/conversation_history/<id>.md` while the
   bytes went to `/work/...`. Fixed (`d2ec168d1`); a live compaction (~450k-token chat) is owed.
 - Oddity for the review: a brand-new chat's restore logs `warm=True` with `version=None`.
+
+## Live robustness tests A–G on the dushanbe stack (2026-10-22, after review fixes c2882e757)
+Chats: Conduit `thr_65d4c3d4…` (new, legacy-planted) and `thr_b32c99d4…`. Total ≈ $2.94 (12 turns).
+- A legacy import: old-layout folder planted for a new chat → restore `imported_legacy=true`, v1 saved, old folder deleted, agent quoted both files. (Every real legacy chat has an open ad design leg, so none was usable.)
+- E sandbox after cold restore: run_python read restored files, wrote outputs/atrium-summary.csv (v2); a third worker restored it cold and the agent quoted it.
+- F two chats: project doc written in chat A reached chat B; separate inodes per chat.
+- G concurrent turns, same file name in two chats on one worker: each chat kept its own bytes; manifests match.
+- C idle sweep (idle 120 s / sweep 30 s temporarily): swept 135 s after last use (688 KB), next turn restored cold.
+- B freeze (SIGSTOP) mid-run_python: the frozen worker's late save was refused `fenced`, record untouched. BUT the takeover failed: `ExecutionConflict` because `pin_manifest_hash` differs per process — `proposal_policy`/`ingestion_policy` contain frozensets and `canonical_payload_digest` dumps them in PYTHONHASHSEED order (reproduced: 3 seeds → 3 digests). PRE-EXISTING (platform/execution untouched by F3); any chat-turn takeover across processes fails permanently. The failed turn also shows the person no error. Fix awaiting founder go.
+- D live compaction (CLUE_AGENT_CONTEXT_WINDOW_TOKENS=120000 temporarily): history written to agent/work/conversation_history/<id>.md (511 KB), saved; after wiping every area the agent named /work/conversation_history/<id>.md from its summary and quoted the file.
+.env restored to its original values after C and D; workers restarted.
