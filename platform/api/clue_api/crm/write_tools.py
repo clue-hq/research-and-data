@@ -289,6 +289,7 @@ class ProposeCrmChangesTool(Tool):
                             for change in inputs.changes
                         ],
                         version=self._version(connection),
+                        min_interval_s=self._settings.crm_write_min_interval_s,
                     )
                 except (WriteRefused, ComposioError, CrmBudgetExhausted) as exc:
                     # Leave the block normally: the Salesforce reads already made stay counted.

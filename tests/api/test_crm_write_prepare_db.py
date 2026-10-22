@@ -170,6 +170,22 @@ class _FakeCrm:
             record = self.records.get(str(arguments["objectId"]), {})
             props = {name: record.get(name) for name in arguments["properties"]}
             return {"id": str(arguments["objectId"]), "properties": props}
+        if slug == "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES":
+            # HubSpot's batch read leaves out a record it does not have.
+            return {
+                "status": "COMPLETE",
+                "results": [
+                    {
+                        "id": item["id"],
+                        "properties": {
+                            name: self.records.get(item["id"], {}).get(name)
+                            for name in arguments["properties"]
+                        },
+                    }
+                    for item in arguments["inputs"]
+                    if item["id"] not in self.missing
+                ],
+            }
         if slug == "HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS":
             lists = self.lists.get(str(arguments["record_id"]), [])
             return {"results": [{"listId": list_id} for list_id in lists]}
@@ -192,6 +208,12 @@ class _FakeCrm:
             ]
             return {"records": found, "totalSize": len(found), "done": True}
         raise AssertionError(f"unexpected read {slug}")
+
+
+#: The reads of a record's current values: a company in a batch, a contact on its own.
+_RECORD_READS = frozenset(
+    {"HUBSPOT_READ_CRM_OBJECT_BY_ID", "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"}
+)
 
 
 class _FakeBudget:
@@ -245,6 +267,7 @@ async def _prepare_batch(
     proposal_id: UUID,
     changes: list[ProposedChange],
     budget: Any = None,
+    **pause: Any,
 ) -> PreparedBatch:
     return await prepare_changes(
         conn,
@@ -254,6 +277,7 @@ async def _prepare_batch(
         proposal_id=proposal_id,
         changes=changes,
         version="v-test",
+        **pause,
     )
 
 
@@ -315,7 +339,7 @@ def test_forbidden_writes_are_refused_before_the_card(
         assert refused.value.reason_code == code
         assert await _write_count(conn, seeded.workspace_id) == 0
         # Refused before any record was read.
-        assert not [c for c in gateway.calls if c[0] == "HUBSPOT_READ_CRM_OBJECT_BY_ID"]
+        assert not [c for c in gateway.calls if c[0] in _RECORD_READS]
 
     _run(tmp_path, "refuse", body)
 
@@ -415,7 +439,7 @@ def test_an_empty_field_is_a_fill_not_an_overwrite(tmp_path: Path) -> None:
         # One change per field, from one read of the record.
         assert sorted(p.field for p in prepared) == ["icp_tier", "name"]
         assert all(p.before is None and p.overwrites_person is False for p in prepared)
-        reads = [c for c in gateway.calls if c[0] == "HUBSPOT_READ_CRM_OBJECT_BY_ID"]
+        reads = [c for c in gateway.calls if c[0] in _RECORD_READS]
         assert len(reads) == 1
         tier = next(p for p in prepared if p.field == "icp_tier")
         assert tier.arguments == {"companyId": "101", "properties": {"icp_tier": "Tier 1"}}
@@ -745,45 +769,121 @@ def test_a_batch_whose_every_record_is_missing_prepares_nothing_and_lists_each(
     _run(tmp_path, "allmissing", body)
 
 
+_RATE_LIMITED = ExecuteResult(
+    False,
+    {"http_error": "429", "status_code": 429},
+    '{"status":"error","message":"You have reached your secondly limit.","category":"RATE_LIMITS"}',
+)
+
+
 @pytest.mark.parametrize(
-    "failure",
+    ("failure", "code"),
     [
-        ExecuteResult(
-            False,
-            {"http_error": "401", "status_code": 401},
-            '{"status":"error","message":"Authentication credentials not found.",'
-            '"category":"INVALID_AUTHENTICATION"}',
+        (
+            ExecuteResult(
+                False,
+                {"http_error": "401", "status_code": 401},
+                '{"status":"error","message":"Authentication credentials not found.",'
+                '"category":"INVALID_AUTHENTICATION"}',
+            ),
+            "crm_read_failed",
         ),
-        ExecuteResult(
-            False,
-            {"http_error": "429", "status_code": 429},
-            '{"status":"error","message":"You have reached your secondly limit.",'
-            '"category":"RATE_LIMITS"}',
+        # A rate limit or an unreachable CRM is temporary, not a failed read (final review I-3).
+        (_RATE_LIMITED, "crm_rate_limited"),
+        (
+            ExecuteResult(False, {"http_error": "502", "status_code": 502}, "Bad Gateway"),
+            "crm_unavailable",
         ),
-        ExecuteResult(False, {"http_error": "502", "status_code": 502}, "Bad Gateway"),
     ],
 )
 def test_a_read_that_fails_for_any_other_reason_still_refuses_the_whole_batch(
-    tmp_path: Path, failure: ExecuteResult
+    tmp_path: Path, failure: ExecuteResult, code: str
 ) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         gateway = _FakeCrm(
-            records={"101": {"icp_tier": None}},
-            failing={"HUBSPOT_READ_CRM_OBJECT_BY_ID": failure},
+            records={"101": {"icp_tier": None}, "201": {"jobtitle": None}},
+            failing=dict.fromkeys(_RECORD_READS, failure),
+        )
+        for change in (
+            _set_company("101", "icp_tier", "Tier 1"),
+            _set_contact("201", {"jobtitle": "COO"}),
+        ):
+            with pytest.raises(WriteRefused) as refused:
+                await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+            assert refused.value.reason_code == code
+
+    _run(tmp_path, "readfail", body)
+
+
+def test_a_rate_limited_field_list_read_is_temporary(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={"101": {}},
+            failing={"HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE": _RATE_LIMITED},
         )
         with pytest.raises(WriteRefused) as refused:
             await _prepare_batch(
                 conn, gateway, connection, proposal_id, [_set_company("101", "icp_tier", "Tier 1")]
             )
-        assert refused.value.reason_code == "crm_read_failed"
+        assert refused.value.reason_code == "crm_rate_limited"
 
-    _run(tmp_path, "readfail", body)
+    _run(tmp_path, "fieldlimit", body)
+
+
+def test_hubspot_companies_are_read_in_batches_of_100(tmp_path: Path) -> None:
+    """Final review I-3: one read per 100 companies, not one per company."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        ids = [str(1000 + n) for n in range(150)]
+        gateway = _FakeCrm(records={rid: {"icp_tier": None, "name": f"Co {rid}"} for rid in ids})
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company(rid, "icp_tier", "Tier 1") for rid in ids],
+        )
+        assert len(prepared) == 150
+        assert {p.parsed.label for p in prepared} == {f"Co {rid}" for rid in ids}
+        batches = [
+            c[1] for c in gateway.calls if c[0] == "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"
+        ]
+        assert [len(b["inputs"]) for b in batches] == [100, 50]
+        assert set(batches[0]["properties"]) == {"icp_tier", "name", "domain"}
+        assert not [c for c in gateway.calls if c[0] == "HUBSPOT_READ_CRM_OBJECT_BY_ID"]
+
+    _run(tmp_path, "batched", body)
+
+
+def test_prepare_pauses_between_its_reads(tmp_path: Path) -> None:
+    """R-7.3's pause between calls covers the reads before the card too."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        slept: list[float] = []
+
+        async def sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        gateway = _FakeCrm(records={"101": {"icp_tier": None}, "201": {"jobtitle": None}})
+        await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company("101", "icp_tier", "Tier 1"), _set_contact("201", {"jobtitle": "COO"})],
+            min_interval_s=0.25,
+            sleep=sleep,
+        )
+        assert len(gateway.calls) > 1
+        assert slept == [0.25] * (len(gateway.calls) - 1)
+
+    _run(tmp_path, "pause", body)
 
 
 def test_a_read_with_no_answer_is_not_taken_for_a_missing_record(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         unreachable = ComposioError("unavailable", None, "ConnectTimeout")
-        gateway = _FakeCrm(failing={"HUBSPOT_READ_CRM_OBJECT_BY_ID": unreachable})
+        gateway = _FakeCrm(failing=dict.fromkeys(_RECORD_READS, unreachable))
         with pytest.raises(ComposioError):
             await _prepare_batch(
                 conn, gateway, connection, proposal_id, [_set_company("101", "icp_tier", "Tier 1")]
@@ -795,7 +895,7 @@ def test_a_read_with_no_answer_is_not_taken_for_a_missing_record(tmp_path: Path)
 @pytest.mark.parametrize(
     ("malformed", "change"),
     [
-        ("HUBSPOT_READ_CRM_OBJECT_BY_ID", _set_company("101", "icp_tier", "Tier 1")),
+        ("HUBSPOT_READ_CRM_OBJECT_BY_ID", _set_contact("101", {"jobtitle": "COO"})),
         ("HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS", _add_to_list("p1")),
         (
             "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
@@ -871,7 +971,11 @@ def test_an_update_names_its_records_from_the_read_not_by_their_ids(tmp_path: Pa
             for c in gateway.calls
             if c[0] == "HUBSPOT_READ_CRM_OBJECT_BY_ID"
         }
-        assert reads["101"] == {"icp_tier", "name", "domain"}
+        (companies,) = [
+            c[1] for c in gateway.calls if c[0] == "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"
+        ]
+        assert [item["id"] for item in companies["inputs"]] == ["101", "102", "103"]
+        assert set(companies["properties"]) == {"icp_tier", "name", "domain"}
         assert reads["201"] == {"jobtitle", "firstname", "lastname", "email"}
 
         # The write log keeps the name too.

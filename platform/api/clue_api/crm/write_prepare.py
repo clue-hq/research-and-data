@@ -13,18 +13,20 @@ not have (R-11.7): that change alone is left out as a :class:`RefusedChange`
 (``crm_record_not_found``) and the rest go on. Otherwise it returns one :class:`PreparedChange`
 per (record, field) — a change setting three fields is three — each with the value the CRM holds
 today. A change that would not change anything is dropped. Reading before-values is the only CRM
-traffic here, and on Salesforce every call is taken from the org's API budget first (R-7.5).
+traffic here: batched by object where the CRM has a batch read (R-7.4), paused between calls
+(R-7.3), and on Salesforce every call is taken from the org's API budget first (R-7.5).
 """
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import re
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -132,8 +134,10 @@ class WriteRefused(Exception):
     ``crm_value_not_allowed`` (not one of the field's picklist values),
     ``crm_removal_not_allowed`` (a list or campaign member Clue did not add, R-6.25 call 12),
     ``crm_read_failed`` (the CRM's answer to a read needed to show the change was an error or not
-    the expected shape; an unreadable value is never taken as empty). A record the CRM does not
-    have is not a failed read: it refuses only its own change (:class:`RefusedChange`).
+    the expected shape; an unreadable value is never taken as empty), ``crm_rate_limited`` /
+    ``crm_unavailable`` (a read met the CRM's rate limit or no answer: temporary, worth one more
+    try later). A record the CRM does not have is not a failed read: it refuses only its own
+    change (:class:`RefusedChange`).
     """
 
     def __init__(self, reason_code: str, message: str) -> None:
@@ -180,6 +184,11 @@ _SOQL_CHUNK = 200
 _MAX_LISTED_VALUES = 50
 
 _HUBSPOT_OBJECT_TYPES = {"company": "companies", "contact": "contacts"}
+#: HubSpot objects whose current values are read many records per call (R-7.4), and how many
+#: per call (composio-api-notes.md § Writes, (f)). Contacts have no batch read with a recorded
+#: argument shape, so each is read on its own.
+_HUBSPOT_BATCH_READS = {"company": "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"}
+_HUBSPOT_BATCH_READ_SIZE = 100
 _HUBSPOT_CONTACT_OBJECT_TYPE_ID = "0-1"
 _SALESFORCE_SOBJECTS = {"account": "Account", "contact": "Contact"}
 _CRM_NAMES: Mapping[CrmProvider, str] = {"hubspot": "HubSpot", "salesforce": "Salesforce"}
@@ -273,15 +282,20 @@ class _Reader:
         budget: _Budget | None,
         connection: CrmConnection,
         version: str,
+        min_interval_s: float,
+        sleep: Callable[[float], Awaitable[None]],
     ) -> None:
         self._conn = conn
         self._gateway = gateway
         self._budget = budget
         self._connection = connection
         self._version = version
+        self._min_interval_s = min_interval_s
+        self._sleep = sleep
+        self._calls = 0
 
     async def read(self, slug: str, arguments: Mapping[str, Any]) -> Any:
-        result = await self._call(slug, arguments)
+        result = await self.call(slug, arguments)
         if not result.successful:
             raise self._failed(result)
         return _unwrap(result.data)
@@ -289,27 +303,49 @@ class _Reader:
     async def read_record(self, slug: str, arguments: Mapping[str, Any]) -> Any | None:
         """A read of one record by its id: ``None`` when the CRM says there is no such record
         (HubSpot's 404). Any other failure refuses the batch, like :meth:`read`."""
-        result = await self._call(slug, arguments)
+        result = await self.call(slug, arguments)
         if not result.successful:
             if _record_missing(result):
                 return None
             raise self._failed(result)
         return _unwrap(result.data)
 
-    async def _call(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult:
+    async def call(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult:
+        """One read, after the pause between calls (R-7.3) and, on Salesforce, taken from the
+        org's API budget (R-7.5). A rate limit or an unreachable CRM refuses the batch as
+        temporary; any other refused answer is returned for the caller to judge."""
+        if self._calls and self._min_interval_s > 0:
+            await self._sleep(self._min_interval_s)
+        self._calls += 1
         if self._connection.provider == "salesforce":
             if self._budget is None:
                 raise ValueError("Salesforce reads need the API budget.")
             await self._budget.take_call(
                 self._conn, connection=self._connection, today=datetime.now(UTC).date()
             )
-        return await self._gateway.execute(
+        result = await self._gateway.execute(
             slug=slug,
             arguments=arguments,
             connected_account_id=self._connection.composio_connected_account_id,
             user_id=composio_user_id(self._connection.workspace_id),
             version=self._version,
         )
+        if not result.successful:
+            temporary = temporary_failure(result)
+            name = _CRM_NAMES[self._connection.provider]
+            if temporary == "rate_limited":
+                raise WriteRefused(
+                    "crm_rate_limited",
+                    f"{name} is rate-limiting Clue's reads, so the changes cannot be shown yet: "
+                    f"{result.error or 'too many requests'}",
+                )
+            if temporary == "unavailable":
+                raise WriteRefused(
+                    "crm_unavailable",
+                    f"{name} is not answering, so the changes cannot be shown yet: "
+                    f"{result.error or 'no answer'}",
+                )
+        return result
 
     def _failed(self, result: ExecuteResult) -> WriteRefused:
         return WriteRefused(
@@ -326,6 +362,19 @@ def _status_code(result: ExecuteResult) -> int | None:
         if isinstance(body, Mapping) and isinstance(body.get("status_code"), int):
             return int(body["status_code"])
         body = body.get("data") if isinstance(body, Mapping) else None
+    return None
+
+
+_TEMPORARY_CODES = ("REQUEST_LIMIT_EXCEEDED", '"category":"RATE_LIMITS"')
+
+
+def temporary_failure(result: ExecuteResult) -> Literal["rate_limited", "unavailable"] | None:
+    """A refused call that is a rate limit or an unreachable CRM rather than a refusal."""
+    status = _status_code(result)
+    if status == 429 or any(code in (result.error or "") for code in _TEMPORARY_CODES):
+        return "rate_limited"
+    if isinstance(status, int) and status >= 500:
+        return "unavailable"
     return None
 
 
@@ -474,6 +523,51 @@ async def _hubspot_field_values(
     if not isinstance(properties, Mapping):
         raise _unreadable(f"the {object_name} {record_ref}")
     return properties
+
+
+async def hubspot_batch_values(
+    call: Callable[[str, Mapping[str, Any]], Awaitable[ExecuteResult]],
+    object_name: str,
+    wanted: Mapping[str, Sequence[str]],
+) -> dict[str, Mapping[str, object]]:
+    """The values of ``wanted`` records (id → fields) of an object HubSpot reads many per call
+    (R-7.4: up to 100 ids a call). A record the answer leaves out — HubSpot's batch read skips
+    one it does not have — is not in the result, nor is any record of a call refused or answered
+    in an unexpected shape: the caller reads those one by one, which tells a missing record from
+    a failed read. ``call`` makes one read (and raises on a temporary failure)."""
+    slug = _HUBSPOT_BATCH_READS.get(object_name)
+    found: dict[str, Mapping[str, object]] = {}
+    if slug is None:
+        return found
+    ids = list(wanted)
+    for start in range(0, len(ids), _HUBSPOT_BATCH_READ_SIZE):
+        chunk = ids[start : start + _HUBSPOT_BATCH_READ_SIZE]
+        properties = list(dict.fromkeys(field for rid in chunk for field in wanted[rid]))
+        result = await call(
+            slug, {"inputs": [{"id": rid} for rid in chunk], "properties": properties}
+        )
+        records = _batch_records(result.data) if result.successful else None
+        if records is not None:
+            found.update({rid: records[rid] for rid in chunk if rid in records})
+    return found
+
+
+def _batch_records(data: Any) -> dict[str, Mapping[str, object]] | None:
+    """Each record's properties by id in a HubSpot batch read's answer; ``None`` when the answer
+    is not of that shape."""
+    body = _unwrap(data)
+    results = body.get("results") if isinstance(body, Mapping) else None
+    if not isinstance(results, list):
+        return None
+    records: dict[str, Mapping[str, object]] = {}
+    for record in results:
+        properties = record.get("properties") if isinstance(record, Mapping) else None
+        if not isinstance(record, Mapping) or record.get("id") is None:
+            return None
+        if not isinstance(properties, Mapping):
+            return None
+        records[str(record["id"])] = properties
+    return records
 
 
 async def _salesforce_field_values(
@@ -760,12 +854,16 @@ async def prepare_changes(
     proposal_id: UUID,
     changes: Sequence[ProposedChange],
     version: str,
+    min_interval_s: float = 0,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> PreparedBatch:
     """Check, read and scope a proposed batch; refuse it whole when any change may not be written,
     except a change whose record the CRM does not have, which alone is refused (R-11.7).
 
-    ``version`` is the pinned Composio toolkit version of the connection's CRM. Writes nothing
-    but the Salesforce budget's call count; the caller logs the result with
+    ``version`` is the pinned Composio toolkit version of the connection's CRM;
+    ``min_interval_s`` is the pause between its CRM reads (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the
+    same pause the executor keeps between its calls). Writes nothing but the Salesforce budget's
+    call count; the caller logs the result with
     :func:`clue_api.crm.writes.insert_writes` under ``proposal_id``.
     """
     del proposal_id  # the caller logs the prepared changes under it
@@ -773,7 +871,15 @@ async def prepare_changes(
     items = [_parse(provider, change) for change in changes]
     _check_once_per_record_field(items)
 
-    reader = _Reader(conn, gateway=gateway, budget=budget, connection=connection, version=version)
+    reader = _Reader(
+        conn,
+        gateway=gateway,
+        budget=budget,
+        connection=connection,
+        version=version,
+        min_interval_s=min_interval_s,
+        sleep=sleep,
+    )
     metas: dict[str, dict[str, _FieldMeta]] = {}
     for object_name in dict.fromkeys(item.parsed.object for item in items if item.parsed.fields):
         metas[object_name] = await _field_metas(reader, provider, object_name)
@@ -784,21 +890,26 @@ async def prepare_changes(
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
 
-    # Before-values: field updates per record (HubSpot) or per object (Salesforce, batched).
+    # Before-values: field updates in batches per object where the CRM has a batch read
+    # (HubSpot companies, every Salesforce object), else per record (HubSpot contacts).
     updates = [item for item in items if item.parsed.change_kind(item.spec) == "field_update"]
     current: dict[tuple[str, str], Mapping[str, object]] = {}
     if provider == "hubspot":
-        wanted: dict[tuple[str, str], list[str]] = {}
+        by_record: dict[str, dict[str, list[str]]] = {}
         for item in updates:
-            key = (item.parsed.object, str(item.parsed.record_ref))
-            wanted.setdefault(key, []).extend(item.parsed.fields)
-        for (object_name, record_ref), fields in wanted.items():
-            display = _DISPLAY_FIELDS[provider].get(object_name, ())
-            values = await _hubspot_field_values(
-                reader, object_name, record_ref, list(dict.fromkeys([*fields, *display]))
+            display = _DISPLAY_FIELDS[provider].get(item.parsed.object, ())
+            fields = by_record.setdefault(item.parsed.object, {}).setdefault(
+                str(item.parsed.record_ref), []
             )
-            if values is not None:
-                current[(object_name, record_ref)] = values
+            fields.extend(f for f in (*item.parsed.fields, *display) if f not in fields)
+        for object_name, record_fields in by_record.items():
+            batch = await hubspot_batch_values(reader.call, object_name, record_fields)
+            for record_ref, fields in record_fields.items():
+                values = batch.get(record_ref)
+                if values is None:
+                    values = await _hubspot_field_values(reader, object_name, record_ref, fields)
+                if values is not None:
+                    current[(object_name, record_ref)] = values
     else:
         by_object: dict[str, dict[str, set[str]]] = {}
         for item in updates:

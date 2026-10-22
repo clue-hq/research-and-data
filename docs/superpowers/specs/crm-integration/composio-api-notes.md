@@ -132,6 +132,20 @@ were created. Slugs found with `search_tools` plus `GET /tools/{slug}?version=` 
 | (e) create company | `HUBSPOT_CREATE_COMPANY` (schema only) | flat named properties (`name`, `domain`, `industry` enum, …) + `custom_properties{}` | `HUBSPOT_CREATE_COMPANIES` `inputs[{properties}]` (not probed) | `{id, properties, createdAt, …}` (schema) |
 | (f) read current values | `HUBSPOT_READ_CRM_OBJECT_BY_ID` ✔ | `objectType`, `objectId`, `properties[]` (also `propertiesWithHistory[]`) | batch reads: `HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES`, `HUBSPOT_READ_CONTACT` (single) | `{id, properties{…}, updatedAt}`; unset properties come back `null` |
 
+**Batch reads used by the write path (final review I-3, 2026-10-23).** The checks before the card,
+before sending and after sending read HubSpot **companies** with
+`HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES` (already on the read allowlist), 100 ids a call:
+`inputs[{id}]` (required; at most 100 per the tool's description), `properties[]`, optional
+`idProperty` (default `hs_object_id`), `propertiesWithHistory[]`, `archived` — from Composio's own
+tool schema as `find_crm_actions` listed it on 2026-10-22 (schema only). The answer is read as
+HubSpot's batch read, `{status, results[{id, properties{…}}]}`, **not verified live**: a record the
+answer leaves out, and every record of a call that is refused or answered in another shape, is read
+again on its own with `HUBSPOT_READ_CRM_OBJECT_BY_ID` (which tells a missing record, 404, from a
+failed read), so a wrong guess costs calls, never a wrong value. Contacts stay one read per record:
+`HUBSPOT_READ_CONTACTS` is allowlisted but its argument shape is recorded nowhere. List memberships
+stay one `HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS` per contact: no allowlisted read takes many records.
+First live use owed (Phase 3's first company write).
+
 HubSpot errors seen (verbatim, `ExecuteResult.error`; long lists cut with `…`):
 - **Invalid picklist (enum) value** — `{"status":"error","message":"Property values were not valid: [{\"isValid\":false,\"message\":\"ZZ_NOT_A_REAL_INDUSTRY was not one of the allowed options: [ACCOUNTING, … MOBILE_GAMES]\", …}]", …,"errors":[{…,"code":"INVALID_OPTION","context":{"propertyName":["industry"]}}],"category":"VALIDATION_ERROR"}` (≈9 KB: it lists every option — truncate before showing).
 - **Unknown property** — `…"errors":[{"message":"Property \"zz_no_such_property\" does not exist","code":"PROPERTY_DOESNT_EXIST",…}],"category":"VALIDATION_ERROR"}`.

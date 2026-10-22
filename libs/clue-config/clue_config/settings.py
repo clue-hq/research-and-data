@@ -1046,7 +1046,8 @@ class Settings(BaseSettings):
     crm_salesforce_api_share_pct: int = Field(default=10, ge=1, le=100)
     # The CRM write executor (Phase 2): a change that meets a rate limit or an unreachable CRM is
     # retried this many sends in all, waiting RETRY_BASE_S * 2**(attempt-1) seconds between them,
-    # then failed (retryable); MIN_INTERVAL_S is the pause between two calls to the CRM.
+    # then failed (retryable); MIN_INTERVAL_S is the pause between two calls to the CRM (the
+    # reads before a permission card included).
     # Env: ``CLUE_CRM_WRITE_MAX_ATTEMPTS`` / ``CLUE_CRM_WRITE_RETRY_BASE_S`` /
     # ``CLUE_CRM_WRITE_MIN_INTERVAL_S``.
     crm_write_max_attempts: int = Field(default=4, ge=1)

@@ -79,6 +79,8 @@ from clue_api.crm.write_prepare import (
     _soql_text,
     _status_code,
     _unwrap,
+    hubspot_batch_values,
+    temporary_failure,
 )
 from clue_api.crm.writes import (
     WriteProposal,
@@ -214,24 +216,11 @@ def crm_reply(body: str) -> tuple[str, Any]:
     return body, None
 
 
-_TEMPORARY_CODES = ("REQUEST_LIMIT_EXCEEDED", '"category":"RATE_LIMITS"')
-
-
 def _refusal_kind(result: ExecuteResult) -> FailureKind:
     """A refused call's ``failure_kind``: the CRM's 404 for a record is ``not_found``."""
     if _status_code(result) == 404:
         return "not_found"
     return failure_kind(result.error)
-
-
-def _temporary(result: ExecuteResult) -> Literal["rate_limited", "unavailable"] | None:
-    """A refused call that is a rate limit or an unreachable CRM rather than a refusal."""
-    status = _status_code(result)
-    if status == 429 or any(code in (result.error or "") for code in _TEMPORARY_CODES):
-        return "rate_limited"
-    if isinstance(status, int) and status >= 500:
-        return "unavailable"
-    return None
 
 
 # --- the run's pieces ------------------------------------------------------------------------
@@ -393,7 +382,7 @@ class _Crm:
                 return ExecuteResult(False, None, exc.message)
             raise self._stop(exc) from exc
         if not result.successful:
-            temporary = _temporary(result)
+            temporary = temporary_failure(result)
             if temporary is not None:
                 raise _Stop(temporary, result.error or f"{self.name} is not answering.")
         return result
@@ -429,12 +418,33 @@ def _unreadable(crm: _Crm, what: str) -> _Seen:
 
 
 async def _read_fields(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
-    """The current value of each field update's field."""
+    """The current value of each field update's field, read in batches where the CRM has a
+    batch read (HubSpot companies, Salesforce SOQL)."""
     seen: dict[UUID, _Seen] = {}
     if crm.connection.provider == "hubspot":
-        by_record: dict[tuple[str, str], list[_Write]] = {}
+        hubspot_objects: dict[str, dict[str, list[_Write]]] = {}
         for write in writes:
-            by_record.setdefault((write.object, str(write.record_ref)), []).append(write)
+            hubspot_objects.setdefault(write.object, {}).setdefault(
+                str(write.record_ref), []
+            ).append(write)
+        # Batched where HubSpot has a batch read (companies, R-7.4); a record the batch did not
+        # return, and every contact, is read on its own (that read tells "not found" apart).
+        by_record: dict[tuple[str, str], list[_Write]] = {}
+        for object_name, object_records in hubspot_objects.items():
+            batch = await hubspot_batch_values(
+                crm.call,
+                object_name,
+                {
+                    ref: sorted({str(w.field) for w in group})
+                    for ref, group in object_records.items()
+                },
+            )
+            for record_ref, group in object_records.items():
+                if record_ref not in batch:
+                    by_record[(object_name, record_ref)] = group
+                    continue
+                for write in group:
+                    seen[write.write_id] = _Seen(value=batch[record_ref].get(str(write.field)))
         for (object_name, record_ref), group in by_record.items():
             result = await crm.call(
                 _HUBSPOT_READ,

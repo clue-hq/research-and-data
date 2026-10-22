@@ -110,6 +110,11 @@ class _WritingCrm(_FakeCrm):
             ):
                 self.calls.append((slug, dict(arguments)))
                 return _NOT_FOUND
+            if slug == _BATCH_READ:  # HubSpot leaves out a record it does not have
+                self.calls.append((slug, dict(arguments)))
+                held = [i for i in arguments["inputs"] if i["id"] in self.records]
+                answer = self._answer(slug, {**arguments, "inputs": held})
+                return ExecuteResult(True, {"data": answer}, None)
             return await super().execute(slug=slug, arguments=arguments, **kwargs)
         self.calls.append((slug, dict(arguments)))
         if self.on_write is not None:
@@ -174,6 +179,8 @@ _WRITE_SLUGS = frozenset(
         "HUBSPOT_CREATE_CONTACT",
     }
 )
+
+_BATCH_READ = "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"
 
 #: HubSpot's answer for a record that is not there (HTTP 404 inside a refused call).
 _NOT_FOUND = ExecuteResult(
@@ -768,7 +775,7 @@ def test_a_rate_limited_read_back_never_fails_a_change_the_crm_accepted(tmp_path
         await _handle(handler, connection)  # send 1 of 2 is rate limited
 
         # Send 2 — the last allowed — lands; the read-back right after is rate limited.
-        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [None, limited]
+        gateway.failures[_BATCH_READ] = [None, limited]
         result = await _handle(handler, connection)
 
         assert result.requeue
@@ -814,7 +821,7 @@ def test_a_rate_limited_read_counts_as_an_attempt(tmp_path: Path) -> None:
         gateway = _WritingCrm(records={"101": {"icp_tier": None}})
         proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
         limited = ComposioError("rate_limited", 429, "Too many requests")
-        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [limited, limited, limited]
+        gateway.failures[_BATCH_READ] = [limited, limited, limited]
         handler = _handler(conn, tmp_path, gateway, crm_write_max_attempts=3)
 
         first = await _handle(handler, connection)
@@ -850,7 +857,7 @@ def test_a_confirming_read_that_keeps_failing_settles_the_change(tmp_path: Path)
         proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
         handler = _handler(conn, tmp_path, gateway, crm_write_max_attempts=3)
         # The check before sending passes, the send lands, every read after it is limited.
-        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [None, limited, limited, limited]
+        gateway.failures[_BATCH_READ] = [None, limited, limited, limited]
 
         first = await _handle(handler, connection)
         assert first.requeue and first.requeue_after == timedelta(seconds=30)
@@ -880,6 +887,29 @@ def test_a_confirming_read_that_keeps_failing_settles_the_change(tmp_path: Path)
     _run(tmp_path, "confirmfail", body)
 
 
+def test_hubspot_company_reads_are_batched(tmp_path: Path) -> None:
+    """Final review I-3: the check before sending and the read-back read 100 companies a call."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        ids = [str(1000 + n) for n in range(150)]
+        gateway = _WritingCrm(records={rid: {"icp_tier": None} for rid in ids})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, *[_tier(rid, "Tier 1") for rid in ids]
+        )
+
+        assert (await _handle(_handler(conn, tmp_path, gateway), connection)).outcome == "done"
+
+        logged = await _writes(conn, proposal_id)
+        assert {change["status"] for change in logged.values()} == {"succeeded"}
+        reads = [args for slug, args in gateway.calls if slug == _BATCH_READ]
+        # Per chunk of the batch write: its check, its send, its read-back.
+        assert [len(args["inputs"]) for args in reads] == [100, 100, 50, 50]
+        assert not [slug for slug, _ in gateway.calls if slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID"]
+        assert [len(args["inputs"]) for _, args in gateway.writes] == [100, 50]
+
+    _run(tmp_path, "batchread", body)
+
+
 def test_a_refused_connection_pauses_and_a_missing_record_fails_alone(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         gateway = _WritingCrm(records={"101": {"icp_tier": None}, "102": {"icp_tier": None}})
@@ -887,9 +917,7 @@ def test_a_refused_connection_pauses_and_a_missing_record_fails_alone(tmp_path: 
             conn, seeded, connection, gateway, _tier("101", "Tier 1"), _tier("102", "Tier 2")
         )
         # Clue's Composio key is refused (401): nothing fails for good, the proposal pauses.
-        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [
-            ComposioError("auth", 401, "Invalid API key")
-        ]
+        gateway.failures[_BATCH_READ] = [ComposioError("auth", 401, "Invalid API key")]
         result = await _handle(_handler(conn, tmp_path, gateway), connection)
 
         assert result.outcome == "crm_auth" and not result.requeue
