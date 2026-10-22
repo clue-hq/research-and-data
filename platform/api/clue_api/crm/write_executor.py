@@ -1063,7 +1063,7 @@ class CrmWriteHandler:
                         "UPDATE crm_write SET status = :status, failure_kind = :kind, "
                         "crm_message = :message, crm_response = CAST(:response AS jsonb), "
                         "retryable = :retryable, crm_id = COALESCE(:crm_id, crm_id), "
-                        "finished_at = now() "
+                        "record_ref = COALESCE(:created, record_ref), finished_at = now() "
                         "WHERE write_id = :id AND status NOT IN ('succeeded', 'failed', 'skipped')"
                     ),
                     {
@@ -1074,6 +1074,13 @@ class CrmWriteHandler:
                         "response": _response_param(outcome.crm_response),
                         "retryable": outcome.retryable,
                         "crm_id": outcome.crm_id,
+                        # A create that succeeded names its new record (L9): the write log and
+                        # the wake message read it like any other change's record.
+                        "created": (
+                            outcome.crm_id
+                            if outcome.status == "succeeded" and by_id[write_id].kind in _CREATES
+                            else None
+                        ),
                     },
                 )
                 write = by_id[write_id]

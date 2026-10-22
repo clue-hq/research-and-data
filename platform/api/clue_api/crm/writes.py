@@ -149,6 +149,21 @@ async def proposal_counts(conn: AsyncConnection, *, proposal_id: UUID) -> WriteC
     return WriteCounts(**{key: int(value) for key, value in row._mapping.items()})
 
 
+async def proposal_created_records(
+    conn: AsyncConnection, *, proposal_id: UUID
+) -> list[tuple[str, str]]:
+    """``(record_label, new CRM id)`` of each record the proposal's succeeded creates made."""
+    rows = await conn.execute(
+        text(
+            "SELECT record_label, record_ref FROM crm_write WHERE proposal_id = :id "
+            "AND kind IN ('create_contact', 'create_company') AND status = 'succeeded' "
+            "AND record_ref IS NOT NULL ORDER BY ordinal"
+        ),
+        {"id": proposal_id},
+    )
+    return [(str(row.record_label), str(row.record_ref)) for row in rows]
+
+
 async def set_proposal_status(
     conn: AsyncConnection,
     *,

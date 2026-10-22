@@ -37,7 +37,12 @@ from clue_api.conversation_capture import (
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.connections import ConnectRequest
 from clue_api.crm.write_answer import allowed_sentence
-from clue_api.crm.writes import WriteCounts, WriteProposal, proposal_counts
+from clue_api.crm.writes import (
+    WriteCounts,
+    WriteProposal,
+    proposal_counts,
+    proposal_created_records,
+)
 from clue_spine import get_project
 
 __all__ = [
@@ -134,12 +139,19 @@ def _opening(allowed: str | None) -> str:
 
 
 def crm_writes_finished_message(
-    proposal_id: UUID, counts: WriteCounts, *, allowed: str | None = None
+    proposal_id: UUID,
+    counts: WriteCounts,
+    *,
+    allowed: str | None = None,
+    created: Sequence[tuple[str, str]] = (),
 ) -> str:
+    """``created`` is ``(label, new CRM id)`` of each record the proposal's creates made."""
     message = (
         f"{_opening(allowed)}The CRM changes are finished: {_tally(counts)} — "
         f"{_log_hint(proposal_id)}."
     )
+    if created:
+        message += " Created " + ", ".join(f"{label} ({crm_id})" for label, crm_id in created) + "."
     if counts.reconnected:
         message += (
             f" {counts.reconnected} were not sent (or not confirmed) because the CRM was "
@@ -185,6 +197,7 @@ async def queue_crm_writes_finished_turn(
             proposal.proposal_id,
             counts,
             allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
+            created=await proposal_created_records(conn, proposal_id=proposal.proposal_id),
         ),
     )
 

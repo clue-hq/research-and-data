@@ -40,10 +40,13 @@ from clue_api.crm.write_executor import (
     failure_kind,
 )
 from clue_api.crm.write_prepare import ProposedChange, prepare_changes
+from clue_api.crm.write_tools import CrmWriteLogInput
 from clue_config import Settings
 from clue_fleet import WorkContext, WorkId, WorkResult
 from clue_storage import FsStorage
+from tests.api.test_crm_propose_db import _ctx
 from tests.api.test_crm_tools_db import _connect
+from tests.api.test_crm_write_log_tools_db import _log_tool
 from tests.api.test_crm_write_prepare_db import _FakeBudget, _FakeCrm
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
 from tests.db.conftest import run_async
@@ -946,6 +949,16 @@ def test_a_create_stores_its_id_and_is_linked_as_created_by_clue(tmp_path: Path)
             "HUBSPOT_CREATE_CONTACT",
             "HUBSPOT_READ_CRM_OBJECT_BY_ID",
         ]
+        # The write log names the new record, so the agent can tell the person its id (L9).
+        logged = (
+            await _log_tool(conn).invoke(
+                CrmWriteLogInput(proposal_id=proposal_id), _ctx(conn, seeded.workspace_id)
+            )
+        ).references["writes"]
+        assert [(w["status"], w["record_ref"]) for w in logged] == [("succeeded", "500")]
+        # And so does the wake message.
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{proposal_id}")
+        assert f"Created {logged[0]['record_label']} (500)." in message
 
     _run(tmp_path, "create", body)
 
@@ -974,6 +987,14 @@ def test_a_refused_create_shows_the_crm_message_and_keeps_its_answer(tmp_path: P
         assert row.crm_response == json.loads(_HUBSPOT_INVALID_EMAIL)
         # Nothing was created, so the write names no record.
         assert (row.record_ref, row.crm_id) == (None, None)
+        logged = (
+            await _log_tool(conn).invoke(
+                CrmWriteLogInput(proposal_id=proposal_id), _ctx(conn, seeded.workspace_id)
+            )
+        ).references["writes"]
+        assert [(w["status"], w["record_ref"]) for w in logged] == [("failed", None)]
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{proposal_id}")
+        assert "Created" not in message
 
     _run(tmp_path, "createrefused", body)
 
