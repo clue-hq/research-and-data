@@ -39,7 +39,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -56,8 +56,11 @@ if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so
     from clue_api.chat.attachments import ValidatedAttachment
 
 __all__ = [
+    "AGENT_REPLY_EXPECTED",
+    "AGENT_REPLY_NONE",
     "AGENT_TURN_DEDUP_PREFIX",
     "DERIVATION_CRM_CONNECTED",
+    "DERIVATION_CRM_WRITES_FINISHED",
     "DERIVATION_DESIGN_LEG_FIRST_TURN",
     "DERIVATION_DESIGN_LEG_REDELIVERY",
     "DERIVATION_DISCOVERY_FINISHED",
@@ -99,12 +102,22 @@ DERIVATION_DISCOVERY_FINISHED = "discovery_finished"
 #: The workspace's CRM connection became active: the chat that showed the connect card resumes
 #: by itself (CRM integration, R-3.10). Same shape as ``discovery_finished``.
 DERIVATION_CRM_CONNECTED = "crm_connected"
+#: A CRM write proposal finished (every covered write succeeded, failed or was skipped): the chat
+#: that proposed it resumes by itself with the outcome (CRM integration Phase 2). Same shape as
+#: ``crm_connected``.
+DERIVATION_CRM_WRITES_FINISHED = "crm_writes_finished"
+
+#: R-11.6 (CRM rulings): whether the agent replies to a submission. ``expected`` is a turn the
+#: fleet runs; ``none`` is recorded only — the answer to a CRM write card, which starts no turn.
+#: The dispatcher and every busy check skip a ``none`` submission.
+AGENT_REPLY_EXPECTED: Final = "expected"
+AGENT_REPLY_NONE: Final = "none"
 
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
     "submitted_via_membership_id, onboarding_input_id, message_artifact_key, message_sha256, "
     "idempotency_key, agent_profile_id, previous_turn_outcome, requested_at, "
-    "derivation, derived_from_turn_id"
+    "derivation, derived_from_turn_id, agent_reply"
 )
 
 
@@ -175,6 +188,8 @@ class AgentTurnSubmissionRow(BaseModel):
     #: Spec 2026-09-20 §2.1: set when the server made this submission from a user's own bytes.
     derivation: str | None = None
     derived_from_turn_id: UUID | None = None
+    #: R-11.6: ``none`` for a submission the agent never replies to (it never runs).
+    agent_reply: str = AGENT_REPLY_EXPECTED
 
 
 class SubmissionContextRefRow(BaseModel):
@@ -221,6 +236,7 @@ async def insert_submission(
     previous_turn_outcome: str | None = None,
     derivation: str | None = None,
     derived_from_turn_id: UUID | None = None,
+    agent_reply: str = AGENT_REPLY_EXPECTED,
 ) -> tuple[AgentTurnSubmissionRow, bool]:
     """Insert one submission, or replay it. Returns ``(row, created)``.
 
@@ -251,14 +267,14 @@ async def insert_submission(
                     "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
                     " message_sha256, idempotency_key, agent_profile_id, previous_turn_outcome, "
-                    " requested_at, derivation, derived_from_turn_id) "
+                    " requested_at, derivation, derived_from_turn_id, agent_reply) "
                     "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
                     " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
                     " :agent_profile_id, :previous_turn_outcome, GREATEST(clock_timestamp(), "
                     " (SELECT max(requested_at) + interval '1 microsecond' "
                     " FROM agent_turn_submission WHERE workspace_id=:workspace_id "
                     " AND thread_id=:thread_id)), "
-                    " :derivation, :derived_from_turn_id) "
+                    " :derivation, :derived_from_turn_id, :agent_reply) "
                     f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
                 ),
                 {
@@ -276,6 +292,7 @@ async def insert_submission(
                     "previous_turn_outcome": previous_turn_outcome,
                     "derivation": derivation,
                     "derived_from_turn_id": derived_from_turn_id,
+                    "agent_reply": agent_reply,
                 },
             )
         )
@@ -343,6 +360,7 @@ async def insert_submission(
         existing.message_sha256 != message_sha256
         or existing.thread_id != thread_id
         or existing.agent_profile_id != agent_profile_id
+        or existing.agent_reply != agent_reply
         or tuple(context_refs) != existing_refs
         or tuple(item.upload_id for item in existing_attachments)
         != tuple(item.upload_id for item in attachment_refs)
@@ -623,16 +641,18 @@ _THREAD_INFLIGHT_SQL = text(
     """
 )
 
-# The next turn this thread owes: the earliest submission whose task has not reached a terminal
-# state. A DONE task is an executed turn; a FAILED task is an honest failure that the fleet's own
-# doctrine says is retried only by an explicit requeue, never silently — so both are skipped and
-# the thread moves on instead of looping on a turn that cannot succeed.
+# The next turn this thread owes: the earliest submission the agent replies to whose task has not
+# reached a terminal state (a ``none`` submission is recorded only and never runs, R-11.6). A DONE
+# task is an executed turn; a FAILED task is an honest failure that the fleet's own doctrine says
+# is retried only by an explicit requeue, never silently — so both are skipped and the thread
+# moves on instead of looping on a turn that cannot succeed.
 _NEXT_PENDING_SQL = text(
     """
     SELECT s.turn_id, s.project_id
     FROM agent_turn_submission s
     WHERE s.workspace_id = :workspace_id
       AND s.thread_id = :thread_id
+      AND s.agent_reply = 'expected'
       AND NOT EXISTS (
             SELECT 1 FROM fleet_task f
             WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)
@@ -674,6 +694,7 @@ _WAKE_PENDING_SQL = text(
     WHERE s.workspace_id = :workspace_id
       AND s.thread_id = :thread_id
       AND s.turn_id = :wake_turn_id
+      AND s.agent_reply = 'expected'
       AND NOT EXISTS (
             SELECT 1 FROM fleet_task f
             WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)

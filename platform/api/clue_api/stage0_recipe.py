@@ -440,10 +440,17 @@ class Stage0StepPinProvider:
         if step.tool_name in {
             "author_icp_document",
             "configure_project_targeting",
+            # CRM integration (recipe0-stage0@36): both carry only the trusted `source_turn_ref`.
+            "connect_crm",
             "manage_products",
+            # CRM integration Phase 2 (recipe0-stage0@37): both carry only the trusted
+            # `source_turn_ref`.
+            "manage_crm_grants",
+            "propose_crm_changes",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",
+            "write_brand_document",
             "write_project_document",
         }:
             requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
@@ -486,6 +493,14 @@ class Stage0StepPinProvider:
             # ``web_search`` joins at recipe0-stage0@31: its body names no project either; the
             # pin is the execution's own.
             "web_search",
+            # ``find_crm_actions`` and ``run_crm_action`` join at recipe0-stage0@36 on the same
+            # terms: their bodies are a search text, or a CRM action and its arguments, never a
+            # project.
+            "find_crm_actions",
+            "run_crm_action",
+            # ``crm_write_log`` joins at recipe0-stage0@37 on the same terms: its body is a set of
+            # filters, never a project.
+            "crm_write_log",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

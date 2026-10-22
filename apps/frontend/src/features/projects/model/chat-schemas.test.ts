@@ -281,6 +281,41 @@ test("a physically missing historical artifact gives actionable recovery copy", 
   );
 });
 
+test("a CRM write card's Allow sends its choices as crm_write", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-crm",
+        decision: "approved",
+        expectedSubjectSha256: "d".repeat(64),
+        expectedEstimatedCostCents: null,
+        crmWrite: { selected_write_ids: ["w1", "w2"], always_allow: ["hubspot:create_contact:contact"] },
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-crm",
+        decision: "approved",
+        expected_subject_sha256: "d".repeat(64),
+        expected_estimated_cost_cents: null,
+        crm_write: {
+          selected_write_ids: ["w1", "w2"],
+          always_allow: ["hubspot:create_contact:contact"],
+        },
+      },
+    },
+  );
+});
+
+test("a withdrawn gate is never open", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [{ ...fixtureGates[0], withdrawn: true }],
+  });
+  assert.equal(gate.withdrawn, true);
+  assert.equal(isGateOpen(gate), false);
+});
+
 test("the submissions-union keeps queued turns and their attach cursor", () => {
   const page = ChatTurnListResponseSchema.parse({
     data: [
@@ -319,6 +354,17 @@ test("the submissions-union keeps queued turns and their attach cursor", () => {
   );
 });
 
+test("a turn names the card it answered, and an ordinary turn names none", () => {
+  const page = ChatTurnListResponseSchema.parse({
+    data: [
+      { ...fixtureTurns[0], answered_gate_id: "gate-crm-1" },
+      { ...fixtureTurns[0], turn_id: "plain-1" },
+    ],
+  });
+  assert.equal(page.turns[0].answeredGateId, "gate-crm-1");
+  assert.equal(page.turns[1].answeredGateId, null);
+});
+
 test("durable stream events immediately refine queued/running/terminal turn state", () => {
   assert.equal(turnStateForStreamEvent("turn.accepted"), "queued");
   assert.equal(turnStateForStreamEvent("turn.started"), "running");
@@ -337,6 +383,20 @@ test("a 202 reports whether it replayed an already-accepted identity", () => {
     },
   });
   assert.equal(accepted.replayed, true);
+  assert.equal(accepted.agentReply, "expected", "an older server's 202 means a turn runs");
+});
+
+test("a 202 says when no turn will run for the submission (R-11.6)", () => {
+  const accepted = AcceptedTurnResponseSchema.parse({
+    data: {
+      turn_id: "t1",
+      thread_id: "th1",
+      requested_at: "2026-10-22T11:30:00Z",
+      replayed: false,
+      agent_reply: "none",
+    },
+  });
+  assert.equal(accepted.agentReply, "none");
 });
 
 test("a turn body is exactly one of a message or a gate response", () => {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -525,5 +526,49 @@ def test_card_compilation_retries_converge_across_persistence_crash_boundaries(
             # The card is content-addressed, so the crashed attempt's copy (if any) and the two
             # convergent retries are one durable row.
             assert completed == baseline + 1
+
+    run_async(scenario())
+
+
+def test_card_answers_since_the_last_turn_ride_the_project_context(tmp_path: Path) -> None:
+    """R-11.6: a CRM write card answered since the agent's last turn started no turn, so the next
+    turn's L3 carries one plain line for it; with nothing to tell, no such artifact exists."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed_post_recon(conn, suffix=uuid4().hex[:8])
+            factory = conn_session_factory(conn)
+            durable = DurableAgentArtifactStore(
+                storage=FsStorage(tmp_path / "s6-card-answers"), conn_factory=factory
+            )
+            runner = _runner(artifacts=durable, conn_factory=factory)
+            submission = await _capture_submission(
+                conn,
+                artifacts=durable,
+                workspace_id=seeded.workspace_id,
+                project_id=seeded.project_a.project_id,
+                brand_id=seeded.brand.brand_id,
+                product_id=seeded.product.product_id,
+                client_entity_id=seeded.client_entity_id,
+                label="card-answers",
+            )
+            pin, _ = await load_or_create_agent_turn_scope_pin(conn, submission=submission)
+            scope = _ProjectScope.from_pin(pin)
+            line = (
+                "Since your last turn: the CRM write card from 2026-10-22 09:14 UTC (3 changes) "
+                "was declined by Priya Rao."
+            )
+
+            told = await runner._compose_project_context(
+                submission=submission, scope=scope, card_answers=(line,)
+            )
+            (artifact,) = [item for item in told.artifacts if item.name == "since_last_turn"]
+            assert artifact.domain_ref.object_type == "thread"
+            assert artifact.domain_ref.object_id == submission.thread_id
+            body = json.loads(await durable.read(artifact.artifact_ref))
+            assert body["lines"] == [line]
+
+            quiet = await runner._compose_project_context(submission=submission, scope=scope)
+            assert "since_last_turn" not in {item.name for item in quiet.artifacts}
 
     run_async(scenario())

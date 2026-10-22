@@ -110,6 +110,7 @@ from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
 from clue_api.conversation_naming import build_conversation_namer
 from clue_api.crm.read_sinks import CrmReadSinks
+from clue_api.crm.write_executor import build_crm_write_handler
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -1498,6 +1499,14 @@ async def _serve() -> None:
             storage=storage,
             artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         )
+        # CRM integration Phase 2: approved CRM changes are sent in the background, one task per
+        # connection.
+        crm_write_handler = build_crm_write_handler(
+            settings=settings,
+            secrets=secrets,
+            conn_factory=transaction,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1513,6 +1522,7 @@ async def _serve() -> None:
             arv2_discovery_handler=arv2_discovery_handler,
             arv2_display_page_handler=arv2_display_page_handler,
             product_page_handler=product_page_handler,
+            crm_write_handler=crm_write_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,

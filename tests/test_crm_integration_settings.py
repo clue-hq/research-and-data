@@ -1,4 +1,5 @@
-"""CRM integration (Phase 1): the Composio keys are documented, with their defaults."""
+"""CRM integration (Phases 1–2): the Composio and write-executor keys are documented, with their
+defaults."""
 
 from __future__ import annotations
 
@@ -19,6 +20,9 @@ DEFAULTS = {
     "composio_hubspot_toolkit_version": "20261020_01",
     "composio_salesforce_toolkit_version": "20261018_00",
     "crm_salesforce_api_share_pct": 10,
+    "crm_write_max_attempts": 4,
+    "crm_write_retry_base_s": 30,
+    "crm_write_min_interval_s": 0.1,
 }
 
 EXAMPLE_LINES = (
@@ -30,6 +34,9 @@ EXAMPLE_LINES = (
     r"^CLUE_COMPOSIO_HUBSPOT_TOOLKIT_VERSION=20261020_01$",
     r"^CLUE_COMPOSIO_SALESFORCE_TOOLKIT_VERSION=20261018_00$",
     r"^CLUE_CRM_SALESFORCE_API_SHARE_PCT=10$",
+    r"^CLUE_CRM_WRITE_MAX_ATTEMPTS=4$",
+    r"^CLUE_CRM_WRITE_RETRY_BASE_S=30$",
+    r"^CLUE_CRM_WRITE_MIN_INTERVAL_S=0\.1$",
 )
 
 

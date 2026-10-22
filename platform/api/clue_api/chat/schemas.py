@@ -49,6 +49,7 @@ __all__ = [
     "AgentProfileOptionWire",
     "ArchiveThreadResponse",
     "ComposerContextEntityWire",
+    "CrmWriteAnswer",
     "ContextRefRequest",
     "CreateBlankProjectRequest",
     "CreateThreadRequest",
@@ -180,6 +181,20 @@ class UpdateThreadRequest(_Request):
         return self
 
 
+class CrmWriteAnswer(_Request):
+    """The person's choices on a CRM write permission card (CRM integration Phase 2, card §3 A).
+
+    ``selected_write_ids`` are the ticked changes of the card; ``always_allow`` the standing
+    permissions (scope keys the card offered) to grant from now on. Both are choices only: the
+    server proves every id belongs to the proposal and every scope was offered by the card.
+    """
+
+    selected_write_ids: list[UUID] = Field(default_factory=list, max_length=1_000)
+    always_allow: list[Annotated[str, StringConstraints(min_length=1, max_length=300)]] = Field(
+        default_factory=list, max_length=100
+    )
+
+
 class GateResponseRequest(_Request):
     """A structured answer to one durable ``agent_gate`` (charter §3.5, §3-P5(c)).
 
@@ -209,6 +224,9 @@ class GateResponseRequest(_Request):
     selected_product_ids: (
         list[Annotated[str, StringConstraints(min_length=1, max_length=200)]] | None
     ) = Field(default=None, min_length=1, max_length=200)
+    # Present only for a CRM write permission card: the ticked changes and the "Always allow"
+    # choices. The server proves each against the proposal and the card it showed.
+    crm_write: CrmWriteAnswer | None = None
 
     @model_validator(mode="after")
     def one_bounded_auxiliary_answer(self) -> GateResponseRequest:
@@ -218,13 +236,14 @@ class GateResponseRequest(_Request):
                 ("revision_request", self.revision_request),
                 ("selected_product_id", self.selected_product_id),
                 ("selected_product_ids", self.selected_product_ids),
+                ("crm_write", self.crm_write),
             )
             if value is not None
         ]
         if len(supplied) > 1:
             raise ValueError(
-                "revision_request, selected_product_id and selected_product_ids are mutually "
-                "exclusive"
+                "revision_request, selected_product_id, selected_product_ids and crm_write are "
+                "mutually exclusive"
             )
         return self
 
@@ -350,7 +369,9 @@ class HomeProjectRequest(_Request):
         return self
 
 
-def gate_response_message(response: GateResponseRequest) -> str:
+def gate_response_message(
+    response: GateResponseRequest, *, crm_write_summary: str | None = None
+) -> str:
     """The canonical bytes a gate response is captured as.
 
     Deterministic (sorted keys, compact separators, one spelling of the amount) because these bytes
@@ -360,7 +381,7 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
-    payload: dict[str, str | list[str] | None] = {
+    payload: dict[str, Any] = {
         "kind": "gate_response",
         "gate_id": response.gate_id,
         "decision": response.decision,
@@ -381,6 +402,16 @@ def gate_response_message(response: GateResponseRequest) -> str:
     # is captured as sent rather than sorted.
     if response.selected_product_ids is not None:
         payload["selected_product_ids"] = list(response.selected_product_ids)
+    # A CRM write card answer: the choices, de-duplicated in the order made, and one sentence the
+    # agent reads ("Allowed 60 of 61 changes; always allow adding contacts to Clue lists."). The
+    # sentence is derived from the immutable card, so a retried click captures the same bytes.
+    if crm_write_summary is not None:
+        chosen = response.crm_write or CrmWriteAnswer()
+        payload["crm_write"] = {
+            "selected_write_ids": list(dict.fromkeys(str(i) for i in chosen.selected_write_ids)),
+            "always_allow": list(dict.fromkeys(chosen.always_allow)),
+            "summary": crm_write_summary,
+        }
     return json.dumps(
         payload,
         sort_keys=True,
@@ -557,6 +588,9 @@ class TurnAcceptedWire(_Wire):
     #: thread holds an open design leg, else ``head_of_abm``. Derived in the accept transaction,
     #: so the composer can label the pending turn without a second read.
     routed_to: Literal["head_of_abm", "design"] = "head_of_abm"
+    #: R-11.6: ``none`` when the submission is recorded and no turn will run for it (the answer
+    #: to a CRM write card). The client then attaches no turn stream and shows nothing in flight.
+    agent_reply: Literal["expected", "none"] = "expected"
 
 
 class TurnAcceptedResponse(_Wire):
@@ -902,6 +936,9 @@ class GateWire(_Wire):
     snapshot_erasure_reason: str | None
     answer: GateAnswerWire | None
     launches: tuple[GateLaunchWire, ...]
+    #: Unanswered and no longer answerable: a CRM write card a newer card replaced, or one a
+    #: reconnect closed. Such a gate is not open and asks nothing of anyone.
+    withdrawn: bool = False
 
 
 class GateListResponse(_Wire):
@@ -963,6 +1000,7 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
             )
             for launch in view.launches
         ),
+        withdrawn=view.withdrawn,
     )
 
 

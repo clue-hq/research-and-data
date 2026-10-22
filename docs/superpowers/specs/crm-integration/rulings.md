@@ -217,6 +217,39 @@ Related documents:
   notes, replies, visit roll-ups, owner tasks.
 - **R-6.20 (2026-10-20)** **Creating deals** is not in the first release.
 
+- **R-6.21 (2026-10-22)** **The permission card groups changes, it does not list every change.**
+  One line per group (the same action on the same field) with a count, a summary of the values and
+  the agent's reason; opening a group lists its records, which can be unticked one by one. Changes
+  that **overwrite a value a person set are never grouped** — each is listed on its own, unticked by
+  default. Card spec: `2026-10-22-crm-write-permission-card-design.md`.
+
+- **R-6.22 (2026-10-22)** **The card spec is the current card**; planning and building do not
+  wait for a Figma design. "Fully automatic" lives on the settings page, not on the card; only one
+  live write card per chat (a new proposal replaces an unanswered one); the asking card shows the
+  CRM's logo.
+
+- **R-6.23 (2026-10-22)** **Write actions are found the same way as reads.** The agent searches
+  Composio (`find_crm_actions`) and picks the write action itself, guided by the `crm-writing`
+  skill; proposing writes by a fixed list of "kinds" was considered and rejected (one generic
+  mechanism, judgement in the prompt). Safety stays in code: only allowlisted write actions can run,
+  and each carries data we maintain (kind of change, object and fields, plain-words label) that
+  drives the permission scope, the card's groups, the before-values and the write log. In trial 1
+  the search missed one named read action (F5) but the agent still finished correctly; on Salesforce
+  it found everything first time.
+
+- **R-6.24 (2026-10-22, replaces the starting default in R-6.4)** **No permission question at
+  connect.** The first permission card asks instead: it already offers "Always allow" for the kinds
+  of change on it (e.g. adding contacts to Clue lists), so the person decides when a real write is
+  in front of them. The connect card stays as built.
+
+- **R-6.25 (2026-10-22)** **Confirmed design calls** (design §15): writes run in a background
+  executor that wakes the chat with the results (call 4); undo is a new proposal of the reverse
+  changes through the same permissions (call 9); when the CRM cannot tell who set a value, Clue
+  assumes a person did (call 11); Clue removes only memberships, notes and tasks it created itself,
+  per its own record (call 12); standing permissions belong to the current connection and changing
+  CRMs clears them (calls 1, 8); setting up Clue's own fields always needs an owner or admin, once,
+  and is never covered by "Fully automatic" (call 7).
+
 ## 7. Correctness and API budget
 
 - **R-7.1 (2026-10-20)** **No duplicates:** every create is **find, then create** (contacts matched
@@ -257,11 +290,20 @@ Related documents:
 - **R-8.6 (2026-10-20, final)** Clue **may add opted-out people** to lists or campaigns, even ones
   the customer's automations might email.
 
+- **R-8.7 (2026-10-22)** **What personal data Clue may write into the customer's CRM.** First and
+  last name, job title and the company/account link: yes. Work email: **only verified** (no verified
+  email, no contact created — design call 6). Buying/committee role: yes. LinkedIn profile URL: yes,
+  when identity-bound. **Phone numbers: no.** **Personal research details** (interests, posts,
+  resonance facts) **never go into the CRM**; they stay in Clue behind its own checks. **Sensitive
+  data: never.** **EU and every other person:** the same rules, and every person written must also
+  pass Clue's existing identity-binding and jurisdiction/use-class check — a field Clue may not use
+  for that person in outreach is never written to the CRM. Each write records the claim it came
+  from in the write log, so a privacy erasure in Clue can list what was written into the customer's
+  CRM (Clue never deletes it there, R-6.13).
+
 ## 9. Open — not yet decided
 
-- **What personal data Clue may write into the customer's CRM** (which person fields; verified
-  work email only; no phone; no personal research details in notes; how EU people are handled) —
-  asked 2026-10-20, not yet answered.
+- *(none — the personal-data question was answered 2026-10-22, R-8.7)*
 
 ## 10. Trial 1 findings — decisions
 
@@ -289,3 +331,46 @@ Related documents:
 - **R-10.10 (2026-10-21)** **F6 (slow turns) and F7 (underscores rendered as italics in chat)
   dropped.**
 - **R-10.11 (2026-10-21)** **F5 (narrow Composio action search) deferred** — to be taken up later.
+- **R-10.12 (2026-10-21)** **F11 fix — the sales motion stands on its own.** The skill no longer
+  asks the agent to save its script (the sandbox does not keep `.py`); the CSV tables are still
+  saved for later turns. The published document says in words how its numbers were computed
+  (window, definitions, deals counted, filters, deals set aside and why), and each number's Source
+  is the CRM and the day it was computed (e.g. "CRM (HubSpot), computed 21 Oct 2026"), never a file
+  in the agent's workspace. Option 1 (letting the sandbox keep `.py`) was not chosen.
+- **R-10.13 (2026-10-22)** **F8 (callback page background), F9 (test CRM data limits) and F10 (an
+  11-minute reasoning loop) are not counted as issues or defects for now.** Nothing is done about
+  them; with F5 deferred, no trial finding blocks the Phase 1 gate.
+- **R-10.14 (2026-10-22)** **Changing the CRM once one is connected belongs on a settings page, not
+  in the chat.** The switch test was skipped. Found during it: a switch or reconnect card was shown
+  as already connected because the tool's snapshot and the connection route format the same time
+  differently (`…Z` vs `…+00:00`) — fixed in `ef4e96cbc` (compared as moments), still needed for
+  reconnecting an expired connection. Whether `connect_crm` should keep offering a switch from chat
+  is to be decided with the settings page.
+
+## 11. Phase 2 live check — decisions (2026-10-22)
+
+- **R-11.1 (2026-10-22)** **A card link always says `agent_gate`.** The agent linked the write card by
+  its kind (`crm_write_permission`), so the chat showed an incomplete review request. Finalization
+  now refuses a link whose id is a card under any other type (design-leg links untouched), and the
+  manual's gate line spells the link out (`e672ab95c`).
+- **R-11.2 (2026-10-22)** **The card names records, not ids** — the prepare read also fetches the
+  record's display name (`e93ad4a27`).
+- **R-11.3 (2026-10-22)** **Answering the write card starts no agent turn.** Allow records the answer
+  and hands the changes to the background sender; its one wake turn reports the results. Don't allow
+  records the answer only; the card shows the decline and the agent sees it the next time the person
+  writes. (Live: Allow started a needless turn that ran 9½ minutes, failed on a model timeout and held
+  back the results report.)
+- **R-11.4 (2026-10-22)** **Answering any card adds no message bubble to the chat**, for every kind of
+  agent gate: only the card's state changes. The answer stays recorded (and a turn the answer starts
+  still runs, for the cards that start one).
+- **R-11.5 (2026-10-22)** **The card shows option labels, not internal values** ("Tier 1", not
+  "tier_1"), from the field definitions Clue already reads to check picklist values.
+- **R-11.6 (2026-10-22)** **How R-11.3 is built: a submission can need no reply.** A card answer stays
+  a turn submission (the answer's receipt and double-click anchor), with a new column saying whether
+  the agent replies; the CRM card's answers say no. The dispatcher and busy checks skip such
+  submissions; the route tells the browser "recorded, no turn". The sender's results message says
+  who allowed what and which standing permission was granted; a decline reaches the agent as one
+  context line on its next turn ("since your last turn, the write card from … was declined by …").
+  Set aside: holding the answer turn until the writes finish (blocks the chat, worse when paused);
+  recording the answer with no submission (changes the gate-answer contract every card relies on);
+  faking a finished run.

@@ -5,10 +5,14 @@ Spec: docs/superpowers/specs/crm-integration/2026-10-20-crm-integration-first-re
 ``connect-link`` for a fresh Composio link on each click — links live about ten minutes, so none is
 stored for reuse. Composio sends the browser back to the frontend's callback page, which calls
 ``complete``: the connection is activated only when Composio reports it ACTIVE and it is exactly
-the attempt this request recorded, and then every chat waiting on the connection is woken.
+the attempt this request recorded, and then every chat waiting on the connection is woken, and
+the CRM changes the replaced connection had not sent are closed (never sent on the new one) and
+their chats asked to propose them again.
 
 Connecting requires ``workspace.manage_settings`` (owners and admins); any member may read the
-connection's status.
+connection's status, and the progress of a CRM write permission card (``GET /crm/proposals/{id}``:
+what was sent, what failed with the CRM's own message, what was skipped and why, who answered;
+card spec §3 B–F, §6).
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Request
+from sqlalchemy import text
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.crm.composio_gateway import (
@@ -33,6 +38,8 @@ from clue_api.crm.connections import (
     start_attempt,
 )
 from clue_api.crm.wake import queue_crm_connected_turns
+from clue_api.crm.write_answer import proposal_progress
+from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
@@ -169,13 +176,21 @@ def register_crm_routes(
             )
             if activated is None:
                 return {"outcome": "stale"}
-            _, waiting = activated
+            connection, waiting = activated
             if artifacts is None:
                 log.warning("crm.complete.no_artifact_store", waiting=len(waiting))
             else:
                 await queue_crm_connected_turns(
                     conn, artifacts, requests=waiting, provider=provider
                 )
+            # CRM changes the replaced connection had not sent are never sent on this one (it
+            # may be another portal or org): they are closed and their chats asked to re-propose.
+            await close_replaced_connection_proposals(
+                conn,
+                artifacts,
+                workspace_id=workspace_id,
+                active_connection_id=connection.connection_id,
+            )
         return {"outcome": "connected", "provider": provider}
 
     @router.get("/crm/connection")
@@ -183,6 +198,14 @@ def register_crm_routes(
         principal_for(request, workspace_id)
         async with conn_factory() as conn:
             current = await latest_connection(conn, workspace_id=workspace_id)
+            name = (
+                None
+                if current is None
+                else await conn.scalar(
+                    text("SELECT display_name FROM platform_user WHERE user_id = :id"),
+                    {"id": current.connected_by_user_id},
+                )
+            )
         if current is None:
             return {"status": "none"}
         status: Literal["active", "expired", "disconnected"] = current.status  # type: ignore[assignment]
@@ -191,4 +214,19 @@ def register_crm_routes(
             "status": status,
             "connectedAt": current.connected_at.isoformat(),
             "connectedBy": current.connected_by_user_id,
+            # The connect card's footer says who connected it ("Connected by …").
+            "connectedByName": name,
         }
+
+    @router.get("/crm/proposals/{proposal_id}")
+    async def proposal(
+        proposal_id: UUID, request: Request, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        principal_for(request, workspace_id)
+        async with conn_factory() as conn:
+            progress = await proposal_progress(
+                conn, workspace_id=workspace_id, proposal_id=proposal_id
+            )
+        if progress is None:
+            raise refused(404, "crm_proposal_not_found", "No such CRM proposal here.")
+        return progress

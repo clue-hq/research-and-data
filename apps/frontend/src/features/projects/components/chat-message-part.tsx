@@ -21,6 +21,7 @@ import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import { crmConnectCard, type CrmProvider } from "@/features/integrations/model/crm";
 import { ChatGateCard } from "./chat-gate-card";
 import { CrmConnectCard } from "./crm-connect-card";
+import { CrmWritePermissionCard } from "./crm-write-permission-card";
 import { ChatResearchTask } from "./chat-research-task";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
@@ -120,6 +121,17 @@ export function ChatMessagePartView({
     case "gate": {
       const card = actions.gateFor(part);
       if (!card) return null;
+      // A CRM write permission card has its own frame; a notice about one (its gate could not be
+      // read) stays the shared approval card's.
+      if (card.crmWrite !== null) {
+        return (
+          <CrmWritePermissionCard
+            busy={actions.busy}
+            card={card}
+            onDecide={actions.onGateDecision}
+          />
+        );
+      }
       return (
         <ChatGateCard
           busy={actions.busy}

@@ -322,7 +322,7 @@ def test_unlisted_action_and_missing_sink_refuse(tmp_path: Path) -> None:
         ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
         gateway = _FakeComposio()
         tool = _reader(conn, gateway, sinks)
-        assert await _codes(tool, "HUBSPOT_CREATE_CONTACT", ctx) == ["crm_action_not_allowed"]
+        assert await _codes(tool, "HUBSPOT_CREATE_DEAL", ctx) == ["crm_action_not_allowed"]
         unbound = _reader(conn, gateway, CrmReadSinks())
         assert await _codes(unbound, "HUBSPOT_SEARCH_DEALS", ctx) == ["crm_reads_unavailable"]
         assert gateway.executed == []
@@ -495,5 +495,45 @@ def test_find_filters_to_read_allowlist(tmp_path: Path) -> None:
             "HUBSPOT_LIST_DEALS",
         ]
         assert refs["actions"][0]["input_schema"] == {"type": "object"}
+        assert {action["access"] for action in refs["actions"]} == {"read"}
 
     _run(tmp_path, "find", body)
+
+
+def test_find_crm_actions_lists_writes_and_run_crm_action_refuses_them(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any) -> None:
+        await _connect(conn, seeded.workspace_id)
+        tools = [
+            ToolInfo("HUBSPOT_UPDATE_COMPANY", "Update a company", {"type": "object"}, ()),
+            ToolInfo("HUBSPOT_UPDATE_CONTACT", "Update a contact", {}, ()),
+            ToolInfo("HUBSPOT_MERGE_CONTACTS", "Merge contacts", {}, ()),
+            ToolInfo("HUBSPOT_SEARCH_COMPANIES", "Search companies", {}, ("readOnlyHint",)),
+            ToolInfo("HUBSPOT_CREATE_CONTACT", "Create a contact", {}, ()),
+        ]
+        find = FindCrmActionsTool(
+            gateway=_FakeComposio(tools=tools),  # type: ignore[arg-type]
+            conn_factory=conn_session_factory(conn),
+        )
+        refs = (
+            await find.invoke(
+                FindCrmActionsInput(query="companies", limit=10), _ctx(conn, seeded.workspace_id)
+            )
+        ).references
+        assert [(a["slug"], a["access"]) for a in refs["actions"]] == [
+            ("HUBSPOT_UPDATE_COMPANY", "write"),
+            ("HUBSPOT_SEARCH_COMPANIES", "read"),
+            ("HUBSPOT_CREATE_CONTACT", "write"),
+        ]
+
+        sinks = CrmReadSinks()
+        ctx, _sink = _turn_ctx(conn, seeded.workspace_id, sinks)
+        gateway = _FakeComposio()
+        tool = _reader(conn, gateway, sinks)
+        assert await _codes(tool, "HUBSPOT_UPDATE_COMPANY", ctx) == ["crm_action_is_a_write"]
+        failures = await tool.preconditions(
+            RunCrmActionInput(slug="HUBSPOT_CREATE_CONTACT", arguments={}), ctx
+        )
+        assert "propose_crm_changes" in failures[0].message
+        assert gateway.executed == []
+
+    _run(tmp_path, "find-writes", body)

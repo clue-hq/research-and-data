@@ -99,6 +99,14 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # so v34 still promotes on a fresh database and stays the exact replay input for turns pinned
     # to it.
     "recipe0-stage0-v35.json",
+    # CRM integration Phase 1 (2026-10-20): four addresses ADDED, none removed — `connect_crm@1`,
+    # `find_crm_actions@1`, `run_crm_action@1` and `write_brand_document@1`, which
+    # `head-of-abm@v76` grants. v35 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v36.json",
+    # CRM integration Phase 2 (2026-10-22): three addresses ADDED, none removed —
+    # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, which
+    # `head-of-abm@v77` grants. v36 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v37.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

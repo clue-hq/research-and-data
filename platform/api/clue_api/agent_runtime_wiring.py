@@ -1452,7 +1452,10 @@ class GovernedAgentToolFactory:
             model_input = ModelFinalizeRequest.model_validate(kwargs)
             # Every refusal must come before the completion guard writes outputs/ and before the
             # snapshot freezes it; afterwards the repair a refusal asks for cannot be made.
-            await self._execution.check_finalizable(status=model_input.status)
+            await self._execution.check_finalizable(
+                status=model_input.status,
+                open_gate_refs=model_input.open_gate_refs,
+            )
             if (
                 model_input.status is FinalizeStatus.COMPLETED
                 and self._required_output_path is not None

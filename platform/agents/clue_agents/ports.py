@@ -30,6 +30,7 @@ from clue_agents.contracts import (
     ContinuationRef,
     DelegationRequest,
     DelegationResult,
+    DomainObjectRef,
     FinalizeStatus,
     ValidatedPlan,
     normalize_virtual_path,
@@ -340,11 +341,17 @@ class AgentExecutionAdapter(Protocol):
 
     async def delegate(self, *, request: DelegationRequest) -> DelegationResult: ...
 
-    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+    async def check_finalizable(
+        self,
+        *,
+        status: FinalizeStatus,
+        open_gate_refs: Sequence[DomainObjectRef] = (),
+    ) -> None:
         """Refuse a finalization this execution cannot accept yet — before anything is frozen.
 
         Raises ``ValueError`` (a refusal the model can repair, e.g. unresolved failed tool
-        attempts for ``completed``); never changes state. ``finalize_turn`` calls it first,
+        attempts for ``completed``, or an ``open_gate_refs`` entry that names a gate under any
+        object type but ``agent_gate``); never changes state. ``finalize_turn`` calls it first,
         because once ``outputs/`` is snapshotted the repair the refusal asks for is impossible
         (production 2026-10-03, McKee).
         """

@@ -7,13 +7,15 @@ group. Add a line here whenever a new document is written.
 
 | Document | What it is | Status |
 |---|---|---|
+| [`2026-10-22-crm-write-permission-card-design.md`](2026-10-22-crm-write-permission-card-design.md) | Phase 2 permission card for Figma: states (asking, sending, done, not allowed, replaced, paused), grouping, wording, data | Current card (R-6.22) |
 | [`status.md`](status.md) | Build status: what is built, in progress, not started, or parked — one line per feature | Live — updated whenever a feature changes state |
 | [`composio-api-notes.md`](composio-api-notes.md) | Verified Composio REST v3.1 shapes, errors and versions from the Task 0 spike | Live — amend when Composio behaviour changes |
 | [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md) | First end-to-end trial of the reads on the local stack: what happened, findings F1–F11, what was not exercised | Record — F2 and F4 fixed; F3 moved to agent-workspace |
 | [`../agent-workspace/README.md`](../agent-workspace/README.md) | F3 moved to its own folder: workspace footprint findings and rulings AW-1… (was R-10.4–R-10.8) | Live |
+| [`../../plans/2026-10-22-crm-integration-phase-2-write-foundation.md`](../../plans/2026-10-22-crm-integration-phase-2-write-foundation.md) | Phase 2 (write foundation) implementation plan: 11 tasks, ending with a live check on both test CRMs | Draft for founder review |
 | [`../../plans/2026-10-21-chat-thread-stream.md`](../../plans/2026-10-21-chat-thread-stream.md) | Plan for F2: the live thread stream (R-10.1) | Done 2026-10-21 (F2 fixed) |
 | [`rulings.md`](rulings.md) | Every founder decision, numbered (R-x.y) and dated; superseded rulings struck through | Live — updated after every decision |
-| [`2026-10-20-crm-integration-first-release-design.md`](2026-10-20-crm-integration-first-release-design.md) | The first-release design: HubSpot and Salesforce, read and write, through Composio | Draft for founder review |
+| [`2026-10-20-crm-integration-first-release-design.md`](2026-10-20-crm-integration-first-release-design.md) | The first-release design: HubSpot and Salesforce, read and write, through Composio | Reviewed for Phase 2 (2026-10-22) |
 | [`../../plans/2026-10-20-crm-integration-phase-1-reads.md`](../../plans/2026-10-20-crm-integration-phase-1-reads.md) | Phase 1 (reads) implementation plan: 13 tasks, ending with the founder's local test | Draft for founder review |
 
 ## Superseded

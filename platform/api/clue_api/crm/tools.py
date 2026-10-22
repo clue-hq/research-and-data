@@ -5,9 +5,11 @@ card is drawn by the chat from this tool's own result, and the person's login ha
 tab; when the connection becomes active every chat waiting on a card is woken with a
 ``crm_connected`` turn, so after showing a card the agent simply ends its turn.
 
-``find_crm_actions@1`` searches the connected CRM's read actions, and ``run_crm_action@1`` runs
-one. A read's whole result is written to ``reads/<operation_id>.json`` in the thread's workspace,
-however small, and the model is told only where it is and what it holds (§5): the records are
+``find_crm_actions@1`` searches the connected CRM's actions — the read ones, and the write ones
+on Clue's allowlist (``write_actions.py``), each marked by its ``access`` — and ``run_crm_action@1``
+runs a read; it refuses a write, which is proposed with ``propose_crm_changes`` instead. A
+read's whole result is written to ``reads/<operation_id>.json`` in the thread's workspace, however
+small, and the model is told only where it is and what it holds (§5): the records are
 analysed in the code sandbox, never pasted into the conversation.
 
 Composio account ids never reach the model; it sees the CRM name, the status and when/by whom.
@@ -44,11 +46,13 @@ from clue_api.crm.salesforce_budget import (
     SalesforceBudget,
     is_api_disabled,
 )
+from clue_api.crm.write_actions import is_write
 from clue_api.turn_action import TurnActionUnresolvable, load_turn_identity, parse_turn_action_ref
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_auth import get_workspace_membership, permissions_for_role
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory, transaction
+from clue_fleet import WorkQueue
 from clue_spine import get_project
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -267,6 +271,8 @@ class FindCrmActionsInput(ToolInput):
 
 class CrmActionView(BaseModel):
     slug: str
+    #: ``read``: run it with run_crm_action. ``write``: propose it with propose_crm_changes.
+    access: Literal["read", "write"]
     description: str
     input_schema: dict[str, Any]
 
@@ -314,10 +320,12 @@ class FindCrmActionsTool(Tool):
     name = "find_crm_actions"
     version = "1"
     model_description = (
-        "Search the connected CRM's read actions by what you want to read, e.g. 'search deals', "
-        "'deal pipeline stages', 'contacts of a company', 'run a SOQL query'. Returns each "
-        "action's name and its input schema; run one with run_crm_action. Only read actions are "
-        "listed. " + tool_manual_link("find_crm_actions")
+        "Search the connected CRM's actions by what you want to do, e.g. 'search deals', "
+        "'deal pipeline stages', 'contacts of a company', 'run a SOQL query', 'update a company'. "
+        "Returns each action's name, its input schema and its access: run a 'read' action with "
+        "run_crm_action; a 'write' action is never run directly, propose it with "
+        "propose_crm_changes so the person can approve it. Only reads and the writes Clue allows "
+        "are listed. " + tool_manual_link("find_crm_actions")
     )
     input_model: ClassVar[type[ToolInput]] = FindCrmActionsInput
     output_model: ClassVar[type[ToolOutput]] = FindCrmActionsOutput
@@ -328,6 +336,9 @@ class FindCrmActionsTool(Tool):
         external_boundary=ExternalReplayBoundary.NONE,
     )
     parameter_policy = JournalParameterPolicy(safe_display_fields=("query", "limit"))
+    #: The execution's own project, like every tool of the conversation recipe (its body is a
+    #: search text and names no project).
+    pin_requirements = ("project",)
 
     def __init__(
         self, *, gateway: ComposioGateway | None, conn_factory: ConnFactory = transaction
@@ -355,7 +366,8 @@ class FindCrmActionsTool(Tool):
         gateway = _require_gateway(self._gateway)
         connection = await _active_connection(self._conn_factory, ctx.workspace_id)
         try:
-            # Ask for more than the limit: the search is over every action, writes included.
+            # Ask for more than the limit: the search is over every action, most of them neither
+            # an allowed read nor an allowed write.
             found = await gateway.search_tools(
                 toolkit=connection.provider, query=inputs.query, limit=min(inputs.limit * 4, 100)
             )
@@ -365,10 +377,14 @@ class FindCrmActionsTool(Tool):
             ) from exc
         actions = [
             CrmActionView(
-                slug=tool.slug, description=tool.description, input_schema=dict(tool.input_schema)
+                slug=tool.slug,
+                access="read" if is_readable(connection.provider, tool.slug) else "write",
+                description=tool.description,
+                input_schema=dict(tool.input_schema),
             )
             for tool in found
             if is_readable(connection.provider, tool.slug)
+            or is_write(connection.provider, tool.slug)
         ][: inputs.limit]
         output = FindCrmActionsOutput(provider=connection.provider, actions=actions)
         return ToolResult(
@@ -464,7 +480,7 @@ class RunCrmActionTool(Tool):
                 version=self._version(connection.provider),
             )
         except ComposioError as exc:
-            raise await self._composio_refusal(exc, connection) from exc
+            raise await composio_refusal(self._conn_factory, exc, connection) from exc
         if not result.successful:
             if connection.provider == "salesforce" and is_api_disabled(result.error):
                 raise _refuse("salesforce_api_disabled", API_DISABLED_MESSAGE)
@@ -523,22 +539,24 @@ class RunCrmActionTool(Tool):
         if refusal is not None:
             raise _refuse(refusal.reason_code, str(refusal))
 
-    async def _composio_refusal(
-        self, exc: ComposioError, connection: CrmConnection
-    ) -> PreconditionFailed:
-        if exc.kind == "connection_expired":
-            async with self._conn_factory() as conn:
-                await mark_expired(conn, connection_id=connection.connection_id)
-            return _refuse(
-                "crm_connection_expired",
-                "The CRM connection has expired or was revoked. Call connect_crm to ask the "
-                "person to reconnect it.",
-            )
-        if exc.kind == "rate_limited":
-            return _refuse("crm_rate_limited", "The CRM is rate-limiting reads; try again shortly.")
-        if exc.kind == "unavailable":
-            return _refuse("crm_unavailable", f"The CRM could not be reached: {exc.message}")
-        return _refuse("crm_action_failed", f"The CRM read failed: {exc.message}")
+
+async def composio_refusal(
+    conn_factory: ConnFactory, exc: ComposioError, connection: CrmConnection
+) -> PreconditionFailed:
+    """The refusal for a CRM call Composio could not make; an expired connection is marked so."""
+    if exc.kind == "connection_expired":
+        async with conn_factory() as conn:
+            await mark_expired(conn, connection_id=connection.connection_id)
+        return _refuse(
+            "crm_connection_expired",
+            "The CRM connection has expired or was revoked. Call connect_crm to ask the "
+            "person to reconnect it.",
+        )
+    if exc.kind == "rate_limited":
+        return _refuse("crm_rate_limited", "The CRM is rate-limiting reads; try again shortly.")
+    if exc.kind == "unavailable":
+        return _refuse("crm_unavailable", f"The CRM could not be reached: {exc.message}")
+    return _refuse("crm_action_failed", f"The CRM read failed: {exc.message}")
 
 
 def _require_gateway(gateway: ComposioGateway | None) -> ComposioGateway:
@@ -550,6 +568,12 @@ def _require_gateway(gateway: ComposioGateway | None) -> ComposioGateway:
 
 
 def _require_readable(provider: CrmProvider, slug: str) -> None:
+    if is_write(provider, slug):
+        raise _Refused(
+            "crm_action_is_a_write",
+            f"{slug} changes the CRM, so it is not run directly: propose it with "
+            "propose_crm_changes and the person approves it.",
+        )
     if not is_readable(provider, slug):
         raise _Refused(
             "crm_action_not_allowed",
@@ -565,13 +589,22 @@ def build_crm_tools(
     secrets: Secrets | None,
     conn_factory: ConnFactory = transaction,
     read_sinks: CrmReadSinks | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> tuple[Tool, ...]:
     """The CRM tools, always registered (one registry shape); they refuse when not configured.
 
     ``read_sinks`` is the registry the conversation engine binds each turn's workspace into; it
     exists only where turns are driven (the fleet worker), and ``run_crm_action`` refuses
-    ``crm_reads_unavailable`` everywhere else.
+    ``crm_reads_unavailable`` everywhere else. ``work_queue`` is where ``propose_crm_changes``
+    offers the write executor (the fleet queue when none is given).
     """
+    # Imported here: the write tool reuses this module's connection and refusal helpers.
+    from clue_api.crm.write_tools import (
+        CrmWriteLogTool,
+        ManageCrmGrantsTool,
+        ProposeCrmChangesTool,
+    )
+
     gateway = build_composio_gateway(settings=settings, secrets=secrets)
     return (
         ConnectCrmTool(
@@ -581,4 +614,9 @@ def build_crm_tools(
         RunCrmActionTool(
             settings=settings, gateway=gateway, read_sinks=read_sinks, conn_factory=conn_factory
         ),
+        ProposeCrmChangesTool(
+            settings=settings, gateway=gateway, conn_factory=conn_factory, work_queue=work_queue
+        ),
+        CrmWriteLogTool(gateway=gateway, conn_factory=conn_factory),
+        ManageCrmGrantsTool(gateway=gateway, conn_factory=conn_factory),
     )

@@ -69,6 +69,7 @@ async def clear_empty_hold(
           AND NOT EXISTS (
             SELECT 1 FROM agent_turn_submission s
             WHERE s.workspace_id=t.workspace_id AND s.thread_id=t.id AND s.turn_id<>:turn
+              AND s.agent_reply='expected'
               AND NOT EXISTS (SELECT 1 FROM fleet_task f WHERE f.kind='agent_turn'
                 AND f.dedup_key='agent-turn:' || s.turn_id::text AND f.status IN ('done','failed'))
           )

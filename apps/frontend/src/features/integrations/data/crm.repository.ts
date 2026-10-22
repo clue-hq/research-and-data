@@ -2,9 +2,12 @@ import {
   CompleteResponseSchema,
   ConnectLinkResponseSchema,
   CrmConnectError,
+  CrmConnectionResponseSchema,
   type CompleteResponse,
+  type CrmConnectionResponse,
   type CrmProvider,
 } from "../model/crm";
+import { CrmProposalProgressSchema, type CrmProposalProgress } from "../model/crm-write";
 
 const CRM_PATH = "/api/clue/frontend/v1/crm";
 
@@ -62,4 +65,29 @@ export async function completeConnection(
     return { outcome: "failed" };
   }
   return CompleteResponseSchema.parse(await response.json());
+}
+
+/** The workspace's CRM connection, as any member may read it. */
+export async function fetchCrmConnection(
+  clueFetch: typeof fetch = fetch,
+): Promise<CrmConnectionResponse> {
+  const response = await clueFetch(`${CRM_PATH}/connection`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`HTTP_${response.status}`);
+  return CrmConnectionResponseSchema.parse(await response.json());
+}
+
+/** How far a CRM write proposal got (the write permission card after its answer). */
+export async function fetchCrmProposal(
+  proposalId: string,
+  clueFetch: typeof fetch = fetch,
+): Promise<CrmProposalProgress> {
+  const response = await clueFetch(`${CRM_PATH}/proposals/${encodeURIComponent(proposalId)}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(await errorCode(response));
+  return CrmProposalProgressSchema.parse(await response.json());
 }

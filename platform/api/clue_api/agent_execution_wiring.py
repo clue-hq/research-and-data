@@ -8,6 +8,7 @@ from collections.abc import (
     AsyncIterator,
     Callable,
     Mapping,
+    Sequence,
 )
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
@@ -54,6 +55,7 @@ from clue_agents.contracts import (
 )
 from clue_agents.execution import SPILL_THRESHOLD_BYTES, spill_stub
 from clue_agents.ports import ExecutionProgress, OperationFailure, SpillSink
+from clue_api.agent_gate import refuse_misnamed_gate_links
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
@@ -2093,7 +2095,19 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
     async def delegate(self, *, request: DelegationRequest) -> DelegationResult:
         raise ValueError("delegation must execute as a validated plan operation")
 
-    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+    async def check_finalizable(
+        self,
+        *,
+        status: FinalizeStatus,
+        open_gate_refs: Sequence[DomainObjectRef] = (),
+    ) -> None:
+        if open_gate_refs:
+            async with self._conn_factory() as conn:
+                await refuse_misnamed_gate_links(
+                    conn,
+                    workspace_id=self._constitution.workspace_id,
+                    links=[(ref.object_type, ref.object_id) for ref in open_gate_refs],
+                )
         if status is not FinalizeStatus.COMPLETED:
             return
         unresolved = await self._executor.unresolved_interaction_failures(
@@ -2115,7 +2129,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         if authority is None:
             raise RuntimeError("finalization authority is not composed")
         # Backstop: finalize_turn already ran this check before freezing outputs.
-        await self.check_finalizable(status=FinalizeStatus(envelope.status.value))
+        await self.check_finalizable(
+            status=FinalizeStatus(envelope.status.value),
+            open_gate_refs=envelope.open_gate_refs,
+        )
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,

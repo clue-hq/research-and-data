@@ -847,7 +847,7 @@ class TurnStreamEmitter:
         await self._part(
             (
                 TurnEventType.PART_COMPLETED
-                if answer is not None or unavailable
+                if answer is not None or unavailable or view.withdrawn
                 else TurnEventType.PART_CREATED
             ),
             GatePart(
@@ -863,6 +863,10 @@ class TurnStreamEmitter:
                     if unavailable
                     else "responded"
                     if answer is not None
+                    # A CRM write card a newer card replaced, or a reconnect closed: it can no
+                    # longer be answered, so it asks nothing.
+                    else "withdrawn"
+                    if view.withdrawn
                     else "requested"
                 ),
                 subject_refs=() if unavailable else (_gate_subject_ref(view),),

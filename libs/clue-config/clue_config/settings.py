@@ -1058,6 +1058,14 @@ class Settings(BaseSettings):
     # Clue's cap on a Salesforce org's daily API allowance, in percent (R-7.5).
     # Env: ``CLUE_CRM_SALESFORCE_API_SHARE_PCT``.
     crm_salesforce_api_share_pct: int = Field(default=10, ge=1, le=100)
+    # The CRM write executor (Phase 2): a change that meets a rate limit or an unreachable CRM is
+    # retried this many sends in all, waiting RETRY_BASE_S * 2**(attempt-1) seconds between them,
+    # then failed (retryable); MIN_INTERVAL_S is the pause between two calls to the CRM.
+    # Env: ``CLUE_CRM_WRITE_MAX_ATTEMPTS`` / ``CLUE_CRM_WRITE_RETRY_BASE_S`` /
+    # ``CLUE_CRM_WRITE_MIN_INTERVAL_S``.
+    crm_write_max_attempts: int = Field(default=4, ge=1)
+    crm_write_retry_base_s: float = Field(default=30, ge=0)
+    crm_write_min_interval_s: float = Field(default=0.1, ge=0)
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session

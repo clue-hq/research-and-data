@@ -72,11 +72,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v21"
+MANUAL_VERSION = "v23"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v75"
+PROFILE_VERSION = "v77"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -529,8 +529,9 @@ def _gate_line(gate: str | None) -> str:
         return "- Opens a human gate: no."
     kind = f", of kind `{gate}`" if gate else ", whose kind the output names"
     return (
-        f"- Opens a human gate: yes{kind}. Put the gate id it returns into `open_gate_refs` "
-        "when you finalize, or the human never sees the card."
+        f"- Opens a human gate: yes{kind}. Put it into `open_gate_refs` as "
+        '`{object_type: "agent_gate", object_id: <the gate id it returns>}` when you finalize, '
+        "or the human never sees the card."
     )
 
 

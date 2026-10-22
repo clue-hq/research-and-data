@@ -87,6 +87,10 @@ import {
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { useNamingCatchUp } from "./use-naming-catch-up";
 import { usePageVisible } from "./use-page-visible";
+import {
+  CRM_WRITE_GATE_KIND,
+  crmWriteRefusal,
+} from "@/features/integrations/model/crm-write";
 import { TERMINAL_TURN_EVENTS } from "../model/chat-events";
 import type { ChatAttachmentRef } from "../model/chat-attachments";
 import {
@@ -114,6 +118,17 @@ import {
  * those can be tested against synthetic streams and this can stay a thin
  * orchestrator.
  */
+
+/** The newest frame cursor among the turns of the last thread read, or `null` if none has one. */
+function newestTurnCursor(turns: readonly ChatTurn[]): number | null {
+  let newest: number | null = null;
+  for (const turn of turns) {
+    if (turn.lastEventId !== null && (newest === null || turn.lastEventId > newest)) {
+      newest = turn.lastEventId;
+    }
+  }
+  return newest;
+}
 
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
@@ -1114,21 +1129,31 @@ export function useProjectChatController({
         });
         // The answer is durable the moment the turn was accepted; the reload
         // below reads it back rather than the client asserting it locally.
-        attach(activeThreadId, accepted.turnId);
+        // An answer the agent does not reply to (a CRM write card, R-11.6) runs
+        // no turn: there is no stream to follow and nothing in flight — the
+        // card follows its proposal instead.
+        if (accepted.agentReply !== "none") attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
+        const crmWrite = card.kind === CRM_WRITE_GATE_KIND;
         if (
           failure instanceof ClueChatApiError &&
-          failure.code.startsWith("GATE_")
+          (failure.code.startsWith("GATE_") ||
+            (crmWrite && failure.code.startsWith("CRM_")))
         ) {
           setGateFailures((current) => {
             const next = new Map(current);
             next.set(
               card.gateId,
-              gateAuthorityFailure(failure.code, failure.message),
+              crmWrite
+                ? { reason: crmWriteRefusal(failure.code), recovery: null }
+                : gateAuthorityFailure(failure.code, failure.message),
             );
             return next;
           });
+          // A write card stays put and says why; its gate is read again so a card another
+          // member answered, or a newer card replaced, shows what really happened.
+          if (crmWrite) void loadGates(activeThreadId).catch(report);
         } else {
           report(failure);
         }
@@ -1137,8 +1162,8 @@ export function useProjectChatController({
       }
     },
     [
-      activeThreadId, attach, invalidateProjectCatalog, loadConversation, projectId,
-      repositories, report,
+      activeThreadId, attach, invalidateProjectCatalog, loadConversation, loadGates,
+      projectId, repositories, report,
     ],
   );
 
@@ -1412,7 +1437,10 @@ export function useProjectChatController({
     const handle = repositories.threadStream.open({
       projectId,
       threadId,
-      lastEventId: threadCursor.current.get(threadId) ?? null,
+      // A first open starts from the page's last read of the thread, not from the thread's
+      // tail: a tab loaded hidden (or in the background) opens only when shown, and a turn that
+      // began in between would otherwise be skipped.
+      lastEventId: threadCursor.current.get(threadId) ?? newestTurnCursor(turnsRef.current),
       onCursor(eventId) {
         if (open) threadCursor.current.set(threadId, eventId);
       },

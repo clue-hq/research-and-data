@@ -569,6 +569,73 @@ test("a derived turn renders its assistant answer and no user bubble", () => {
   assert.equal(human[0].body, acceptedMessage.body);
 });
 
+test("a card answer renders no user bubble, for every gate kind", () => {
+  // R-11.4: answering a card changes only the card. The answer's durable user row stays (role-scoped
+  // history needs it) and is hidden by the turn's answered gate — never by reading its text.
+  const answerMessage = {
+    id: "gate-answer-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "answer-key",
+    bodySha256: "answer-sha",
+    body: JSON.stringify({ gate_id: "g1", decision: "approved" }),
+    bodyUnavailableReason: null,
+    createdAt: "2026-10-22T00:00:00Z",
+    refs: [],
+  };
+  const assistantMessage = {
+    ...answerMessage,
+    id: "gate-answer-assistant-message",
+    sequence: 2,
+    role: "assistant" as const,
+    bodyArtifactKey: "answer-assistant-key",
+    bodySha256: "answer-assistant-sha",
+    body: "The ICP is confirmed.",
+  };
+  const turn = {
+    turnId: TURN,
+    threadId: "t1",
+    projectId: "p1",
+    state: "completed",
+    requestedAt: answerMessage.createdAt,
+    lastEventId: null,
+    generationAttempts: 1,
+    submissionMessage: answerMessage,
+    derivation: null,
+    answeredGateId: "g1",
+  };
+
+  // A card whose answer still starts a turn: the reply shows, the answer does not.
+  const answered = composeTranscript({
+    messages: [{ ...answerMessage, sequence: 1 }, assistantMessage],
+    turns: [turn],
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(answered.filter((message) => message.role === "user").length, 0);
+  assert.equal(
+    answered.find((message) => message.role === "assistant")?.body,
+    assistantMessage.body,
+  );
+
+  // Accepted but not yet run: still no bubble.
+  const accepted = composeTranscript({
+    messages: [],
+    turns: [turn],
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(accepted.filter((message) => message.role === "user").length, 0);
+
+  // An ordinary message with the same bytes is a message the person sent.
+  const typed = composeTranscript({
+    messages: [],
+    turns: [{ ...turn, answeredGateId: null }],
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(typed.filter((message) => message.role === "user").length, 1);
+});
+
 test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
   const acceptedMessage = {
     id: "cancelled-user-message",

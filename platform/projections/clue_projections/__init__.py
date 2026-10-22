@@ -66,6 +66,7 @@ from clue_projections.dtos import (
 )
 from clue_projections.events import ReplayPlan, plan_replay
 from clue_projections.gates import (
+    GATE_WITHDRAWN_SQL,
     GateAnswerView,
     GateLaunchView,
     GateView,
@@ -282,6 +283,7 @@ __all__ = [
     "ProjectSidebarProjectView",
     "USER_MESSAGE_FLAVORS",
     # FI Lane D D4 gate substrate projections
+    "GATE_WITHDRAWN_SQL",
     "GateAnswerView",
     "GateLaunchView",
     "GateView",

@@ -69,6 +69,7 @@ const TurnAcceptedWireSchema = z.object({
   thread_id: z.string().min(1),
   requested_at: z.string(),
   replayed: z.boolean().default(false),
+  agent_reply: z.enum(["expected", "none"]).default("expected"),
 });
 
 export interface AcceptedTurn {
@@ -77,6 +78,11 @@ export interface AcceptedTurn {
   requestedAt: string;
   /** True when this idempotency identity had already been accepted. */
   replayed: boolean;
+  /**
+   * `none` when the submission was recorded and no turn will run for it (the
+   * answer to a CRM write card, R-11.6): nothing to attach, nothing in flight.
+   */
+  agentReply: "expected" | "none";
 }
 
 export const AcceptedTurnResponseSchema = z
@@ -87,6 +93,7 @@ export const AcceptedTurnResponseSchema = z
       threadId: wire.data.thread_id,
       requestedAt: wire.data.requested_at,
       replayed: wire.data.replayed,
+      agentReply: wire.data.agent_reply,
     }),
   );
 
@@ -103,6 +110,7 @@ const TurnViewWireSchema = z.object({
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
   derivation: z.string().nullable().default(null),
+  answered_gate_id: z.string().nullable().default(null),
   stop_request: StopRequestSchema.nullable().default(null),
 });
 
@@ -122,6 +130,11 @@ export interface ChatTurn {
    * redelivery or first turn): the transcript renders no user bubble for it.
    */
   derivation: string | null;
+  /**
+   * The agent gate this turn answered (R-11.4): answering a card shows only on the card, so the
+   * transcript renders no user bubble for this turn. Absent on turns built before the field.
+   */
+  answeredGateId?: string | null;
   stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
@@ -144,6 +157,7 @@ export const ChatTurnListResponseSchema = z
         generationAttempts: item.generation_attempts,
         stopRequest: item.stop_request,
         derivation: item.derivation,
+        answeredGateId: item.answered_gate_id,
         submissionMessage:
           item.submission_message === null
             ? null
@@ -330,18 +344,27 @@ export const GateResponseSchema = z
     // The route refuses `selected_product_id` on that kind and this list on the
     // single-valued one, so the two are never both present here either.
     selectedProductIds: z.array(z.string().min(1)).min(1).readonly().optional(),
+    // A CRM write permission card's Allow: the ticked changes and the "Always allow" scopes.
+    // Sent as `crm_write`; "Don't allow" sends nothing but the decision.
+    crmWrite: z
+      .object({
+        selected_write_ids: z.array(z.string().min(1)).min(1),
+        always_allow: z.array(z.string().min(1)),
+      })
+      .optional(),
   })
   .superRefine((response, ctx) => {
     const exclusive = [
       response.revisionRequest,
       response.selectedProductId,
       response.selectedProductIds,
+      response.crmWrite,
     ].filter((value) => value !== undefined);
     if (exclusive.length > 1) {
       ctx.addIssue({
         code: "custom",
         message:
-          "revisionRequest, selectedProductId and selectedProductIds are mutually exclusive",
+          "revisionRequest, selectedProductId, selectedProductIds and crmWrite are mutually exclusive",
       });
     }
   });
@@ -395,6 +418,12 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
   }
   if (submission.response.selectedProductIds !== undefined) {
     gateResponse.selected_product_ids = [...submission.response.selectedProductIds];
+  }
+  if (submission.response.crmWrite !== undefined) {
+    gateResponse.crm_write = {
+      selected_write_ids: [...submission.response.crmWrite.selected_write_ids],
+      always_allow: [...submission.response.crmWrite.always_allow],
+    };
   }
   return {
     gate_response: gateResponse,

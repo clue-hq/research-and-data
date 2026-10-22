@@ -287,7 +287,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # its number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top
     # of it — v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines'
     # chapters) and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v75",
+    # v76 (2026-10-20, CRM integration Phase 1 - reads): v75's surface plus `connect_crm@1`,
+    # `find_crm_actions@1`, `run_crm_action@1` and `write_brand_document@1`, the new skill
+    # `crm-sales-analysis` v1, `stage0-interview@v49` (section 2b: the CRM step), `manual-*@v22`
+    # and recipe 36. Prompt v18 stays.
+    # v77 (2026-10-22, CRM integration Phase 2 - writes): v76's surface plus
+    # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, the new skill
+    # `crm-writing` v1, `stage0-interview@v50` (v49 with its manual paths repointed),
+    # `manual-*@v23` and recipe 37. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v77",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -522,12 +530,22 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.REVIEWER,
     ),
     "import_accounts": (),
-    # CRM integration Phase 1: registered now, granted to the Head of ABM by the reviewed profile
-    # bump in Task 11 (docs/superpowers/plans/2026-10-20-crm-integration-phase-1-reads.md).
-    "connect_crm": (),
-    "find_crm_actions": (),
-    "run_crm_action": (),
-    "write_brand_document": (),
+    # CRM integration Phase 1 (reads): granted to the Head of ABM at `head-of-abm@v76`
+    # (docs/superpowers/plans/2026-10-20-crm-integration-phase-1-reads.md, Task 11). The three CRM
+    # tools read the workspace's CRM through Composio and never change it; `write_brand_document`
+    # publishes `company/` and `proof/` brand documents only.
+    "connect_crm": (AgentRole.HEAD_OF_ABM,),
+    "find_crm_actions": (AgentRole.HEAD_OF_ABM,),
+    "run_crm_action": (AgentRole.HEAD_OF_ABM,),
+    "write_brand_document": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 2 (writes): granted to the Head of ABM at `head-of-abm@v77`
+    # (docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md, Task 10).
+    # `propose_crm_changes` proposes CRM writes that the person approves on a permission card (or
+    # that a standing permission covers); `crm_write_log` reads what Clue changed;
+    # `manage_crm_grants` lists and revokes the standing permissions, and never grants one.
+    "propose_crm_changes": (AgentRole.HEAD_OF_ABM,),
+    "crm_write_log": (AgentRole.HEAD_OF_ABM,),
+    "manage_crm_grants": (AgentRole.HEAD_OF_ABM,),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -746,6 +764,18 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # `manage_products` (head-of-abm@v71) changes the brand's real product list,
                 # pages and every project's product set — a durable write no trial may make.
                 "manage_products",
+                # The CRM tools (head-of-abm@v76) reach the workspace's real CRM through Composio,
+                # and `write_brand_document` durably publishes brand documents; a dev-harness turn
+                # also carries no project, so installed they could only refuse.
+                "connect_crm",
+                "find_crm_actions",
+                "run_crm_action",
+                "write_brand_document",
+                # The CRM write tools (head-of-abm@v77) open real permission cards and send real
+                # changes to the workspace's CRM, or revoke a person's standing permission.
+                "propose_crm_changes",
+                "crm_write_log",
+                "manage_crm_grants",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to
@@ -863,10 +893,6 @@ _RESERVED_REASON: dict[str, str] = {
     "discover_accounts": "post_stage0_not_admitted",
     "estimate_project": "post_stage0_not_admitted",
     "import_accounts": "post_stage0_not_admitted",
-    "connect_crm": "crm_integration_pending_profile_grant",
-    "find_crm_actions": "crm_integration_pending_profile_grant",
-    "run_crm_action": "crm_integration_pending_profile_grant",
-    "write_brand_document": "crm_integration_pending_profile_grant",
     "retry_ingestion": "replay_not_certified",
     "reverse_profile": "superseded_by_governed_stage0_recon",
     "score_accounts": "post_stage0_not_admitted",

@@ -144,6 +144,10 @@ class ThreadTurnView(_View):
     #: Spec 2026-09-20 §2.2: set when the server made this turn from the user's own bytes; the
     #: client renders no user bubble for it.
     derivation: str | None = None
+    #: R-11.4 (2026-10-22): the agent gate this turn answered, if any. Answering a card adds no
+    #: message bubble to the chat — the card's own state shows the answer — so the client hides
+    #: this turn's user row by the durable answer row, never by reading its text.
+    answered_gate_id: UUID | None = None
 
 
 class ThreadMessageSummary(_View):
@@ -460,6 +464,7 @@ _TURN_UNION_SELECT = """
         s.message_artifact_key,
         s.message_sha256,
         s.derivation,
+        ga.gate_id AS answered_gate_id,
         e.terminal_event,
         e.started,
         e.last_event_id,
@@ -499,7 +504,16 @@ _TURN_UNION_SELECT = """
           AND t.dedup_key = :dedup_prefix || s.turn_id::text
         LIMIT 1
     ) f ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT a.gate_id
+        FROM agent_gate_answer a
+        WHERE a.workspace_id = s.workspace_id AND a.turn_id = s.turn_id
+        LIMIT 1
+    ) ga ON TRUE
     WHERE s.workspace_id = :workspace_id
+      -- R-11.6: a submission the agent never replies to (a CRM write card's answer) is a
+      -- receipt, not a turn: it is never listed, never queued and never makes a thread busy.
+      AND s.agent_reply = 'expected'
 """
 
 _THREAD_TURNS = text(
@@ -575,6 +589,9 @@ def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
         last_event_id=(None if row["last_event_id"] is None else int(str(row["last_event_id"]))),
         generation_attempts=int(str(row["attempts"] or 0)),
         derivation=(None if row.get("derivation") is None else str(row["derivation"])),
+        answered_gate_id=(
+            None if row.get("answered_gate_id") is None else UUID(str(row["answered_gate_id"]))
+        ),
     )
 
 

@@ -612,11 +612,15 @@ export function composeTranscript({
     const pending = optimistic.find((item) => item.turnId === turnId);
 
     const derived = durableTurn?.derivation != null;
+    const answeredGate = durableTurn?.answeredGateId != null;
     const durableUser = durable.find((message) => message.role === "user");
     const acceptedUser = durableTurn?.submissionMessage;
     if (derived) {
       // A derived turn (a design-leg redelivery or first turn) carries the user's own bytes,
       // which the transcript already shows under the turn they were typed on.
+    } else if (answeredGate) {
+      // R-11.4: a card answer shows only on its card. The durable user row stays for the
+      // agent's history; the transcript renders no bubble for it.
     } else if (durableUser) {
       composed.push(userMessage(durableUser, false));
     } else if (acceptedUser) {

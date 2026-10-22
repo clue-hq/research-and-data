@@ -156,6 +156,7 @@ export function createFixtureChatTurnsRepository(
         threadId,
         requestedAt: new Date().toISOString(),
         replayed: false,
+        agentReply: "expected",
       };
       accepted.set(idempotencyKey, record);
       turns.push({
@@ -168,6 +169,8 @@ export function createFixtureChatTurnsRepository(
         generationAttempts: 0,
         submissionMessage: null,
         derivation: null,
+        answeredGateId:
+          submission.kind === "gate_response" ? submission.response.gateId : null,
       });
       return record;
     },
@@ -198,6 +201,7 @@ export function createFixtureChatTurnsRepository(
         threadId,
         requestedAt: new Date().toISOString(),
         replayed: false,
+        agentReply: "expected",
       };
       turns.push({
         turnId: retryId,

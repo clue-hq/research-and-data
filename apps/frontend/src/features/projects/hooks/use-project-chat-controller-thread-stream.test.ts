@@ -10,6 +10,7 @@ import {
   useProjectChatController,
   type ProjectChatController,
 } from "@/features/projects/hooks/use-project-chat-controller";
+import type { GateCardModel } from "@/features/projects/model/chat-gate";
 
 const PROJECT = "project-thread-stream";
 const THREAD_A = "thread-a";
@@ -24,9 +25,9 @@ const TIMESTAMP = "2026-10-21T12:00:00Z";
  * readers and the controller's effects run for real. Each thread starts with
  * one finished turn ("done"); the server can add turns the chat never sent.
  */
-function harness() {
+function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
   const dom = new JSDOM("<div id='root'></div>");
-  let visibility: "visible" | "hidden" = "visible";
+  let visibility: "visible" | "hidden" = startHidden ? "hidden" : "visible";
   Object.defineProperty(dom.window.document, "visibilityState", {
     configurable: true,
     get: () => visibility,
@@ -44,12 +45,15 @@ function harness() {
   const oldFetch = globalThis.fetch;
   const encoder = new TextEncoder();
   const server = {
-    turns: new Map<string, Array<{ turn_id: string; state: string }>>([
-      [THREAD_A, [{ turn_id: "done", state: "completed" }]],
+    turns: new Map<string, Array<{ turn_id: string; state: string; last_event_id?: number }>>([
+      [THREAD_A, [{ turn_id: "done", state: "completed", last_event_id: 7 }]],
       [THREAD_B, [{ turn_id: "done-b", state: "completed" }]],
     ]),
     turnReads: new Map<string, number>(),
     threadReads: 0,
+    /** What a POST of a turn answers: its turn id and whether the agent replies (R-11.6). */
+    accept: { turnId: "answer", agentReply: "expected" as "expected" | "none" },
+    posts: 0,
   };
   const turnStreams = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
   /** Every thread-stream open, in order: its thread, cursor header, abort signal and body. */
@@ -98,6 +102,14 @@ function harness() {
         start(controller) { turnStreams.set(turnId!, controller); },
       }), { headers: { "Content-Type": "text/event-stream" } });
     }
+    const submit = path.match(/\/threads\/([^/]+)\/turns$/);
+    if (submit && init?.method === "POST") {
+      server.posts += 1;
+      return Response.json({ data: {
+        turn_id: server.accept.turnId, thread_id: submit[1], requested_at: TIMESTAMP,
+        replayed: false, routed_to: "head_of_abm", agent_reply: server.accept.agentReply,
+      } }, { status: 202 });
+    }
     if (path === prefix) {
       server.threadReads += 1;
       return Response.json({ data: [THREAD_A, THREAD_B].map((id) => ({
@@ -109,9 +121,9 @@ function harness() {
     if (turnsList) {
       const threadId = turnsList[1]!;
       server.turnReads.set(threadId, (server.turnReads.get(threadId) ?? 0) + 1);
-      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state }) => ({
+      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state, last_event_id }) => ({
         turn_id, thread_id: threadId, project_id: PROJECT, state,
-        requested_at: TIMESTAMP, last_event_id: null, generation_attempts: 1, submission_message: null,
+        requested_at: TIMESTAMP, last_event_id: last_event_id ?? null, generation_attempts: 1, submission_message: null,
       })), meta: { thread_status: "idle" } });
     }
     if (/\/threads\/[^/]+\/(messages|gates)$/.test(path)) {
@@ -142,7 +154,7 @@ function harness() {
     }
   }
   const unexpectedNavigation = () => assert.fail("no navigation is expected");
-  async function mount(threadId: string) {
+  async function mount(threadId: string, { awaitStream = true }: { awaitStream?: boolean } = {}) {
     await act(async () => {
       root.render(createElement(AppRouterContext.Provider, {
         value: {
@@ -158,6 +170,10 @@ function harness() {
         }),
       )));
     });
+    if (!awaitStream) {
+      await flushUntil(() => (server.turnReads.get(threadId) ?? 0) > 0, `${threadId} read`);
+      return;
+    }
     await flushUntil(
       () => threadOpens.some((open) => open.threadId === threadId && !open.signal?.aborted),
       `the thread stream of ${threadId} open`,
@@ -319,6 +335,64 @@ test("test_a_tab_hidden_before_any_turn_frame_reopens_from_the_hello", async () 
     await h.setVisibility("visible");
     await h.flushUntil(() => h.threadOpens.length === opens + 1, "reopened when shown");
     assert.equal(h.threadOpens.at(-1)?.lastEventId, "5");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_tab_loaded_hidden_opens_from_its_last_read", async () => {
+  // Found live (Garner Salesforce trial): a chat loaded in a hidden tab opened its first stream
+  // at the thread's tail when shown, so a wake turn that began in between was skipped. The
+  // first open must start from the page's last read of the thread (its newest turn cursor).
+  const h = harness({ startHidden: true });
+  try {
+    await h.mount(THREAD_A, { awaitStream: false });
+    await h.settle();
+    assert.equal(h.threadOpens.length, 0, "a hidden tab opens no stream");
+    await h.setVisibility("visible");
+    await h.flushUntil(() => h.threadOpens.length === 1, "opened when first shown");
+    assert.equal(h.threadOpens[0]?.lastEventId, "7", "from the newest cursor of the last read");
+  } finally {
+    await h.teardown();
+  }
+});
+
+/** A CRM write card as the controller hands it to `answerGate` (only what an answer reads). */
+function crmWriteCard(): GateCardModel {
+  return {
+    gateId: "gate-crm", state: "requested", kind: "crm_write_permission",
+    expectedSubjectSha256: "a".repeat(64), permittedDecisions: ["approved", "rejected"],
+    revisionKind: null, amountCents: null, productOptions: [], productSet: null,
+  } as unknown as GateCardModel;
+}
+
+test("test_a_card_answer_that_needs_no_reply_attaches_no_turn", async () => {
+  // R-11.6: answering a CRM write card is recorded and starts no turn. The chat attaches no
+  // stream for it and shows nothing in flight; the card follows its proposal instead.
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    h.server.accept = { turnId: "answer-none", agentReply: "none" };
+    await act(async () => {
+      await h.controller().answerGate(crmWriteCard(), { kind: "decision", decision: "rejected" });
+    });
+    await h.settle();
+    assert.equal(h.server.posts, 1, "the answer was sent");
+    assert.equal(h.turnStreams.has("answer-none"), false, "no turn stream is attached");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_card_answer_the_agent_replies_to_attaches_its_turn", async () => {
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    h.server.accept = { turnId: "answer-expected", agentReply: "expected" };
+    await act(async () => {
+      await h.controller().answerGate(crmWriteCard(), { kind: "decision", decision: "rejected" });
+    });
+    await h.flushUntil(() => h.turnStreams.has("answer-expected"), "the answer's turn attached");
   } finally {
     await h.teardown();
   }

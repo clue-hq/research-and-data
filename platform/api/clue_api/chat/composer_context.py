@@ -68,7 +68,11 @@ __all__ = [
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v75"
+# v76 grants the CRM reads (`connect_crm`, `find_crm_actions`, `run_crm_action`) and
+# `write_brand_document`, with the `crm-sales-analysis` skill.
+# v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
+# the `crm-writing` skill.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v77"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
