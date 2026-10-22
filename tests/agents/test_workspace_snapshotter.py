@@ -644,3 +644,56 @@ def test_without_a_receipt_source_a_new_file_still_gets_one(tmp_path: Path) -> N
         source="unknown", operation_id=None, produced_at=None, details={}, read_again=""
     )
     assert saved["outputs/t.csv"].receipt is None
+
+
+def test_a_save_rebases_over_an_expiry_only_move(tmp_path: Path) -> None:
+    """The expiry job moved the version mid-turn; the turn's own files must not be lost (AW-24)."""
+
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"reads/r.json": b"{}", "scratch/a.md": b"a"})
+    lease = _open(machine)
+    try:
+        _expire(store, "reads/r.json")  # the job publishes version 2 under the running turn
+        _write(lease, "scratch/b.md", b"b")
+        report = asyncio.run(lease.save_snapshot())
+        assert (report.status, report.version) == ("saved", 3)
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    saved = _current(store)
+    assert sorted(saved) == ["reads/r.json", "scratch/a.md", "scratch/b.md"]
+    assert saved["reads/r.json"].expired_at is not None  # the expiry is not undone
+    assert saved["scratch/b.md"].expired_at is None
+    assert not (machine.agent() / "reads/r.json").exists()  # its bytes went with the expiry
+    assert _note(machine)["version"] == 3  # type: ignore[index]
+
+
+def test_a_rebased_save_keeps_a_file_the_turn_rewrote_after_its_expiry(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"reads/r.json": b"{}"})
+    lease = _open(machine)
+    try:
+        _expire(store, "reads/r.json")
+        _write(lease, "reads/r.json", b'{"again":true}')
+        assert asyncio.run(lease.save_snapshot()).status == "saved"
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    revived = _current(store)["reads/r.json"]
+    assert revived.expired_at is None
+    assert store.blobs[revived.sha256] == b'{"again":true}'
+
+
+def test_a_save_still_refuses_a_real_conflict(tmp_path: Path) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/a.md": b"a"})
+    lease = _open(a)
+    try:
+        _turn(b, {"scratch/a.md": b"changed"})  # another machine, not the expiry job
+        _write(lease, "scratch/c.md", b"c")
+        assert asyncio.run(lease.save_snapshot()).status == "stale"
+        assert _note(a) is None
+    finally:
+        asyncio.run(a.factory.release_saved(lease))
+    assert sorted(_current(store)) == ["scratch/a.md"]

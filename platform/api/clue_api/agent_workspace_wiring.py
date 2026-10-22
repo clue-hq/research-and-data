@@ -17,6 +17,7 @@ from clue_agents.worker_area import WorkerArea, process_worker_area
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_workspace_receipts import DbReceiptSource
 from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
 from clue_config import Settings, load_settings
 from clue_db import ConnFactory, transaction
@@ -117,6 +118,12 @@ def build_agent_workspace_factory(
             ),
             concurrency=resolved_settings.agent_workspace_transfer_concurrency,
             legacy_root=prepared.path,
+            # What a file was and how to get it again, for after Phase 2 expires its bytes
+            # (AW-22, AW-24). Read from the rows the turn already wrote; never a blocker.
+            receipts=DbReceiptSource(
+                conn_factory=conn_factory,
+                artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory),
+            ),
         ),
         turn_bindings=turn_bindings,
     )

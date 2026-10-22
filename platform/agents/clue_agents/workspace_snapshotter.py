@@ -10,7 +10,9 @@ machine that holds the current copy makes one database read and no storage call.
 Restore brings a stale copy up to date without wiping it: files whose hash already matches stay,
 missing or different ones are downloaded, files the version no longer lists are deleted. Save
 stores only new bytes, then moves the version record with a compare-and-set under the turn's fleet
-lease. A save that loses the race removes the note, so the next turn restores the winner. A save
+lease. A save that loses the race removes the note, so the next turn restores the winner — unless
+it lost to Phase 2's expiry job alone (AW-24), which it re-aims at the version that job published
+and retries once, so a turn never loses its own work to an expiry. A save
 that cannot reach storage after its retries marks the copy *unsaved* and raises: the copy is kept
 and the chat's next turn on this machine saves it (AW-18).
 """
@@ -300,7 +302,7 @@ class WorkspaceSnapshotter:
         started = time.monotonic()
         chat = lease.chat
         base = lease.snapshot_base or SnapshotBase(pointer=None, manifest=None)
-        local = await asyncio.to_thread(_read_agent_folders, lease)
+        local: Mapping[str, bytes] = await asyncio.to_thread(_read_agent_folders, lease)
         manifest = await self._manifest_for(local, previous=base.manifest, chat=chat)
         if base.manifest is not None and manifest.same_files(base.manifest):
             await self._store.touch(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
@@ -311,16 +313,20 @@ class WorkspaceSnapshotter:
             return self._report(
                 lease, "unchanged", uploaded=0, size=0, version=None, started=started
             )
-        # Only the bytes the base still HOLDS may be skipped: an expired entry's content address
-        # names bytes the expiry deleted, so a file revived with the same bytes is uploaded again.
-        known = {entry.sha256 for entry in (base.manifest.live() if base.manifest else ())}
-        new_files = [
-            (entry, local[entry.path]) for entry in manifest.live() if entry.sha256 not in known
-        ]
+        new_files = _new_files(manifest, base=base, local=local)
         try:
             uploaded, status, pointer = await self._save_with_retries(
                 lease, base=base, manifest=manifest, new_files=new_files
             )
+            if status == "stale":
+                rebased = await self._rebase_over_expiry(lease, base=base, local=local)
+                if rebased is not None:
+                    base, local, manifest = rebased
+                    new_files = _new_files(manifest, base=base, local=local)
+                    again, status, pointer = await self._save_with_retries(
+                        lease, base=base, manifest=manifest, new_files=new_files
+                    )
+                    uploaded += again
         except WorkspaceSaveUnavailable:
             if base.pointer is not None and base.manifest is not None:
                 await asyncio.to_thread(
@@ -415,6 +421,67 @@ class WorkspaceSnapshotter:
         )
         return SnapshotManifest(entries=tuple(sorted(entries, key=lambda item: item.path)))
 
+    async def _rebase_over_expiry(
+        self,
+        lease: AgentWorkspaceLease,
+        *,
+        base: SnapshotBase,
+        local: Mapping[str, bytes],
+    ) -> tuple[SnapshotBase, Mapping[str, bytes], SnapshotManifest] | None:
+        """Re-aim a save that lost only to the expiry job, or ``None`` for a real conflict.
+
+        The expiry job (AW-24) moves a chat's version while a turn is still running, and without
+        this the turn's own work would be thrown away for a race it did not lose to anyone. The
+        move is an expiry *only* when every live entry the published version still has is the
+        base's, byte for byte, and every path it no longer has live is one it now carries as an
+        expired receipt. Anything else — another machine saved, a file changed — is a genuine
+        conflict and stays ``stale``.
+
+        The copies the expiry released go from the disk too, exactly as a restore would have
+        dropped them; one the turn itself rewrote stays, and revives its path.
+        """
+
+        chat = lease.chat
+        if base.pointer is None or base.manifest is None:
+            return None
+        current = await self._store.current(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id
+        )
+        if current is None or current.version == base.pointer.version:
+            return None
+        published = await self._store.read_manifest(workspace_id=chat.workspace_id, pointer=current)
+        base_live = {entry.path: entry.sha256 for entry in base.manifest.live()}
+        published_live = {entry.path: entry.sha256 for entry in published.live()}
+        expired = {entry.path for entry in published.expired()}
+        gone = base_live.keys() - published_live.keys()
+        if not gone:
+            return None  # a move that expired nothing the base held is somebody else's save
+        if any(base_live.get(path) != sha for path, sha in published_live.items()):
+            return None
+        if any(path not in expired for path in gone):
+            return None
+        released = {
+            path
+            for path in expired
+            if path in local and hashlib.sha256(local[path]).hexdigest() == base_live.get(path)
+        }
+        if released:
+            local = {path: data for path, data in local.items() if path not in released}
+            await asyncio.to_thread(_replace_agent_folders, lease, local)
+        log.info(
+            "agent_workspace.save_rebased",
+            workspace_id=chat.workspace_id,
+            thread_id=chat.thread_id,
+            base_version=base.pointer.version,
+            onto_version=current.version,
+            released=len(released),
+        )
+        rebased = SnapshotBase(
+            pointer=current, manifest=published, legacy_folder=base.legacy_folder
+        )
+        manifest = await self._manifest_for(local, previous=published, chat=chat)
+        return rebased, local, manifest
+
     async def _receipt_for(self, chat: ChatScope, path: str) -> Receipt | None:
         """What this new file was, for after its bytes expire; ``None`` for a work product."""
 
@@ -495,6 +562,19 @@ def _elapsed(started: float) -> int:
 
 def _version(base: SnapshotBase) -> int | None:
     return None if base.pointer is None else base.pointer.version
+
+
+def _new_files(
+    manifest: SnapshotManifest, *, base: SnapshotBase, local: Mapping[str, bytes]
+) -> list[tuple[SnapshotEntry, bytes]]:
+    """The bytes this save must upload: only the ones the base version still HOLDS may be skipped.
+
+    An expired entry's content address names bytes the expiry deleted, so a file revived with the
+    same bytes is uploaded again.
+    """
+
+    known = {entry.sha256 for entry in (base.manifest.live() if base.manifest else ())}
+    return [(entry, local[entry.path]) for entry in manifest.live() if entry.sha256 not in known]
 
 
 def _open_agent(lease: AgentWorkspaceLease) -> tuple[int, int]:
