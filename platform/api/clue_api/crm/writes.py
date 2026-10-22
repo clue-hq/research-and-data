@@ -483,19 +483,42 @@ async def forget_membership_link(
 
 
 async def clue_added_members(
-    conn: AsyncConnection, *, connection_id: UUID, pairs: Sequence[tuple[str, str]]
+    conn: AsyncConnection,
+    *,
+    connection_id: UUID,
+    pairs: Sequence[tuple[str, str]],
+    project_id: str | None = None,
 ) -> set[tuple[str, str]]:
-    """Which (list, record) memberships of this connection Clue added itself."""
+    """Which (list, record) memberships of this connection Clue added itself.
+
+    With ``project_id``, only those a proposal of that project added: a list can serve several
+    projects (R-11.11), and one project never removes a member another project added. The project
+    is the one of the proposal whose write created the link; a link no write created belongs to
+    no project.
+    """
     wanted = {
         membership_link_id(list_ref, record): (list_ref, record) for list_ref, record in pairs
     }
     if not wanted:
         return set()
+    project_clause = (
+        ""
+        if project_id is None
+        else "AND EXISTS (SELECT 1 FROM crm_write w JOIN crm_write_proposal p "
+        "ON p.proposal_id = w.proposal_id WHERE w.write_id = l.created_by_write_id "
+        "AND p.project_id = :project_id) "
+    )
     rows = await conn.execute(
         text(
-            "SELECT crm_id FROM crm_record_link WHERE connection_id = :connection_id "
-            "AND crm_object = :object AND created_by_clue AND crm_id = ANY(:ids)"
+            "SELECT l.crm_id FROM crm_record_link l WHERE l.connection_id = :connection_id "
+            "AND l.crm_object = :object AND l.created_by_clue AND l.crm_id = ANY(:ids) "
+            + project_clause
         ),
-        {"connection_id": connection_id, "object": MEMBERSHIP_LINK_OBJECT, "ids": list(wanted)},
+        {
+            "connection_id": connection_id,
+            "object": MEMBERSHIP_LINK_OBJECT,
+            "ids": list(wanted),
+            "project_id": project_id,
+        },
     )
     return {wanted[crm_id] for (crm_id,) in rows}

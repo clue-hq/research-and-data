@@ -278,6 +278,7 @@ class ProposeCrmChangesTool(Tool):
                         budget=self._budget if connection.provider == "salesforce" else None,
                         connection=connection,
                         proposal_id=proposal_id,
+                        project_id=turn.project_id,
                         changes=[
                             ProposedChange(
                                 slug=change.slug,

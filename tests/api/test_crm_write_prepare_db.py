@@ -280,12 +280,17 @@ async def _prepare_batch(
     budget: Any = None,
     **pause: Any,
 ) -> PreparedBatch:
+    project = await conn.execute(
+        text("SELECT project_id FROM crm_write_proposal WHERE proposal_id = :id"),
+        {"id": proposal_id},
+    )
     return await prepare_changes(
         conn,
         gateway=gateway,
         budget=budget,
         connection=connection,
         proposal_id=proposal_id,
+        project_id=project.scalar_one(),
         changes=changes,
         version="v-test",
         **pause,
@@ -639,6 +644,50 @@ def test_proposal_status_and_record_links_are_kept(tmp_path: Path) -> None:
     _run(tmp_path, "status", body)
 
 
+async def _added_by(
+    conn: Any, seeded: Any, connection: CrmConnection, project_id: str, list_ref: str, record: str
+) -> None:
+    """A proposal of ``project_id`` whose list add succeeded, as the executor leaves it."""
+    proposal_id = uuid4()
+    await writes.insert_proposal(
+        conn,
+        proposal_id=proposal_id,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        project_id=project_id,
+        thread_id=seeded.thread_id,
+        turn_id=seeded.turn_id,
+        status="finished",
+    )
+    write_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO crm_write (write_id, proposal_id, workspace_id, connection_id, ordinal, "
+            "slug, arguments, kind, object, record_ref, record_label, overwrites_person, reason, "
+            "scope_key, selected, status, idempotency_key) VALUES (:id, :proposal, :ws, :c, 0, "
+            "'HUBSPOT_UPDATE_LIST_MEMBERSHIPS', CAST('{}' AS jsonb), 'list_membership', "
+            "'contact', :record, :record, false, 'committee', 'kind:list_membership', true, "
+            "'succeeded', :key)"
+        ),
+        {
+            "id": write_id,
+            "proposal": proposal_id,
+            "ws": seeded.workspace_id,
+            "c": connection.connection_id,
+            "record": record,
+            "key": f"crm-write:{write_id}",
+        },
+    )
+    await writes.record_membership_link(
+        conn,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        list_ref=list_ref,
+        record_ref=record,
+        write_id=write_id,
+    )
+
+
 def _remove_from_list(record: str, list_id: str = "9") -> ProposedChange:
     return ProposedChange(
         "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
@@ -658,14 +707,7 @@ def test_clue_removes_only_members_it_added(tmp_path: Path) -> None:
         assert await _write_count(conn, seeded.workspace_id) == 0
 
         # p2 was added by Clue: the removal is prepared.
-        await writes.record_membership_link(
-            conn,
-            workspace_id=seeded.workspace_id,
-            connection_id=connection.connection_id,
-            list_ref="9",
-            record_ref="p2",
-            write_id=None,
-        )
+        await _added_by(conn, seeded, connection, seeded.project_id, "9", "p2")
         (removal,) = await _prepare(
             conn, gateway, connection, proposal_id, [_remove_from_list("p2")]
         )

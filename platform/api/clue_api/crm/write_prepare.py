@@ -775,9 +775,10 @@ def _check_once_per_created_record(items: Sequence[_Item]) -> None:
 
 
 async def _check_removals(
-    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+    conn: AsyncConnection, connection: CrmConnection, project_id: str, items: Sequence[_Item]
 ) -> None:
-    """Clue removes only members it added itself (R-6.25 call 12)."""
+    """Clue removes only members it added itself (R-6.25 call 12), for this batch's project: a
+    list several projects use keeps each project's members its own (R-11.11)."""
     removals = [
         (str(item.parsed.list_ref), str(item.parsed.record_ref), item.parsed.label)
         for item in items
@@ -787,6 +788,7 @@ async def _check_removals(
         conn,
         connection_id=connection.connection_id,
         pairs=[(list_ref, record) for list_ref, record, _ in removals],
+        project_id=project_id,
     )
     for list_ref, record, label in removals:
         if (list_ref, record) not in added:
@@ -919,6 +921,7 @@ async def prepare_changes(
     budget: _Budget | None,
     connection: CrmConnection,
     proposal_id: UUID,
+    project_id: str,
     changes: Sequence[ProposedChange],
     version: str,
     min_interval_s: float = 0,
@@ -927,10 +930,11 @@ async def prepare_changes(
     """Check, read and scope a proposed batch; refuse it whole when any change may not be written,
     except a change whose record the CRM does not have, which alone is refused (R-11.7).
 
-    ``version`` is the pinned Composio toolkit version of the connection's CRM;
-    ``min_interval_s`` is the pause between its CRM reads (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the
-    same pause the executor keeps between its calls). Writes nothing but the Salesforce budget's
-    call count; the caller logs the result with
+    ``project_id`` is the project the batch is proposed for (a removal may take off only a member
+    that project's proposals added). ``version`` is the pinned Composio toolkit version of the
+    connection's CRM; ``min_interval_s`` is the pause between its CRM reads
+    (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the same pause the executor keeps between its calls).
+    Writes nothing but the Salesforce budget's call count; the caller logs the result with
     :func:`clue_api.crm.writes.insert_writes` under ``proposal_id``.
     """
     del proposal_id  # the caller logs the prepared changes under it
@@ -953,7 +957,7 @@ async def prepare_changes(
         metas[object_name] = await _field_metas(reader, provider, object_name)
     for item in items:
         _check_fields(provider, item, metas)
-    await _check_removals(conn, connection, items)
+    await _check_removals(conn, connection, project_id, items)
 
     # A field the object does not have refuses only its own change (final review M-2), as a
     # missing record does (R-11.7): the agent learns it before any card, the rest go on.

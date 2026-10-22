@@ -281,6 +281,7 @@ async def _propose(
         budget=_FakeBudget(gateway),
         connection=connection,
         proposal_id=proposal_id,
+        project_id=seeded.project_id,
         changes=list(changes),
         version="v",
     )
