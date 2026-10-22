@@ -1697,3 +1697,40 @@ def test_a_covered_create_and_its_uncovered_adds_wait_for_one_card(tmp_path: Pat
         assert [g["title"] for g in card["groups"]] == ['Add 1 company to the list "Clue: Q4"']
 
     _run(tmp_path, "newlistgrant", body)
+
+
+def test_a_campaign_is_proposed_active_and_in_progress(tmp_path: Path) -> None:
+    """R-12.9: the agent names the campaign; Clue creates it active, status "In Progress"."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        (create,) = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee")],
+        )
+        expected = {"name": "Clue: Q4", "is_active": True, "status": "In Progress"}
+        assert create.arguments == expected
+        assert create.after == expected
+        card = card_snapshot([create], provider="salesforce", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["title"] == 'Create the campaign "Clue: Q4"'
+        assert group["value_summary"] == 'Active, status "In Progress"'
+
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=[create],
+        )
+        row = (
+            await conn.execute(
+                text("SELECT arguments, after_value FROM crm_write WHERE proposal_id = :p"),
+                {"p": proposal_id},
+            )
+        ).one()
+        assert row.arguments == row.after_value == expected
+
+    _run(tmp_path, "campaignactive", body, provider="salesforce")

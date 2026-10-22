@@ -136,6 +136,10 @@ RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
 #: An add to a list the same proposal was to create, when the create did not happen (R-12.7).
 NOT_CREATED_MESSAGE = "The list was not created, so nothing was added to it."
+#: Salesforce refuses "In Progress" when the org's Campaign.Status picklist lacks it (R-12.9).
+NO_IN_PROGRESS_MESSAGE = (
+    'Salesforce has no campaign status "In Progress"; ask your Salesforce admin to add it.'
+)
 #: A membership change of a list HubSpot no longer has (R-11.11 (4); Review Focus 3).
 LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
 #: Salesforce lets only Marketing Users create campaigns (Phase 3 Task 1 ruling).
@@ -193,6 +197,18 @@ def _campaign_not_allowed(message: str) -> bool:
     return all(part in message for part in _CAMPAIGN_NOT_ALLOWED)
 
 
+def _no_in_progress_status(parsed: Any) -> bool:
+    """Salesforce's refusal of the campaign status Clue sends: a bad restricted-picklist value
+    on ``Status`` naming "In Progress"."""
+    return isinstance(parsed, list) and any(
+        isinstance(item, Mapping)
+        and item.get("errorCode") == "INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST"
+        and "Status" in (item.get("fields") or [])
+        and "In Progress" in str(item.get("message") or "")
+        for item in parsed
+    )
+
+
 def failure_kind(message: str | None) -> FailureKind:
     """The ``crm_write.failure_kind`` of a CRM refusal, from the error code in its message."""
     if not message:
@@ -246,6 +262,8 @@ def crm_reply(body: str) -> tuple[str, Any]:
     if isinstance(parsed, Mapping | list):
         # A refusal a person can act on is said in plain words; the answer is kept.
         message = MARKETING_USER_MESSAGE if _campaign_not_allowed(body) else None
+        if message is None and _no_in_progress_status(parsed):
+            message = NO_IN_PROGRESS_MESSAGE
         message = message or _crm_text(parsed) or body
         return message[:_MESSAGE_MAX], parsed
     if len(body) > _MESSAGE_MAX:

@@ -2102,3 +2102,70 @@ def test_a_finished_proposal_leaves_no_add_waiting_for_a_list(tmp_path: Path) ->
         assert [slug for slug, _ in gateway.writes] == ["HUBSPOT_CREATE_LIST"]
 
     _run(tmp_path, "newlistbackstop", body)
+
+
+# --- Task 3c (R-12.9): Clue's Salesforce campaigns are created active -------------------------
+
+_NO_IN_PROGRESS = (
+    '[{"message":"bad value for restricted picklist field: In Progress",'
+    '"errorCode":"INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST","fields":["Status"]}]'
+)
+NO_IN_PROGRESS = (
+    'Salesforce has no campaign status "In Progress"; ask your Salesforce admin to add it.'
+)
+
+
+def test_a_campaign_is_created_active_and_a_retry_sends_the_same(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(failures={"SALESFORCE_CREATE_CAMPAIGN": ["crash"]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+        )
+        handler = _handler(conn, tmp_path, gateway)
+        with pytest.raises(RuntimeError):
+            await _handle(handler, connection)
+        await _handle(handler, connection)
+
+        expected = {"name": "Clue: Q4", "is_active": True, "status": "In Progress"}
+        assert [args for slug, args in gateway.writes] == [expected]  # sent once, as stored
+        settled = await _created(conn, proposal_id)
+        assert (settled["status"], settled["crm_id"]) == (
+            "succeeded",
+            gateway.crm_lists["Clue: Q4"],
+        )
+
+    _run(tmp_path, "campaignactivesent", body, provider="salesforce")
+
+
+def test_an_org_without_the_in_progress_status_is_told_in_plain_words(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        refusal = ExecuteResult(False, {"http_error": "400", "status_code": 400}, _NO_IN_PROGRESS)
+        gateway = _WritingCrm(failures={"SALESFORCE_CREATE_CAMPAIGN": [refusal]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        (change,) = (await _writes(conn, proposal_id)).values()
+        assert (change["status"], change["crm_message"]) == ("failed", NO_IN_PROGRESS)
+        assert change["crm_response"] == json.loads(_NO_IN_PROGRESS)
+
+    _run(tmp_path, "noinprogress", body, provider="salesforce")
+
+
+def test_the_missing_in_progress_status_is_said_plainly() -> None:
+    assert crm_reply(_NO_IN_PROGRESS) == (NO_IN_PROGRESS, json.loads(_NO_IN_PROGRESS))
+    # A bad value on another picklist keeps Salesforce's own words.
+    other = '[{"message":"bad value for restricted picklist field: Big","errorCode":"INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST","fields":["Industry"]}]'  # noqa: E501
+    assert crm_reply(other)[0] == (
+        "bad value for restricted picklist field: Big (INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST)"
+    )

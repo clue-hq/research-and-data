@@ -41,6 +41,7 @@ from clue_api.crm.composio_gateway import (
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.lists import live_list_named, stored_list
 from clue_api.crm.write_actions import (
+    CLUE_CAMPAIGN_SETTINGS,
     HUBSPOT_OBJECT_TYPE_IDS,
     NEW_LIST_PREFIX,
     ParsedChange,
@@ -1160,12 +1161,17 @@ async def prepare_changes(
                 builder.whole(item, before=before, after=after)
         elif kind == "list_create":
             # Nothing to read: the list is new (a kept one of that name was refused above).
-            # The list is made under the name the card shows.
-            builder.whole(
-                _with_arguments(item, ("name",), item.parsed.label),
-                before=None,
-                after={"name": item.parsed.label},
+            # The list is made under the name the card shows; a Salesforce campaign is made
+            # active, "In Progress" (R-12.9). What is stored is what is sent, on every try.
+            made: dict[str, object] = {**item.proposed.arguments, "name": item.parsed.label}
+            after: dict[str, object] = {"name": item.parsed.label}
+            if provider == "salesforce":
+                made.update(CLUE_CAMPAIGN_SETTINGS)
+                after.update(CLUE_CAMPAIGN_SETTINGS)
+            item = dataclasses.replace(
+                item, proposed=dataclasses.replace(item.proposed, arguments=made)
             )
+            builder.whole(item, before=None, after=after)
         elif kind in ("create_contact", "create_company"):
             found = await _find_existing(reader, provider, item)
             if found is None:
@@ -1360,7 +1366,10 @@ def card_snapshot(
     for changes in grouped.values():
         first = changes[0]
         count = len(changes)
+        kind = first.parsed.change_kind(first.spec)
         summary = None
+        if kind == "list_create" and provider == "salesforce":
+            summary = f'Active, status "{CLUE_CAMPAIGN_SETTINGS["status"]}"'
         if first.field is not None:
             befores = [change.before for change in changes]
             before_text = (
@@ -1369,7 +1378,6 @@ def card_snapshot(
                 else _counts([_shown(c, c.before) for c in changes])
             )
             summary = f"{before_text} → {_counts([_shown(c, c.after) for c in changes])}"
-        kind = first.parsed.change_kind(first.spec)
         groups.append(
             {
                 "kind": kind,

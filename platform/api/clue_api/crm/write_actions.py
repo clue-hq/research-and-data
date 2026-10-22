@@ -42,6 +42,7 @@ __all__ = [
     "HUBSPOT_OBJECT_TYPE_IDS",
     "NEW_LIST_PREFIX",
     "WRITE_ACTIONS",
+    "CLUE_CAMPAIGN_SETTINGS",
     "BatchSpec",
     "ItemOutcome",
     "ParsedChange",
@@ -488,9 +489,20 @@ def _salesforce_remove_from_campaign(arguments: Arguments) -> ParsedChange:
     return ParsedChange("contact", record, {}, _id(arguments, "campaign_id"), record)
 
 
+#: How Clue creates every Salesforce campaign (R-12.9): active and "In Progress", because a target
+#: list is in use from the start (an inactive "Planned" one is hidden from most reports and
+#: pickers). Preparation adds these to the name the agent gives; the card says so.
+CLUE_CAMPAIGN_SETTINGS: Mapping[str, object] = {"is_active": True, "status": "In Progress"}
+
+
 def _salesforce_create_campaign(arguments: Arguments) -> ParsedChange:
-    # Only the name, so the card shows everything that is sent.
-    _only(arguments, {"name"})
+    # The name, and only the settings Clue itself sends, so the card shows everything sent.
+    _only(arguments, {"name", *CLUE_CAMPAIGN_SETTINGS})
+    for setting, value in CLUE_CAMPAIGN_SETTINGS.items():
+        if setting in arguments and arguments[setting] != value:
+            raise WriteNotParsable(
+                f"Clue creates campaigns with {setting} {value!r} (R-12.9); leave '{setting}' out."
+            )
     return ParsedChange("contact", None, {}, None, _list_name(arguments))
 
 

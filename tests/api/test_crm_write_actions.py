@@ -327,6 +327,9 @@ def test_scope_keys() -> None:
         ),
         ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": " "}),
         ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "budgeted_cost": 9}),
+        # R-12.9: Clue's campaigns are active and "In Progress", nothing else
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "is_active": False}),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "status": "Planned"}),
         (
             "hubspot",
             "HUBSPOT_CREATE_CONTACT",
@@ -413,3 +416,10 @@ def test_hubspot_list_batch_groups_by_list_and_operation() -> None:
     assert batch.build([a, b]) == {"list_id": "9", "operation": "add", "record_ids": ["1", "2"]}
     outcomes = batch.split({"recordsIdsAdded": ["1"], "recordIdsMissing": ["2"]}, [a, b])
     assert [(o.ok, o.crm_id) for o in outcomes] == [(True, "1"), (False, "2")]
+
+
+def test_a_campaign_create_may_name_the_active_status_clue_sets() -> None:
+    spec = write_spec("salesforce", "SALESFORCE_CREATE_CAMPAIGN")
+    assert spec is not None
+    parsed = spec.parse({"name": "Clue: Q4", "is_active": True, "status": "In Progress"})
+    assert parsed.label == "Clue: Q4" and parsed.change_kind(spec) == "list_create"
