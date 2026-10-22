@@ -32,6 +32,8 @@ from clue_api.crm.write_prepare import (
     prepare_changes,
 )
 from clue_config import Settings
+from clue_core import VerificationStatus
+from clue_research.claimstore import record_verification
 from tests.api._crm_people import clear_people
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
@@ -2362,11 +2364,13 @@ async def _succeeded_write(
     before: object,
     after: object,
     clue_entity_id: str | None,
+    reverses: UUID | None = None,
 ) -> UUID:
-    """A field update Clue made and the CRM accepted, as the write log holds it."""
+    """A field update Clue made and the CRM accepted, as the write log holds it (an undo of
+    ``reverses`` when given)."""
     from clue_api.crm.write_actions import write_spec
 
-    spec = write_spec(connection.provider, "HUBSPOT_UPDATE_CONTACTS")
+    spec = write_spec("hubspot", "HUBSPOT_UPDATE_CONTACTS")
     assert spec is not None
     parsed = spec.parse({"inputs": [{"id": record, "properties": {field: after}}]})
     change = PreparedChange(
@@ -2383,6 +2387,7 @@ async def _succeeded_write(
         source_ref=None,
         arguments={"inputs": [{"id": record, "properties": {field: after}}]},
         clue_entity_id=clue_entity_id,
+        reverses_write_id=reverses,
     )
     proposal = uuid4()
     await writes.insert_proposal(
@@ -2522,3 +2527,100 @@ def test_an_undo_of_a_write_clue_did_not_make_here_is_refused(tmp_path: Path) ->
             ]
 
     _run(tmp_path, "undoforeign", body)
+
+
+# --- fix round 2: an undo of an undo is checked against today's research ---------------------
+
+
+def test_an_undo_of_an_undo_is_checked_against_todays_research(tmp_path: Path) -> None:
+    """Re-sending the value Clue first wrote is a new write of it: it passes only while the
+    research still offers it, and then cites its claim."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        nick = str(world.nick)
+        gateway = _FakeCrm(records={"202": {"jobtitle": "Director", "email": "nick@zafran.io"}})
+        first = await _succeeded_write(
+            conn,
+            seeded,
+            connection,
+            record="202",
+            field="jobtitle",
+            before="Director",
+            after="VP Marketing",
+            clue_entity_id=nick,
+        )
+        undone = await _succeeded_write(
+            conn,
+            seeded,
+            connection,
+            record="202",
+            field="jobtitle",
+            before="VP Marketing",
+            after="Director",
+            clue_entity_id=nick,
+            reverses=first,
+        )
+        redo = _contact_update("202", {"jobtitle": "VP Marketing"}, reverses_write_id=undone)
+
+        current = await _prepare_batch(conn, gateway, connection, proposal_id, [redo])
+        assert current.refused == []
+        (change,) = current.changes
+        assert change.source_claim_ids == (world.claims["nick_title"],)
+        # Checked like a new write of the value, about the Clue contact the undone write named.
+        assert change.clue_entity_id == nick
+
+        await record_verification(
+            conn, world.claims["nick_title"], status=VerificationStatus.REJECTED
+        )
+        rejected = await _prepare_batch(conn, gateway, connection, proposal_id, [redo])
+        assert _refusal(rejected) == [(0, "crm_personal_data_not_allowed")]
+        assert rejected.changes == []
+
+    _run(tmp_path, "undoundo", body)
+
+
+def test_an_undo_on_another_record_or_of_another_workspace_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={
+                "202": {"jobtitle": "VP Marketing", "email": "nick@zafran.io"},
+                "203": {"jobtitle": "VP Marketing", "email": "nick@zafran.io"},
+            }
+        )
+        mine = await _succeeded_write(
+            conn,
+            seeded,
+            connection,
+            record="202",
+            field="jobtitle",
+            before="Director",
+            after="VP Marketing",
+            clue_entity_id=str(world.nick),
+        )
+        theirs_seeded = await _seed(conn, tmp_path, workspace_id="ws-crmw-undo-theirs", label="ut")
+        # Its own connection (a Composio account is one workspace's; the row's shape is a
+        # HubSpot write either way).
+        theirs_connection = await _connect(conn, theirs_seeded.workspace_id, "salesforce")
+        theirs = await _succeeded_write(
+            conn,
+            theirs_seeded,
+            theirs_connection,
+            record="202",
+            field="jobtitle",
+            before="Director",
+            after="VP Marketing",
+            clue_entity_id=None,
+        )
+        message = "This undo does not match a change Clue made."
+        for change in (
+            _contact_update("203", {"jobtitle": "Director"}, reverses_write_id=mine),
+            _contact_update("202", {"jobtitle": "Director"}, reverses_write_id=theirs),
+        ):
+            batch = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+            assert [(r.reason_code, r.message) for r in batch.refused] == [
+                ("crm_write_not_parsable", message)
+            ]
+
+    _run(tmp_path, "undoelsewhere", body)

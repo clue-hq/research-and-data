@@ -248,6 +248,8 @@ class _Item:
     #: ``company``, the record Clue knows the entity by on this connection, and the email (person)
     #: or domain (company) the record must hold when Clue knows no record.
     owner: tuple[str, str | None, str | None] | None = None
+    #: Clue's own undo restoring its before-value (ruling #2/#3): no research check applies.
+    exempt: bool = False
 
 
 def _words(*names: str) -> str:
@@ -971,7 +973,7 @@ async def _reversed_writes(
     rows = await conn.execute(
         text(
             "SELECT write_id, object, record_ref, field, before_value::text AS before_value, "
-            "clue_entity_id "
+            "clue_entity_id, reverses_write_id "
             "FROM crm_write WHERE write_id = ANY(:ids) AND workspace_id = :ws "
             "AND connection_id = :connection AND status = 'succeeded' AND kind = 'field_update'"
         ),
@@ -986,11 +988,14 @@ async def _reversed_writes(
     }
 
 
-def _undo(item: _Item, reversed_write: Mapping[str, Any] | None) -> _Item | str | None:
+def _undo(item: _Item, reversed_write: Mapping[str, Any] | None) -> _Item | str:
     """Ruling #2/#3: an undo of Clue's own update restores exactly its before-value. The cleared
-    undo (no claim ids, the reversed write's Clue entity), the refusal of an undo that names no
-    such write of this record and field, or ``None`` when the value is not the before-value (the
-    change is then checked like any other)."""
+    undo (no claim ids, the reversed write's Clue entity, ``owner`` unset), the refusal of an
+    undo that names no such write of this record and field, or — when the value is not the
+    before-value, or the reversed write is itself an undo (fix round 2: re-sending the value Clue
+    first wrote is a new write of it, so today's research decides, and a claim rejected, superseded
+    or erased since is not sent again) — the change to check like any other, about the Clue entity
+    the reversed write named when the change names none."""
     if reversed_write is None:
         return _NOT_AN_UNDO
     if (
@@ -1000,10 +1005,17 @@ def _undo(item: _Item, reversed_write: Mapping[str, Any] | None) -> _Item | str 
     ):
         return _NOT_AN_UNDO
     value = item.parsed.fields[str(reversed_write["field"])]
-    if not same_value(value, reversed_write["before_value"]):
-        return None
+    if reversed_write["reverses_write_id"] is not None or not same_value(
+        value, reversed_write["before_value"]
+    ):
+        if item.proposed.clue_entity_id is not None or reversed_write["clue_entity_id"] is None:
+            return item
+        named = dataclasses.replace(
+            item.proposed, clue_entity_id=str(reversed_write["clue_entity_id"])
+        )
+        return dataclasses.replace(item, proposed=named)
     proposed = dataclasses.replace(item.proposed, clue_entity_id=reversed_write["clue_entity_id"])
-    return dataclasses.replace(item, proposed=proposed, claims={}, owner=None)
+    return dataclasses.replace(item, proposed=proposed, claims={}, owner=None, exempt=True)
 
 
 def _person_target(provider: CrmProvider, field: str, label: str) -> tuple[str, str] | None:
@@ -1154,6 +1166,28 @@ async def check_against_targets(
     is refused on its own, naming the field and why, never the value. The rest go on, carrying
     the claim ids their values came from."""
     provider = connection.provider
+    cleared: dict[int, _Item] = {}
+    refused: list[RefusedChange] = []
+    # Undos first (ruling #2/#3, fix round 2): Clue's own undo is cleared as it is; any other
+    # change naming a reversed write is checked below, about the entity that write named.
+    reversed_writes = await _reversed_writes(conn, connection, items)
+    pending: dict[int, _Item] = {}
+    for index, item in items.items():
+        if (
+            item.proposed.reverses_write_id is not None
+            and item.parsed.change_kind(item.spec) == "field_update"
+        ):
+            undo = _undo(item, reversed_writes.get(str(item.proposed.reverses_write_id)))
+            if isinstance(undo, str):
+                refused.append(_refused(index, item, undo, "crm_write_not_parsable"))
+                continue
+            if undo.exempt:
+                cleared[index] = undo
+                continue
+            item = undo
+        pending[index] = item
+    items = pending
+
     named = {
         uid
         for item in items.values()
@@ -1180,25 +1214,11 @@ async def check_against_targets(
         contact_ids=person_ids,
     )
 
-    reversed_writes = await _reversed_writes(conn, connection, items)
-    cleared: dict[int, _Item] = {}
-    refused: list[RefusedChange] = []
     for index, item in items.items():
         entity = _uuid(item.proposed.clue_entity_id)
         entity_id = str(entity) if entity is not None else None
         object_metas = metas.get(item.parsed.object, {})
         checked: _Item | str = item
-        if (
-            item.proposed.reverses_write_id is not None
-            and item.parsed.change_kind(item.spec) == "field_update"
-        ):
-            undo = _undo(item, reversed_writes.get(str(item.proposed.reverses_write_id)))
-            if isinstance(undo, str):
-                refused.append(_refused(index, item, undo, "crm_write_not_parsable"))
-                continue
-            if undo is not None:
-                cleared[index] = undo
-                continue
         if _person_change(item):
             if item.proposed.clue_entity_id is None:
                 checked = _NAME_THE_CONTACT
@@ -1230,7 +1250,7 @@ async def check_against_targets(
             refused.append(_refused(index, item, checked))
         else:
             cleared[index] = checked
-    return cleared, refused
+    return dict(sorted(cleared.items())), refused
 
 
 def _with_buying_role(
