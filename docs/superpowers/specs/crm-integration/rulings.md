@@ -446,3 +446,6 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
 - **R-12.8 (2026-10-23)** **"Always allow" for list membership stays one permission (R-6.7) and is
   worded neutrally:** "Always allow adding records to Clue lists and campaigns", on the card and in
   the permissions list.
+- **R-12.9 (2026-10-23)** **Clue creates its Salesforce campaigns active, with status "In Progress".** A
+  target list is in use from the moment it is created; an inactive "Planned" campaign is hidden
+  from most campaign reports and pickers.
