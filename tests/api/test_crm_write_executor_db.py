@@ -659,6 +659,35 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
     _run(tmp_path, "expired", body)
 
 
+def test_a_connection_expired_before_the_batch_starts_pauses_and_wakes(tmp_path: Path) -> None:
+    """Final review M-12: a queued proposal on a connection that expired before its task ran is
+    paused and its chat woken once, as when the connection expires mid-batch."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
+        await conn.execute(
+            text(
+                "UPDATE workspace_integration_connection SET status = 'expired' "
+                "WHERE connection_id = :id"
+            ),
+            {"id": connection.connection_id},
+        )
+
+        for _ in range(2):  # a second run wakes nobody again
+            result = await _handle(_handler(conn, tmp_path, gateway), connection)
+            assert result.outcome == "connection_not_active" and not result.requeue
+
+        assert await _proposal_status(conn, proposal_id) == "paused"
+        assert gateway.calls == []
+        key = f"crm-writes-paused:{proposal_id}:0"
+        assert await _wake_messages(conn, seeded.workspace_id) == [key]
+        message = await _wake_message(conn, tmp_path, key)
+        assert "the HubSpot connection has expired or was revoked" in message
+
+    _run(tmp_path, "expiredbefore", body)
+
+
 def test_a_paused_proposal_is_never_sent_on_a_different_connection(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         expired = ComposioError("connection_expired", 410, "Connected account expired")

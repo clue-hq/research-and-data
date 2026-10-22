@@ -28,15 +28,16 @@ unreachable CRM puts the change back to ``queued`` and requeues the task after
 ``CLUE_CRM_WRITE_RETRY_BASE_S * 2**(attempt-1)`` seconds, until ``CLUE_CRM_WRITE_MAX_ATTEMPTS``
 sends, then fails it ``retryable``; a rate limit met by a read counts as an attempt the same way,
 and a change sent whose confirming read keeps failing is failed ``retryable`` at the same cap.
-An expired connection is marked expired and the proposal ``paused``; a connection Composio refuses
+An expired connection is marked expired and the proposal ``paused`` (a proposal still waiting when
+its task finds the connection already expired is paused the same way); a connection Composio refuses
 (401/403, or a connected account it no longer knows) pauses it without touching the connection, as
 does Salesforce's API budget running out. A paused proposal resumes only on its own connection: it
 is never sent on another one, because a reconnect may be to a different portal or org (founder
-ruling, Task 6 review). When a new connection becomes active, the connect callback closes the
-other connections' unsent proposals (:func:`close_replaced_connection_proposals`) and their chats
-are asked to propose again. A finished proposal — and a paused one — wakes the chat that proposed
-it (:mod:`clue_api.crm.wake`). A change whose action is no longer allowlisted fails on its own and
-never blocks the queue.
+ruling, Task 6 review; R-11.10: a reconnect does not resume it). When a new connection becomes
+active, the connect callback closes the other connections' unsent proposals
+(:func:`close_replaced_connection_proposals`) and their chats are asked to propose again. A finished
+proposal — and a paused one — wakes the chat that proposed it (:mod:`clue_api.crm.wake`). A change
+whose action is no longer allowlisted fails on its own and never blocks the queue.
 
 Declined and replaced proposals are never picked up: only ``queued`` ones, plus ``sending`` (a run
 that died) and ``paused`` (waiting on a reconnect or the budget).
@@ -761,6 +762,8 @@ class CrmWriteHandler:
         async with self._conn_factory() as conn:
             connection = await get_connection(conn, connection_id=connection_id)
         if connection is None or connection.status != "active":
+            if connection is not None and connection.status == "expired":
+                await self._pause_waiting(connection)
             return WorkResult(outcome="connection_not_active", references={})
         crm = _Crm(
             gateway=self._gateway,
@@ -795,6 +798,31 @@ class CrmWriteHandler:
                     outcome="more_queued", references={"proposals": len(handled)}, requeue=True
                 )
         return WorkResult(outcome="done", references={"proposals": len(handled)})
+
+    async def _pause_waiting(self, connection: CrmConnection) -> None:
+        """The connection expired before its waiting proposals were sent: pause each and wake
+        its chat, as when it expires mid-batch (final review M-12). A proposal already paused
+        has woken its chat; the wake's key keeps a second run from waking it again."""
+        reason, resumes = _expired_reason(connection)
+        async with self._conn_factory() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT proposal_id FROM crm_write_proposal WHERE connection_id = :c "
+                    "AND status IN ('queued', 'sending') ORDER BY created_at, proposal_id "
+                    "FOR UPDATE"
+                ),
+                {"c": connection.connection_id},
+            )
+            for row in rows.all():
+                proposal_id = UUID(str(row.proposal_id))
+                await set_proposal_status(conn, proposal_id=proposal_id, status="paused")
+                proposal = await get_proposal(conn, proposal_id=proposal_id)
+                assert proposal is not None
+                if self._artifacts is not None:
+                    await queue_crm_writes_paused_turn(
+                        conn, self._artifacts, proposal=proposal, reason=reason, resumes=resumes
+                    )
+                log.info("crm_write.paused", proposal_id=str(proposal_id), reason="expired")
 
     async def _run_proposal(
         self, crm: _Crm, proposal_id: UUID, context: WorkContext
@@ -1161,11 +1189,7 @@ class CrmWriteHandler:
         if stop.kind == "connection_expired":
             assert stop.error is not None
             await composio_refusal(self._conn_factory, stop.error, crm.connection)
-            reason = f"the {crm.name} connection has expired or was revoked"
-            resumes = (
-                "once this connection works again; if the person connects the CRM anew, these "
-                "changes are not sent and must be proposed again"
-            )
+            reason, resumes = _expired_reason(crm.connection)
         elif stop.kind == "auth":
             # Clue's Composio key or the connected account is not accepted: a deployment fault
             # or a deleted account, never a reason to fail the person's changes for good.
@@ -1205,6 +1229,15 @@ class CrmWriteHandler:
             log.warning("crm_write.no_artifact_store", proposal_id=str(proposal.proposal_id))
             return
         await queue_crm_writes_finished_turn(conn, self._artifacts, proposal=proposal)
+
+
+def _expired_reason(connection: CrmConnection) -> tuple[str, str]:
+    """The paused wake's reason and what resumes it, for an expired connection."""
+    return (
+        f"the {_CRM_NAMES[connection.provider]} connection has expired or was revoked",
+        "once this connection works again; if the person connects the CRM anew, these "
+        "changes are not sent and must be proposed again",
+    )
 
 
 # --- the proposals of a connection ------------------------------------------------------------
