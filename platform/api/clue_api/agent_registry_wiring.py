@@ -546,6 +546,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "propose_crm_changes": (AgentRole.HEAD_OF_ABM,),
     "crm_write_log": (AgentRole.HEAD_OF_ABM,),
     "manage_crm_grants": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 3 (first writes, Task 4): `read_crm_targets` reads a project's accounts
+    # and committee reduced to what R-8.7 allows. Registered UNGRANTED until the Phase 3 catalog
+    # bump (Task 8), which grants it to the Head of ABM.
+    "read_crm_targets": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge

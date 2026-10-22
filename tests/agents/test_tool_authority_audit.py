@@ -180,7 +180,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # (155 -> 156); `crm_write_log@1` and `manage_crm_grants@1` likewise (156 -> 158). All three
     # are GRANTED to the Head of ABM as of `head-of-abm@v77` (2026-10-22), the reviewed bump that
     # pins their schema digests and mints the `crm-writing` skill. No new NAME joins.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 158
+    # CRM integration Phase 3: `read_crm_targets@1`, ungranted until the Phase 3 catalog bump
+    # (158 -> 159).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 159
+    assert C6_AGENT_TOOL_AUTHORITY["read_crm_targets"] == ()
     for crm_write_tool in ("propose_crm_changes", "crm_write_log", "manage_crm_grants"):
         assert C6_AGENT_TOOL_AUTHORITY[crm_write_tool] == (AgentRole.HEAD_OF_ABM,)
         assert c6_roles_for_tool(f"{crm_write_tool}@1") == (AgentRole.HEAD_OF_ABM,)
