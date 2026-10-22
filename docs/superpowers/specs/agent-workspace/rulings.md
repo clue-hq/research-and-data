@@ -131,6 +131,10 @@ agent, not only the CRM work.
   days for now."* The retention expiry job (WS-26) checks every hour
   (`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S=3600`), so a file goes up to an hour after its
   limit (Q10 decided).
+- **AW-25 (2026-10-22)** **The person never sees or downloads the agent's workspace files** (Q11);
+  the snapshot stays internal. **Stage-0 trial workspaces are left as they are for now** (Q8): no
+  change in Phase 2 (they currently compose with snapshots on, review minor M2). Founder: *"NO THEY
+  CANT SEE or download them"*; *"yeah let them be for now."*
 - **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
   the release rule of spec §3 (Q7) is dropped: until Phase 2 lands, nothing in a chat's snapshot is
   deleted (raw inputs included), and stored files of old versions are kept. **Order:** the CRM branch

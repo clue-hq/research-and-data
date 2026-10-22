@@ -215,7 +215,7 @@ the biggest: about two F2s.
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
 phase starts. Everything Phase 1's plan needs is decided (Q1–Q6, Q9, Q10's cache values). Still
-open, for later phases: Q8 and Q11 (Q7 decided by AW-23; Q10's expiry-job timing by AW-24).
+open: none (Q7 by AW-23, Q8 and Q11 by AW-25, Q10's expiry-job timing by AW-24).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -936,6 +936,8 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: AW-25 (founder): the person never sees or downloads the workspace files (Q11);
+  Stage-0 trial workspaces left as they are (Q8).
 - 2026-10-22: AW-24 (founder): working files kept 7 days, not 30; the expiry job runs hourly
   (Q10 decided).
 - 2026-10-22: corrections. WS-30 and §5's artifact-store row wrongly said the existing purge
