@@ -106,7 +106,7 @@ Record every answer as you receive it (section 6). Do not batch the questions in
 
 ## 2b. The sales motion and the CRM
 
-Question 2 (the last closed-won deals) is where the CRM helps most. If `brand/knowledge/company/sales-motion.md` is recent, take the answer from it and propose it as a guess. Otherwise, before asking question 2, offer to read the CRM: open `.deepagent/skills/crm-sales-analysis/v1/SKILL.md` and follow it. It connects the CRM if needed, or takes the numbers by hand if the person prefers. When the CRM step has to wait for the person to connect, end the turn; the chat comes back by itself. Then continue with question 3.
+Question 2 (the last closed-won deals) is where the CRM helps most. If `brand/knowledge/company/sales-motion.md` is recent, take the answer from it and propose it as a guess. Otherwise, before asking question 2, offer to read the CRM: open `.deepagent/skills/crm-sales-analysis/v2/SKILL.md` and follow it. It connects the CRM if needed, or takes the numbers by hand if the person prefers. When the CRM step has to wait for the person to connect, end the turn; the chat comes back by itself. Then continue with question 3.
 
 ## 3. The ICP: your view first, then theirs
 

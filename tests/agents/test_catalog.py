@@ -106,6 +106,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The CRM sales analysis (head-of-abm@v76): connect the CRM, read the deals, compute in the
         # sandbox, write company/sales-motion.md and the closed-won customers.
         "skill:crm-sales-analysis@v1",
+        # v2 (head-of-abm@v77): the read-only sentence points to crm-writing.
+        "skill:crm-sales-analysis@v2",
         # The CRM writes (head-of-abm@v77): what Clue writes, one proposal per decision, the
         # permission card's answer, repairing failed rows, and undo through the write log.
         "skill:crm-writing@v1",

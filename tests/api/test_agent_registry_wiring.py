@@ -180,7 +180,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `crm-sales-analysis@v1`, stage0-interview@v49 and manual@v22.
         # v77 (2026-10-22, CRM integration Phase 2): three CRM write tools granted; the new
         # `crm-writing@v1`, stage0-interview@v50 and manual@v23.
-        AgentRole.HEAD_OF_ABM: ("277507dd47e02a361d70358a8001bfa81168a53e988ec8e28fad05a5a9979161"),
+        AgentRole.HEAD_OF_ABM: ("9d6e7484c7dc1501fcd98e33521d1a63c0cae0f056c567967a3dd185a80d86f9"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -809,7 +809,8 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         "skill:code-execution@v1",
         # v76 adds the CRM sales analysis after it: the procedure for the four CRM-integration
         # tools (and `run_python@1`) granted with it.
-        "skill:crm-sales-analysis@v1",
+        # v77 re-pins it at v2, whose read-only sentence points to crm-writing.
+        "skill:crm-sales-analysis@v2",
         # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
         # with it (and `connect_crm@1` and `find_crm_actions@1`).
         "skill:crm-writing@v1",
@@ -1003,7 +1004,8 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         "skill:code-execution@v1",
         # v76 adds the CRM sales analysis after it: the procedure for the four CRM-integration
         # tools (and `run_python@1`) granted with it.
-        "skill:crm-sales-analysis@v1",
+        # v77 re-pins it at v2, whose read-only sentence points to crm-writing.
+        "skill:crm-sales-analysis@v2",
         # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
         # with it (and `connect_crm@1` and `find_crm_actions@1`).
         "skill:crm-writing@v1",

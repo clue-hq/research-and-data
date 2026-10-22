@@ -1163,7 +1163,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Either the workspace's CRM is connected (state "connected": which CRM, since when, by whom) or the chat now shows the person a connect card (state "card"). After a card, say in a sentence why connecting helps and end your turn: the chat continues by itself once the CRM is connected.
 
-**Taught by.** crm-sales-analysis v1 section 2, "Connecting".
+**Taught by.** crm-sales-analysis v2 section 2, "Connecting".
 
 **See also.** `.deepagent/skills/manual-humans-screens/v23/SKILL.md`.
 
@@ -1212,7 +1212,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A list of the connected CRM's actions that match the search, each with its input schema and its access. Nothing was read from the CRM. Run a read with run_crm_action; propose a write with propose_crm_changes.
 
-**Taught by.** crm-sales-analysis v1 section 3, "Read the setup first"; crm-writing v1 section 3, "Finding the write action".
+**Taught by.** crm-sales-analysis v2 section 3, "Read the setup first"; crm-writing v1 section 3, "Finding the write action".
 
 **See also.** `.deepagent/skills/manual-tools/v23/SKILL.md`.
 
@@ -1267,7 +1267,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** The whole result is in the file at `path` under reads/; you got only its record count, field names and next_cursor. Fetch every page, then read the files and compute in run_python. Never state a number you did not compute from these files.
 
-**Taught by.** crm-sales-analysis v1 sections 6 and 7, "Pulling the deals" and "Compute in the sandbox".
+**Taught by.** crm-sales-analysis v2 sections 6 and 7, "Pulling the deals" and "Compute in the sandbox".
 
 **See also.** `.deepagent/skills/manual-workspace/v23/SKILL.md`, `.deepagent/skills/manual-limits/v23/SKILL.md`.
 
@@ -1327,7 +1327,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A new version of the brand document at `path` is current, attributed to the person whose turn this is; the previous version is kept in its history. `unchanged: true` means the bytes matched the current version and nothing new was published. The next turn's brand/knowledge/ shows it.
 
-**Taught by.** crm-sales-analysis v1 sections 12 and 13, "Write company/sales-motion.md" and "Add the new customers".
+**Taught by.** crm-sales-analysis v2 sections 12 and 13, "Write company/sales-motion.md" and "Add the new customers".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v23/SKILL.md`, `.deepagent/skills/manual-gates-authority/v23/SKILL.md`.
 

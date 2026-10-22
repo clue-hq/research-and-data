@@ -9,8 +9,9 @@ version: v77
 # person approves on a permission card, or that a standing permission covers),
 # `crm_write_log@1` (what Clue changed in the CRM, for answers and undo) and
 # `manage_crm_grants@1` (list and revoke the standing permissions; never grant one) - and the new
-# skill `crm-writing` v1 (founder-approved substance, 2026-10-22). stage0-interview v50 is v49
-# with its manual paths repointed to v23. The manual re-mints at `manual-*@v23`; the
+# skill `crm-writing` v1 (founder-approved substance, 2026-10-22). crm-sales-analysis v2 is v1
+# with its read-only sentence pointing to crm-writing (founder ruling 2026-10-22).
+# stage0-interview v50 is v49 with its manual and crm-sales-analysis paths repointed (v23, v2). The manual re-mints at `manual-*@v23`; the
 # conversation recipe moves 36 -> 37. Prompt v18 stays.
 # v76 (2026-10-20, CRM integration Phase 1 - reads; spec
 # docs/superpowers/specs/crm-integration/2026-10-20-crm-integration-first-release-design.md):
@@ -68,7 +69,7 @@ prompt:
 skills:
 - name: stage0-interview
   version: v50
-  sha256: 2c41fed81232c09c9351292071eb0bd2f7150ca67515f27b2308df0ec3170e18
+  sha256: bdbe2be6192fa8bddc35f8df4122da9b6bde214c077a275b36e91738442dd0a3
 - name: account-research-briefing
   version: v3
   sha256: af01631ec609d588216a4a802a4ab44d6e91e851fa2bca579d01e108a057757e
@@ -85,8 +86,8 @@ skills:
   version: v1
   sha256: c4c9383e26d4921ecde44e495f569cd2af38df9e06831f16c13b5df5b4f4820a
 - name: crm-sales-analysis
-  version: v1
-  sha256: 81362041253345e67706918935d45484d38c9a85f534070115b0f89b266adae8
+  version: v2
+  sha256: dcfab038661b512ba8ba805f2742dac4850bfb13cc4587a922eef9fbc3d9e7e8
 - name: crm-writing
   version: v1
   sha256: e3ead90690bc49d47989c4f787aa315da93594b9e07b583919416ddfef2a8878
@@ -101,7 +102,7 @@ skills:
   sha256: 6a7c49abfdaeb49a7e62d62845c3203ae56844f2a91861b7152ce08f6cb9d00b
 - name: manual-tools
   version: v23
-  sha256: 476932373474259aae234ba5340f1ac019659e5f665ec9eb0454b6e86914f3e3
+  sha256: b38b6010604a2511a2f8b3f12a8df81e7aa67006ac2f4560bae558f12d6dec3d
 - name: manual-fields
   version: v23
   sha256: 46f0c5a1da67a9429ac0db893c68a7014cfa447c42531a4ca15fa19925112be9
