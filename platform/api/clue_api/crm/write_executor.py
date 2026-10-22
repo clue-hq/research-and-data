@@ -315,6 +315,8 @@ class _Seen:
     value: object = None
     error: str | None = None
     kind: FailureKind | None = None
+    #: The name the CRM holds for a list or campaign it found (``list_create`` only).
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -672,39 +674,23 @@ async def _read_by_id(crm: _Crm, write: _Write) -> _Seen:
 
 
 async def _read_lists(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
-    """For a list or campaign create: the one the CRM has under that name — or, on Salesforce,
-    where names repeat, by the id the CRM gave it once it gave one. ``value`` is its id, or
-    ``None`` (composio-api-notes.md § Phase 3 shapes)."""
+    """For a list or campaign create: the one the CRM has. By the id the CRM gave it once it gave
+    one (a list renamed since is still Clue's); before that by name. ``value`` is its id, or
+    ``None``; ``name`` is what the CRM calls it (composio-api-notes.md § Phase 3 shapes)."""
     seen: dict[UUID, _Seen] = {}
     for write in writes:
         name = str(write.label or "")
         if crm.connection.provider == "hubspot":
-            result = await crm.call(
-                "HUBSPOT_GET_CRM_LIST_BY_NAME",
-                {"object_type_id": HUBSPOT_OBJECT_TYPE_IDS[write.object], "list_name": name},
-            )
-            if not result.successful:
-                # HubSpot answers 404 LIST_NAME_DOES_NOT_EXIST for a name it does not have.
-                missing = _status_code(result) == 404 or "LIST_NAME_DOES_NOT_EXIST" in (
-                    result.error or ""
-                )
-                seen[write.write_id] = (
-                    _Seen(value=None) if missing else _Seen(error=result.error or "No answer.")
-                )
-                continue
-            body = _unwrap(result.data)
-            found = body.get("list") if isinstance(body, Mapping) else None
-            if not isinstance(found, Mapping) or found.get("listId") in (None, ""):
-                seen[write.write_id] = _unreadable(crm, f'the list "{name}"')
-                continue
-            seen[write.write_id] = _Seen(value=str(found["listId"]))
+            seen[write.write_id] = await _read_hubspot_list(crm, write, name)
             continue
         where = (
             f"Id = {_soql_text(write.crm_id)}"
             if write.crm_id is not None
             else f"Name = {_soql_text(name)}"
         )
-        result = await crm.call(_SOQL, {"query": f"SELECT Id FROM Campaign WHERE {where} LIMIT 2"})
+        result = await crm.call(
+            _SOQL, {"query": f"SELECT Id, Name FROM Campaign WHERE {where} LIMIT 2"}
+        )
         records = _records(_unwrap(result.data), "records") if result.successful else None
         if not result.successful:
             seen[write.write_id] = _Seen(error=result.error or "No answer.")
@@ -716,8 +702,44 @@ async def _read_lists(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
             found_id = str(records[0]["Id"])
             # Salesforce may answer the 18-character form of the id it gave.
             same = write.crm_id is not None and _sf_key(found_id) == _sf_key(write.crm_id)
-            seen[write.write_id] = _Seen(value=write.crm_id if same else found_id)
+            seen[write.write_id] = _Seen(
+                value=write.crm_id if same else found_id, name=_text(records[0].get("Name"))
+            )
     return seen
+
+
+async def _read_hubspot_list(crm: _Crm, write: _Write, name: str) -> _Seen:
+    type_id = HUBSPOT_OBJECT_TYPE_IDS[write.object]
+    if write.crm_id is not None:
+        result = await crm.call(
+            "HUBSPOT_SEARCH_CRM_LISTS",
+            {"objectTypeId": type_id, "listIds": [write.crm_id], "count": 1},
+        )
+        if not result.successful:
+            return _Seen(error=result.error or "No answer.")
+        found = _records(_unwrap(result.data), "lists")
+        if found is None:
+            return _unreadable(crm, f"the list {write.crm_id}")
+        match = next((one for one in found if str(one.get("listId")) == write.crm_id), None)
+        if match is None:
+            return _Seen(value=None)
+        return _Seen(value=write.crm_id, name=_text(match.get("name")))
+    result = await crm.call(
+        "HUBSPOT_GET_CRM_LIST_BY_NAME", {"object_type_id": type_id, "list_name": name}
+    )
+    if not result.successful:
+        # HubSpot answers 404 LIST_NAME_DOES_NOT_EXIST for a name it does not have.
+        missing = _status_code(result) == 404 or "LIST_NAME_DOES_NOT_EXIST" in (result.error or "")
+        return _Seen(value=None) if missing else _Seen(error=result.error or "No answer.")
+    body = _unwrap(result.data)
+    found_list = body.get("list") if isinstance(body, Mapping) else None
+    if not isinstance(found_list, Mapping) or found_list.get("listId") in (None, ""):
+        return _unreadable(crm, f'the list "{name}"')
+    return _Seen(value=str(found_list["listId"]), name=_text(found_list.get("name")))
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 async def _read(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
@@ -762,6 +784,15 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
                 f"{crm.name} before proposing it again.",
                 "not_applied",
             )
+        if (
+            seen.value is not None
+            and write.kind == _LIST_CREATE
+            and write.attempts > 0
+            and seen.name == write.label
+        ):
+            # An earlier send made it but died before Clue kept its id (review #3): the list of
+            # exactly the name Clue sent is Clue's own, kept now and never made again.
+            return _Outcome("succeeded", crm_id=str(seen.value))
         if seen.value is not None and write.kind == _LIST_CREATE:
             target = "list" if crm.connection.provider == "hubspot" else "campaign"
             return _Outcome(

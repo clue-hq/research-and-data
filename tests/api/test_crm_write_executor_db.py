@@ -139,20 +139,32 @@ class _WritingCrm(_FakeCrm):
     def _list_read(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult | None:
         """HubSpot's list-by-name read and Salesforce's Campaign SOQL (composio-api-notes.md
         § Phase 3 shapes)."""
+        if slug == "HUBSPOT_SEARCH_CRM_LISTS":
+            wanted = {str(i) for i in arguments.get("listIds") or []}
+            found = [
+                {"listId": i, "name": n, "objectTypeId": arguments["objectTypeId"]}
+                for n, i in self.crm_lists.items()
+                if i in wanted
+            ]
+            return ExecuteResult(
+                True,
+                {"data": {"lists": found, "total": len(found), "offset": 0, "hasMore": False}},
+                None,
+            )
         if slug == "HUBSPOT_GET_CRM_LIST_BY_NAME":
             name = str(arguments["list_name"])
-            list_id = next(
-                (i for n, i in self.crm_lists.items() if n.lower() == name.lower()), None
-            )
-            if list_id is None:
+            # HubSpot matches the name ignoring case, and answers the name it holds.
+            held = next((n for n in self.crm_lists if n.lower() == name.lower()), None)
+            if held is None:
                 return _LIST_NAME_MISSING
+            list_id = self.crm_lists[held]
             return ExecuteResult(
                 True,
                 {
                     "data": {
                         "list": {
                             "listId": list_id,
-                            "name": name,
+                            "name": held,
                             "objectTypeId": arguments["object_type_id"],
                             "processingType": "MANUAL",
                         }
@@ -1368,6 +1380,19 @@ def test_a_proposal_queued_during_the_run_is_not_lost(tmp_path: Path) -> None:
 
 def test_list_membership_links_follow_adds_and_removals(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await store_list(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            crm_object="contact",
+            crm_list_id="77",
+            name="Q4 committee",
+            kind="hubspot_list",
+            created_by_clue=True,
+            created_by_write_id=None,
+            project_id=seeded.project_id,
+        )
         gateway = _WritingCrm(lists={"201": []})
         add = ProposedChange(
             slug="HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
@@ -1569,12 +1594,13 @@ def test_a_created_list_is_stored_for_the_project(tmp_path: Path) -> None:
 
         change = await _created(conn, proposal_id)
         assert (change["status"], change["crm_id"]) == ("succeeded", "17")
-        # Looked for by name first, created, then read back by name.
+        # Looked for by name first, created, then read back by the id HubSpot gave it.
         assert [slug for slug, _ in gateway.calls] == [
             "HUBSPOT_GET_CRM_LIST_BY_NAME",
             "HUBSPOT_CREATE_LIST",
-            "HUBSPOT_GET_CRM_LIST_BY_NAME",
+            "HUBSPOT_SEARCH_CRM_LISTS",
         ]
+        assert gateway.calls[-1][1]["listIds"] == ["17"]
         (kept,) = await lists_for_project(
             conn,
             workspace_id=seeded.workspace_id,
@@ -1755,3 +1781,93 @@ def test_the_marketing_user_refusal_is_shown_in_plain_words() -> None:
     assert crm_reply(other)[0] == (
         "entity type cannot be inserted: Lead (CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY)"
     )
+
+
+def test_a_list_renamed_after_its_create_is_still_confirmed_by_its_id(tmp_path: Path) -> None:
+    """Review #4: once HubSpot named the list's id, the read-back goes by the id."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create_list("Clue: Q4"))
+        original = gateway._write
+
+        def write_then_rename(slug: str, arguments: Mapping[str, Any]) -> Any:
+            answer = original(slug, arguments)
+            if slug == "HUBSPOT_CREATE_LIST":  # someone renames it as soon as it exists
+                gateway.crm_lists["Clue: Q4 (renamed)"] = gateway.crm_lists.pop("Clue: Q4")
+            return answer
+
+        gateway._write = write_then_rename  # type: ignore[method-assign]
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["crm_id"]) == ("succeeded", "17")
+
+    _run(tmp_path, "listrenamed", body)
+
+
+@pytest.mark.parametrize("provider", ["hubspot", "salesforce"])
+def test_a_list_the_crm_made_before_a_crash_is_kept_and_not_made_again(
+    tmp_path: Path, provider: str
+) -> None:
+    """Review #3: the worker dies after the CRM made the list, before Clue kept its id."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        slug = "HUBSPOT_CREATE_LIST" if provider == "hubspot" else "SALESFORCE_CREATE_CAMPAIGN"
+        change = (
+            _create_list("Clue: Q4")
+            if provider == "hubspot"
+            else ProposedChange(slug, {"name": "Clue: Q4"}, "committee")
+        )
+        gateway = _WritingCrm(failures={slug: ["crash"]})
+        proposal_id = await _propose(conn, seeded, connection, gateway, change)
+        handler = _handler(conn, tmp_path, gateway)
+        with pytest.raises(RuntimeError):
+            await _handle(handler, connection)
+        sent = await _created(conn, proposal_id)
+        assert (sent["status"], sent["crm_id"], sent["attempts"]) == ("sending", None, 1)
+
+        await _handle(handler, connection)
+
+        made = gateway.crm_lists["Clue: Q4"]
+        settled = await _created(conn, proposal_id)
+        assert (settled["status"], settled["crm_id"]) == ("succeeded", made)
+        assert [s for s, _ in gateway.writes] == [slug]  # never made twice
+        (kept,) = await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+        assert (kept.crm_list_id, kept.name, kept.created_by_clue) == (made, "Clue: Q4", True)
+        assert kept.created_by_write_id == settled["write_id"]
+
+    _run(tmp_path, f"listcrash{provider[:2]}", body, provider=provider)
+
+
+def test_a_list_named_differently_in_case_is_not_taken_for_clues_own(tmp_path: Path) -> None:
+    """After a crash, only a list of exactly the name Clue sent is taken as the one it made."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create_list("Clue: Q4"))
+        # As a run that died after sending leaves it.
+        await conn.execute(
+            text("UPDATE crm_write SET status = 'sending', attempts = 1 WHERE proposal_id = :p"),
+            {"p": proposal_id},
+        )
+        gateway.crm_lists["clue: q4"] = "40"  # a person's list, HubSpot matches it by name
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["failure_kind"]) == ("skipped", "conflict")
+        assert not await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+
+    _run(tmp_path, "listcase", body)

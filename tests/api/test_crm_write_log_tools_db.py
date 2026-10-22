@@ -289,7 +289,9 @@ def test_grants_are_listed_and_revoked(tmp_path: Path) -> None:
         # Granted in one transaction, so in no particular order between themselves.
         assert {g["grant_id"]: g["phrase"] for g in listed["grants"]} == {
             str(field): f"Always allow setting “icp_tier” on companies — by Aryan, {when}",
-            str(lists): f"Always allow adding contacts to Clue lists — by Aryan, {when}",
+            str(
+                lists
+            ): f"Always allow adding records to Clue lists and campaigns — by Aryan, {when}",
         }
 
         revoked = (await tool.invoke(_grants_input(seeded, "revoke", field), ctx)).references
@@ -447,3 +449,13 @@ def test_a_list_create_grant_is_worded_like_the_card() -> None:
     assert (
         _grant_phrase("salesforce", "kind", "list_create", None, None) == "creating Clue campaigns"
     )
+    # R-12.8: one standing permission each for adding to and removing from any list or campaign.
+    for provider in ("hubspot", "salesforce"):
+        assert (
+            _grant_phrase(provider, "kind", "list_membership", None, None)
+            == "adding records to Clue lists and campaigns"
+        )
+        assert (
+            _grant_phrase(provider, "kind", "list_removal", None, None)
+            == "removing records from Clue lists and campaigns"
+        )

@@ -593,6 +593,8 @@ propose_crm_changes:
     crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
     crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.
     crm_list_exists: Clue already keeps a list or campaign of that name; the message gives its id. Add to that one instead of creating another.
+    crm_list_not_kept: Clue does not keep that HubSpot list yet. If the person named it, link it first with link_crm_list, then propose the change again; the other changes are on the card.
+    crm_list_gone: HubSpot no longer has that list. Look for it by name; if it is not there, propose creating the list again, then add to the new one. The other changes are on the card.
     crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
     crm_record_not_found: Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed.
     crm_field_unknown: The CRM has no field by that name. Look up the field's real name in the CRM's field list, and propose that change again; the other changes are on the card. When every change was refused this way, nothing was proposed.

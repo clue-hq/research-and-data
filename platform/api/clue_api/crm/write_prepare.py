@@ -117,7 +117,9 @@ class RefusedChange:
     slug: str
     record_ref: str | None
     #: ``crm_record_not_found``: the read before the card found no such record;
-    #: ``crm_field_unknown``: the object has no such field (final review M-2).
+    #: ``crm_field_unknown``: the object has no such field (final review M-2);
+    #: ``crm_list_not_kept`` / ``crm_list_gone``: a HubSpot list Clue does not keep, or a kept
+    #: one HubSpot no longer has.
     reason_code: str
     message: str
 
@@ -805,24 +807,45 @@ async def _check_removals(
             )
 
 
+#: Said for a change to a HubSpot list Clue does not keep (fix round 1 ruling).
+LIST_NOT_KEPT_MESSAGE = "Clue does not keep this list yet. Link it first with link_crm_list."
+#: Said for a change to a kept list HubSpot no longer has (R-11.11 (4)).
+LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
+
+
 async def _with_list_objects(
     conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
-) -> list[_Item]:
+) -> tuple[list[_Item], dict[int, RefusedChange]]:
     """A HubSpot list holds one object type, which its membership action does not name: read it
-    from the list Clue keeps (a company list holds companies). A list Clue does not keep stays a
-    contact list, as in Phase 2."""
+    from the list Clue keeps (a company list holds companies). A change to a list Clue does not
+    keep (``crm_list_not_kept``: the person names one with ``link_crm_list`` first) or to a kept
+    list HubSpot no longer has (``crm_list_gone``) is refused on its own."""
     resolved: list[_Item] = []
-    for item in items:
+    refused: dict[int, RefusedChange] = {}
+    for index, item in enumerate(items):
         kind = item.parsed.change_kind(item.spec)
         if connection.provider == "hubspot" and kind in ("list_membership", "list_removal"):
             kept = await stored_list(
                 conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
             )
-            if kept is not None and kept.crm_object != item.parsed.object:
+            if kept is None or kept.gone_at is not None:
+                code, message = (
+                    ("crm_list_not_kept", LIST_NOT_KEPT_MESSAGE)
+                    if kept is None
+                    else ("crm_list_gone", LIST_GONE_MESSAGE)
+                )
+                refused[index] = RefusedChange(
+                    index=index,
+                    slug=item.proposed.slug,
+                    record_ref=item.parsed.record_ref,
+                    reason_code=code,
+                    message=message,
+                )
+            elif kept.crm_object != item.parsed.object:
                 parsed = dataclasses.replace(item.parsed, object=kept.crm_object)
                 item = dataclasses.replace(item, parsed=parsed)
         resolved.append(item)
-    return resolved
+    return resolved, refused
 
 
 async def _check_list_creates(
@@ -989,7 +1012,7 @@ async def prepare_changes(
     """
     del proposal_id  # the caller logs the prepared changes under it
     provider = connection.provider
-    items = await _with_list_objects(
+    items, list_refused = await _with_list_objects(
         conn, connection, [_parse(provider, change) for change in changes]
     )
     _check_once_per_record_field(items)
@@ -1010,13 +1033,21 @@ async def prepare_changes(
         metas[object_name] = await _field_metas(reader, provider, object_name)
     for item in items:
         _check_fields(provider, item, metas)
-    await _check_removals(conn, connection, project_id, items)
+    await _check_removals(
+        conn,
+        connection,
+        project_id,
+        [item for index, item in enumerate(items) if index not in list_refused],
+    )
 
     # A field the object does not have refuses only its own change (final review M-2), as a
-    # missing record does (R-11.7): the agent learns it before any card, the rest go on.
-    refused: list[RefusedChange] = []
+    # missing record does (R-11.7), and so does a change to a list Clue cannot use: the agent
+    # learns it before any card, the rest go on.
+    refused: list[RefusedChange] = list(list_refused.values())
     kept: dict[int, _Item] = {}
     for index, item in enumerate(items):
+        if index in list_refused:
+            continue
         unknown = next((f for f in item.parsed.fields if f not in metas[item.parsed.object]), None)
         if unknown is None:
             kept[index] = item
@@ -1206,13 +1237,13 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
 def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
     kind = change.parsed.change_kind(change.spec)
     target = "lists" if provider == "hubspot" else "campaigns"
-    members = _noun(change.parsed.object, 2)
     if kind == "list_create":
         return f"creating Clue {target}"
+    # One scope covers every list and campaign, of companies or contacts (R-12.8).
     if kind == "list_membership":
-        return f"adding {members} to Clue {target}"
+        return "adding records to Clue lists and campaigns"
     if kind == "list_removal":
-        return f"removing {members} from Clue {target}"
+        return "removing records from Clue lists and campaigns"
     if kind == "field_update":
         return f'setting "{change.field_label}" on {_noun(change.spec.object, 2)}'
     if kind == "create_contact":

@@ -540,9 +540,9 @@ class CrmWriteLogTool(Tool):
         "with reverses_write_id set to its write_id: for a field update (kind 'field_update'), "
         "propose the same action with the before value; for adding someone to a list or "
         "campaign (kind 'list_membership'), propose the matching removal; for a removal, propose "
-        "adding them back. Clue does not undo a created record (kinds 'create_contact', "
-        "'create_company'): tell the person to delete it in the CRM if they want it gone. "
-        + tool_manual_link("crm_write_log")
+        "adding them back. Clue does not undo a created record or list (kinds 'create_contact', "
+        "'create_company', 'list_create'): Clue never deletes CRM records, so tell the person to "
+        "delete it in the CRM if they want it gone. " + tool_manual_link("crm_write_log")
     )
     input_model: ClassVar[type[ToolInput]] = CrmWriteLogInput
     output_model: ClassVar[type[ToolOutput]] = CrmWriteLogOutput
@@ -872,10 +872,11 @@ def _grant_phrase(
     target = "lists" if provider == "hubspot" else "campaigns"
     if kind == "list_create":
         return f"creating Clue {target}"
+    # One scope covers every list and campaign, of companies or contacts (R-12.8).
     if kind == "list_membership":
-        return f"adding contacts to Clue {target}"
+        return "adding records to Clue lists and campaigns"
     if kind == "list_removal":
-        return f"removing contacts from Clue {target}"
+        return "removing records from Clue lists and campaigns"
     if kind == "create_contact":
         return "creating contacts"
     if kind == "create_company":

@@ -243,6 +243,12 @@ def _run(tmp_path: Path, label: str, body: Any, provider: str = "hubspot") -> No
         async with rollback_conn() as conn:
             seeded = await _seed(conn, tmp_path, workspace_id=f"ws-crmw-{label}", label=label)
             connection = await _connect(conn, seeded.workspace_id, provider)
+            if provider == "hubspot":
+                # The contact lists these tests add to are lists Clue keeps (fix round 1 #1).
+                for list_id in ("9", "10"):
+                    await _keep_list(
+                        conn, seeded, connection, list_id, f"List {list_id}", "contact"
+                    )
             proposal_id = uuid4()
             await writes.insert_proposal(
                 conn,
@@ -564,7 +570,7 @@ def test_the_card_snapshot_groups_by_action_and_field_with_counts_and_lists_over
         assert {row["before"] for row in card["overwrites"]} == {"Tier 3", "Tier 2"}
         assert card["overwrites"][0]["set_by"] is None
         assert [s["phrase"] for s in card["standing_permissions"]] == [
-            "adding contacts to Clue lists",
+            "adding records to Clue lists and campaigns",
             'setting "ICP tier" on companies',
         ]
         assert card["allow_count"] == 60
@@ -712,6 +718,10 @@ def test_clue_removes_only_members_it_added(tmp_path: Path) -> None:
             conn, gateway, connection, proposal_id, [_remove_from_list("p2")]
         )
         assert removal.scope_key == "kind:list_removal"
+        card = card_snapshot([removal], provider="hubspot", project_name="Q4")
+        assert card["groups"][0]["always_allow"] == (
+            "removing records from Clue lists and campaigns"
+        )
         assert removal.before is True and removal.after is False
         # Clue's link to p2 in list 9 says nothing about list 10.
         with pytest.raises(WriteRefused):
@@ -1486,7 +1496,7 @@ def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
         # 102 is already in the list: nothing to change.
         company, contact = prepared
         assert (company.parsed.object, company.parsed.record_ref) == ("company", "101")
-        # A list Clue does not keep is a contact list, as in Phase 2.
+        # A contact list Clue keeps holds contacts.
         assert (contact.parsed.object, contact.parsed.record_ref) == ("contact", "201")
         reads = {
             c[1]["record_id"]: c[1]["object_type_id"]
@@ -1499,7 +1509,8 @@ def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
         (group,) = card["groups"]
         assert group["title"] == 'Add 1 company to the list "17"'
         assert group["object"] == "company"
-        assert group["always_allow"] == "adding companies to Clue lists"
+        # R-12.8: one scope for every list and campaign add, worded for all of them.
+        assert group["always_allow"] == "adding records to Clue lists and campaigns"
 
         await writes.insert_writes(
             conn,
@@ -1515,3 +1526,53 @@ def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
         assert dict(objects.all()) == {"101": "company", "201": "contact"}  # type: ignore[arg-type]
 
     _run(tmp_path, "companylist", body)
+
+
+LIST_NOT_KEPT = "Clue does not keep this list yet. Link it first with link_crm_list."
+LIST_GONE = "The list no longer exists in HubSpot; find it by name or create it again."
+
+
+def test_a_change_to_a_list_clue_does_not_keep_is_refused_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(lists={"201": [], "202": ["55"], "203": []})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_add_to_list("201", "55"), _remove_from_list("202", "55"), _add_to_list("203")],
+        )
+        # The add to list 9 (kept) goes on; both changes to list 55 are refused on their own,
+        # the removal before any check of who added the member.
+        assert [c.parsed.record_ref for c in batch.changes] == ["203"]
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (0, "crm_list_not_kept", LIST_NOT_KEPT),
+            (1, "crm_list_not_kept", LIST_NOT_KEPT),
+        ]
+        # Nothing was read for a refused change.
+        read = [c[1]["record_id"] for c in gateway.calls]
+        assert read == ["203"]
+
+    _run(tmp_path, "notkept", body)
+
+
+def test_an_add_to_a_kept_list_that_is_gone_is_refused_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        from clue_api.crm.lists import mark_gone
+
+        await _keep_list(conn, seeded, connection, "17", "Clue: Q4")
+        await mark_gone(conn, connection_id=connection.connection_id, crm_list_id="17")
+        gateway = _FakeCrm(lists={"101": [], "201": []})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_add_to_list("101", "17"), _add_to_list("201")],
+        )
+        assert [c.parsed.record_ref for c in batch.changes] == ["201"]
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (0, "crm_list_gone", LIST_GONE),
+        ]
+
+    _run(tmp_path, "keptgone", body)

@@ -339,7 +339,8 @@ _MAX_CARD_ANSWER_LINES = 10
 
 async def allowed_sentence(conn: AsyncConnection, *, proposal_id: UUID) -> str | None:
     """Who allowed what on the proposal's card, for the start of the sender's results message:
-    "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding contacts to Clue lists."
+    "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding records to Clue lists
+    and campaigns."
 
     ``None`` when nobody allowed a card for this proposal (its changes were all covered by
     standing permissions, so no card was shown)."""

@@ -36,6 +36,7 @@ from clue_api.agent_gate import (
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.crm import writes
 from clue_api.crm.connections import mark_expired
+from clue_api.crm.lists import store_list
 from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.crm.write_tools import (
     CrmChangeInput,
@@ -284,6 +285,20 @@ def _run(tmp_path: Path, label: str, body: Any) -> None:
             seeded.label = label
             seeded.storage = FsStorage(tmp_path / f"crm-answer-{label}")
             connection = await _connect(conn, seeded.workspace_id)
+            # The contact list these tests add to is one Clue keeps (Phase 3, fix round 1 #1).
+            await store_list(
+                conn,
+                workspace_id=seeded.workspace_id,
+                connection_id=connection.connection_id,
+                provider="hubspot",
+                crm_object="contact",
+                crm_list_id="9",
+                name="Q4 committee",
+                kind="hubspot_list",
+                created_by_clue=True,
+                created_by_write_id=None,
+                project_id=seeded.project_id,
+            )
             await body(conn, seeded, connection)
 
     run_async(scenario())
@@ -348,7 +363,7 @@ def test_allow_queues_the_selected_changes_and_records_always_allow(tmp_path: Pa
         }
         captured = await _captured_message(conn, seeded, "allow")
         assert captured["crm_write"]["summary"] == (
-            "Allowed 3 of 4 changes; always allow adding contacts to Clue lists."
+            "Allowed 3 of 4 changes; always allow adding records to Clue lists and campaigns."
         )
 
     _run(tmp_path, "allow", body)
@@ -821,8 +836,8 @@ def test_the_results_message_names_who_allowed_what(tmp_path: Path) -> None:
         )
         message = (await seeded.storage.get(key)).decode()
         assert message.startswith(
-            "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding contacts to "
-            "Clue lists. The CRM changes are finished: 2 done, 0 failed, 0 skipped"
+            "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding records to "
+            "Clue lists and campaigns. The CRM changes are finished: 2 done, 0 failed, 0 skipped"
         ), message
 
     _run(tmp_path, "wake-names", body)
