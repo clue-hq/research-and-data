@@ -41,7 +41,7 @@ function snapshot(crm: "hubspot" | "salesforce" = "hubspot") {
           { write_id: W(2), record_ref: "c2", name: "bo@acme.com", before: false, after: true },
         ],
         scope_key: "hubspot:list_membership:contact",
-        always_allow: "adding contacts to Clue lists",
+        always_allow: "adding records to Clue lists and campaigns",
         selected: true,
       },
       {
@@ -81,7 +81,7 @@ function snapshot(crm: "hubspot" | "salesforce" = "hubspot") {
       },
     ],
     standing_permissions: [
-      { scope_key: "hubspot:list_membership:contact", phrase: "adding contacts to Clue lists", selected: false },
+      { scope_key: "hubspot:list_membership:contact", phrase: "adding records to Clue lists and campaigns", selected: false },
       { scope_key: "hubspot:field_update:company:icp_tier", phrase: 'setting "ICP tier" on companies', selected: false },
     ],
     allow_count: 4,
@@ -105,7 +105,7 @@ test("groups default ticked and overwrites unticked", () => {
   assert.deepEqual(
     model.standingPermissions.map((permission) => permission.label),
     [
-      "Always allow adding contacts to Clue lists",
+      "Always allow adding records to Clue lists and campaigns",
       'Always allow setting "ICP tier" on companies',
     ],
   );
@@ -226,6 +226,41 @@ test("a list Clue creates and a company list are worded by what they hold (Phase
     'Added 2 companies to the list "17"',
   );
   assert.equal(crmWriteRecordsCaption(hubspot.groups[1]!), "2 companies");
+});
+
+test("a list create that did not happen never reads as created", () => {
+  const model = crmWriteCard({
+    ...snapshot("salesforce"),
+    groups: [
+      {
+        ...snapshot("salesforce").groups[0]!,
+        kind: "list_create",
+        object: "campaign",
+        list_ref: null,
+        title: 'Create the campaign "Clue: Q4"',
+        count: 1,
+        records: [{ write_id: W(9), record_ref: null, name: "Clue: Q4", after: { name: "Clue: Q4" } }],
+        scope_key: "kind:list_create",
+        always_allow: "creating Clue campaigns",
+      },
+    ],
+  });
+  assert.ok(model);
+  const group = model.groups[0]!;
+  // Salesforce refused it (the user is not a Marketing User).
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 0, failed: 1, skipped: 0, pending: 0 }),
+    { mark: "failed", line: 'Could not create the campaign "Clue: Q4" — 1 failed' },
+  );
+  // Skipped: the CRM already had one of that name.
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 0, failed: 0, skipped: 1, pending: 0 }),
+    { mark: "failed", line: 'Did not create the campaign "Clue: Q4" — 1 skipped' },
+  );
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 1, failed: 0, skipped: 0, pending: 0 }),
+    { mark: "done", line: 'Created the campaign "Clue: Q4"' },
+  );
 });
 
 test("a group where nothing succeeded is shown as failed, with its count", () => {

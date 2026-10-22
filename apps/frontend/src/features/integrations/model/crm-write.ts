@@ -310,8 +310,14 @@ export function crmWriteDoneLine(
   const people = noun("contact", tally.chosen);
   const things = noun(group.object, tally.chosen);
   switch (group.kind) {
-    case "list_create":
-      return `Created the ${target} "${group.records[0]?.name ?? ""}"`;
+    case "list_create": {
+      // Never "Created" when it was not: refused (e.g. not a Marketing User) or skipped (the CRM
+      // already had one of that name).
+      const name = group.records[0]?.name ?? "";
+      if (tally.done > 0) return `Created the ${target} "${name}"`;
+      if (tally.failed > 0) return `Could not create the ${target} "${name}"`;
+      return `Did not create the ${target} "${name}"`;
+    }
     case "list_membership":
       return `Added ${count} ${things} to the ${target} "${group.listRef ?? ""}"`;
     case "list_removal":
