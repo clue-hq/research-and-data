@@ -1978,31 +1978,6 @@ def test_a_failed_create_skips_its_members_with_the_reason(tmp_path: Path) -> No
     _run(tmp_path, "newlistfail", body)
 
 
-def test_an_unchosen_create_skips_its_members(tmp_path: Path) -> None:
-    """A covered add whose create the person unticked is never sent."""
-
-    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
-        gateway = _WritingCrm(lists={"101": []})
-        proposal_id = await _propose(
-            conn, seeded, connection, gateway, _create_list("Clue: Q4"), _add_to_new("101")
-        )
-        await conn.execute(
-            text(
-                "UPDATE crm_write SET selected = false WHERE proposal_id = :id "
-                "AND kind = 'list_create'"
-            ),
-            {"id": proposal_id},
-        )
-
-        await _handle(_handler(conn, tmp_path, gateway), connection)
-
-        logged = await _writes(conn, proposal_id)
-        assert (logged["101"]["status"], logged["101"]["crm_message"]) == ("skipped", NOT_CREATED)
-        assert gateway.writes == []
-
-    _run(tmp_path, "newlistunchosen", body)
-
-
 def test_a_resume_after_a_crash_between_the_create_and_the_adds_uses_the_kept_id(
     tmp_path: Path,
 ) -> None:
@@ -2064,3 +2039,66 @@ def test_a_new_campaign_is_created_then_its_contacts_are_added(tmp_path: Path) -
         assert logged[campaign]["status"] == "succeeded"
 
     _run(tmp_path, "newcampaignsent", body, provider="salesforce")
+
+
+def test_a_list_reference_with_spaces_around_it_is_filled_as_parsed(tmp_path: Path) -> None:
+    """Review I-1: preparation reads " new:Clue: Q4 " as the list "Clue: Q4"; so does the send."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(lists={"101": []})
+        add = ProposedChange(
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+            {"list_id": " new:Clue: Q4 ", "operation": "add", "record_ids": ["101"]},
+            "Target accounts.",
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_CREATE_LIST",
+                {"name": " Clue: Q4", "object_type_id": "0-2", "processing_type": "MANUAL"},
+                "Target accounts.",
+            ),
+            add,
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == "succeeded"
+        assert gateway.lists["101"] == ["17"]
+        # The list is made under the name the card showed.
+        assert gateway.writes[0][1]["name"] == "Clue: Q4"
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "newlistspaces", body)
+
+
+def test_a_finished_proposal_leaves_no_add_waiting_for_a_list(tmp_path: Path) -> None:
+    """The backstop: an add still naming a list not made is skipped before the proposal ends."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(lists={"101": []})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _create_list("Clue: Q4"), _add_to_new("101")
+        )
+        # As if the add named a list no create of this proposal makes.
+        await conn.execute(
+            text(
+                "UPDATE crm_write SET arguments = jsonb_set(arguments, '{list_id}', "
+                "to_jsonb(CAST('new:Clue: Elsewhere' AS text))) "
+                "WHERE proposal_id = :id AND record_ref = '101'"
+            ),
+            {"id": proposal_id},
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert (logged["101"]["status"], logged["101"]["crm_message"]) == ("skipped", NOT_CREATED)
+        assert await _proposal_status(conn, proposal_id) == "finished"
+        assert [slug for slug, _ in gateway.writes] == ["HUBSPOT_CREATE_LIST"]
+
+    _run(tmp_path, "newlistbackstop", body)

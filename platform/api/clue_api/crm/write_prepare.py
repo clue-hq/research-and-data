@@ -1146,7 +1146,13 @@ async def prepare_changes(
             for field, after in item.parsed.fields.items():
                 await builder.field(item, item.spec, record_ref, field, values.get(field), after)
         elif kind == "list_membership" and new_list_name(item.parsed.list_ref) is not None:
-            builder.whole(item, before=False, after=True)
+            # Kept as parsed (``new:<name>``, no stray spaces), so the executor finds it by the
+            # create's name exactly (Task 3b review I-1).
+            builder.whole(
+                _with_arguments(item, _LIST_ARGUMENTS, str(item.parsed.list_ref)),
+                before=False,
+                after=True,
+            )
         elif kind in ("list_membership", "list_removal"):
             before = (str(item.parsed.list_ref), str(item.parsed.record_ref)) in members
             after = kind == "list_membership"
@@ -1154,7 +1160,12 @@ async def prepare_changes(
                 builder.whole(item, before=before, after=after)
         elif kind == "list_create":
             # Nothing to read: the list is new (a kept one of that name was refused above).
-            builder.whole(item, before=None, after={"name": item.parsed.label})
+            # The list is made under the name the card shows.
+            builder.whole(
+                _with_arguments(item, ("name",), item.parsed.label),
+                before=None,
+                after={"name": item.parsed.label},
+            )
         elif kind in ("create_contact", "create_company"):
             found = await _find_existing(reader, provider, item)
             if found is None:
@@ -1175,6 +1186,21 @@ async def prepare_changes(
     # the order the executor sends (R-12.7).
     ordered = sorted(builder.prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
     return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
+
+
+#: The argument that names a membership change's list (HubSpot) or campaign (Salesforce).
+_LIST_ARGUMENTS = ("list_id", "campaign_id")
+
+
+def _with_arguments(item: _Item, names: Sequence[str], value: str) -> _Item:
+    """``item`` with the one of ``names`` it carries set to ``value``."""
+    arguments = dict(item.proposed.arguments)
+    for name in names:
+        if name in arguments:
+            arguments[name] = value
+    return dataclasses.replace(
+        item, proposed=dataclasses.replace(item.proposed, arguments=arguments)
+    )
 
 
 def _field_unknown(provider: CrmProvider, index: int, item: _Item, field: str) -> RefusedChange:

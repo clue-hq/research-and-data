@@ -992,6 +992,9 @@ class CrmWriteHandler:
         except _Stop as stop:
             return await self._stopped(crm, proposal_id, stop)
         async with self._conn_factory() as conn:
+            # "Finished" means every change was decided: an add still naming a list not made
+            # is skipped, never left waiting (Task 3b review I-1).
+            await _skip_adds_to_lists_not_made(conn, crm.connection, proposal_id)
             await set_proposal_status(conn, proposal_id=proposal_id, status="finished")
             proposal = await get_proposal(conn, proposal_id=proposal_id)
             assert proposal is not None
@@ -1564,6 +1567,26 @@ async def _fill_new_lists(
                 ),
                 {**waiting, "message": NOT_CREATED_MESSAGE},
             )
+
+
+async def _skip_adds_to_lists_not_made(
+    conn: AsyncConnection, connection: CrmConnection, proposal_id: UUID
+) -> None:
+    """Skip every undecided add that still names a list by ``new:<name>``."""
+    await conn.execute(
+        text(
+            "UPDATE crm_write SET status = 'skipped', crm_message = :message, finished_at = now() "
+            "WHERE proposal_id = :id AND kind = 'list_membership' "
+            "AND status NOT IN ('succeeded', 'failed', 'skipped') "
+            "AND starts_with(arguments ->> :argument, :prefix)"
+        ),
+        {
+            "id": proposal_id,
+            "argument": _LIST_ARGUMENT[connection.provider],
+            "prefix": NEW_LIST_PREFIX,
+            "message": NOT_CREATED_MESSAGE,
+        },
+    )
 
 
 async def _load_writes(
