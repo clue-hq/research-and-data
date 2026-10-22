@@ -41,6 +41,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clue_agents import DomainObjectRef
 from clue_api.agent_gate import (
+    KIND_CRM_WRITE_PERMISSION,
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
     KIND_PRODUCT_SELECTION,
@@ -175,6 +176,7 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
+from clue_api.crm import write_answer as crm_write_answer
 from clue_api.design_leg_wiring import (
     design_document_card_fields,
     design_legs_for_threads,
@@ -599,6 +601,18 @@ def _is_knowledge_document_gate(gate: AgentGateRow) -> bool:
     """
 
     return gate.subject_snapshot.get("subject_kind") == "brand_knowledge_document"
+
+
+def _crm_selected(response: GateResponseRequest) -> list[UUID]:
+    """The ticked changes of a CRM write card answer, each once, in the order ticked."""
+    chosen = response.crm_write.selected_write_ids if response.crm_write is not None else []
+    return list(dict.fromkeys(chosen))
+
+
+def _crm_always_allow(response: GateResponseRequest) -> list[str]:
+    """The "Always allow" choices of a CRM write card answer, each once."""
+    chosen = response.crm_write.always_allow if response.crm_write is not None else []
+    return list(dict.fromkeys(scope.strip() for scope in chosen))
 
 
 def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
@@ -2273,6 +2287,7 @@ def build_chat_router(
                 message="no such gate in this thread",
             )
         if view.gate.kind not in {
+            KIND_CRM_WRITE_PERMISSION,
             KIND_DIRECTIVE_CONFIRMATION,
             KIND_ICP_CONFIRMATION,
             KIND_PRODUCT_SELECTION,
@@ -2282,6 +2297,12 @@ def build_chat_router(
                 status_code=422,
                 code="GATE_KIND_UNSUPPORTED",
                 message=f"this surface cannot answer a {view.gate.kind} gate",
+            )
+        if response.crm_write is not None and view.gate.kind != KIND_CRM_WRITE_PERMISSION:
+            raise _refuse(
+                status_code=422,
+                code="GATE_CRM_WRITE_UNEXPECTED",
+                message="only a CRM write permission card takes ticked changes",
             )
         if not view.gate.snapshot_available:
             raise _refuse(
@@ -2296,8 +2317,13 @@ def build_chat_router(
                 message="this decision was not offered by the durable gate",
             )
         # Addressee, not membership: a colleague with a perfectly valid session and a perfectly
-        # valid turn of their own still may not answer somebody else's gate.
-        if view.gate.addressee_user_id != who.user_id:
+        # valid turn of their own still may not answer somebody else's gate. The one exception is
+        # a CRM write permission card, which any member of the workspace answers (R-6.8); the
+        # principal is a member here by construction, holding ``gate.respond``.
+        if (
+            view.gate.addressee_user_id != who.user_id
+            and view.gate.kind != KIND_CRM_WRITE_PERMISSION
+        ):
             raise _refuse(
                 status_code=403,
                 code="GATE_FORBIDDEN",
@@ -2488,6 +2514,32 @@ def build_chat_router(
                     code="GATE_PRODUCT_STALE",
                     message="the selected product was not in the presented catalog",
                 )
+        elif view.gate.kind == KIND_CRM_WRITE_PERMISSION:
+            if (
+                response.revision_request is not None
+                or response.selected_product_id is not None
+                or response.selected_product_ids is not None
+            ):
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_ANSWER_UNEXPECTED",
+                    message="a CRM write card is answered with its ticked changes only",
+                )
+            # A retried click of the same answering turn replays without re-proving: its proposal
+            # has moved on (queued or declined) by its own answer.
+            if view.answer is None:
+                try:
+                    await crm_write_answer.check_answer(
+                        conn,
+                        view.gate,
+                        decision=response.decision,
+                        selected_write_ids=_crm_selected(response),
+                        always_allow=_crm_always_allow(response),
+                    )
+                except crm_write_answer.CrmAnswerRefused as exc:
+                    raise _refuse(
+                        status_code=exc.status_code, code=exc.code, message=str(exc)
+                    ) from exc
         elif view.gate.kind == KIND_PRODUCT_SET_SELECTION:
             # A project targets a SET of products (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3, ruling
             # P1). The same rules as the single-valued gate, applied per element, plus the one this
@@ -2709,6 +2761,21 @@ def build_chat_router(
                         turn_id=turn_id,
                     )
                 )
+                # A CRM write card's answer also tells the agent, in words, what was allowed. The
+                # sentence is derived from the immutable card, so a retry captures the same bytes.
+                if gate is not None and gate.kind == KIND_CRM_WRITE_PERMISSION:
+                    crm_response = _gate_response(body)
+                    message = gate_response_message(
+                        crm_response,
+                        crm_write_summary=await crm_write_answer.answer_summary(
+                            conn,
+                            gate,
+                            decision=crm_response.decision,
+                            selected_write_ids=_crm_selected(crm_response),
+                            always_allow=_crm_always_allow(crm_response),
+                        ),
+                    )
+                    digest = content_address(message.encode())
                 # Replay is decided before anything is written: a retry must not persist a second
                 # artifact, and a *different* message under a used key must be refused rather than
                 # answered with the first one's turn.
@@ -2893,6 +2960,20 @@ def build_chat_router(
                             else {}
                         )
                         selected_option_ref = None
+                    elif gate.kind == KIND_CRM_WRITE_PERMISSION:
+                        # The answer trigger takes exactly these two arrays for an approval and
+                        # nothing for a refusal.
+                        decision_payload = (
+                            {
+                                "selected_write_ids": [
+                                    str(write_id) for write_id in _crm_selected(response)
+                                ],
+                                "always_allow": list(_crm_always_allow(response)),
+                            }
+                            if response.decision == "approved"
+                            else {}
+                        )
+                        selected_option_ref = None
                     else:
                         decision_payload = (
                             {"revision_request": response.revision_request}
@@ -3001,6 +3082,18 @@ def build_chat_router(
                                 if atomic_launch and transactional_tool_invoker_factory is not None
                                 else None
                             ),
+                        )
+                    elif gate.kind == KIND_CRM_WRITE_PERMISSION:
+                        # Same transaction as the immutable answer: Allow queues the ticked changes,
+                        # grants each "Always allow" and offers the write executor; Don't allow
+                        # declines the whole proposal. Either both commit or neither does.
+                        await crm_write_answer.apply_answer(
+                            conn,
+                            gate,
+                            decision=response.decision,
+                            selected_write_ids=_crm_selected(response),
+                            always_allow=_crm_always_allow(response),
+                            answered_by_user_id=who.user_id,
                         )
                     elif (
                         gate.kind == KIND_PRODUCT_SET_SELECTION and response.decision == "approved"

@@ -10,7 +10,9 @@ the CRM changes the replaced connection had not sent are closed (never sent on t
 their chats asked to propose them again.
 
 Connecting requires ``workspace.manage_settings`` (owners and admins); any member may read the
-connection's status.
+connection's status, and the progress of a CRM write permission card (``GET /crm/proposals/{id}``:
+what was sent, what failed with the CRM's own message, what was skipped and why, who answered;
+card spec §3 B–F, §6).
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from clue_api.crm.connections import (
     start_attempt,
 )
 from clue_api.crm.wake import queue_crm_connected_turns
+from clue_api.crm.write_answer import proposal_progress
 from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
@@ -214,3 +217,16 @@ def register_crm_routes(
             # The connect card's footer says who connected it ("Connected by …").
             "connectedByName": name,
         }
+
+    @router.get("/crm/proposals/{proposal_id}")
+    async def proposal(
+        proposal_id: UUID, request: Request, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        principal_for(request, workspace_id)
+        async with conn_factory() as conn:
+            progress = await proposal_progress(
+                conn, workspace_id=workspace_id, proposal_id=proposal_id
+            )
+        if progress is None:
+            raise refused(404, "crm_proposal_not_found", "No such CRM proposal here.")
+        return progress
