@@ -309,7 +309,7 @@ for the chat's whole life, like `scratch/`.**
   proposed 24 hours once it was clear production runs one chat worker; you kept 30 minutes.
 - **Decided 2026-10-22 (AW-17):** each worker area is capped at **10 GiB**; over it, idle chat
   folders are deleted, oldest first.
-- **Decided 2026-10-22 (AW-24):** the retention expiry job runs hourly; working files (`scratch/`,
+- **Decided 2026-10-22 (AW-24; interval amended 2026-10-23):** the retention expiry job runs daily; working files (`scratch/`,
   `work/`) are kept 7 days after the chat's last activity.
 
 **Q11. Should the person ever see or download these files?** [—] *(not discussed)*
@@ -624,7 +624,7 @@ What lands in the agent folders today:
   | `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` | `16` | P1 |
   | `CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` | `172800` | P2 |
   | `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` | `604800` (7 days, AW-24) | P2 |
-  | `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` | `3600` | P2 |
+  | `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` | `86400` (daily, AW-24) | P2 |
 
   With snapshots switched off, the system behaves as on `feat/crm-integration`: local folders only.
   The cache removal then uses a 24-hour idle window instead of 30 minutes, because the cache is the
@@ -674,7 +674,7 @@ What lands in the agent folders today:
   A file with no matching durable row still gets a receipt, with source "unknown". It is never
   dropped silently.
 - **WS-26 [P2] The expiry job.** A periodic fleet job runs every
-  `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (default 3600), with one runner at a time like
+  `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (default 86400 — daily, AW-24), with one runner at a time like
   the storage sweep. It:
   1. finds chats with raw inputs (48 hours) or working files (7 days, AW-24) past their window and
      no queued or running turn;
@@ -958,6 +958,7 @@ and WS-28's list contents for live and expired files (P2).
   keep their bytes in R2. D-25 deferred; §3's P2 row and WS-26 step 3 updated.
 - 2026-10-22: AW-25 (founder): the person never sees or downloads the workspace files (Q11);
   Stage-0 trial workspaces left as they are (Q8).
+- 2026-10-23: AW-24's interval amended (founder): the expiry job runs daily (86400 s), not hourly.
 - 2026-10-22: AW-24 (founder): working files kept 7 days, not 30; the expiry job runs hourly
   (Q10 decided).
 - 2026-10-22: corrections. WS-30 and §5's artifact-store row wrongly said the existing purge

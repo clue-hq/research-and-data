@@ -4,7 +4,7 @@
 
 **Goal:** A chat's rough work (raw inputs after 48 hours, working files after 7 days, old versions, erased chats) leaves R2 for real; the agent is told at every turn what it has, how old it is and what expired; nothing a person can see is ever touched.
 
-**Architecture:** Snapshot files move to their own storage area (`<ws>/agent-workspace/<sha>`) so deleting a chat's file can never reach an upload, a Gallery artifact or a research output. The file list (schema 2) carries a receipt and an `expired_at` per entry. An hourly fleet job expires due entries with the same compare-and-set a turn uses; a turn's save rebases over an expiry-only conflict. Each turn's context gains a `workspace_files` card built from the file list, never from disk. The manual and the staleness instruction are rewritten after founder review.
+**Architecture:** Snapshot files move to their own storage area (`<ws>/agent-workspace/<sha>`) so deleting a chat's file can never reach an upload, a Gallery artifact or a research output. The file list (schema 2) carries a receipt and an `expired_at` per entry. A daily fleet job expires due entries with the same compare-and-set a turn uses; a turn's save rebases over an expiry-only conflict. Each turn's context gains a `workspace_files` card built from the file list, never from disk. The manual and the staleness instruction are rewritten after founder review.
 
 **Tech Stack:** Python 3.12, asyncpg/SQLAlchemy raw SQL, Alembic, `clue_storage`, pytest on `clue_dushanbe_test` only.
 
@@ -15,7 +15,7 @@
 - Raw inputs (`reads/`, `work/conversation_history/`, `work/large_tool_results/`) expire **172800 s** after the chat's last activity (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`, AW-2).
 - Working files (`scratch/`, and `work/` apart from the two compaction folders) expire **604800 s** after the chat's last activity (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S`, AW-22/AW-24).
 - `outputs/` never expires (AW-22).
-- The expiry job checks every **3600 s** (`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S`, AW-24), one runner at a time (`maintenance_run` + advisory lock, like the storage sweep).
+- The expiry job checks every **86400 s** (daily; `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S`, AW-24), one runner at a time (`maintenance_run` + advisory lock, like the storage sweep).
 - Last activity = the newest of `agent_workspace_snapshot.last_activity_at` and the chat's newest `agent_turn_submission.requested_at` (WS-24).
 - Only keys of the shape `<ws>/agent-workspace/<sha256>` are ever marked erased by this work (AW-26). A key of any other shape is released, never erased.
 - A deleted file keeps its file-list entry, marked `expired_at`, with its receipt, for the chat's life (WS-25, WS-26).
@@ -46,7 +46,7 @@
 
 **Interfaces:**
 - Produces: `agent_workspace_key(workspace_id: str, sha256: str) -> str` returning `f"{workspace_id}/agent-workspace/{sha256}"`; `is_agent_workspace_key(storage_key: str) -> bool`.
-- Produces: `Settings.agent_workspace_raw_retention_s: float = 172800.0`, `Settings.agent_workspace_working_retention_s: float = 604800.0`, `Settings.agent_workspace_retention_sweep_interval_s: float = 3600.0` (all `gt=0`).
+- Produces: `Settings.agent_workspace_raw_retention_s: float = 172800.0`, `Settings.agent_workspace_working_retention_s: float = 604800.0`, `Settings.agent_workspace_retention_sweep_interval_s: float = 86400.0` (all `gt=0`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -64,7 +64,7 @@ async def test_the_artifact_table_accepts_the_agent_workspace_shape(conn):
 def test_phase_2_retention_settings_defaults(monkeypatch):
     s = Settings()  # with the env cleared of CLUE_AGENT_WORKSPACE_*
     assert (s.agent_workspace_raw_retention_s, s.agent_workspace_working_retention_s,
-            s.agent_workspace_retention_sweep_interval_s) == (172800.0, 604800.0, 3600.0)
+            s.agent_workspace_retention_sweep_interval_s) == (172800.0, 604800.0, 86400.0)
 ```
 
 - [ ] **Step 2: Run them**
@@ -281,7 +281,7 @@ async def test_reading_identical_bytes_again_works_after_expiry():
 - [ ] **Step 2: Run** — `uv run pytest tests/api/test_agent_workspace_retention_db.py -q -p no:cacheprovider`. Expected: FAIL (`ImportError`).
 - [ ] **Step 3: Implement** per Interfaces. In `fleet_main.py`: `_workspace_retention_loop(interval_s, job, every, conn_factory)` that every `interval_s` opens a transaction and calls `run_retention_if_due`; composed only when `settings.agent_workspace_snapshots_enabled`; log `fleet.workspace_retention.ran` with the report's fields.
 - [ ] **Step 4: Run** the Step 2 command. Expected: PASS.
-- [ ] **Step 5: Commit** — `feat(workspace): hourly expiry of raw inputs and working files, one runner at a time`
+- [ ] **Step 5: Commit** — `feat(workspace): daily expiry of raw inputs and working files, one runner at a time`
 
 ---
 

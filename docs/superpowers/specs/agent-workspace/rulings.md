@@ -125,12 +125,14 @@ agent, not only the CRM work.
   about an hour idle), Claude.ai (created files kept for the conversation) and Manus (intermediate
   code and temporary files dropped when an idle task's computer is recycled after 7 or 21 days; its
   outputs and uploads restored). Founder: *"go with 30 days for scratch and work."*
-- **AW-24 (2026-10-22)** **Working files are kept 7 days, not 30; the expiry job runs hourly.**
+- **AW-24 (2026-10-22, interval amended 2026-10-23)** **Working files are kept 7 days, not 30; the expiry job runs daily.**
   `scratch/` and `work/` (apart from its compaction folders) are deleted **7 days** after the chat's
   last activity (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S=604800`); founder: *"you can make this 7
-  days for now."* The retention expiry job (WS-26) checks every hour
-  (`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S=3600`), so a file goes up to an hour after its
-  limit (Q10 decided).
+  days for now."* The retention expiry job (WS-26) checks **once a day**
+  (`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S=86400`), so a raw input goes between 48 and 72
+  hours after last activity and a working file between 7 and 8 days (Q10 decided; founder
+  2026-10-23: *"can we make it like a once a day thing?"* — the interval is precision only, nothing
+  else depends on it).
 - **AW-25 (2026-10-22)** **The person never sees or downloads the agent's workspace files** (Q11);
   the snapshot stays internal. **Stage-0 trial workspaces are left as they are for now** (Q8): no
   change in Phase 2 (they currently compose with snapshots on, review minor M2). Founder: *"NO THEY
