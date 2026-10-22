@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and analysis work; publishing blocked (F4); findings in [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md), to be discussed before fixing._
+_Last updated: 2026-10-22 — Phase 2 built and live-checked on both test CRMs; findings in [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md) (three founder questions, two fixes, minors); whole-branch review next._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -35,14 +35,18 @@ _Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and
   public callback URL and Composio keys in that environment.
 
 ## Phase 2 — write foundation
-- 📝 Design reviewed 2026-10-22 (R-6.21–R-6.25, R-8.7); card spec current (R-6.22); plan `docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md` awaiting founder review
-- ⬜ `propose_crm_changes`: classification, find-before-create, before-values, overwrite marker
-- ⬜ Write log, idempotency keys, executor (fleet task), `crm_writes_finished` wake with per-record results
-- ⬜ Retry rule (automatic for temporary failures only) and per-workspace throttle
-- ⬜ Permission card (Allow once / Always allow / Fully automatic); grants; `manage_crm_grants`
-- ⬜ Overwrites of a person's value always ask
-- ⬜ `crm_write_log` and undo through chat
-- ⬜ Forbidden actions enforced (merge, delete, consent fields, `*_FROM_NL`, GDPR erasure)
+- ✅ Design reviewed 2026-10-22 (R-6.21–R-6.25, R-8.7); card spec current (R-6.22); plan `docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md` executed (subagent-driven, Tasks 1–11)
+- ✅ Write allowlist (13 actions, `crm/write_actions.py`): kind of change, object and fields, forbidden fields; `HUBSPOT_UPDATE_CONTACT` left out (reports success on a refused write)
+- ✅ Schema: `crm_write_proposal`, `crm_write` (the log), `crm_write_grant`, `crm_record_link`, the `crm_write_permission` gate, `crm_write` fleet kind, `crm_writes_finished` wake (`ebf28e41a6a4`, `a3b587b8fdfd`, `0e92986934d3`)
+- ✅ `propose_crm_changes`: find-before-create, before-values from a read, picklist values checked, overwrite marker (R-6.5), grouping for the card, one live card per chat (a new proposal replaces an unanswered one)
+- ✅ Executor on the fleet: batch calls, read-back after every write (`not_applied`), retries for temporary failures, auth errors pause, never resumes across connections, re-offers itself; `crm_writes_finished` / paused wake turns name who allowed what
+- ✅ Permission card in chat (six states; any member answers; answering starts no agent turn and adds no bubble — R-11.3/R-11.4/R-11.6); progress route `GET /crm/proposals/{id}`
+- ✅ Standing permissions ("Always allow" per kind of change on the card); `manage_crm_grants` (list, revoke; idempotent revoke); a new connection starts with none
+- ✅ `crm_write_log` (filters, before-values, action slug for undo) and undo through chat (`reverses_write_id`; removals only of members Clue added)
+- ✅ `crm-writing` skill v1 (founder-approved wording), Head of ABM v77 (recipe 37, manual v23), crm-sales-analysis v2 points to it
+- ✅ Live check on both test CRMs 2026-10-22 — [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md): propose/allow/log/undo/revoke/create/refusals/overwrite all pass; open: L5 list lookup, L6 missing record, L10 Salesforce field coverage (founder questions), L8 raw CRM message, L9 create id in the log (fixes)
+- ⬜ Per-workspace throttle (R-7.3) — not built in Phase 2
+- ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 
 ## Phase 3 — first writes (a few at a time)
 - ⬜ Target accounts → Clue list (HubSpot) / campaign (Salesforce)
