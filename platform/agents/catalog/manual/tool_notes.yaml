@@ -631,3 +631,45 @@ manage_crm_grants:
     crm_not_connected: Tell the person no CRM is connected, so there are no permissions to list or revoke.
     crm_grant_not_named: List the permissions first, then revoke by the grant_id of the one the person named.
     crm_grant_not_found: List the permissions again, and revoke by a grant_id from that list.
+
+find_crm_list:
+  afterwards: >-
+    Nothing changed. `lists` are the lists (HubSpot) or campaigns (Salesforce) Clue keeps for the
+    project; propose changes only to one with stored true. One with gone true is no longer in the
+    CRM. With a name, `found` lists what the CRM has under exactly that name; when the person named
+    it, link it with link_crm_list before proposing changes to it. When `found` has more than one
+    Salesforce campaign, ask the person which one they mean.
+  skill_section: crm-writing v1 section 4, "One proposal per decision".
+  see_also: [tools]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists.
+    crm_not_connected: Call connect_crm to ask the person to connect the CRM.
+    crm_connection_expired: Call connect_crm; it shows the person a Reconnect card.
+    project_not_found: Use this conversation's own project id.
+    crm_action_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now.
+    crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
+    crm_unavailable: Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now.
+    salesforce_api_disabled: Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns.
+    salesforce_api_share_exhausted: Tell the person Clue has used its share of the org's API calls for today, and look for the campaign again tomorrow.
+    salesforce_limits_unavailable: Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce.
+
+link_crm_list:
+  afterwards: >-
+    Clue now keeps the list (HubSpot) or campaign (Salesforce) for the project, marked as one the
+    person named, not one Clue created. Nothing changed in the CRM. Propose the adds to it with
+    propose_crm_changes; Clue never removes members it did not add.
+  skill_section: crm-writing v1 section 4, "One proposal per decision".
+  see_also: [tools]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists.
+    crm_not_connected: Call connect_crm to ask the person to connect the CRM.
+    crm_connection_expired: Call connect_crm; it shows the person a Reconnect card.
+    project_not_found: Use this conversation's own project id.
+    crm_list_not_found: The CRM has no list or campaign with that id. Find it by its exact name with find_crm_list, and link the id it gives.
+    crm_list_not_manual: That HubSpot list is filled by a rule, so Clue cannot add to it. Tell the person, and ask for a list whose members are set by hand, or propose creating Clue's own list.
+    crm_action_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now.
+    crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
+    crm_unavailable: Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now.
+    salesforce_api_disabled: Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns.
+    salesforce_api_share_exhausted: Tell the person Clue has used its share of the org's API calls for today, and link the campaign tomorrow.
+    salesforce_limits_unavailable: Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce.

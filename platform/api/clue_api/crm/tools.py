@@ -599,7 +599,7 @@ def build_crm_tools(
     offers the write executor (the fleet queue when none is given).
     """
     # Imported here: the write tool reuses this module's connection and refusal helpers.
-    from clue_api.crm.target_tools import ReadCrmTargetsTool
+    from clue_api.crm.target_tools import FindCrmListTool, LinkCrmListTool, ReadCrmTargetsTool
     from clue_api.crm.write_tools import (
         CrmWriteLogTool,
         ManageCrmGrantsTool,
@@ -623,4 +623,8 @@ def build_crm_tools(
         # Phase 3 (Task 4): reads only Clue's records, so it needs no gateway. Ungranted until
         # the Phase 3 catalog bump (Task 8).
         ReadCrmTargetsTool(settings=settings, conn_factory=conn_factory),
+        # Phase 3 (Task 7): a project's lists, and keeping one the person names. Ungranted until
+        # the Phase 3 catalog bump (Task 8).
+        FindCrmListTool(settings=settings, gateway=gateway, conn_factory=conn_factory),
+        LinkCrmListTool(settings=settings, gateway=gateway, conn_factory=conn_factory),
     )

@@ -142,16 +142,23 @@ async def link_project(
 
 
 async def lists_for_project(
-    conn: AsyncConnection, *, workspace_id: str, project_id: str, connection_id: UUID
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    connection_id: UUID,
+    include_gone: bool = False,
 ) -> list[CrmList]:
-    """The lists of this connection the project uses, oldest first; a gone list is left out."""
+    """The lists of this connection the project uses, oldest first; a gone list is left out, or
+    with ``include_gone`` listed after every live one (R-11.11 (4): it is said to be gone)."""
     rows = await conn.execute(
         text(
             f"SELECT {_LIST_COLUMNS} "
             "FROM crm_list l JOIN crm_list_project p ON p.list_id = l.list_id "
             "WHERE p.project_id = :project_id AND p.workspace_id = :ws "
             "AND l.workspace_id = :ws AND l.connection_id = :connection_id "
-            "AND l.gone_at IS NULL ORDER BY l.created_at, l.crm_list_id"
+            + ("" if include_gone else "AND l.gone_at IS NULL ")
+            + "ORDER BY l.gone_at IS NOT NULL, l.created_at, l.crm_list_id"
         ),
         {"project_id": project_id, "ws": workspace_id, "connection_id": connection_id},
     )

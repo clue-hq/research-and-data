@@ -232,6 +232,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # Phase 3: reads only Clue's records, so it needs no Composio key; the matrix's project id
     # names no project of the workspace, its first fail-closed boundary.
     "read_crm_targets": ("precondition", ("project_not_found",)),
+    # Phase 3 (Task 7): they read the CRM, so they refuse first without a Composio key.
+    "find_crm_list": ("precondition", ("crm_not_configured",)),
+    "link_crm_list": ("precondition", ("crm_not_configured",)),
     "write_brand_document": ("precondition", ("storage_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
@@ -665,6 +668,8 @@ def _bodies() -> dict[str, dict[str, object]]:
         "crm_write_log": {},
         "manage_crm_grants": {"action": "list", "source_turn_ref": f"turn-action:{_UUID()}"},
         "read_crm_targets": {"project_id": "prj_matrix_missing"},
+        "find_crm_list": {"project_id": "prj_matrix_missing"},
+        "link_crm_list": {"project_id": "prj_matrix_missing", "crm_list_id": "17"},
         "write_brand_document": {
             "path": "company/sales-motion.md",
             "kind": "sales-motion",
@@ -1541,8 +1546,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # write_brand_document (+4 names, +4 addresses), ungranted until Task 11.
     # CRM integration Phase 2: propose_crm_changes (+1 name, +1 address), ungranted until the
     # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
-    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8.
-    assert len(registry.names()) == 159
+    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
+    # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
+    assert len(registry.names()) == 161
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1594,7 +1600,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
     # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
-    assert len(registry) == 185  # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 1)
+    assert len(registry) == 187  # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 3)
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1648,8 +1654,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # write_brand_document (+4 names, +4 addresses), ungranted until Task 11.
     # CRM integration Phase 2: propose_crm_changes (+1 name, +1 address), ungranted until the
     # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
-    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8.
-    assert len(registry.names()) == 159
+    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
+    # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
+    assert len(registry.names()) == 161
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1688,7 +1695,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
     # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
-    assert len(registry) == 185  # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 1)
+    assert len(registry) == 187  # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 3)
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
