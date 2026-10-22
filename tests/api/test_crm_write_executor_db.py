@@ -94,6 +94,8 @@ class _WritingCrm(_FakeCrm):
         self.refused_records: set[str] = set()
         #: Lists (HubSpot) and campaigns (Salesforce) by name: their CRM ids.
         self.crm_lists: dict[str, str] = {}
+        #: (campaign id, contact id) of each Salesforce campaign member.
+        self.campaign_members: set[tuple[str, str]] = set()
 
     @property
     def writes(self) -> list[tuple[str, dict[str, Any]]]:
@@ -173,6 +175,17 @@ class _WritingCrm(_FakeCrm):
                 None,
             )
         query = str(arguments.get("query", ""))
+        if slug == "SALESFORCE_RUN_SOQL_QUERY" and "FROM CampaignMember" in query:
+            campaign = re.search(r"CampaignId = '([^']*)'", query)
+            assert campaign is not None
+            found = [
+                {"attributes": {"type": "CampaignMember"}, "ContactId": contact}
+                for member_of, contact in sorted(self.campaign_members)
+                if member_of == campaign.group(1) and f"'{contact}'" in query
+            ]
+            return ExecuteResult(
+                True, {"data": {"records": found, "totalSize": len(found), "done": True}}, None
+            )
         if slug == "SALESFORCE_RUN_SOQL_QUERY" and "FROM Campaign" in query:
             by_name = re.search(r"Name = '(.*)'", query)
             by_id = re.search(r"Id = '(.*)'", query)
@@ -203,6 +216,10 @@ class _WritingCrm(_FakeCrm):
                     "createdAt": "2026-10-23T10:00:00Z",
                 }
             }
+        if slug == "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN":
+            self.campaign_members.add((str(arguments["campaign_id"]), str(arguments["contact_id"])))
+            # The verified answer (composio-api-notes.md § Phase 3 shapes).
+            return {"errors": [], "id": "00vjV000003bbV7QAI", "success": True}
         if slug == "SALESFORCE_CREATE_CAMPAIGN":
             # The verified answer (composio-api-notes.md § Phase 3 shapes): an 18-character id.
             campaign_id = f"701jV00000Hd83x{len(self.crm_lists):03d}"
@@ -258,6 +275,7 @@ _WRITE_SLUGS = frozenset(
         "HUBSPOT_CREATE_CONTACT",
         "HUBSPOT_CREATE_LIST",
         "SALESFORCE_CREATE_CAMPAIGN",
+        "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
     }
 )
 
@@ -1871,3 +1889,178 @@ def test_a_list_named_differently_in_case_is_not_taken_for_clues_own(tmp_path: P
         )
 
     _run(tmp_path, "listcase", body)
+
+
+# --- Task 3b (R-12.7): a new list and its first members, sent in order ------------------------
+
+
+NOT_CREATED = "The list was not created, so nothing was added to it."
+
+
+def _add_to_new(record: str, name: str = "Clue: Q4") -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        {"list_id": f"new:{name}", "operation": "add", "record_ids": [record]},
+        "Target accounts.",
+    )
+
+
+async def _arguments(conn: Any, proposal_id: UUID) -> dict[str | None, dict[str, Any]]:
+    rows = await conn.execute(
+        text("SELECT record_ref, arguments FROM crm_write WHERE proposal_id = :id"),
+        {"id": proposal_id},
+    )
+    return {row.record_ref: row.arguments for row in rows}
+
+
+def test_a_new_list_is_created_then_its_members_are_added_with_its_id(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(lists={"101": [], "102": []})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _add_to_new("101"),
+            _create_list("Clue: Q4"),
+            _add_to_new("102"),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        ]
+        assert gateway.writes[1][1]["list_id"] == "17"
+        assert gateway.lists == {"101": ["17"], "102": ["17"]}
+        logged = await _writes(conn, proposal_id)
+        assert {ref: row["status"] for ref, row in logged.items()} == {
+            "17": "succeeded",
+            "101": "succeeded",
+            "102": "succeeded",
+        }
+        # The new id is kept on the adds, so a later run never sends the placeholder.
+        arguments = await _arguments(conn, proposal_id)
+        assert arguments["101"]["list_id"] == arguments["102"]["list_id"] == "17"
+        added = await writes.clue_added_members(
+            conn,
+            connection_id=connection.connection_id,
+            pairs=[("17", "101"), ("17", "102")],
+            project_id=seeded.project_id,
+        )
+        assert added == {("17", "101"), ("17", "102")}
+
+    _run(tmp_path, "newlistsent", body)
+
+
+def test_a_failed_create_skips_its_members_with_the_reason(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        refusal = ExecuteResult(
+            False,
+            {"http_error": "400", "status_code": 400},
+            '{"status":"error","message":"A list with this name already exists."}',
+        )
+        gateway = _WritingCrm(lists={"101": []}, failures={"HUBSPOT_CREATE_LIST": [refusal]})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _create_list("Clue: Q4"), _add_to_new("101")
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged: dict[Any, dict[str, Any]] = await _writes(conn, proposal_id)
+        assert logged[None]["status"] == "failed"  # the create names no list: none was made
+        assert (logged["101"]["status"], logged["101"]["crm_message"]) == ("skipped", NOT_CREATED)
+        assert logged["101"]["sent"] is False
+        assert [slug for slug, _ in gateway.writes] == ["HUBSPOT_CREATE_LIST"]
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "newlistfail", body)
+
+
+def test_an_unchosen_create_skips_its_members(tmp_path: Path) -> None:
+    """A covered add whose create the person unticked is never sent."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(lists={"101": []})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _create_list("Clue: Q4"), _add_to_new("101")
+        )
+        await conn.execute(
+            text(
+                "UPDATE crm_write SET selected = false WHERE proposal_id = :id "
+                "AND kind = 'list_create'"
+            ),
+            {"id": proposal_id},
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert (logged["101"]["status"], logged["101"]["crm_message"]) == ("skipped", NOT_CREATED)
+        assert gateway.writes == []
+
+    _run(tmp_path, "newlistunchosen", body)
+
+
+def test_a_resume_after_a_crash_between_the_create_and_the_adds_uses_the_kept_id(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        crashed: list[bool] = []
+
+        async def die_before_the_add(slug: str, arguments: dict[str, Any]) -> None:
+            if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS" and not crashed:
+                crashed.append(True)
+                raise RuntimeError("the worker died after the list was made")
+
+        gateway = _WritingCrm(lists={"101": []}, on_write=die_before_the_add)
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _create_list("Clue: Q4"), _add_to_new("101")
+        )
+        handler = _handler(conn, tmp_path, gateway)
+        with pytest.raises(RuntimeError):
+            await _handle(handler, connection)
+        assert (await _arguments(conn, proposal_id))["101"]["list_id"] == "17"
+
+        await _handle(handler, connection)
+
+        adds = [args for slug, args in gateway.writes if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]
+        assert [a["list_id"] for a in adds] == ["17", "17"]
+        assert [slug for slug, _ in gateway.writes].count("HUBSPOT_CREATE_LIST") == 1
+        assert (await _writes(conn, proposal_id))["101"]["status"] == "succeeded"
+        assert gateway.lists["101"] == ["17"]
+
+    _run(tmp_path, "newlistcrash", body)
+
+
+def test_a_new_campaign_is_created_then_its_contacts_are_added(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+            ProposedChange(
+                "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                {"campaign_id": "new:Clue: Q4", "contact_id": "003A"},
+                "committee",
+            ),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        campaign = gateway.crm_lists["Clue: Q4"]
+        assert [slug for slug, _ in gateway.writes] == [
+            "SALESFORCE_CREATE_CAMPAIGN",
+            "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+        ]
+        assert gateway.writes[1][1] == {"campaign_id": campaign, "contact_id": "003A"}
+        assert gateway.campaign_members == {(campaign, "003A")}
+        logged = await _writes(conn, proposal_id)
+        assert logged["003A"]["status"] == "succeeded"
+        assert logged[campaign]["status"] == "succeeded"
+
+    _run(tmp_path, "newcampaignsent", body, provider="salesforce")

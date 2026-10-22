@@ -588,7 +588,7 @@ propose_crm_changes:
     crm_not_connected: Call connect_crm to ask the person to connect the CRM, and propose again once it is connected.
     crm_connection_expired: Call connect_crm; it shows the person a Reconnect card. Propose again once they reconnect.
     crm_write_not_allowed: Leave that change out, and tell the person plainly that Clue cannot make this write yet.
-    crm_write_not_parsable: Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again.
+    crm_write_not_parsable: Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again. To add to a list or campaign this same call creates, give the add the list id new:<the exact name of the create>; only adds may use it.
     crm_field_forbidden: Leave that field out of every change and propose again; Clue never writes consent or phone fields, and writes only the allowed fields on a person (crm-writing section 5).
     crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
     crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.

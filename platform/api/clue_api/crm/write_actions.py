@@ -40,6 +40,7 @@ from clue_api.crm.composio_gateway import CrmProvider
 
 __all__ = [
     "HUBSPOT_OBJECT_TYPE_IDS",
+    "NEW_LIST_PREFIX",
     "WRITE_ACTIONS",
     "BatchSpec",
     "ItemOutcome",
@@ -51,6 +52,7 @@ __all__ = [
     "forbidden_fields",
     "is_forbidden_field",
     "is_write",
+    "new_list_name",
     "scope_key",
     "single_field_arguments",
     "write_spec",
@@ -184,6 +186,19 @@ def _unwrap(data: Any) -> Any:
     if isinstance(data, Mapping) and "data" in data and isinstance(data["data"], Mapping):
         return data["data"]
     return data
+
+
+#: A membership change may add to a list the same batch creates, before it has an id: its
+#: list argument is ``new:`` and the exact name the create gives the list (R-12.7). Preparation
+#: checks the batch holds that create; the executor sends the create first and puts the new id in.
+NEW_LIST_PREFIX = "new:"
+
+
+def new_list_name(list_ref: str | None) -> str | None:
+    """The name of the list a ``new:<name>`` reference points at; ``None`` for a CRM id."""
+    if list_ref is None or not list_ref.startswith(NEW_LIST_PREFIX):
+        return None
+    return list_ref[len(NEW_LIST_PREFIX) :]
 
 
 # --- HubSpot ----------------------------------------------------------------------------------

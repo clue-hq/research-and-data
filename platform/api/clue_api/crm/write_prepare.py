@@ -42,11 +42,13 @@ from clue_api.crm.connections import CrmConnection
 from clue_api.crm.lists import live_list_named, stored_list
 from clue_api.crm.write_actions import (
     HUBSPOT_OBJECT_TYPE_IDS,
+    NEW_LIST_PREFIX,
     ParsedChange,
     WriteActionSpec,
     WriteNotParsable,
     field_update_spec,
     is_forbidden_field,
+    new_list_name,
     scope_key,
     single_field_arguments,
     write_spec,
@@ -819,12 +821,39 @@ async def _with_list_objects(
     """A HubSpot list holds one object type, which its membership action does not name: read it
     from the list Clue keeps (a company list holds companies). A change to a list Clue does not
     keep (``crm_list_not_kept``: the person names one with ``link_crm_list`` first) or to a kept
-    list HubSpot no longer has (``crm_list_gone``) is refused on its own."""
+    list HubSpot no longer has (``crm_list_gone``) is refused on its own.
+
+    An add to ``new:<name>`` (R-12.7) is to the list the same batch creates under exactly that
+    name: it holds that create's object. One that names no create, or a removal from a list not
+    made yet, is refused on its own (``crm_write_not_parsable``)."""
     resolved: list[_Item] = []
     refused: dict[int, RefusedChange] = {}
+    created = {
+        item.parsed.label: item
+        for item in items
+        if item.parsed.change_kind(item.spec) == "list_create"
+    }
     for index, item in enumerate(items):
         kind = item.parsed.change_kind(item.spec)
-        if connection.provider == "hubspot" and kind in ("list_membership", "list_removal"):
+        name = new_list_name(item.parsed.list_ref)
+        if kind in ("list_membership", "list_removal") and name is not None:
+            create = created.get(name)
+            if kind == "list_removal" or create is None:
+                refused[index] = RefusedChange(
+                    index=index,
+                    slug=item.proposed.slug,
+                    record_ref=item.parsed.record_ref,
+                    reason_code="crm_write_not_parsable",
+                    message=(
+                        f'"{item.parsed.list_ref}" names no list this batch creates: '
+                        f"{NEW_LIST_PREFIX}<name> must be the exact name of a list or campaign "
+                        "created in the same call, and is used only to add to it."
+                    ),
+                )
+            elif create.parsed.object != item.parsed.object:
+                parsed = dataclasses.replace(item.parsed, object=create.parsed.object)
+                item = dataclasses.replace(item, parsed=parsed)
+        elif connection.provider == "hubspot" and kind in ("list_membership", "list_removal"):
             kept = await stored_list(
                 conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
             )
@@ -1090,10 +1119,12 @@ async def prepare_changes(
             ).items():
                 current[(object_name, record_ref)] = values
 
+    # A list this batch creates has no members yet: nothing to read for its adds.
     memberships_proposed = [
         item
         for item in kept.values()
         if item.parsed.change_kind(item.spec) in ("list_membership", "list_removal")
+        and new_list_name(item.parsed.list_ref) is None
     ]
     members = (
         await _memberships(reader, provider, memberships_proposed)
@@ -1114,6 +1145,8 @@ async def prepare_changes(
             item = dataclasses.replace(item, parsed=dataclasses.replace(item.parsed, label=label))
             for field, after in item.parsed.fields.items():
                 await builder.field(item, item.spec, record_ref, field, values.get(field), after)
+        elif kind == "list_membership" and new_list_name(item.parsed.list_ref) is not None:
+            builder.whole(item, before=False, after=True)
         elif kind in ("list_membership", "list_removal"):
             before = (str(item.parsed.list_ref), str(item.parsed.record_ref)) in members
             after = kind == "list_membership"
@@ -1138,7 +1171,10 @@ async def prepare_changes(
                 await builder.field(item, update, record_ref, field, held, after)
         else:  # link_duplicate has no action until Phase 3
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
-    return PreparedBatch(builder.prepared, sorted(refused, key=lambda r: r.index))
+    # A list is created before anything is added to it: creates come first, on the card and in
+    # the order the executor sends (R-12.7).
+    ordered = sorted(builder.prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
+    return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
 
 
 def _field_unknown(provider: CrmProvider, index: int, item: _Item, field: str) -> RefusedChange:
@@ -1222,9 +1258,9 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
     if kind == "list_create":
         return f'Create the {target} "{change.parsed.label}"'
     if kind == "list_membership":
-        return f'Add {count} {members} to the {target} "{change.parsed.list_ref}"'
+        return f'Add {count} {members} to the {target} "{_list_shown(change)}"'
     if kind == "list_removal":
-        return f'Remove {count} {members} from the {target} "{change.parsed.list_ref}"'
+        return f'Remove {count} {members} from the {target} "{_list_shown(change)}"'
     if kind == "field_update":
         return f'Set "{change.field_label}" on {count} {_noun(change.spec.object, count)}'
     if kind == "create_contact":
@@ -1251,6 +1287,11 @@ def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
     if kind == "create_company":
         return f"creating {_noun(change.spec.object, 2)}"
     return "marking possible duplicates"
+
+
+def _list_shown(change: PreparedChange) -> str | None:
+    """The list a membership change names on the card: a list not made yet by its name."""
+    return new_list_name(change.parsed.list_ref) or change.parsed.list_ref
 
 
 def _group_object(provider: CrmProvider, change: PreparedChange) -> str:
@@ -1310,7 +1351,7 @@ def card_snapshot(
                 "object": _group_object(provider, first),
                 "field": first.field,
                 "field_label": first.field_label,
-                "list_ref": first.parsed.list_ref,
+                "list_ref": _list_shown(first),
                 "title": _title(provider, first, count),
                 "count": count,
                 "value_summary": summary,

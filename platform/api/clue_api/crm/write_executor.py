@@ -73,8 +73,10 @@ from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
 from clue_api.crm.write_actions import (
     HUBSPOT_OBJECT_TYPE_IDS,
+    NEW_LIST_PREFIX,
     WriteActionSpec,
     WriteNotParsable,
+    new_list_name,
     write_spec,
 )
 from clue_api.crm.write_prepare import (
@@ -132,6 +134,8 @@ NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sen
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
 #: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
+#: An add to a list the same proposal was to create, when the create did not happen (R-12.7).
+NOT_CREATED_MESSAGE = "The list was not created, so nothing was added to it."
 #: A membership change of a list HubSpot no longer has (R-11.11 (4); Review Focus 3).
 LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
 #: Salesforce lets only Marketing Users create campaigns (Phase 3 Task 1 ruling).
@@ -964,7 +968,24 @@ class CrmWriteHandler:
         async with self._conn_factory() as conn:
             writes = await _start_proposal(conn, crm.connection, proposal_id)
         try:
-            for spec, chunk in _chunks(writes):
+            # Lists first (R-12.7): an add to a list the proposal creates names it ``new:<name>``
+            # until the create has an id. The id is then kept on those adds' rows, so a later run
+            # never sends the placeholder; when the create did not happen they are skipped.
+            creates = [write for write in writes if write.kind == _LIST_CREATE]
+            for spec, chunk in _chunks(creates):
+                if context.stop_requested.is_set() or context.lease_lost.is_set():
+                    return WorkResult(outcome="interrupted", references={}, requeue=True)
+                await self._send_chunk(crm, spec, chunk)
+            if creates or any(new_list_name(write.list_ref) for write in writes):
+                async with self._conn_factory() as conn:
+                    await _fill_new_lists(conn, crm.connection, proposal_id)
+                    writes = await _load_writes(conn, crm.connection, proposal_id)
+            rest = [
+                write
+                for write in writes
+                if write.kind != _LIST_CREATE and new_list_name(write.list_ref) is None
+            ]
+            for spec, chunk in _chunks(rest):
                 if context.stop_requested.is_set() or context.lease_lost.is_set():
                     return WorkResult(outcome="interrupted", references={}, requeue=True)
                 await self._send_chunk(crm, spec, chunk)
@@ -1495,6 +1516,60 @@ async def _start_proposal(
         ),
         {"id": proposal_id},
     )
+    return await _load_writes(conn, connection, proposal_id)
+
+
+#: The argument that names a membership change's list (HubSpot) or campaign (Salesforce).
+_LIST_ARGUMENT = {"hubspot": "list_id", "salesforce": "campaign_id"}
+
+
+async def _fill_new_lists(
+    conn: AsyncConnection, connection: CrmConnection, proposal_id: UUID
+) -> None:
+    """Every list the proposal created gives its id to the adds that name it ``new:<name>``;
+    an add to a list whose create failed, was skipped or was not chosen is skipped, never sent
+    (R-12.7). A create still undecided leaves its adds waiting."""
+    argument = _LIST_ARGUMENT[connection.provider]
+    creates = await conn.execute(
+        text(
+            "SELECT status, crm_id, record_label FROM crm_write "
+            "WHERE proposal_id = :id AND kind = 'list_create'"
+        ),
+        {"id": proposal_id},
+    )
+    for create in creates.all():
+        waiting = {
+            "id": proposal_id,
+            "argument": argument,
+            "placeholder": f"{NEW_LIST_PREFIX}{create.record_label}",
+        }
+        if create.status == "succeeded" and create.crm_id:
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET arguments = jsonb_set(arguments, "
+                    "ARRAY[CAST(:argument AS text)], to_jsonb(CAST(:crm_id AS text))) "
+                    "WHERE proposal_id = :id AND kind = 'list_membership' "
+                    "AND status NOT IN ('succeeded', 'failed', 'skipped') "
+                    "AND arguments ->> :argument = :placeholder"
+                ),
+                {**waiting, "crm_id": create.crm_id},
+            )
+        elif create.status in _TERMINAL:
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET status = 'skipped', crm_message = :message, "
+                    "finished_at = now() WHERE proposal_id = :id AND kind = 'list_membership' "
+                    "AND status NOT IN ('succeeded', 'failed', 'skipped') "
+                    "AND arguments ->> :argument = :placeholder"
+                ),
+                {**waiting, "message": NOT_CREATED_MESSAGE},
+            )
+
+
+async def _load_writes(
+    conn: AsyncConnection, connection: CrmConnection, proposal_id: UUID
+) -> list[_Write]:
+    """The proposal's chosen changes not yet decided, in order."""
     project_id = await conn.scalar(
         text("SELECT project_id FROM crm_write_proposal WHERE proposal_id = :id"),
         {"id": proposal_id},

@@ -107,7 +107,8 @@ _MAX_CHANGES = 500
 
 
 class CrmChangeInput(BaseModel):
-    #: A write action find_crm_actions listed with access "write".
+    #: A write action find_crm_actions listed with access "write". An add to a list or campaign
+    #: the same call creates names it ``new:<exact name>`` in its list argument (R-12.7).
     slug: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     arguments: dict[str, Any]
     #: One line the person reads on the card: why Clue wants this change.
@@ -197,7 +198,10 @@ class ProposeCrmChangesTool(Tool):
         "at once the changes a standing permission covers. When state is 'awaiting_permission' a "
         "permission card asks the person: tell them to use the card and end your turn; the chat "
         "continues by itself when the changes are done. Put everything you want to change in one "
-        "call. " + tool_manual_link("propose_crm_changes")
+        "call. To create a list or campaign and add to it in the same call, give each add the "
+        "list id 'new:' followed by the exact name the create gives it (e.g. list_id "
+        "'new:Clue: Q4 hotel groups'); Clue creates the list first and adds to it with its new "
+        "id. " + tool_manual_link("propose_crm_changes")
     )
     input_model: ClassVar[type[ToolInput]] = ProposeCrmChangesInput
     output_model: ClassVar[type[ToolOutput]] = ProposeCrmChangesOutput

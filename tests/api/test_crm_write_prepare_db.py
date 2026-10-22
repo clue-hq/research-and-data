@@ -1523,7 +1523,7 @@ def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
             text("SELECT record_ref, object FROM crm_write WHERE proposal_id = :p"),
             {"p": proposal_id},
         )
-        assert dict(objects.all()) == {"101": "company", "201": "contact"}  # type: ignore[arg-type]
+        assert dict(objects.all()) == {"101": "company", "201": "contact"}
 
     _run(tmp_path, "companylist", body)
 
@@ -1576,3 +1576,124 @@ def test_an_add_to_a_kept_list_that_is_gone_is_refused_alone(tmp_path: Path) -> 
         ]
 
     _run(tmp_path, "keptgone", body)
+
+
+# --- Task 3b (R-12.7): a list Clue creates and its first members are one card ----------------
+
+
+def _add_to_new(record: str, name: str = "Clue: Q4", operation: str = "add") -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        {"list_id": f"new:{name}", "operation": operation, "record_ids": [record]},
+        "the project's target accounts",
+    )
+
+
+def test_a_new_list_and_its_first_members_are_one_card(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        # The agent may list the adds before the create: the create still comes first.
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_add_to_new("101"), _create_list("Clue: Q4"), _add_to_new("102")],
+        )
+        # Nothing to read: the list is new, so it has no members yet.
+        assert gateway.calls == []
+        create, first, second = prepared
+        assert create.parsed.change_kind(create.spec) == "list_create"
+        for add in (first, second):
+            assert add.parsed.change_kind(add.spec) == "list_membership"
+            assert add.parsed.object == "company"  # the new list's object
+            assert (add.before, add.after) == (False, True)
+            assert add.arguments["list_id"] == "new:Clue: Q4"
+        assert [first.parsed.record_ref, second.parsed.record_ref] == ["101", "102"]
+
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+        assert [g["title"] for g in card["groups"]] == [
+            'Create the list "Clue: Q4"',
+            'Add 2 companies to the list "Clue: Q4"',
+        ]
+        assert card["allow_count"] == 3
+
+    _run(tmp_path, "newlist", body)
+
+
+def test_a_placeholder_naming_no_create_is_refused_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                _add_to_new("101", "Clue: Q1"),  # no such create in the batch
+                _add_to_new("102", operation="remove"),  # a new list has no members to remove
+                _add_to_new("103", "clue: q4"),  # the name must be the create's, exactly
+                _add_to_new("104"),
+            ],
+        )
+        assert [c.parsed.record_ref for c in batch.changes] == [None, "104"]
+        assert [(r.index, r.reason_code) for r in batch.refused] == [
+            (1, "crm_write_not_parsable"),
+            (2, "crm_write_not_parsable"),
+            (3, "crm_write_not_parsable"),
+        ]
+        assert "new:Clue: Q1" in batch.refused[0].message
+
+    _run(tmp_path, "newlistbad", body)
+
+
+def test_a_new_campaign_and_its_contacts_are_one_card(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+                ProposedChange(
+                    "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                    {"campaign_id": "new:Clue: Q4", "contact_id": "003A"},
+                    "committee",
+                ),
+            ],
+            _FakeBudget(gateway),
+        )
+        assert gateway.calls == []
+        card = card_snapshot(prepared, provider="salesforce", project_name="Q4")
+        assert [g["title"] for g in card["groups"]] == [
+            'Create the campaign "Clue: Q4"',
+            'Add 1 contact to the campaign "Clue: Q4"',
+        ]
+
+    _run(tmp_path, "newcampaign", body, provider="salesforce")
+
+
+def test_a_covered_create_and_its_uncovered_adds_wait_for_one_card(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await writes.insert_grant(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            scope_key="kind:list_create",
+            granted_by_user_id=USER_ID,
+        )
+        create, add = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [_create_list("Clue: Q4"), _add_to_new("101")],
+        )
+        # Each permission applies on its own: the create is covered, the add asks.
+        assert create.covered_by is not None and add.covered_by is None
+        card = card_snapshot([create, add], provider="hubspot", project_name="Q4")
+        assert [g["title"] for g in card["groups"]] == ['Add 1 company to the list "Clue: Q4"']
+
+    _run(tmp_path, "newlistgrant", body)
