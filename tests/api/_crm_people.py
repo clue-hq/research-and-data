@@ -4,7 +4,8 @@ Since Phase 3 Task 5 a change that creates or updates a CRM contact must name th
 is about, and every person value it writes must be what Clue researched and cleared. Tests about
 something else (the executor, the card, the reads before it) use :func:`clear_people` to seed, for
 each such change, a committee member of a project account whose claims hold exactly the values
-the change writes, and to name that member on the change.
+the change writes, link it to the CRM record an update writes, and name that member on the
+change.
 """
 
 from __future__ import annotations
@@ -36,6 +37,14 @@ def _fields(change: Any) -> Mapping[str, Any]:
         inputs: Any = arguments["inputs"]
         return dict(inputs[0]["properties"])
     return dict(arguments)
+
+
+def _record_ref(change: Any) -> str | None:
+    if change.slug == "HUBSPOT_UPDATE_CONTACTS":
+        return str(change.arguments["inputs"][0]["id"])
+    if change.slug == "SALESFORCE_UPDATE_CONTACT":
+        return str(change.arguments["contact_id"])
+    return None
 
 
 async def _world(conn: Any, seeded: Any) -> Any:
@@ -88,6 +97,25 @@ async def clear_people(conn: Any, seeded: Any, changes: Sequence[Any]) -> list[A
         role = first("hs_buying_role")
         persona = _PERSONA_BY_ROLE.get(str(role).split(";")[-1]) if role else "user"
         await world.claim(f"{label}-persona", person, "contact.persona", persona)
+        record = _record_ref(change)
+        if record is not None:
+            # The CRM record this change writes is the one Clue knows this person by.
+            from uuid import UUID
+
+            from clue_api.crm import writes
+            from clue_api.crm.connections import latest_connection
+
+            connection = await latest_connection(conn, workspace_id=seeded.workspace_id)
+            assert connection is not None
+            await writes.record_link(
+                conn,
+                workspace_id=seeded.workspace_id,
+                connection_id=connection.connection_id,
+                crm_object="contact",
+                crm_id=record,
+                created_by_clue=False,
+                clue_entity_id=UUID(str(person)),
+            )
         if dataclasses.is_dataclass(change) and not isinstance(change, type):
             cleared.append(dataclasses.replace(change, clue_entity_id=str(person)))
         else:

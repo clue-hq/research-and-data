@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import re
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -43,6 +44,7 @@ from clue_api.crm.connections import CrmConnection
 from clue_api.crm.lists import live_list_named, stored_list
 from clue_api.crm.targets import TargetAccount, TargetContact, TargetValue, project_targets
 from clue_api.crm.write_actions import (
+    _SALESFORCE_CONTACT_ARGS,
     CLUE_CAMPAIGN_SETTINGS,
     HUBSPOT_OBJECT_TYPE_IDS,
     NEW_LIST_PREFIX,
@@ -242,6 +244,10 @@ class _Item:
     #: The buying role Clue offers this contact, when the change writes one (composed with the
     #: roles the CRM contact already has once its value is read).
     buying_role: tuple[str, str] | None = None  # (field, Clue's role)
+    #: Whose CRM record this change must be (Fix round 1, Critical #1): ``person`` or
+    #: ``company``, the record Clue knows the entity by on this connection, and the email (person)
+    #: or domain (company) the record must hold when Clue knows no record.
+    owner: tuple[str, str | None, str | None] | None = None
 
 
 def _words(*names: str) -> str:
@@ -778,6 +784,16 @@ _CUSTOM_PERSON_TARGETS = (
 )
 _ICP_TIER_FIELD = "hs_ideal_customer_profile"
 _TARGET_ACCOUNT_FIELD = "hs_is_target_account"
+#: Written only from Clue's fit for a named account (ruling #4, R-12.1).
+_CLUE_ACCOUNT_FIELDS = frozenset({_ICP_TIER_FIELD, _TARGET_ACCOUNT_FIELD})
+_NOT_THE_PERSON = "This CRM record is not the person Clue researched."
+_NOT_THE_COMPANY = "This CRM record is not the company Clue researched."
+_NOT_AN_UNDO = "This undo does not match a change Clue made."
+#: The field a record is recognised by when Clue knows no record id for it.
+_OWNER_FIELDS: Mapping[str, Mapping[CrmProvider, str]] = {
+    "person": {"hubspot": "email", "salesforce": "Email"},
+    "company": {"hubspot": "domain", "salesforce": "Website"},
+}
 
 
 def _person_change(item: _Item) -> bool:
@@ -881,14 +897,113 @@ async def _targets(
     return accounts, contacts
 
 
-def _refused(index: int, item: _Item, message: str) -> RefusedChange:
+def _refused(
+    index: int, item: _Item, message: str, code: str = PERSONAL_DATA_NOT_ALLOWED
+) -> RefusedChange:
     return RefusedChange(
         index=index,
         slug=item.proposed.slug,
         record_ref=item.parsed.record_ref,
-        reason_code=PERSONAL_DATA_NOT_ALLOWED,
+        reason_code=code,
         message=message,
     )
+
+
+def _owner_field(provider: CrmProvider, item: _Item) -> tuple[str, ...]:
+    """The field a change's record is recognised by, read with its before-values."""
+    return () if item.owner is None else (_OWNER_FIELDS[item.owner[0]][provider],)
+
+
+def _owner_values(provider: CrmProvider, item: _Item) -> Mapping[str, object]:
+    """A create was found by the email or website it writes, which was checked against the
+    research, so the record holds it (a search answer may leave the field out)."""
+    if item.spec.find_existing is None:
+        return {}
+    key = item.spec.find_existing[1]
+    return (
+        {_OWNER_FIELDS[item.owner[0]][provider]: item.parsed.fields.get(key)} if item.owner else {}
+    )
+
+
+def owner_mismatch(
+    provider: CrmProvider, item: _Item, record_ref: str, values: Mapping[str, object]
+) -> RefusedChange | None:
+    """Whether the CRM record a change writes is the named entity's (Fix round 1, Critical #1):
+    the record Clue knows it by on this connection; else, when Clue knows none, a record whose
+    own email (person) or domain (company), read before the write, is the researched one.
+    ``None`` when it is; the change's refusal otherwise (its index is set by the caller)."""
+    if item.owner is None:
+        return None
+    kind, known, expected = item.owner
+    if known is not None:
+        same = (
+            _sf_key(known) == _sf_key(record_ref)
+            if provider == "salesforce"
+            else str(known) == str(record_ref)
+        )
+    else:
+        held = values.get(_OWNER_FIELDS[kind][provider])
+        if not expected or held in (None, ""):
+            same = False
+        elif kind == "person":
+            same = str(held).strip().lower() == expected.strip().lower()
+        else:
+            same = website_host(held) == website_host(expected)
+    if same:
+        return None
+    return _refused(-1, item, _NOT_THE_PERSON if kind == "person" else _NOT_THE_COMPANY)
+
+
+async def _reversed_writes(
+    conn: AsyncConnection, connection: CrmConnection, items: Mapping[int, _Item]
+) -> dict[str, Mapping[str, Any]]:
+    """The field updates Clue made and the CRM accepted on this connection that the batch's
+    undos name, by write id (``reverses_write_id`` is never taken on the agent's word)."""
+    ids = sorted(
+        {
+            item.proposed.reverses_write_id
+            for item in items.values()
+            if item.proposed.reverses_write_id is not None
+        }
+    )
+    if not ids:
+        return {}
+    rows = await conn.execute(
+        text(
+            "SELECT write_id, object, record_ref, field, before_value::text AS before_value, "
+            "clue_entity_id "
+            "FROM crm_write WHERE write_id = ANY(:ids) AND workspace_id = :ws "
+            "AND connection_id = :connection AND status = 'succeeded' AND kind = 'field_update'"
+        ),
+        {"ids": ids, "ws": connection.workspace_id, "connection": connection.connection_id},
+    )
+    return {
+        str(row.write_id): {
+            **row._mapping,
+            "before_value": None if row.before_value is None else json.loads(row.before_value),
+        }
+        for row in rows
+    }
+
+
+def _undo(item: _Item, reversed_write: Mapping[str, Any] | None) -> _Item | str | None:
+    """Ruling #2/#3: an undo of Clue's own update restores exactly its before-value. The cleared
+    undo (no claim ids, the reversed write's Clue entity), the refusal of an undo that names no
+    such write of this record and field, or ``None`` when the value is not the before-value (the
+    change is then checked like any other)."""
+    if reversed_write is None:
+        return _NOT_AN_UNDO
+    if (
+        reversed_write["object"] != item.parsed.object
+        or str(reversed_write["record_ref"]) != str(item.parsed.record_ref)
+        or set(item.parsed.fields) != {reversed_write["field"]}
+    ):
+        return _NOT_AN_UNDO
+    value = item.parsed.fields[str(reversed_write["field"])]
+    if not same_value(value, reversed_write["before_value"]):
+        return None
+    proposed = dataclasses.replace(item.proposed, clue_entity_id=reversed_write["clue_entity_id"])
+    return dataclasses.replace(item, proposed=proposed, claims={}, owner=None)
 
 
 def _person_target(provider: CrmProvider, field: str, label: str) -> tuple[str, str] | None:
@@ -909,6 +1024,7 @@ def _check_person(
     """The change with each field's claim ids, or why it may not be written."""
     claims: dict[str, tuple[UUID, ...]] = {}
     buying_role: tuple[str, str] | None = None
+    as_researched: dict[str, str] = {}
     for field, value in item.parsed.fields.items():
         meta = metas.get(field)
         label = meta.label if meta else field
@@ -934,8 +1050,58 @@ def _check_person(
                 return f"{named}: {_NOT_RESEARCHED}."
         elif _normalised(value) != _normalised(offered.value):
             return f"{named}: {_NOT_RESEARCHED}."
+        if attribute != "buying_role":
+            as_researched[field] = offered.value
         claims[field] = offered.claim_ids
-    return dataclasses.replace(item, claims=claims, buying_role=buying_role)
+    if item.parsed.change_kind(item.spec) == "create_contact" and not any(
+        _person_target(provider, f, f) == ("work_email", "email") for f in item.parsed.fields
+    ):
+        return "A contact is created only with its verified work email."
+    # Ruling #5: what reaches the CRM is Clue's own spelling, not the agent's.
+    item = _with_values(item, as_researched)
+    email = contact.work_email.value if contact.work_email is not None else None
+    return dataclasses.replace(
+        item,
+        claims=claims,
+        buying_role=buying_role,
+        owner=("person", contact.crm_record_id, email),
+    )
+
+
+def _with_values(item: _Item, values: Mapping[str, object]) -> _Item:
+    """``item`` with these fields set to these values, in its parsed fields and in the arguments
+    sent (an update's properties, a create's own or custom properties; on Salesforce under the
+    action's argument name)."""
+    if not values:
+        return item
+    arguments: dict[str, Any] = {
+        key: (dict(value) if isinstance(value, Mapping) else value)
+        for key, value in item.proposed.arguments.items()
+    }
+    inputs = arguments.get("inputs")
+    if isinstance(inputs, list) and inputs and isinstance(inputs[0], Mapping):
+        first = dict(inputs[0])
+        first["properties"] = dict(first.get("properties") or {})
+        arguments["inputs"] = [first, *inputs[1:]]
+    for field, value in values.items():
+        names = [field, *(arg for arg, sf in _SALESFORCE_CONTACT_ARGS.items() if sf == field)]
+        holders = [arguments]
+        if isinstance(arguments.get("inputs"), list):
+            holders.append(arguments["inputs"][0]["properties"])
+        for nested in ("custom_properties", "custom_fields", "properties"):
+            if isinstance(arguments.get(nested), dict):
+                holders.append(arguments[nested])
+        for holder in holders:
+            name = next((n for n in names if n in holder), None)
+            if name is not None:
+                holder[name] = value
+                break
+    fields = {**item.parsed.fields, **values}
+    return dataclasses.replace(
+        item,
+        proposed=dataclasses.replace(item.proposed, arguments=arguments),
+        parsed=dataclasses.replace(item.parsed, fields=fields),
+    )
 
 
 def _check_company(
@@ -960,7 +1126,15 @@ def _check_company(
             value is True or str(value).strip().lower() == "true"
         ):
             return f"{named}: Clue only sets it to true."
-    return dataclasses.replace(item, claims=claims)
+    if item.spec.find_existing is not None:  # a create: it must be this company's website
+        key = item.spec.find_existing[1]
+        if not account.domain or website_host(item.parsed.fields.get(key)) != website_host(
+            account.domain
+        ):
+            return _NOT_THE_COMPANY
+    return dataclasses.replace(
+        item, claims=claims, owner=("company", account.crm_record_id, account.domain)
+    )
 
 
 async def check_against_targets(
@@ -1006,6 +1180,7 @@ async def check_against_targets(
         contact_ids=person_ids,
     )
 
+    reversed_writes = await _reversed_writes(conn, connection, items)
     cleared: dict[int, _Item] = {}
     refused: list[RefusedChange] = []
     for index, item in items.items():
@@ -1013,6 +1188,17 @@ async def check_against_targets(
         entity_id = str(entity) if entity is not None else None
         object_metas = metas.get(item.parsed.object, {})
         checked: _Item | str = item
+        if (
+            item.proposed.reverses_write_id is not None
+            and item.parsed.change_kind(item.spec) == "field_update"
+        ):
+            undo = _undo(item, reversed_writes.get(str(item.proposed.reverses_write_id)))
+            if isinstance(undo, str):
+                refused.append(_refused(index, item, undo, "crm_write_not_parsable"))
+                continue
+            if undo is not None:
+                cleared[index] = undo
+                continue
         if _person_change(item):
             if item.proposed.clue_entity_id is None:
                 checked = _NAME_THE_CONTACT
@@ -1024,6 +1210,14 @@ async def check_against_targets(
                 contact = contacts[entity_id]
                 checked = _check_person(
                     provider, item, contact, accounts.get(contact.account_entity_id), object_metas
+                )
+        elif _company_change(item) and item.proposed.clue_entity_id is None:
+            unnamed = sorted(_CLUE_ACCOUNT_FIELDS & set(item.parsed.fields))
+            if unnamed:
+                meta = object_metas.get(unnamed[0])
+                checked = (
+                    f"{meta.label if meta else unnamed[0]} ({unnamed[0]}): it comes only from "
+                    "Clue's fit; name the Clue account it is for (clue_entity_id)."
                 )
         elif _company_change(item) and item.proposed.clue_entity_id is not None:
             if entity_id not in owned_accounts:
@@ -1456,7 +1650,10 @@ async def prepare_changes(
     if provider == "hubspot":
         by_record: dict[str, dict[str, list[str]]] = {}
         for item in updates:
-            display = _DISPLAY_FIELDS[provider].get(item.parsed.object, ())
+            display = (
+                *_DISPLAY_FIELDS[provider].get(item.parsed.object, ()),
+                *_owner_field(provider, item),
+            )
             fields = by_record.setdefault(item.parsed.object, {}).setdefault(
                 str(item.parsed.record_ref), []
             )
@@ -1476,6 +1673,7 @@ async def prepare_changes(
             wanted_fields = records.setdefault(str(item.parsed.record_ref), set())
             wanted_fields.update(item.parsed.fields)
             wanted_fields.update(_DISPLAY_FIELDS[provider].get(item.parsed.object, ()))
+            wanted_fields.update(_owner_field(provider, item))
         for object_name, records in by_object.items():
             for record_ref, values in (
                 await _salesforce_field_values(reader, object_name, records)
@@ -1503,6 +1701,10 @@ async def prepare_changes(
                 refused.append(_record_not_found(provider, index, item, record_ref))
                 continue
             values = current[(item.parsed.object, record_ref)]
+            mismatch = owner_mismatch(provider, item, record_ref, values)
+            if mismatch is not None:
+                refused.append(dataclasses.replace(mismatch, index=index))
+                continue
             composed = _with_buying_role(index, item, values)
             if isinstance(composed, RefusedChange):
                 refused.append(composed)
@@ -1541,6 +1743,13 @@ async def prepare_changes(
             builder.whole(item, before=None, after=after)
         elif kind in ("create_contact", "create_company"):
             found = await _find_existing(reader, provider, item)
+            if found is not None:
+                mismatch = owner_mismatch(
+                    provider, item, found[0], {**found[1], **_owner_values(provider, item)}
+                )
+                if mismatch is not None:
+                    refused.append(dataclasses.replace(mismatch, index=index))
+                    continue
             composed = _with_buying_role(index, item, found[1] if found is not None else {})
             if isinstance(composed, RefusedChange):
                 refused.append(composed)

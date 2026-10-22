@@ -349,7 +349,12 @@ def test_a_person_value_is_proposed_only_as_clue_researched_it(tmp_path: Path) -
 
     async def body(conn: Any, seeded: Any, connection: Any) -> None:
         world = await _researched(conn, seeded)
-        gateway = _FakeCrm(records={"101": {"icp_tier": None}, "201": {"jobtitle": None}})
+        gateway = _FakeCrm(
+            records={
+                "101": {"icp_tier": None},
+                "201": {"jobtitle": None, "email": "nick@zafran.io"},
+            }
+        )
 
         def title(value: str, clue_entity_id: str | None) -> CrmChangeInput:
             return CrmChangeInput(

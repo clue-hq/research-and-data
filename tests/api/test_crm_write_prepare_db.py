@@ -76,6 +76,17 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
         {"name": "x_flag", "label": "Do not call", "type": "bool", "fieldType": "booleancheckbox"},
         {"name": "domain", "label": "Company domain name", "type": "string", "fieldType": "text"},
         {
+            # A customer's own picklist whose labels differ from its values (R-11.5).
+            "name": "account_band",
+            "label": "Account band",
+            "type": "enumeration",
+            "fieldType": "select",
+            "options": [
+                {"label": "Tier 1", "value": "tier_1"},
+                {"label": "Tier 2", "value": "tier_2"},
+            ],
+        },
+        {
             "name": "hs_is_target_account",
             "label": "Target Account",
             "type": "bool",
@@ -1205,15 +1216,15 @@ def test_the_card_shows_option_labels_but_keeps_the_values_it_sends(tmp_path: Pa
         # shows as it is; a field with no options is unchanged.
         gateway = _FakeCrm(
             records={
-                "101": {"hs_ideal_customer_profile": None, "name": ""},
-                "102": {"hs_ideal_customer_profile": None, "name": "Moxa"},
-                "103": {"hs_ideal_customer_profile": "legacy", "name": "Orbit"},
+                "101": {"account_band": None, "name": ""},
+                "102": {"account_band": None, "name": "Moxa"},
+                "103": {"account_band": "legacy", "name": "Orbit"},
             }
         )
         changes = [
-            _set_company("101", "hs_ideal_customer_profile", "tier_1"),
-            _set_company("102", "hs_ideal_customer_profile", "tier_1"),
-            _set_company("103", "hs_ideal_customer_profile", "tier_2"),
+            _set_company("101", "account_band", "tier_1"),
+            _set_company("102", "account_band", "tier_1"),
+            _set_company("103", "account_band", "tier_2"),
             _set_company("101", "name", "tier_1 Holdings"),
         ]
         prepared = await _prepare(conn, gateway, connection, proposal_id, changes)
@@ -1227,13 +1238,11 @@ def test_the_card_shows_option_labels_but_keeps_the_values_it_sends(tmp_path: Pa
         assert overwrite["before"] == "legacy" and overwrite["after"] == "Tier 2"
 
         # What is stored and sent stays the internal value.
-        by_record = {
-            p.parsed.record_ref: p for p in prepared if p.field == "hs_ideal_customer_profile"
-        }
+        by_record = {p.parsed.record_ref: p for p in prepared if p.field == "account_band"}
         assert by_record["101"].after == "tier_1"
         assert by_record["101"].arguments == {
             "companyId": "101",
-            "properties": {"hs_ideal_customer_profile": "tier_1"},
+            "properties": {"account_band": "tier_1"},
         }
         assert by_record["103"].before == "legacy" and by_record["103"].after == "tier_2"
         await writes.insert_writes(
@@ -1246,7 +1255,7 @@ def test_the_card_shows_option_labels_but_keeps_the_values_it_sends(tmp_path: Pa
         rows = await conn.execute(
             text(
                 "SELECT after_value #>> '{}' FROM crm_write "
-                "WHERE proposal_id = :p AND field = 'hs_ideal_customer_profile'"
+                "WHERE proposal_id = :p AND field = 'account_band'"
             ),
             {"p": proposal_id},
         )
@@ -2010,9 +2019,9 @@ def test_the_buying_role_is_added_and_never_removes_one(tmp_path: Path) -> None:
         world = await _researched(conn, seeded)
         gateway = _FakeCrm(
             records={
-                "201": {"hs_buying_role": "BLOCKER;END_USER"},
-                "202": {"hs_buying_role": "BLOCKER;END_USER"},
-                "203": {"hs_buying_role": "CHAMPION"},
+                "201": {"hs_buying_role": "BLOCKER;END_USER", "email": "nick@zafran.io"},
+                "202": {"hs_buying_role": "BLOCKER;END_USER", "email": "nick@zafran.io"},
+                "203": {"hs_buying_role": "CHAMPION", "email": "nick@zafran.io"},
             }
         )
 
@@ -2057,9 +2066,13 @@ def test_a_company_tier_must_match_the_fit_band(tmp_path: Path) -> None:
         world = await _researched(conn, seeded)
         gateway = _FakeCrm(
             records={
-                "101": {"hs_ideal_customer_profile": None, "hs_is_target_account": None},
-                "102": {"hs_ideal_customer_profile": None},
-                "103": {"hs_is_target_account": "true"},
+                "101": {
+                    "hs_ideal_customer_profile": None,
+                    "hs_is_target_account": None,
+                    "domain": "zafran.io",
+                },
+                "102": {"hs_ideal_customer_profile": None, "domain": "zafran.io"},
+                "103": {"hs_is_target_account": "true", "domain": "zafran.io"},
             }
         )
 
@@ -2161,3 +2174,351 @@ def test_a_salesforce_website_spelled_differently_finds_the_existing_account(
             )
 
     _run(tmp_path, "sfdomain", body, provider="salesforce")
+
+
+# --- fix round 1: the record is the researched one; Clue's own undo restores its before-value ---
+
+
+def _contact_update(record: str, fields: Mapping[str, object], **extra: Any) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_CONTACTS",
+        {"inputs": [{"id": record, "properties": dict(fields)}]},
+        "x",
+        **extra,
+    )
+
+
+async def _link(
+    conn: Any, seeded: Any, connection: CrmConnection, obj: str, crm_id: str, entity: Any
+) -> None:
+    await writes.record_link(
+        conn,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        crm_object=obj,
+        crm_id=crm_id,
+        created_by_clue=False,
+        clue_entity_id=UUID(str(entity)),
+    )
+
+
+_NOT_THE_PERSON = "This CRM record is not the person Clue researched."
+_NOT_THE_COMPANY = "This CRM record is not the company Clue researched."
+
+
+def test_a_researched_value_on_another_persons_record_is_refused(tmp_path: Path) -> None:
+    """Critical #1: Nick's title written onto John's record is a misattribution. Unlinked, the
+    record's own email decides; linked, the record Clue knows Nick by."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={
+                "201": {"jobtitle": None, "email": "john@zafran.io"},
+                "202": {"jobtitle": None, "email": "Nick@Zafran.io"},
+                "203": {"jobtitle": None},
+            }
+        )
+        title = {"jobtitle": "VP Marketing"}
+        nick = str(world.nick)
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _contact_update("201", title, clue_entity_id=nick),
+                _contact_update("202", title, clue_entity_id=nick),
+                _contact_update("203", title, clue_entity_id=nick),
+            ],
+        )
+        assert [(r.index, r.message) for r in batch.refused] == [
+            (0, _NOT_THE_PERSON),
+            (2, _NOT_THE_PERSON),
+        ]
+        assert [c.parsed.record_ref for c in batch.changes] == ["202"]
+
+        # Linked: the record Clue knows Nick by is the only one, whatever the email says.
+        await _link(conn, seeded, connection, "contact", "203", world.nick)
+        linked = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _contact_update("202", title, clue_entity_id=nick),
+                _contact_update("203", title, clue_entity_id=nick),
+            ],
+        )
+        assert [(r.index, r.message) for r in linked.refused] == [(0, _NOT_THE_PERSON)]
+        assert [c.parsed.record_ref for c in linked.changes] == ["203"]
+
+    _run(tmp_path, "wrongperson", body)
+
+
+def test_a_company_tier_on_another_company_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={
+                "101": {"hs_ideal_customer_profile": None, "domain": "other.example"},
+                "102": {"hs_ideal_customer_profile": None, "domain": "www.zafran.io"},
+            }
+        )
+
+        def tier(record: str) -> ProposedChange:
+            return ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": record, "properties": {"hs_ideal_customer_profile": "tier_1"}},
+                "tier",
+                clue_entity_id=str(world.zafran),
+            )
+
+        batch = await _prepare_batch(
+            conn, gateway, connection, proposal_id, [tier("101"), tier("102")]
+        )
+        assert [(r.index, r.message) for r in batch.refused] == [(0, _NOT_THE_COMPANY)]
+        assert [c.parsed.record_ref for c in batch.changes] == ["102"]
+
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        linked = await _prepare_batch(
+            conn, gateway, connection, proposal_id, [tier("101"), tier("102")]
+        )
+        assert [(r.index, r.message) for r in linked.refused] == [(1, _NOT_THE_COMPANY)]
+
+    _run(tmp_path, "wrongcompany", body)
+
+
+def test_clues_tier_needs_its_account(tmp_path: Path) -> None:
+    """Ruling #4: the ICP tier and the target flag come only from Clue's fit for a named account."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"101": {"hs_ideal_customer_profile": None}})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _set_company("101", "hs_ideal_customer_profile", "tier_1"),
+                _set_company("101", "hs_is_target_account", True),
+            ],
+        )
+        assert _refusal(batch) == [
+            (0, "crm_personal_data_not_allowed"),
+            (1, "crm_personal_data_not_allowed"),
+        ]
+        assert batch.changes == []
+
+    _run(tmp_path, "tiernoaccount", body)
+
+
+def test_an_accepted_person_value_is_sent_as_clue_researched_it(tmp_path: Path) -> None:
+    """Ruling #5: a value accepted by normalisation goes out in Clue's own spelling."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"202": {"jobtitle": None, "email": "nick@zafran.io"}})
+        (update,) = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _contact_update(
+                    "202", {"jobtitle": "  VP   Marketing "}, clue_entity_id=str(world.nick)
+                )
+            ],
+        )
+        assert update.after == "VP Marketing"
+        assert update.arguments == {
+            "inputs": [{"id": "202", "properties": {"jobtitle": "VP Marketing"}}]
+        }
+        (created,) = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_person(
+                    {**_NICK, "email": " NICK@zafran.io", "lastname": "Fisher "}, world.nick
+                )
+            ],
+        )
+        assert created.arguments["email"] == "nick@zafran.io"
+        assert created.arguments["lastname"] == "Fisher"
+        assert created.after == {**_NICK}
+
+    _run(tmp_path, "asresearched", body)
+
+
+async def _succeeded_write(
+    conn: Any,
+    seeded: Any,
+    connection: CrmConnection,
+    *,
+    record: str,
+    field: str,
+    before: object,
+    after: object,
+    clue_entity_id: str | None,
+) -> UUID:
+    """A field update Clue made and the CRM accepted, as the write log holds it."""
+    from clue_api.crm.write_actions import write_spec
+
+    spec = write_spec(connection.provider, "HUBSPOT_UPDATE_CONTACTS")
+    assert spec is not None
+    parsed = spec.parse({"inputs": [{"id": record, "properties": {field: after}}]})
+    change = PreparedChange(
+        write_id=uuid4(),
+        spec=spec,
+        parsed=parsed,
+        field=field,
+        before=before,
+        after=after,
+        overwrites_person=False,
+        scope_key=f"field:contact.{field}",
+        covered_by=None,
+        reason="x",
+        source_ref=None,
+        arguments={"inputs": [{"id": record, "properties": {field: after}}]},
+        clue_entity_id=clue_entity_id,
+    )
+    proposal = uuid4()
+    await writes.insert_proposal(
+        conn,
+        proposal_id=proposal,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        project_id=seeded.project_id,
+        thread_id=seeded.thread_id,
+        turn_id=seeded.turn_id,
+    )
+    await writes.insert_writes(
+        conn,
+        proposal_id=proposal,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        prepared=[change],
+    )
+    await conn.execute(
+        text("UPDATE crm_write SET status = 'succeeded' WHERE write_id = :id"),
+        {"id": change.write_id},
+    )
+    return change.write_id
+
+
+def test_clues_own_undo_restores_its_before_value(tmp_path: Path) -> None:
+    """Ruling #2/#3: an undo of Clue's own succeeded update may restore its before-value (or
+    clear a field that was empty), carries no claim ids and keeps the write's Clue contact."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        nick = str(world.nick)
+        gateway = _FakeCrm(
+            records={
+                "202": {"jobtitle": "VP Marketing", "email": "nick@zafran.io"},
+                "203": {"jobtitle": "VP Marketing", "email": "nick@zafran.io"},
+            }
+        )
+        titled = await _succeeded_write(
+            conn,
+            seeded,
+            connection,
+            record="202",
+            field="jobtitle",
+            before="Director",
+            after="VP Marketing",
+            clue_entity_id=nick,
+        )
+        filled = await _succeeded_write(
+            conn,
+            seeded,
+            connection,
+            record="203",
+            field="jobtitle",
+            before=None,
+            after="VP Marketing",
+            clue_entity_id=nick,
+        )
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _contact_update("202", {"jobtitle": "Director"}, reverses_write_id=titled),
+                _contact_update("203", {"jobtitle": ""}, reverses_write_id=filled),
+            ],
+        )
+        assert batch.refused == []
+        undo, clear = batch.changes
+        assert (undo.after, undo.source_claim_ids, undo.clue_entity_id) == ("Director", (), nick)
+        assert clear.after == "" and clear.clue_entity_id == nick
+
+        # Not its before-value: an undo in name only is checked like any other value.
+        other = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_contact_update("202", {"jobtitle": "CEO"}, reverses_write_id=titled)],
+        )
+        assert _refusal(other) == [(0, "crm_personal_data_not_allowed")]
+
+        # A clear outside such an undo is still refused.
+        cleared = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_contact_update("203", {"jobtitle": ""}, clue_entity_id=nick)],
+        )
+        assert _refusal(cleared) == [(0, "crm_personal_data_not_allowed")]
+
+    _run(tmp_path, "undo", body)
+
+
+def test_an_undo_of_a_write_clue_did_not_make_here_is_refused(tmp_path: Path) -> None:
+    """``reverses_write_id`` is checked server-side: a write of another connection, one that did
+    not succeed, or an id Clue never logged is not an undo."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"202": {"jobtitle": "VP Marketing", "email": "nick@zafran.io"}})
+
+        async def made() -> UUID:
+            return await _succeeded_write(
+                conn,
+                seeded,
+                connection,
+                record="202",
+                field="jobtitle",
+                before="Director",
+                after="VP Marketing",
+                clue_entity_id=str(world.nick),
+            )
+
+        elsewhere, failed = await made(), await made()
+        other = await _connect(conn, seeded.workspace_id, "salesforce")
+        await conn.execute(
+            text("UPDATE crm_write SET connection_id = :c WHERE write_id = :id"),
+            {"c": other.connection_id, "id": elsewhere},
+        )
+        await conn.execute(
+            text("UPDATE crm_write SET status = 'failed' WHERE write_id = :id"), {"id": failed}
+        )
+        message = "This undo does not match a change Clue made."
+        for write_id in (elsewhere, failed, uuid4()):
+            batch = await _prepare_batch(
+                conn,
+                gateway,
+                connection,
+                proposal_id,
+                [_contact_update("202", {"jobtitle": "Director"}, reverses_write_id=write_id)],
+            )
+            assert [(r.reason_code, r.message) for r in batch.refused] == [
+                ("crm_write_not_parsable", message)
+            ]
+
+    _run(tmp_path, "undoforeign", body)
