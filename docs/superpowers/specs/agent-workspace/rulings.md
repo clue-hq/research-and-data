@@ -152,7 +152,9 @@ agent, not only the CRM work.
     `<workspace>/agent-workspace/<sha256>`, as design sessions have `<workspace>/design/<sha256>`.
     Only snapshots ever write there, so "nothing holds it" is one check over snapshot holds and a
     deletion can never touch an upload, a Gallery artifact or a research output even when the
-    bytes are identical. Amends AW-21's first consequence (snapshot files no longer share storage
+    bytes are identical. **The conversation itself is never deleted** by any of this: a chat's
+    messages (`agent_thread_message`) are what every turn's history is loaded from and nothing
+    but a DSAR touches them; the `work/conversation_history/` offload is only a copy. Amends AW-21's first consequence (snapshot files no longer share storage
     with other kinds of file; chats still share identical files with each other). WS-31a is
     dropped: a privacy erasure of research or provider data can no longer land on a chat's file.
 - **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
