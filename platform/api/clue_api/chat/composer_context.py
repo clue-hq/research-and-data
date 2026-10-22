@@ -70,7 +70,9 @@ __all__ = [
 # turn is queued from the message that opened it.
 # v76 grants the CRM reads (`connect_crm`, `find_crm_actions`, `run_crm_action`) and
 # `write_brand_document`, with the `crm-sales-analysis` skill.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v76"
+# v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
+# the `crm-writing` skill.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v77"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

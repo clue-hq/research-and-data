@@ -443,6 +443,10 @@ class Stage0StepPinProvider:
             # CRM integration (recipe0-stage0@36): both carry only the trusted `source_turn_ref`.
             "connect_crm",
             "manage_products",
+            # CRM integration Phase 2 (recipe0-stage0@37): both carry only the trusted
+            # `source_turn_ref`.
+            "manage_crm_grants",
+            "propose_crm_changes",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",
@@ -494,6 +498,9 @@ class Stage0StepPinProvider:
             # project.
             "find_crm_actions",
             "run_crm_action",
+            # ``crm_write_log`` joins at recipe0-stage0@37 on the same terms: its body is a set of
+            # filters, never a project.
+            "crm_write_log",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

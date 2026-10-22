@@ -516,9 +516,10 @@ connect_crm:
 
 find_crm_actions:
   afterwards: >-
-    A list of the connected CRM's read actions that match the search, each with its input schema.
-    Nothing was read from the CRM. Run one with run_crm_action.
-  skill_section: crm-sales-analysis v1 section 3, "Read the setup first".
+    A list of the connected CRM's actions that match the search, each with its input schema and
+    its access. Nothing was read from the CRM. Run a read with run_crm_action; propose a write with
+    propose_crm_changes.
+  skill_section: crm-sales-analysis v1 section 3, "Read the setup first"; crm-writing v1 section 3, "Finding the write action".
   see_also: [tools]
   refusals:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand.
@@ -536,6 +537,7 @@ run_crm_action:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand.
     crm_not_connected: Call connect_crm to ask the person to connect the CRM.
     crm_connection_expired: Call connect_crm; it shows the person a Reconnect card.
+    crm_action_is_a_write: Do not run it; propose the change with propose_crm_changes so the person can approve it (crm-writing section 4).
     crm_action_not_allowed: Use find_crm_actions to find a read action that does what you need, and run that one.
     crm_action_failed: Check the setup you read (field and stage names), fix the arguments the CRM's message points at, and run it again.
     crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
@@ -570,3 +572,55 @@ write_brand_document:
     storage_unavailable: Tell the person brand documents cannot be saved on this deployment right now.
     turn_unavailable: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
     brand_unavailable: Explain that this project's brand is unavailable in the current workspace.
+
+propose_crm_changes:
+  afterwards: >-
+    The changes are recorded as one proposal. State "awaiting_permission" means the chat now shows
+    the person a permission card; state "queued" means a standing permission covers every change
+    and they are being sent. End your turn with one line on what is waiting: the chat continues by
+    itself with the results once the changes are sent.
+  skill_section: crm-writing v1 sections 4 and 6, "One proposal per decision" and "After proposing".
+  see_also: [gates-authority, humans-screens]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot write to the CRM.
+    crm_turn_not_found: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
+    crm_not_connected: Call connect_crm to ask the person to connect the CRM, and propose again once it is connected.
+    crm_connection_expired: Call connect_crm; it shows the person a Reconnect card. Propose again once they reconnect.
+    crm_write_not_allowed: Leave that change out, and tell the person plainly that Clue cannot make this write yet.
+    crm_write_not_parsable: Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again.
+    crm_field_forbidden: Leave that field out of every change and propose again; Clue never writes consent or phone fields, and writes only the allowed fields on a person (crm-writing section 5).
+    crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
+    crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.
+    crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
+    crm_nothing_to_change: Tell the person the CRM already holds those values, so there is nothing to change.
+    crm_action_failed: Check the action's input schema against the CRM's message, fix the arguments, and propose again.
+    crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
+    crm_unavailable: Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now.
+    salesforce_api_disabled: Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot write to it.
+    salesforce_api_share_exhausted: Tell the person Clue has used its share of the org's API calls for today, and propose the changes again tomorrow.
+    salesforce_limits_unavailable: Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not writing to Salesforce.
+
+crm_write_log:
+  afterwards: >-
+    Nothing changed. The rows are what Clue changed or tried to change in the CRM, newest first:
+    each with its write_id, the value before and after, its status, and the CRM's message when it
+    failed. To undo one, propose it again with reverses_write_id (crm-writing section 8).
+  skill_section: crm-writing v1 section 8, "The write log and undo".
+  see_also: [tools]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so there is no write log to read.
+
+manage_crm_grants:
+  afterwards: >-
+    `grants` lists the connected CRM's standing permissions ("Always allow") in plain words. After
+    a revoke, `revoked` is the permission withdrawn, and those changes ask on a card again;
+    `already_revoked: true` means it had been withdrawn before and nothing changed. Permissions
+    are given only on the card, never with this tool.
+  skill_section: crm-writing v1 section 8, "The write log and undo".
+  see_also: [gates-authority]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so there are no permissions to manage.
+    crm_turn_not_found: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
+    crm_not_connected: Tell the person no CRM is connected, so there are no permissions to list or revoke.
+    crm_grant_not_named: List the permissions first, then revoke by the grant_id of the one the person named.
+    crm_grant_not_found: List the permissions again, and revoke by a grant_id from that list.

@@ -291,7 +291,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `find_crm_actions@1`, `run_crm_action@1` and `write_brand_document@1`, the new skill
     # `crm-sales-analysis` v1, `stage0-interview@v49` (section 2b: the CRM step), `manual-*@v22`
     # and recipe 36. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v76",
+    # v77 (2026-10-22, CRM integration Phase 2 - writes): v76's surface plus
+    # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, the new skill
+    # `crm-writing` v1, `stage0-interview@v50` (v49 with its manual paths repointed),
+    # `manual-*@v23` and recipe 37. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v77",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -534,13 +538,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "find_crm_actions": (AgentRole.HEAD_OF_ABM,),
     "run_crm_action": (AgentRole.HEAD_OF_ABM,),
     "write_brand_document": (AgentRole.HEAD_OF_ABM,),
-    # CRM integration Phase 2 (writes): `propose_crm_changes` is registered ungranted; the Phase 2
-    # catalog bump (docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md,
-    # Task 10) grants it to the Head of ABM.
-    "propose_crm_changes": (),
-    # `crm_write_log` and `manage_crm_grants` (Task 8) likewise, until the same bump.
-    "crm_write_log": (),
-    "manage_crm_grants": (),
+    # CRM integration Phase 2 (writes): granted to the Head of ABM at `head-of-abm@v77`
+    # (docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md, Task 10).
+    # `propose_crm_changes` proposes CRM writes that the person approves on a permission card (or
+    # that a standing permission covers); `crm_write_log` reads what Clue changed;
+    # `manage_crm_grants` lists and revokes the standing permissions, and never grants one.
+    "propose_crm_changes": (AgentRole.HEAD_OF_ABM,),
+    "crm_write_log": (AgentRole.HEAD_OF_ABM,),
+    "manage_crm_grants": (AgentRole.HEAD_OF_ABM,),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -766,6 +771,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "find_crm_actions",
                 "run_crm_action",
                 "write_brand_document",
+                # The CRM write tools (head-of-abm@v77) open real permission cards and send real
+                # changes to the workspace's CRM, or revoke a person's standing permission.
+                "propose_crm_changes",
+                "crm_write_log",
+                "manage_crm_grants",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to

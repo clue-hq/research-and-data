@@ -49,6 +49,9 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   find_crm_actions: "Look up CRM actions",
   run_crm_action: "Read from your CRM",
   write_brand_document: "Update brand context",
+  propose_crm_changes: "Propose CRM changes",
+  crm_write_log: "Review CRM changes",
+  manage_crm_grants: "Manage CRM permissions",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {
