@@ -207,10 +207,13 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
             row = (await conn.execute(statement, params)).first()
             if row is None:
                 return "stale", None
+            # ``live()``, never ``entries``: an expired entry's bytes are already gone, and holding
+            # its key would keep that key out of ``before - after`` forever — the retention job
+            # would mark files expired and free nothing (WS-26).
             keys = dict.fromkeys(
                 (
                     manifest_key,
-                    *(agent_workspace_key(workspace_id, e.sha256) for e in manifest.entries),
+                    *(agent_workspace_key(workspace_id, e.sha256) for e in manifest.live()),
                 )
             )
             before = await self._held_keys(conn, workspace_id=workspace_id, thread_id=thread_id)

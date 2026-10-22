@@ -74,6 +74,11 @@ from clue_api.agent_turn_fleet_wiring import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
+from clue_api.agent_workspace_retention import (
+    AgentWorkspaceRetentionJob,
+    run_retention_if_due,
+)
+from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
@@ -254,6 +259,11 @@ _WORK_LEASE_PRUNE_EVERY = timedelta(days=1)
 _LOCAL_IDLE_S = 86400.0
 #: A media download's temp folder older than this belongs to a process that died.
 _MEDIA_TEMP_MAX_AGE_S = 6 * 3600.0
+#: How often a worker ASKS whether the fleet owes its expiry pass — not how often the pass runs
+#: (that is ``agent_workspace_retention_sweep_interval_s``, daily, kept in the database). A check
+#: is one row read, and asking often is what keeps a restarted worker from skipping a whole day.
+#: A constant, not a knob, like ``_WORK_LEASE_PRUNE_EVERY`` above.
+_RETENTION_CHECK_EVERY_S = 300.0
 
 
 async def _orphan_sweep_loop(
@@ -431,6 +441,67 @@ def _start_workspace_cache_sweep(
             _workspace_cache_job(settings, area),
         )
     )
+
+
+async def _workspace_retention_loop(
+    interval_s: float,
+    job: AgentWorkspaceRetentionJob,
+    every: timedelta,
+    *,
+    conn_factory: ConnFactory = transaction,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """Every ``interval_s`` seconds, ask whether the FLEET is due its expiry pass and run it if so.
+
+    ``every`` belongs to the fleet, not to this process:
+    :func:`~clue_api.agent_workspace_retention.run_retention_if_due` keeps the last run in the
+    database, so a restart never resets it and one process runs while the others skip. A fault is
+    logged and the loop continues — expiring old files must never sink run execution."""
+
+    while True:
+        await sleep(interval_s)
+        try:
+            async with conn_factory() as conn:
+                report = await run_retention_if_due(conn, job=job, every=every)
+            if report is not None:
+                log.info(
+                    "fleet.workspace_retention.ran",
+                    chats_checked=report.chats_checked,
+                    chats_expired=report.chats_expired,
+                    files_expired=report.files_expired,
+                    skipped_busy=report.skipped_busy,
+                    stale=report.stale,
+                )
+        except Exception as exc:  # noqa: BLE001 — a cleanup fault must not sink run execution
+            log.warning("fleet.workspace_retention.error", exc_info=True)
+            capture(exc)
+
+
+def _start_workspace_retention(
+    settings: Settings, storage: StorageBackend
+) -> asyncio.Task[None] | None:
+    """Start the F3 Phase 2 expiry job (WS-26, AW-24), or ``None`` when snapshots are off.
+
+    With snapshots off a chat's folder is the only copy of its files and nothing holds them in
+    storage, so there is nothing for this job to expire; the cache sweep's own day-long idle
+    window is the whole of retention then.
+    """
+
+    if not settings.agent_workspace_snapshots_enabled:
+        log.info("fleet.workspace_retention.disabled")
+        return None
+    job = AgentWorkspaceRetentionJob(
+        store=DbWorkspaceSnapshotStore(
+            storage=storage,
+            conn_factory=transaction,
+            concurrency=settings.agent_workspace_transfer_concurrency,
+        ),
+        conn_factory=transaction,
+        raw_s=settings.agent_workspace_raw_retention_s,
+        working_s=settings.agent_workspace_working_retention_s,
+    )
+    every = timedelta(seconds=settings.agent_workspace_retention_sweep_interval_s)
+    return asyncio.create_task(_workspace_retention_loop(_RETENTION_CHECK_EVERY_S, job, every))
 
 
 def _remove_stale_media_dirs(temp_root: Path, *, now: float | None = None) -> int:
@@ -1557,6 +1628,9 @@ async def _serve() -> None:
         )
         _clean_up_at_start(settings, workspace_area)
         workspace_cache_sweep = _start_workspace_cache_sweep(settings, workspace_area)
+        # F3 Phase 2 (WS-26, AW-24): the daily expiry of cold chats' raw inputs and
+        # working files. Its own loop, its own fleet clock in ``maintenance_run``.
+        workspace_retention = _start_workspace_retention(settings, storage)
         exa_discovery = _start_exa_discovery(
             settings,
             secrets=secrets,
@@ -1583,6 +1657,7 @@ async def _serve() -> None:
                 design_reaper,
                 design_event_pruner,
                 workspace_cache_sweep,
+                workspace_retention,
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,
