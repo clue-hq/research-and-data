@@ -90,6 +90,9 @@ class PreparedChange:
     #: The CRM's own label of ``field`` (the card never shows a field id).
     field_label: str | None = None
     reverses_write_id: UUID | None = None
+    #: Each picklist field's option labels by internal value, for the card only (R-11.5); what
+    #: is stored, compared and sent stays the internal value.
+    option_labels: Mapping[str, Mapping[str, str]] = dataclasses.field(default_factory=dict)
 
 
 class WriteRefused(Exception):
@@ -165,6 +168,8 @@ class _FieldMeta:
     options: tuple[str, ...] | None
     #: A multi-select picklist: the value is ``;``-separated.
     multi: bool
+    #: Each option's label by its value, shown on the card instead of the value (R-11.5).
+    option_labels: Mapping[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -309,16 +314,20 @@ async def _field_metas(
         )
         for prop in _list(body, "results", f"the {object_name} fields"):
             options = None
+            labels: dict[str, str] = {}
             if prop.get("type") == "enumeration":
-                options = tuple(
-                    str(option.get("value"))
+                shown = [
+                    option
                     for option in prop.get("options") or []
                     if isinstance(option, Mapping) and not option.get("hidden")
-                )
+                ]
+                options = tuple(str(option.get("value")) for option in shown)
+                labels = _option_labels(prop.get("options"))
             metas[str(prop.get("name"))] = _FieldMeta(
                 str(prop.get("label") or prop.get("name")),
                 options,
                 prop.get("fieldType") == "checkbox",
+                labels,
             )
         return metas
     body = await reader.read(
@@ -327,16 +336,30 @@ async def _field_metas(
     for field in _list(body, "fields", f"the {object_name} fields"):
         kind = field.get("type")
         options = None
+        labels = {}
         if kind in ("picklist", "multipicklist"):
             options = tuple(
                 str(value.get("value"))
                 for value in field.get("picklistValues") or []
                 if isinstance(value, Mapping) and value.get("active", True)
             )
+            labels = _option_labels(field.get("picklistValues"))
         metas[str(field.get("name"))] = _FieldMeta(
-            str(field.get("label") or field.get("name")), options, kind == "multipicklist"
+            str(field.get("label") or field.get("name")), options, kind == "multipicklist", labels
         )
     return metas
+
+
+def _option_labels(options: object) -> dict[str, str]:
+    """Each option's label by its value. Inactive or hidden options keep theirs: a value read
+    from the CRM may still hold one."""
+    if not isinstance(options, list):
+        return {}
+    return {
+        str(option.get("value")): str(option.get("label"))
+        for option in options
+        if isinstance(option, Mapping) and option.get("label") not in (None, "")
+    }
 
 
 def _soql_text(value: object) -> str:
@@ -598,6 +621,7 @@ class _Builder:
             overwrites=overwrites,
             arguments=single_field_arguments(spec, record_ref, field, after),
             field_label=meta.label if meta else field,
+            option_labels=self._option_labels(parsed.object, [field]),
         )
 
     def whole(self, item: _Item, *, before: object, after: object) -> None:
@@ -611,7 +635,18 @@ class _Builder:
             overwrites=False,
             arguments=dict(item.proposed.arguments),
             field_label=None,
+            option_labels=self._option_labels(item.parsed.object, list(item.parsed.fields)),
         )
+
+    def _option_labels(
+        self, object_name: str, fields: Sequence[str]
+    ) -> dict[str, Mapping[str, str]]:
+        metas = self._metas.get(object_name, {})
+        return {
+            field: metas[field].option_labels
+            for field in fields
+            if field in metas and metas[field].option_labels
+        }
 
     def _add(
         self,
@@ -625,6 +660,7 @@ class _Builder:
         overwrites: bool,
         arguments: Mapping[str, object],
         field_label: str | None,
+        option_labels: Mapping[str, Mapping[str, str]],
     ) -> None:
         scope = scope_key(spec, parsed, field)
         grant = (
@@ -646,6 +682,7 @@ class _Builder:
                 arguments=arguments,
                 field_label=field_label,
                 reverses_write_id=item.proposed.reverses_write_id,
+                option_labels=option_labels,
             )
         )
 
@@ -771,6 +808,28 @@ def _display(value: object) -> str:
     return str(value)
 
 
+def _labelled(labels: Mapping[str, str] | None, value: object) -> object:
+    """A picklist value as its option label; a value with no option shows as it is."""
+    if not labels or not isinstance(value, str):
+        return value
+    if value in labels:
+        return labels[value]
+    if ";" in value:  # a multi-select value
+        return "; ".join(labels.get(one, one) for one in value.split(";"))
+    return value
+
+
+def _shown(change: PreparedChange, value: object) -> object:
+    """``value`` of ``change`` as the card shows it: option labels instead of internal values."""
+    if not change.option_labels:
+        return value
+    if isinstance(value, Mapping):  # a create's fields
+        return {key: _labelled(change.option_labels.get(key), one) for key, one in value.items()}
+    if change.field is None:
+        return value
+    return _labelled(change.option_labels.get(change.field), value)
+
+
 def _counts(values: Sequence[object]) -> str:
     counted = Counter(_display(value) for value in values)
     return ", ".join(f"{value} ({count})" for value, count in sorted(counted.items()))
@@ -845,9 +904,11 @@ def card_snapshot(
         if first.field is not None:
             befores = [change.before for change in changes]
             before_text = (
-                "Empty today" if all(same_value(b, None) for b in befores) else _counts(befores)
+                "Empty today"
+                if all(same_value(b, None) for b in befores)
+                else _counts([_shown(c, c.before) for c in changes])
             )
-            summary = f"{before_text} → {_counts([change.after for change in changes])}"
+            summary = f"{before_text} → {_counts([_shown(c, c.after) for c in changes])}"
         groups.append(
             {
                 "kind": first.parsed.change_kind(first.spec),
@@ -864,8 +925,8 @@ def card_snapshot(
                         "write_id": str(change.write_id),
                         "record_ref": change.parsed.record_ref,
                         "name": change.parsed.label,
-                        "before": change.before,
-                        "after": change.after,
+                        "before": _shown(change, change.before),
+                        "after": _shown(change, change.after),
                     }
                     for change in changes
                 ],
@@ -900,8 +961,8 @@ def card_snapshot(
                 "name": change.parsed.label,
                 "field": change.field,
                 "field_label": change.field_label,
-                "before": change.before,
-                "after": change.after,
+                "before": _shown(change, change.before),
+                "after": _shown(change, change.after),
                 "set_by": None,
                 "set_at": None,
                 "set_by_text": "Who set it isn't known",

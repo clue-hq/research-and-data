@@ -55,6 +55,17 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
             "fieldType": "select",
             "options": _TIERS,
         },
+        {
+            "name": "hs_ideal_customer_profile",
+            "label": "Ideal Customer Profile Tier",
+            "type": "enumeration",
+            "fieldType": "radio",
+            "options": [
+                {"label": "Tier 1", "value": "tier_1"},
+                {"label": "Tier 2", "value": "tier_2"},
+                {"label": "Tier 3", "value": "tier_3"},
+            ],
+        },
         {"name": "x_flag", "label": "Do not call", "type": "bool", "fieldType": "booleancheckbox"},
         {"name": "clue_marketing_consent", "label": "Marketing", "type": "string"},
     ],
@@ -78,6 +89,16 @@ _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
                 {"value": "Hospitality", "label": "Hospitality", "active": True},
                 {"value": "Retail", "label": "Retail", "active": True},
                 {"value": "Old", "label": "Old", "active": False},
+            ],
+        },
+        {
+            "name": "Tier__c",
+            "label": "Tier",
+            "type": "picklist",
+            "custom": True,
+            "picklistValues": [
+                {"value": "T1", "label": "Tier One", "active": True},
+                {"value": "T2", "label": "Tier Two", "active": True},
             ],
         },
     ],
@@ -767,3 +788,84 @@ def test_salesforce_records_are_named_by_their_name_then_email(tmp_path: Path) -
         assert any(q.startswith("SELECT Id, Email, Name, Title FROM Contact") for q in queries)
 
     _run(tmp_path, "sflabels", body, provider="salesforce")
+
+
+def test_the_card_shows_option_labels_but_keeps_the_values_it_sends(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        # R-11.5: "Tier 1", not "tier_1". A value with no option (the person's own "legacy")
+        # shows as it is; a field with no options is unchanged.
+        gateway = _FakeCrm(
+            records={
+                "101": {"hs_ideal_customer_profile": None, "name": ""},
+                "102": {"hs_ideal_customer_profile": None, "name": "Moxa"},
+                "103": {"hs_ideal_customer_profile": "legacy", "name": "Orbit"},
+            }
+        )
+        changes = [
+            _set_company("101", "hs_ideal_customer_profile", "tier_1"),
+            _set_company("102", "hs_ideal_customer_profile", "tier_1"),
+            _set_company("103", "hs_ideal_customer_profile", "tier_2"),
+            _set_company("101", "name", "tier_1 Holdings"),
+        ]
+        prepared = await _prepare(conn, gateway, connection, proposal_id, changes)
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+
+        tiers, names = card["groups"]
+        assert tiers["value_summary"] == "Empty today \u2192 Tier 1 (2)"
+        assert {r["after"] for r in tiers["records"]} == {"Tier 1"}
+        assert names["value_summary"] == "Empty today \u2192 tier_1 Holdings (1)"
+        (overwrite,) = card["overwrites"]
+        assert overwrite["before"] == "legacy" and overwrite["after"] == "Tier 2"
+
+        # What is stored and sent stays the internal value.
+        by_record = {
+            p.parsed.record_ref: p for p in prepared if p.field == "hs_ideal_customer_profile"
+        }
+        assert by_record["101"].after == "tier_1"
+        assert by_record["101"].arguments == {
+            "companyId": "101",
+            "properties": {"hs_ideal_customer_profile": "tier_1"},
+        }
+        assert by_record["103"].before == "legacy" and by_record["103"].after == "tier_2"
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=prepared,
+        )
+        rows = await conn.execute(
+            text(
+                "SELECT after_value #>> '{}' FROM crm_write "
+                "WHERE proposal_id = :p AND field = 'hs_ideal_customer_profile'"
+            ),
+            {"p": proposal_id},
+        )
+        assert {row[0] for row in rows.all()} == {"tier_1", "tier_2"}
+
+    _run(tmp_path, "optlabels", body)
+
+
+def test_a_salesforce_card_shows_picklist_labels(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={"001A": {"Tier__c": None, "Name": "Cargoloop"}, "001B": {"Tier__c": None}}
+        )
+        changes = [
+            ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT",
+                {"account_id": rid, "custom_fields": {"Tier__c": value}},
+                "x",
+            )
+            for rid, value in (("001A", "T1"), ("001B", "T2"))
+        ]
+        prepared = await _prepare(
+            conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway)
+        )
+        card = card_snapshot(prepared, provider="salesforce", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["value_summary"] == "Empty today \u2192 Tier One (1), Tier Two (1)"
+        assert sorted(r["after"] for r in group["records"]) == ["Tier One", "Tier Two"]
+        assert sorted(str(p.after) for p in prepared) == ["T1", "T2"]
+
+    _run(tmp_path, "sfoptlabels", body, provider="salesforce")
