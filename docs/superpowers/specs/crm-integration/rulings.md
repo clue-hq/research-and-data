@@ -391,3 +391,10 @@ Related documents:
   definitions (exists, updateable, not forbidden; label and picklist labels from the same read),
   sent through the composite patch as today — about a day with its live test. Not chosen:
   allowlisting `SALESFORCE_UPDATE_RECORD` as a second action.
+- **R-11.10 (2026-10-23)** **A reconnect does not resume a paused batch — and the card says so.**
+  Every reconnect creates a new connection, and Clue never resumes changes across connections, so
+  changes left unsent when a connection lapses are closed and proposed again. The paused card says
+  that plainly instead of "sending carries on once it is reconnected" (final review I-1, option a).
+  Resuming on a same-portal / same-org reconnect (stamping the org id at activation, carrying the
+  queued changes and the record of members Clue added) is not chosen for now. This replaces the
+  "resume in order" part of R-7.2.
