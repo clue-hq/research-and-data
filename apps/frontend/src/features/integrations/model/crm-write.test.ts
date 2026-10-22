@@ -4,6 +4,8 @@ import {
   crmWriteAnswer,
   crmWriteCard,
   crmWriteDoneLine,
+  crmWriteGroupOutcome,
+  crmWriteRefusal,
   crmWriteRecordsCaption,
   groupTickState,
   initialSelection,
@@ -178,4 +180,26 @@ test("wording follows the CRM (list vs campaign, company vs account, singular)",
   // The asking-state titles are the server's own words (card spec §5), shown as sent.
   assert.equal(hubspot.title, "Clue wants to update HubSpot");
   assert.equal(salesforce.title, "Clue wants to update Salesforce");
+});
+
+test("a group where nothing succeeded is shown as failed, with its count", () => {
+  const model = card();
+  assert.deepEqual(
+    crmWriteGroupOutcome("hubspot", model.groups[1]!, {
+      chosen: 2, done: 0, failed: 2, skipped: 0, pending: 0,
+    }),
+    { mark: "failed", line: 'Set "ICP tier" on 0 of 2 companies — 2 failed' },
+  );
+  assert.deepEqual(
+    crmWriteGroupOutcome("hubspot", model.groups[1]!, {
+      chosen: 2, done: 1, failed: 1, skipped: 0, pending: 0,
+    }),
+    { mark: "done", line: 'Set "ICP tier" on 1 of 2 companies' },
+  );
+});
+
+test("a stale card says it can no longer be answered, never to try again", () => {
+  const message = crmWriteRefusal("GATE_SUBJECT_STALE");
+  assert.match(message, /can no longer be answered/);
+  assert.doesNotMatch(message, /try again/i);
 });

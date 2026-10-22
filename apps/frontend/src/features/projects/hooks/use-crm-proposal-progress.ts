@@ -15,8 +15,8 @@ const POLL_INTERVAL_MS = 2000;
  * The progress of a CRM write card's proposal, once the card was answered or withdrawn.
  *
  * Read once when enabled (a declined, replaced or finished card needs it for who answered and
- * why it closed); then re-read every 2 s while the CRM is still being written to and the tab is
- * showing. A failed read changes nothing; the next tick tries again.
+ * why it closed); then re-read 2 s after each read returns, while the CRM is still being written
+ * to and the tab is showing. A failed read changes nothing; the next tick tries again.
  */
 export function useCrmProposalProgress(
   proposalId: string | null,
@@ -29,20 +29,29 @@ export function useCrmProposalProgress(
   useEffect(() => {
     if (!enabled || proposalId === null || !visible) return;
     if (progress !== null && !pending) return;
+    // One read at a time: the next is scheduled only after the last one returned, so an older
+    // response can never land after a newer one. A response after cleanup is dropped.
     let live = true;
-    const read = () =>
-      fetchCrmProposal(proposalId)
-        .then((next) => {
-          if (live) setProgress(next);
-        })
-        .catch(() => undefined);
+    let timer: number | undefined;
+    const read = async () => {
+      try {
+        const next = await fetchCrmProposal(proposalId);
+        if (!live) return;
+        setProgress(next);
+        if (!crmWriteProgressPending(next)) return;
+      } catch {
+        if (!live) return; // a failed read changes nothing; the next tick tries again
+      }
+      timer = window.setTimeout(() => void read(), POLL_INTERVAL_MS);
+    };
     if (progress === null) void read();
-    const timer = window.setInterval(() => void read(), POLL_INTERVAL_MS);
+    else timer = window.setTimeout(() => void read(), POLL_INTERVAL_MS);
     return () => {
       live = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-    // `progress` itself is left out on purpose: only its pending-ness restarts the poll.
+    // `progress` itself is left out on purpose: the chain reads it once at start, and only its
+    // pending-ness (or visibility) restarts the chain.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, proposalId, visible, pending]);
 

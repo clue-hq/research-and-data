@@ -10,7 +10,7 @@ import {
   countsLine,
   crmWriteAnswer,
   crmWriteCardView,
-  crmWriteDoneLine,
+  crmWriteGroupOutcome,
   crmWriteRecordsCaption,
   groupTickState,
   initialSelection,
@@ -414,11 +414,13 @@ function DoneCard({ progress, write }: { progress: CrmProposalProgress | null; w
         {write.groups.map((group, index) => {
           const tally = progress?.groups[index];
           if (!tally || tally.chosen === 0) return null;
+          const outcome = crmWriteGroupOutcome(write.provider, group, tally);
           return (
             <OutcomeGroup
               group={group}
               key={`${group.alwaysAllowPhrase}:${index}`}
-              line={crmWriteDoneLine(write.provider, group, tally)}
+              line={outcome.line}
+              mark={outcome.mark}
             />
           );
         })}
@@ -448,12 +450,20 @@ function DoneCard({ progress, write }: { progress: CrmProposalProgress | null; w
   );
 }
 
-function OutcomeGroup({ group, line }: { group: CrmWriteGroup; line: string }) {
+function OutcomeGroup({
+  group,
+  line,
+  mark,
+}: {
+  group: CrmWriteGroup;
+  line: string;
+  mark: "done" | "failed";
+}) {
   const [open, setOpen] = useState(false);
   return (
     <li className={styles.group}>
       <div className={styles.row}>
-        <Mark kind="done" />
+        <Mark kind={mark} />
         <p className={`${styles.rowText} ${styles.rowBody}`}>{line}</p>
         <Chevron open={open} label={line} onToggle={() => setOpen((value) => !value)} />
       </div>

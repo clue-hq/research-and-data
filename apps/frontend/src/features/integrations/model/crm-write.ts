@@ -311,6 +311,20 @@ export function crmWriteDoneLine(
   }
 }
 
+/**
+ * One group's done-state line and mark: ✓ when at least one change succeeded ("N of M"); ✕ with
+ * the failed/skipped count when none did.
+ */
+export function crmWriteGroupOutcome(
+  provider: CrmProvider,
+  group: CrmWriteGroup,
+  tally: CrmWriteTally,
+): { mark: "done" | "failed"; line: string } {
+  const line = crmWriteDoneLine(provider, group, tally);
+  if (tally.done > 0) return { mark: "done", line };
+  return { mark: "failed", line: `${line} — ${countsLine(tally)}` };
+}
+
 /** A plain message for a refused answer; the card stays as it was (card spec §4). */
 export function crmWriteRefusal(code: string): string {
   switch (code) {
@@ -322,6 +336,8 @@ export function crmWriteRefusal(code: string): string {
       return "One of the ticked changes is no longer part of this proposal. Refresh and try again.";
     case "GATE_REPLACED":
       return "A newer proposal replaced this one.";
+    case "GATE_SUBJECT_STALE":
+      return "This card can no longer be answered. Clue will propose these changes again.";
     case "GATE_ALREADY_ANSWERED":
       return "Someone already answered this card.";
     default:
