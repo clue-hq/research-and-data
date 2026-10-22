@@ -330,7 +330,7 @@ From the code on this branch. File references are for the builder.
 | Profile per turn | each turn starts a new execution of the currently promoted conversation recipe and profile | `agent_turn_fleet_wiring.py:~800-840` |
 | CRM reads registry | `CrmReadSinks`: a per-process map from a turn to its `reads/` folder, filled while the turn holds the lease | `platform/api/clue_api/crm/read_sinks.py`, `fleet_main.py:1120` |
 | Cleanup | an hourly job deletes a thread folder 24 h after its newest turn ended; it skips `awaiting_input`; its receipt id collides on a second purge | `platform/api/clue_api/agent_cleanup.py` |
-| Artifact store | files stored in R2 under `ws/sha256` with an `artifact` row; owners hold references (`retain_artifact`/`release_artifacts`); a 48 h sweep deletes expired, erased or unreferenced files | `libs/clue-storage/clue_storage/artifacts.py` |
+| Artifact store | files stored in R2 under `ws/sha256` with an `artifact` row; owners hold references (`retain_artifact`/`release_artifacts`); a sweep deletes the files of rows already marked erased or expired, and stored files with no `artifact` row. **It does not delete a live row that nothing references any more** (corrected 2026-10-22; `storage_wiring.py:212`, `artifacts.py:459`) | `libs/clue-storage/clue_storage/artifacts.py` |
 | The precedent | design site turns: a version record `(workspace, document) → (version, manifest_sha256)`, a compare-and-set update, a local version note, restore when stale | `clue_design/sessions.py:122-157`, `lumen_api/main.py:12093-12340`, `lumen_agent/session_sync.py` |
 
 What lands in the agent folders today:
@@ -732,7 +732,13 @@ What lands in the agent folders today:
     mechanism (`retain_artifact` / `release_artifacts`, or an equivalent owner table).
   - Each version holds the files it names. Replacing a version releases the files only the old
     version used.
-  - The existing purge then deletes a stored file once no live version references it.
+  - **Nothing deletes a released file today** (corrected 2026-10-22: the existing purge only
+    deletes files whose row is already marked erased or expired, and row-less blobs). So WS-30
+    adds the step: after a save or an erasure releases a version's holds, each released file is
+    checked under its row lock with `erase_if_unreferenced` (it counts snapshot holds and live
+    claims), and one that nothing holds is marked erased; the existing purge then deletes its bytes.
+    A file another chat, an upload or a claim still holds is left alone. In scope for Phase 2
+    (founder, 2026-10-22).
   - Older versions are kept only as long as the builder needs them for the compare-and-set.
     Builder's call: keep the current version only, or the current one plus one.
 - **WS-31 [P2] Chat and project erasure** (narrowed by AW-21). A person's privacy erasure stays as
@@ -755,8 +761,9 @@ What lands in the agent folders today:
 
 - **WS-32 [P2] Manual rewrite.** The workspace chapter of the agent's manual is rewritten to say:
   - what each folder keeps, and for how long;
-  - that `outputs/` and `scratch/` last for the chat;
-  - that `work/` is kept for the chat like `scratch/`, and its compaction folders expire like `reads/`;
+  - that `outputs/` lasts for the chat;
+  - that `scratch/` and `work/` are deleted 30 days after the chat's last activity (AW-22), and
+    `work/`'s compaction folders expire like `reads/`;
   - that `reads/` expire and leave receipts;
   - where the turn-start file list is.
 
@@ -928,6 +935,9 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: corrections. WS-30 and §5's artifact-store row wrongly said the existing purge
+  deletes files nothing references; it does not, so WS-30 now adds that step (kept in Phase 2,
+  founder). WS-32 updated for AW-22.
 - 2026-10-22: AW-23 (founder): P1 may ship without P2 (Q7 decided); the CRM branch merged into
   this one (`7d83e34af`); two pull requests, CRM first.
 - 2026-10-22: AW-22 (founder): `scratch/` and `work/` are deleted 30 days after the chat's last
