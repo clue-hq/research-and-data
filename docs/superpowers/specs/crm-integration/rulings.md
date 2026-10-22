@@ -374,3 +374,11 @@ Related documents:
   Set aside: holding the answer turn until the writes finish (blocks the chat, worse when paused);
   recording the answer with no submission (changes the gate-answer contract every card relies on);
   faking a finished run.
+- **R-11.7 (2026-10-22)** **A missing record refuses only its own change.** When the read before the
+  card finds that a record does not exist (HubSpot 404), that change is refused as
+  `crm_record_not_found` and the rest of the batch goes on the card; the agent tells the person
+  which record was missing. (Live check L6: the whole proposal was refused.)
+- **R-11.8 (2026-10-22)** **List lookup and creation wait for Phase 3.** Clue can add contacts to a
+  HubSpot list but cannot look lists up or create one (live check L5); the list-lookup read and the
+  create-list write (and the Salesforce campaign equivalents) arrive with the target-accounts
+  feature in Phase 3.
