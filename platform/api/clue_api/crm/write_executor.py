@@ -26,7 +26,8 @@ A refusal fails the change with ``failure_kind`` read from the CRM's own error c
 (:func:`failure_kind`) and the CRM's message kept verbatim; it is never retried. A rate limit or an
 unreachable CRM puts the change back to ``queued`` and requeues the task after
 ``CLUE_CRM_WRITE_RETRY_BASE_S * 2**(attempt-1)`` seconds, until ``CLUE_CRM_WRITE_MAX_ATTEMPTS``
-sends, then fails it ``retryable``; a rate limit met by a read counts as an attempt the same way.
+sends, then fails it ``retryable``; a rate limit met by a read counts as an attempt the same way,
+and a change sent whose confirming read keeps failing is failed ``retryable`` at the same cap.
 An expired connection is marked expired and the proposal ``paused``; a connection Composio refuses
 (401/403, or a connected account it no longer knows) pauses it without touching the connection, as
 does Salesforce's API budget running out. A paused proposal resumes only on its own connection: it
@@ -115,6 +116,8 @@ NOT_APPLIED_MESSAGE = "The CRM reported success but the value did not change."
 NOT_CHOSEN_MESSAGE = "Not chosen on the permission card, so it was not sent."
 NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sent."
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
+#: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
+UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
 UNCONFIRMED_MESSAGE = (
     "The CRM was reconnected or switched after this was sent, so Clue could not confirm it; "
     "check the CRM, and propose again if it is missing."
@@ -825,7 +828,8 @@ class CrmWriteHandler:
     async def _read_back(self, crm: _Crm, accepted: Sequence[_Write]) -> None:
         """Confirm the changes the CRM accepted. A stop here leaves them ``sending`` — sent,
         awaiting confirmation — with their attempt neither counted again nor failed: the next
-        run's check confirms them without sending them again."""
+        run's check confirms them without sending them again (a stopped check counts as an
+        attempt, :meth:`_read_stopped`)."""
         back = await _read(crm, accepted)
         await self._record(
             crm,
@@ -835,9 +839,12 @@ class CrmWriteHandler:
 
     async def _read_stopped(self, writes: Sequence[_Write], stop: _Stop) -> bool:
         """The check before sending met a rate limit or an unreachable CRM: that counts as an
-        attempt of each change still waiting to be sent (so the back-off grows), and one past
-        ``MAX_ATTEMPTS`` fails ``retryable``. A change already sent (``sending``, awaiting
-        confirmation) is never counted or failed here. ``True`` when the run must stop."""
+        attempt of each change it read (so the back-off grows), and one at ``MAX_ATTEMPTS`` fails
+        ``retryable``. For a change still waiting to be sent it is a send that did not happen; for
+        one already sent (``sending``, awaiting confirmation) it is a confirming read that did not
+        happen, and at the cap that change is settled as sent but unconfirmed, never sent again
+        (final review I-2: an outage must not leave the card "Sending" for ever). ``True`` when
+        the run must stop."""
         if stop.kind not in ("rate_limited", "unavailable"):
             return True
         ids = [write.write_id for write in writes]
@@ -845,17 +852,18 @@ class CrmWriteHandler:
             rows = await conn.execute(
                 text(
                     "UPDATE crm_write SET attempts = attempts + 1 WHERE write_id = ANY(:ids) "
-                    "AND status = 'queued' RETURNING write_id, attempts"
+                    "AND status IN ('queued', 'sending') RETURNING write_id, status, attempts"
                 ),
                 {"ids": ids},
             )
-            counted = rows.all()
             spent = [
-                row.write_id
-                for row in counted
+                row
+                for row in rows.all()
                 if int(row.attempts) >= self._settings.crm_write_max_attempts
             ]
-            if spent:
+            unsent = [row.write_id for row in spent if row.status == "queued"]
+            unconfirmed = [row.write_id for row in spent if row.status == "sending"]
+            if unsent:
                 await conn.execute(
                     text(
                         "UPDATE crm_write SET status = 'failed', failure_kind = :kind, "
@@ -863,9 +871,22 @@ class CrmWriteHandler:
                         "retryable = true, finished_at = now() WHERE write_id = ANY(:ids)"
                     ),
                     {
-                        "ids": spent,
+                        "ids": unsent,
                         "kind": "rate_limited" if stop.kind == "rate_limited" else "other",
                         **_stop_message(stop),
+                    },
+                )
+            if unconfirmed:
+                await conn.execute(
+                    text(
+                        "UPDATE crm_write SET status = 'failed', failure_kind = 'other', "
+                        "crm_message = :message, crm_response = CAST(:response AS jsonb), "
+                        "retryable = true, finished_at = now() WHERE write_id = ANY(:ids)"
+                    ),
+                    {
+                        "ids": unconfirmed,
+                        "message": UNCONFIRMED_SEND_MESSAGE,
+                        "response": _stop_message(stop)["response"],
                     },
                 )
             undecided = await conn.scalar(

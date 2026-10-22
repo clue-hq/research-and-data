@@ -839,6 +839,47 @@ def test_a_rate_limited_read_counts_as_an_attempt(tmp_path: Path) -> None:
     _run(tmp_path, "readlimit", body)
 
 
+def test_a_confirming_read_that_keeps_failing_settles_the_change(tmp_path: Path) -> None:
+    """Final review I-2: a change sent but never confirmed counts each stopped confirming read as
+    an attempt, backs off, and at the cap is failed (retryable) so the proposal finishes and wakes
+    its chat — it never spins as "sending" for ever."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        limited = ComposioError("rate_limited", 429, "Too many requests")
+        gateway = _WritingCrm(records={"101": {"icp_tier": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
+        handler = _handler(conn, tmp_path, gateway, crm_write_max_attempts=3)
+        # The check before sending passes, the send lands, every read after it is limited.
+        gateway.failures["HUBSPOT_READ_CRM_OBJECT_BY_ID"] = [None, limited, limited, limited]
+
+        first = await _handle(handler, connection)
+        assert first.requeue and first.requeue_after == timedelta(seconds=30)
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["attempts"]) == ("sending", 1)
+
+        second = await _handle(handler, connection)
+        assert second.requeue and second.requeue_after == timedelta(seconds=60)
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["attempts"]) == ("sending", 2)
+
+        third = await _handle(handler, connection)
+        assert not third.requeue
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["failure_kind"], change["retryable"]) == (
+            "failed",
+            "other",
+            True,
+        )
+        assert change["crm_message"] == "Sent; Clue could not confirm it — check the CRM"
+        assert len(gateway.writes) == 1  # never sent again
+        assert await _proposal_status(conn, proposal_id) == "finished"
+        assert await _wake_messages(conn, seeded.workspace_id) == [
+            f"crm-writes-finished:{proposal_id}"
+        ]
+
+    _run(tmp_path, "confirmfail", body)
+
+
 def test_a_refused_connection_pauses_and_a_missing_record_fails_alone(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         gateway = _WritingCrm(records={"101": {"icp_tier": None}, "102": {"icp_tier": None}})
