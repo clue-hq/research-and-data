@@ -580,7 +580,8 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             split=_hubspot_split_results,
         ),
     ),
-    # Schema only — verified at the Phase 2 live check (the test portal has no lists).
+    # Verified live (Phase 3 Task 1, company lists): add answers {recordsIdsAdded}, remove
+    # {recordIdsRemoved}; adding an existing member is successful with empty data.
     WriteActionSpec(
         provider="hubspot",
         slug="HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
@@ -655,8 +656,9 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             split=_salesforce_composite_split("contact_id"),
         ),
     ),
-    # Schema only — verified at the Phase 2 live check (the test org has no campaigns). Adding
-    # fails when the contact is already a member, so read_before checks membership by SOQL.
+    # Verified live (Phase 3 Task 1): answers {id, success, errors}; the member's Status is the
+    # campaign's default ("Sent"). Adding an existing member is refused ("Already a campaign
+    # member.", DUPLICATE_VALUE), so read_before checks membership by SOQL.
     WriteActionSpec(
         provider="salesforce",
         slug="SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
@@ -667,7 +669,7 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=None,
         batch=None,
     ),
-    # Schema only — verified at the Phase 2 live check.
+    # Verified live (Phase 3 Task 1): ``member_id`` takes the contact's id; answers {}.
     WriteActionSpec(
         provider="salesforce",
         slug="SALESFORCE_REMOVE_FROM_CAMPAIGN",
@@ -700,8 +702,8 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=(_SOQL, "Website"),
         batch=None,
     ),
-    # Schema only, live check owed: the test org's user is not a Marketing User (Phase 3 Task 1).
-    # A campaign holds contacts.
+    # Verified live (Phase 3 Task 1 re-run): answers {id, success, errors}; a new campaign is
+    # "Planned". Only a Marketing User may create one. A campaign holds contacts.
     WriteActionSpec(
         provider="salesforce",
         slug="SALESFORCE_CREATE_CAMPAIGN",

@@ -192,9 +192,10 @@ class _WritingCrm(_FakeCrm):
                 }
             }
         if slug == "SALESFORCE_CREATE_CAMPAIGN":
-            campaign_id = f"701A0000000000{len(self.crm_lists)}"
+            # The verified answer (composio-api-notes.md § Phase 3 shapes): an 18-character id.
+            campaign_id = f"701jV00000Hd83x{len(self.crm_lists):03d}"
             self.crm_lists[str(arguments["name"])] = campaign_id
-            return {"id": campaign_id, "success": True, "errors": []}
+            return {"errors": [], "id": campaign_id, "success": True}
         if slug == "HUBSPOT_CREATE_CONTACT":
             record_id = str(500 + len(self.records))
             self.records[record_id] = dict(arguments)
@@ -1614,7 +1615,7 @@ def test_a_created_campaign_is_stored_for_the_project(tmp_path: Path) -> None:
         await _handle(_handler(conn, tmp_path, gateway), connection)
 
         change = await _created(conn, proposal_id)
-        assert (change["status"], change["crm_id"]) == ("succeeded", "701A00000000000")
+        assert (change["status"], change["crm_id"]) == ("succeeded", "701jV00000Hd83x000")
         (kept,) = await lists_for_project(
             conn,
             workspace_id=seeded.workspace_id,
@@ -1622,7 +1623,7 @@ def test_a_created_campaign_is_stored_for_the_project(tmp_path: Path) -> None:
             connection_id=connection.connection_id,
         )
         assert (kept.crm_list_id, kept.crm_object, kept.kind) == (
-            "701A00000000000",
+            "701jV00000Hd83x000",
             "contact",
             "salesforce_campaign",
         )

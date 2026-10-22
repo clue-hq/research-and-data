@@ -165,7 +165,7 @@ HubSpot errors seen (verbatim, `ExecuteResult.error`; long lists cut with `…`)
 |---|---|---|---|---|
 | (a) update account fields | `SALESFORCE_UPDATE_ACCOUNT` ✔ (named snake_case args, cannot clear) or `SALESFORCE_UPDATE_RECORD` ✔ (UI API, any object) | `account_id` + `description`, `industry`, … , `custom_fields{}` / `record_id`, `fields{ApiName: value\|null}`, optional `if_unmodified_since`, `allow_save_on_duplicate` (default false) | `SALESFORCE_PATCH_COMPOSITE_SOBJECTS` ✔ with `external_id_field_name: "Id"` (upsert on Id = update), `sobject_name`, `records[{attributes:{type}, Id, …}]`, `all_or_none`; **200** (verified: 201 → refused by Composio) | `UPDATE_ACCOUNT`: `{}` (204); `UPDATE_RECORD`: the full UI-API record `{apiName, fields{F:{value, displayValue}}, eTag, …}` (large); composite: `{results:[{id, success, created, errors[]}]}` |
 | (b) update contact fields | `SALESFORCE_UPDATE_CONTACT` ✔ or `SALESFORCE_UPDATE_RECORD` | `contact_id` + `title`, `email`, … , `custom_fields{}` | composite as above (`sobject_name: Contact`) | `{}` (204) |
-| (c) add to / remove from a campaign | `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` (refusal probed only — the org has no campaigns); `SALESFORCE_REMOVE_FROM_CAMPAIGN` (schema only) | add: `campaign_id`, `contact_id`, optional `status` (must match a configured member status); remove: `campaign_id` + `member_id` (contact/lead id) or `campaign_member_id` | one member per call; many via `SALESFORCE_POST_COMPOSITE_SOBJECTS` with `CampaignMember` records (200) | add: `{id, success, errors[]}`; remove: `{message}` (schema). Add **fails if already a member** (tool description) — check membership by SOQL first. Leads: `SALESFORCE_ADD_LEAD_TO_CAMPAIGN`. Make one: `SALESFORCE_CREATE_CAMPAIGN` |
+| (c) add to / remove from a campaign | `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` (refusal probed only — the org has no campaigns); `SALESFORCE_REMOVE_FROM_CAMPAIGN` (schema only) | add: `campaign_id`, `contact_id`, optional `status` (must match a configured member status); remove: `campaign_id` + `member_id` (contact/lead id) or `campaign_member_id` | one member per call; many via `SALESFORCE_POST_COMPOSITE_SOBJECTS` with `CampaignMember` records (200) | add: `{id, success, errors[]}`; remove: `{message}` (schema). Add **fails if already a member** (tool description) — check membership by SOQL first. Leads: `SALESFORCE_ADD_LEAD_TO_CAMPAIGN`. Make one: `SALESFORCE_CREATE_CAMPAIGN`. **Verified live 2026-10-23 — see § Phase 3 shapes** (remove answers `{}`, not `{message}`) |
 | (d) create contact | `SALESFORCE_CREATE_CONTACT` (schema only) | `last_name` (required), `first_name`, `email`, `account_id`, … , `custom_fields{}` | `SALESFORCE_POST_COMPOSITE_SOBJECTS` `records[{attributes:{type:"Contact"}, …}]`, `all_or_none`; 200 | `{id, success, errors[]}` (schema) |
 | (e) create account | `SALESFORCE_CREATE_ACCOUNT` (schema only) | `name` (required), `website`, `industry`, … , `custom_fields{}` | composite create, 200 | schema says `{id, success, errors[]}`; the tool's description says `data.response_data.id` — **unverified which**, check on first create |
 | (f) read current values | `SALESFORCE_RUN_SOQL_QUERY` ✔ (exact fields), `SALESFORCE_GET_ACCOUNT` ✔ (all fields), `SALESFORCE_GET_CONTACT_BY_ID` ✔ (`fields` comma list) | `query` / `account_id` / `id, fields` | `SALESFORCE_GET_COMPOSITE_SOBJECTS` `sobject_name, ids[] (≤2000), fields[]` | SOQL `{records[], totalSize, done}`; GET returns the flat record |
@@ -198,8 +198,8 @@ Salesforce errors seen (verbatim `ExecuteResult.error`):
 
 Checked live through `HttpComposioGateway.execute` at the pinned versions (hubspot `20261020_01`,
 salesforce `20261018_00`) with `scripts/crm_phase3_spike.py` (re-runnable; `hubspot` or
-`salesforce` to run one half). **HubSpot is verified end to end. Salesforce stopped at campaign
-create** (see below) — the Salesforce half is owed once the org is fixed.
+`salesforce` to run one half). **Both CRMs are verified end to end** (Salesforce after the
+founder made the test user a Marketing User; see below).
 
 ### HubSpot ABM properties (`HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE` ✔)
 Answer `data = {results: [property…]}` (companies 244 properties, contacts 404). Option values are
@@ -243,32 +243,25 @@ HubSpot list errors seen (verbatim `ExecuteResult.error`; `data` = `{http_error,
 - **List id does not exist** (add to `999999999`) — `{"status":"error","message":"List does not exist with ID 999999999.","correlationId":"…","context":{"listId":["999999999"]},"category":"OBJECT_NOT_FOUND","subCategory":"ListError.LIST_ID_DOES_NOT_EXIST"}`.
 - **List name does not exist** (`GET_CRM_LIST_BY_NAME`) — `{"status":"error","message":"List does not exist with name Clue: spike and object type ID 0-2.","correlationId":"…","context":{"listName":["Clue: spike"],"objectTypeId":["0-2"]},"category":"OBJECT_NOT_FOUND","subCategory":"ListError.LIST_NAME_DOES_NOT_EXIST"}` — the normal "not made yet" answer, not a failure.
 
-### Salesforce campaigns — BLOCKED at create (needs the founder)
-- `SALESFORCE_CREATE_CAMPAIGN` ✔ exists (`name` required; optional `type`, `status`,
-  `is_active`, `start_date`, `end_date`, `parent_id`, `description`, cost fields,
-  `custom_fields{}`). Called with `name: "Clue: spike"` it was **refused**:
-  `successful: false`, `data.status_code: 400`, error
-  `[{"message":"entity type cannot be inserted: Campaign","errorCode":"CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY","fields":[]}]`.
-- Cause (read-only checks): the connected user (`SALESFORCE_WHO_AM_I` →
-  `data.data.user_id`) is a System Administrator with **`User.UserPermissionsMarketingUser =
-  false`**. Salesforce lets only Marketing Users create campaigns. The org has 0 campaigns, so
-  member add/remove and `CampaignMemberStatus` could not be checked either.
-- **Product consequence:** a customer's connected Salesforce user must have "Marketing User"
-  ticked, or campaign create fails with the error above — Clue should recognise
-  `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` on `Campaign` and say so plainly.
-- Still owed after the fix (re-run `scripts/crm_phase3_spike.py salesforce`): the create answer
-  (`{id, success, errors[]}` per schema), the SOQL `SELECT Id, Name, IsActive, Status FROM
-  Campaign WHERE Name = 'Clue: spike'` answer, the default `CampaignMember.Status` and the allowed
-  statuses (`SELECT Label, IsDefault, HasResponded, SortOrder FROM CampaignMemberStatus WHERE
-  CampaignId = …`), `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` (`campaign_id`, `contact_id`, optional
-  `status`) answer and its already-a-member error, `SALESFORCE_REMOVE_FROM_CAMPAIGN`
-  (`campaign_id` + `member_id` or `campaign_member_id`; it deletes the CampaignMember row) answer.
-- **Built from the schema only, live check owed (Task 3, 2026-10-23):** Clue sends
-  `SALESFORCE_CREATE_CAMPAIGN` with `name` alone, reads the new id from the answer's `id`, and
-  before and after sending looks the campaign up by SOQL (`SELECT Id FROM Campaign WHERE Name =
-  '…' LIMIT 2`, by `Id` once it has one). The refusal above is shown to the person as "Your
-  Salesforce user needs the Marketing User permission to create campaigns." (`failure_kind`
-  `permission`, the answer kept). Re-check all of this when the spike's Salesforce half re-runs.
+### Salesforce campaigns (verified 2026-10-23, after the founder made the test user a Marketing User)
+First run: `SALESFORCE_CREATE_CAMPAIGN` was **refused** because the connected user (a System
+Administrator, `User.UserPermissionsMarketingUser = false`) was not a Marketing User:
+`successful: false`, `data.status_code: 400`, error
+`[{"message":"entity type cannot be inserted: Campaign","errorCode":"CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY","fields":[]}]`.
+Clue shows that refusal as "Your Salesforce user needs the Marketing User permission to create
+campaigns." (`failure_kind` `permission`, the answer kept). A customer's connected user must have
+"Marketing User" ticked to create campaigns. Re-run (`scripts/crm_phase3_spike.py salesforce`)
+after the founder ticked it:
+
+| Action | Slug | Arguments | Answer (`data`) |
+|---|---|---|---|
+| create | `SALESFORCE_CREATE_CAMPAIGN` ✔ | `name` (also optional `type`, `status`, `is_active`, dates, `parent_id`, `description`, cost fields, `custom_fields{}` — Clue sends `name` only) | `{"errors": [], "id": "701jV00000Hd83xQAB", "success": true}` — the id is under `id`; the new campaign's `Status` is "Planned" |
+| find | `SALESFORCE_RUN_SOQL_QUERY` ✔ | `SELECT Id, Name, IsActive, Status FROM Campaign WHERE Name = '…'` | the usual `{records, totalSize, done}`; Clue looks up by `Name`, then by `Id` once it has one (names may repeat) |
+| member statuses | `SALESFORCE_RUN_SOQL_QUERY` ✔ | `SELECT Label, IsDefault, HasResponded, SortOrder FROM CampaignMemberStatus WHERE CampaignId = '…' ORDER BY SortOrder` | a new campaign has "Sent" (`IsDefault` true, `HasResponded` false) and "Responded" (`IsDefault` false, `HasResponded` true) |
+| add | `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` ✔ | `campaign_id`, `contact_id` (optional `status`; omitted → the default "Sent") | `{"errors": [], "id": "00vjV000003bbV7QAI", "success": true}` (the CampaignMember id) |
+| add again | `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` ✔ | the same contact | `successful: false`, HTTP 400, error `[{"message":"Already a campaign member.","errorCode":"DUPLICATE_VALUE","fields":[]}]` — Clue's SOQL membership check before sending avoids it |
+| remove | `SALESFORCE_REMOVE_FROM_CAMPAIGN` ✔ | `campaign_id`, **`member_id` = the contact's id** (verified; not the CampaignMember id) | `{}`; the campaign then has 0 members (the CampaignMember row is deleted) |
+
 - Other campaign slugs present at this version (not probed): `SALESFORCE_GET_CAMPAIGN`,
   `SALESFORCE_LIST_CAMPAIGNS`, `SALESFORCE_SEARCH_CAMPAIGNS`, `SALESFORCE_UPDATE_CAMPAIGN`,
   `SALESFORCE_ADD_LEAD_TO_CAMPAIGN`, `SALESFORCE_DELETE_CAMPAIGN` (never allowlist).
@@ -276,4 +269,5 @@ HubSpot list errors seen (verbatim `ExecuteResult.error`; `data` = `{http_error,
 ### Left in the test CRMs
 - HubSpot (Conduit test portal): manual company list **"Clue: spike"** (list id `17`), empty —
   Aldercare was added and removed again. Clue never deletes (R-6.13); delete by hand if wanted.
-- Salesforce (Garner test org): nothing (the campaign was refused).
+- Salesforce (Garner test org): empty campaign **"Clue: spike"** (`701jV00000Hd83xQAB`) — one
+  contact was added and removed again. Clue never deletes; delete by hand if wanted.
