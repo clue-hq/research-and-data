@@ -32,12 +32,24 @@ from clue_api.agent_workspace_snapshots import (
 )
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
-from clue_storage import FsStorage, StorageError
+from clue_storage import (
+    FsStorage,
+    StorageError,
+    agent_workspace_key,
+    artifact_key,
+    is_agent_workspace_key,
+    record_artifact,
+    retain_artifact,
+)
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 WHEN = datetime(2026, 10, 22, 9, 30, tzinfo=UTC)
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _entry(path: str, data: bytes) -> SnapshotEntry:
@@ -52,13 +64,19 @@ def _entry(path: str, data: bytes) -> SnapshotEntry:
 
 
 class CountingStorage(FsStorage):
-    """The filesystem backend, counting puts; ``fail_gets`` makes every read fail like an outage."""
+    """The filesystem backend, counting puts and recording deletes; ``fail_gets`` makes every read
+    fail like an outage."""
 
     def __init__(self, root: Path) -> None:
         super().__init__(root)
         self.puts = 0
         self.fail_gets = False
         self.fail_next_puts = 0
+        self.deletes: list[str] = []
+
+    async def delete(self, key: str) -> None:
+        self.deletes.append(key)
+        await super().delete(key)
 
     async def put(self, key: str, data: bytes, *, media_type: str) -> None:
         self.puts += 1
@@ -117,6 +135,57 @@ async def _save(
         manifest=manifest,
         fence=fence,
     )
+
+
+async def _reference_keys(ws: str, thread: str = "thr-1") -> set[str]:
+    async with transaction() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact_reference WHERE workspace_id = :ws "
+                "AND reference_kind = :kind AND reference_id = :id"
+            ),
+            {"ws": ws, "kind": SNAPSHOT_REFERENCE_KIND, "id": thread},
+        )
+    return {row[0] for row in rows}
+
+
+async def _erasure(key: str) -> tuple[bool, bool]:
+    """``(erased, purged)`` of the artifact row for ``key`` — it must exist."""
+
+    async with transaction() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT erased_at, purged_at FROM artifact WHERE storage_key = :k"),
+                {"k": key},
+            )
+        ).first()
+    assert row is not None, f"no artifact row for {key}"
+    return row[0] is not None, row[1] is not None
+
+
+async def _record_legacy(ws: str, storage: CountingStorage, data: bytes, thread: str) -> str:
+    """A Phase 1 hold: bytes recorded and held under the bare ``{ws}/{sha}`` key."""
+
+    sha = hashlib.sha256(data).hexdigest()
+    key = artifact_key(ws, sha)
+    async with transaction() as conn:
+        await record_artifact(
+            conn,
+            storage_key=key,
+            workspace_id=ws,
+            content_sha256=sha,
+            media_type="text/plain",
+            size_bytes=len(data),
+        )
+        await retain_artifact(
+            conn,
+            workspace_id=ws,
+            storage_key=key,
+            reference_kind=SNAPSHOT_REFERENCE_KIND,
+            reference_id=thread,
+        )
+    await FsStorage.put(storage, key, data, media_type="text/plain")
+    return key
 
 
 def test_first_save_creates_version_1_and_reads_back(tmp_path: Path) -> None:
@@ -250,7 +319,7 @@ def test_references_name_only_the_current_version(tmp_path: Path) -> None:
                 {"ws": ws, "kind": SNAPSHOT_REFERENCE_KIND},
             )
             keys = {row[0] for row in rows}
-        expected_keys = {pointer.manifest_key, f"{ws}/{hashlib.sha256(b'2').hexdigest()}"}
+        expected_keys = {pointer.manifest_key, agent_workspace_key(ws, _sha(b"2"))}
         assert keys == expected_keys
 
     _scenario(body, tmp_path)
@@ -263,7 +332,9 @@ def test_tampered_blob_raises_corrupt(tmp_path: Path) -> None:
         assert pointer is not None
         manifest = await store.read_manifest(workspace_id=ws, pointer=pointer)
         entry = manifest.entries[0]
-        await FsStorage.put(storage, f"{ws}/{entry.sha256}", b"evil", media_type="text/plain")
+        await FsStorage.put(
+            storage, agent_workspace_key(ws, entry.sha256), b"evil", media_type="text/plain"
+        )
         with pytest.raises(SnapshotCorrupt):
             await store.read_file(workspace_id=ws, entry=entry)
 
@@ -395,5 +466,149 @@ def test_a_retry_after_a_failed_upload_stores_the_bytes(tmp_path: Path) -> None:
         )
         assert status == "saved" and pointer is not None
         assert await store.read_file(workspace_id=ws, entry=entry) == data
+
+    _scenario(body, tmp_path)
+
+
+# --- F3 Phase 2 (WS-30, ruling AW-26): own storage area, erase what no snapshot holds ------------
+
+
+def test_files_are_stored_under_the_agent_workspace_area(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        _, pointer = await _save(
+            store, ws, {"scratch/a.md": b"1", "outputs/b.md": b"2"}, expected=None
+        )
+        assert pointer is not None
+        keys = await _reference_keys(ws)
+        assert len(keys) == 3
+        assert all(is_agent_workspace_key(key) for key in keys)
+        assert pointer.manifest_key in keys
+        assert keys >= {agent_workspace_key(ws, _sha(b"1")), agent_workspace_key(ws, _sha(b"2"))}
+        for key in keys:
+            assert await storage.exists(key)
+
+    _scenario(body, tmp_path)
+
+
+def test_a_phase_1_file_is_read_from_the_old_key_and_restored_under_the_new_one(
+    tmp_path: Path,
+) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        data = b"written before Phase 2"
+        entry = _entry("scratch/a.md", data)
+        old_key = await _record_legacy(ws, storage, data, "thr-1")
+
+        assert await store.read_file(workspace_id=ws, entry=entry) == data
+
+        await _save(store, ws, {"scratch/a.md": data}, expected=None)
+        new_key = agent_workspace_key(ws, entry.sha256)
+        assert await storage.exists(new_key)
+        assert new_key in await _reference_keys(ws)
+        # The Phase 1 key is only released: its bytes may belong to an upload (AW-26).
+        assert await _erasure(old_key) == (False, False)
+        assert await storage.exists(old_key)
+        assert await store.read_file(workspace_id=ws, entry=entry) == data
+
+    _scenario(body, tmp_path)
+
+
+def test_a_new_version_erases_the_files_only_the_old_version_used(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        _, first = await _save(
+            store, ws, {"scratch/a.md": b"A", "scratch/b.md": b"B"}, expected=None
+        )
+        assert first is not None
+        kept = agent_workspace_key(ws, _sha(b"A"))
+        dropped = agent_workspace_key(ws, _sha(b"B"))
+
+        _, second = await _save(store, ws, {"scratch/a.md": b"A"}, expected=1)
+        assert second is not None
+
+        assert await _erasure(dropped) == (True, True)
+        assert not await storage.exists(dropped)
+        assert await _erasure(first.manifest_key) == (True, True)
+        assert not await storage.exists(first.manifest_key)
+        assert await _erasure(kept) == (False, False)
+        assert await storage.exists(kept)
+        assert await _erasure(second.manifest_key) == (False, False)
+
+    _scenario(body, tmp_path)
+
+
+def test_a_file_two_chats_hold_survives_one_chat_dropping_it(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        shared = b"both chats wrote this"
+        key = agent_workspace_key(ws, _sha(shared))
+        await _save(store, ws, {"scratch/s.md": shared}, expected=None, thread="thr-x")
+        await _save(store, ws, {"scratch/s.md": shared}, expected=None, thread="thr-y")
+
+        await _save(store, ws, {"scratch/other.md": b"other"}, expected=1, thread="thr-x")
+
+        assert key not in await _reference_keys(ws, "thr-x")
+        assert key in await _reference_keys(ws, "thr-y")
+        assert await _erasure(key) == (False, False)
+        assert await storage.exists(key)
+
+    _scenario(body, tmp_path)
+
+
+def test_forget_erases_every_file_no_other_chat_holds(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        mine, shared = b"only this chat", b"both chats wrote this"
+        mine_key = agent_workspace_key(ws, _sha(mine))
+        shared_key = agent_workspace_key(ws, _sha(shared))
+        _, pointer = await _save(
+            store,
+            ws,
+            {"scratch/m.md": mine, "scratch/s.md": shared},
+            expected=None,
+            thread="thr-x",
+        )
+        assert pointer is not None
+        await _save(store, ws, {"scratch/s.md": shared}, expected=None, thread="thr-y")
+
+        await store.forget(workspace_id=ws, thread_id="thr-x")
+
+        assert await _reference_keys(ws, "thr-x") == set()
+        assert await _erasure(mine_key) == (True, True)
+        assert not await storage.exists(mine_key)
+        assert await _erasure(pointer.manifest_key) == (True, True)
+        assert await _erasure(shared_key) == (False, False)
+        assert await storage.exists(shared_key)
+
+    _scenario(body, tmp_path)
+
+
+def test_erasure_never_touches_a_key_of_another_shape(tmp_path: Path) -> None:
+    """AW-26: a released key outside the agent-workspace area is some other owner's bytes — an
+    upload or a Gallery artifact — and neither a new version nor a forget may erase it."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        data = b"an upload's bytes"
+        legacy = await _record_legacy(ws, storage, data, "thr-1")
+
+        await _save(store, ws, {"scratch/a.md": b"new"}, expected=None)
+        assert legacy not in await _reference_keys(ws)
+        assert await _erasure(legacy) == (False, False)
+        assert await storage.exists(legacy)
+
+        async with transaction() as conn:
+            await retain_artifact(
+                conn,
+                workspace_id=ws,
+                storage_key=legacy,
+                reference_kind=SNAPSHOT_REFERENCE_KIND,
+                reference_id="thr-1",
+            )
+        await store.forget(workspace_id=ws, thread_id="thr-1")
+        assert await _erasure(legacy) == (False, False)
+        assert await storage.exists(legacy)
+        assert legacy not in storage.deletes
 
     _scenario(body, tmp_path)

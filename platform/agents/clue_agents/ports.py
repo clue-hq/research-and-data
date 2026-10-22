@@ -224,6 +224,11 @@ class WorkspaceSnapshotStore(Protocol):
     F3 (spec WS-1–WS-3, WS-8): ``save`` moves the record with a compare-and-set on the version the
     turn restored, and only while the fence still holds the chat's fleet lease. Implemented over
     Postgres and the artifact store in ``clue_api.agent_workspace_snapshots``.
+
+    The files live in the chat's own storage area (WS-30), so ``save`` and ``forget`` also erase
+    the ones they released that no other snapshot still holds. Nothing outside that area is ever
+    erased — bytes a person can see (uploads, Gallery artifacts, evidence snapshots) are some
+    other owner's, however exactly they match a chat's file (ruling AW-26).
     """
 
     async def current(self, *, workspace_id: str, thread_id: str) -> SnapshotPointer | None: ...

@@ -9,8 +9,16 @@ so a worker that lost the chat's lease, or a turn that raced another, never over
 version. Files are always stored before the row moves, so a row never names missing bytes.
 
 The snapshot's files are held through ``artifact_reference`` rows of kind
-:data:`SNAPSHOT_REFERENCE_KIND`, which always name exactly the current version; Phase 2 erases what
-nothing references any more.
+:data:`SNAPSHOT_REFERENCE_KIND`, which always name exactly the current version.
+
+F3 Phase 2 (WS-30, ruling AW-26) gives those files their own storage area — ``agent_workspace_key``
+writes ``{workspace}/agent-workspace/{sha}`` — and makes a save or a forget erase the keys it
+released that no other snapshot still holds. The area is what makes that safe: a released key of
+any other shape is some other owner's bytes (an upload, a Gallery artifact, an evidence snapshot)
+that merely deduped onto the same content address, so erasure is guarded by
+:func:`~clue_storage.is_agent_workspace_key` and never touches one. Phase 1 bytes still live under
+the bare ``{workspace}/{sha}`` key, so a read falls back to it and a re-save simply re-stores the
+bytes in the new area and releases the old key without erasing it.
 """
 
 from __future__ import annotations
@@ -44,8 +52,12 @@ from clue_storage import (
     ArtifactRecord,
     StorageBackend,
     StorageError,
+    agent_workspace_key,
     artifact_key,
+    erase_if_unreferenced,
     get_artifact,
+    is_agent_workspace_key,
+    purge_erased_artifacts,
     record_artifact,
     release_artifacts,
     retain_artifact,
@@ -77,6 +89,10 @@ _TOUCH = text(
 _FORGET = text(
     "DELETE FROM agent_workspace_snapshot WHERE workspace_id = :ws AND thread_id = :thread"
 )
+_HELD = text(
+    "SELECT storage_key FROM artifact_reference WHERE workspace_id = :ws "
+    "AND reference_kind = :kind AND reference_id = :thread"
+)
 
 
 class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
@@ -107,7 +123,7 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
     ) -> SnapshotManifest:
         data = await self._read_verified(
             workspace_id=workspace_id,
-            key=pointer.manifest_key,
+            keys=(pointer.manifest_key,),
             sha256=pointer.manifest_sha256,
             size=None,
         )
@@ -116,7 +132,10 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
     async def read_file(self, *, workspace_id: str, entry: SnapshotEntry) -> bytes:
         return await self._read_verified(
             workspace_id=workspace_id,
-            key=artifact_key(workspace_id, entry.sha256),
+            keys=(
+                agent_workspace_key(workspace_id, entry.sha256),
+                artifact_key(workspace_id, entry.sha256),
+            ),
             sha256=entry.sha256,
             size=entry.size,
         )
@@ -161,7 +180,7 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
     ) -> tuple[SaveStatus, SnapshotPointer | None]:
         body = encode_manifest(manifest)
         manifest_sha = hashlib.sha256(body).hexdigest()
-        manifest_key = artifact_key(workspace_id, manifest_sha)
+        manifest_key = agent_workspace_key(workspace_id, manifest_sha)
         await self._store_one(
             workspace_id=workspace_id,
             sha256=manifest_sha,
@@ -188,15 +207,18 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
             row = (await conn.execute(statement, params)).first()
             if row is None:
                 return "stale", None
-            await self._hold_current(
-                conn,
-                workspace_id=workspace_id,
-                thread_id=thread_id,
-                keys=(
+            keys = dict.fromkeys(
+                (
                     manifest_key,
-                    *(artifact_key(workspace_id, e.sha256) for e in manifest.entries),
-                ),
+                    *(agent_workspace_key(workspace_id, e.sha256) for e in manifest.entries),
+                )
             )
+            before = await self._held_keys(conn, workspace_id=workspace_id, thread_id=thread_id)
+            await self._hold_current(
+                conn, workspace_id=workspace_id, thread_id=thread_id, keys=tuple(keys)
+            )
+            marked = await self._erase_released(conn, before=before, after=set(keys))
+        await self._purge(marked)
         return "saved", SnapshotPointer(
             version=int(row[0]), manifest_sha256=manifest_sha, manifest_key=manifest_key
         )
@@ -206,23 +228,27 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
             await conn.execute(_TOUCH, {"ws": workspace_id, "thread": thread_id})
 
     async def forget(self, *, workspace_id: str, thread_id: str) -> None:
-        """Delete the chat's version record and its holds; Phase 2 erases the bytes (WS-31)."""
+        """Delete the chat's version record and its holds, and erase the files of its own area
+        that no other snapshot still holds (WS-31)."""
 
         async with self._conn_factory() as conn:
             await conn.execute(_FORGET, {"ws": workspace_id, "thread": thread_id})
+            before = await self._held_keys(conn, workspace_id=workspace_id, thread_id=thread_id)
             await release_artifacts(
                 conn,
                 workspace_id=workspace_id,
                 reference_kind=SNAPSHOT_REFERENCE_KIND,
                 reference_id=thread_id,
             )
+            marked = await self._erase_released(conn, before=before, after=set())
+        await self._purge(marked)
 
     # --- internals ------------------------------------------------------------------------------
 
     async def _store_one(
         self, *, workspace_id: str, sha256: str, media_type: str, data: bytes
     ) -> bool:
-        key = artifact_key(workspace_id, sha256)
+        key = agent_workspace_key(workspace_id, sha256)
         async with self._conn_factory() as conn:
             existing = await get_artifact(conn, key)
             live = (
@@ -273,13 +299,66 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
                 reference_id=thread_id,
             )
 
-    async def _read_verified(
-        self, *, workspace_id: str, key: str, sha256: str, size: int | None
-    ) -> bytes:
+    async def _held_keys(
+        self, conn: AsyncConnection, *, workspace_id: str, thread_id: str
+    ) -> set[str]:
+        """The storage keys this chat's snapshot holds right now."""
+
+        rows = await conn.execute(
+            _HELD, {"ws": workspace_id, "kind": SNAPSHOT_REFERENCE_KIND, "thread": thread_id}
+        )
+        return {str(row[0]) for row in rows}
+
+    async def _erase_released(
+        self, conn: AsyncConnection, *, before: set[str], after: set[str]
+    ) -> tuple[str, ...]:
+        """Phase 1 of erasure for every key this chat has let go of: stamp ``erased_at`` on the
+        ones nothing else holds, and return them for the post-commit purge.
+
+        Only keys in the chat's own storage area are candidates (ruling AW-26). A released key of
+        another shape is a Phase 1 snapshot's, and those bytes may equally be an upload's or a
+        Gallery artifact's — releasing the hold is the whole of what this chat may do to them.
+        """
+
+        marked: list[str] = []
+        for key in sorted(before - after):
+            if not is_agent_workspace_key(key):
+                continue
+            if await erase_if_unreferenced(conn, key):
+                marked.append(key)
+        return tuple(marked)
+
+    async def _purge(self, keys: tuple[str, ...]) -> None:
+        """Phase 2 of erasure: delete the blobs, in a fresh transaction after the one that
+        stamped ``erased_at`` committed (``clue_storage.artifacts`` module docstring — storage is
+        never mutated inside the transaction whose rollback would have to undo it)."""
+
+        if not keys:
+            return
         async with self._conn_factory() as conn:
-            record = await get_artifact(conn, key)
-        if record is None or not _is_live(record) or record.workspace_id != workspace_id:
-            raise SnapshotCorrupt(f"snapshot file {key} is not a live artifact of this workspace")
+            await purge_erased_artifacts(conn, self._storage, keys=keys)
+
+    async def _read_verified(
+        self, *, workspace_id: str, keys: Sequence[str], sha256: str, size: int | None
+    ) -> bytes:
+        """Read the first of ``keys`` whose artifact row is live, and verify what comes back.
+
+        A file is tried in its own area first and under its Phase 1 key second, so a chat whose
+        snapshot predates the area still restores. A key whose row is live but whose bytes are
+        missing or wrong is :class:`SnapshotCorrupt`, never a reason to try the next candidate —
+        a live row is the claim that these are the bytes.
+        """
+
+        async with self._conn_factory() as conn:
+            for candidate in keys:
+                record = await get_artifact(conn, candidate)
+                if record is not None and _is_live(record) and record.workspace_id == workspace_id:
+                    key = candidate
+                    break
+            else:
+                raise SnapshotCorrupt(
+                    f"snapshot file {keys[0]} is not a live artifact of this workspace"
+                )
         try:
             data = await self._storage.get(key)
         except ArtifactNotFound as exc:
