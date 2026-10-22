@@ -180,7 +180,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `crm-sales-analysis@v1`, stage0-interview@v49 and manual@v22.
         # v77 (2026-10-22, CRM integration Phase 2): three CRM write tools granted; the new
         # `crm-writing@v1`, stage0-interview@v50 and manual@v23.
-        AgentRole.HEAD_OF_ABM: ("e70cb0f5946ed843489ae0811209dd7e7deb00bb282f00411dccb360aef89c89"),
+        AgentRole.HEAD_OF_ABM: ("8f3deca4cff1e5d4b391e3f9d542184ce0f934866d77d4830ba643a714e4a5c3"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

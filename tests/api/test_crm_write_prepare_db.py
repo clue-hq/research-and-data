@@ -19,11 +19,13 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.crm import writes
-from clue_api.crm.composio_gateway import ExecuteResult
+from clue_api.crm.composio_gateway import ComposioError, ExecuteResult
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.write_prepare import (
+    PreparedBatch,
     PreparedChange,
     ProposedChange,
+    RefusedChange,
     WriteRefused,
     card_snapshot,
     prepare_changes,
@@ -108,6 +110,15 @@ _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
 }
 
 
+#: HubSpot's answer to reading a record that is not there (HTTP 404 inside a refused call).
+HUBSPOT_NOT_FOUND = ExecuteResult(
+    False,
+    {"http_error": "404", "status_code": 404, "message": "Not Found"},
+    '{"status":"error","message":"Object not found.  objectId are usually numeric.",'
+    '"category":"OBJECT_NOT_FOUND"}',
+)
+
+
 class _FakeCrm:
     """Answers the read actions preparation uses; every call is recorded."""
 
@@ -117,9 +128,15 @@ class _FakeCrm:
         records: Mapping[str, Mapping[str, Any]] | None = None,
         lists: Mapping[str, list[str]] | None = None,
         malformed: frozenset[str] = frozenset(),
+        missing: frozenset[str] = frozenset(),
+        failing: Mapping[str, ExecuteResult | Exception] | None = None,
     ) -> None:
         #: Reads answered with a body of an unexpected shape.
         self.malformed = malformed
+        #: HubSpot record ids the CRM does not have: reading one by id answers 404.
+        self.missing = missing
+        #: Reads that fail: a refused call (its result) or no answer at all (the exception).
+        self.failing = dict(failing or {})
         self.records = {key: dict(value) for key, value in (records or {}).items()}
         self.lists = dict(lists or {})
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -135,6 +152,13 @@ class _FakeCrm:
     ) -> ExecuteResult:
         del connected_account_id, user_id, version
         self.calls.append((slug, dict(arguments)))
+        failure = self.failing.get(slug)
+        if isinstance(failure, Exception):
+            raise failure
+        if failure is not None:
+            return failure
+        if slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID" and str(arguments["objectId"]) in self.missing:
+            return HUBSPOT_NOT_FOUND
         if slug in self.malformed:
             return ExecuteResult(True, {"data": {"message": "unexpected"}}, None)
         return ExecuteResult(True, {"data": self._answer(slug, arguments)}, None)
@@ -209,6 +233,19 @@ async def _prepare(
     changes: list[ProposedChange],
     budget: Any = None,
 ) -> list[PreparedChange]:
+    batch = await _prepare_batch(conn, gateway, connection, proposal_id, changes, budget)
+    assert batch.refused == []
+    return batch.changes
+
+
+async def _prepare_batch(
+    conn: Any,
+    gateway: _FakeCrm,
+    connection: CrmConnection,
+    proposal_id: UUID,
+    changes: list[ProposedChange],
+    budget: Any = None,
+) -> PreparedBatch:
     return await prepare_changes(
         conn,
         gateway=gateway,
@@ -606,23 +643,153 @@ def test_clue_removes_only_members_it_added(tmp_path: Path) -> None:
     _run(tmp_path, "removal", body)
 
 
-def test_a_salesforce_record_the_read_does_not_return_is_refused_not_shown_as_empty(
+def _not_found(index: int, slug: str, record_ref: str, message: str) -> RefusedChange:
+    return RefusedChange(
+        index=index,
+        slug=slug,
+        record_ref=record_ref,
+        reason_code="crm_record_not_found",
+        message=message,
+    )
+
+
+def test_a_missing_hubspot_record_refuses_only_its_own_change(tmp_path: Path) -> None:
+    """R-11.7 (live check L6): HubSpot's 404 for one company refused the whole batch."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={
+                "101": {"icp_tier": "Tier 3", "name": "Cargoloop"},
+                "102": {"icp_tier": None, "name": "Stackfield"},
+            },
+            missing=frozenset({"999999999999"}),
+        )
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _set_company("101", "icp_tier", "Tier 1"),
+                _set_company("999999999999", "icp_tier", "Tier 1"),
+                _set_company("102", "icp_tier", "Tier 2"),
+            ],
+        )
+        assert batch.refused == [
+            _not_found(
+                1,
+                "HUBSPOT_UPDATE_COMPANY",
+                "999999999999",
+                "HubSpot has no company 999999999999.",
+            )
+        ]
+        assert [
+            (p.parsed.record_ref, p.parsed.label, p.field, p.before, p.after) for p in batch.changes
+        ] == [
+            ("101", "Cargoloop", "icp_tier", "Tier 3", "Tier 1"),
+            ("102", "Stackfield", "icp_tier", None, "Tier 2"),
+        ]
+
+    _run(tmp_path, "hsmissing", body)
+
+
+def test_a_salesforce_record_the_read_does_not_return_refuses_only_its_own_change(
     tmp_path: Path,
 ) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
-        gateway = _FakeCrm(records={"001A": {"Industry": None}})
+        gateway = _FakeCrm(
+            records={
+                "001A": {"Industry": "Retail", "Name": "Aldercare"},
+                "001B": {"Industry": None, "Name": "Birchwood"},
+            }
+        )
         changes = [
             ProposedChange(
                 "SALESFORCE_UPDATE_ACCOUNT", {"account_id": rid, "industry": "Hospitality"}, "x"
             )
-            for rid in ("001A", "001Z")
+            for rid in ("001A", "001Z", "001B")
         ]
-        with pytest.raises(WriteRefused) as refused:
-            await _prepare(conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway))
-        assert refused.value.reason_code == "crm_read_failed"
-        assert "001Z" in str(refused.value) and "001A" not in str(refused.value)
+        batch = await _prepare_batch(
+            conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway)
+        )
+        assert batch.refused == [
+            _not_found(1, "SALESFORCE_UPDATE_ACCOUNT", "001Z", "Salesforce has no account 001Z.")
+        ]
+        # Never shown as empty: the missing account is not on the card at all.
+        assert [(p.parsed.record_ref, p.before, p.after) for p in batch.changes] == [
+            ("001A", "Retail", "Hospitality"),
+            ("001B", None, "Hospitality"),
+        ]
 
     _run(tmp_path, "sfmissing", body, provider="salesforce")
+
+
+def test_a_batch_whose_every_record_is_missing_prepares_nothing_and_lists_each(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(missing=frozenset({"901", "902"}))
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company("901", "icp_tier", "Tier 1"), _set_contact("902", {"jobtitle": "COO"})],
+        )
+        assert batch.changes == []
+        assert batch.refused == [
+            _not_found(0, "HUBSPOT_UPDATE_COMPANY", "901", "HubSpot has no company 901."),
+            _not_found(1, "HUBSPOT_UPDATE_CONTACTS", "902", "HubSpot has no contact 902."),
+        ]
+
+    _run(tmp_path, "allmissing", body)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ExecuteResult(
+            False,
+            {"http_error": "401", "status_code": 401},
+            '{"status":"error","message":"Authentication credentials not found.",'
+            '"category":"INVALID_AUTHENTICATION"}',
+        ),
+        ExecuteResult(
+            False,
+            {"http_error": "429", "status_code": 429},
+            '{"status":"error","message":"You have reached your secondly limit.",'
+            '"category":"RATE_LIMITS"}',
+        ),
+        ExecuteResult(False, {"http_error": "502", "status_code": 502}, "Bad Gateway"),
+    ],
+)
+def test_a_read_that_fails_for_any_other_reason_still_refuses_the_whole_batch(
+    tmp_path: Path, failure: ExecuteResult
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={"101": {"icp_tier": None}},
+            failing={"HUBSPOT_READ_CRM_OBJECT_BY_ID": failure},
+        )
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare_batch(
+                conn, gateway, connection, proposal_id, [_set_company("101", "icp_tier", "Tier 1")]
+            )
+        assert refused.value.reason_code == "crm_read_failed"
+
+    _run(tmp_path, "readfail", body)
+
+
+def test_a_read_with_no_answer_is_not_taken_for_a_missing_record(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        unreachable = ComposioError("unavailable", None, "ConnectTimeout")
+        gateway = _FakeCrm(failing={"HUBSPOT_READ_CRM_OBJECT_BY_ID": unreachable})
+        with pytest.raises(ComposioError):
+            await _prepare_batch(
+                conn, gateway, connection, proposal_id, [_set_company("101", "icp_tier", "Tier 1")]
+            )
+
+    _run(tmp_path, "noanswer", body)
 
 
 @pytest.mark.parametrize(

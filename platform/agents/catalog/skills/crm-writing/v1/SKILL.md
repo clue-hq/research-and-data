@@ -27,7 +27,7 @@ tools:
   - name: propose_crm_changes
     version: "1"
     input_schema_sha256: 4df276a6bfc8255bf2ddbec8e832de2daac96c9009de955532c0c02724f0f8b5
-    output_schema_sha256: 52ca0f17baa566220dd48df63579a570c4a8bfd20be3f12ded64a4fbb85a4a13
+    output_schema_sha256: d8227de9b75aeaefd1757ae6ce8fb094128f60b7223554d8ab23f8cb3e7ef587
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---

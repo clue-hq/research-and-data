@@ -8,11 +8,12 @@ permission covers), R-6.25 call 11 (when the CRM cannot tell who set a value, a 
 person carries only name, job title, company link, work email, buying role and LinkedIn URL).
 
 :func:`prepare_changes` refuses the whole batch (:class:`WriteRefused`) when any change may not be
-written, so nothing reaches a card or the write log. Otherwise it returns one
-:class:`PreparedChange` per (record, field) — a change setting three fields is three — each with
-the value the CRM holds today. A change that would not change anything is dropped. Reading
-before-values is the only CRM traffic here, and on Salesforce every call is taken from the
-org's API budget first (R-7.5).
+written, so nothing reaches a card or the write log. The one exception is a record the CRM does
+not have (R-11.7): that change alone is left out as a :class:`RefusedChange`
+(``crm_record_not_found``) and the rest go on. Otherwise it returns one :class:`PreparedChange`
+per (record, field) — a change setting three fields is three — each with the value the CRM holds
+today. A change that would not change anything is dropped. Reading before-values is the only CRM
+traffic here, and on Salesforce every call is taken from the org's API budget first (R-7.5).
 """
 
 from __future__ import annotations
@@ -28,7 +29,12 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.crm.composio_gateway import ComposioGateway, CrmProvider, composio_user_id
+from clue_api.crm.composio_gateway import (
+    ComposioGateway,
+    CrmProvider,
+    ExecuteResult,
+    composio_user_id,
+)
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.write_actions import (
     ParsedChange,
@@ -50,8 +56,10 @@ from clue_api.crm.writes import (
 )
 
 __all__ = [
+    "PreparedBatch",
     "PreparedChange",
     "ProposedChange",
+    "RefusedChange",
     "WriteRefused",
     "card_snapshot",
     "prepare_changes",
@@ -95,6 +103,27 @@ class PreparedChange:
     option_labels: Mapping[str, Mapping[str, str]] = dataclasses.field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class RefusedChange:
+    """One proposed change left out of the batch while the rest go on (R-11.7)."""
+
+    #: Its position in the proposed batch, counting from 0.
+    index: int
+    slug: str
+    record_ref: str | None
+    #: ``crm_record_not_found``: the read before the card found no such record.
+    reason_code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class PreparedBatch:
+    #: What goes on the card (or is sent under a standing permission).
+    changes: list[PreparedChange]
+    #: The changes left out, each with why.
+    refused: list[RefusedChange]
+
+
 class WriteRefused(Exception):
     """A proposed change Clue may not write; the batch stops before any card.
 
@@ -103,7 +132,8 @@ class WriteRefused(Exception):
     ``crm_value_not_allowed`` (not one of the field's picklist values),
     ``crm_removal_not_allowed`` (a list or campaign member Clue did not add, R-6.25 call 12),
     ``crm_read_failed`` (the CRM's answer to a read needed to show the change was an error or not
-    the expected shape; an unreadable value is never taken as empty).
+    the expected shape; an unreadable value is never taken as empty). A record the CRM does not
+    have is not a failed read: it refuses only its own change (:class:`RefusedChange`).
     """
 
     def __init__(self, reason_code: str, message: str) -> None:
@@ -251,26 +281,57 @@ class _Reader:
         self._version = version
 
     async def read(self, slug: str, arguments: Mapping[str, Any]) -> Any:
+        result = await self._call(slug, arguments)
+        if not result.successful:
+            raise self._failed(result)
+        return _unwrap(result.data)
+
+    async def read_record(self, slug: str, arguments: Mapping[str, Any]) -> Any | None:
+        """A read of one record by its id: ``None`` when the CRM says there is no such record
+        (HubSpot's 404). Any other failure refuses the batch, like :meth:`read`."""
+        result = await self._call(slug, arguments)
+        if not result.successful:
+            if _record_missing(result):
+                return None
+            raise self._failed(result)
+        return _unwrap(result.data)
+
+    async def _call(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult:
         if self._connection.provider == "salesforce":
             if self._budget is None:
                 raise ValueError("Salesforce reads need the API budget.")
             await self._budget.take_call(
                 self._conn, connection=self._connection, today=datetime.now(UTC).date()
             )
-        result = await self._gateway.execute(
+        return await self._gateway.execute(
             slug=slug,
             arguments=arguments,
             connected_account_id=self._connection.composio_connected_account_id,
             user_id=composio_user_id(self._connection.workspace_id),
             version=self._version,
         )
-        if not result.successful:
-            raise WriteRefused(
-                "crm_read_failed",
-                f"Could not read {_CRM_NAMES[self._connection.provider]} to prepare the "
-                f"changes: {result.error or 'no answer'}",
-            )
-        return _unwrap(result.data)
+
+    def _failed(self, result: ExecuteResult) -> WriteRefused:
+        return WriteRefused(
+            "crm_read_failed",
+            f"Could not read {_CRM_NAMES[self._connection.provider]} to prepare the "
+            f"changes: {result.error or 'no answer'}",
+        )
+
+
+def _status_code(result: ExecuteResult) -> int | None:
+    """The CRM's HTTP status Composio reports inside a refused call's ``data``."""
+    body = result.data
+    for _ in range(2):
+        if isinstance(body, Mapping) and isinstance(body.get("status_code"), int):
+            return int(body["status_code"])
+        body = body.get("data") if isinstance(body, Mapping) else None
+    return None
+
+
+def _record_missing(result: ExecuteResult) -> bool:
+    """A refused read that says the record is not there: HubSpot's 404 (``OBJECT_NOT_FOUND``)."""
+    return _status_code(result) == 404 or "OBJECT_NOT_FOUND" in (result.error or "")
 
 
 def _unwrap(data: Any) -> Any:
@@ -397,8 +458,9 @@ def _display_name(
 
 async def _hubspot_field_values(
     reader: _Reader, object_name: str, record_ref: str, fields: Sequence[str]
-) -> Mapping[str, object]:
-    body = await reader.read(
+) -> Mapping[str, object] | None:
+    """The record's values, or ``None`` when HubSpot has no such record."""
+    body = await reader.read_record(
         "HUBSPOT_READ_CRM_OBJECT_BY_ID",
         {
             "objectType": _HUBSPOT_OBJECT_TYPES[object_name],
@@ -406,6 +468,8 @@ async def _hubspot_field_values(
             "properties": list(fields),
         },
     )
+    if body is None:
+        return None
     properties = body.get("properties") if isinstance(body, Mapping) else None
     if not isinstance(properties, Mapping):
         raise _unreadable(f"the {object_name} {record_ref}")
@@ -415,7 +479,8 @@ async def _hubspot_field_values(
 async def _salesforce_field_values(
     reader: _Reader, object_name: str, records: Mapping[str, set[str]]
 ) -> dict[str, Mapping[str, object]]:
-    """Batched SOQL: one query per 200 records of an object."""
+    """Batched SOQL: one query per 200 records of an object. A record the query does not return
+    does not exist (or the connected user cannot see it) and is left out."""
     fields = sorted({field for wanted in records.values() for field in wanted})
     ids = sorted(records)
     found: dict[str, Mapping[str, object]] = {}
@@ -428,10 +493,9 @@ async def _salesforce_field_values(
         body = await reader.read("SALESFORCE_RUN_SOQL_QUERY", {"query": query})
         for record in _list(body, "records", f"the {object_name} records"):
             found[_sf_key(record.get("Id"))] = record
-    missing = [record_ref for record_ref in ids if _sf_key(record_ref) not in found]
-    if missing:
-        raise _unreadable(f"the {object_name} {', '.join(missing)}")
-    return {record_ref: found[_sf_key(record_ref)] for record_ref in ids}
+    return {
+        record_ref: found[_sf_key(record_ref)] for record_ref in ids if _sf_key(record_ref) in found
+    }
 
 
 async def _memberships(
@@ -696,8 +760,9 @@ async def prepare_changes(
     proposal_id: UUID,
     changes: Sequence[ProposedChange],
     version: str,
-) -> list[PreparedChange]:
-    """Check, read and scope a proposed batch; refuse it whole when any change may not be written.
+) -> PreparedBatch:
+    """Check, read and scope a proposed batch; refuse it whole when any change may not be written,
+    except a change whose record the CRM does not have, which alone is refused (R-11.7).
 
     ``version`` is the pinned Composio toolkit version of the connection's CRM. Writes nothing
     but the Salesforce budget's call count; the caller logs the result with
@@ -729,9 +794,11 @@ async def prepare_changes(
             wanted.setdefault(key, []).extend(item.parsed.fields)
         for (object_name, record_ref), fields in wanted.items():
             display = _DISPLAY_FIELDS[provider].get(object_name, ())
-            current[(object_name, record_ref)] = await _hubspot_field_values(
+            values = await _hubspot_field_values(
                 reader, object_name, record_ref, list(dict.fromkeys([*fields, *display]))
             )
+            if values is not None:
+                current[(object_name, record_ref)] = values
     else:
         by_object: dict[str, dict[str, set[str]]] = {}
         for item in updates:
@@ -756,10 +823,14 @@ async def prepare_changes(
         else set()
     )
 
-    for item in items:
+    refused: list[RefusedChange] = []
+    for index, item in enumerate(items):
         kind = item.parsed.change_kind(item.spec)
         if kind == "field_update":
             record_ref = str(item.parsed.record_ref)
+            if (item.parsed.object, record_ref) not in current:
+                refused.append(_record_not_found(provider, index, item, record_ref))
+                continue
             values = current[(item.parsed.object, record_ref)]
             # Named by what the record is called today; its id only when the read holds nothing.
             label = _display_name(provider, item.parsed.object, values) or item.parsed.label
@@ -782,7 +853,19 @@ async def prepare_changes(
                 await builder.field(item, update, record_ref, field, values.get(field), after)
         else:  # link_duplicate has no action until Phase 3
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
-    return builder.prepared
+    return PreparedBatch(builder.prepared, refused)
+
+
+def _record_not_found(
+    provider: CrmProvider, index: int, item: _Item, record_ref: str
+) -> RefusedChange:
+    return RefusedChange(
+        index=index,
+        slug=item.proposed.slug,
+        record_ref=record_ref,
+        reason_code="crm_record_not_found",
+        message=f"{_CRM_NAMES[provider]} has no {_noun(item.parsed.object, 1)} {record_ref}.",
+    )
 
 
 # --- the card (card spec §3, §5, §6) -------------------------------------------------------

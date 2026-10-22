@@ -593,6 +593,7 @@ propose_crm_changes:
     crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
     crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.
     crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
+    crm_record_not_found: Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed.
     crm_nothing_to_change: Tell the person the CRM already holds those values, so there is nothing to change.
     crm_action_failed: Check the action's input schema against the CRM's message, fix the arguments, and propose again.
     crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.

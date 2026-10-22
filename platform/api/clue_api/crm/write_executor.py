@@ -76,6 +76,7 @@ from clue_api.crm.write_prepare import (
     _SALESFORCE_SOBJECTS,
     _sf_key,
     _soql_text,
+    _status_code,
     _unwrap,
 )
 from clue_api.crm.writes import (
@@ -211,16 +212,6 @@ def crm_reply(body: str) -> tuple[str, Any]:
 
 
 _TEMPORARY_CODES = ("REQUEST_LIMIT_EXCEEDED", '"category":"RATE_LIMITS"')
-
-
-def _status_code(result: ExecuteResult) -> int | None:
-    """The CRM's HTTP status Composio reports inside a refused call's ``data``."""
-    body = result.data
-    for _ in range(2):
-        if isinstance(body, Mapping) and isinstance(body.get("status_code"), int):
-            return int(body["status_code"])
-        body = body.get("data") if isinstance(body, Mapping) else None
-    return None
 
 
 def _refusal_kind(result: ExecuteResult) -> FailureKind:

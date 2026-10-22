@@ -1363,6 +1363,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `needs_permission` | `int` | — |
 | `groups` | `list[CrmChangeGroup]` | — |
 | `overwrites` | `int` | — |
+| `refused` | `list[CrmRefusedChange]` | Changes left out of the proposal, each with its reason; the others are on the card. |
 
 *CrmChangeGroup*: One row.
 
@@ -1374,6 +1375,16 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `count` | `int` | — |
 | `covered` | `bool` | A standing permission covers these: they are sent without asking. |
 | `overwrites_person` | `bool` | These overwrite a value a person set; each is shown on the card on its own, unticked. |
+
+*CrmRefusedChange*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `index` | `int` | Its position in `changes`, counting from 0. |
+| `slug` | `str` | — |
+| `record_ref` | `str or None` | — |
+| `reason_code` | `str` | — |
+| `message` | `str` | Names the record, e.g. "HubSpot has no company 999999999999." |
 
 **Refusals**
 
@@ -1389,6 +1400,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `crm_value_not_allowed` | Use one of the allowed values the message lists, and propose again. |
 | `crm_removal_not_allowed` | Leave that removal out, and tell the person to remove the member in the CRM if they want it gone. |
 | `crm_read_failed` | Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now. |
+| `crm_record_not_found` | Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed. |
 | `crm_nothing_to_change` | Tell the person the CRM already holds those values, so there is nothing to change. |
 | `crm_action_failed` | Check the action's input schema against the CRM's message, fix the arguments, and propose again. |
 | `crm_rate_limited` | Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy. |

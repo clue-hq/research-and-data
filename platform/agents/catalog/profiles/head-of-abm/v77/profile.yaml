@@ -90,7 +90,7 @@ skills:
   sha256: dcfab038661b512ba8ba805f2742dac4850bfb13cc4587a922eef9fbc3d9e7e8
 - name: crm-writing
   version: v1
-  sha256: e3ead90690bc49d47989c4f787aa315da93594b9e07b583919416ddfef2a8878
+  sha256: 707e78ac1024b097f1ccbc6752d2bae4dea9081d3d6d91e7ae88b7577cfebc94
 - name: manual-index
   version: v23
   sha256: 76532941da0defa376848dec478eae5274c5df847085712a98b20ce74e999396
@@ -102,7 +102,7 @@ skills:
   sha256: 6a7c49abfdaeb49a7e62d62845c3203ae56844f2a91861b7152ce08f6cb9d00b
 - name: manual-tools
   version: v23
-  sha256: cbf0d230b0708255d9fe2c6184a1f05358a2b5ca1be31d12e2428f5b434666b9
+  sha256: b060cd7459bea027abc0398d149529249027a037dbb13816b9a4845229f57258
 - name: manual-fields
   version: v23
   sha256: 46f0c5a1da67a9429ac0db893c68a7014cfa447c42531a4ca15fa19925112be9
@@ -256,7 +256,7 @@ tools:
 - name: propose_crm_changes
   version: '1'
   input_schema_sha256: 4df276a6bfc8255bf2ddbec8e832de2daac96c9009de955532c0c02724f0f8b5
-  output_schema_sha256: 52ca0f17baa566220dd48df63579a570c4a8bfd20be3f12ded64a4fbb85a4a13
+  output_schema_sha256: d8227de9b75aeaefd1757ae6ce8fb094128f60b7223554d8ab23f8cb3e7ef587
 - name: crm_write_log
   version: '1'
   input_schema_sha256: 17871b5c66e4df7e60acb3640152f096ca7abc4bddc3daabf737570d7345cfb3

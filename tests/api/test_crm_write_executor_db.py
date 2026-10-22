@@ -268,7 +268,7 @@ async def _propose(
     """Prepare and log a proposal the way propose_crm_changes does, then move it to ``status``."""
     proposal_id = uuid4()
     calls_before = len(gateway.calls)
-    prepared = await prepare_changes(
+    batch = await prepare_changes(
         conn,
         gateway=gateway,  # type: ignore[arg-type]
         budget=_FakeBudget(gateway),
@@ -277,6 +277,8 @@ async def _propose(
         changes=list(changes),
         version="v",
     )
+    assert batch.refused == []
+    prepared = batch.changes
     del gateway.calls[calls_before:]  # only the executor's calls are asserted
     await writes.insert_proposal(
         conn,

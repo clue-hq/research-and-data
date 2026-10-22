@@ -48,6 +48,7 @@ from clue_api.crm.tools import (
 from clue_api.crm.write_prepare import (
     PreparedChange,
     ProposedChange,
+    RefusedChange,
     WriteRefused,
     _noun,
     card_snapshot,
@@ -69,6 +70,7 @@ from clue_spine import get_project
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
+    PreconditionFailed,
     PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
@@ -86,6 +88,7 @@ __all__ = [
     "CrmChangeGroup",
     "CrmGrantView",
     "CrmLoggedWrite",
+    "CrmRefusedChange",
     "CrmWriteLogInput",
     "CrmWriteLogOutput",
     "CrmWriteLogTool",
@@ -137,6 +140,16 @@ class CrmChangeGroup(BaseModel):
     overwrites_person: bool
 
 
+class CrmRefusedChange(BaseModel):
+    #: Its position in `changes`, counting from 0.
+    index: int
+    slug: str
+    record_ref: str | None
+    reason_code: str
+    #: Names the record, e.g. "HubSpot has no company 999999999999."
+    message: str
+
+
 class ProposeCrmChangesOutput(ToolOutput):
     proposal_id: str
     state: Literal["queued", "awaiting_permission"]
@@ -147,6 +160,8 @@ class ProposeCrmChangesOutput(ToolOutput):
     needs_permission: int
     groups: list[CrmChangeGroup]
     overwrites: int
+    #: Changes left out of the proposal, each with its reason; the others are on the card.
+    refused: list[CrmRefusedChange] = Field(default_factory=list)
 
 
 def proposal_id_for(source_turn_ref: str, changes: Sequence[CrmChangeInput]) -> UUID:
@@ -252,11 +267,12 @@ class ProposeCrmChangesTool(Tool):
         proposal_id = proposal_id_for(inputs.source_turn_ref, inputs.changes)
 
         refusal: Exception | None = None
+        refused: list[RefusedChange] = []
         async with self._conn_factory() as conn:
             stored = await _stored_output(conn, ctx.workspace_id, proposal_id)
             if stored is None:
                 try:
-                    prepared = await prepare_changes(
+                    batch = await prepare_changes(
                         conn,
                         gateway=gateway,
                         budget=self._budget if connection.provider == "salesforce" else None,
@@ -278,19 +294,39 @@ class ProposeCrmChangesTool(Tool):
                     # Leave the block normally: the Salesforce reads already made stay counted.
                     refusal = exc
                 else:
-                    if not prepared:
+                    refused = batch.refused
+                    if batch.changes:
+                        await self._record(conn, ctx, turn, connection, proposal_id, batch.changes)
+                        stored = await _stored_output(conn, ctx.workspace_id, proposal_id)
+                    elif not refused:
                         refusal = WriteRefused(
                             "crm_nothing_to_change",
                             "The CRM already holds every proposed value, so nothing was proposed.",
                         )
-                    else:
-                        await self._record(conn, ctx, turn, connection, proposal_id, prepared)
-                        stored = await _stored_output(conn, ctx.workspace_id, proposal_id)
         if isinstance(refusal, ComposioError):
             raise await composio_refusal(self._conn_factory, refusal, connection) from refusal
         if isinstance(refusal, WriteRefused | CrmBudgetExhausted):
             raise _refuse(refusal.reason_code, str(refusal)) from refusal
-        assert stored is not None
+        if stored is None:
+            # Every change was refused on its own (R-11.7): no proposal, no empty card.
+            raise PreconditionFailed(
+                [PreconditionFailure(r.reason_code, r.message) for r in refused]
+            )
+        if refused:
+            stored = stored.model_copy(
+                update={
+                    "refused": [
+                        CrmRefusedChange(
+                            index=r.index,
+                            slug=r.slug,
+                            record_ref=r.record_ref,
+                            reason_code=r.reason_code,
+                            message=r.message,
+                        )
+                        for r in refused
+                    ]
+                }
+            )
         if stored.state == "queued":
             await self._offer(connection)
         return ToolResult(
