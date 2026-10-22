@@ -127,7 +127,7 @@ the decision).
 | D-21 | The agent is told at turn start what files exist from earlier, how old they are, and what has expired | roadmap P0/P2; my proposal of 2026-10-21 | WS-28 | P2 | as discussed |
 | D-22 | The agent checks how old its numbers and source data are before relying on them after a gap, decides itself whether to read again, and need not tell the person | AW-4; your words: *"the agent need not explicitly state the user, but yes it must check the staleness of its numbers"* | WS-29 | P2 | as discussed |
 | D-23 | Your case: the agent did an analysis, the chat sat idle a week, the input files are gone, but the agent's state says "done". It must not build on files that are gone without knowing | your words (2026-10-21) | WS-25, WS-28, WS-29 | P2 | as discussed |
-| D-24 | Privacy erasure covers snapshots | roadmap P2 | WS-31 | P2 | **timing differs: Q7** |
+| D-24 | Privacy erasure covers snapshots | roadmap P2 | WS-31 | P2 | decided 2026-10-22 (AW-21): erasure covers records about a person, not mentions in chat files; release timing still Q7 |
 | D-25 | Stored files that no snapshot points to anymore are deleted | roadmap P2 | WS-30 | P2 | as discussed |
 | D-26 | Skill and manual text reviewed by you before it is written | standing rule; roadmap P0 | WS-29, WS-32 | P2 | as discussed |
 | D-27 | Research runs: their reconciliation step reads the source run's snapshot, not local disk | roadmap P3 | WS-33 | P3 | as discussed |
@@ -727,7 +727,9 @@ What lands in the agent folders today:
   - The existing purge then deletes a stored file once no live version references it.
   - Older versions are kept only as long as the builder needs them for the compare-and-set.
     Builder's call: keep the current version only, or the current one plus one.
-- **WS-31 [P2] Privacy and project erasure.** Erasing a chat, a project or a person's data:
+- **WS-31 [P2] Chat and project erasure** (narrowed by AW-21). A person's privacy erasure stays as
+  it is today (the records kept about the person); it does not search chat files for their details.
+  Erasing a chat or a project:
   - deletes the version records and file lists involved, and releases their stored files, which the
     existing purge then deletes (respecting other live references);
   - leaves cached copies on any machine to be removed by WS-16 within one cleanup interval;
@@ -735,6 +737,11 @@ What lands in the agent folders today:
     missing version record.
 
   The erasure tests prove that no erased content remains in R2 after the purge.
+- **WS-31a [P2] A privacy-erased file in a chat is skipped, not fatal** (AW-21; the Phase 1 review's
+  I1). Snapshot files share one stored file per content hash in the workspace, so a chat's file can
+  be byte-identical to something a person's erasure later removes. Restore skips such a file and
+  drops it from the chat's file list; a save never stores those bytes again; the agent's turn-start
+  list (WS-28) names the file as erased. Today such a chat fails every turn.
 
 ### 8.4 The manual
 
@@ -913,6 +920,9 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: AW-21 (founder): privacy erasure covers the records about a person, not mentions in
+  chat files. D-24 decided; WS-31 narrowed to chat and project erasure; WS-31a added (an erased
+  file is skipped, not fatal — the review's I1). Snapshot storage stays shared per content hash.
 - 2026-10-22: Phase 1 built (plan `docs/superpowers/plans/2026-10-22-agent-workspace-phase-1-core.md`,
   Tasks 1–12) and the first live check passed on the dushanbe stack: a new chat saved version 1
   (2 files, 89 bytes, 937 ms); after every worker area was wiped, the follow-up restored on another

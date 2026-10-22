@@ -98,6 +98,18 @@ agent, not only the CRM work.
   factory. A privacy erasure that changes library content without moving its digest bumps
   `project_library_epoch`, which the digest includes, so every chat's copy resyncs next turn. Spec
   §12; plan decision 3.
+- **AW-21 (2026-10-22)** **Privacy erasure covers the records about a person, not mentions in chat
+  files.** A person's erasure removes what the platform keeps *about* them (the contact, its claims,
+  the research and provider data tied to them), as it already does. It does not search agent chat
+  files (notes, tables, scratch) for the person's details; those traces may stay until the chat is
+  deleted or the 48-hour raw-input expiry (AW-2) removes them. Founder: *"its fine if some traces of
+  the person, which are not stored in hashed db records are left"* — no platform where people talk
+  to an LLM can erase every mention of someone. Consequences: (1) snapshot files keep sharing one
+  stored file per content hash in the workspace (no per-chat copies); (2) a chat whose saved file is
+  byte-identical to something later privacy-erased skips that file on restore, drops it from its
+  file list, never stores it again and tells the agent at its next turn, instead of failing every
+  turn (the review's I1; Phase 2); (3) WS-31 shrinks to deleting a chat's or project's snapshots and
+  letting the existing purge remove bytes nothing else holds.
 
 ## Scope, order and interim
 
