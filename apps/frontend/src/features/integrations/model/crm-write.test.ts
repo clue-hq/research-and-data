@@ -7,6 +7,7 @@ import {
   crmWriteGroupOutcome,
   crmWriteRefusal,
   crmWriteRecordsCaption,
+  pausedCaption,
   groupTickState,
   initialSelection,
   selectedCount,
@@ -202,4 +203,13 @@ test("a stale card says it can no longer be answered, never to try again", () =>
   const message = crmWriteRefusal("GATE_SUBJECT_STALE");
   assert.match(message, /can no longer be answered/);
   assert.doesNotMatch(message, /try again/i);
+});
+
+test("the paused card says a reconnect does not resume the unsent changes (R-11.10)", () => {
+  const caption = pausedCaption("HubSpot");
+  assert.equal(
+    caption,
+    "If you reconnect HubSpot, the changes not yet sent are not sent; Clue will propose them again.",
+  );
+  assert.doesNotMatch(caption, /carries on/i);
 });

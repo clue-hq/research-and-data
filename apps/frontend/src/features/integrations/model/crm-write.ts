@@ -259,6 +259,15 @@ export function crmWriteRecordsCaption(group: CrmWriteGroup): string {
   return `${count} ${noun(object, count)}`;
 }
 
+/**
+ * The paused card's caption. A reconnect makes a new connection and Clue never sends changes
+ * across connections, so the changes left are not sent after it (R-11.10); the wake turn
+ * (write_executor.py `_stopped`) says the same to the agent.
+ */
+export function pausedCaption(providerName: string): string {
+  return `If you reconnect ${providerName}, the changes not yet sent are not sent; Clue will propose them again.`;
+}
+
 export function allowLabel(count: number): string {
   return count > 0 ? `Allow ${count}` : "Allow";
 }

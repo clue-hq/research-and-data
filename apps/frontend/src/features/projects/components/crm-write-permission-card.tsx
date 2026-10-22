@@ -14,6 +14,7 @@ import {
   crmWriteRecordsCaption,
   groupTickState,
   initialSelection,
+  pausedCaption,
   selectedCount,
   sendingTitle,
   toggleGroup,
@@ -498,7 +499,7 @@ function PausedCard({ progress, write }: { progress: CrmProposalProgress | null;
       />
       {progress ? <p className={styles.rowText}>{`${countsLine(progress.counts)} so far`}</p> : null}
       <div className={frame.actions}>
-        <p className={frame.caption}>Sending carries on in order once it is reconnected.</p>
+        <p className={frame.caption}>{pausedCaption(write.providerName)}</p>
         <Link className={styles.linkButton} href="/settings/integrations">
           Reconnect {write.providerName}
         </Link>
