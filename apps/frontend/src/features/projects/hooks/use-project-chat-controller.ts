@@ -87,6 +87,10 @@ import {
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { useNamingCatchUp } from "./use-naming-catch-up";
 import { usePageVisible } from "./use-page-visible";
+import {
+  CRM_WRITE_GATE_KIND,
+  crmWriteRefusal,
+} from "@/features/integrations/model/crm-write";
 import { TERMINAL_TURN_EVENTS } from "../model/chat-events";
 import type { ChatAttachmentRef } from "../model/chat-attachments";
 import {
@@ -1128,18 +1132,25 @@ export function useProjectChatController({
         attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
+        const crmWrite = card.kind === CRM_WRITE_GATE_KIND;
         if (
           failure instanceof ClueChatApiError &&
-          failure.code.startsWith("GATE_")
+          (failure.code.startsWith("GATE_") ||
+            (crmWrite && failure.code.startsWith("CRM_")))
         ) {
           setGateFailures((current) => {
             const next = new Map(current);
             next.set(
               card.gateId,
-              gateAuthorityFailure(failure.code, failure.message),
+              crmWrite
+                ? { reason: crmWriteRefusal(failure.code), recovery: null }
+                : gateAuthorityFailure(failure.code, failure.message),
             );
             return next;
           });
+          // A write card stays put and says why; its gate is read again so a card another
+          // member answered, or a newer card replaced, shows what really happened.
+          if (crmWrite) void loadGates(activeThreadId).catch(report);
         } else {
           report(failure);
         }
@@ -1148,8 +1159,8 @@ export function useProjectChatController({
       }
     },
     [
-      activeThreadId, attach, invalidateProjectCatalog, loadConversation, projectId,
-      repositories, report,
+      activeThreadId, attach, invalidateProjectCatalog, loadConversation, loadGates,
+      projectId, repositories, report,
     ],
   );
 

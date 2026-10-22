@@ -2942,3 +2942,33 @@ product-set version tagged with the change), and the project's chat shows one li
 | `POST` | `/frontend/v1/projects/:projectId/product-notices/:changeId/dismiss` | `204`; per person. |
 
 Shown only in the project's chat, above the transcript (founder answer 2026-10-15).
+
+## CRM write permission card (2026-10-22)
+
+CRM integration Phase 2; card spec
+`docs/superpowers/specs/crm-integration/2026-10-22-crm-write-permission-card-design.md`. When the
+Head of ABM proposes CRM changes no standing permission covers, its turn ends on an `agent_gate`
+of kind `crm_write_permission`, rendered by `CrmWritePermissionCard`.
+
+- **The card's content** is the gate's `subject_snapshot` (`card_snapshot` in
+  `platform/api/clue_api/crm/write_prepare.py`): `crm`, `title`, `description`, `groups[]`
+  (`kind`, `object`, `field_label`, `list_ref`, `title`, `count`, `value_summary`, `reason`,
+  `records[{write_id, name, before, after}]`, `scope_key`, `always_allow`), `overwrites_heading`,
+  `overwrites[]`, `standing_permissions[{scope_key, phrase}]`, `caption`. Parsed by
+  `crmWriteCard` (`features/integrations/model/crm-write.ts`). The gate's `subject_ref` is
+  `crm_write_proposal:<proposalId>`; it has no `subject_revision` and no amount.
+- **Gate list** gains `withdrawn: bool` (default `false`): nobody answered and it can no longer
+  be answered (a newer card replaced it, or a reconnect closed it). A withdrawn gate is never open;
+  the card reads "Replaced by a newer proposal", or "These changes were not sent" when the
+  progress read says `closed`.
+- **Answer:** `POST …/turns` with `gate_response.crm_write = {selected_write_ids, always_allow}`
+  for Allow; "Don't allow" is `decision: "rejected"` with no `crm_write`. Any member of the
+  workspace may answer (R-6.8), so the addressee rule does not apply to this kind. Refusals shown
+  on the card, which stays as it was: `422 CRM_WRITE_NOTHING_SELECTED`,
+  `422 CRM_WRITE_UNKNOWN_CHANGE`, `409 CRM_CONNECTION_CHANGED`, `409 GATE_REPLACED`.
+- **Progress:** `GET /frontend/v1/crm/proposals/:proposalId` → `{proposalId, state (asking |
+  sending | paused | done | declined | replaced | closed), provider, counts{done, failed, skipped,
+  pending}, groups[{…, chosen, done, failed, skipped, pending}], overwrites[], failed[{writeId,
+  label, field, crmMessage}], skipped[{writeId, label, reason}], answeredBy, answeredByName,
+  answeredAt}`. Read once an answered or withdrawn card is shown, then every 2 s while `sending`
+  and the tab is visible.

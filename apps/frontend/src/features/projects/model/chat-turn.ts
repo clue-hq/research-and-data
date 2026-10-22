@@ -330,18 +330,27 @@ export const GateResponseSchema = z
     // The route refuses `selected_product_id` on that kind and this list on the
     // single-valued one, so the two are never both present here either.
     selectedProductIds: z.array(z.string().min(1)).min(1).readonly().optional(),
+    // A CRM write permission card's Allow: the ticked changes and the "Always allow" scopes.
+    // Sent as `crm_write`; "Don't allow" sends nothing but the decision.
+    crmWrite: z
+      .object({
+        selected_write_ids: z.array(z.string().min(1)).min(1),
+        always_allow: z.array(z.string().min(1)),
+      })
+      .optional(),
   })
   .superRefine((response, ctx) => {
     const exclusive = [
       response.revisionRequest,
       response.selectedProductId,
       response.selectedProductIds,
+      response.crmWrite,
     ].filter((value) => value !== undefined);
     if (exclusive.length > 1) {
       ctx.addIssue({
         code: "custom",
         message:
-          "revisionRequest, selectedProductId and selectedProductIds are mutually exclusive",
+          "revisionRequest, selectedProductId, selectedProductIds and crmWrite are mutually exclusive",
       });
     }
   });
@@ -395,6 +404,12 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
   }
   if (submission.response.selectedProductIds !== undefined) {
     gateResponse.selected_product_ids = [...submission.response.selectedProductIds];
+  }
+  if (submission.response.crmWrite !== undefined) {
+    gateResponse.crm_write = {
+      selected_write_ids: [...submission.response.crmWrite.selected_write_ids],
+      always_allow: [...submission.response.crmWrite.always_allow],
+    };
   }
   return {
     gate_response: gateResponse,

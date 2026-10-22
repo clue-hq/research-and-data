@@ -281,6 +281,41 @@ test("a physically missing historical artifact gives actionable recovery copy", 
   );
 });
 
+test("a CRM write card's Allow sends its choices as crm_write", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-crm",
+        decision: "approved",
+        expectedSubjectSha256: "d".repeat(64),
+        expectedEstimatedCostCents: null,
+        crmWrite: { selected_write_ids: ["w1", "w2"], always_allow: ["hubspot:create_contact:contact"] },
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-crm",
+        decision: "approved",
+        expected_subject_sha256: "d".repeat(64),
+        expected_estimated_cost_cents: null,
+        crm_write: {
+          selected_write_ids: ["w1", "w2"],
+          always_allow: ["hubspot:create_contact:contact"],
+        },
+      },
+    },
+  );
+});
+
+test("a withdrawn gate is never open", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [{ ...fixtureGates[0], withdrawn: true }],
+  });
+  assert.equal(gate.withdrawn, true);
+  assert.equal(isGateOpen(gate), false);
+});
+
 test("the submissions-union keeps queued turns and their attach cursor", () => {
   const page = ChatTurnListResponseSchema.parse({
     data: [
