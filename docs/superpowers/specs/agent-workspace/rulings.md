@@ -135,6 +135,17 @@ agent, not only the CRM work.
   the snapshot stays internal. **Stage-0 trial workspaces are left as they are for now** (Q8): no
   change in Phase 2 (they currently compose with snapshots on, review minor M2). Founder: *"NO THEY
   CANT SEE or download them"*; *"yeah let them be for now."*
+- **AW-26 (2026-10-23)** **No automatic deletion of stored files that nothing references — WS-30
+  leaves Phase 2.** Stored files are held from about 110 places (uploads, turn `outputs/` copies,
+  research receipts …) while the existing "is it referenced?" check counts two, and a chat or a
+  project being archived must never take with it the artifacts a person made on purpose for a
+  campaign. Deciding which unreferenced files may be swept needs its own careful discussion once
+  the system has matured. Founder: *"this ws-30's scope is too big, let's keep this out of phase 2
+  … let the system get a little more mature and then we will see."* **Consequence, recorded:**
+  Phase 2's expiry removes a raw input (or a 7-day-old working file) from the chat — the agent no
+  longer sees it, only its receipt — but its bytes stay in R2; so does every file of an old
+  version and of an erased chat. Snapshot storage stays shared per content hash (AW-21), so WS-31a
+  (skip a privacy-erased file) stays in Phase 2.
 - **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
   the release rule of spec §3 (Q7) is dropped: until Phase 2 lands, nothing in a chat's snapshot is
   deleted (raw inputs included), and stored files of old versions are kept. **Order:** the CRM branch

@@ -128,7 +128,7 @@ the decision).
 | D-22 | The agent checks how old its numbers and source data are before relying on them after a gap, decides itself whether to read again, and need not tell the person | AW-4; your words: *"the agent need not explicitly state the user, but yes it must check the staleness of its numbers"* | WS-29 | P2 | as discussed |
 | D-23 | Your case: the agent did an analysis, the chat sat idle a week, the input files are gone, but the agent's state says "done". It must not build on files that are gone without knowing | your words (2026-10-21) | WS-25, WS-28, WS-29 | P2 | as discussed |
 | D-24 | Privacy erasure covers snapshots | roadmap P2 | WS-31 | P2 | decided 2026-10-22 (AW-21): erasure covers records about a person, not mentions in chat files; release timing still Q7 |
-| D-25 | Stored files that no snapshot points to anymore are deleted | roadmap P2 | WS-30 | P2 | as discussed |
+| D-25 | Stored files that no snapshot points to anymore are deleted | roadmap P2 | WS-30 | — | **deferred 2026-10-23 (AW-26):** out of Phase 2, decided later |
 | D-26 | Skill and manual text reviewed by you before it is written | standing rule; roadmap P0 | WS-29, WS-32 | P2 | as discussed |
 | D-27 | Research runs: their reconciliation step reads the source run's snapshot, not local disk | roadmap P3 | WS-33 | P3 | as discussed |
 | D-28 | Delegated sub-agents get the same mechanism | roadmap P3 | WS-12, WS-34 | P1 (mechanism), P3 (checked) | as discussed |
@@ -196,7 +196,7 @@ evidence for the first two.
 |---|---|---|---|---|
 | **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
 | **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; each worker its own disk area and each chat its own copy of the brand and project files; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36, WS-37 | §11 tests 1–4, 6, 8, 10, 11, 13, 14 pass; the first live check passes with timings recorded. **Status: P1 built; live check passed 2026-10-22** (branch `feat/agent-workspace-durability`; not in production until P2) |
-| **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting stored files nothing points to | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
+| **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; ~~deleting stored files nothing points to~~ (deferred, AW-26) | Raw CRM data is out of the chat after 48 hours (the agent sees only its receipt; the bytes stay in R2 until AW-26 is revisited). The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
 | **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
 
@@ -680,7 +680,8 @@ What lands in the agent folders today:
      no queued or running turn;
   2. writes a new snapshot version without those files' bytes, keeping their receipts, marked with
      `expired_at`, and using the same compare-and-set as a turn's save;
-  3. releases its hold on the stored files.
+  3. releases its hold on the stored files (the bytes stay in R2: nothing sweeps unreferenced files,
+     AW-26).
 
   A chat with a live turn is skipped and retried next cycle.
 
@@ -728,7 +729,9 @@ What lands in the agent folders today:
 
 ### 8.3 Erasure and storage cleanup
 
-- **WS-30 [P2] Stored files are deleted when nothing points to them.**
+- **WS-30 [deferred, AW-26] Stored files are deleted when nothing points to them.** *Out of Phase 2
+  (founder, 2026-10-23): which unreferenced files may be swept needs its own discussion. Kept below
+  as the record of what was proposed.*
   - Snapshots hold their stored files and file lists through the artifact store's reference
     mechanism (`retain_artifact` / `release_artifacts`, or an equivalent owner table).
   - Each version holds the files it names. Replacing a version releases the files only the old
@@ -936,6 +939,9 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-23: AW-26 (founder): WS-30 leaves Phase 2 — no automatic deletion of unreferenced
+  stored files until a separate discussion. Expired and released snapshot files leave the chat but
+  keep their bytes in R2. D-25 deferred; §3's P2 row and WS-26 step 3 updated.
 - 2026-10-22: AW-25 (founder): the person never sees or downloads the workspace files (Q11);
   Stage-0 trial workspaces left as they are (Q8).
 - 2026-10-22: AW-24 (founder): working files kept 7 days, not 30; the expiry job runs hourly
