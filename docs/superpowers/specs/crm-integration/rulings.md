@@ -346,3 +346,20 @@ Related documents:
   differently (`…Z` vs `…+00:00`) — fixed in `ef4e96cbc` (compared as moments), still needed for
   reconnecting an expired connection. Whether `connect_crm` should keep offering a switch from chat
   is to be decided with the settings page.
+
+## 11. Phase 2 live check — decisions (2026-10-22)
+
+- **R-11.1 (2026-10-22)** **A card link always says `agent_gate`.** The agent linked the write card by
+  its kind (`crm_write_permission`), so the chat showed an incomplete review request. Finalization
+  now refuses a link whose id is a card under any other type (design-leg links untouched), and the
+  manual's gate line spells the link out (`e672ab95c`).
+- **R-11.2 (2026-10-22)** **The card names records, not ids** — the prepare read also fetches the
+  record's display name (`e93ad4a27`).
+- **R-11.3 (2026-10-22)** **Answering the write card starts no agent turn.** Allow records the answer
+  and hands the changes to the background sender; its one wake turn reports the results. Don't allow
+  records the answer only; the card shows the decline and the agent sees it the next time the person
+  writes. (Live: Allow started a needless turn that ran 9½ minutes, failed on a model timeout and held
+  back the results report.)
+- **R-11.4 (2026-10-22)** **Answering any card adds no message bubble to the chat**, for every kind of
+  agent gate: only the card's state changes. The answer stays recorded (and a turn the answer starts
+  still runs, for the cards that start one).
