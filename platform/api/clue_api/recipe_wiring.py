@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import BaseModel
 from sqlalchemy import text
 
 import clue_execution
@@ -227,12 +226,6 @@ def _observation(
     )
 
 
-def _jsonable(value: object) -> object:
-    if isinstance(value, BaseModel):
-        return value.model_dump(mode="json", exclude_none=False)
-    return value
-
-
 def _register_static_catalog(
     registry: PinResolverRegistry,
     *,
@@ -265,7 +258,9 @@ def _register_static_catalog(
             return None
         return _observation(
             version=resource.version,
-            payload=_jsonable(resource.payload),
+            # The model itself, not its JSON: the digest sorts a set's items, and a JSON dump
+            # would already have laid them out in this process's own (random) set order.
+            payload=resource.payload,
             status=resource.status,
         )
 
