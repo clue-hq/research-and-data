@@ -365,3 +365,12 @@ Related documents:
   still runs, for the cards that start one).
 - **R-11.5 (2026-10-22)** **The card shows option labels, not internal values** ("Tier 1", not
   "tier_1"), from the field definitions Clue already reads to check picklist values.
+- **R-11.6 (2026-10-22)** **How R-11.3 is built: a submission can need no reply.** A card answer stays
+  a turn submission (the answer's receipt and double-click anchor), with a new column saying whether
+  the agent replies; the CRM card's answers say no. The dispatcher and busy checks skip such
+  submissions; the route tells the browser "recorded, no turn". The sender's results message says
+  who allowed what and which standing permission was granted; a decline reaches the agent as one
+  context line on its next turn ("since your last turn, the write card from … was declined by …").
+  Set aside: holding the answer turn until the writes finish (blocks the chat, worse when paused);
+  recording the answer with no submission (changes the gate-answer contract every card relies on);
+  faking a finished run.
