@@ -117,8 +117,35 @@ def upgrade() -> None:
     op.execute(_derivation_check(_DERIVATIONS_AFTER))
 
 
+def _delete_guarded(table: str, guard: str, where: str) -> None:
+    """Delete rows from an append-only table, lifting its delete guard for this statement only."""
+    op.execute(f"ALTER TABLE {table} DISABLE TRIGGER {guard}")
+    op.execute(f"DELETE FROM {table} WHERE {where}")
+    op.execute(f"ALTER TABLE {table} ENABLE TRIGGER {guard}")
+
+
+def _delete_crm_connected_turns() -> None:
+    """The ``crm_connected`` wake turns and their child rows (final review I-4: the submission
+    table is append-only and its children hold it by foreign key, as in ebf28e41a6a4)."""
+    turns = "SELECT turn_id FROM agent_turn_submission WHERE derivation = 'crm_connected'"
+    for table, guard in (
+        ("agent_turn_submission_context_ref", "agent_turn_submission_context_ref_append_only"),
+        ("agent_turn_scope_pin", "agent_turn_scope_pin_append_only"),
+        ("agent_turn_knowledge_pin", "agent_turn_knowledge_pin_append_only"),
+        ("agent_turn_project_files", "agent_turn_project_files_append_only"),
+        ("agent_gate_answer", "agent_gate_answer_append_only"),
+    ):
+        _delete_guarded(table, guard, f"turn_id IN ({turns})")
+    op.execute(f"DELETE FROM agent_turn_submission_attachment WHERE turn_id IN ({turns})")
+    _delete_guarded(
+        "agent_turn_submission",
+        "agent_turn_submission_append_only",
+        "derivation = 'crm_connected'",
+    )
+
+
 def downgrade() -> None:
-    op.execute("DELETE FROM agent_turn_submission WHERE derivation = 'crm_connected'")
+    _delete_crm_connected_turns()
     op.execute(_derivation_check(_DERIVATIONS_BEFORE))
     op.execute("DROP TABLE crm_connect_request")
     op.execute("DROP TABLE workspace_integration_connection")
