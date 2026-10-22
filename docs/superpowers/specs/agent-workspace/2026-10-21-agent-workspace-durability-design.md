@@ -121,7 +121,7 @@ the decision).
 | D-15 | Existing chats are not migrated; a chat's current folder becomes its first snapshot | AW-5 | WS-22 | P1 | as discussed |
 | D-16 | Rollout behind a flag | roadmap P3 | WS-21 | P1 (flag), P3 (rollout) | as discussed; the flag must exist from the first code (env parity rule) |
 | D-17 | Which folder belongs to which tier | roadmap P0 | WS-4, WS-5, WS-23 | P1 (folders), P2 (tiers) | decided 2026-10-22 (Q5, AW-14): `work/` kept for the chat's life |
-| D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | **changed 2026-10-22 (AW-22):** `outputs/` for the chat's life; `scratch/` and `work/` 30 days after last activity |
+| D-18 | Work products (tables, scripts, drafts, notes) kept as long as the chat | AW-2 | WS-23 | P2 | **changed 2026-10-22 (AW-22):** `outputs/` for the chat's life; `scratch/` and `work/` 7 days after last activity (AW-24) |
 | D-19 | Raw inputs (CRM reads, large tool results, conversation offloads) deleted 48 hours after the chat's last activity | AW-2; your words: *"48 hours after the long activity i think is good enough"* | WS-23, WS-24, WS-26 | P2 | as discussed |
 | D-20 | A receipt for every raw input, kept for the chat's lifetime: what, when, how many records, content hash, how to read it again | AW-2 | WS-25 | P2 | as discussed |
 | D-21 | The agent is told at turn start what files exist from earlier, how old they are, and what has expired | roadmap P0/P2; my proposal of 2026-10-21 | WS-28 | P2 | as discussed |
@@ -215,7 +215,7 @@ the biggest: about two F2s.
 Each item below is a place where this spec differs from what we discussed, or settles something
 we did not discuss. Each has my recommendation. Nothing in the build depends on these until its
 phase starts. Everything Phase 1's plan needs is decided (Q1–Q6, Q9, Q10's cache values). Still
-open, for later phases: Q7, Q8, Q11 and Q10's expiry-job timing.
+open, for later phases: Q8 and Q11 (Q7 decided by AW-23; Q10's expiry-job timing by AW-24).
 
 **Q1. Cleaning the cache when a worker starts** [P1]: **decided 2026-10-22 (AW-9).**
 - **The problem:** on our VM every worker shares one disk (`/srv/clue/workspaces`), and the brand
@@ -309,7 +309,8 @@ for the chat's whole life, like `scratch/`.**
   proposed 24 hours once it was clear production runs one chat worker; you kept 30 minutes.
 - **Decided 2026-10-22 (AW-17):** each worker area is capped at **10 GiB**; over it, idle chat
   folders are deleted, oldest first.
-- **Proposed by me, still open (Phase 2):** the expiry job runs hourly.
+- **Decided 2026-10-22 (AW-24):** the retention expiry job runs hourly; working files (`scratch/`,
+  `work/`) are kept 7 days after the chat's last activity.
 
 **Q11. Should the person ever see or download these files?** [—] *(not discussed)*
 - **My recommendation:** keep it out of scope for now. The snapshot makes it easy to add later.
@@ -622,7 +623,7 @@ What lands in the agent folders today:
   | `CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` | `10737418240` | P1 |
   | `CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY` | `16` | P1 |
   | `CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` | `172800` | P2 |
-  | `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` | `2592000` (30 days, AW-22) | P2 |
+  | `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` | `604800` (7 days, AW-24) | P2 |
   | `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` | `3600` | P2 |
 
   With snapshots switched off, the system behaves as on `feat/crm-integration`: local folders only.
@@ -650,7 +651,7 @@ What lands in the agent folders today:
   |---|---|---|
   | Outcomes | published documents, designs, research claims | untouched; already durable |
   | Work product | `outputs/` | the chat's lifetime (until the chat is erased; there is no chat retention policy yet) |
-  | Working file (AW-22) | `scratch/`, and `work/` apart from its two compaction folders | bytes deleted **30 days after the chat's last activity** (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S`, default 2592000); the entry stays, marked expired |
+  | Working file (AW-22) | `scratch/`, and `work/` apart from its two compaction folders | bytes deleted **7 days after the chat's last activity** (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S`, default 604800; AW-24); the entry stays, marked expired |
   | Raw input | `reads/`, `work/conversation_history/`, `work/large_tool_results/` | bytes deleted **48 hours after the chat's last activity** (`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S`, default 172800); the receipt stays for the chat's lifetime |
 
 - **WS-24 [P2] Last activity** is the newest of these events:
@@ -675,7 +676,7 @@ What lands in the agent folders today:
 - **WS-26 [P2] The expiry job.** A periodic fleet job runs every
   `CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (default 3600), with one runner at a time like
   the storage sweep. It:
-  1. finds chats with raw inputs (48 hours) or working files (30 days, AW-22) past their window and
+  1. finds chats with raw inputs (48 hours) or working files (7 days, AW-24) past their window and
      no queued or running turn;
   2. writes a new snapshot version without those files' bytes, keeping their receipts, marked with
      `expired_at`, and using the same compare-and-set as a turn's save;
@@ -762,7 +763,7 @@ What lands in the agent folders today:
 - **WS-32 [P2] Manual rewrite.** The workspace chapter of the agent's manual is rewritten to say:
   - what each folder keeps, and for how long;
   - that `outputs/` lasts for the chat;
-  - that `scratch/` and `work/` are deleted 30 days after the chat's last activity (AW-22), and
+  - that `scratch/` and `work/` are deleted 7 days after the chat's last activity (AW-24), and
     `work/`'s compaction folders expire like `reads/`;
   - that `reads/` expire and leave receipts;
   - where the turn-start file list is.
@@ -935,6 +936,8 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: AW-24 (founder): working files kept 7 days, not 30; the expiry job runs hourly
+  (Q10 decided).
 - 2026-10-22: corrections. WS-30 and §5's artifact-store row wrongly said the existing purge
   deletes files nothing references; it does not, so WS-30 now adds that step (kept in Phase 2,
   founder). WS-32 updated for AW-22.

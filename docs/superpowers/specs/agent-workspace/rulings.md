@@ -23,7 +23,7 @@ agent, not only the CRM work.
   - *Outcomes* (published brand and project documents, designs): already durable, unchanged.
   - *Work products* (analysis tables, scripts, drafts, the agent's notes): **as long as the chat**
     (recommended; founder agreed the direction). *Amended by AW-22:* only `outputs/` is kept for
-    the chat's life; `scratch/` and `work/` go 30 days after the chat's last activity.
+    the chat's life; `scratch/` and `work/` go 7 days after the chat's last activity (AW-24).
   - *Raw inputs* (CRM reads, large tool results, conversation offloads): deleted **48 hours after the
     chat's last activity**, but a **receipt** of each (what was read, when, how many records, content
     hash, how to read it again) is kept for the chat's lifetime, so nothing points at a missing file
@@ -66,7 +66,7 @@ agent, not only the CRM work.
   Large tool results, already stored in full, may point to that copy instead of being stored twice
   (builder's call). Spec WS-4, WS-23, WS-27.
 - **AW-14 (2026-10-22)** **`work/` is kept for the chat's whole life, like `scratch/`.** *(Amended by
-  AW-22: both are kept 30 days after the chat's last activity, not for its whole life.)* It is not
+  AW-22 and AW-24: both are kept 7 days after the chat's last activity, not for its whole life.)* It is not
   emptied between turns. Its files are work products, except the compaction offloads
   (`work/conversation_history/`, `work/large_tool_results/`), which stay raw inputs under AW-2. The
   agent's manual, which today calls `work/` per-turn scratch, is rewritten to match (spec WS-32).
@@ -112,7 +112,7 @@ agent, not only the CRM work.
   file list, never stores it again and tells the agent at its next turn, instead of failing every
   turn (the review's I1; Phase 2); (3) WS-31 shrinks to deleting a chat's or project's snapshots and
   letting the existing purge remove bytes nothing else holds.
-- **AW-22 (2026-10-22)** **The agent's working files are kept 30 days after the chat's last
+- **AW-22 (2026-10-22)** *(Window amended to 7 days by AW-24.)* **The agent's working files are kept 30 days after the chat's last
   activity.** Three windows instead of two (amends AW-2 and AW-14):
   - `outputs/` (the files meant for the person): kept for the chat's life;
   - `scratch/` and `work/` apart from its two compaction folders (the agent's notes, tables,
@@ -125,6 +125,12 @@ agent, not only the CRM work.
   about an hour idle), Claude.ai (created files kept for the conversation) and Manus (intermediate
   code and temporary files dropped when an idle task's computer is recycled after 7 or 21 days; its
   outputs and uploads restored). Founder: *"go with 30 days for scratch and work."*
+- **AW-24 (2026-10-22)** **Working files are kept 7 days, not 30; the expiry job runs hourly.**
+  `scratch/` and `work/` (apart from its compaction folders) are deleted **7 days** after the chat's
+  last activity (`CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S=604800`); founder: *"you can make this 7
+  days for now."* The retention expiry job (WS-26) checks every hour
+  (`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S=3600`), so a file goes up to an hour after its
+  limit (Q10 decided).
 - **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
   the release rule of spec §3 (Q7) is dropped: until Phase 2 lands, nothing in a chat's snapshot is
   deleted (raw inputs included), and stored files of old versions are kept. **Order:** the CRM branch
