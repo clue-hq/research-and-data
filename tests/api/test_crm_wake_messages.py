@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from clue_api.crm.connections import CrmConnection
-from clue_api.crm.wake import crm_writes_paused_message
+from clue_api.crm.wake import crm_writes_finished_message, crm_writes_paused_message
 from clue_api.crm.write_executor import _expired_reason
 from clue_api.crm.writes import WriteCounts
 
@@ -52,10 +52,6 @@ def test_a_budget_pause_says_when_it_carries_on() -> None:
 
 
 def test_the_finished_message_says_how_many_records_were_linked() -> None:
-    from uuid import uuid4
-
-    from clue_api.crm.wake import crm_writes_finished_message
-
     done = WriteCounts(done=3, failed=0, skipped=0, not_chosen=0, waiting=0)
     proposal = uuid4()
     assert "Linked" not in crm_writes_finished_message(proposal, done)

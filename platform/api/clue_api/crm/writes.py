@@ -172,14 +172,16 @@ async def proposal_created_records(
 
 
 async def proposal_linked_records(conn: AsyncConnection, *, proposal_id: UUID) -> int:
-    """How many existing CRM records the proposal's succeeded updates linked to their Clue
-    entities (Task 6): links an update made, not ones that were there already."""
+    """How many existing CRM records the proposal linked to their Clue entities (Task 6): by a
+    succeeded update, or by a create that found the record already there. Links the proposal
+    made, not ones that were there already."""
     count = await conn.scalar(
         text(
             "SELECT count(*) FROM crm_record_link l JOIN crm_write w "
             "ON w.write_id = l.created_by_write_id WHERE w.proposal_id = :id "
-            "AND w.kind = 'field_update' AND w.status = 'succeeded' AND NOT l.created_by_clue "
-            "AND l.clue_entity_id IS NOT NULL"
+            "AND ((w.kind = 'field_update' AND w.status = 'succeeded') "
+            "OR (w.kind IN ('create_contact', 'create_company') AND w.status = 'skipped')) "
+            "AND NOT l.created_by_clue AND l.clue_entity_id IS NOT NULL"
         ),
         {"id": proposal_id},
     )

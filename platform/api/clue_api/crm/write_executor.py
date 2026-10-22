@@ -353,6 +353,9 @@ class _Outcome:
     crm_id: str | None = None
     #: The CRM's answer behind ``crm_message``, when the message is not the whole of it.
     crm_response: Any = None
+    #: The record a create found already there at send time (R-7.1: the same email or domain),
+    #: linked to the change's Clue entity instead of creating another (Task 6 ruling #2).
+    found_id: str | None = None
 
 
 def _failed(message: str, kind: FailureKind | None = None, *, retryable: bool = False) -> _Outcome:
@@ -838,6 +841,7 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
                     "was not created again."
                     + (" It may be the one an earlier send created." if write.attempts else "")
                 ),
+                found_id=str(seen.value),
             )
         return None
     if write.kind in _MEMBERSHIP or same_value(seen.value, write.before):
@@ -1208,8 +1212,9 @@ class CrmWriteHandler:
             )
             return []
         # The record exists from now on: its id and the "Clue created it" link are kept at once,
-        # whatever happens to the read-back. A list is not a record: it is kept once it is
-        # confirmed (:meth:`_record`).
+        # whatever happens to the read-back. Its Clue entity is linked only once the create is
+        # confirmed (:meth:`_record`), so an unconfirmed record is never the entity's. A list is
+        # not a record: it is kept once it is confirmed (:meth:`_record`).
         connection = crm.connection
         async with self._conn_factory() as conn:
             await conn.execute(
@@ -1226,7 +1231,6 @@ class CrmWriteHandler:
                 crm_id=created.crm_id,
                 created_by_clue=True,
                 created_by_write_id=write.write_id,
-                clue_entity_id=_entity(write),
             )
         return [created]
 
@@ -1351,6 +1355,19 @@ class CrmWriteHandler:
                     },
                 )
                 write = by_id[write_id]
+                if outcome.found_id is not None and _entity(write) is not None:
+                    # Not created by Clue: the record a find matched is the same person or
+                    # company, and becomes the Clue entity's record.
+                    await record_link(
+                        conn,
+                        workspace_id=connection.workspace_id,
+                        connection_id=connection.connection_id,
+                        crm_object=write.object,
+                        crm_id=outcome.found_id,
+                        created_by_clue=False,
+                        created_by_write_id=write_id,
+                        clue_entity_id=_entity(write),
+                    )
                 if outcome.status != "succeeded":
                     continue
                 if write.kind == _LIST_CREATE and outcome.crm_id is not None:

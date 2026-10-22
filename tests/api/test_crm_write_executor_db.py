@@ -2368,3 +2368,80 @@ def test_a_crm_record_linked_to_one_clue_entity_is_never_relinked(tmp_path: Path
         assert nick.crm_record_id == "202"
 
     _run(tmp_path, "linkpolicy", body)
+
+
+def test_a_create_that_is_not_confirmed_links_no_clue_record(tmp_path: Path) -> None:
+    """Fix round 1 #1: the record the CRM named is remembered at once (never made twice), but it
+    is linked to its Clue contact only once the create is confirmed."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from clue_api.crm.targets import project_targets
+        from tests.api.test_crm_write_prepare_db import _create_person, _researched
+
+        world = await _researched(conn, seeded)
+        unreadable = ExecuteResult(
+            False, {"http_error": "403", "status_code": 403}, "Forbidden to read"
+        )
+        gateway = _WritingCrm(records={}, failures={"HUBSPOT_READ_CRM_OBJECT_BY_ID": [unreadable]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_person(
+                {"firstname": "Nick", "lastname": "Fisher", "email": "nick@zafran.io"},
+                world.nick,
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert change["status"] == "failed"
+        links = await _links(conn, connection)
+        assert links[change["crm_id"]][1:3] == (None, True)
+        page = await project_targets(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            settings=Settings(_env_file=None),
+        )
+        nick = next(c for c in page.contacts if c.contact_entity_id == str(world.nick))
+        assert nick.crm_record_id is None
+
+    _run(tmp_path, "linkunconfirmed", body)
+
+
+def test_a_create_found_existing_at_send_links_the_found_record(tmp_path: Path) -> None:
+    """Ruling #2: the record the re-check finds (the same email, R-7.1) is the person: it is
+    linked to the Clue contact, not marked created by Clue, and nothing is created."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from tests.api.test_crm_write_prepare_db import _create_person, _researched
+
+        world = await _researched(conn, seeded)
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_person(
+                {"firstname": "Nick", "lastname": "Fisher", "email": "nick@zafran.io"},
+                world.nick,
+            ),
+        )
+        # Someone made the contact meanwhile.
+        gateway.records["777"] = {"email": "nick@zafran.io", "firstname": "Nick"}
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert change["status"] == "skipped"
+        assert "HUBSPOT_CREATE_CONTACT" not in [slug for slug, _ in gateway.writes]
+        crm_object, entity, created_by_clue, _ = (await _links(conn, connection))["777"]
+        assert (crm_object, entity, created_by_clue) == ("contact", str(world.nick), False)
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{proposal_id}")
+        assert "Linked 1 Clue record to its CRM record." in message
+
+    _run(tmp_path, "linkfound", body)
