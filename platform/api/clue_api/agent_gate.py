@@ -36,6 +36,8 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_projections.gates import GATE_WITHDRAWN_SQL
+
 __all__ = [
     "DECISIONS",
     "DEFAULT_GATE_CURRENCY",
@@ -528,7 +530,8 @@ async def open_gates_for_thread(
     """Every unanswered gate of one thread, oldest first.
 
     "Unanswered" is an anti-join against the answer table — the derivation §6-D3 ratified — so a
-    thread's approval state cannot drift from the record of what was actually decided.
+    thread's approval state cannot drift from the record of what was actually decided. A withdrawn
+    gate (a CRM write card whose proposal moved on without an answer) is not open either.
     """
 
     rows = (
@@ -541,6 +544,7 @@ async def open_gates_for_thread(
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
                     "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
                     "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
+                    f"  AND NOT {GATE_WITHDRAWN_SQL} "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
                 {"workspace_id": workspace_id, "thread_id": thread_id},

@@ -16,7 +16,8 @@ holds that answer's CRM half:
   grants each "Always allow" on the proposal's connection, queues the proposal and offers the
   connection's write executor; Don't allow declines the whole proposal — the changes a standing
   permission covered included — and nothing is sent;
-* :func:`proposal_progress` is what ``GET /crm/proposals/{id}`` serves the card.
+* :func:`proposal_progress` is what ``GET /crm/proposals/{id}`` serves the card. A card a newer card
+  replaced reads ``replaced``; one a reconnect closed before anybody answered reads ``closed``.
 """
 
 from __future__ import annotations
@@ -130,16 +131,19 @@ async def check_answer(
     if proposal.status != "awaiting_permission":
         raise CrmAnswerRefused(409, "GATE_SUBJECT_STALE", "this card is no longer waiting")
     current = await latest_connection(conn, workspace_id=gate.workspace_id)
+    # Only an active connection takes an answer: an expired one can never send (reconnecting always
+    # makes a new connection row and closes this one's proposals), and a standing permission given
+    # on it would be lost with it.
     if (
         current is None
         or current.connection_id != proposal.connection_id
-        or current.status == "disconnected"
+        or current.status != "active"
     ):
         raise CrmAnswerRefused(
             409,
             "CRM_CONNECTION_CHANGED",
-            "the CRM was reconnected or switched since this card was shown; ask Clue to propose "
-            "the changes again",
+            "the CRM connection this card was made for is no longer active (expired, reconnected "
+            "or switched); reconnect the CRM and ask Clue to propose the changes again",
         )
     if decision != "approved":
         if choices.selected_write_ids or choices.always_allow:
@@ -386,9 +390,13 @@ async def proposal_progress(
     totals = tally(list(status))
     del totals["chosen"]
     answered_at = proposal.answered_at
+    state = _CARD_STATE.get(proposal.status, "asking")
+    if proposal.status == "finished" and proposal.answered_by_user_id is None:
+        # A card nobody answered before a reconnect closed it: nothing was sent.
+        state = "closed"
     return {
         "proposalId": str(proposal_id),
-        "state": _CARD_STATE.get(proposal.status, "asking"),
+        "state": state,
         "provider": None if connection is None else connection.provider,
         "counts": totals,
         "groups": groups,

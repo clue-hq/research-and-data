@@ -933,6 +933,9 @@ class GateWire(_Wire):
     snapshot_erasure_reason: str | None
     answer: GateAnswerWire | None
     launches: tuple[GateLaunchWire, ...]
+    #: Unanswered and no longer answerable: a CRM write card a newer card replaced, or one a
+    #: reconnect closed. Such a gate is not open and asks nothing of anyone.
+    withdrawn: bool = False
 
 
 class GateListResponse(_Wire):
@@ -994,6 +997,7 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
             )
             for launch in view.launches
         ),
+        withdrawn=view.withdrawn,
     )
 
 

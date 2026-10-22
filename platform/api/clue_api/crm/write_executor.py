@@ -1239,7 +1239,9 @@ async def close_replaced_connection_proposals(
     active_connection_id: UUID,
 ) -> list[UUID]:
     """A new connection became active: the proposals other connections of the workspace still
-    had to send are closed, never sent on the new one (it may be another portal or org).
+    had to send are closed, never sent on the new one (it may be another portal or org). A card
+    still waiting for its answer is closed too: it could never be answered (the answer route
+    refuses a card of another connection), so it would otherwise wait for ever.
 
     Every undecided change is ``skipped`` with ``failure_kind = 'connection_expired'`` — or
     ``failed`` when it had been sent and could not be confirmed — the proposal is ``finished``,
@@ -1247,7 +1249,8 @@ async def close_replaced_connection_proposals(
     rows = await conn.execute(
         text(
             "SELECT proposal_id FROM crm_write_proposal WHERE workspace_id = :ws "
-            "AND connection_id <> :active AND status IN ('queued', 'sending', 'paused') "
+            "AND connection_id <> :active "
+            "AND status IN ('awaiting_permission', 'queued', 'sending', 'paused') "
             "ORDER BY created_at, proposal_id FOR UPDATE"
         ),
         {"ws": workspace_id, "active": active_connection_id},

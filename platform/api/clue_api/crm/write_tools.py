@@ -309,17 +309,18 @@ class ProposeCrmChangesTool(Tool):
             await set_proposal_status(conn, proposal_id=proposal_id, status="queued")
             return
 
-        # One live card per chat: an earlier card still waiting for its answer is replaced.
-        earlier = await conn.execute(
+        # One live card per chat: an earlier card still waiting for its answer is replaced. One
+        # guarded UPDATE, never read-then-write: when an answer is being recorded on that card at
+        # the same moment, this waits for its row lock and then re-checks the status, so a
+        # proposal the answer just queued (or declined) is never overwritten.
+        await conn.execute(
             text(
-                "SELECT proposal_id FROM crm_write_proposal WHERE workspace_id = :ws "
-                "AND thread_id = :thread AND status = 'awaiting_permission' "
-                "AND proposal_id <> :proposal_id"
+                "UPDATE crm_write_proposal SET status = 'replaced', finished_at = now() "
+                "WHERE workspace_id = :ws AND thread_id = :thread "
+                "AND status = 'awaiting_permission' AND proposal_id <> :proposal_id"
             ),
             {"ws": ctx.workspace_id, "thread": turn.thread_id, "proposal_id": proposal_id},
         )
-        for (earlier_id,) in earlier.all():
-            await set_proposal_status(conn, proposal_id=earlier_id, status="replaced")
 
         project = await get_project(conn, turn.project_id)
         snapshot = card_snapshot(

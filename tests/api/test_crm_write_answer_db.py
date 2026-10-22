@@ -31,9 +31,12 @@ from clue_api.agent_gate import (
     get_gate,
     insert_gate,
     insert_gate_answer,
+    open_gates_for_thread,
 )
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.crm import writes
+from clue_api.crm.connections import mark_expired
+from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.crm.write_tools import (
     CrmChangeInput,
     ProposeCrmChangesInput,
@@ -48,6 +51,7 @@ from clue_api.turn_action import derive_turn_action_ref
 from clue_auth.policy import permissions_for_role
 from clue_config import load_settings
 from clue_core import new_operation_id
+from clue_projections import open_gate_kinds_for_threads, thread_gates
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
 from tests.api.test_crm_tools_db import _connect
@@ -714,3 +718,139 @@ def test_the_database_lifts_the_addressee_rule_for_crm_write_cards_only(tmp_path
                     )
 
     _run(tmp_path, "trigger", body)
+
+
+def test_a_card_on_an_expired_connection_cannot_be_answered(tmp_path: Path) -> None:
+    """An answer queued on an expired connection could never be sent: reconnecting always makes a
+    new connection row and closes this one's proposals."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        await mark_expired(conn, connection_id=connection.connection_id)
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client,
+                seeded,
+                proposed,
+                snapshot,
+                key="expired",
+                selected=_ids_in(snapshot, "101"),
+                always_allow=["field:company.icp_tier"],
+            )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "CRM_CONNECTION_CHANGED"
+        assert await _answers(conn, seeded.workspace_id) == 0
+        assert await _grants(conn, seeded.workspace_id) == []
+
+    _run(tmp_path, "expired", body)
+
+
+async def _thread_status(client: httpx.AsyncClient, seeded: Any) -> str:
+    listing = await client.get(
+        f"/api/v1/projects/{seeded.project_id}/threads",
+        headers={"X-Workspace-Id": seeded.workspace_id},
+    )
+    assert listing.status_code == 200, listing.text
+    statuses = {item["id"]: str(item["status"]) for item in listing.json()["data"]}
+    return statuses[seeded.thread_id]
+
+
+async def _open_gate_ids(conn: Any, seeded: Any) -> set[str]:
+    rows = await open_gates_for_thread(
+        conn, workspace_id=seeded.workspace_id, thread_id=seeded.thread_id
+    )
+    kinds = await open_gate_kinds_for_threads(
+        workspace_id=seeded.workspace_id,
+        thread_ids=(seeded.thread_id,),
+        conn_factory=conn_session_factory(conn),
+    )
+    views = await thread_gates(
+        workspace_id=seeded.workspace_id,
+        thread_id=seeded.thread_id,
+        conn_factory=conn_session_factory(conn),
+    )
+    opened = {str(row.gate_id) for row in rows}
+    # Every derivation of openness agrees.
+    assert {view.gate_id for view in views if view.is_open} == opened
+    assert len(kinds.get(seeded.thread_id, ())) == len(opened)
+    return opened
+
+
+def test_a_replaced_card_is_no_longer_open_anywhere(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        first = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        second = await _propose(conn, seeded, _set_tier("101", "Tier 2"))
+        assert await _open_gate_ids(conn, seeded) == {second["gate_id"]}
+        second_snapshot = await _snapshot(conn, seeded, second)
+        async with _client(conn, seeded) as client:
+            gates = await client.get(
+                f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/gates",
+                headers={"X-Workspace-Id": seeded.workspace_id},
+            )
+            assert gates.status_code == 200, gates.text
+            withdrawn = {item["gate_id"]: item["withdrawn"] for item in gates.json()["data"]}
+            assert withdrawn == {first["gate_id"]: True, second["gate_id"]: False}
+            replaced = await client.get(
+                f"{PROPOSALS}/{first['proposal_id']}",
+                headers={"X-Workspace-Id": seeded.workspace_id},
+            )
+            assert replaced.json()["state"] == "replaced"
+
+            answered = await _answer(
+                client,
+                seeded,
+                second,
+                second_snapshot,
+                key="newer",
+                selected=_ids_in(second_snapshot, "101"),
+            )
+            assert answered.status_code == 202, answered.text
+            # The replaced card asks nothing: the chat is not waiting on an approval any more.
+            assert await _thread_status(client, seeded) != "approval"
+        assert await _open_gate_ids(conn, seeded) == set()
+
+    _run(tmp_path, "withdrawn", body)
+
+
+def test_a_reconnect_closes_a_card_nobody_answered(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        reconnected = await _connect(conn, seeded.workspace_id, provider="salesforce")
+        closed = await close_replaced_connection_proposals(
+            conn,
+            None,
+            workspace_id=seeded.workspace_id,
+            active_connection_id=reconnected.connection_id,
+        )
+        assert closed == [UUID(proposed["proposal_id"])]
+        assert (await _proposal(conn, proposed["proposal_id"])).status == "finished"
+        assert await _open_gate_ids(conn, seeded) == set()
+        async with _client(conn, seeded) as client:
+            assert await _thread_status(client, seeded) != "approval"
+            progress = await client.get(
+                f"{PROPOSALS}/{proposed['proposal_id']}",
+                headers={"X-Workspace-Id": seeded.workspace_id},
+            )
+        assert progress.json()["state"] == "closed"
+        assert progress.json()["counts"]["done"] == 0
+
+    _run(tmp_path, "reconnect-closes", body)
+
+
+def test_a_newer_card_never_replaces_a_proposal_an_answer_queued(tmp_path: Path) -> None:
+    """The replace step is one guarded UPDATE: whichever order the answer and the next proposal
+    land in, a proposal the answer queued stays queued."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        first = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, first)
+        async with _client(conn, seeded) as client:
+            answered = await _answer(
+                client, seeded, first, snapshot, key="first", selected=_ids_in(snapshot, "101")
+            )
+        assert answered.status_code == 202, answered.text
+        await _propose(conn, seeded, _set_tier("103", "Tier 2"))
+        assert (await _proposal(conn, first["proposal_id"])).status == "queued"
+
+    _run(tmp_path, "race-order", body)
