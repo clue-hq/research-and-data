@@ -287,7 +287,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # its number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top
     # of it — v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines'
     # chapters) and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v75",
+    # v76 (2026-10-20, design/harness-alignment, under trial): v75 plus prompt v19 (the design brief
+    # carries no copy; a menu of angles for variants); `manual-*@v22`, `stage0-interview@v49`.
+    AgentRole.HEAD_OF_ABM: "v76",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

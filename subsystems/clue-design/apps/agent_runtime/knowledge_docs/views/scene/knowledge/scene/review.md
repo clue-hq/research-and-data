@@ -122,7 +122,13 @@ and CTA. Judge the compact preview, not the inspector zoom. Reflow into availabl
 space or remove optional copy before accepting text that only reads enlarged.
 For paired identities, check that the advertiser is recognizable as the sender;
 a target logo must not overpower a shrunken advertiser mark. An authentic asset
-can still be an unsuitable variant, scale or surface for this composition.
+can still be an unsuitable variant, scale or surface for this composition. A visible
+flaw on a logo, such as stray pixels, a cut letter or a plate edge, is a defect; fix
+it before you accept.
+In a button with an icon, check the label and icon sit on the same centre line and
+the gap after the last letter is about a third of the label's size. If the label
+still looks high or low, adjust the row's top and bottom padding, not the
+children's positions.
 For a support-size repair, compare that occurrence before and after at the same
 viewing scale, and verify that the approved headline and artwork are unchanged.
 Then check the hierarchy in the whole composition: does the headline still lead,
@@ -139,7 +145,11 @@ if absent, record `added_meaning` and reject until sourced or removed. General
 positioning, a slogan or industry fit is not evidence for a specific capability.
 Check idea/copy, evidence and attribution, hierarchy, readable contrast, brand
 identity, authentic product crop, independent editable layers and reference
-treatment. Compare the reference's visual invariants against the actual rendered
+treatment. Count the words on the image against your format's budget in
+`knowledge/scene/placement.md`; copy over budget is a defect to fix by cutting, unless
+the person supplied those exact words. Read the headline alone, as someone scrolling
+past would: does it say what this is, and that it is for them? If it only makes sense
+after the support line, rewrite it. Compare the reference's visual invariants against the actual rendered
 relationships, not merely matching palette or motif. Read the relevant playbook
 and shared resources again if a revision raises a new question; discovery remains
 available throughout review. A missing CTA is not a defect when the objective

@@ -1433,7 +1433,8 @@ the tools available to you and the scene skills throughout this work.
 1. Gather {workspace}/state.json, seller/index.md when present, and
 /.deepagent/skills/scene-brief-copy/SKILL.md. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
-evidence. Read the direction contract and relevant playbook. Do not make the
+evidence. Read the direction contract, and the playbook for the angle you
+choose; the scene-brief-copy skill says how to choose it. Do not make the
 user provide a headline, asset IDs or a detailed image-generation prompt.
 Design from what you have. Ask only as the clarify-design-brief skill says:
 before you start, in one round of at most six questions, each with a default.

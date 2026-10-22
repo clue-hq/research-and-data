@@ -23,6 +23,26 @@ mismatch instead of changing units to evade it.
 | Display ad examples | `size(300,250,px)`, `size(728,90,px)`, `size(160,600,px)` | Exact contracted slot, export and size constraints |
 | A4 print | `size(210,297,mm)` | Trim, bleed and output requirements in `knowledge/export/print-geometry.md` |
 
+## How much copy each placement carries
+
+Count every visible word except the logo and real product interface text. These
+are ceilings, not targets. When copy runs over, cut support and secondary lines
+first; never shrink type to fit more words. Smaller surfaces carry less content,
+not the same content smaller. Copy the person supplied word for word stays as it
+is, even over the budget; say so in your summary.
+
+| Placement | Headline | Support | CTA in the artwork | Whole ad |
+|---|---|---|---|---|
+| Square feed (1080×1080) | up to 8 words | up to 15 words, or none | optional, since the feed shows its own button; if used, 2–4 words starting with a verb | up to 25 words |
+| Portrait feed (1080×1350) | up to 8 words | up to 20 words | as square | up to 30 words |
+| Story (1080×1920) | up to 7 words | up to 140 characters | up to 4 words, inside the safe band | up to 35 words |
+| Landscape (1200×628) | up to 8 words | up to 12 words, or none | as square | up to 20 words |
+| Profile or company cover | one standing line (the brand's positioning, not a campaign message) or none | none | none | one line |
+| Display 300×250 | 6–8 words | up to 8 words, or none | 1–3 words starting with a verb | up to 15 words |
+| Display 728×90 | one line, up to 8 words | none | 1–3 words starting with a verb | up to 12 words |
+| Display 160×600 | about 4 short words per line, up to 5 lines | none | 1–3 words starting with a verb | up to 14 words |
+| A4 print | up to 10 words | a short paragraph is fine | it must work on paper: a URL, a date and place, or a phone number | — |
+
 The DSL grammar defines page syntax and units. Declare a real page and measured
 frames before image generation. Pixel page units currently lay out in the same
 numeric scene coordinates; do not treat print millimeters as pixel coordinates.

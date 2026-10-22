@@ -276,7 +276,9 @@ def test_each_duplicated_rule_has_one_home():
     assert "Page before spend" not in components
     assert "requested new artwork still needs generation" not in components
     brief_copy = flat("skills/scene-brief-copy/SKILL.md")
-    assert 'never a stock phrase such as "Learn more", "Get started" or "Book a demo"' in brief_copy
+    # Copy work 2026-10-18 (founder): a positive CTA pattern replaces the named stock phrases.
+    assert "write a specific verb and object for the real next step" in brief_copy
+    assert "Avoid stock phrases." in brief_copy and '"Book a demo"' not in brief_copy
     assert "validate_creative_direction()" not in brief_copy
     assert "If the user asks for new imagery" not in brief_copy
     assert "CTA presence follows" not in flat("skills/account-adaptation/SKILL.md")
@@ -312,16 +314,42 @@ def test_operating_note_and_pointer_skills_are_gone_and_their_content_lives_in_t
     assert "another company's logo: fetch_logo" in flat
     assert "only IDs a tool returned, or that the asset index or source_assets.json lists" in flat
     assert "- scene/review.md: judging the current scene, and honest gaps." in flat
-    # S2: the six pointer skills are no longer delivered, but their files stay in the repo.
-    removed = ("create-design", "plan-design", "visual-review", "reference-image-direction",
-               "reference-conditioned-ads", "generative-imagery")
+    # S2: three pointer skills are no longer delivered, but their files stay in the repo.
+    removed = ("create-design", "plan-design", "visual-review")
     root = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs"
     manifest = json.loads((root / "views/scene/manifest.json").read_text())
     for name in removed:
         assert name not in manifest["skills"]
         assert not (workspace / ".deepagent/skills" / name).exists()
         assert (root / "skills" / name / "SKILL.md").is_file()
+    # Founder 2026-10-19: the imagery skills are delivered again (S2 had removed them).
+    for name in ("generative-imagery", "reference-image-direction", "reference-conditioned-ads"):
+        assert name in manifest["skills"]
+        assert (workspace / ".deepagent/skills" / name / "SKILL.md").is_file()
     # The one unique sentence of reference-conditioned-ads moved to the references guide.
     references = " ".join(texts["knowledge_docs/knowledge/scene/references.md"].split())
     assert ("Exact reproduction follows the user's request; otherwise preserve the defining "
             "properties intentionally.") in references
+
+
+def test_copy_guidance_chooses_the_angle_first_and_budgets_the_words():
+    """Copy work 2026-10-18 (founder): angle before playbook, per-format word budgets, line rules."""
+    from pathlib import Path
+
+    prompt = " ".join(prompts.build_scene_solo_prompt("/run_test/workspace").split())
+    assert "Read the direction contract and relevant playbook." not in prompt
+    assert "the playbook for the angle you choose; the scene-brief-copy skill says how" in prompt
+    scene = Path(prompts.__file__).resolve().parent.parent / "knowledge_docs/views/scene"
+
+    def flat(rel):
+        return " ".join((scene / rel).read_text().split())
+
+    brief_copy = flat("skills/scene-brief-copy/SKILL.md")
+    assert "Choose the angle before the playbook." in brief_copy
+    assert brief_copy.index("Choose the angle before the playbook.") < brief_copy.index("catalog.md")
+    assert "read the budget for your format before you write copy" in brief_copy
+    assert "They show the move, not the words" in brief_copy
+    placement = flat("knowledge/scene/placement.md")
+    assert "## How much copy each placement carries" in placement
+    assert "| Square feed (1080×1080) | up to 8 words |" in placement
+    assert "Count the words on the image against your format's budget" in flat("knowledge/scene/review.md")
