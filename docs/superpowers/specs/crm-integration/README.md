@@ -8,6 +8,7 @@ group. Add a line here whenever a new document is written.
 | Document | What it is | Status |
 |---|---|---|
 | [`2026-10-22-crm-write-permission-card-design.md`](2026-10-22-crm-write-permission-card-design.md) | Phase 2 permission card for Figma: states (asking, sending, done, not allowed, replaced, paused), grouping, wording, data | Current card (R-6.22) |
+| [`../../plans/2026-10-23-crm-integration-phase-3-first-writes.md`](../../plans/2026-10-23-crm-integration-phase-3-first-writes.md) | Phase 3 (first writes) implementation plan: 9 tasks — verify list/campaign shapes, list registry (R-11.11), create-list / company lists, `read_crm_targets` (R-8.7 reduced view), R-8.7 checked in prepare, record links, find/link a list, skill v2 + v78, live check; decisions D-1–D-6 for the founder | Draft 2026-10-23 — awaiting founder review and rulings on D-1–D-6 |
 | [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md) | Phase 2 live check on both test CRMs: what passed, what was fixed mid-run (R-11.1–R-11.6), open founder questions L5/L6/L10, fixes L8/L9, minors, what was not exercised | Record — questions and fixes feed the whole-branch review |
 | [`status.md`](status.md) | Build status: what is built, in progress, not started, or parked — one line per feature | Live — updated whenever a feature changes state |
 | [`composio-api-notes.md`](composio-api-notes.md) | Verified Composio REST v3.1 shapes, errors and versions from the Task 0 spike | Live — amend when Composio behaviour changes |

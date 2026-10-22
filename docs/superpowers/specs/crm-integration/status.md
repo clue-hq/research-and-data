@@ -51,6 +51,7 @@ _Last updated: 2026-10-22 — Phase 2 built and live-checked on both test CRMs; 
 - ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 
 ## Phase 3 — first writes (a few at a time)
+- 📝 Plan `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md` (branch `feat/crm-integration-phase-3`) — awaiting founder review and decisions D-1–D-6 (tier from fit bands; verified_smtp only; HubSpot company list / Salesforce campaign of contacts; duplicate links to Phase 4; R-8.7 gate on what ARV2 records; persona → buying role)
 - ⬜ Target accounts → Clue list (HubSpot) / campaign (Salesforce) — design R-11.11: Clue creates its own list or finds the person's by name, stores the id (one list, many projects), recovers by name; allowlist list lookup + create-list / create-campaign after a live check
 - ⬜ HubSpot Target account + ICP tier fields
 - ⬜ Buying-committee contacts (Salesforce: Contacts only); missing companies/accounts
