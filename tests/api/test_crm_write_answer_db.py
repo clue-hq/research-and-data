@@ -529,15 +529,25 @@ def test_the_turn_list_names_the_gate_a_turn_answered(tmp_path: Path) -> None:
     """R-11.4: the chat hides a card answer's message bubble by the answer row, never by text.
 
     The turn list carries ``answered_gate_id`` for the turn that answered a card and ``None`` for
-    every other turn, so the client can render no user bubble for the answer.
+    every other turn, so the client can render no user bubble for the answer. A card whose answer
+    the agent replies to (here a research directive) is the one that has such a turn: a CRM write
+    card's answer is recorded with no turn at all (R-11.6).
     """
 
     async def body(conn: Any, seeded: Any, connection: Any) -> None:
-        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
-        snapshot = await _snapshot(conn, seeded, proposed)
+        await _seeded_turn_ran(conn, seeded)
+        gate = await _directive_gate(conn, seeded)
         async with _client(conn, seeded) as client:
-            answered = await _answer(
-                client, seeded, proposed, snapshot, key="r114", decision="rejected"
+            answered = await client.post(
+                f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
+                json={
+                    "gate_response": {
+                        "gate_id": str(gate.gate_id),
+                        "decision": "rejected",
+                        "expected_subject_sha256": gate.expected_subject_sha256,
+                    }
+                },
+                headers={"X-Workspace-Id": seeded.workspace_id, "Idempotency-Key": "r114"},
             )
             assert answered.status_code == 202, answered.text
             listing = await client.get(
@@ -547,11 +557,310 @@ def test_the_turn_list_names_the_gate_a_turn_answered(tmp_path: Path) -> None:
         assert listing.status_code == 200, listing.text
         by_turn = {item["turn_id"]: item for item in listing.json()["data"]}
         answer_turn = answered.json()["data"]["turn_id"]
-        assert by_turn[answer_turn]["answered_gate_id"] == proposed["gate_id"]
+        assert by_turn[answer_turn]["answered_gate_id"] == str(gate.gate_id)
         others = [item for turn_id, item in by_turn.items() if turn_id != answer_turn]
         assert all(item["answered_gate_id"] is None for item in others)
+        # The agent replies to this card's answer: the route says so and the turn is offered.
+        assert answered.json()["data"]["agent_reply"] == "expected"
+        assert await _agent_turn_tasks(conn, seeded, UUID(answer_turn)) == 1
 
     _run(tmp_path, "answered-gate-id", body)
+
+
+# --- R-11.3 / R-11.6: answering the write card starts no agent turn --------------------------
+
+
+async def _seeded_turn_ran(conn: Any, seeded: Any) -> None:
+    """Mark the seeded turn (the one that showed the card) as run, as it is in production."""
+    from clue_api.agent_turn_submission import agent_turn_dedup_key, thread_work_id
+    from clue_core import ProjectRunId
+    from clue_fleet import FleetTaskKind, enqueue_task
+
+    await enqueue_task(
+        conn,
+        kind=FleetTaskKind.AGENT_TURN,
+        project_run_id=ProjectRunId(
+            thread_work_id(workspace_id=seeded.workspace_id, thread_id=seeded.thread_id)
+        ),
+        dedup_key=agent_turn_dedup_key(seeded.turn_id),
+    )
+    await conn.execute(
+        text("UPDATE fleet_task SET status = 'done' WHERE dedup_key = :key"),
+        {"key": agent_turn_dedup_key(seeded.turn_id)},
+    )
+
+
+async def _directive_gate(conn: Any, seeded: Any) -> Any:
+    gate, _ = await insert_gate(
+        conn,
+        gate_id=uuid4(),
+        workspace_id=seeded.workspace_id,
+        project_id=seeded.project_id,
+        thread_id=seeded.thread_id,
+        turn_id=seeded.turn_id,
+        kind=KIND_DIRECTIVE_CONFIRMATION,
+        subject_ref="research-directive:33333333-3333-4333-8333-333333333333:v1",
+        subject_revision=1,
+        expected_subject_sha256="d" * 64,
+        subject_snapshot={"research_directive_id": str(uuid4())},
+        max_spend_cents=None,
+        currency=None,
+        addressee_user_id=USER_ID,
+    )
+    return gate
+
+
+async def _agent_turn_tasks(conn: Any, seeded: Any, turn_id: UUID | None = None) -> int:
+    from clue_api.agent_turn_submission import agent_turn_dedup_key, thread_work_id
+
+    result = await conn.execute(
+        text(
+            "SELECT count(*) FROM fleet_task WHERE kind = 'agent_turn' AND work_id = :work "
+            "AND (CAST(:key AS text) IS NULL OR dedup_key = :key)"
+        ),
+        {
+            "work": str(
+                thread_work_id(workspace_id=seeded.workspace_id, thread_id=seeded.thread_id)
+            ),
+            "key": None if turn_id is None else agent_turn_dedup_key(turn_id),
+        },
+    )
+    return int(result.scalar_one())
+
+
+async def _turn_list(client: httpx.AsyncClient, seeded: Any) -> list[str]:
+    listing = await client.get(
+        f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
+        headers={"X-Workspace-Id": seeded.workspace_id},
+    )
+    assert listing.status_code == 200, listing.text
+    return [item["turn_id"] for item in listing.json()["data"]]
+
+
+async def _assert_no_turn(conn: Any, client: httpx.AsyncClient, seeded: Any, turn_id: str) -> None:
+    """The answer is recorded and nothing runs, and nothing waits on it."""
+    from clue_api.agent_turn_submission import dispatch_next_thread_turn
+
+    assert await _agent_turn_tasks(conn, seeded, UUID(turn_id)) == 0
+    # Only the seeded turn ever ran on this thread.
+    assert await _agent_turn_tasks(conn, seeded) == 1
+    assert (
+        await dispatch_next_thread_turn(
+            conn, workspace_id=seeded.workspace_id, thread_id=seeded.thread_id
+        )
+        is None
+    )
+    assert await _agent_turn_tasks(conn, seeded) == 1
+    assert turn_id not in await _turn_list(client, seeded)
+    assert await _thread_status(client, seeded) != "running"
+    accepted = await conn.scalar(
+        text("SELECT count(*) FROM agent_turn_event_stream WHERE turn_id = :turn"),
+        {"turn": UUID(turn_id)},
+    )
+    assert accepted == 0
+
+
+def test_allow_records_the_answer_and_starts_no_turn(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await _seeded_turn_ran(conn, seeded)
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client,
+                seeded,
+                proposed,
+                snapshot,
+                key="nr-allow",
+                selected=_ids_in(snapshot, "101"),
+            )
+            assert response.status_code == 202, response.text
+            assert response.json()["data"]["agent_reply"] == "none"
+            assert await _answers(conn, seeded.workspace_id) == 1
+            assert await _offers(conn, connection.connection_id) == 1
+            assert (await _proposal(conn, proposed["proposal_id"])).status == "queued"
+            await _assert_no_turn(conn, client, seeded, response.json()["data"]["turn_id"])
+
+            # A retried click answers once and queues once, and still starts no turn.
+            replay = await _answer(
+                client,
+                seeded,
+                proposed,
+                snapshot,
+                key="nr-allow",
+                selected=_ids_in(snapshot, "101"),
+            )
+            assert replay.status_code == 202, replay.text
+            assert replay.json()["data"]["replayed"] is True
+            assert replay.json()["data"]["agent_reply"] == "none"
+            assert replay.json()["data"]["turn_id"] == response.json()["data"]["turn_id"]
+            assert await _answers(conn, seeded.workspace_id) == 1
+            assert await _offers(conn, connection.connection_id) == 1
+            await _assert_no_turn(conn, client, seeded, response.json()["data"]["turn_id"])
+
+    _run(tmp_path, "no-reply-allow", body)
+
+
+def test_dont_allow_records_the_answer_and_starts_no_turn(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await _seeded_turn_ran(conn, seeded)
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="nr-decline", decision="rejected"
+            )
+            assert response.status_code == 202, response.text
+            assert response.json()["data"]["agent_reply"] == "none"
+            assert await _answers(conn, seeded.workspace_id) == 1
+            assert await _offers(conn, connection.connection_id) == 0
+            assert (await _proposal(conn, proposed["proposal_id"])).status == "declined"
+            await _assert_no_turn(conn, client, seeded, response.json()["data"]["turn_id"])
+
+    _run(tmp_path, "no-reply-decline", body)
+
+
+async def _name(conn: Any, user_id: str, name: str) -> None:
+    await conn.execute(
+        text("UPDATE platform_user SET display_name = :name WHERE user_id = :user"),
+        {"name": name, "user": user_id},
+    )
+
+
+def test_the_results_message_names_who_allowed_what(tmp_path: Path) -> None:
+    from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+    from clue_api.crm.wake import queue_crm_writes_finished_turn
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await _name(conn, USER_ID, "Aryan Keshri")
+        proposed = await _propose(
+            conn,
+            seeded,
+            _set_tier("101", "Tier 1"),
+            _set_tier("103", "Tier 2"),
+            _add_to_list("501"),
+        )
+        snapshot = await _snapshot(conn, seeded, proposed)
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client,
+                seeded,
+                proposed,
+                snapshot,
+                key="nr-wake",
+                selected=_ids_in(snapshot, "101") + _ids_in(snapshot, "501"),
+                always_allow=["kind:list_membership"],
+            )
+        assert response.status_code == 202, response.text
+        await conn.execute(
+            text("UPDATE crm_write SET status = 'succeeded' WHERE proposal_id = :id AND selected"),
+            {"id": UUID(proposed["proposal_id"])},
+        )
+        proposal = await writes.get_proposal(conn, proposal_id=UUID(proposed["proposal_id"]))
+        assert proposal is not None
+        artifacts = DurableAgentArtifactStore(
+            storage=seeded.storage, conn_factory=conn_session_factory(conn)
+        )
+        assert await queue_crm_writes_finished_turn(conn, artifacts, proposal=proposal)
+        from clue_api.agent_turn_submission import turn_id_for_submission
+
+        wake = turn_id_for_submission(
+            workspace_id=seeded.workspace_id,
+            thread_id=seeded.thread_id,
+            idempotency_key=f"crm-writes-finished:{proposed['proposal_id']}",
+        )
+        key = await conn.scalar(
+            text("SELECT message_artifact_key FROM agent_turn_submission WHERE turn_id = :id"),
+            {"id": wake},
+        )
+        message = (await seeded.storage.get(key)).decode()
+        assert message.startswith(
+            "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding contacts to "
+            "Clue lists. The CRM changes are finished: 2 done, 0 failed, 0 skipped"
+        ), message
+
+    _run(tmp_path, "wake-names", body)
+
+
+async def _send(client: httpx.AsyncClient, seeded: Any, key: str) -> str:
+    response = await client.post(
+        f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
+        json={"message": f"Next message {key}."},
+        headers={"X-Workspace-Id": seeded.workspace_id, "Idempotency-Key": key},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["data"]["agent_reply"] == "expected"
+    return str(response.json()["data"]["turn_id"])
+
+
+def test_a_decline_reaches_the_agent_once_on_its_next_turn(tmp_path: Path) -> None:
+    from clue_api.crm.write_answer import card_answers_since_last_turn
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await _seeded_turn_ran(conn, seeded)
+        await _name(conn, OTHER_USER_ID, "Priya Rao")
+        proposed = await _propose(
+            conn, seeded, _set_tier("101", "Tier 1"), _set_tier("103", "Tier 2")
+        )
+        snapshot = await _snapshot(conn, seeded, proposed)
+        card_at = await conn.scalar(
+            text("SELECT created_at FROM agent_gate WHERE gate_id = :gate"),
+            {"gate": UUID(proposed["gate_id"])},
+        )
+        async with _client(conn, seeded, OTHER_USER_ID) as colleague:
+            declined = await _answer(
+                colleague, seeded, proposed, snapshot, key="nr-d", decision="rejected"
+            )
+            assert declined.status_code == 202, declined.text
+        async with _client(conn, seeded) as client:
+            next_turn = await _send(client, seeded, "after-decline")
+            later_turn = await _send(client, seeded, "later")
+
+        async def lines(turn_id: str) -> tuple[str, ...]:
+            return await card_answers_since_last_turn(
+                conn,
+                workspace_id=seeded.workspace_id,
+                thread_id=seeded.thread_id,
+                turn_id=UUID(turn_id),
+            )
+
+        assert await lines(next_turn) == (
+            f"Since your last turn: the CRM write card from {card_at:%Y-%m-%d %H:%M} UTC "
+            "(2 changes) was declined by Priya Rao.",
+        )
+        # Only once: the turn after that has already been told.
+        assert await lines(later_turn) == ()
+        # The answer itself is no turn the agent runs, so it has no lines of its own.
+        assert await lines(declined.json()["data"]["turn_id"]) == ()
+
+    _run(tmp_path, "decline-line", body)
+
+
+def test_an_allowed_card_still_sending_is_named_on_the_next_turn(tmp_path: Path) -> None:
+    from clue_api.crm.write_answer import card_answers_since_last_turn
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await _seeded_turn_ran(conn, seeded)
+        await _name(conn, USER_ID, "Aryan Keshri")
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        async with _client(conn, seeded) as client:
+            allowed = await _answer(
+                client, seeded, proposed, snapshot, key="nr-a", selected=_ids_in(snapshot, "101")
+            )
+            assert allowed.status_code == 202, allowed.text
+            next_turn = await _send(client, seeded, "after-allow")
+        (line,) = await card_answers_since_last_turn(
+            conn,
+            workspace_id=seeded.workspace_id,
+            thread_id=seeded.thread_id,
+            turn_id=UUID(next_turn),
+        )
+        assert line.endswith(
+            "(1 change) was allowed by Aryan Keshri; the changes are still being sent."
+        )
+
+    _run(tmp_path, "allow-line", body)
 
 
 def test_the_progress_read_reports_counts_and_crm_messages(tmp_path: Path) -> None:

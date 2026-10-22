@@ -588,6 +588,9 @@ class TurnAcceptedWire(_Wire):
     #: thread holds an open design leg, else ``head_of_abm``. Derived in the accept transaction,
     #: so the composer can label the pending turn without a second read.
     routed_to: Literal["head_of_abm", "design"] = "head_of_abm"
+    #: R-11.6: ``none`` when the submission is recorded and no turn will run for it (the answer
+    #: to a CRM write card). The client then attaches no turn stream and shows nothing in flight.
+    agent_reply: Literal["expected", "none"] = "expected"
 
 
 class TurnAcceptedResponse(_Wire):

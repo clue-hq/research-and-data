@@ -52,6 +52,8 @@ from clue_api.agent_gate import (
     insert_gate_answer,
 )
 from clue_api.agent_turn_submission import (
+    AGENT_REPLY_EXPECTED,
+    AGENT_REPLY_NONE,
     SubmissionConflict,
     dispatch_next_thread_turn,
     get_submission,
@@ -2776,6 +2778,16 @@ def build_chat_router(
                         ),
                     )
                     digest = content_address(message.encode())
+                # R-11.3/R-11.6: answering a CRM write card starts no agent turn. Allow hands the
+                # changes to the background sender, whose own wake turn reports the results; Don't
+                # allow reaches the agent as a context line on its next turn. The answer is still
+                # recorded as a submission — the receipt the gate answer points at and the anchor a
+                # retried click replays on — marked as one the agent never replies to.
+                agent_reply: Literal["expected", "none"] = (
+                    AGENT_REPLY_NONE
+                    if gate is not None and gate.kind == KIND_CRM_WRITE_PERMISSION
+                    else AGENT_REPLY_EXPECTED
+                )
                 # Replay is decided before anything is written: a retry must not persist a second
                 # artifact, and a *different* message under a used key must be refused rather than
                 # answered with the first one's turn.
@@ -2823,6 +2835,11 @@ def build_chat_router(
                             requested_at=existing.requested_at.isoformat(),
                             replayed=True,
                             routed_to=routed_to,
+                            agent_reply=(
+                                AGENT_REPLY_NONE
+                                if existing.agent_reply == AGENT_REPLY_NONE
+                                else AGENT_REPLY_EXPECTED
+                            ),
                         )
                     )
                 # Mutable domain state is checked only for a NEW submission. An
@@ -2938,6 +2955,7 @@ def build_chat_router(
                         # the Home bootstrap path never carries one — a first turn has no
                         # previous design turn).
                         previous_turn_outcome=body.previous_turn_outcome,
+                        agent_reply=agent_reply,
                     )
                 except SubmissionConflict as exc:
                     raise _refuse(
@@ -3209,19 +3227,23 @@ def build_chat_router(
                 # It rides the same transaction as the capture and the submission, so the frame
                 # cannot exist for a turn that does not, and the replay path above emits nothing —
                 # a second POST under one idempotency key announces nothing new.
-                await emit_turn_event(
-                    conn,
-                    workspace_id=who.workspace_id,
-                    project_id=project_id,
-                    thread_id=thread_id,
-                    turn_id=turn_id,
-                    event_type=TurnEventType.TURN_ACCEPTED,
-                    payload={
-                        "requested_at": submission.requested_at.isoformat(),
-                        "source": "route",
-                        "kind": "gate_response" if gate is not None else "message",
-                    },
-                )
+                #
+                # A submission the agent never replies to is no turn, so it announces none: an
+                # open chat would otherwise attach a stream that never ends.
+                if agent_reply == AGENT_REPLY_EXPECTED:
+                    await emit_turn_event(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        event_type=TurnEventType.TURN_ACCEPTED,
+                        payload={
+                            "requested_at": submission.requested_at.isoformat(),
+                            "source": "route",
+                            "kind": "gate_response" if gate is not None else "message",
+                        },
+                    )
                 await dispatch_next_thread_turn(
                     conn,
                     workspace_id=who.workspace_id,
@@ -3239,6 +3261,7 @@ def build_chat_router(
                     requested_at=submission.requested_at.isoformat(),
                     replayed=False,
                     routed_to=routed_to,
+                    agent_reply=agent_reply,
                 )
             )
 

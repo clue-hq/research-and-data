@@ -111,6 +111,7 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.crm.write_answer import card_answers_since_last_turn
 from clue_api.design_leg_wiring import (
     DesignLegExitJudge,
     DesignLegFinisher,
@@ -203,6 +204,8 @@ __all__ = [
 #: constant rather than a setting because there is nothing here an operator should tune per
 #: deployment without also revisiting the profile's round/timeout limits.
 PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS = 1_000_000
+#: R-11.6: the L3 note of card answers the agent has not heard of (they started no turn).
+SINCE_LAST_TURN_MEDIA_TYPE = "application/vnd.clue.since-last-turn+json"
 
 _EXECUTION_NAMESPACE_KEY = "project-conversation@1"
 _DRIVER_WORKER_ID = "agent-turn-recipe-driver"
@@ -660,6 +663,16 @@ class ProjectConversationTurnRunner:
                 documents=documents,
             )
             mounts = MountRequest(brand=(scope.brand_id, brand_version))
+        # R-11.6: what was answered on a CRM write card since this thread's last turn. The answer
+        # started no turn, so this is how a decline (or an Allow whose changes are still being
+        # sent) reaches the agent — once, on the first turn after it.
+        async with self._conn_factory() as conn:
+            card_answers = await card_answers_since_last_turn(
+                conn,
+                workspace_id=workspace_id,
+                thread_id=submission.thread_id,
+                turn_id=turn_id,
+            )
         # The project's own state (spec §4.1): status.md, decisions.md, the artifact index and
         # every document this project authored, compiled once beside the threads and mounted
         # read-only at ``project/``. The project moves while a turn runs — a discovery run
@@ -863,6 +876,7 @@ class ProjectConversationTurnRunner:
                 product_changes=product_changes,
                 project_library_index=project_library_index,
                 focus_refs=submission_focus_refs,
+                card_answers=card_answers,
             )
             card_ref = await self._artifact(
                 submission,
@@ -1022,6 +1036,7 @@ class ProjectConversationTurnRunner:
         product_changes: tuple[str, ...] = (),
         project_library_index: bytes | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
+        card_answers: tuple[str, ...] = (),
     ) -> _ProjectContextBundle:
         """Compile and persist the bounded index of this turn's pinned brand knowledge.
 
@@ -1109,6 +1124,28 @@ class ProjectConversationTurnRunner:
                     schema_version="1",
                     content_sha256=project_ref.sha256,
                     omitted_count=0,
+                )
+            )
+
+        if card_answers:
+            # R-11.6: a CRM write card answered since the agent's last turn started no turn of its
+            # own, so this turn is told — one plain line per card, already bounded by the reader.
+            answers_ref = await self._artifact(
+                submission,
+                scope,
+                SINCE_LAST_TURN_MEDIA_TYPE,
+                {"schema_version": "1", "lines": list(card_answers)},
+            )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name="since_last_turn",
+                    artifact_ref=answers_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="thread",
+                        object_id=submission.thread_id,
+                        version=None,
+                    ),
                 )
             )
 
@@ -1612,7 +1649,8 @@ _SWEEP_THREADS_SQL = text(
     """
     SELECT DISTINCT s.workspace_id, s.thread_id
     FROM agent_turn_submission s
-    WHERE NOT EXISTS (
+    WHERE s.agent_reply = 'expected'
+      AND NOT EXISTS (
         SELECT 1 FROM fleet_task f
         WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)
           AND f.dedup_key = :prefix || s.turn_id::text

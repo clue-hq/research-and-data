@@ -18,12 +18,17 @@ holds that answer's CRM half:
   permission covered included — and nothing is sent;
 * :func:`proposal_progress` is what ``GET /crm/proposals/{id}`` serves the card. A card a newer card
   replaced reads ``replaced``; one a reconnect closed before anybody answered reads ``closed``.
+
+Answering the card starts no agent turn (R-11.3, built as R-11.6): the agent learns of an Allow from
+the sender's results message, which opens with :func:`allowed_sentence`, and of a Don't allow from
+the one line :func:`card_answers_since_last_turn` adds to its next turn's context.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -39,8 +44,10 @@ from clue_fleet import FleetTaskKind, enqueue_task
 
 __all__ = [
     "CrmAnswerRefused",
+    "allowed_sentence",
     "answer_summary",
     "apply_answer",
+    "card_answers_since_last_turn",
     "check_answer",
     "proposal_progress",
 ]
@@ -310,6 +317,117 @@ async def apply_answer(
         dedup_key=crm_write_dedup_key(proposal.connection_id),
         reopen_terminal=True,
     )
+
+
+# --- what the agent hears of an answer it did not reply to (R-11.6) -------------------------
+
+#: A person whose name was erased (or never given) is still somebody.
+_SOMEBODY = "A workspace member"
+#: The most card answers one turn's context names; older ones are dropped, never summarized.
+_MAX_CARD_ANSWER_LINES = 10
+
+
+async def allowed_sentence(conn: AsyncConnection, *, proposal_id: UUID) -> str | None:
+    """Who allowed what on the proposal's card, for the start of the sender's results message:
+    "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding contacts to Clue lists."
+
+    ``None`` when nobody allowed a card for this proposal (its changes were all covered by
+    standing permissions, so no card was shown)."""
+    row = (
+        await conn.execute(
+            text(
+                "SELECT a.decision_payload, g.subject_snapshot, u.display_name "
+                "FROM crm_write_proposal p "
+                "JOIN agent_gate_answer a ON a.gate_id = p.gate_id "
+                "JOIN agent_gate g ON g.gate_id = p.gate_id "
+                "LEFT JOIN platform_user u ON u.user_id = a.answered_by_user_id "
+                "WHERE p.proposal_id = :id AND a.decision = 'approved'"
+            ),
+            {"id": proposal_id},
+        )
+    ).first()
+    if row is None:
+        return None
+    payload = _snapshot(row.decision_payload)
+    snapshot = _snapshot(row.subject_snapshot)
+    shown = _shown_write_ids(snapshot)
+    selected = {str(item) for item in payload.get("selected_write_ids") or ()}
+    sentence = (
+        f"{row.display_name or _SOMEBODY} allowed {len(selected & shown)} of {_changes(len(shown))}"
+    )
+    phrases = _phrases(snapshot)
+    granted = [phrases.get(str(scope), str(scope)) for scope in payload.get("always_allow") or ()]
+    if granted:
+        sentence += " and granted: always allow " + _join(granted)
+    return sentence + "."
+
+
+async def card_answers_since_last_turn(
+    conn: AsyncConnection, *, workspace_id: str, thread_id: str, turn_id: UUID
+) -> tuple[str, ...]:
+    """One plain line for each write card answered in this thread since the agent's last turn
+    before ``turn_id`` — answers that started no turn, so the agent has not heard of them.
+
+    A declined card always gets its line ("… was declined by Priya Rao."). An allowed card gets
+    one only while its changes are still being sent: once they finish (or pause) the sender's own
+    message says so. Each answer reaches exactly one turn — the first the agent replies to after
+    it — so a retry of that turn reads the same lines and the turn after reads none of them."""
+    rows = (
+        await conn.execute(
+            text(
+                """
+                WITH this_turn AS (
+                    SELECT requested_at FROM agent_turn_submission
+                    WHERE workspace_id = :ws AND thread_id = :thread AND turn_id = :turn
+                ),
+                last_turn AS (
+                    SELECT max(s.requested_at) AS at
+                    FROM agent_turn_submission s, this_turn
+                    WHERE s.workspace_id = :ws AND s.thread_id = :thread
+                      AND s.agent_reply = 'expected' AND s.requested_at < this_turn.requested_at
+                )
+                SELECT a.decision, g.created_at AS card_at, g.subject_snapshot,
+                       u.display_name, p.status
+                FROM agent_turn_submission s
+                CROSS JOIN this_turn
+                CROSS JOIN last_turn
+                JOIN agent_gate_answer a
+                  ON a.workspace_id = s.workspace_id AND a.turn_id = s.turn_id
+                JOIN agent_gate g ON g.gate_id = a.gate_id
+                JOIN crm_write_proposal p ON p.gate_id = g.gate_id
+                LEFT JOIN platform_user u ON u.user_id = a.answered_by_user_id
+                WHERE s.workspace_id = :ws AND s.thread_id = :thread
+                  AND s.agent_reply = 'none'
+                  AND s.requested_at < this_turn.requested_at
+                  AND (last_turn.at IS NULL OR s.requested_at > last_turn.at)
+                ORDER BY s.requested_at DESC
+                LIMIT :limit
+                """
+            ),
+            {
+                "ws": workspace_id,
+                "thread": thread_id,
+                "turn": turn_id,
+                "limit": _MAX_CARD_ANSWER_LINES,
+            },
+        )
+    ).all()
+    lines: list[str] = []
+    for row in reversed(rows):
+        name = row.display_name or _SOMEBODY.lower()
+        card = (
+            f"Since your last turn: the CRM write card from {_utc_minute(row.card_at)} "
+            f"({_changes(len(_shown_write_ids(_snapshot(row.subject_snapshot))))})"
+        )
+        if row.decision != "approved":
+            lines.append(f"{card} was declined by {name}.")
+        elif row.status in ("queued", "sending"):
+            lines.append(f"{card} was allowed by {name}; the changes are still being sent.")
+    return tuple(lines)
+
+
+def _utc_minute(value: datetime) -> str:
+    return f"{value.astimezone(UTC):%Y-%m-%d %H:%M} UTC"
 
 
 # --- the progress read -----------------------------------------------------------------------

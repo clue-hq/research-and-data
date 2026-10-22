@@ -36,6 +36,7 @@ from clue_api.conversation_capture import (
 )
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.connections import ConnectRequest
+from clue_api.crm.write_answer import allowed_sentence
 from clue_api.crm.writes import WriteCounts, WriteProposal, proposal_counts
 from clue_spine import get_project
 
@@ -127,8 +128,18 @@ def _log_hint(proposal_id: UUID) -> str:
     return f"read the details with crm_write_log(proposal_id={proposal_id})"
 
 
-def crm_writes_finished_message(proposal_id: UUID, counts: WriteCounts) -> str:
-    message = f"The CRM changes are finished: {_tally(counts)} — {_log_hint(proposal_id)}."
+def _opening(allowed: str | None) -> str:
+    """Who allowed what (R-11.6): the card's answer started no turn, so this message says it."""
+    return "" if allowed is None else f"{allowed} "
+
+
+def crm_writes_finished_message(
+    proposal_id: UUID, counts: WriteCounts, *, allowed: str | None = None
+) -> str:
+    message = (
+        f"{_opening(allowed)}The CRM changes are finished: {_tally(counts)} — "
+        f"{_log_hint(proposal_id)}."
+    )
     if counts.reconnected:
         message += (
             f" {counts.reconnected} were not sent (or not confirmed) because the CRM was "
@@ -140,10 +151,16 @@ def crm_writes_finished_message(proposal_id: UUID, counts: WriteCounts) -> str:
 
 
 def crm_writes_paused_message(
-    proposal_id: UUID, counts: WriteCounts, *, reason: str, resumes: str
+    proposal_id: UUID,
+    counts: WriteCounts,
+    *,
+    reason: str,
+    resumes: str,
+    allowed: str | None = None,
 ) -> str:
     return (
-        f"The CRM changes are paused: {reason.rstrip('.')}. So far {_tally(counts)}, "
+        f"{_opening(allowed)}The CRM changes are paused: {reason.rstrip('.')}. "
+        f"So far {_tally(counts)}, "
         f"{counts.waiting} waiting. They continue by themselves {resumes}. "
         f"{_log_hint(proposal_id).capitalize()}."
     )
@@ -164,7 +181,11 @@ async def queue_crm_writes_finished_turn(
         artifacts,
         proposal=proposal,
         key=f"crm-writes-finished:{proposal.proposal_id}",
-        message=crm_writes_finished_message(proposal.proposal_id, counts),
+        message=crm_writes_finished_message(
+            proposal.proposal_id,
+            counts,
+            allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
+        ),
     )
 
 
@@ -189,7 +210,11 @@ async def queue_crm_writes_paused_turn(
         proposal=proposal,
         key=f"crm-writes-paused:{proposal.proposal_id}:{decided}",
         message=crm_writes_paused_message(
-            proposal.proposal_id, counts, reason=reason, resumes=resumes
+            proposal.proposal_id,
+            counts,
+            reason=reason,
+            resumes=resumes,
+            allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
         ),
     )
 

@@ -511,6 +511,9 @@ _TURN_UNION_SELECT = """
         LIMIT 1
     ) ga ON TRUE
     WHERE s.workspace_id = :workspace_id
+      -- R-11.6: a submission the agent never replies to (a CRM write card's answer) is a
+      -- receipt, not a turn: it is never listed, never queued and never makes a thread busy.
+      AND s.agent_reply = 'expected'
 """
 
 _THREAD_TURNS = text(
