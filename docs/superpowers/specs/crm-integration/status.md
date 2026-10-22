@@ -44,7 +44,7 @@ _Last updated: 2026-10-22 — Phase 2 built and live-checked on both test CRMs; 
 - ✅ Standing permissions ("Always allow" per kind of change on the card); `manage_crm_grants` (list, revoke; idempotent revoke); a new connection starts with none
 - ✅ `crm_write_log` (filters, before-values, action slug for undo) and undo through chat (`reverses_write_id`; removals only of members Clue added)
 - ✅ `crm-writing` skill v1 (founder-approved wording), Head of ABM v77 (recipe 37, manual v23), crm-sales-analysis v2 points to it
-- ✅ Live check on both test CRMs 2026-10-22 — [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md): propose/allow/log/undo/revoke/create/refusals/overwrite all pass; open: L5 list lookup, L6 missing record, L10 Salesforce field coverage (founder questions), L8 raw CRM message, L9 create id in the log (fixes)
+- ✅ Live check on both test CRMs 2026-10-22 — [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md): propose/allow/log/undo/revoke/create/refusals/overwrite all pass; decided the same day: L6 per-change not-found (R-11.7, fixed), L8 CRM message text and L9 create id in the log (fixed), L5 lists wait for Phase 3 (R-11.8), L10 Salesforce field coverage stays (R-11.9, design A noted)
 - ⬜ Per-workspace throttle (R-7.3) — not built in Phase 2
 - ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 

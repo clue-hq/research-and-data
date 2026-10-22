@@ -43,7 +43,22 @@ for the founder and the final review.
 - **R-11.4** Answering any card adds no message bubble; the turn list carries `answered_gate_id`
   (`fac5e0f75`).
 
-## Open — founder questions
+## Decided after the run (same day)
+- **L6 → R-11.7, fixed `02c01de08`:** a missing record refuses only its own change
+  (`crm_record_not_found`, listed in the tool's `refused`); the rest of the batch goes on the card;
+  a batch with every record missing makes no proposal. Residual: a replayed call rebuilt from the
+  stored proposal has no `refused` list (needs a column); membership reads are not covered; the
+  HubSpot 404 shape is assumed from the executor's handling, a live re-run would confirm it.
+- **L8 fixed `5d37c57cd`:** the card, wake message and log show the CRM's message text; the raw
+  answer is kept in `crm_write.crm_response` (migration `01b066d230e7`).
+- **L9 fixed `8130d6ed2`:** a create's new id is stamped on its log row and named in the results
+  message ("Created <label> (<id>)").
+- **L5 → R-11.8:** list lookup and creation wait for Phase 3.
+- **L10 → R-11.9:** Salesforce field coverage stays at Composio's named arguments; design A (any
+  field by API name, checked against the org's definitions, sent through the composite patch)
+  noted for later.
+
+## Open — founder questions (as raised during the run)
 - **L5 List membership cannot be used.** `HUBSPOT_UPDATE_LIST_MEMBERSHIPS` needs a list id, and no
   connected action lists the lists or creates one (a generic object read of `lists` gets "Unable to
   infer object type"). Clue's own target-account list (the first-release write) needs a create-list
