@@ -57,3 +57,22 @@ Chats: Conduit `thr_65d4c3d4…` (new, legacy-planted) and `thr_b32c99d4…`. To
 - B freeze (SIGSTOP) mid-run_python: the frozen worker's late save was refused `fenced`, record untouched. BUT the takeover failed: `ExecutionConflict` because `pin_manifest_hash` differs per process — `proposal_policy`/`ingestion_policy` contain frozensets and `canonical_payload_digest` dumps them in PYTHONHASHSEED order (reproduced: 3 seeds → 3 digests). PRE-EXISTING (platform/execution untouched by F3); any chat-turn takeover across processes fails permanently. The failed turn also shows the person no error. Fix awaiting founder go.
 - D live compaction (CLUE_AGENT_CONTEXT_WINDOW_TOKENS=120000 temporarily): history written to agent/work/conversation_history/<id>.md (511 KB), saved; after wiping every area the agent named /work/conversation_history/<id>.md from its summary and quoted the file.
 .env restored to its original values after C and D; workers restarted.
+
+## Takeover fix and test B re-run (2026-10-22, commits ad14c9790 + bddd32771)
+- Fix: canonical_payload_digest sorts a set's items (ad14c9790), and the static pin catalog
+  hashes the policy model itself instead of its JSON (bddd32771) — the first commit alone did not
+  fix the live path, which the re-run showed. Both have cross-process tests (six PYTHONHASHSEEDs).
+- Re-run 1 (freeze during run_python): the replay conflict is gone (pins now 2bf881218052 /
+  6dc96e43a2f1 in every process), but the engine then abandoned the frozen worker's in-flight
+  run_python node (`worker_recovery`) and failed the execution (`node_dispatch_made_no_progress`):
+  a turn whose agent is mid tool call is not resumed — execution-engine design, not F3.
+- Re-run 2 (freeze right after restore, before any tool call): the takeover worker restored and
+  then waited on an advisory lock held by the FROZEN process's open transaction (SIGSTOP keeps the
+  connection); after `kill -9` (a real crash) the lock dropped and the takeover finished the turn,
+  saved v4 and the person saw the answer. Every unfrozen zombie's save was refused `fenced` (3/3).
+  Restarting workers wiped every area (incl. the crashed one's); no sandbox containers left.
+- Open (pre-existing, not F3): mid-tool-call turns are not resumed after a crash; a hung (not dead)
+  worker holds DB locks until it dies or resumes; a failed turn shows the person no error.
+- Pre-existing test failures seen (unchanged by the fix): test_recipes.py::test_latest_recipe0_…
+  (test DB recipe rows) and six in tests/stage0/test_phase_c5_recipe0.py (ValidationError in
+  confirm_project_product).
