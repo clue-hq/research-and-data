@@ -1034,6 +1034,33 @@ def test_a_create_stores_its_id_and_is_linked_as_created_by_clue(tmp_path: Path)
     _run(tmp_path, "create", body)
 
 
+def test_a_salesforce_account_made_since_the_card_is_not_created_again(tmp_path: Path) -> None:
+    """Final review I-5: the re-check before sending matches the website's host too."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "SALESFORCE_CREATE_ACCOUNT", {"name": "Acme", "website": "acme.com"}, "x"
+            ),
+        )
+        # Someone made the account meanwhile, with the website spelled another way.
+        gateway.records["001A"] = {"Name": "Acme", "Website": "https://www.acme.com/"}
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        (change,) = (await _writes(conn, proposal_id)).values()
+        assert (change["status"], change["failure_kind"]) == ("skipped", "conflict")
+        assert "001A" in change["crm_message"]
+        assert gateway.writes == []
+
+    _run(tmp_path, "sfcreate", body, provider="salesforce")
+
+
 def test_a_refused_create_shows_the_crm_message_and_keeps_its_answer(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         refusal = ExecuteResult(

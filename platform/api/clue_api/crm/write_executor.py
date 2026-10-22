@@ -79,7 +79,10 @@ from clue_api.crm.write_prepare import (
     _soql_text,
     _status_code,
     _unwrap,
+    create_key,
     hubspot_batch_values,
+    salesforce_find_query,
+    salesforce_match,
     temporary_failure,
 )
 from clue_api.crm.writes import (
@@ -568,7 +571,7 @@ async def _read_created(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen
         slug, key = write.spec.find_existing
         fields = write.after if isinstance(write.after, Mapping) else {}
         value = fields.get(key)
-        if value is None or str(value).strip() == "":
+        if not create_key(key, value):
             seen[write.write_id] = _Seen(value=None)
             continue
         if crm.connection.provider == "hubspot":
@@ -585,12 +588,12 @@ async def _read_created(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen
             records = _records(_unwrap(result.data), "results") if result.successful else None
             id_key = "id"
         else:
-            query = (
-                f"SELECT Id FROM {_SALESFORCE_SOBJECTS[write.object]} "
-                f"WHERE {key} = {_soql_text(value)} LIMIT 2"
-            )
+            query = salesforce_find_query(_SALESFORCE_SOBJECTS[write.object], key, value, [])
             result = await crm.call(slug, {"query": query})
             records = _records(_unwrap(result.data), "records") if result.successful else None
+            if records is not None:  # a website matches by its host, not its spelling
+                match = salesforce_match(key, value, records)
+                records = [] if match is None else [match]
             id_key = "Id"
         if not result.successful:
             seen[write.write_id] = _Seen(error=result.error or "No answer.")

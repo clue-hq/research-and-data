@@ -9,6 +9,7 @@ The CRM is a fake gateway; the database is the lane's test DB.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
@@ -201,6 +202,15 @@ class _FakeCrm:
             return {"fields": _SALESFORCE_FIELDS[arguments["object_name"]]}
         if slug == "SALESFORCE_RUN_SOQL_QUERY":
             query = arguments["query"]
+            like = re.search(r"Website LIKE '%(.*)%'", query)
+            if like is not None:  # Salesforce's LIKE ignores case
+                wanted = like.group(1).replace("\\", "").lower()
+                found = [
+                    {"attributes": {"type": "Account"}, "Id": rid, **rec}
+                    for rid, rec in self.records.items()
+                    if wanted in str(rec.get("Website") or "").lower()
+                ]
+                return {"records": found, "totalSize": len(found), "done": True}
             found = [
                 {"attributes": {"type": "Account"}, "Id": rid, **rec}
                 for rid, rec in self.records.items()
@@ -1140,3 +1150,90 @@ def test_a_salesforce_card_shows_picklist_labels(tmp_path: Path) -> None:
         assert sorted(str(p.after) for p in prepared) == ["T1", "T2"]
 
     _run(tmp_path, "sfoptlabels", body, provider="salesforce")
+
+
+def _create_account(name: str, website: str) -> ProposedChange:
+    return ProposedChange("SALESFORCE_CREATE_ACCOUNT", {"name": name, "website": website}, "x")
+
+
+def test_a_salesforce_account_create_finds_its_record_by_the_website_host(tmp_path: Path) -> None:
+    """Final review I-5: "https://www.Acme.com/about" and "acme.com" are one company."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={
+                "001A": {"Name": "Acme", "Website": "https://www.Acme.com/about"},
+                "001B": {"Name": "Notacme", "Website": "notacme.com"},
+            }
+        )
+        budget = _FakeBudget(gateway)
+        found = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_create_account("Acme Corp", "acme.com")],
+            budget,
+        )
+        # The create became an update of the account it would have duplicated.
+        assert [(p.parsed.record_ref, p.field, p.after) for p in found] == [
+            ("001A", "Name", "Acme Corp")
+        ]
+        (query,) = [c[1]["query"] for c in gateway.calls if c[0] == "SALESFORCE_RUN_SOQL_QUERY"]
+        assert "WHERE Website LIKE '%acme.com%'" in query
+
+        # A host that only appears inside another company's website is not a match.
+        other = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_create_account("Cme", "https://cme.com/")],
+            budget,
+        )
+        assert [(p.parsed.record_ref, p.parsed.change_kind(p.spec)) for p in other] == [
+            (None, "create_company")
+        ]
+
+    _run(tmp_path, "sfwebsite", body, provider="salesforce")
+
+
+@pytest.mark.parametrize(
+    ("provider", "changes"),
+    [
+        (
+            "hubspot",
+            [
+                ProposedChange("HUBSPOT_CREATE_CONTACT", {"email": "Ana@acme.example.com"}, "x"),
+                ProposedChange("HUBSPOT_CREATE_CONTACT", {"email": " ana@acme.example.com"}, "x"),
+            ],
+        ),
+        (
+            "hubspot",
+            [
+                ProposedChange(
+                    "HUBSPOT_CREATE_COMPANY", {"name": "Acme", "domain": "acme.com"}, "x"
+                ),
+                ProposedChange(
+                    "HUBSPOT_CREATE_COMPANY", {"name": "Acme Inc", "domain": "www.acme.com"}, "x"
+                ),
+            ],
+        ),
+        (
+            "salesforce",
+            [_create_account("Acme", "https://acme.com"), _create_account("Acme", "www.acme.com/")],
+        ),
+    ],
+)
+def test_two_creates_of_one_record_in_a_batch_are_refused(
+    tmp_path: Path, provider: str, changes: list[ProposedChange]
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway))
+        assert refused.value.reason_code == "crm_write_not_parsable"
+        assert "proposed twice in this batch" in str(refused.value)
+        assert gateway.calls == []  # refused before any read
+
+    _run(tmp_path, f"twice{provider}", body, provider=provider)

@@ -487,6 +487,51 @@ def _sf_key(record_id: object) -> str:
     return str(record_id)[:15]
 
 
+#: Create keys that hold a website: matched as the host they name, never as the string
+#: (R-7.1 "companies/accounts by domain"; final review I-5).
+_HOST_KEYS = frozenset({"Website", "domain"})
+
+
+def website_host(value: object) -> str:
+    """A website as the lower-case host it names: ``https://www.Acme.com/about`` is
+    ``acme.com``. No scheme, ``www.``, port, path, query or trailing slash."""
+    host = str(value or "").strip().lower()
+    host = re.sub(r"^[a-z][a-z0-9+.-]*://", "", host)
+    host = re.split(r"[/?#]", host, maxsplit=1)[0].rsplit("@", 1)[-1].split(":", 1)[0]
+    host = host.strip(".")
+    return host.removeprefix("www.")
+
+
+def create_key(key: str, value: object) -> str:
+    """What a create is matched on (R-7.1): a website's host, else the value as written, trimmed
+    and lower-cased (an email). Empty when there is nothing to match on."""
+    if value is None:
+        return ""
+    return website_host(value) if key in _HOST_KEYS else str(value).strip().lower()
+
+
+def salesforce_find_query(sobject: str, key: str, value: object, fields: Sequence[str]) -> str:
+    """The SOQL that looks for the record a create would duplicate. A website is looked for
+    broadly (any spelling that contains its host); :func:`salesforce_match` then keeps only the
+    records whose website is that host."""
+    select = ", ".join(dict.fromkeys(["Id", *fields, key]))
+    if key not in _HOST_KEYS:
+        return f"SELECT {select} FROM {sobject} WHERE {key} = {_soql_text(value)} LIMIT 2"
+    host = website_host(value)
+    for special in ("\\", "%", "_"):
+        host = host.replace(special, "\\" + special)
+    pattern = "'%" + host.replace("'", "\\'") + "%'"
+    return f"SELECT {select} FROM {sobject} WHERE {key} LIKE {pattern} LIMIT {_SOQL_CHUNK}"
+
+
+def salesforce_match(
+    key: str, value: object, records: Sequence[Mapping[str, Any]]
+) -> Mapping[str, Any] | None:
+    """The record of :func:`salesforce_find_query`'s answer that the create would duplicate."""
+    wanted = create_key(key, value)
+    return next((r for r in records if create_key(key, r.get(key)) == wanted), None)
+
+
 def _display_name(
     provider: CrmProvider, object_name: str, values: Mapping[str, object]
 ) -> str | None:
@@ -653,15 +698,15 @@ async def _find_existing(
         if not isinstance(properties, Mapping) or results[0].get("id") is None:
             raise _unreadable(f"the {item.parsed.object} search")
         return str(results[0]["id"]), properties
-    query = (
-        f"SELECT Id, {', '.join(fields)} FROM {_SALESFORCE_SOBJECTS[item.parsed.object]} "
-        f"WHERE {key} = {_soql_text(value)} LIMIT 2"
-    )
+    if not create_key(key, value):
+        return None
+    query = salesforce_find_query(_SALESFORCE_SOBJECTS[item.parsed.object], key, value, fields)
     what = f"the {item.parsed.object} search"
     records = _list(await reader.read(slug, {"query": query}), "records", what)
-    if records and records[0].get("Id") is None:
+    if any(record.get("Id") is None for record in records):
         raise _unreadable(what)
-    return (str(records[0]["Id"]), records[0]) if records else None
+    match = salesforce_match(key, value, records)
+    return (str(match["Id"]), match) if match is not None else None
 
 
 # --- preparing -----------------------------------------------------------------------------
@@ -705,6 +750,26 @@ def _check_once_per_record_field(items: Sequence[_Item]) -> None:
                     f"{parsed.label} is changed twice in one batch; propose each field once.",
                 )
             seen.add(key)
+
+
+def _check_once_per_created_record(items: Sequence[_Item]) -> None:
+    """Two creates of one record (same email, same website host) in a batch would both pass the
+    search before either exists (final review I-5)."""
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if item.spec.find_existing is None:
+            continue
+        key = item.spec.find_existing[1]
+        value = create_key(key, item.parsed.fields.get(key))
+        if not value:
+            continue
+        if (item.parsed.object, value) in seen:
+            raise WriteRefused(
+                "crm_write_not_parsable",
+                f'The {_noun(item.parsed.object, 1)} with {key} "{value}" is proposed twice in '
+                "this batch; propose each record once.",
+            )
+        seen.add((item.parsed.object, value))
 
 
 async def _check_removals(
@@ -870,6 +935,7 @@ async def prepare_changes(
     provider = connection.provider
     items = [_parse(provider, change) for change in changes]
     _check_once_per_record_field(items)
+    _check_once_per_created_record(items)
 
     reader = _Reader(
         conn,
@@ -960,8 +1026,13 @@ async def prepare_changes(
                 continue
             record_ref, values = found
             update = field_update_spec(provider, item.parsed.object)
+            assert item.spec.find_existing is not None
+            match_key = item.spec.find_existing[1]
             for field, after in item.parsed.fields.items():
-                await builder.field(item, update, record_ref, field, values.get(field), after)
+                held = values.get(field)
+                if field == match_key and create_key(field, held) == create_key(field, after):
+                    continue  # the website it was found by, spelled another way: not a change
+                await builder.field(item, update, record_ref, field, held, after)
         else:  # link_duplicate has no action until Phase 3
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
     return PreparedBatch(builder.prepared, refused)
