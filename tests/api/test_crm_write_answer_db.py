@@ -525,6 +525,52 @@ def test_a_card_is_answered_once_by_any_member(tmp_path: Path) -> None:
     _run(tmp_path, "once", body)
 
 
+@pytest.mark.parametrize("status", ["queued", "sending", "finished", "declined"])
+def test_an_answer_that_lost_the_race_says_someone_answered_first(
+    tmp_path: Path, status: str
+) -> None:
+    """Final review M-1: a colleague's answer moved the proposal on a moment before this one (its
+    gate answer not yet visible to this request): the click is told someone answered first, never
+    that the card is stale."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        await writes.set_proposal_status(
+            conn,
+            proposal_id=UUID(proposed["proposal_id"]),
+            status=status,
+            answered_by_user_id=OTHER_USER_ID,
+        )
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="late", selected=_ids_in(snapshot, "101")
+            )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "CRM_WRITE_ALREADY_ANSWERED"
+        assert await _answers(conn, seeded.workspace_id) == 0
+
+    _run(tmp_path, f"race-{status}", body)
+
+
+def test_a_card_closed_unanswered_is_stale_not_answered(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        # Closed by the system (a reconnect), with nobody's answer.
+        await writes.set_proposal_status(
+            conn, proposal_id=UUID(proposed["proposal_id"]), status="finished"
+        )
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="closed", selected=_ids_in(snapshot, "101")
+            )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "GATE_SUBJECT_STALE"
+
+    _run(tmp_path, "closed-unanswered", body)
+
+
 def test_the_turn_list_names_the_gate_a_turn_answered(tmp_path: Path) -> None:
     """R-11.4: the chat hides a card answer's message bubble by the answer row, never by text.
 

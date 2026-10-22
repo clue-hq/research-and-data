@@ -338,7 +338,7 @@ export function crmWriteGroupOutcome(
 export function crmWriteRefusal(code: string): string {
   switch (code) {
     case "CRM_CONNECTION_CHANGED":
-      return "The CRM connection changed or expired, so these changes can't be sent. Reconnect it, and Clue will propose them again.";
+      return "The CRM connection changed or expired, so these changes can't be sent.";
     case "CRM_WRITE_NOTHING_SELECTED":
       return "Tick at least one change to allow.";
     case "CRM_WRITE_UNKNOWN_CHANGE":
@@ -346,7 +346,9 @@ export function crmWriteRefusal(code: string): string {
     case "GATE_REPLACED":
       return "A newer proposal replaced this one.";
     case "GATE_SUBJECT_STALE":
-      return "This card can no longer be answered. Clue will propose these changes again.";
+      return "This card can no longer be answered.";
+    case "CRM_WRITE_ALREADY_ANSWERED":
+      return "Someone answered this card first.";
     case "GATE_ALREADY_ANSWERED":
       return "Someone already answered this card.";
     default:

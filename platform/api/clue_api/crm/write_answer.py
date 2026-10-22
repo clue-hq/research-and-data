@@ -8,7 +8,8 @@ The card is a ``crm_write_permission`` gate answered through the chat's turn rou
 holds that answer's CRM half:
 
 * :func:`check_answer` proves an answer may be applied, before anything is written: the proposal
-  still waits for this card (a newer card ``replaced`` it → ``GATE_REPLACED``), its connection is
+  still waits for this card (a newer card ``replaced`` it → ``GATE_REPLACED``; another member's
+  answer moved it on first → ``CRM_WRITE_ALREADY_ANSWERED``), its connection is
   still the workspace's (a reconnect → ``CRM_CONNECTION_CHANGED``), every ticked change belongs to
   the proposal, an approval ticks something, and every "Always allow" was offered by the card;
 * :func:`answer_summary` is the one sentence the agent reads in the answering turn;
@@ -136,6 +137,15 @@ async def check_answer(
     if proposal.status == "replaced":
         raise CrmAnswerRefused(409, "GATE_REPLACED", "a newer card replaced this one")
     if proposal.status != "awaiting_permission":
+        answered_by = await conn.scalar(
+            text("SELECT answered_by_user_id FROM crm_write_proposal WHERE proposal_id = :id"),
+            {"id": proposal.proposal_id},
+        )
+        if answered_by is not None:
+            # Another member's answer moved it on a moment before this one (final review M-1).
+            raise CrmAnswerRefused(
+                409, "CRM_WRITE_ALREADY_ANSWERED", "someone answered this card first"
+            )
         raise CrmAnswerRefused(409, "GATE_SUBJECT_STALE", "this card is no longer waiting")
     current = await latest_connection(conn, workspace_id=gate.workspace_id)
     # Only an active connection takes an answer: an expired one can never send (reconnecting always

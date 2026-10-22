@@ -213,3 +213,13 @@ test("the paused card says a reconnect does not resume the unsent changes (R-11.
   );
   assert.doesNotMatch(caption, /carries on/i);
 });
+
+test("a click that lost the race says someone answered first (final review M-1)", () => {
+  assert.equal(crmWriteRefusal("CRM_WRITE_ALREADY_ANSWERED"), "Someone answered this card first.");
+});
+
+test("a refusal says what happened, never what Clue will do next", () => {
+  for (const code of ["GATE_SUBJECT_STALE", "CRM_CONNECTION_CHANGED", "CRM_WRITE_ALREADY_ANSWERED"]) {
+    assert.doesNotMatch(crmWriteRefusal(code), /propose/i, code);
+  }
+});
