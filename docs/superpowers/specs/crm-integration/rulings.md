@@ -413,3 +413,28 @@ Related documents:
   writes `HUBSPOT_CREATE_LIST`, `SALESFORCE_CREATE_CAMPAIGN` — each verified live on both test CRMs
   first. (Live check L5: the agent could not find a list because these actions were never on Clue's
   allowlist; the HubSpot grant itself already allows lists.)
+
+## 12. Phase 3 — first writes (decisions, 2026-10-23)
+
+All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md`.
+
+- **R-12.1 (2026-10-23)** **HubSpot ICP tier comes from Clue's fit bands:** High → Tier 1, Medium →
+  Tier 2, Low → Tier 3, using the same thresholds the screens use (0.70 / 0.40); an account with no
+  fit gets no tier change. (ARV2 has no tier of its own.)
+- **R-12.2 (2026-10-23)** **"Verified" email means `verified_smtp` only.** A catch-all, unknown or
+  unverified address is never written, and a person without a verified email is not created (R-8.7).
+- **R-12.3 (2026-10-23)** **What goes on the list:** HubSpot — one list of the target **companies** per
+  project ("Clue: <project>"); Salesforce — one **campaign** per project holding the committee
+  **contacts** Clue wrote (Salesforce campaigns cannot hold accounts).
+- **R-12.4 (2026-10-23)** **Duplicate links move to Phase 4.** Both ways of linking a possible
+  duplicate (HubSpot association label, Salesforce custom field) are admin schema changes in the
+  customer's CRM, Phase 4's subject. Phase 3 keeps find-before-create and records which CRM record
+  each Clue entity maps to.
+- **R-12.5 (2026-10-23)** **The person-data gate checks what ARV2 records today:** a value comes only
+  from a live claim that is not `sensitive`, not marked unsafe for outreach and not a `weak` identity
+  match; the jurisdiction/use-class gate is added when ARV2 records jurisdiction (the deferred
+  privacy sprint).
+- **R-12.6 (2026-10-23)** **Persona → HubSpot buying role:** champion → Champion, economic buyer →
+  Budget holder, technical evaluator → Influencer, blocker → Blocker, user → End user — confirmed
+  against the portal's own options before anything is built on it. No role is written to
+  Salesforce in Phase 3 (no standard field).
