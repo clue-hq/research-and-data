@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.crm import writes
+from clue_api.crm.connections import activate_from_attempt, start_attempt
 from clue_api.crm.write_tools import (
     CrmChangeInput,
     CrmWriteLogInput,
@@ -58,9 +59,16 @@ def _grants_tool(conn: Any) -> ManageCrmGrantsTool:
     )
 
 
-def _set(record: str, field: str, value: object, *, reverses: UUID | None = None) -> CrmChangeInput:
+def _set(
+    record: str,
+    field: str,
+    value: object,
+    *,
+    reverses: UUID | None = None,
+    slug: str = "HUBSPOT_UPDATE_COMPANY",
+) -> CrmChangeInput:
     return CrmChangeInput(
-        slug="HUBSPOT_UPDATE_COMPANY",
+        slug=slug,
         arguments={"companyId": record, "properties": {field: value}},
         reason="Undo the ICP tier." if reverses else "The ICP tiers Clue scored.",
         reverses_write_id=reverses,
@@ -181,6 +189,9 @@ def test_the_log_answers_what_changed_this_week(tmp_path: Path) -> None:
         assert set(by_id) == {str(done), str(refused)}
         assert by_id[str(done)] == {
             "write_id": str(done),
+            "slug": "HUBSPOT_UPDATE_COMPANY",
+            "object": "company",
+            "kind": "field_update",
             "when": by_id[str(done)]["when"],
             "record_label": by_id[str(done)]["record_label"],
             "record_ref": "101",
@@ -209,10 +220,6 @@ def test_the_log_answers_what_changed_this_week(tmp_path: Path) -> None:
         limited = (await tool.invoke(CrmWriteLogInput(limit=1), ctx)).references
         assert [row["write_id"] for row in limited["writes"]] == [str(done)]
 
-        # Another workspace's log is not this one's.
-        other = (await tool.invoke(CrmWriteLogInput(), _ctx(conn, "ws-crml-nobody"))).references
-        assert other["writes"] == []
-
     _run(tmp_path, "week", body)
 
 
@@ -238,7 +245,13 @@ def test_an_undo_proposal_carries_the_before_values(tmp_path: Path) -> None:
             conn,
             seeded,
             gateway,
-            _set(row["record_ref"], row["field"], row["before"], reverses=UUID(row["write_id"])),
+            _set(
+                row["record_ref"],
+                row["field"],
+                row["before"],
+                reverses=UUID(row["write_id"]),
+                slug=row["slug"],
+            ),
         )
 
         logged = (
@@ -293,19 +306,23 @@ def test_grants_are_listed_and_revoked(tmp_path: Path) -> None:
         ).one()
         assert stamped.revoked_by_user_id == USER_ID and stamped.revoked_at is not None
 
-        # Revoking it again is refused in plain words, never a silent success.
-        with pytest.raises(PreconditionFailed) as again:
-            await tool.invoke(_grants_input(seeded, "revoke", field), ctx)
-        assert [f.reason_code for f in again.value.failures] == ["crm_grant_already_revoked"]
+        assert revoked["already_revoked"] is False
 
-        # Another workspace's grant cannot be revoked from here.
-        other = await _seed(conn, tmp_path, workspace_id="ws-crml-grants-other", label="other")
-        other_connection = await _connect(conn, other.workspace_id, provider="salesforce")
-        foreign = await _grant(conn, other, other_connection, "kind:create_contact")
-        with pytest.raises(PreconditionFailed) as elsewhere:
-            await tool.invoke(_grants_input(seeded, "revoke", foreign), ctx)
-        assert [f.reason_code for f in elsewhere.value.failures] == ["crm_grant_not_found"]
-        assert await writes.live_grants(conn, connection_id=other_connection.connection_id)
+        # Revoking it again (a replay) answers that it is already revoked and changes nothing.
+        again = (await tool.invoke(_grants_input(seeded, "revoke", field), ctx)).references
+        assert again["already_revoked"] is True
+        assert again["revoked"]["grant_id"] == str(field)
+        assert [g["grant_id"] for g in again["grants"]] == [str(lists)]
+        restamped = (
+            await conn.execute(
+                text(
+                    "SELECT revoked_by_user_id, revoked_at FROM crm_write_grant "
+                    "WHERE grant_id = :id"
+                ),
+                {"id": field},
+            )
+        ).one()
+        assert tuple(restamped) == tuple(stamped)
 
         # A revoke names the grant it revokes; a list names none.
         with pytest.raises(PreconditionFailed) as unnamed:
@@ -319,7 +336,7 @@ def test_grants_are_listed_and_revoked(tmp_path: Path) -> None:
 
 def test_a_new_connection_starts_with_no_grants(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: Any) -> None:
-        await _grant(conn, seeded, connection, "field:company.icp_tier")
+        old_grant = await _grant(conn, seeded, connection, "field:company.icp_tier")
         tool = _grants_tool(conn)
         ctx = _ctx(conn, seeded.workspace_id)
         before = (await tool.invoke(_grants_input(seeded, "list"), ctx)).references
@@ -330,7 +347,81 @@ def test_a_new_connection_starts_with_no_grants(tmp_path: Path) -> None:
         after = (await tool.invoke(_grants_input(seeded, "list"), ctx)).references
         assert after["grants"] == []
 
+        # The old connection's grant no longer applies, so it cannot be revoked either: it reads
+        # as unknown, like a missing id, and stays as it was.
+        with pytest.raises(PreconditionFailed) as old:
+            await tool.invoke(_grants_input(seeded, "revoke", old_grant), ctx)
+        assert [f.reason_code for f in old.value.failures] == ["crm_grant_not_found"]
+        assert await writes.live_grants(conn, connection_id=connection.connection_id)
+
     _run(tmp_path, "new-connection", body)
+
+
+async def _connect_as(conn: Any, workspace_id: str, account_id: str) -> Any:
+    """A HubSpot connection under its own connected account (``_connect`` reuses one id)."""
+    request_id = (
+        await conn.execute(
+            text(
+                "INSERT INTO crm_connect_request (request_id, workspace_id, project_id, "
+                "thread_id, turn_id, requested_by_user_id, mode) VALUES (gen_random_uuid(), "
+                ":ws, 'p', 't', gen_random_uuid(), :user, 'connect') RETURNING request_id"
+            ),
+            {"ws": workspace_id, "user": USER_ID},
+        )
+    ).scalar_one()
+    await start_attempt(
+        conn,
+        request_id=request_id,
+        workspace_id=workspace_id,
+        provider="hubspot",
+        connected_account_id=account_id,
+        started_by_user_id=USER_ID,
+    )
+    activated = await activate_from_attempt(
+        conn,
+        request_id=request_id,
+        workspace_id=workspace_id,
+        connected_account_id=account_id,
+        auth_config_id="ac_h",
+    )
+    assert activated is not None
+    return activated[0]
+
+
+def test_another_workspace_s_log_and_grants_are_out_of_reach(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        del connection
+        other = await _seed(conn, tmp_path, workspace_id="ws-crml-iso-other", label="iso-other")
+        other_connection = await _connect_as(conn, other.workspace_id, "ca_hubspot_other")
+        foreign_grant = await _grant(conn, other, other_connection, "field:company.icp_tier")
+        gateway = _FakeCrm(records={"101": {"icp_tier": None}})
+        foreign = await _propose(conn, other, gateway, _set("101", "icp_tier", "Tier 1"))
+        (foreign_write,) = await _write_ids(conn, foreign)
+        await _finish(conn, foreign_write, "succeeded")
+        log = _log_tool(conn)
+        ctx = _ctx(conn, seeded.workspace_id)
+
+        # Its own workspace reads it; this one does not, not even by its proposal id.
+        theirs = (
+            await log.invoke(
+                CrmWriteLogInput(proposal_id=UUID(foreign)), _ctx(conn, other.workspace_id)
+            )
+        ).references
+        assert [row["write_id"] for row in theirs["writes"]] == [str(foreign_write)]
+        by_id = (await log.invoke(CrmWriteLogInput(proposal_id=UUID(foreign)), ctx)).references
+        assert by_id["writes"] == []
+        assert (await log.invoke(CrmWriteLogInput(), ctx)).references["writes"] == []
+
+        # Its grant cannot be revoked from here, and stays live.
+        with pytest.raises(PreconditionFailed) as elsewhere:
+            await _grants_tool(conn).invoke(_grants_input(seeded, "revoke", foreign_grant), ctx)
+        assert [f.reason_code for f in elsewhere.value.failures] == ["crm_grant_not_found"]
+        assert [
+            g.grant_id
+            for g in await writes.live_grants(conn, connection_id=other_connection.connection_id)
+        ] == [foreign_grant]
+
+    _run(tmp_path, "isolation", body)
 
 
 def test_both_tools_refuse_when_the_crm_is_not_configured(tmp_path: Path) -> None:

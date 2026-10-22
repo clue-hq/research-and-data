@@ -470,6 +470,10 @@ class CrmWriteLogInput(ToolInput):
 
 class CrmLoggedWrite(BaseModel):
     write_id: str
+    #: The write action and what it acts on, so an undo is one propose_crm_changes call.
+    slug: str
+    object: str
+    kind: str
     when: datetime
     record_label: str
     record_ref: str | None
@@ -494,8 +498,12 @@ class CrmWriteLogTool(Tool):
         "Read what Clue changed (or tried to change) in the CRM, newest first: each change's "
         "record, field, the value before and after, its status and the CRM's message when it "
         "failed. By default the last 7 days; narrow by proposal_id (any age), record (its CRM id "
-        "or part of its name), status or since_days. To undo a change, propose the before value "
-        "again with propose_crm_changes and set reverses_write_id to its write_id. "
+        "or part of its name), status or since_days. To undo a change, call propose_crm_changes "
+        "with reverses_write_id set to its write_id: for a field update (kind 'field_update'), "
+        "propose the same action with the before value; for adding someone to a list or "
+        "campaign (kind 'list_membership'), propose the matching removal; for a removal, propose "
+        "adding them back. Clue does not undo a created record (kinds 'create_contact', "
+        "'create_company'): tell the person to delete it in the CRM if they want it gone. "
         + tool_manual_link("crm_write_log")
     )
     input_model: ClassVar[type[ToolInput]] = CrmWriteLogInput
@@ -558,8 +566,9 @@ class CrmWriteLogTool(Tool):
             rows = (
                 await conn.execute(
                     text(
-                        f"SELECT w.write_id, {_WHEN} AS logged_at, w.record_label, "  # noqa: S608
-                        "w.record_ref, w.field, w.before_value::text AS before_value, "
+                        "SELECT w.write_id, w.slug, w.object, w.kind, "  # noqa: S608
+                        f"{_WHEN} AS logged_at, w.record_label, w.record_ref, w.field, "
+                        "w.before_value::text AS before_value, "
                         "w.after_value::text AS after_value, w.status, w.failure_kind, "
                         "w.crm_message, w.reason, w.proposal_id "
                         "FROM crm_write w JOIN crm_write_proposal p "
@@ -574,6 +583,9 @@ class CrmWriteLogTool(Tool):
             writes=[
                 CrmLoggedWrite(
                     write_id=str(row.write_id),
+                    slug=row.slug,
+                    object=row.object,
+                    kind=row.kind,
                     when=row.logged_at,
                     record_label=row.record_label,
                     record_ref=row.record_ref,
@@ -636,6 +648,8 @@ class ManageCrmGrantsOutput(ToolOutput):
     #: The live standing permissions of the connected CRM (after a revoke, the ones left).
     grants: list[CrmGrantView]
     revoked: CrmGrantView | None
+    #: The grant named in a revoke had been revoked before this call; nothing changed.
+    already_revoked: bool = False
 
 
 class ManageCrmGrantsTool(Tool):
@@ -653,8 +667,8 @@ class ManageCrmGrantsTool(Tool):
     replay = ReplaySafety(
         policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
         durable_identity=(
-            "crm_write_grant.revoked_at: a grant is revoked once (a second revoke is refused); "
-            "a list writes nothing"
+            "crm_write_grant.revoked_at: a grant is revoked once; revoking it again (a replay) "
+            "answers already_revoked and stamps nothing; a list writes nothing"
         ),
         external_boundary=ExternalReplayBoundary.NONE,
     )
@@ -689,17 +703,19 @@ class ManageCrmGrantsTool(Tool):
             self._check(inputs)
             person = await _person(self._conn_factory, inputs.source_turn_ref, ctx)
             connection = await _active_connection(self._conn_factory, ctx.workspace_id)
-            revoked = None
+            revoked, already_revoked = None, False
             async with self._conn_factory() as conn:
                 if inputs.action == "revoke":
                     assert inputs.grant_id is not None
-                    revoked = await _revoke(
-                        conn, ctx.workspace_id, inputs.grant_id, person, connection.provider
+                    revoked, already_revoked = await _revoke(
+                        conn, ctx.workspace_id, connection, inputs.grant_id, person
                     )
                 grants = await _grant_views(conn, connection)
         except _Refused as exc:
             raise _refuse(exc.reason_code, str(exc)) from exc
-        output = ManageCrmGrantsOutput(grants=grants, revoked=revoked)
+        output = ManageCrmGrantsOutput(
+            grants=grants, revoked=revoked, already_revoked=already_revoked
+        )
         return ToolResult(
             tool=self.name, version=self.version, references=output.model_dump(mode="json")
         )
@@ -735,34 +751,36 @@ _GRANT_COLUMNS = (
 async def _revoke(
     conn: AsyncConnection,
     workspace_id: str,
+    connection: CrmConnection,
     grant_id: UUID,
     person: str,
-    provider: str,
-) -> CrmGrantView:
+) -> tuple[CrmGrantView, bool]:
+    """Revoke a grant of the active connection; ``True`` when it was already revoked.
+
+    A grant of an older connection never applies again, so it reads as unknown, like a missing
+    id or another workspace's grant.
+    """
     row = (
         await conn.execute(
             text(
                 f"SELECT {_GRANT_COLUMNS} FROM crm_write_grant g "  # noqa: S608
                 "LEFT JOIN platform_user u ON u.user_id = g.granted_by_user_id "
-                "WHERE g.grant_id = :id AND g.workspace_id = :ws FOR UPDATE OF g"
+                "WHERE g.grant_id = :id AND g.workspace_id = :ws "
+                "AND g.connection_id = :connection_id FOR UPDATE OF g"
             ),
-            {"id": grant_id, "ws": workspace_id},
+            {"id": grant_id, "ws": workspace_id, "connection_id": connection.connection_id},
         )
     ).first()
     if row is None:
         raise _Refused(
             "crm_grant_not_found",
-            "There is no such permission in this workspace; list the permissions to find it.",
+            "There is no such permission for the connected CRM; list the permissions to find it.",
         )
-    view = _grant_view(row, provider)
-    if row.revoked_at is not None or not await revoke_grant(
-        conn, grant_id=grant_id, revoked_by_user_id=person
-    ):
-        raise _Refused(
-            "crm_grant_already_revoked",
-            f"This permission was already revoked, so nothing changed: {view.phrase}.",
-        )
-    return view
+    view = _grant_view(row, connection.provider)
+    # The row is locked, so a grant live here is revoked by this call.
+    if row.revoked_at is not None:
+        return view, True
+    return view, not await revoke_grant(conn, grant_id=grant_id, revoked_by_user_id=person)
 
 
 async def _grant_views(conn: AsyncConnection, connection: CrmConnection) -> list[CrmGrantView]:
