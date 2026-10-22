@@ -1061,8 +1061,9 @@ class CrmWriteHandler:
         return [replace(w, attempts=attempts[w.write_id]) for w in call if w.write_id in attempts]
 
     async def _put_back(self, call: Sequence[_Write], stop: _Stop) -> bool:
-        """A call that met a temporary failure or an expired connection: its changes wait again,
-        except those that have used up their sends (rate limit / unreachable), which fail.
+        """A call that met a temporary failure or a stop that pauses (an expired or refused
+        connection, the budget): its changes wait again, except those that have used up their
+        sends (rate limit / unreachable), which fail.
         ``True`` when any change waits (the run stops)."""
         exhausted: list[UUID] = []
         waiting: list[UUID] = []
@@ -1082,8 +1083,11 @@ class CrmWriteHandler:
                         "CASE WHEN :unsent THEN 1 ELSE 0 END "
                         "WHERE write_id = ANY(:ids) AND status = 'sending'"
                     ),
-                    # Composio refused an expired connection before reaching the CRM: not a send.
-                    {"ids": waiting, "unsent": stop.kind == "connection_expired"},
+                    # A stop that pauses (an expired or refused connection, the budget) came
+                    # before any CRM answer: not a send (final review M-9). A temporary stop keeps
+                    # its attempt even when Composio raised it, so the back-off grows and the
+                    # attempt cap is reached (else it would retry for ever).
+                    {"ids": waiting, "unsent": stop.kind not in ("rate_limited", "unavailable")},
                 )
             if exhausted:
                 await conn.execute(

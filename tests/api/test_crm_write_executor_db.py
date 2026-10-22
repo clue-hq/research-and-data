@@ -688,6 +688,27 @@ def test_a_connection_expired_before_the_batch_starts_pauses_and_wakes(tmp_path:
     _run(tmp_path, "expiredbefore", body)
 
 
+def test_a_send_composio_refused_does_not_count_as_an_attempt(tmp_path: Path) -> None:
+    """Final review M-9: a send Composio refused before reaching the CRM (its key or the connected
+    account not accepted) pauses the proposal and leaves the change's attempts as they were."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(
+            records={"101": {"icp_tier": None}},
+            failures={"HUBSPOT_UPDATE_COMPANIES": [ComposioError("auth", 401, "Invalid API key")]},
+        )
+        proposal_id = await _propose(conn, seeded, connection, gateway, _tier("101", "Tier 1"))
+
+        result = await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert result.outcome == "crm_auth"
+        assert await _proposal_status(conn, proposal_id) == "paused"
+        change = (await _writes(conn, proposal_id))["101"]
+        assert (change["status"], change["attempts"]) == ("queued", 0)
+
+    _run(tmp_path, "authsend", body)
+
+
 def test_a_paused_proposal_is_never_sent_on_a_different_connection(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         expired = ComposioError("connection_expired", 410, "Connected account expired")
