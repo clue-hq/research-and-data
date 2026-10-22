@@ -80,7 +80,10 @@ _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
                 {"value": "Old", "label": "Old", "active": False},
             ],
         },
-    ]
+    ],
+    "Contact": [
+        {"name": "Title", "label": "Title", "type": "string", "custom": False},
+    ],
 }
 
 
@@ -625,3 +628,142 @@ def test_an_answer_of_an_unexpected_shape_is_refused_not_read_as_empty(
         assert refused.value.reason_code == "crm_read_failed"
 
     _run(tmp_path, "shape", body)
+
+
+def test_an_update_names_its_records_from_the_read_not_by_their_ids(tmp_path: Path) -> None:
+    """The live defect: an update that does not set a name was labelled by its CRM id."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={
+                "101": {"icp_tier": None, "name": "Cargoloop", "domain": "cargoloop.test"},
+                "102": {"icp_tier": None, "name": "", "domain": "stackfield.test"},
+                "103": {"icp_tier": None},
+                "201": {
+                    "jobtitle": None,
+                    "firstname": "Ana",
+                    "lastname": "Lima",
+                    "email": "a@x.io",
+                },
+                "202": {"jobtitle": None, "email": "bo@x.io"},
+            }
+        )
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _set_company("101", "icp_tier", "Tier 1"),
+                _set_company("102", "icp_tier", "Tier 1"),
+                _set_company("103", "icp_tier", "Tier 1"),
+                _set_contact("201", {"jobtitle": "COO"}),
+                _set_contact("202", {"jobtitle": "CFO"}),
+            ],
+        )
+        labels = {p.parsed.record_ref: p.parsed.label for p in prepared}
+        assert labels == {
+            "101": "Cargoloop",
+            "102": "stackfield.test",  # no name: the domain
+            "103": "103",  # the read holds nothing to name it by: the id
+            "201": "Ana Lima",
+            "202": "bo@x.io",
+        }
+        # Display properties are read alongside, never compared: one change per proposed field.
+        assert sorted((p.parsed.record_ref, p.field) for p in prepared) == [
+            ("101", "icp_tier"),
+            ("102", "icp_tier"),
+            ("103", "icp_tier"),
+            ("201", "jobtitle"),
+            ("202", "jobtitle"),
+        ]
+        assert all(p.parsed.fields.keys() == {p.field} for p in prepared)
+        reads = {
+            c[1]["objectId"]: set(c[1]["properties"])
+            for c in gateway.calls
+            if c[0] == "HUBSPOT_READ_CRM_OBJECT_BY_ID"
+        }
+        assert reads["101"] == {"icp_tier", "name", "domain"}
+        assert reads["201"] == {"jobtitle", "firstname", "lastname", "email"}
+
+        # The write log keeps the name too.
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=prepared,
+        )
+        rows = await conn.execute(
+            text("SELECT record_ref, record_label FROM crm_write WHERE proposal_id = :p"),
+            {"p": proposal_id},
+        )
+        assert dict(rows.all())["101"] == "Cargoloop"
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+        names = {r["record_ref"]: r["name"] for g in card["groups"] for r in g["records"]}
+        assert names["101"] == "Cargoloop" and names["201"] == "Ana Lima"
+
+    _run(tmp_path, "labels", body)
+
+
+def test_a_display_value_does_not_change_overwrite_detection(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        # A person set the name; the change sets only the tier, which a person also set.
+        gateway = _FakeCrm(records={"101": {"icp_tier": "Tier 3", "name": "Cargoloop"}})
+        (change,) = await _prepare(
+            conn, gateway, connection, proposal_id, [_set_company("101", "icp_tier", "Tier 1")]
+        )
+        assert change.field == "icp_tier" and change.before == "Tier 3"
+        assert change.overwrites_person is True
+        assert change.arguments == {"companyId": "101", "properties": {"icp_tier": "Tier 1"}}
+
+        # Renaming names the record by its name today; the name is still the compared field.
+        (rename,) = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_set_company("101", "name", "Cargoloop Inc")],
+        )
+        assert rename.parsed.label == "Cargoloop"
+        assert rename.before == "Cargoloop" and rename.after == "Cargoloop Inc"
+        assert rename.overwrites_person is True
+
+    _run(tmp_path, "labelsover", body)
+
+
+def test_salesforce_records_are_named_by_their_name_then_email(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(
+            records={
+                "001A": {"Industry": None, "Name": "Cargoloop"},
+                "001B": {"Industry": None},
+                "003A": {"Title": None, "Name": "Ana Lima", "Email": "a@x.io"},
+                "003B": {"Title": None, "Name": None, "Email": "bo@x.io"},
+            }
+        )
+        changes = [
+            ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT", {"account_id": rid, "industry": "Hospitality"}, "x"
+            )
+            for rid in ("001A", "001B")
+        ] + [
+            ProposedChange("SALESFORCE_UPDATE_CONTACT", {"contact_id": rid, "title": "COO"}, "x")
+            for rid in ("003A", "003B")
+        ]
+        prepared = await _prepare(
+            conn, gateway, connection, proposal_id, changes, _FakeBudget(gateway)
+        )
+        labels = {p.parsed.record_ref: p.parsed.label for p in prepared}
+        assert labels == {
+            "001A": "Cargoloop",
+            "001B": "001B",
+            "003A": "Ana Lima",
+            "003B": "bo@x.io",
+        }
+        assert sorted(p.field for p in prepared) == ["Industry", "Industry", "Title", "Title"]
+        queries = [c[1]["query"] for c in gateway.calls if c[0] == "SALESFORCE_RUN_SOQL_QUERY"]
+        assert any(q.startswith("SELECT Id, Industry, Name FROM Account") for q in queries)
+        assert any(q.startswith("SELECT Id, Email, Name, Title FROM Contact") for q in queries)
+
+    _run(tmp_path, "sflabels", body, provider="salesforce")

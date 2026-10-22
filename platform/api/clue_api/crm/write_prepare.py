@@ -150,6 +150,12 @@ _HUBSPOT_OBJECT_TYPES = {"company": "companies", "contact": "contacts"}
 _HUBSPOT_CONTACT_OBJECT_TYPE_ID = "0-1"
 _SALESFORCE_SOBJECTS = {"account": "Account", "contact": "Contact"}
 _CRM_NAMES: Mapping[CrmProvider, str] = {"hubspot": "HubSpot", "salesforce": "Salesforce"}
+#: Read alongside a field update's before-values only to name the record on the card and in the
+#: write log; never compared, never written. In order of preference.
+_DISPLAY_FIELDS: Mapping[CrmProvider, Mapping[str, tuple[str, ...]]] = {
+    "hubspot": {"company": ("name", "domain"), "contact": ("firstname", "lastname", "email")},
+    "salesforce": {"account": ("Name",), "contact": ("Name", "Email")},
+}
 
 
 @dataclass(frozen=True)
@@ -346,6 +352,24 @@ def _salesforce_id(value: str) -> str:
 def _sf_key(record_id: object) -> str:
     """Salesforce answers 18-character ids for 15-character ones."""
     return str(record_id)[:15]
+
+
+def _display_name(
+    provider: CrmProvider, object_name: str, values: Mapping[str, object]
+) -> str | None:
+    """What the record is called today, from the display fields read with its before-values."""
+
+    def text(name: str) -> str | None:
+        value = values.get(name)
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    if provider == "hubspot" and object_name == "contact":
+        full = " ".join(part for part in (text("firstname"), text("lastname")) if part)
+        return full or text("email")
+    return next(
+        (found for name in _DISPLAY_FIELDS[provider].get(object_name, ()) if (found := text(name))),
+        None,
+    )
 
 
 async def _hubspot_field_values(
@@ -667,14 +691,17 @@ async def prepare_changes(
             key = (item.parsed.object, str(item.parsed.record_ref))
             wanted.setdefault(key, []).extend(item.parsed.fields)
         for (object_name, record_ref), fields in wanted.items():
+            display = _DISPLAY_FIELDS[provider].get(object_name, ())
             current[(object_name, record_ref)] = await _hubspot_field_values(
-                reader, object_name, record_ref, fields
+                reader, object_name, record_ref, list(dict.fromkeys([*fields, *display]))
             )
     else:
         by_object: dict[str, dict[str, set[str]]] = {}
         for item in updates:
             records = by_object.setdefault(item.parsed.object, {})
-            records.setdefault(str(item.parsed.record_ref), set()).update(item.parsed.fields)
+            wanted_fields = records.setdefault(str(item.parsed.record_ref), set())
+            wanted_fields.update(item.parsed.fields)
+            wanted_fields.update(_DISPLAY_FIELDS[provider].get(item.parsed.object, ()))
         for object_name, records in by_object.items():
             for record_ref, values in (
                 await _salesforce_field_values(reader, object_name, records)
@@ -697,6 +724,9 @@ async def prepare_changes(
         if kind == "field_update":
             record_ref = str(item.parsed.record_ref)
             values = current[(item.parsed.object, record_ref)]
+            # Named by what the record is called today; its id only when the read holds nothing.
+            label = _display_name(provider, item.parsed.object, values) or item.parsed.label
+            item = dataclasses.replace(item, parsed=dataclasses.replace(item.parsed, label=label))
             for field, after in item.parsed.fields.items():
                 await builder.field(item, item.spec, record_ref, field, values.get(field), after)
         elif kind in ("list_membership", "list_removal"):
