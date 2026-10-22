@@ -85,3 +85,32 @@ Chats: Conduit `thr_65d4c3d4…` (new, legacy-planted) and `thr_b32c99d4…`. To
 - Live check: worker frozen mid-run_python → takeover gave up (engine rule) → owner wrote one
   `turn.failed` → chat shows "Response failed" after reload; the unfrozen stale worker was fenced
   and wrote no second ending; snapshot stayed at v4.
+
+## 2026-10-22 (late): founder rulings AW-21–AW-23, CRM branch merged in
+
+- **AW-21:** privacy erasure covers the records about a person, not mentions in chat files; snapshot
+  storage stays shared per content hash; WS-31 narrowed; WS-31a (P2) = a privacy-erased file in a
+  chat is skipped, not fatal (review I1). Checked in code first: one `artifact` row per
+  `<ws>/<sha256>`; privacy erasure (4 sites) ignores holders and is permanent (`record_artifact`
+  refuses); ordinary erasure counts snapshot holds.
+- **AW-22:** `scratch/` and `work/` deleted 30 days after last activity; `outputs/` for the chat's
+  life; raw inputs 48 h. Compared with ChatGPT / Claude.ai / Manus first. Phase 1 lists label
+  scratch/work `work_product`; the P2 expiry job decides by path (`tier_for`).
+- **AW-23:** Phase 1 may ship without Phase 2 (no customers). Note: in P1 nothing in a snapshot is
+  deleted, and released old-version files are never deleted (the storage sweep only purges
+  erased/expired rows and row-less blobs).
+- **Merge:** `feat/crm-integration` (CRM Phase 2 writes, 44 commits) merged into this branch,
+  `7d83e34af`. One conflict in `ProjectConversationTurnRunner.run` (hold_chat wrapper vs R-11.6
+  card answers) — kept ours, re-applied CRM's two additions; `git diff -w HEAD` = CRM's diff only.
+  Migration merge `01baa2e73e84` (F3 `cd9c1e49f6af` + CRM `f09f9e286be6`). Test DB and stack DB
+  migrated to it. Two PRs planned: CRM first, then F3 (no push yet).
+- **Tests:** 608 pass across the CRM + workspace suites on `clue_dushanbe_test`. Running files from
+  several folders at once gives 31 setup errors (`require_profiling_db` lives in
+  `tests/profiling/conftest.py`); those three files pass alone.
+- **Live check (merged code):** new chat thr_efd66ef7… wrote outputs/merge-check.csv and
+  scratch/merge-note.md (v1); chat folder deleted from every area; follow-up restored cold on
+  another worker (2 files, 34 B, 789 ms) and the agent quoted both exactly; save `unchanged`.
+  Two turns, about $0.40 (estimate). **Owed:** a CRM read through a cold restore — the dushanbe
+  `.env` has no Composio keys, so CRM is off on this stack (`crm_write.handler_not_composed`).
+- `.env`: added the three `CLUE_CRM_WRITE_*` keys. Pre-existing parity gap: ~40 example keys absent
+  from the dushanbe `.env` (Composio/CRM among them).
