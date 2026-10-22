@@ -98,7 +98,7 @@ from clue_api.brand_library import ensure_brand_library
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.interrupted_turn import commit_interrupted_turn, recover_interrupted_answer
 from clue_api.chat.turn_controls import stop_requested
-from clue_api.chat.turn_events import prune_turn_events
+from clue_api.chat.turn_events import end_unended_turn_as_failed, prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
 from clue_api.context_observability import record_context_card
 from clue_api.conversation_capture import (
@@ -1621,6 +1621,13 @@ class AgentTurnWorkHandler:
             )
             return WorkResult(outcome="fenced_out", references=references, task_finalized=True)
         async with self._conn_factory() as conn:
+            if status is FleetTaskStatus.FAILED:
+                # Only now, after this worker's own finish was accepted: a fenced-out attempt
+                # returned above, so it can never paint "failed" over a takeover that may still
+                # succeed. A run that already wrote its own ending is left as it is.
+                await end_unended_turn_as_failed(
+                    conn, workspace_id=workspace_id, thread_id=thread_id, turn_id=turn_id
+                )
             # Spec 2026-09-30 §4: if this was a discovery run's wake turn, the run holding this
             # thread (and its project) is released now — in the dispatch's own transaction, so the
             # dispatch below already sees the thread free and offers the first held message.

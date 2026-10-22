@@ -48,6 +48,7 @@ __all__ = [
     "TurnEventRow",
     "TurnEventType",
     "TurnReplayPlan",
+    "end_unended_turn_as_failed",
     "emit_turn_event",
     "list_turn_events",
     "next_generation_attempt",
@@ -281,6 +282,55 @@ async def emit_turn_event(
         .one()
     )
     return _row(dict(row))
+
+
+async def end_unended_turn_as_failed(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+    turn_id: UUID,
+) -> bool:
+    """Write ``turn.failed`` for a turn that has no ending yet; True when one was written.
+
+    For a turn whose run raised before it could say how it ended. Without an ending the person sees
+    the reasoning stop and nothing else, even after a reload; the chat renders a ``turn.failed``
+    with no ``failure_code`` as "Response failed". A turn that already ended (its run wrote its own
+    typed failure, or it completed) is left alone. Under the turn's sequence lock, so the check and
+    the append are one step.
+    """
+
+    await conn.execute(_TURN_SEQUENCE_LOCK_SQL, {"turn_lock_key": str(turn_id)})
+    ended = await conn.scalar(
+        text(
+            "SELECT 1 FROM agent_turn_event_stream "
+            "WHERE workspace_id = :workspace_id AND turn_id = :turn_id "
+            "AND event_type = ANY(CAST(:terminal AS text[])) LIMIT 1"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "turn_id": turn_id,
+            "terminal": [event.value for event in TERMINAL_TURN_EVENTS],
+        },
+    )
+    if ended is not None:
+        return False
+    project_id = await conn.scalar(
+        text("SELECT project_id FROM agent_thread WHERE workspace_id = :ws AND id = :thread"),
+        {"ws": workspace_id, "thread": thread_id},
+    )
+    if project_id is None:
+        return False
+    await emit_turn_event(
+        conn,
+        workspace_id=workspace_id,
+        project_id=str(project_id),
+        thread_id=thread_id,
+        turn_id=turn_id,
+        event_type=TurnEventType.TURN_FAILED,
+        payload={"status": "failed"},
+    )
+    return True
 
 
 async def list_turn_events(
