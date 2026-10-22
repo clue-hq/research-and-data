@@ -167,13 +167,16 @@ def crm_writes_paused_message(
     counts: WriteCounts,
     *,
     reason: str,
-    resumes: str,
+    next_step: str,
     allowed: str | None = None,
 ) -> str:
+    """``next_step`` is one whole sentence on what happens to the waiting changes: they carry on
+    by themselves only when the same connection can still send them (a budget or a passing
+    error); after an expired connection they are not sent and are proposed again (R-11.10)."""
     return (
         f"{_opening(allowed)}The CRM changes are paused: {reason.rstrip('.')}. "
         f"So far {_tally(counts)}, "
-        f"{counts.waiting} waiting. They continue by themselves {resumes}. "
+        f"{counts.waiting} waiting. {next_step} "
         f"{_log_hint(proposal_id).capitalize()}."
     )
 
@@ -208,7 +211,7 @@ async def queue_crm_writes_paused_turn(
     *,
     proposal: WriteProposal,
     reason: str,
-    resumes: str,
+    next_step: str,
 ) -> UUID | None:
     """Wake the proposing chat when the proposal's writes pause.
 
@@ -226,7 +229,7 @@ async def queue_crm_writes_paused_turn(
             proposal.proposal_id,
             counts,
             reason=reason,
-            resumes=resumes,
+            next_step=next_step,
             allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
         ),
     )

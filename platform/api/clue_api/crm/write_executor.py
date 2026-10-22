@@ -803,7 +803,7 @@ class CrmWriteHandler:
         """The connection expired before its waiting proposals were sent: pause each and wake
         its chat, as when it expires mid-batch (final review M-12). A proposal already paused
         has woken its chat; the wake's key keeps a second run from waking it again."""
-        reason, resumes = _expired_reason(connection)
+        reason, next_step = _expired_reason(connection)
         async with self._conn_factory() as conn:
             rows = await conn.execute(
                 text(
@@ -820,7 +820,7 @@ class CrmWriteHandler:
                 assert proposal is not None
                 if self._artifacts is not None:
                     await queue_crm_writes_paused_turn(
-                        conn, self._artifacts, proposal=proposal, reason=reason, resumes=resumes
+                        conn, self._artifacts, proposal=proposal, reason=reason, next_step=next_step
                     )
                 log.info("crm_write.paused", proposal_id=str(proposal_id), reason="expired")
 
@@ -1193,7 +1193,7 @@ class CrmWriteHandler:
         if stop.kind == "connection_expired":
             assert stop.error is not None
             await composio_refusal(self._conn_factory, stop.error, crm.connection)
-            reason, resumes = _expired_reason(crm.connection)
+            reason, next_step = _expired_reason(crm.connection)
         elif stop.kind == "auth":
             # Clue's Composio key or the connected account is not accepted: a deployment fault
             # or a deleted account, never a reason to fail the person's changes for good.
@@ -1203,17 +1203,23 @@ class CrmWriteHandler:
                 detail=stop.message,
             )
             reason = f"Clue could not use the {crm.name} connection ({stop.message})"
-            resumes = "once the connection works again (the next approved change retries it)"
+            next_step = (
+                "They continue by themselves once the connection works again "
+                "(the next approved change retries them)."
+            )
         else:
             reason = stop.message
-            resumes = f"when {crm.name}'s daily API allowance allows it again"
+            next_step = (
+                f"They continue by themselves when {crm.name}'s daily API allowance "
+                "allows it again."
+            )
         async with self._conn_factory() as conn:
             await set_proposal_status(conn, proposal_id=proposal_id, status="paused")
             proposal = await get_proposal(conn, proposal_id=proposal_id)
             assert proposal is not None
             if self._artifacts is not None:
                 await queue_crm_writes_paused_turn(
-                    conn, self._artifacts, proposal=proposal, reason=reason, resumes=resumes
+                    conn, self._artifacts, proposal=proposal, reason=reason, next_step=next_step
                 )
         log.info("crm_write.paused", proposal_id=str(proposal_id), reason=stop.kind)
         if stop.kind == "budget" and stop.budget_code == "salesforce_api_share_exhausted":
@@ -1236,11 +1242,11 @@ class CrmWriteHandler:
 
 
 def _expired_reason(connection: CrmConnection) -> tuple[str, str]:
-    """The paused wake's reason and what resumes it, for an expired connection."""
+    """The paused wake's reason and what happens next, for an expired connection (R-11.10)."""
     return (
         f"the {_CRM_NAMES[connection.provider]} connection has expired or was revoked",
-        "once this connection works again; if the person connects the CRM anew, these "
-        "changes are not sent and must be proposed again",
+        "They are not sent: connecting the CRM again creates a new connection, so once the "
+        "person reconnects, propose them again.",
     )
 
 
