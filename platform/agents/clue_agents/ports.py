@@ -37,6 +37,7 @@ from clue_agents.contracts import (
 )
 from clue_agents.workspace_snapshot import (
     LeaseFence,
+    Receipt,
     SaveStatus,
     SnapshotEntry,
     SnapshotManifest,
@@ -64,6 +65,7 @@ __all__ = [
     "OperationFailure",
     "SpillSink",
     "TurnBinding",
+    "ReceiptSource",
     "WorkspaceSnapshotStore",
     "WorkspaceEntry",
 ]
@@ -257,6 +259,18 @@ class WorkspaceSnapshotStore(Protocol):
     async def touch(self, *, workspace_id: str, thread_id: str) -> None: ...
 
     async def forget(self, *, workspace_id: str, thread_id: str) -> None: ...
+
+
+@runtime_checkable
+class ReceiptSource(Protocol):
+    """Where a newly saved file came from, and how the agent could get it again (AW-22, AW-24).
+
+    F3 Phase 2: a raw input's or a working file's bytes expire, so the save asks this for a
+    :class:`Receipt` to keep in the file list in their place. It answers for every path — when it
+    knows nothing it says so — because a file is never dropped for want of a receipt.
+    """
+
+    async def receipt_for(self, *, workspace_id: str, thread_id: str, path: str) -> Receipt: ...
 
 
 @runtime_checkable

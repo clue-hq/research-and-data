@@ -37,6 +37,8 @@ from clue_agents.worker_area import ChatScope, wipe_path
 from clue_agents.workspace_policy import WorkspaceSecurityError
 from clue_agents.workspace_snapshot import (
     SAVED_FOLDERS,
+    UNKNOWN_RECEIPT,
+    Receipt,
     SaveStatus,
     SnapshotCorrupt,
     SnapshotEntry,
@@ -51,7 +53,7 @@ from clue_agents.workspace_snapshot import (
 from clue_obs import get_logger
 
 if TYPE_CHECKING:
-    from clue_agents.ports import WorkspaceSnapshotStore
+    from clue_agents.ports import ReceiptSource, WorkspaceSnapshotStore
     from clue_agents.workspace import AgentWorkspaceLease
 
 __all__ = ["RestoreReport", "SaveReport", "WorkspaceSnapshotter"]
@@ -122,12 +124,14 @@ class WorkspaceSnapshotter:
         legacy_root: Path | None = None,
         retry_delays: Sequence[float] = _DEFAULT_RETRY_DELAYS,
         sleep: Callable[[float], Any] = asyncio.sleep,
+        receipts: ReceiptSource | None = None,
     ) -> None:
         self._store = store
         self._concurrency = max(1, concurrency)
         self._legacy_root = legacy_root
         self._retry_delays = tuple(retry_delays)
         self._sleep = sleep
+        self._receipts = receipts
 
     # --- restore ------------------------------------------------------------------------------
 
@@ -228,7 +232,10 @@ class WorkspaceSnapshotter:
         for entry in manifest.entries:
             validate_snapshot_path(entry.path)
         local = await asyncio.to_thread(_read_agent_folders, lease)
-        wanted = {entry.path: entry for entry in manifest.entries}
+        # Only the live entries have bytes. An expired one is kept in the file list for its
+        # receipt (AW-22), so it must never be downloaded, and a local copy left over from
+        # before the expiry is deleted along with the files the version no longer lists.
+        wanted = {entry.path: entry for entry in manifest.live()}
         missing = [
             entry
             for path, entry in wanted.items()
@@ -294,7 +301,7 @@ class WorkspaceSnapshotter:
         chat = lease.chat
         base = lease.snapshot_base or SnapshotBase(pointer=None, manifest=None)
         local = await asyncio.to_thread(_read_agent_folders, lease)
-        manifest = _manifest_for(local, previous=base.manifest)
+        manifest = await self._manifest_for(local, previous=base.manifest, chat=chat)
         if base.manifest is not None and manifest.same_files(base.manifest):
             await self._store.touch(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
             return self._report(
@@ -304,9 +311,11 @@ class WorkspaceSnapshotter:
             return self._report(
                 lease, "unchanged", uploaded=0, size=0, version=None, started=started
             )
-        known = {entry.sha256 for entry in (base.manifest.entries if base.manifest else ())}
+        # Only the bytes the base still HOLDS may be skipped: an expired entry's content address
+        # names bytes the expiry deleted, so a file revived with the same bytes is uploaded again.
+        known = {entry.sha256 for entry in (base.manifest.live() if base.manifest else ())}
         new_files = [
-            (entry, local[entry.path]) for entry in manifest.entries if entry.sha256 not in known
+            (entry, local[entry.path]) for entry in manifest.live() if entry.sha256 not in known
         ]
         try:
             uploaded, status, pointer = await self._save_with_retries(
@@ -361,6 +370,60 @@ class WorkspaceSnapshotter:
             size=sum(len(data) for _, data in new_files),
             version=None if pointer is None else pointer.version,
             started=started,
+        )
+
+    async def _manifest_for(
+        self,
+        local: Mapping[str, bytes],
+        *,
+        previous: SnapshotManifest | None,
+        chat: ChatScope,
+    ) -> SnapshotManifest:
+        """The file list for what is on disk now, carrying the previous version's expiries.
+
+        An entry whose bytes are unchanged keeps the ``written_at`` and the receipt it already
+        had. An expired entry (AW-22) is carried forward as it is — unless a local file now sits
+        at its path, in which case the agent wrote it again and a fresh live entry replaces it.
+        A new raw input or working file is given a receipt, so that when its bytes expire the
+        agent is still told what was there and how to get it again.
+        """
+
+        earlier = previous.by_path() if previous is not None else {}
+        now = datetime.now(UTC)
+        entries = []
+        for path, data in sorted(local.items()):
+            sha = hashlib.sha256(data).hexdigest()
+            before = earlier.get(path)
+            unchanged = before is not None and before.expired_at is None and before.sha256 == sha
+            entries.append(
+                SnapshotEntry(
+                    path=path,
+                    sha256=sha,
+                    size=len(data),
+                    media_type=mimetypes.guess_type(path)[0] or "application/octet-stream",
+                    tier=tier_for(path),
+                    written_at=before.written_at if unchanged and before else now,
+                    receipt=before.receipt
+                    if unchanged and before
+                    else await self._receipt_for(chat, path),
+                )
+            )
+        entries.extend(
+            entry
+            for entry in earlier.values()
+            if entry.expired_at is not None and entry.path not in local
+        )
+        return SnapshotManifest(entries=tuple(sorted(entries, key=lambda item: item.path)))
+
+    async def _receipt_for(self, chat: ChatScope, path: str) -> Receipt | None:
+        """What this new file was, for after its bytes expire; ``None`` for a work product."""
+
+        if tier_for(path) == "work_product":
+            return None  # outputs/ never expires (AW-2), so there is nothing to tell the agent
+        if self._receipts is None:
+            return UNKNOWN_RECEIPT
+        return await self._receipts.receipt_for(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id, path=path
         )
 
     async def _save_with_retries(
@@ -432,30 +495,6 @@ def _elapsed(started: float) -> int:
 
 def _version(base: SnapshotBase) -> int | None:
     return None if base.pointer is None else base.pointer.version
-
-
-def _manifest_for(
-    local: Mapping[str, bytes], *, previous: SnapshotManifest | None
-) -> SnapshotManifest:
-    earlier = previous.by_path() if previous is not None else {}
-    now = datetime.now(UTC)
-    entries = []
-    for path, data in sorted(local.items()):
-        sha = hashlib.sha256(data).hexdigest()
-        before = earlier.get(path)
-        entries.append(
-            SnapshotEntry(
-                path=path,
-                sha256=sha,
-                size=len(data),
-                media_type=mimetypes.guess_type(path)[0] or "application/octet-stream",
-                tier=tier_for(path),
-                written_at=before.written_at
-                if before is not None and before.sha256 == sha
-                else now,
-            )
-        )
-    return SnapshotManifest(entries=tuple(entries))
 
 
 def _open_agent(lease: AgentWorkspaceLease) -> tuple[int, int]:

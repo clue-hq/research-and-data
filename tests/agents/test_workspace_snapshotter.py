@@ -1,5 +1,6 @@
 """F3 Phase 1, plan Task 8: restore and save a chat's agent folders (spec WS-6–WS-11, WS-18, WS-22;
-AW-13, AW-14, AW-18)."""
+AW-13, AW-14, AW-18). Phase 2, Task 3 adds expired entries and save-time receipts (AW-2, AW-22,
+AW-24)."""
 
 from __future__ import annotations
 
@@ -7,17 +8,19 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 
-from clue_agents.ports import WorkspaceSnapshotStore
+from clue_agents.ports import ReceiptSource, WorkspaceSnapshotStore
 from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
 from clue_agents.workspace_policy import PreparedWorkspaceRoot, WorkspaceRootPolicy
 from clue_agents.workspace_snapshot import (
     LeaseFence,
+    Receipt,
     SaveStatus,
     SnapshotCorrupt,
     SnapshotEntry,
@@ -129,7 +132,65 @@ class Machine:
         return self.chat_dir() / "agent"
 
 
-def _machine(tmp_path: Path, name: str, store: FakeStore, legacy: Path | None = None) -> Machine:
+@dataclass
+class FakeReceipts(ReceiptSource):
+    """A receipt source that answers for every path and remembers what it was asked."""
+
+    asked: list[str] = field(default_factory=list)
+
+    async def receipt_for(self, *, workspace_id: str, thread_id: str, path: str) -> Receipt:
+        self.asked.append(path)
+        return Receipt(
+            source="run_crm_action",
+            operation_id="op-1",
+            produced_at=datetime(2026, 10, 22, 11, tzinfo=UTC),
+            details={"tool": "hubspot", "records": 120},
+            read_again=f"run_crm_action(...) wrote {path}",
+        )
+
+
+def _expire(store: FakeStore, *paths: str) -> SnapshotManifest:
+    """Publish a new version with ``paths`` expired and their bytes gone, as Task 5's job will."""
+
+    assert store.pointer is not None
+    manifest = asyncio.run(store.read_manifest(workspace_id=WS, pointer=store.pointer))
+    expired_at = datetime(2026, 10, 22, 12, tzinfo=UTC)
+    receipt = Receipt(
+        source="run_crm_action",
+        operation_id="op-9",
+        produced_at=datetime(2026, 10, 20, tzinfo=UTC),
+        details={},
+        read_again="run_crm_action(action='deals.list')",
+    )
+    entries = []
+    for item in manifest.entries:
+        if item.path in paths:
+            store.blobs.pop(item.sha256, None)  # the expiry deleted the bytes
+            entries.append(replace(item, expired_at=expired_at, receipt=receipt))
+        else:
+            entries.append(item)
+    updated = SnapshotManifest(entries=tuple(entries))
+    body = encode_manifest(updated)
+    sha = hashlib.sha256(body).hexdigest()
+    store.blobs[sha] = body
+    store.pointer = SnapshotPointer(
+        version=store.pointer.version + 1, manifest_sha256=sha, manifest_key=f"{WS}/{sha}"
+    )
+    return updated
+
+
+def _current(store: FakeStore) -> dict[str, SnapshotEntry]:
+    assert store.pointer is not None
+    return asyncio.run(store.read_manifest(workspace_id=WS, pointer=store.pointer)).by_path()
+
+
+def _machine(
+    tmp_path: Path,
+    name: str,
+    store: FakeStore,
+    legacy: Path | None = None,
+    receipts: ReceiptSource | None = None,
+) -> Machine:
     base = tmp_path / name
     base.mkdir()
     (base / "source").mkdir(mode=0o700)
@@ -141,7 +202,11 @@ def _machine(tmp_path: Path, name: str, store: FakeStore, legacy: Path | None = 
         prepared_root=PreparedWorkspaceRoot(path=prepared.path),
         artifact_sink=RecordingArtifactSink(),
         snapshotter=WorkspaceSnapshotter(
-            store=store, concurrency=4, legacy_root=legacy, retry_delays=(0, 0, 0)
+            store=store,
+            concurrency=4,
+            legacy_root=legacy,
+            retry_delays=(0, 0, 0),
+            receipts=receipts,
         ),
     )
     return Machine(root=prepared.path, factory=factory)
@@ -505,3 +570,77 @@ def test_release_saved_saves_unsaved_writes_best_effort(tmp_path: Path) -> None:
     asyncio.run(machine.factory.release_saved(lease))  # never raises
     assert store.pointer.version == 1
 
+
+def test_restore_never_downloads_an_expired_entry_and_removes_its_local_file(
+    tmp_path: Path,
+) -> None:
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"reads/r.json": b"{}"})
+    asyncio.run(b.factory.release_saved(_open(b)))  # b's copy now holds reads/r.json
+    _turn(a, {"reads/r.json": b"{}", "scratch/a.md": b"a"})
+    _expire(store, "reads/r.json")
+    lease = _open(b)
+    try:
+        assert not (b.agent() / "reads/r.json").exists()
+        assert (b.agent() / "scratch/a.md").read_bytes() == b"a"
+        assert lease.restore_report is not None and lease.restore_report.downloaded == 1
+        base = lease.snapshot_base
+        assert base is not None and base.manifest is not None
+        gone = base.manifest.by_path()["reads/r.json"]
+        assert gone.expired_at is not None and gone.receipt is not None
+    finally:
+        asyncio.run(b.factory.release_saved(lease))
+
+
+def test_save_carries_expired_entries_forward_and_revives_a_rewritten_path(
+    tmp_path: Path,
+) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"reads/r.json": b"{}", "scratch/keep.md": b"k"})
+    first = _current(store)["reads/r.json"]
+    _expire(store, "reads/r.json")
+
+    assert _turn(machine, {"scratch/other.md": b"o"}) == "saved"
+    carried = _current(store)["reads/r.json"]
+    assert carried.expired_at is not None and carried.receipt is not None
+    assert carried.written_at == first.written_at
+
+    before_save = datetime.now(UTC)
+    assert first.written_at < before_save
+    assert _turn(machine, {"reads/r.json": b"{}"}) == "saved"  # the same bytes, written again
+    revived = _current(store)["reads/r.json"]
+    assert revived.expired_at is None
+    assert revived.written_at >= before_save
+    assert store.blobs[revived.sha256] == b"{}"  # the bytes the expiry deleted were put back
+
+
+def test_save_attaches_a_receipt_to_each_new_raw_input(tmp_path: Path) -> None:
+    store, receipts = FakeStore(), FakeReceipts()
+    machine = _machine(tmp_path, "a", store, receipts=receipts)
+    _turn(
+        machine,
+        {"reads/op-1.json": b"{}", "scratch/a.md": b"a", "outputs/t.csv": b"a,b"},
+    )
+    saved = _current(store)
+    assert saved["reads/op-1.json"].receipt == asyncio.run(
+        receipts.receipt_for(workspace_id=WS, thread_id=THREAD, path="reads/op-1.json")
+    )
+    assert saved["scratch/a.md"].receipt is not None  # a working file expires too (AW-22)
+    assert saved["outputs/t.csv"].receipt is None  # work products never expire (AW-2)
+    assert sorted(set(receipts.asked)) == ["reads/op-1.json", "scratch/a.md"]
+
+    _turn(machine, {"scratch/b.md": b"b"})  # an unchanged entry keeps the receipt it had
+    assert _current(store)["reads/op-1.json"].receipt == saved["reads/op-1.json"].receipt
+
+
+def test_without_a_receipt_source_a_new_file_still_gets_one(tmp_path: Path) -> None:
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+    _turn(machine, {"reads/op-1.json": b"{}", "outputs/t.csv": b"a,b"})
+    saved = _current(store)
+    assert saved["reads/op-1.json"].receipt == Receipt(
+        source="unknown", operation_id=None, produced_at=None, details={}, read_again=""
+    )
+    assert saved["outputs/t.csv"].receipt is None
