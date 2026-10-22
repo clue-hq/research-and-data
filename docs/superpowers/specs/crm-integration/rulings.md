@@ -363,3 +363,5 @@ Related documents:
 - **R-11.4 (2026-10-22)** **Answering any card adds no message bubble to the chat**, for every kind of
   agent gate: only the card's state changes. The answer stays recorded (and a turn the answer starts
   still runs, for the cards that start one).
+- **R-11.5 (2026-10-22)** **The card shows option labels, not internal values** ("Tier 1", not
+  "tier_1"), from the field definitions Clue already reads to check picklist values.
