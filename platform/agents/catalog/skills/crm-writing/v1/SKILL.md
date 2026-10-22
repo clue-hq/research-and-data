@@ -127,7 +127,7 @@ results.
 To undo a change:
 
 - **A field change.** Propose the old value with `reverses_write_id` set to that change's
-  `write_id`. It goes through the card again.
+  `write_id`. It goes through the card again, unless an Always-allow permission covers it.
 - **An addition to a list or campaign.** Propose the matching removal. Clue removes only members
   it added itself.
 - **A created record.** Clue does not undo it. Tell the person to delete it in the CRM if they
