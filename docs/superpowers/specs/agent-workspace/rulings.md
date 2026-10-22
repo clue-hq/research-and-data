@@ -125,6 +125,13 @@ agent, not only the CRM work.
   about an hour idle), Claude.ai (created files kept for the conversation) and Manus (intermediate
   code and temporary files dropped when an idle task's computer is recycled after 7 or 21 days; its
   outputs and uploads restored). Founder: *"go with 30 days for scratch and work."*
+- **AW-23 (2026-10-22)** **Phase 1 may ship without Phase 2.** There are no customers yet, so
+  the release rule of spec §3 (Q7) is dropped: until Phase 2 lands, nothing in a chat's snapshot is
+  deleted (raw inputs included), and stored files of old versions are kept. **Order:** the CRM branch
+  (`feat/crm-integration`, through its Phase 2 writes) is merged into the F3 branch (merge
+  `7d83e34af`, migrations joined by `01baa2e73e84`); they ship as **two pull requests**, CRM first,
+  then F3 with only its own commits. Founder: *"we have no customer right now. so we can ship with
+  just phase 1 for now"*; *"yes go ahead with step 1, two PRs."*
 
 ## Scope, order and interim
 

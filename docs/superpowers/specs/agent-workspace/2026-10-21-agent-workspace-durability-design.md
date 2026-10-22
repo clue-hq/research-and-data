@@ -200,8 +200,9 @@ evidence for the first two.
 | **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
 
-**Release rule (Claude's call, Q7):** P1 can be built, merged into the branch and tested on its
-own. **It does not reach production without P2.** P1 alone would keep raw CRM records in R2 with no
+**Release rule (AW-23, 2026-10-22): P1 may ship without P2** — there are no customers yet. Until
+P2 lands nothing in a snapshot is deleted. *Superseded text:* ~~P1 can be built, merged into the branch and tested on its
+own. It does not reach production without P2.~~ P1 alone would keep raw CRM records in R2 with no
 expiry and outside privacy erasure, which is worse than today's 24 hours on one disk.
 
 **Size (estimate from 2026-10-21):** three plans, each the size of F2 or a bit larger. Phase 1 is
@@ -927,6 +928,8 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-22: AW-23 (founder): P1 may ship without P2 (Q7 decided); the CRM branch merged into
+  this one (`7d83e34af`); two pull requests, CRM first.
 - 2026-10-22: AW-22 (founder): `scratch/` and `work/` are deleted 30 days after the chat's last
   activity; `outputs/` stays for the chat's life. D-18 changed; WS-4, WS-23, WS-26 and the flag
   table updated. Compared with ChatGPT, Claude.ai and Manus first.
