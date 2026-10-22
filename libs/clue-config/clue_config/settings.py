@@ -838,6 +838,17 @@ class Settings(BaseSettings):
     # How often a worker checks its area for idle chat folders.
     # Env: ``CLUE_AGENT_WORKSPACE_CACHE_SWEEP_INTERVAL_S``.
     agent_workspace_cache_sweep_interval_s: float = Field(default=300.0, gt=0)
+    # F3 Phase 2 retention (AW-24). A raw read — the untouched bytes a tool pulled down — expires
+    # this long after it was written; the agent can always fetch it again.
+    # Env: ``CLUE_AGENT_WORKSPACE_RAW_RETENTION_S``.
+    agent_workspace_raw_retention_s: float = Field(default=172800.0, gt=0)
+    # What the agent itself made (notes, drafts, outputs) is kept longer than a raw read, because
+    # re-making it costs a turn. Env: ``CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S``.
+    agent_workspace_working_retention_s: float = Field(default=604800.0, gt=0)
+    # How often the expiry job runs. Daily: nothing here is urgent, and a sweep that wakes more
+    # often only costs reads (AW-24 as amended 2026-10-23 — it was hourly).
+    # Env: ``CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S``.
+    agent_workspace_retention_sweep_interval_s: float = Field(default=86400.0, gt=0)
 
     # --- C7 structured research-view activation -------------------------------------------
     # Each externally reachable capability is independently default-off. Deployments can canary
