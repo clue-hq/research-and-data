@@ -870,6 +870,8 @@ def _grant_phrase(
     if scope_kind == "field":
         return f"setting “{field}” on {_noun(str(object_name), 2)}"
     target = "lists" if provider == "hubspot" else "campaigns"
+    if kind == "list_create":
+        return f"creating Clue {target}"
     if kind == "list_membership":
         return f"adding contacts to Clue {target}"
     if kind == "list_removal":

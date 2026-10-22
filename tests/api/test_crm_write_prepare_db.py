@@ -1336,3 +1336,182 @@ def test_a_salesforce_field_the_org_does_not_have_refuses_only_its_own_change(
         assert [(p.parsed.record_ref, p.field) for p in batch.changes] == [("001B", "Industry")]
 
     _run(tmp_path, "sfunknownfield", body, provider="salesforce")
+
+
+# --- Phase 3: lists Clue creates, and company lists (Task 3) ---------------------------------
+
+
+def _create_list(name: str, object_type_id: str = "0-2") -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_CREATE_LIST",
+        {"name": name, "object_type_id": object_type_id, "processing_type": "MANUAL"},
+        "the project's target accounts",
+    )
+
+
+async def _keep_list(
+    conn: Any,
+    seeded: Any,
+    connection: CrmConnection,
+    crm_list_id: str,
+    name: str,
+    crm_object: str = "company",
+) -> None:
+    from clue_api.crm.lists import store_list
+
+    await store_list(
+        conn,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        provider=connection.provider,
+        crm_object=crm_object,  # type: ignore[arg-type]
+        crm_list_id=crm_list_id,
+        name=name,
+        kind="hubspot_list" if connection.provider == "hubspot" else "salesforce_campaign",
+        created_by_clue=True,
+        created_by_write_id=None,
+        project_id=seeded.project_id,
+    )
+
+
+def test_a_list_create_is_prepared_without_any_read(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        (change,) = await _prepare(
+            conn, gateway, connection, proposal_id, [_create_list("Clue: Q4 hotel groups")]
+        )
+        assert gateway.calls == []  # no before-value: the list does not exist yet
+        assert change.parsed.change_kind(change.spec) == "list_create"
+        assert (change.parsed.object, change.parsed.label) == ("company", "Clue: Q4 hotel groups")
+        assert change.before is None and change.overwrites_person is False
+        assert change.scope_key == "kind:list_create"
+        assert change.arguments == {
+            "name": "Clue: Q4 hotel groups",
+            "object_type_id": "0-2",
+            "processing_type": "MANUAL",
+        }
+        card = card_snapshot([change], provider="hubspot", project_name="Q4 hotel groups")
+        (group,) = card["groups"]
+        assert group["title"] == 'Create the list "Clue: Q4 hotel groups"'
+        assert group["always_allow"] == "creating Clue lists"
+        assert group["object"] == "list"
+        assert [r["name"] for r in group["records"]] == ["Clue: Q4 hotel groups"]
+
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=[change],
+        )
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT kind, object, record_ref, record_label FROM crm_write "
+                    "WHERE proposal_id = :p"
+                ),
+                {"p": proposal_id},
+            )
+        ).one()
+        assert tuple(row) == ("list_create", "company", None, "Clue: Q4 hotel groups")
+
+    _run(tmp_path, "listcreate", body)
+
+
+def test_a_salesforce_campaign_create_is_worded_as_a_campaign(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        changes = [
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q1"}, "committee"),
+        ]
+        prepared = await _prepare(conn, gateway, connection, proposal_id, changes)
+        assert gateway.calls == []
+        card = card_snapshot(prepared, provider="salesforce", project_name="Q4")
+        # Two lists are two groups, each named.
+        assert [g["title"] for g in card["groups"]] == [
+            'Create the campaign "Clue: Q4"',
+            'Create the campaign "Clue: Q1"',
+        ]
+        assert [s["phrase"] for s in card["standing_permissions"]] == ["creating Clue campaigns"]
+
+    _run(tmp_path, "campaigncreate", body, provider="salesforce")
+
+
+def test_a_list_clue_already_keeps_is_not_created_again(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        from clue_api.crm.lists import mark_gone
+
+        gateway = _FakeCrm()
+        await _keep_list(conn, seeded, connection, "17", "Clue: Q4 hotel groups")
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(
+                conn, gateway, connection, proposal_id, [_create_list("clue: q4 hotel groups")]
+            )
+        assert refused.value.reason_code == "crm_list_exists"
+        assert "17" in str(refused.value)
+
+        # Two creates of one name in one batch are refused too.
+        with pytest.raises(WriteRefused) as twice:
+            await _prepare(
+                conn,
+                gateway,
+                connection,
+                proposal_id,
+                [_create_list("Clue: Q1"), _create_list("Clue: q1")],
+            )
+        assert twice.value.reason_code == "crm_write_not_parsable"
+
+        # A list the CRM no longer has may be created again (R-11.11 (4)).
+        await mark_gone(conn, connection_id=connection.connection_id, crm_list_id="17")
+        (again,) = await _prepare(
+            conn, gateway, connection, proposal_id, [_create_list("Clue: Q4 hotel groups")]
+        )
+        assert again.parsed.change_kind(again.spec) == "list_create"
+
+    _run(tmp_path, "listexists", body)
+
+
+def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _keep_list(conn, seeded, connection, "17", "Clue: Q4 hotel groups")
+        gateway = _FakeCrm(lists={"101": [], "102": ["17"], "201": []})
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_add_to_list("101", "17"), _add_to_list("102", "17"), _add_to_list("201", "9")],
+        )
+        # 102 is already in the list: nothing to change.
+        company, contact = prepared
+        assert (company.parsed.object, company.parsed.record_ref) == ("company", "101")
+        # A list Clue does not keep is a contact list, as in Phase 2.
+        assert (contact.parsed.object, contact.parsed.record_ref) == ("contact", "201")
+        reads = {
+            c[1]["record_id"]: c[1]["object_type_id"]
+            for c in gateway.calls
+            if c[0] == "HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS"
+        }
+        assert reads == {"101": "0-2", "102": "0-2", "201": "0-1"}
+
+        card = card_snapshot([company], provider="hubspot", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["title"] == 'Add 1 company to the list "17"'
+        assert group["object"] == "company"
+        assert group["always_allow"] == "adding companies to Clue lists"
+
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=prepared,
+        )
+        objects = await conn.execute(
+            text("SELECT record_ref, object FROM crm_write WHERE proposal_id = :p"),
+            {"p": proposal_id},
+        )
+        assert dict(objects.all()) == {"101": "company", "201": "contact"}  # type: ignore[arg-type]
+
+    _run(tmp_path, "companylist", body)

@@ -23,8 +23,10 @@ __all__ = [
     "CrmList",
     "link_project",
     "lists_for_project",
+    "live_list_named",
     "mark_gone",
     "store_list",
+    "stored_list",
 ]
 
 CrmListObject = Literal["company", "contact"]
@@ -165,3 +167,38 @@ async def mark_gone(conn: AsyncConnection, *, connection_id: UUID, crm_list_id: 
         ),
         {"connection_id": connection_id, "crm_list_id": crm_list_id},
     )
+
+
+async def stored_list(
+    conn: AsyncConnection, *, connection_id: UUID, crm_list_id: str
+) -> CrmList | None:
+    """The list of this connection with this CRM id, gone or not; ``None`` when Clue does not
+    keep it."""
+    row = (
+        await conn.execute(
+            text(
+                f"SELECT {_COLUMNS} FROM crm_list WHERE connection_id = :connection_id "
+                "AND crm_list_id = :crm_list_id"
+            ),
+            {"connection_id": connection_id, "crm_list_id": crm_list_id},
+        )
+    ).one_or_none()
+    return None if row is None else CrmList(**row._mapping)
+
+
+async def live_list_named(
+    conn: AsyncConnection, *, connection_id: UUID, name: str
+) -> CrmList | None:
+    """A list of this connection that the CRM still has, named ``name`` (case ignored, as
+    HubSpot matches list names)."""
+    row = (
+        await conn.execute(
+            text(
+                f"SELECT {_COLUMNS} FROM crm_list WHERE connection_id = :connection_id "
+                "AND lower(name) = lower(:name) AND gone_at IS NULL "
+                "ORDER BY created_at, crm_list_id LIMIT 1"
+            ),
+            {"connection_id": connection_id, "name": name.strip()},
+        )
+    ).one_or_none()
+    return None if row is None else CrmList(**row._mapping)

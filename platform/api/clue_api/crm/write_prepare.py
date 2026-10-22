@@ -39,7 +39,9 @@ from clue_api.crm.composio_gateway import (
     composio_user_id,
 )
 from clue_api.crm.connections import CrmConnection
+from clue_api.crm.lists import live_list_named, stored_list
 from clue_api.crm.write_actions import (
+    HUBSPOT_OBJECT_TYPE_IDS,
     ParsedChange,
     WriteActionSpec,
     WriteNotParsable,
@@ -135,6 +137,7 @@ class WriteRefused(Exception):
     ``crm_field_forbidden`` (consent, phone, or a person field outside R-8.7),
     ``crm_value_not_allowed`` (not one of the field's picklist values),
     ``crm_removal_not_allowed`` (a list or campaign member Clue did not add, R-6.25 call 12),
+    ``crm_list_exists`` (a list or campaign of that name Clue already keeps on this connection),
     ``crm_read_failed`` (the CRM's answer to a read needed to show the change was an error or not
     the expected shape; an unreadable value is never taken as empty), ``crm_rate_limited`` /
     ``crm_unavailable`` (a read met the CRM's rate limit or no answer: temporary, worth one more
@@ -191,7 +194,6 @@ _HUBSPOT_OBJECT_TYPES = {"company": "companies", "contact": "contacts"}
 #: argument shape, so each is read on its own.
 _HUBSPOT_BATCH_READS = {"company": "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"}
 _HUBSPOT_BATCH_READ_SIZE = 100
-_HUBSPOT_CONTACT_OBJECT_TYPE_ID = "0-1"
 _SALESFORCE_SOBJECTS = {"account": "Account", "contact": "Contact"}
 _CRM_NAMES: Mapping[CrmProvider, str] = {"hubspot": "HubSpot", "salesforce": "Salesforce"}
 #: Read alongside a field update's before-values only to name the record on the card and in the
@@ -645,12 +647,14 @@ async def _memberships(
     """(list, record) pairs that exist today, for the membership changes proposed."""
     members: set[tuple[str, str]] = set()
     if provider == "hubspot":
-        for record_ref in sorted({str(item.parsed.record_ref) for item in items}):
+        pairs = sorted({(item.parsed.object, str(item.parsed.record_ref)) for item in items})
+        for object_name, record_ref in pairs:
             body = await reader.read(
                 "HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS",
-                {"object_type_id": _HUBSPOT_CONTACT_OBJECT_TYPE_ID, "record_id": record_ref},
+                {"object_type_id": HUBSPOT_OBJECT_TYPE_IDS[object_name], "record_id": record_ref},
             )
-            for membership in _list(body, "results", f"the lists of contact {record_ref}"):
+            what = f"the lists of {object_name} {record_ref}"
+            for membership in _list(body, "results", what):
                 members.add((str(membership.get("listId")), record_ref))
         return members
     by_campaign: dict[str, set[str]] = {}
@@ -801,6 +805,52 @@ async def _check_removals(
             )
 
 
+async def _with_list_objects(
+    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+) -> list[_Item]:
+    """A HubSpot list holds one object type, which its membership action does not name: read it
+    from the list Clue keeps (a company list holds companies). A list Clue does not keep stays a
+    contact list, as in Phase 2."""
+    resolved: list[_Item] = []
+    for item in items:
+        kind = item.parsed.change_kind(item.spec)
+        if connection.provider == "hubspot" and kind in ("list_membership", "list_removal"):
+            kept = await stored_list(
+                conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
+            )
+            if kept is not None and kept.crm_object != item.parsed.object:
+                parsed = dataclasses.replace(item.parsed, object=kept.crm_object)
+                item = dataclasses.replace(item, parsed=parsed)
+        resolved.append(item)
+    return resolved
+
+
+async def _check_list_creates(
+    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+) -> None:
+    """One list of a name per connection: a name Clue already keeps, or proposed twice in one
+    batch, is refused (a list the CRM no longer has may be created again)."""
+    target = "list" if connection.provider == "hubspot" else "campaign"
+    seen: set[str] = set()
+    for item in items:
+        if item.parsed.change_kind(item.spec) != "list_create":
+            continue
+        name = item.parsed.label
+        if name.lower() in seen:
+            raise WriteRefused(
+                "crm_write_not_parsable",
+                f'The {target} "{name}" is created twice in this batch; propose it once.',
+            )
+        seen.add(name.lower())
+        kept = await live_list_named(conn, connection_id=connection.connection_id, name=name)
+        if kept is not None:
+            raise WriteRefused(
+                "crm_list_exists",
+                f'Clue already keeps the {target} "{kept.name}" ({kept.crm_list_id}) in '
+                f"{_CRM_NAMES[connection.provider]}. Use it instead of creating another.",
+            )
+
+
 class _Builder:
     def __init__(
         self,
@@ -939,9 +989,12 @@ async def prepare_changes(
     """
     del proposal_id  # the caller logs the prepared changes under it
     provider = connection.provider
-    items = [_parse(provider, change) for change in changes]
+    items = await _with_list_objects(
+        conn, connection, [_parse(provider, change) for change in changes]
+    )
     _check_once_per_record_field(items)
     _check_once_per_created_record(items)
+    await _check_list_creates(conn, connection, items)
 
     reader = _Reader(
         conn,
@@ -1035,6 +1088,9 @@ async def prepare_changes(
             after = kind == "list_membership"
             if before != after:
                 builder.whole(item, before=before, after=after)
+        elif kind == "list_create":
+            # Nothing to read: the list is new (a kept one of that name was refused above).
+            builder.whole(item, before=None, after={"name": item.parsed.label})
         elif kind in ("create_contact", "create_company"):
             found = await _find_existing(reader, provider, item)
             if found is None:
@@ -1131,10 +1187,13 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
     kind = change.parsed.change_kind(change.spec)
     target = "list" if provider == "hubspot" else "campaign"
     people = _noun("contact", count)
+    members = _noun(change.parsed.object, count)
+    if kind == "list_create":
+        return f'Create the {target} "{change.parsed.label}"'
     if kind == "list_membership":
-        return f'Add {count} {people} to the {target} "{change.parsed.list_ref}"'
+        return f'Add {count} {members} to the {target} "{change.parsed.list_ref}"'
     if kind == "list_removal":
-        return f'Remove {count} {people} from the {target} "{change.parsed.list_ref}"'
+        return f'Remove {count} {members} from the {target} "{change.parsed.list_ref}"'
     if kind == "field_update":
         return f'Set "{change.field_label}" on {count} {_noun(change.spec.object, count)}'
     if kind == "create_contact":
@@ -1147,10 +1206,13 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
 def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
     kind = change.parsed.change_kind(change.spec)
     target = "lists" if provider == "hubspot" else "campaigns"
+    members = _noun(change.parsed.object, 2)
+    if kind == "list_create":
+        return f"creating Clue {target}"
     if kind == "list_membership":
-        return f"adding contacts to Clue {target}"
+        return f"adding {members} to Clue {target}"
     if kind == "list_removal":
-        return f"removing contacts from Clue {target}"
+        return f"removing {members} from Clue {target}"
     if kind == "field_update":
         return f'setting "{change.field_label}" on {_noun(change.spec.object, 2)}'
     if kind == "create_contact":
@@ -1158,6 +1220,12 @@ def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
     if kind == "create_company":
         return f"creating {_noun(change.spec.object, 2)}"
     return "marking possible duplicates"
+
+
+def _group_object(provider: CrmProvider, change: PreparedChange) -> str:
+    if change.parsed.change_kind(change.spec) == "list_create":
+        return "list" if provider == "hubspot" else "campaign"
+    return change.parsed.object
 
 
 def _reason(changes: Sequence[PreparedChange]) -> str:
@@ -1180,11 +1248,13 @@ def card_snapshot(
         if change.overwrites_person:
             overwrites.append(change)
             continue
+        kind = change.parsed.change_kind(change.spec)
         key = (
-            change.parsed.change_kind(change.spec),
-            change.spec.object,
+            kind,
+            change.parsed.object,
             change.field,
-            change.parsed.list_ref,
+            # Each list created is its own group, named.
+            change.parsed.label if kind == "list_create" else change.parsed.list_ref,
         )
         grouped.setdefault(key, []).append(change)
 
@@ -1201,10 +1271,12 @@ def card_snapshot(
                 else _counts([_shown(c, c.before) for c in changes])
             )
             summary = f"{before_text} → {_counts([_shown(c, c.after) for c in changes])}"
+        kind = first.parsed.change_kind(first.spec)
         groups.append(
             {
-                "kind": first.parsed.change_kind(first.spec),
-                "object": first.spec.object,
+                "kind": kind,
+                # What the group's records are: a list created is a list (or campaign).
+                "object": _group_object(provider, first),
                 "field": first.field,
                 "field_label": first.field_label,
                 "list_ref": first.parsed.list_ref,

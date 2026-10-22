@@ -67,13 +67,18 @@ from clue_api.crm.composio_gateway import (
     composio_user_id,
 )
 from clue_api.crm.connections import CrmConnection, get_connection
+from clue_api.crm.lists import mark_gone, store_list
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
 from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
-from clue_api.crm.write_actions import WriteActionSpec, WriteNotParsable, write_spec
+from clue_api.crm.write_actions import (
+    HUBSPOT_OBJECT_TYPE_IDS,
+    WriteActionSpec,
+    WriteNotParsable,
+    write_spec,
+)
 from clue_api.crm.write_prepare import (
     _CRM_NAMES,
-    _HUBSPOT_CONTACT_OBJECT_TYPE_ID,
     _HUBSPOT_OBJECT_TYPES,
     _SALESFORCE_SOBJECTS,
     _sf_key,
@@ -112,6 +117,9 @@ log = get_logger("clue_api.crm.write_executor")
 _TERMINAL = ("succeeded", "failed", "skipped")
 _CREATES = ("create_contact", "create_company")
 _MEMBERSHIP = ("list_membership", "list_removal")
+_LIST_CREATE = "list_create"
+#: Every kind that makes something new in the CRM and stores the id the CRM gives it.
+_MAKES = (*_CREATES, _LIST_CREATE)
 _HUBSPOT_READ = "HUBSPOT_READ_CRM_OBJECT_BY_ID"
 _SOQL = "SALESFORCE_RUN_SOQL_QUERY"
 #: Salesforce ids are matched in one query per this many records.
@@ -124,6 +132,12 @@ NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sen
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
 #: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
+#: A membership change of a list HubSpot no longer has (R-11.11 (4); Review Focus 3).
+LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
+#: Salesforce lets only Marketing Users create campaigns (Phase 3 Task 1 ruling).
+MARKETING_USER_MESSAGE = (
+    "Your Salesforce user needs the Marketing User permission to create campaigns."
+)
 UNCONFIRMED_MESSAGE = (
     "The CRM was reconnected or switched after this was sent, so Clue could not confirm it; "
     "check the CRM, and propose again if it is missing."
@@ -164,10 +178,23 @@ _FAILURE_CODES: tuple[tuple[FailureKind, tuple[str, ...]], ...] = (
 _DUPLICATE_RECORD = re.compile(r'"duplicateRecordError"\s*:\s*\{')
 
 
+#: Salesforce's refusal of a campaign create by a user who is not a Marketing User (verbatim).
+_CAMPAIGN_NOT_ALLOWED = (
+    "CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY",
+    "entity type cannot be inserted: Campaign",
+)
+
+
+def _campaign_not_allowed(message: str) -> bool:
+    return all(part in message for part in _CAMPAIGN_NOT_ALLOWED)
+
+
 def failure_kind(message: str | None) -> FailureKind:
     """The ``crm_write.failure_kind`` of a CRM refusal, from the error code in its message."""
     if not message:
         return "other"
+    if _campaign_not_allowed(message):
+        return "permission"
     if _DUPLICATE_RECORD.search(message):
         return "duplicate_rule"
     for kind, codes in _FAILURE_CODES:
@@ -213,7 +240,9 @@ def crm_reply(body: str) -> tuple[str, Any]:
     except ValueError:
         parsed = None
     if isinstance(parsed, Mapping | list):
-        message = _crm_text(parsed) or body
+        # A refusal a person can act on is said in plain words; the answer is kept.
+        message = MARKETING_USER_MESSAGE if _campaign_not_allowed(body) else None
+        message = message or _crm_text(parsed) or body
         return message[:_MESSAGE_MAX], parsed
     if len(body) > _MESSAGE_MAX:
         return body[:_MESSAGE_MAX], body
@@ -273,6 +302,10 @@ class _Write:
     attempts: int
     #: The record a create made, stored as soon as the CRM names it (before the read-back).
     crm_id: str | None
+    #: What the card called the record; a list's name for a ``list_create``.
+    label: str | None = None
+    #: The project of the change's proposal (a list Clue creates is kept for it).
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -513,13 +546,13 @@ async def _read_memberships(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _
     """Whether each membership change's record is in its list or campaign now."""
     seen: dict[UUID, _Seen] = {}
     if crm.connection.provider == "hubspot":
-        by_record: dict[str, list[_Write]] = {}
+        by_record: dict[tuple[str, str], list[_Write]] = {}
         for write in writes:
-            by_record.setdefault(str(write.record_ref), []).append(write)
-        for record_ref, group in by_record.items():
+            by_record.setdefault((write.object, str(write.record_ref)), []).append(write)
+        for (object_name, record_ref), group in by_record.items():
             result = await crm.call(
                 "HUBSPOT_GET_RECORD_LIST_MEMBERSHIPS",
-                {"object_type_id": _HUBSPOT_CONTACT_OBJECT_TYPE_ID, "record_id": record_ref},
+                {"object_type_id": HUBSPOT_OBJECT_TYPE_IDS[object_name], "record_id": record_ref},
             )
             records = _records(_unwrap(result.data), "results") if result.successful else None
             lists = None if records is None else {str(r.get("listId")) for r in records}
@@ -527,7 +560,9 @@ async def _read_memberships(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _
                 if not result.successful:
                     seen[write.write_id] = _Seen(error=result.error or "No answer.")
                 elif lists is None:
-                    seen[write.write_id] = _unreadable(crm, f"the lists of contact {record_ref}")
+                    seen[write.write_id] = _unreadable(
+                        crm, f"the lists of {object_name} {record_ref}"
+                    )
                 else:
                     seen[write.write_id] = _Seen(value=str(write.list_ref) in lists)
         return seen
@@ -636,22 +671,74 @@ async def _read_by_id(crm: _Crm, write: _Write) -> _Seen:
     return _Seen(value=crm_id if records else None)
 
 
+async def _read_lists(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
+    """For a list or campaign create: the one the CRM has under that name — or, on Salesforce,
+    where names repeat, by the id the CRM gave it once it gave one. ``value`` is its id, or
+    ``None`` (composio-api-notes.md § Phase 3 shapes)."""
+    seen: dict[UUID, _Seen] = {}
+    for write in writes:
+        name = str(write.label or "")
+        if crm.connection.provider == "hubspot":
+            result = await crm.call(
+                "HUBSPOT_GET_CRM_LIST_BY_NAME",
+                {"object_type_id": HUBSPOT_OBJECT_TYPE_IDS[write.object], "list_name": name},
+            )
+            if not result.successful:
+                # HubSpot answers 404 LIST_NAME_DOES_NOT_EXIST for a name it does not have.
+                missing = _status_code(result) == 404 or "LIST_NAME_DOES_NOT_EXIST" in (
+                    result.error or ""
+                )
+                seen[write.write_id] = (
+                    _Seen(value=None) if missing else _Seen(error=result.error or "No answer.")
+                )
+                continue
+            body = _unwrap(result.data)
+            found = body.get("list") if isinstance(body, Mapping) else None
+            if not isinstance(found, Mapping) or found.get("listId") in (None, ""):
+                seen[write.write_id] = _unreadable(crm, f'the list "{name}"')
+                continue
+            seen[write.write_id] = _Seen(value=str(found["listId"]))
+            continue
+        where = (
+            f"Id = {_soql_text(write.crm_id)}"
+            if write.crm_id is not None
+            else f"Name = {_soql_text(name)}"
+        )
+        result = await crm.call(_SOQL, {"query": f"SELECT Id FROM Campaign WHERE {where} LIMIT 2"})
+        records = _records(_unwrap(result.data), "records") if result.successful else None
+        if not result.successful:
+            seen[write.write_id] = _Seen(error=result.error or "No answer.")
+        elif records is None:
+            seen[write.write_id] = _unreadable(crm, f'the campaign "{name}"')
+        elif not records or not records[0].get("Id"):
+            seen[write.write_id] = _Seen(value=None)
+        else:
+            found_id = str(records[0]["Id"])
+            # Salesforce may answer the 18-character form of the id it gave.
+            same = write.crm_id is not None and _sf_key(found_id) == _sf_key(write.crm_id)
+            seen[write.write_id] = _Seen(value=write.crm_id if same else found_id)
+    return seen
+
+
 async def _read(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
     seen: dict[UUID, _Seen] = {}
     fields = [w for w in writes if w.kind == "field_update"]
     memberships = [w for w in writes if w.kind in _MEMBERSHIP]
     creates = [w for w in writes if w.kind in _CREATES]
+    lists = [w for w in writes if w.kind == _LIST_CREATE]
     if fields:
         seen.update(await _read_fields(crm, fields))
     if memberships:
         seen.update(await _read_memberships(crm, memberships))
     if creates:
         seen.update(await _read_created(crm, creates))
+    if lists:
+        seen.update(await _read_lists(crm, lists))
     return seen
 
 
 def _landed(write: _Write, seen: _Seen) -> bool:
-    if write.kind in _CREATES:
+    if write.kind in _MAKES:
         return write.crm_id is not None and seen.value == write.crm_id
     if write.kind in _MEMBERSHIP:
         return seen.value == (write.kind == "list_membership")
@@ -668,12 +755,23 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
         return _Outcome(
             "skipped", crm_message=f"{crm.name} already held this value, so nothing was sent."
         )
-    if write.kind in _CREATES:
+    if write.kind in _MAKES:
         if write.crm_id is not None:  # named by an earlier send, yet not there: never re-create
             return _failed(
                 f"{crm.name} named the new record ({write.crm_id}) but it cannot be found; check "
                 f"{crm.name} before proposing it again.",
                 "not_applied",
+            )
+        if seen.value is not None and write.kind == _LIST_CREATE:
+            target = "list" if crm.connection.provider == "hubspot" else "campaign"
+            return _Outcome(
+                "skipped",
+                failure_kind="conflict",
+                crm_message=(
+                    f'{crm.name} already has a {target} named "{write.label}" ({seen.value}), '
+                    "so it was not created again."
+                    + (" It may be the one an earlier send created." if write.attempts else "")
+                ),
             )
         if seen.value is not None:
             return _Outcome(
@@ -710,10 +808,14 @@ def _after_send(write: _Write, seen: _Seen) -> _Outcome:
 
 
 def _created_id(data: Any) -> str | None:
+    """The id a create's answer gives: a record's ``id``, or a HubSpot list's ``list.listId``."""
     body = _unwrap(data)
-    for candidate in (body, body.get("response_data") if isinstance(body, Mapping) else None):
+    nested = (
+        (body.get("response_data"), body.get("list")) if isinstance(body, Mapping) else (None, None)
+    )
+    for candidate in (body, *nested):
         if isinstance(candidate, Mapping):
-            value = candidate.get("id") or candidate.get("Id")
+            value = candidate.get("id") or candidate.get("Id") or candidate.get("listId")
             if value:
                 return str(value)
     return None
@@ -976,6 +1078,9 @@ class CrmWriteHandler:
         if spec.batch is not None:
             arguments = [write.arguments for write in call]
             result = await crm.execute(spec.batch.slug, spec.batch.build(arguments))
+            if not result.successful and _list_gone(call, result):
+                await self._fail_gone_list(crm, call, result)
+                return []
             if not result.successful and len(call) > 1:
                 # One bad item refuses a whole HubSpot batch and writes nothing: send each alone
                 # so the others go through and the refusal names its own record.
@@ -1010,7 +1115,7 @@ class CrmWriteHandler:
             kind = None if result.successful else _refusal_kind(result)
             await self._record(crm, call, {write.write_id: _failed(refused, kind)})
             return []
-        if write.kind not in _CREATES:
+        if write.kind not in _MAKES:
             return [write]
         created = replace(write, crm_id=_created_id(result.data))
         if created.crm_id is None:
@@ -1027,13 +1132,16 @@ class CrmWriteHandler:
             )
             return []
         # The record exists from now on: its id and the "Clue created it" link are kept at once,
-        # whatever happens to the read-back.
+        # whatever happens to the read-back. A list is not a record: it is kept once it is
+        # confirmed (:meth:`_record`).
         connection = crm.connection
         async with self._conn_factory() as conn:
             await conn.execute(
                 text("UPDATE crm_write SET crm_id = :crm_id WHERE write_id = :id"),
                 {"crm_id": created.crm_id, "id": write.write_id},
             )
+            if write.kind == _LIST_CREATE:
+                return [created]
             await record_link(
                 conn,
                 workspace_id=connection.workspace_id,
@@ -1044,6 +1152,31 @@ class CrmWriteHandler:
                 created_by_write_id=write.write_id,
             )
         return [created]
+
+    async def _fail_gone_list(
+        self, crm: _Crm, call: Sequence[_Write], result: ExecuteResult
+    ) -> None:
+        """HubSpot no longer has the list: Clue stops offering it, and every change of the call
+        fails in plain words, keeping HubSpot's answer (R-11.11 (4))."""
+        _, response = crm_reply(result.error or "")
+        async with self._conn_factory() as conn:
+            await mark_gone(
+                conn, connection_id=crm.connection.connection_id, crm_list_id=str(call[0].list_ref)
+            )
+        await self._record(
+            crm,
+            call,
+            {
+                write.write_id: _Outcome(
+                    "failed",
+                    failure_kind="other",
+                    crm_message=LIST_GONE_MESSAGE,
+                    retryable=False,
+                    crm_response=response if response is not None else result.error,
+                )
+                for write in call
+            },
+        )
 
     async def _mark_sending(self, call: Sequence[_Write]) -> list[_Write]:
         """Log the send before it happens; a change already decided is never sent again."""
@@ -1135,7 +1268,7 @@ class CrmWriteHandler:
                         # the wake message read it like any other change's record.
                         "created": (
                             outcome.crm_id
-                            if outcome.status == "succeeded" and by_id[write_id].kind in _CREATES
+                            if outcome.status == "succeeded" and by_id[write_id].kind in _MAKES
                             else None
                         ),
                     },
@@ -1143,7 +1276,26 @@ class CrmWriteHandler:
                 write = by_id[write_id]
                 if outcome.status != "succeeded":
                     continue
-                if write.kind in _CREATES and outcome.crm_id is not None:
+                if write.kind == _LIST_CREATE and outcome.crm_id is not None:
+                    assert write.project_id is not None and write.label is not None
+                    await store_list(
+                        conn,
+                        workspace_id=connection.workspace_id,
+                        connection_id=connection.connection_id,
+                        provider=connection.provider,
+                        crm_object="company" if write.object == "company" else "contact",
+                        crm_list_id=outcome.crm_id,
+                        name=write.label,
+                        kind=(
+                            "hubspot_list"
+                            if connection.provider == "hubspot"
+                            else "salesforce_campaign"
+                        ),
+                        created_by_clue=True,
+                        created_by_write_id=write_id,
+                        project_id=write.project_id,
+                    )
+                elif write.kind in _CREATES and outcome.crm_id is not None:
                     await record_link(
                         conn,
                         workspace_id=connection.workspace_id,
@@ -1241,6 +1393,12 @@ class CrmWriteHandler:
         await queue_crm_writes_finished_turn(conn, self._artifacts, proposal=proposal)
 
 
+def _list_gone(call: Sequence[_Write], result: ExecuteResult) -> bool:
+    """A membership call HubSpot refused because the list does not exist (composio-api-notes.md
+    § Phase 3 shapes: ``ListError.LIST_ID_DOES_NOT_EXIST``)."""
+    return call[0].kind in _MEMBERSHIP and "LIST_ID_DOES_NOT_EXIST" in (result.error or "")
+
+
 def _expired_reason(connection: CrmConnection) -> tuple[str, str]:
     """The paused wake's reason and what happens next, for an expired connection (R-11.10)."""
     return (
@@ -1306,10 +1464,14 @@ async def _start_proposal(
         ),
         {"id": proposal_id},
     )
+    project_id = await conn.scalar(
+        text("SELECT project_id FROM crm_write_proposal WHERE proposal_id = :id"),
+        {"id": proposal_id},
+    )
     rows = await conn.execute(
         text(
             "SELECT write_id, ordinal, slug, arguments::text AS arguments, kind, object, "
-            "record_ref, field, before_value::text AS before_value, "
+            "record_ref, record_label, field, before_value::text AS before_value, "
             "after_value::text AS after_value, attempts, crm_id FROM crm_write "
             "WHERE proposal_id = :id AND selected "
             "AND status NOT IN ('succeeded', 'failed', 'skipped') ORDER BY ordinal"
@@ -1350,6 +1512,8 @@ async def _start_proposal(
                 after=None if row.after_value is None else json.loads(row.after_value),
                 attempts=int(row.attempts),
                 crm_id=row.crm_id,
+                label=row.record_label,
+                project_id=None if project_id is None else str(project_id),
             )
         )
     return writes

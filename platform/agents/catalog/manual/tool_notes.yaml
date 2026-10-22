@@ -592,6 +592,7 @@ propose_crm_changes:
     crm_field_forbidden: Leave that field out of every change and propose again; Clue never writes consent or phone fields, and writes only the allowed fields on a person (crm-writing section 5).
     crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
     crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.
+    crm_list_exists: Clue already keeps a list or campaign of that name; the message gives its id. Add to that one instead of creating another.
     crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
     crm_record_not_found: Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed.
     crm_field_unknown: The CRM has no field by that name. Look up the field's real name in the CRM's field list, and propose that change again; the other changes are on the card. When every change was refused this way, nothing was proposed.

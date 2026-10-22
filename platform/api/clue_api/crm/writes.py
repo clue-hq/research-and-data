@@ -152,11 +152,13 @@ async def proposal_counts(conn: AsyncConnection, *, proposal_id: UUID) -> WriteC
 async def proposal_created_records(
     conn: AsyncConnection, *, proposal_id: UUID
 ) -> list[tuple[str, str]]:
-    """``(record_label, new CRM id)`` of each record the proposal's succeeded creates made."""
+    """``(record_label, new CRM id)`` of each record — and each list or campaign — the proposal's
+    succeeded creates made."""
     rows = await conn.execute(
         text(
             "SELECT record_label, record_ref FROM crm_write WHERE proposal_id = :id "
-            "AND kind IN ('create_contact', 'create_company') AND status = 'succeeded' "
+            "AND kind IN ('create_contact', 'create_company', 'list_create') "
+            "AND status = 'succeeded' "
             "AND record_ref IS NOT NULL ORDER BY ordinal"
         ),
         {"id": proposal_id},
@@ -228,7 +230,8 @@ async def insert_writes(
                 "slug": change.spec.slug,
                 "arguments": json.dumps(change.arguments, default=str),
                 "kind": change.parsed.change_kind(change.spec),
-                "object": change.spec.object,
+                # The change's own object: a HubSpot list holds companies or contacts.
+                "object": change.parsed.object,
                 "record_ref": change.parsed.record_ref,
                 "record_label": change.parsed.label,
                 "field": change.field,

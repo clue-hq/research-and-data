@@ -74,6 +74,14 @@ _EXAMPLES: dict[tuple[str, str], tuple[dict[str, Any], ParsedChange]] = {
             "Aldercare",
         ),
     ),
+    ("hubspot", "HUBSPOT_CREATE_LIST"): (
+        {"name": "Clue: Q4 hotel groups", "object_type_id": "0-2", "processing_type": "MANUAL"},
+        ParsedChange("company", None, {}, None, "Clue: Q4 hotel groups"),
+    ),
+    ("salesforce", "SALESFORCE_CREATE_CAMPAIGN"): (
+        {"name": "Clue: Q4 hotel groups"},
+        ParsedChange("contact", None, {}, None, "Clue: Q4 hotel groups"),
+    ),
     ("salesforce", "SALESFORCE_UPDATE_ACCOUNT"): (
         {"account_id": "001A", "industry": "Hospitality", "custom_fields": {"Tier__c": "1"}},
         ParsedChange("account", "001A", {"Industry": "Hospitality", "Tier__c": "1"}, None, "001A"),
@@ -140,7 +148,13 @@ def test_no_allowlisted_write_merges_deletes_or_runs_an_llm() -> None:
 def test_the_allowlist_covers_every_kind_but_link_duplicate() -> None:
     for provider in ("hubspot", "salesforce"):
         kinds = {spec.kind for (p, _s), spec in WRITE_ACTIONS.items() if p == provider}
-        assert kinds >= {"field_update", "list_membership", "create_contact", "create_company"}
+        assert kinds >= {
+            "field_update",
+            "list_membership",
+            "create_contact",
+            "create_company",
+            "list_create",
+        }
         assert "link_duplicate" not in kinds
     assert {spec.kind for spec in WRITE_ACTIONS.values()} >= {"list_removal"}
 
@@ -202,6 +216,53 @@ def test_a_list_removal_never_matches_a_list_add_grant() -> None:
     ) == scope_key(spec, remove, None)
 
 
+@pytest.mark.parametrize(
+    ("provider", "slug", "arguments", "object_name"),
+    [
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "MANUAL"},
+            "company",
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Clue: Q4", "object_type_id": "0-1", "processing_type": "MANUAL"},
+            "contact",
+        ),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "contact"),
+    ],
+)
+def test_create_list_is_a_list_create_change(
+    provider: str, slug: str, arguments: Mapping[str, Any], object_name: str
+) -> None:
+    spec = write_spec(provider, slug)  # type: ignore[arg-type]
+    assert spec is not None
+    parsed = spec.parse(arguments)
+    assert parsed.change_kind(spec) == "list_create"
+    assert (parsed.object, parsed.record_ref, parsed.label) == (object_name, None, "Clue: Q4")
+    assert parsed.fields == {} and parsed.list_ref is None
+    assert scope_key(spec, parsed, None) == "kind:list_create"
+    # Nothing is read before a list is created, and it is never a batch.
+    assert spec.read_before is None and spec.batch is None
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "DYNAMIC"},
+        {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "SNAPSHOT"},
+        {"name": "Clue: Q4", "object_type_id": "0-2"},
+    ],
+)
+def test_hubspot_creates_manual_lists_only(arguments: Mapping[str, Any]) -> None:
+    spec = write_spec("hubspot", "HUBSPOT_CREATE_LIST")
+    assert spec is not None
+    with pytest.raises(WriteNotParsable, match="Clue creates manual lists only"):
+        spec.parse(arguments)
+
+
 def test_scope_keys() -> None:
     update = write_spec("hubspot", "HUBSPOT_UPDATE_COMPANY")
     create = write_spec("salesforce", "SALESFORCE_CREATE_CONTACT")
@@ -252,6 +313,20 @@ def test_scope_keys() -> None:
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"companyId": "1", "properties": {}}),
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"properties": {"name": "x"}}),
         ("salesforce", "SALESFORCE_CREATE_CONTACT", {"first_name": "Ana"}),
+        # a list is named, of companies or contacts, and holds nothing the card cannot show
+        ("hubspot", "HUBSPOT_CREATE_LIST", {"object_type_id": "0-2", "processing_type": "MANUAL"}),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Q4", "object_type_id": "0-3", "processing_type": "MANUAL"},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Q4", "object_type_id": "0-2", "processing_type": "MANUAL", "filters": {}},
+        ),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": " "}),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "budgeted_cost": 9}),
         (
             "hubspot",
             "HUBSPOT_CREATE_CONTACT",

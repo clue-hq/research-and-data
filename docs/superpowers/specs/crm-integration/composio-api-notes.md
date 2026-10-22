@@ -263,6 +263,12 @@ HubSpot list errors seen (verbatim `ExecuteResult.error`; `data` = `{http_error,
   CampaignId = …`), `SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` (`campaign_id`, `contact_id`, optional
   `status`) answer and its already-a-member error, `SALESFORCE_REMOVE_FROM_CAMPAIGN`
   (`campaign_id` + `member_id` or `campaign_member_id`; it deletes the CampaignMember row) answer.
+- **Built from the schema only, live check owed (Task 3, 2026-10-23):** Clue sends
+  `SALESFORCE_CREATE_CAMPAIGN` with `name` alone, reads the new id from the answer's `id`, and
+  before and after sending looks the campaign up by SOQL (`SELECT Id FROM Campaign WHERE Name =
+  '…' LIMIT 2`, by `Id` once it has one). The refusal above is shown to the person as "Your
+  Salesforce user needs the Marketing User permission to create campaigns." (`failure_kind`
+  `permission`, the answer kept). Re-check all of this when the spike's Salesforce half re-runs.
 - Other campaign slugs present at this version (not probed): `SALESFORCE_GET_CAMPAIGN`,
   `SALESFORCE_LIST_CAMPAIGNS`, `SALESFORCE_SEARCH_CAMPAIGNS`, `SALESFORCE_UPDATE_CAMPAIGN`,
   `SALESFORCE_ADD_LEAD_TO_CAMPAIGN`, `SALESFORCE_DELETE_CAMPAIGN` (never allowlist).

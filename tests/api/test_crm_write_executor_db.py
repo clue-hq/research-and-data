@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import timedelta
 from pathlib import Path
@@ -31,6 +32,7 @@ from clue_api.crm.connections import (
     open_connect_request,
     start_attempt,
 )
+from clue_api.crm.lists import lists_for_project, store_list
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted
 from clue_api.crm.wake import queue_crm_writes_finished_turn
 from clue_api.crm.write_executor import (
@@ -90,6 +92,8 @@ class _WritingCrm(_FakeCrm):
         self.on_write = on_write
         #: Salesforce records the composite call refuses (inside a successful answer).
         self.refused_records: set[str] = set()
+        #: Lists (HubSpot) and campaigns (Salesforce) by name: their CRM ids.
+        self.crm_lists: dict[str, str] = {}
 
     @property
     def writes(self) -> list[tuple[str, dict[str, Any]]]:
@@ -99,6 +103,10 @@ class _WritingCrm(_FakeCrm):
         queued = self.failures.get(slug)
         failure = queued.pop(0) if queued else None
         if slug not in _WRITE_SLUGS:
+            list_read = self._list_read(slug, arguments)
+            if list_read is not None and not isinstance(failure, ComposioError | ExecuteResult):
+                self.calls.append((slug, dict(arguments)))
+                return list_read
             if isinstance(failure, ComposioError):
                 self.calls.append((slug, dict(arguments)))
                 raise failure
@@ -128,7 +136,65 @@ class _WritingCrm(_FakeCrm):
             raise RuntimeError("the worker died after the CRM wrote")
         return ExecuteResult(True, {"data": answer}, None)
 
+    def _list_read(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult | None:
+        """HubSpot's list-by-name read and Salesforce's Campaign SOQL (composio-api-notes.md
+        § Phase 3 shapes)."""
+        if slug == "HUBSPOT_GET_CRM_LIST_BY_NAME":
+            name = str(arguments["list_name"])
+            list_id = next(
+                (i for n, i in self.crm_lists.items() if n.lower() == name.lower()), None
+            )
+            if list_id is None:
+                return _LIST_NAME_MISSING
+            return ExecuteResult(
+                True,
+                {
+                    "data": {
+                        "list": {
+                            "listId": list_id,
+                            "name": name,
+                            "objectTypeId": arguments["object_type_id"],
+                            "processingType": "MANUAL",
+                        }
+                    }
+                },
+                None,
+            )
+        query = str(arguments.get("query", ""))
+        if slug == "SALESFORCE_RUN_SOQL_QUERY" and "FROM Campaign" in query:
+            by_name = re.search(r"Name = '(.*)'", query)
+            by_id = re.search(r"Id = '(.*)'", query)
+            found = [
+                {"attributes": {"type": "Campaign"}, "Id": i, "Name": n}
+                for n, i in self.crm_lists.items()
+                if (by_name is not None and n == by_name.group(1))
+                or (by_id is not None and i == by_id.group(1))
+            ]
+            return ExecuteResult(
+                True, {"data": {"records": found, "totalSize": len(found), "done": True}}, None
+            )
+        return None
+
     def _write(self, slug: str, arguments: Mapping[str, Any]) -> Any:
+        if slug == "HUBSPOT_CREATE_LIST":
+            list_id = str(17 + len(self.crm_lists))
+            self.crm_lists[str(arguments["name"])] = list_id
+            # The Task 1 answer: the list, with no size on create.
+            return {
+                "list": {
+                    "listId": list_id,
+                    "name": arguments["name"],
+                    "objectTypeId": arguments["object_type_id"],
+                    "processingType": "MANUAL",
+                    "processingStatus": "COMPLETE",
+                    "listVersion": 1,
+                    "createdAt": "2026-10-23T10:00:00Z",
+                }
+            }
+        if slug == "SALESFORCE_CREATE_CAMPAIGN":
+            campaign_id = f"701A0000000000{len(self.crm_lists)}"
+            self.crm_lists[str(arguments["name"])] = campaign_id
+            return {"id": campaign_id, "success": True, "errors": []}
         if slug == "HUBSPOT_CREATE_CONTACT":
             record_id = str(500 + len(self.records))
             self.records[record_id] = dict(arguments)
@@ -177,7 +243,32 @@ _WRITE_SLUGS = frozenset(
         "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
         "SALESFORCE_PATCH_COMPOSITE_SOBJECTS",
         "HUBSPOT_CREATE_CONTACT",
+        "HUBSPOT_CREATE_LIST",
+        "SALESFORCE_CREATE_CAMPAIGN",
     }
+)
+
+#: HubSpot's answer for a list name it does not have: the normal "not made yet" answer.
+_LIST_NAME_MISSING = ExecuteResult(
+    False,
+    {"http_error": "404", "status_code": 404, "message": "Not Found"},
+    '{"status":"error","message":"List does not exist with name Clue: Q4 and object type ID 0-2.",'
+    '"correlationId":"c","context":{"listName":["Clue: Q4"],"objectTypeId":["0-2"]},'
+    '"category":"OBJECT_NOT_FOUND","subCategory":"ListError.LIST_NAME_DOES_NOT_EXIST"}',
+)
+#: HubSpot's answer to a membership change of a list that was deleted (verbatim, Task 1).
+_LIST_GONE_BODY = (
+    '{"status":"error","message":"List does not exist with ID 17.","correlationId":"c",'
+    '"context":{"listId":["17"]},"category":"OBJECT_NOT_FOUND",'
+    '"subCategory":"ListError.LIST_ID_DOES_NOT_EXIST"}'
+)
+_LIST_GONE = ExecuteResult(
+    False, {"http_error": "404", "status_code": 404, "message": "Not Found"}, _LIST_GONE_BODY
+)
+#: Salesforce's refusal of a campaign create by a user who is not a Marketing User (Task 1).
+_NOT_A_MARKETING_USER = (
+    '[{"message":"entity type cannot be inserted: Campaign",'
+    '"errorCode":"CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY","fields":[]}]'
 )
 
 _BATCH_READ = "HUBSPOT_BATCH_READ_COMPANIES_BY_PROPERTIES"
@@ -1455,3 +1546,211 @@ def test_an_unreadable_crm_answer_is_shown_as_it_came() -> None:
     assert crm_reply(shapeless) == (shapeless, json.loads(shapeless))
     # Clue's own sentences pass through untouched.
     assert crm_reply("Refused.") == ("Refused.", None)
+
+
+# --- Phase 3: lists and campaigns Clue creates, and lists deleted in the CRM (Task 3) ---------
+
+
+def _create_list(name: str) -> ProposedChange:
+    return ProposedChange(
+        slug="HUBSPOT_CREATE_LIST",
+        arguments={"name": name, "object_type_id": "0-2", "processing_type": "MANUAL"},
+        reason="The project's target accounts.",
+    )
+
+
+def test_a_created_list_is_stored_for_the_project(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create_list("Clue: Q4"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["crm_id"]) == ("succeeded", "17")
+        # Looked for by name first, created, then read back by name.
+        assert [slug for slug, _ in gateway.calls] == [
+            "HUBSPOT_GET_CRM_LIST_BY_NAME",
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_GET_CRM_LIST_BY_NAME",
+        ]
+        (kept,) = await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+        assert (kept.crm_list_id, kept.name, kept.crm_object, kept.kind) == (
+            "17",
+            "Clue: Q4",
+            "company",
+            "hubspot_list",
+        )
+        assert kept.created_by_clue and kept.created_by_write_id == change["write_id"]
+        # A list is not a CRM record: no record link names it.
+        links = await conn.scalar(
+            text("SELECT count(*) FROM crm_record_link WHERE connection_id = :c AND crm_id = '17'"),
+            {"c": connection.connection_id},
+        )
+        assert links == 0
+        # The wake names the new list and its id, so the agent can add to it.
+        message = await _wake_message(conn, tmp_path, f"crm-writes-finished:{proposal_id}")
+        assert "Created Clue: Q4 (17)." in message
+
+    _run(tmp_path, "listmade", body)
+
+
+def test_a_created_campaign_is_stored_for_the_project(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["crm_id"]) == ("succeeded", "701A00000000000")
+        (kept,) = await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+        assert (kept.crm_list_id, kept.crm_object, kept.kind) == (
+            "701A00000000000",
+            "contact",
+            "salesforce_campaign",
+        )
+
+    _run(tmp_path, "campaignmade", body, provider="salesforce")
+
+
+def test_a_list_made_since_the_card_is_not_created_again(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm()
+        proposal_id = await _propose(conn, seeded, connection, gateway, _create_list("Clue: Q4"))
+        gateway.crm_lists["Clue: Q4"] = "40"  # someone made it by hand meanwhile
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert (change["status"], change["failure_kind"]) == ("skipped", "conflict")
+        assert "40" in change["crm_message"]
+        assert gateway.writes == []
+        # Clue does not adopt a list it did not make: the person links it if they want it.
+        assert not await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+
+    _run(tmp_path, "listmadeby", body)
+
+
+def test_a_deleted_list_is_marked_gone_and_the_change_fails(tmp_path: Path) -> None:
+    """Review Focus 3: the stored list was deleted in HubSpot."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await store_list(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            crm_object="company",
+            crm_list_id="17",
+            name="Clue: Q4",
+            kind="hubspot_list",
+            created_by_clue=True,
+            created_by_write_id=None,
+            project_id=seeded.project_id,
+        )
+        gateway = _WritingCrm(
+            lists={"101": [], "102": []},
+            failures={"HUBSPOT_UPDATE_LIST_MEMBERSHIPS": [_LIST_GONE]},
+        )
+        add = [
+            ProposedChange(
+                "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+                {"list_id": "17", "operation": "add", "record_ids": [record]},
+                "Target accounts.",
+            )
+            for record in ("101", "102")
+        ]
+        proposal_id = await _propose(conn, seeded, connection, gateway, *add)
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        changes = await _writes(conn, proposal_id)
+        for record in ("101", "102"):
+            assert changes[record]["status"] == "failed"
+            assert changes[record]["failure_kind"] == "other"
+            assert changes[record]["retryable"] is False
+            assert changes[record]["crm_message"] == (
+                "The list no longer exists in HubSpot; find it by name or create it again."
+            )
+            assert changes[record]["crm_response"] == json.loads(_LIST_GONE_BODY)
+        # One call found it gone: the changes are not sent one by one after it.
+        assert len(gateway.writes) == 1
+        # The kept list is gone, so it is no longer offered for the project.
+        assert not await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+        gone = await conn.scalar(
+            text("SELECT gone_at IS NOT NULL FROM crm_list WHERE crm_list_id = '17'")
+        )
+        assert gone is True
+
+    _run(tmp_path, "listgone", body)
+
+
+MARKETING_USER = "Your Salesforce user needs the Marketing User permission to create campaigns."
+
+
+def test_a_campaign_create_by_a_user_who_is_not_a_marketing_user_says_so(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        refusal = ExecuteResult(
+            False, {"http_error": "400", "status_code": 400}, _NOT_A_MARKETING_USER
+        )
+        gateway = _WritingCrm(failures={"SALESFORCE_CREATE_CAMPAIGN": [refusal]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        (change,) = (await _writes(conn, proposal_id)).values()
+        assert change["status"] == "failed"
+        assert change["crm_message"] == MARKETING_USER
+        assert change["failure_kind"] == "permission"
+        assert change["crm_response"] == json.loads(_NOT_A_MARKETING_USER)
+        assert not await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+
+    _run(tmp_path, "marketinguser", body, provider="salesforce")
+
+
+def test_the_marketing_user_refusal_is_shown_in_plain_words() -> None:
+    assert crm_reply(_NOT_A_MARKETING_USER) == (MARKETING_USER, json.loads(_NOT_A_MARKETING_USER))
+    assert failure_kind(_NOT_A_MARKETING_USER) == "permission"
+    # The same code for another object is not a campaign permission.
+    other = '[{"message":"entity type cannot be inserted: Lead","errorCode":"CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY"}]'  # noqa: E501
+    assert crm_reply(other)[0] == (
+        "entity type cannot be inserted: Lead (CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY)"
+    )

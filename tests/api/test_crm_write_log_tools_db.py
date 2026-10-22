@@ -438,3 +438,12 @@ def test_both_tools_refuse_when_the_crm_is_not_configured(tmp_path: Path) -> Non
         ] == ["crm_not_configured"]
 
     _run(tmp_path, "unconfigured", body)
+
+
+def test_a_list_create_grant_is_worded_like_the_card() -> None:
+    from clue_api.crm.write_tools import _grant_phrase
+
+    assert _grant_phrase("hubspot", "kind", "list_create", None, None) == "creating Clue lists"
+    assert (
+        _grant_phrase("salesforce", "kind", "list_create", None, None) == "creating Clue campaigns"
+    )

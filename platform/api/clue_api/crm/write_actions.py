@@ -14,7 +14,13 @@ arguments (``industry``), so they are mapped here.
 Never allowlisted: merges, deletes, GDPR/erase actions and Composio's natural-language
 (``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write — use
 the batch ``HUBSPOT_UPDATE_CONTACTS``); the Salesforce ``*_BY_ID`` update tools (deprecated in the
-pinned toolkit). ``link_duplicate`` is a declared kind with no action until Phase 3.
+pinned toolkit). ``link_duplicate`` is a declared kind with no action until Phase 4.
+
+``list_create`` (Phase 3, Task 3) creates a Clue list: a **manual** HubSpot list of companies or
+contacts, or a Salesforce campaign (which holds contacts). Its ``label`` is the list's name; it
+sets no field and names no record until the CRM gives it an id. A HubSpot list membership change
+names no object type, so its ``object`` here is ``contact``; preparation reads the real one from
+the list Clue keeps (``crm_list.crm_object``).
 
 What a result means is the executor's business (Task 6), but two traps are recorded here: a
 Salesforce composite call is ``successful`` even when records fail (each carries ``success`` and
@@ -33,6 +39,7 @@ from typing import Any, Literal
 from clue_api.crm.composio_gateway import CrmProvider
 
 __all__ = [
+    "HUBSPOT_OBJECT_TYPE_IDS",
     "WRITE_ACTIONS",
     "BatchSpec",
     "ItemOutcome",
@@ -55,6 +62,7 @@ WriteKind = Literal[
     "list_removal",
     "create_contact",
     "create_company",
+    "list_create",
     "link_duplicate",
 ]
 
@@ -180,6 +188,9 @@ def _unwrap(data: Any) -> Any:
 
 # --- HubSpot ----------------------------------------------------------------------------------
 
+#: HubSpot's object type ids of the objects a Clue list holds (composio-api-notes.md § Phase 3).
+HUBSPOT_OBJECT_TYPE_IDS: Mapping[str, str] = {"company": "0-2", "contact": "0-1"}
+
 #: Contact-to-company association types HubSpot defines (primary, unlabeled).
 _HUBSPOT_CONTACT_COMPANY_TYPES = frozenset({1, 279})
 
@@ -219,6 +230,29 @@ def _hubspot_list_membership(arguments: Arguments) -> ParsedChange:
     record = _id({"record_id": records[0]}, "record_id")
     kind: WriteKind = "list_membership" if operation == "add" else "list_removal"
     return ParsedChange("contact", record, {}, list_ref, record, kind=kind)
+
+
+def _list_name(arguments: Arguments) -> str:
+    name = arguments.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise WriteNotParsable("'name' must be the list's name.")
+    return name.strip()
+
+
+def _hubspot_create_list(arguments: Arguments) -> ParsedChange:
+    _only(arguments, {"name", "object_type_id", "processing_type"})
+    name = _list_name(arguments)
+    if arguments.get("processing_type") != "MANUAL":
+        raise WriteNotParsable(
+            "Clue creates manual lists only: set 'processing_type' to \"MANUAL\"."
+        )
+    type_id = str(arguments.get("object_type_id"))
+    object_name = next((o for o, t in HUBSPOT_OBJECT_TYPE_IDS.items() if t == type_id), None)
+    if object_name is None:
+        raise WriteNotParsable(
+            '\'object_type_id\' must be "0-2" (a list of companies) or "0-1" (of contacts).'
+        )
+    return ParsedChange(object_name, None, {}, None, name)
 
 
 def _hubspot_associated_company(associations: object) -> str | None:
@@ -439,6 +473,12 @@ def _salesforce_remove_from_campaign(arguments: Arguments) -> ParsedChange:
     return ParsedChange("contact", record, {}, _id(arguments, "campaign_id"), record)
 
 
+def _salesforce_create_campaign(arguments: Arguments) -> ParsedChange:
+    # Only the name, so the card shows everything that is sent.
+    _only(arguments, {"name"})
+    return ParsedChange("contact", None, {}, None, _list_name(arguments))
+
+
 def _salesforce_composite_build(
     object_name: str, parse: Callable[[Arguments], ParsedChange]
 ) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
@@ -573,6 +613,17 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=("HUBSPOT_SEARCH_COMPANIES", "domain"),
         batch=None,
     ),
+    # Verified live (Phase 3 Task 1): a manual company list.
+    WriteActionSpec(
+        provider="hubspot",
+        slug="HUBSPOT_CREATE_LIST",
+        kind="list_create",
+        object="company",  # or contact: the parsed change carries the list's object
+        parse=_hubspot_create_list,
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    ),
     # Salesforce
     WriteActionSpec(
         provider="salesforce",
@@ -647,6 +698,18 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         parse=_salesforce_create("account", _SALESFORCE_ACCOUNT_ARGS, "Name", "Name"),
         read_before=None,
         find_existing=(_SOQL, "Website"),
+        batch=None,
+    ),
+    # Schema only, live check owed: the test org's user is not a Marketing User (Phase 3 Task 1).
+    # A campaign holds contacts.
+    WriteActionSpec(
+        provider="salesforce",
+        slug="SALESFORCE_CREATE_CAMPAIGN",
+        kind="list_create",
+        object="contact",
+        parse=_salesforce_create_campaign,
+        read_before=None,
+        find_existing=None,
         batch=None,
     ),
 )
