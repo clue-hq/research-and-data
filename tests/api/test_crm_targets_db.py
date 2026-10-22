@@ -26,6 +26,7 @@ from clue_api.crm.targets import (
     project_targets,
     split_name,
 )
+from clue_api.crm.write_actions import write_spec
 from clue_config import Settings
 from clue_core import (
     EntityId,
@@ -35,10 +36,13 @@ from clue_core import (
     ResearchMode,
     RunId,
     UseClass,
+    VerificationStatus,
     new_run_id,
 )
+from clue_research.claimstore import record_verification
+from clue_research.claimstore.claims import supersede_with_existing
 from clue_research.claimstore.run_lineage import record_run_lineage
-from clue_research.identity import insert_account_entity, insert_contact_entity
+from clue_research.identity import insert_account_entity, insert_contact_entity, mark_merged
 from clue_research.profiling.committee.fields import load_committee_pack
 from clue_toolbelt import PreconditionFailed
 from tests._workspace import seed_project
@@ -183,7 +187,12 @@ def _run(tmp_path: Path, label: str, body: Any) -> None:
 
 
 async def _targets(
-    world: _World, *, provider: str | None = "hubspot", connection: Any = None
+    world: _World,
+    *,
+    provider: str | None = "hubspot",
+    connection: Any = None,
+    settings: Settings = SETTINGS,
+    **kwargs: Any,
 ) -> ProjectTargets:
     return await project_targets(
         world.conn,
@@ -191,7 +200,8 @@ async def _targets(
         project_id=world.project_id,
         connection_id=connection.connection_id if connection is not None else None,
         provider=provider,  # type: ignore[arg-type]
-        settings=SETTINGS,
+        settings=settings,
+        **kwargs,
     )
 
 
@@ -465,41 +475,331 @@ def test_an_account_already_in_the_crm_carries_its_record_id(tmp_path: Path) -> 
 
 @_db
 def test_workspace_isolation(tmp_path: Path) -> None:
+    """A second seeded workspace, with its own project, accounts, people, claims and CRM link:
+    reading this workspace's project returns none of it, and its project is refused here."""
+
     async def body(conn: Any, world: _World, seeded: Any) -> None:
-        account = await world.account("Zafran Security", "zafran.io")
-        nick = await world.person(account, "Nick Fisher")
+        mine = await world.account("Zafran Security", "zafran.io")
+        nick = await world.person(mine, "Nick Fisher")
         await world.claim("nick_persona", nick, "contact.persona", "champion")
 
-        page = await project_targets(
+        theirs = await _seed(conn, tmp_path, workspace_id="ws-crmt-other", label="other")
+        other = _World(conn, theirs)
+        their_connection = await _connect(conn, other.workspace_id)
+        their_account = await other.account("Theirs Inc", "theirs.example")
+        await other.fit("their_fit", their_account, 0.9, other.project_id)
+        their_person = await other.person(their_account, "Tom Theirs")
+        await other.claim("their_persona", their_person, "contact.persona", "champion")
+        await writes.record_link(
             conn,
-            workspace_id="ws-crmt-someone-else",
-            project_id=world.project_id,
-            connection_id=None,
-            provider=None,
-            settings=SETTINGS,
+            workspace_id=other.workspace_id,
+            connection_id=their_connection.connection_id,
+            crm_object="company",
+            crm_id="7777",
+            created_by_clue=False,
+            clue_entity_id=UUID(str(their_account)),
         )
-        assert page.accounts == [] and page.contacts == [] and page.total_accounts == 0
+
+        page = await _targets(world)
+        assert [a.account_entity_id for a in page.accounts] == [str(mine)]
+        assert [c.contact_entity_id for c in page.contacts] == [str(nick)]
+        assert all(a.crm_record_id is None for a in page.accounts)
+
+        # Their project read from this workspace: nothing, even with their account named.
+        cross = await project_targets(
+            conn,
+            workspace_id=world.workspace_id,
+            project_id=other.project_id,
+            connection_id=their_connection.connection_id,
+            provider="hubspot",
+            settings=SETTINGS,
+            account_ids=[str(their_account)],
+        )
+        assert cross.accounts == [] and cross.contacts == [] and cross.total_accounts == 0
 
         # The tool refuses another workspace's project by name rather than answering empty.
         tool = ReadCrmTargetsTool(settings=SETTINGS, conn_factory=conn_session_factory(conn))
-        foreign = _ctx(conn, "ws-crmt-someone-else")
-        failures = await tool.preconditions(
-            ReadCrmTargetsInput(project_id=world.project_id), foreign
-        )
+        here = _ctx(conn, world.workspace_id)
+        failures = await tool.preconditions(ReadCrmTargetsInput(project_id=other.project_id), here)
         assert [failure.reason_code for failure in failures] == ["project_not_found"]
         with pytest.raises(PreconditionFailed):
-            await tool.invoke(ReadCrmTargetsInput(project_id=world.project_id), foreign)
+            await tool.invoke(ReadCrmTargetsInput(project_id=other.project_id), here)
 
         # An account id that is not this project's is simply not served.
-        narrowed = await project_targets(
-            conn,
-            workspace_id=world.workspace_id,
-            project_id=world.project_id,
-            connection_id=None,
-            provider=None,
-            settings=SETTINGS,
-            account_ids=[str(uuid4())],
-        )
+        narrowed = await _targets(world, account_ids=[str(uuid4())])
         assert narrowed.accounts == [] and narrowed.total_accounts == 0
 
     _run(tmp_path, "isolation", body)
+
+
+@_db
+def test_a_rejected_claim_is_never_offered(tmp_path: Path) -> None:
+    """A rejected claim (a reviewer's or the identity gate's verdict) is dropped before the latest
+    is picked: it is never offered, never named in ``withheld``, and never hides an older live
+    claim."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        fit = await world.fit("fit", account, 0.9, world.project_id)
+        await record_verification(conn, fit, status=VerificationStatus.REJECTED)  # type: ignore[arg-type]
+
+        wrong = await world.person(account, "Wrong Person")
+        for label, field_key, value in (
+            ("wrong_title", "contact.current_title", "Secret Title"),
+            ("wrong_persona", "contact.persona", "champion"),
+            (
+                "wrong_email",
+                "core.work_email",
+                {"address": "secret@zafran.io", "status": "verified_smtp"},
+            ),
+        ):
+            claim = await world.claim(label, wrong, field_key, value)
+            await record_verification(conn, claim, status=VerificationStatus.REJECTED)  # type: ignore[arg-type]
+
+        fixed = await world.person(account, "Fixed Title")
+        older = await world.claim("fixed_old", fixed, "contact.current_title", "Director")
+        newer = await world.claim("fixed_new", fixed, "contact.current_title", "Bogus Title")
+        await record_verification(conn, newer, status=VerificationStatus.REJECTED)  # type: ignore[arg-type]
+
+        page = await _targets(world)
+        zafran = page.accounts[0]
+        assert zafran.hubspot_icp_tier is None and zafran.fit_band is None
+        assert zafran.withheld == ("fit: rejected",)
+
+        by_last = {c.last_name.value: c for c in page.contacts}
+        person = by_last["Person"]
+        assert person.job_title is None and person.buying_role is None
+        assert person.work_email is None
+        assert set(person.withheld) >= {
+            "title: rejected",
+            "buying role: rejected",
+            "email: rejected",
+        }
+        leaked = repr(person)
+        assert "Secret Title" not in leaked and "secret@zafran.io" not in leaked
+
+        title = by_last["Title"].job_title
+        assert title is not None and title.value == "Director" and title.claim_ids == (older,)
+        assert "Bogus Title" not in repr(by_last["Title"])
+
+    _run(tmp_path, "rejected", body)
+
+
+@_db
+def test_a_superseded_email_is_not_offered(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        nick = await world.person(account, "Nick Fisher")
+        replacement = await world.claim(
+            "replacement",
+            nick,
+            "core.work_email",
+            {"address": "nick@zafran.io", "status": "catch_all_valid"},
+        )
+        stale = await world.claim(
+            "stale",
+            nick,
+            "core.work_email",
+            {"address": "old-nick@zafran.io", "status": "verified_smtp"},
+        )
+        await supersede_with_existing(
+            conn,
+            stale,  # type: ignore[arg-type]
+            replacement,  # type: ignore[arg-type]
+            workspace_id=world.workspace_id,
+            entity_id=nick,
+        )
+        contact = (await _targets(world)).contacts[0]
+        assert contact.work_email is None
+        assert contact.withheld == ("email: not verified (catch_all_valid)",)
+        assert "old-nick@zafran.io" not in repr(contact)
+
+    _run(tmp_path, "superseded", body)
+
+
+@_db
+def test_the_newest_work_email_wins(tmp_path: Path) -> None:
+    """The newest live ``core.work_email`` claim is the mailbox's current verdict (the screens read
+    it the same way): a newer catch-all hides an older verified address, and a newer verified
+    address beats an older catch-all."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        demoted = await world.person(account, "Dee Moted")
+        promoted = await world.person(account, "Pro Moted")
+        await world.claim(
+            "demoted_old",
+            demoted,
+            "core.work_email",
+            {"address": "dee@zafran.io", "status": "verified_smtp"},
+        )
+        await world.claim(
+            "demoted_new",
+            demoted,
+            "core.work_email",
+            {"address": "dee@zafran.io", "status": "catch_all_valid"},
+        )
+        await world.claim(
+            "promoted_old",
+            promoted,
+            "core.work_email",
+            {"address": "pro@zafran.io", "status": "catch_all_valid"},
+        )
+        newest = await world.claim(
+            "promoted_new",
+            promoted,
+            "core.work_email",
+            {"address": "pro@zafran.io", "status": "verified_smtp"},
+        )
+        by_first = {c.first_name.value: c for c in (await _targets(world)).contacts if c.first_name}
+        assert by_first["Dee"].work_email is None
+        assert by_first["Dee"].withheld == ("email: not verified (catch_all_valid)",)
+        email = by_first["Pro"].work_email
+        assert email is not None and email.claim_ids == (newest,)
+
+    _run(tmp_path, "newest-email", body)
+
+
+@_db
+def test_a_merged_away_account_and_contact_are_excluded(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        survivor = await world.account("Zafran Security", "zafran.io")
+        loser = await world.account("Zafran Sec (dup)", "zafran-dup.example")
+        await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
+        kept = await world.person(survivor, "Nick Fisher")
+        twin = await world.person(survivor, "Nick Fisher Twin")
+        await world.claim("kept", kept, "contact.persona", "champion")
+        await world.claim("twin", twin, "contact.persona", "champion")
+        await mark_merged(conn, EntityType.CONTACT, twin, kept)
+
+        page = await _targets(world)
+        assert [a.account_entity_id for a in page.accounts] == [str(survivor)]
+        assert page.total_accounts == 1
+        assert [c.contact_entity_id for c in page.contacts] == [str(kept)]
+
+    _run(tmp_path, "merged", body)
+
+
+@_db
+def test_paging_past_the_last_page_still_counts(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        await world.account("Zafran Security", "zafran.io")
+        await world.account("Probook", "probook.example")
+        first = await _targets(world, limit=1)
+        assert len(first.accounts) == 1 and first.total_accounts == 2
+        past = await _targets(world, offset=5, limit=1)
+        assert past.accounts == [] and past.contacts == [] and past.total_accounts == 2
+
+    _run(tmp_path, "paging", body)
+
+
+@_db
+def test_contacts_are_capped_per_page(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        for index in range(3):
+            person = await world.person(account, f"Person Number{index}")
+            await world.claim(f"p{index}", person, "contact.persona", "user")
+
+        whole = await _targets(world)
+        assert len(whole.contacts) == 3 and whole.total_contacts == 3
+        assert whole.contacts_note is None
+
+        cut = await _targets(world, contacts_limit=2)
+        assert [c.contact_entity_id for c in cut.contacts] == [
+            c.contact_entity_id for c in whole.contacts[:2]
+        ]
+        assert cut.total_contacts == 3
+        assert cut.contacts_note is not None and "2 of the 3" in cut.contacts_note
+
+        # Through the tool: the limit is capped at 200 and the count and note ride along.
+        with pytest.raises(ValueError):
+            ReadCrmTargetsInput(project_id=world.project_id, contacts_limit=201)
+        tool = ReadCrmTargetsTool(settings=SETTINGS, conn_factory=conn_session_factory(conn))
+        refs = (
+            await tool.invoke(
+                ReadCrmTargetsInput(project_id=world.project_id, contacts_limit=1),
+                _ctx(conn, world.workspace_id),
+            )
+        ).references
+        assert len(refs["contacts"]) == 1 and refs["total_contacts"] == 3
+        assert "1 of the 3" in refs["contacts_note"]
+
+    _run(tmp_path, "contacts-cap", body)
+
+
+@_db
+def test_linkedin_needs_a_confirmed_fact_about_the_person(tmp_path: Path) -> None:
+    """On the committee through a claim this read does not use (a facet), with nothing read that
+    confirms who they are: their LinkedIn URL is not offered."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        quiet = await world.person(
+            account, "Quiet Person", linkedin="https://www.linkedin.com/in/quietperson"
+        )
+        await world.claim(
+            "facet",
+            quiet,
+            "contact.facet.recent_post",
+            {"text": "We shipped it"},
+            identity_binding=IdentityBinding.STRONG,
+            use_class=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
+        )
+        contact = (await _targets(world)).contacts[0]
+        assert contact.contact_entity_id == str(quiet)
+        assert contact.linkedin_url is None
+        assert contact.withheld == ("LinkedIn: nothing confirmed about this person",)
+        assert "We shipped it" not in repr(contact)
+
+    _run(tmp_path, "linkedin-vacuous", body)
+
+
+@_db
+def test_an_unverified_synthesis_is_held_back_when_verification_is_on(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        nick = await world.person(account, "Nick Fisher")
+        await world.claim(
+            "synth_title",
+            nick,
+            "contact.current_title",
+            "Probably VP",
+            extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        )
+        verifying = Settings(_env_file=None, verification_enabled=True)
+        held = (await _targets(world, settings=verifying)).contacts[0]
+        assert held.job_title is None
+        assert held.withheld == ("title: not yet verified",)
+        relaxed = (
+            await _targets(world, settings=Settings(_env_file=None, verification_enabled=False))
+        ).contacts[0]
+        assert relaxed.job_title is not None and relaxed.job_title.value == "Probably VP"
+
+    _run(tmp_path, "tier4", body)
+
+
+@_db
+def test_a_salesforce_account_link_is_read_as_the_executor_stores_it(tmp_path: Path) -> None:
+    """The executor records a created record's link with its action's ``object``: Salesforce's
+    account create is ``account`` (HubSpot's company create is ``company``). The read uses the
+    same object, so a Salesforce account Clue created is found again."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        sf_create = write_spec("salesforce", "SALESFORCE_CREATE_ACCOUNT")
+        assert sf_create is not None and sf_create.object == "account"
+        connection = await _connect(conn, world.workspace_id, provider="salesforce")
+        account = await world.account("Zafran Security", "zafran.io")
+        await writes.record_link(
+            conn,
+            workspace_id=world.workspace_id,
+            connection_id=connection.connection_id,
+            crm_object=sf_create.object,
+            crm_id="001XX0000001",
+            created_by_clue=True,
+            clue_entity_id=UUID(str(account)),
+        )
+        page = await _targets(world, provider="salesforce", connection=connection)
+        assert page.accounts[0].crm_record_id == "001XX0000001"
+
+    _run(tmp_path, "sf-link", body)

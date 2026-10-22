@@ -16,8 +16,14 @@ verdict is ``verified_smtp`` (R-12.2). The LinkedIn URL comes from the contact r
 none of the contact's claims read here is a weak identity match. Phone numbers, interests, posts
 and ``contact.facet.*`` are never read.
 
-Only the latest live claim of a field is considered: an older claim is not promoted because the
-newest one may not be offered.
+Only the latest **live** claim of a field is considered. A superseded or ``rejected`` claim is not
+live: it is dropped before the latest is picked, so it is never offered and never hides an older
+live claim (a rejection is the only mark the identity gate and a reviewer leave on a wrong-person
+match). A field whose every claim was rejected is withheld as "rejected". A live claim that may not
+be offered is not replaced by an older one: the newest live claim is what Clue currently knows.
+
+Contacts are capped per page (``contacts_limit``); ``total_contacts`` says how many the page's
+committees hold, and ``contacts_note`` says so in words when some were cut.
 """
 
 from __future__ import annotations
@@ -34,9 +40,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.display.gather import committee_members_for_accounts
 from clue_api.arv2.read_tools import claim_gate_reason
 from clue_api.crm.composio_gateway import CrmProvider
+from clue_api.crm.write_actions import WRITE_ACTIONS
 from clue_api.frontend_read.v1_shared import fit_band
 from clue_config import Settings
-from clue_core import Claim, EntityId, IdentityBinding
+from clue_core import Claim, EntityId, IdentityBinding, VerificationStatus
 from clue_research.claimstore import claims_for_entities
 from clue_research.claimstore.run_lineage import project_run_ids
 from clue_research.claimstore.tenancy import WorkspaceScope
@@ -58,6 +65,13 @@ ROLE_KEY = "contact.role_on_committee"
 TITLE_KEY = "contact.current_title"
 EMAIL_KEY = "core.work_email"
 _CONTACT_KEYS = (PERSONA_KEY, ROLE_KEY, TITLE_KEY, EMAIL_KEY)
+#: How each field is named in ``withheld``. Persona and role both make the buying role.
+_LABELS = {
+    TITLE_KEY: "title",
+    PERSONA_KEY: "buying role",
+    ROLE_KEY: "buying role",
+    EMAIL_KEY: "email",
+}
 
 #: The only work-email verdict Clue writes (R-12.2).
 VERIFIED_EMAIL = "verified_smtp"
@@ -86,6 +100,16 @@ _REASON_WORDS = {
     "weak": "identity not confirmed",
 }
 
+#: The most contacts one page returns.
+MAX_TARGET_CONTACTS = 200
+
+#: The CRM object an account is on each provider, as the write executor records it in
+#: ``crm_record_link`` (the ``object`` of the provider's company/account create action:
+#: HubSpot "company", Salesforce "account").
+_ACCOUNT_OBJECT: dict[str, str] = {
+    spec.provider: spec.object for spec in WRITE_ACTIONS.values() if spec.kind == "create_company"
+}
+
 
 @dataclass(frozen=True)
 class TargetValue:
@@ -104,6 +128,8 @@ class TargetAccount:
     hubspot_icp_tier: TargetValue | None
     #: The CRM record this account already is on this connection, when Clue knows it.
     crm_record_id: str | None
+    #: The fit Clue holds but may not use, and why ("fit: rejected").
+    withheld: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -129,6 +155,11 @@ class ProjectTargets:
     contacts: list[TargetContact]
     #: The project's accounts (after ``account_ids``), of which ``accounts`` is one page.
     total_accounts: int
+    #: The contacts the page's committees hold, of which ``contacts`` is at most
+    #: ``contacts_limit``.
+    total_contacts: int = 0
+    #: Set, in plain words, when contacts were cut to the limit.
+    contacts_note: str | None = None
 
 
 def split_name(full_name: str) -> tuple[str | None, str]:
@@ -198,6 +229,7 @@ async def project_targets(
     include_contacts: bool = True,
     offset: int = 0,
     limit: int = 200,
+    contacts_limit: int = MAX_TARGET_CONTACTS,
 ) -> ProjectTargets:
     """One page of the project's accounts and, with ``include_contacts``, their committees.
 
@@ -225,7 +257,7 @@ async def project_targets(
 
     scope = WorkspaceScope.for_workspace(workspace_id)
     page_ids = [EntityId(uuid.UUID(str(row.id))) for row in rows]
-    fits = await _project_fits(
+    fits, fit_withheld = await _project_fits(
         conn,
         workspace_id=workspace_id,
         project_id=project_id,
@@ -233,8 +265,11 @@ async def project_targets(
         scope=scope,
         settings=settings,
     )
-    account_object = "company" if provider == "hubspot" else "account"
-    account_links = await _links(conn, connection_id, account_object, page_ids)
+    account_links = (
+        await _links(conn, connection_id, _ACCOUNT_OBJECT[provider], page_ids)
+        if provider is not None
+        else {}
+    )
     accounts: list[TargetAccount] = []
     for row in rows:
         account_id = str(row.id)
@@ -254,12 +289,15 @@ async def project_targets(
                     else None
                 ),
                 crm_record_id=account_links.get(account_id),
+                withheld=fit_withheld.get(account_id, ()),
             )
         )
 
     contacts: list[TargetContact] = []
+    total_contacts = 0
+    note: str | None = None
     if include_contacts:
-        contacts = await _committee_contacts(
+        contacts, total_contacts = await _committee_contacts(
             conn,
             workspace_id=workspace_id,
             account_ids=[str(account_id) for account_id in page_ids],
@@ -267,8 +305,20 @@ async def project_targets(
             provider=provider,
             scope=scope,
             settings=settings,
+            contacts_limit=contacts_limit,
         )
-    return ProjectTargets(accounts=accounts, contacts=contacts, total_accounts=int(rows[0].total))
+        if total_contacts > len(contacts):
+            note = (
+                f"Showing {len(contacts)} of the {total_contacts} committee contacts of these "
+                "accounts. Read fewer accounts at a time (limit, or account_ids) to see the rest."
+            )
+    return ProjectTargets(
+        accounts=accounts,
+        contacts=contacts,
+        total_accounts=int(rows[0].total),
+        total_contacts=total_contacts,
+        contacts_note=note,
+    )
 
 
 async def _project_fits(
@@ -279,27 +329,38 @@ async def _project_fits(
     account_ids: Sequence[EntityId],
     scope: WorkspaceScope,
     settings: Settings,
-) -> dict[str, Claim]:
-    """Each account's latest live, offerable fit claim **for this project**.
+) -> tuple[dict[str, Claim], dict[str, tuple[str, ...]]]:
+    """Each account's latest live, offerable fit claim **for this project**, and for the accounts
+    whose fit may not be used, why.
 
     A fit is project-relative: it is scored against the project's ICP, and a run is attributed to
     its project by ``run_lineage``. A fit another project scored is not this project's fit.
     """
     runs = set(await project_run_ids(conn, workspace_id=workspace_id, project_id=project_id))
     if not runs:
-        return {}
-    fits: dict[str, Claim] = {}
+        return {}, {}
+    latest: dict[str, Claim] = {}
+    rejected: set[str] = set()
     for claim in await claims_for_entities(conn, list(account_ids), [FIT_KEY], scope=scope):
         entity = str(claim.entity_id)
-        if entity in fits or claim.run_id not in runs:
+        if claim.run_id not in runs:
             continue
-        # The first row of an entity is its newest (``collected_at DESC``).
-        fits[entity] = claim
-    return {
-        entity: claim
-        for entity, claim in fits.items()
-        if claim_gate_reason(claim, settings=settings) is None
+        if not _live(claim):
+            rejected.add(entity)
+            continue
+        # The first live row of an entity is its newest (``collected_at DESC``).
+        latest.setdefault(entity, claim)
+    fits: dict[str, Claim] = {}
+    withheld: dict[str, tuple[str, ...]] = {
+        entity: ("fit: rejected",) for entity in rejected if entity not in latest
     }
+    for entity, claim in latest.items():
+        reason = claim_gate_reason(claim, settings=settings)
+        if reason is None:
+            fits[entity] = claim
+        else:
+            withheld[entity] = (f"fit: {_REASON_WORDS.get(reason, reason)}",)
+    return fits, withheld
 
 
 def _fit_score(claim: Claim | None) -> float | None:
@@ -328,6 +389,13 @@ async def _links(
     return links
 
 
+def _live(claim: Claim) -> bool:
+    """Not superseded and not rejected: the only claims a value may come from."""
+    return (
+        claim.superseded_by is None and claim.verification_status is not VerificationStatus.REJECTED
+    )
+
+
 def _withheld_reason(claim: Claim, *, settings: Settings) -> str | None:
     """Why ``claim`` may not be offered (R-12.5), or ``None`` when it may."""
     reason = claim_gate_reason(claim, settings=settings)
@@ -354,7 +422,9 @@ async def _committee_contacts(
     provider: CrmProvider | None,
     scope: WorkspaceScope,
     settings: Settings,
-) -> list[TargetContact]:
+    contacts_limit: int,
+) -> tuple[list[TargetContact], int]:
+    """The page's committee contacts (at most ``contacts_limit``) and how many there are."""
     committees = await committee_members_for_accounts(
         conn, workspace_id=workspace_id, account_ids=account_ids
     )
@@ -362,8 +432,10 @@ async def _committee_contacts(
     members = [member for account in account_ids for member in committees.get(account, [])]
     # A person with no name cannot be written into a CRM: they are not a target.
     members = [member for member in members if member.name.strip()]
+    total = len(members)
+    members = members[:contacts_limit]
     if not members:
-        return []
+        return [], total
     contact_ids = [EntityId(uuid.UUID(member.id)) for member in members]
     linkedin = {
         str(row.id): row.linkedin_url
@@ -378,11 +450,24 @@ async def _committee_contacts(
 
     contacts: list[TargetContact] = []
     for member in members:
-        claims = claims_by_contact.get(member.id, [])
+        claims = [claim for claim in claims_by_contact.get(member.id, []) if _live(claim)]
+        rejected = {
+            str(claim.field_key)
+            for claim in claims_by_contact.get(member.id, [])
+            if claim.verification_status is VerificationStatus.REJECTED
+        }
         latest: dict[str, Claim] = {}
         for claim in claims:  # newest first within a field
             latest.setdefault(str(claim.field_key), claim)
-        withheld: list[str] = []
+        # A field (persona and role together for the buying role) whose every claim was
+        # rejected is withheld as such; its value is never named.
+        withheld = [
+            f"{label}: rejected"
+            for label in dict.fromkeys(_LABELS.values())
+            if (label != "buying role" or provider == "hubspot")
+            and any(_LABELS[key] == label for key in rejected)
+            and not any(_LABELS[key] == label for key in latest)
+        ]
 
         title_claim = _offered(latest, TITLE_KEY, "title", withheld, settings=settings)
         title = _text(title_claim.value_json, inner_key="title") if title_claim else None
@@ -402,11 +487,21 @@ async def _committee_contacts(
             elif address is not None:
                 withheld.append(f"email: not verified ({status or 'no verification recorded'})")
 
+        # LinkedIn needs at least one fact about this person that may be offered, and no weak
+        # identity match among the live facts read: a URL with nothing confirming whose it is
+        # is not offered.
         linkedin_value: TargetValue | None = None
         url = linkedin.get(member.id)
         if url:
+            confirmed = [
+                claim
+                for claim in latest.values()
+                if _withheld_reason(claim, settings=settings) is None
+            ]
             if any(claim.identity_binding is IdentityBinding.WEAK for claim in claims):
                 withheld.append("LinkedIn: identity not confirmed")
+            elif not confirmed:
+                withheld.append("LinkedIn: nothing confirmed about this person")
             else:
                 linkedin_value = TargetValue(str(url), ())
 
@@ -429,7 +524,7 @@ async def _committee_contacts(
                 crm_record_id=links.get(member.id),
             )
         )
-    return contacts
+    return contacts, total
 
 
 def _offered(

@@ -15,7 +15,12 @@ from pydantic import Field
 from clue_agents.manual import tool_manual_link
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.connections import latest_connection
-from clue_api.crm.targets import TargetAccount, TargetContact, project_targets
+from clue_api.crm.targets import (
+    MAX_TARGET_CONTACTS,
+    TargetAccount,
+    TargetContact,
+    project_targets,
+)
 from clue_api.crm.tools import _refuse
 from clue_config import Settings
 from clue_db import ConnFactory, transaction
@@ -47,6 +52,8 @@ class ReadCrmTargetsInput(ToolInput):
     include_contacts: bool = True
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=MAX_TARGET_ACCOUNTS)
+    #: The most contacts returned for the page's accounts.
+    contacts_limit: int = Field(default=MAX_TARGET_CONTACTS, ge=1, le=MAX_TARGET_CONTACTS)
 
 
 class ReadCrmTargetsOutput(ToolOutput):
@@ -54,6 +61,10 @@ class ReadCrmTargetsOutput(ToolOutput):
     contacts: list[TargetContact]
     #: The project's accounts (narrowed by ``account_ids``); ``accounts`` is one page of them.
     total_accounts: int
+    #: The committee contacts of this page's accounts; ``contacts`` is at most contacts_limit.
+    total_contacts: int
+    #: Says, in words, when contacts were cut to the limit.
+    contacts_note: str | None
     #: The CRM the workspace has connected ("hubspot" or "salesforce"), or ``None``.
     connected_crm: CrmProvider | None
 
@@ -69,7 +80,8 @@ class ReadCrmTargetsTool(Tool):
         "is. Every value carries the claim ids it came from: pass one as a change's source_ref "
         "when you propose it with propose_crm_changes. A field Clue holds but may not write is "
         "listed in the contact's 'withheld' with the reason; never write it some other way. "
-        "Page with offset and limit when total_accounts is larger than the page. Reads only "
+        "Page with offset and limit when total_accounts is larger than the page; when "
+        "contacts_note says contacts were cut, read fewer accounts at a time. Reads only "
         "Clue's records; the CRM is not called. " + tool_manual_link("read_crm_targets")
     )
     input_model: ClassVar[type[ToolInput]] = ReadCrmTargetsInput
@@ -82,7 +94,13 @@ class ReadCrmTargetsTool(Tool):
     )
     #: The result names people; only the request's shape is shown.
     parameter_policy = JournalParameterPolicy(
-        safe_display_fields=("project_id", "include_contacts", "offset", "limit")
+        safe_display_fields=(
+            "project_id",
+            "include_contacts",
+            "offset",
+            "limit",
+            "contacts_limit",
+        )
     )
     pin_requirements = ("project",)
 
@@ -143,11 +161,14 @@ class ReadCrmTargetsTool(Tool):
                 include_contacts=inputs.include_contacts,
                 offset=inputs.offset,
                 limit=inputs.limit,
+                contacts_limit=inputs.contacts_limit,
             )
         output = ReadCrmTargetsOutput(
             accounts=targets.accounts,
             contacts=targets.contacts,
             total_accounts=targets.total_accounts,
+            total_contacts=targets.total_contacts,
+            contacts_note=targets.contacts_note,
             connected_crm=active.provider if active is not None else None,
         )
         return ToolResult(
