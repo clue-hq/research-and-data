@@ -6,8 +6,9 @@ seven-layer assembler and the real workspace lease. Four properties are asserted
 and from the lease's own bytes, never from an in-memory convenience:
 
 * the turn writes exactly one ``agent_turn_knowledge_pin`` row naming the brand's current documents;
-* L3 carries exactly two composed project artifacts — ``brand_knowledge_index`` and
-  ``project_library_index`` — and none of the four cards the old production envelope compiled;
+* L3 carries exactly three composed project artifacts — ``brand_knowledge_index``,
+  ``project_library_index`` and the Phase 2 ``workspace_files`` card — and none of the four cards
+  the old production envelope compiled;
 * the brand's documents and the project's state are **mounted**, read-only, at ``brand/knowledge/``
   and ``project/`` — nothing is copied into the thread, so ``inputs/`` holds only this turn's own
   message and its current-context references;
@@ -722,12 +723,15 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
 
                 # 2. L3 carries both indexes and none of the four retired cards. Every path here
                 # is ``context/project/<constitution artifact name>.json``, so this is also the
-                # assertion that ``project_context_artifacts`` names both index cards.
+                # assertion that ``project_context_artifacts`` names both index cards. The third
+                # is the chat's own file card (F3 Phase 2, WS-28), composed on every turn —
+                # empty on a first turn, which is still what the agent should be told.
                 assert await _l3_paths(conn, submission.turn_id) == (
                     "context/project/brand_knowledge_index.json",
                     "context/project/budget.json",
                     "context/project/project_card.json",
                     "context/project/project_library_index.json",
+                    "context/project/workspace_files.json",
                 )
 
                 # 3. the brand's documents are MOUNTED read-only at ``brand/knowledge/`` — the
@@ -1253,6 +1257,117 @@ def test_two_turns_of_one_thread_share_one_persistent_workspace(tmp_path: Path) 
                 stack.workspaces.close()
 
     run_async(scenario())
+
+
+def test_a_chat_turn_materializes_context_workspace_files_json(tmp_path: Path) -> None:
+    """F3 Phase 2 (WS-28, spec D-23): every turn opens on a card of the chat's own files.
+
+    Two production turns on one thread. The first writes a file in ``outputs/``, which its own
+    ``release_saved`` saves into the chat's snapshot. The second turn must be *told* about that
+    file — from the restored file list, not from the worker's disk — in an L3 context artifact
+    materialized beside its neighbours, so a later turn cannot build on work whose source data
+    has since expired without knowing it.
+    """
+
+    async def scenario() -> None:
+        # LangGraph installs a concurrent index; do it before the rollback fixture's transaction.
+        async with postgres_agent_checkpointer(ExecutionId(uuid4())):
+            pass
+        async with rollback_conn() as conn:
+            workspace_id = f"ws28-{uuid4().hex[:8]}"
+            project = await seed_project(conn, workspace_id, name="WS28 files card project")
+            stack = await _build_stack(conn, tmp_path=tmp_path)
+            try:
+                first = await _capture_submission(
+                    conn,
+                    artifacts=stack.artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    label="files-card-one",
+                )
+                # The finished work the model leaves behind, written through the turn's OWN lease
+                # so the turn's save puts it in the chat's snapshot (``outputs/`` never expires).
+                written: list[str] = []
+
+                def write_outputs(lease: Any) -> None:
+                    if written:
+                        return
+                    lease.backend.write_text_sync("outputs/summary.md", "GI groups first.\n")
+                    written.append("outputs/summary.md")
+
+                stack.workspaces.on_acquire = write_outputs
+                first_result = await _run_turn(
+                    conn,
+                    stack,
+                    workspace_id=workspace_id,
+                    submission=first,
+                    worker_id="ws28-worker",
+                )
+                assert first_result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
+                assert written == ["outputs/summary.md"]
+
+                second = await _capture_submission(
+                    conn,
+                    artifacts=stack.artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    label="files-card-two",
+                    thread_id=first.thread_id,
+                    message_body="What did we land on?",
+                )
+                second_result = await _run_turn(
+                    conn,
+                    stack,
+                    workspace_id=workspace_id,
+                    submission=second,
+                    worker_id="ws28-worker",
+                )
+                assert second_result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
+
+                # 1. the card is a materialized L3 context file, like its neighbours.
+                paths = await _l3_paths(conn, second.turn_id)
+                assert "context/project/workspace_files.json" in paths
+
+                # 2. …and it names the file the first turn left behind, with its tier.
+                card = json.loads(
+                    await stack.storage.get(
+                        await _context_artifact_key(
+                            conn,
+                            turn_id=second.turn_id,
+                            path="context/project/workspace_files.json",
+                        )
+                    )
+                )
+                assert card["schema_version"] == "1"
+                assert {item["path"]: item["tier"] for item in card["live"]}[
+                    "outputs/summary.md"
+                ] == "work_product"
+                assert card["expired"] == []
+                # Task 8 fills the founder-approved sentence; the key is in the contract already.
+                assert "note" in card
+            finally:
+                stack.workspaces.close()
+
+    run_async(scenario())
+
+
+async def _context_artifact_key(conn: AsyncConnection, *, turn_id: UUID, path: str) -> str:
+    """The artifact key behind one materialized L3 context file of a turn."""
+
+    key = (
+        await conn.execute(
+            text(
+                "SELECT r.artifact_key FROM agent_context_ref r "
+                "JOIN agent_context_bundle b ON b.id = r.context_bundle_id "
+                "WHERE b.turn_id = :turn AND r.disposition = 'included' "
+                "AND r.materialized_path = :path"
+            ),
+            {"turn": turn_id, "path": path},
+        )
+    ).scalar_one()
+    return str(key)
 
 
 #: What the model types into the tree. Front matter and all: it says what the document is, and the

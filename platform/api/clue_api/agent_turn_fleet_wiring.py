@@ -37,7 +37,7 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -82,6 +82,11 @@ from clue_api.agent_turn_submission import (
     message_artifact_ref,
     submission_attachment_refs,
     submission_context_refs,
+)
+from clue_api.agent_workspace_files_card import (
+    WORKSPACE_FILES_CARD_NAME,
+    WORKSPACE_FILES_MEDIA_TYPE,
+    build_workspace_files_card,
 )
 from clue_api.arv2.discovery_store import release_discovery_for_turn
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
@@ -889,6 +894,13 @@ class ProjectConversationTurnRunner:
                     project_library_index=project_library_index,
                     focus_refs=submission_focus_refs,
                     card_answers=card_answers,
+                    # F3 Phase 2 (WS-28): what this chat has, how old it is, and what expired —
+                    # off the file list the lease just restored, never off the worker's disk,
+                    # which is only a cache of it (AW-23).
+                    workspace_files=build_workspace_files_card(
+                        None if lease.snapshot_base is None else lease.snapshot_base.manifest,
+                        now=datetime.now(UTC),
+                    ),
                 )
                 card_ref = await self._artifact(
                     submission,
@@ -1044,6 +1056,7 @@ class ProjectConversationTurnRunner:
         project_library_index: bytes | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
         card_answers: tuple[str, ...] = (),
+        workspace_files: dict[str, JsonValue] | None = None,
     ) -> _ProjectContextBundle:
         """Compile and persist the bounded index of this turn's pinned brand knowledge.
 
@@ -1147,6 +1160,30 @@ class ProjectConversationTurnRunner:
                 ProjectContextArtifact(
                     name="since_last_turn",
                     artifact_ref=answers_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="thread",
+                        object_id=submission.thread_id,
+                        version=None,
+                    ),
+                )
+            )
+
+        if workspace_files is not None:
+            # F3 Phase 2 (WS-28, spec D-23): the chat's own files, their age and what expired,
+            # as an ordinary L3 artifact — so it materializes beside the other context files and
+            # is re-sent on a continued turn. An empty card is still composed: "you have no
+            # files" is a true answer, and silence is not.
+            files_ref = await self._artifact(
+                submission,
+                scope,
+                WORKSPACE_FILES_MEDIA_TYPE,
+                workspace_files,
+            )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name=WORKSPACE_FILES_CARD_NAME,
+                    artifact_ref=files_ref,
                     domain_ref=DomainObjectRef(
                         workspace_id=submission.workspace_id,
                         object_type="thread",
