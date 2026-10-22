@@ -45,6 +45,8 @@ _Last updated: 2026-10-22 — Phase 2 built and live-checked on both test CRMs; 
 - ✅ `crm_write_log` (filters, before-values, action slug for undo) and undo through chat (`reverses_write_id`; removals only of members Clue added)
 - ✅ `crm-writing` skill v1 (founder-approved wording), Head of ABM v77 (recipe 37, manual v23), crm-sales-analysis v2 points to it
 - ✅ Live check on both test CRMs 2026-10-22 — [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md): propose/allow/log/undo/revoke/create/refusals/overwrite all pass; decided the same day: L6 per-change not-found (R-11.7, fixed), L8 CRM message text and L9 create id in the log (fixed), L5 lists wait for Phase 3 (R-11.8), L10 Salesforce field coverage stays (R-11.9, design A noted)
+- ✅ Final review (0 Critical, 5 Important, 12 Minor) fixed and re-run live 2026-10-23 on the restarted stack (decline, replace, paused batch, real reconnect, CRM message text, per-change not-found, Cancel); L13 fixed. Deferred by the founder: Phase 1 by-hand path, live onboarding refresh, non-admin member
+- ⬜ **Open frontend bugs (noted, fixing set aside):** L12 — a card in a chat started from the project page can show "belongs to a different conversation" until a reload (every card kind); L14 — a card linked by two turns renders twice. Details: [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md) "Open frontend bugs"
 - ⬜ Per-workspace throttle (R-7.3) — not built in Phase 2
 - ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 

@@ -44,3 +44,19 @@ Cost ≈ $6.50 (Langfuse by chat). Fixed mid-run: L1 card link type (`e672ab95c`
 - Whole-branch Fable review (Phase 1 + Phase 2), one fix wave, finishing-a-development-branch.
 - Not exercised live: "Don't allow" + decline context line, replace of an unanswered card, paused
   batch, 422/409 refusals, list membership, SF picklist pre-check.
+
+## 2026-10-23 — final review fixed, live re-run, open frontend bugs
+- Final whole-branch review (Fable): 0 Critical / 5 Important / 12 Minor; fixed I-1a..I-5, M-1, M-2,
+  M-9, M-12 (`3c0607eb6`..`0c380d45c`), M-6 skill sentence (`585691824`); rulings R-11.10 (no resume
+  after reconnect) and R-11.11 (Clue stores its list/campaign ids, Phase 3).
+- Live re-run on the restarted stack passed (see the findings note's "Re-run" section); founder did a
+  real HubSpot reconnect (new connection `b9eb3492`; Conduit's old `c36a1f46` disconnected). L13
+  fixed (`deafd2f7c`).
+- **Open frontend bugs, set aside by the founder:** L12 (card in a chat started from the project page
+  shows "belongs to a different conversation" until reload) and L14 (a card linked by two turns
+  renders twice) — written up in the findings note and status.md. The unfinished L12 repro test was
+  moved out of the repo (not committed).
+- Deferred by the founder: Phase 1 by-hand path, live onboarding refresh, non-admin member.
+- Workers: `pgrep -c` does not exist on macOS (use `pgrep -f … | wc -l`); the dushanbe lane's four
+  fleet workers share the `clue_api.fleet_main` name — filter by the `/nashville/` path before
+  stopping anything.

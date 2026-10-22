@@ -87,6 +87,39 @@ for the founder and the final review.
 - **L4** Turns are slow: 2–7½ min of thinking before a one-line reply, 21 action searches for three
   writes, one 9½-min turn that timed out (the F5/F10 pattern). Out of this branch.
 
+## Re-run after the final-review fixes (2026-10-23)
+Passed live on the restarted stack (Conduit AI / HubSpot, AltCarbon): per-change "record not
+found" (HubSpot's 404 as assumed); option labels; **Don't allow** (no bubble, no turn, the next turn
+knew of the decline); a new proposal **replacing** an unanswered card (no reload); a connection
+expired before the batch starts → **paused**, one wake, honest card wording, no attempt counted; the
+founder's **real reconnect** (new connection, paused change closed "propose again", no permissions
+carried over); the CRM's **message text** on a refused create; **Cancel** on the connect card.
+Fixed during it: **L13** — the paused wake told the agent changes "continue by themselves once this
+connection works again" (impossible since R-11.10); now it says they are proposed again
+(`deafd2f7c`). The batched HubSpot read is not visible in the worker logs (no per-call action
+logged); the whole proposal step took 3.2 s for three companies. Deferred by the founder: the
+by-hand path, a live onboarding refresh, a non-admin member.
+
+### Open frontend bugs (noted 2026-10-23, fixing set aside by the founder)
+- **L12 — a card in a chat started from the project page can be refused as "another
+  conversation's".** Repro: on `/projects/<id>`, send a message; the app creates the chat and moves
+  to `/projects/<id>/chats/<thread>`. When the first turn ends on a card (any `agent_gate` kind, not
+  only CRM), the chat shows "This review request belongs to a different conversation." instead of
+  the card, until the page is reloaded; after a reload the card is correct and answerable. The check
+  is `gateCardModel` in `apps/frontend/src/features/projects/model/chat-gate.ts` (~549,
+  `gate.threadId !== expectedThreadId`), fed `expectedThreadId: activeThreadId ?? ""` from
+  `use-project-chat-controller.ts` (~1350); the check itself dates from `6a7317b48` (2026-08-12).
+  Root cause not found yet (suspects: the controller's thread id, or the gate read started by the
+  project loader's chat prefetch before the chat view mounts). Keep the check — it is the guard
+  against another conversation's card. An unfinished reproduction test (controller + real
+  repositories, only `fetch` faked: prefetch from the project page → mount → first turn ends on a
+  gate → expect the card, not the notice) was started and set aside.
+- **L14 — a card linked by two turns renders twice.** When a later turn in the same chat (seen: a
+  server-started wake turn) puts the same gate in its `open_gate_refs` again, the transcript shows
+  two copies of the one card, both answerable; answering one locks both, so it is confusing, not
+  unsafe. Fix: render a gate once, at the earliest turn that links it (dedupe by durable gate id
+  where the transcript builds gate parts).
+
 ## Not exercised
 "Don't allow" on a real card and the decline context line; a new proposal replacing an unanswered
 card; a paused batch (connection expired mid-send); the 422/409 answer refusals; list membership
