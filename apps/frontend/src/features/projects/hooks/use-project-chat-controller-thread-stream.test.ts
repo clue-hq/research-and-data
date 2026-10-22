@@ -10,6 +10,7 @@ import {
   useProjectChatController,
   type ProjectChatController,
 } from "@/features/projects/hooks/use-project-chat-controller";
+import type { GateCardModel } from "@/features/projects/model/chat-gate";
 
 const PROJECT = "project-thread-stream";
 const THREAD_A = "thread-a";
@@ -50,6 +51,9 @@ function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
     ]),
     turnReads: new Map<string, number>(),
     threadReads: 0,
+    /** What a POST of a turn answers: its turn id and whether the agent replies (R-11.6). */
+    accept: { turnId: "answer", agentReply: "expected" as "expected" | "none" },
+    posts: 0,
   };
   const turnStreams = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
   /** Every thread-stream open, in order: its thread, cursor header, abort signal and body. */
@@ -97,6 +101,14 @@ function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
       return new Response(new ReadableStream<Uint8Array>({
         start(controller) { turnStreams.set(turnId!, controller); },
       }), { headers: { "Content-Type": "text/event-stream" } });
+    }
+    const submit = path.match(/\/threads\/([^/]+)\/turns$/);
+    if (submit && init?.method === "POST") {
+      server.posts += 1;
+      return Response.json({ data: {
+        turn_id: server.accept.turnId, thread_id: submit[1], requested_at: TIMESTAMP,
+        replayed: false, routed_to: "head_of_abm", agent_reply: server.accept.agentReply,
+      } }, { status: 202 });
     }
     if (path === prefix) {
       server.threadReads += 1;
@@ -340,6 +352,47 @@ test("test_a_tab_loaded_hidden_opens_from_its_last_read", async () => {
     await h.setVisibility("visible");
     await h.flushUntil(() => h.threadOpens.length === 1, "opened when first shown");
     assert.equal(h.threadOpens[0]?.lastEventId, "7", "from the newest cursor of the last read");
+  } finally {
+    await h.teardown();
+  }
+});
+
+/** A CRM write card as the controller hands it to `answerGate` (only what an answer reads). */
+function crmWriteCard(): GateCardModel {
+  return {
+    gateId: "gate-crm", state: "requested", kind: "crm_write_permission",
+    expectedSubjectSha256: "a".repeat(64), permittedDecisions: ["approved", "rejected"],
+    revisionKind: null, amountCents: null, productOptions: [], productSet: null,
+  } as unknown as GateCardModel;
+}
+
+test("test_a_card_answer_that_needs_no_reply_attaches_no_turn", async () => {
+  // R-11.6: answering a CRM write card is recorded and starts no turn. The chat attaches no
+  // stream for it and shows nothing in flight; the card follows its proposal instead.
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    h.server.accept = { turnId: "answer-none", agentReply: "none" };
+    await act(async () => {
+      await h.controller().answerGate(crmWriteCard(), { kind: "decision", decision: "rejected" });
+    });
+    await h.settle();
+    assert.equal(h.server.posts, 1, "the answer was sent");
+    assert.equal(h.turnStreams.has("answer-none"), false, "no turn stream is attached");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_card_answer_the_agent_replies_to_attaches_its_turn", async () => {
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    h.server.accept = { turnId: "answer-expected", agentReply: "expected" };
+    await act(async () => {
+      await h.controller().answerGate(crmWriteCard(), { kind: "decision", decision: "rejected" });
+    });
+    await h.flushUntil(() => h.turnStreams.has("answer-expected"), "the answer's turn attached");
   } finally {
     await h.teardown();
   }

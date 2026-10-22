@@ -383,6 +383,20 @@ test("a 202 reports whether it replayed an already-accepted identity", () => {
     },
   });
   assert.equal(accepted.replayed, true);
+  assert.equal(accepted.agentReply, "expected", "an older server's 202 means a turn runs");
+});
+
+test("a 202 says when no turn will run for the submission (R-11.6)", () => {
+  const accepted = AcceptedTurnResponseSchema.parse({
+    data: {
+      turn_id: "t1",
+      thread_id: "th1",
+      requested_at: "2026-10-22T11:30:00Z",
+      replayed: false,
+      agent_reply: "none",
+    },
+  });
+  assert.equal(accepted.agentReply, "none");
 });
 
 test("a turn body is exactly one of a message or a gate response", () => {

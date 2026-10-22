@@ -69,6 +69,7 @@ const TurnAcceptedWireSchema = z.object({
   thread_id: z.string().min(1),
   requested_at: z.string(),
   replayed: z.boolean().default(false),
+  agent_reply: z.enum(["expected", "none"]).default("expected"),
 });
 
 export interface AcceptedTurn {
@@ -77,6 +78,11 @@ export interface AcceptedTurn {
   requestedAt: string;
   /** True when this idempotency identity had already been accepted. */
   replayed: boolean;
+  /**
+   * `none` when the submission was recorded and no turn will run for it (the
+   * answer to a CRM write card, R-11.6): nothing to attach, nothing in flight.
+   */
+  agentReply: "expected" | "none";
 }
 
 export const AcceptedTurnResponseSchema = z
@@ -87,6 +93,7 @@ export const AcceptedTurnResponseSchema = z
       threadId: wire.data.thread_id,
       requestedAt: wire.data.requested_at,
       replayed: wire.data.replayed,
+      agentReply: wire.data.agent_reply,
     }),
   );
 

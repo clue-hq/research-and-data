@@ -1129,7 +1129,10 @@ export function useProjectChatController({
         });
         // The answer is durable the moment the turn was accepted; the reload
         // below reads it back rather than the client asserting it locally.
-        attach(activeThreadId, accepted.turnId);
+        // An answer the agent does not reply to (a CRM write card, R-11.6) runs
+        // no turn: there is no stream to follow and nothing in flight — the
+        // card follows its proposal instead.
+        if (accepted.agentReply !== "none") attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
         const crmWrite = card.kind === CRM_WRITE_GATE_KIND;
