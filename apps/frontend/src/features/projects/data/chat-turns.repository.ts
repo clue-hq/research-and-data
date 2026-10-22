@@ -168,6 +168,8 @@ export function createFixtureChatTurnsRepository(
         generationAttempts: 0,
         submissionMessage: null,
         derivation: null,
+        answeredGateId:
+          submission.kind === "gate_response" ? submission.response.gateId : null,
       });
       return record;
     },

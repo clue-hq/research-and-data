@@ -507,6 +507,9 @@ def build_chat_stream_router(
                     "last_event_id": item.last_event_id,
                     "generation_attempts": item.generation_attempts,
                     "derivation": item.derivation,
+                    "answered_gate_id": (
+                        None if item.answered_gate_id is None else str(item.answered_gate_id)
+                    ),
                     "stop_request": (
                         {
                             "control_id": str(stop_by_turn[item.turn_id]["control_id"]),

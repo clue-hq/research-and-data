@@ -525,6 +525,35 @@ def test_a_card_is_answered_once_by_any_member(tmp_path: Path) -> None:
     _run(tmp_path, "once", body)
 
 
+def test_the_turn_list_names_the_gate_a_turn_answered(tmp_path: Path) -> None:
+    """R-11.4: the chat hides a card answer's message bubble by the answer row, never by text.
+
+    The turn list carries ``answered_gate_id`` for the turn that answered a card and ``None`` for
+    every other turn, so the client can render no user bubble for the answer.
+    """
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        async with _client(conn, seeded) as client:
+            answered = await _answer(
+                client, seeded, proposed, snapshot, key="r114", decision="rejected"
+            )
+            assert answered.status_code == 202, answered.text
+            listing = await client.get(
+                f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
+                headers={"X-Workspace-Id": seeded.workspace_id},
+            )
+        assert listing.status_code == 200, listing.text
+        by_turn = {item["turn_id"]: item for item in listing.json()["data"]}
+        answer_turn = answered.json()["data"]["turn_id"]
+        assert by_turn[answer_turn]["answered_gate_id"] == proposed["gate_id"]
+        others = [item for turn_id, item in by_turn.items() if turn_id != answer_turn]
+        assert all(item["answered_gate_id"] is None for item in others)
+
+    _run(tmp_path, "answered-gate-id", body)
+
+
 def test_the_progress_read_reports_counts_and_crm_messages(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: Any) -> None:
         proposed = await _propose(

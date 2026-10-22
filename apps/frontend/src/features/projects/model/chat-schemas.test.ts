@@ -354,6 +354,17 @@ test("the submissions-union keeps queued turns and their attach cursor", () => {
   );
 });
 
+test("a turn names the card it answered, and an ordinary turn names none", () => {
+  const page = ChatTurnListResponseSchema.parse({
+    data: [
+      { ...fixtureTurns[0], answered_gate_id: "gate-crm-1" },
+      { ...fixtureTurns[0], turn_id: "plain-1" },
+    ],
+  });
+  assert.equal(page.turns[0].answeredGateId, "gate-crm-1");
+  assert.equal(page.turns[1].answeredGateId, null);
+});
+
 test("durable stream events immediately refine queued/running/terminal turn state", () => {
   assert.equal(turnStateForStreamEvent("turn.accepted"), "queued");
   assert.equal(turnStateForStreamEvent("turn.started"), "running");

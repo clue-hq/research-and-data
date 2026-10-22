@@ -103,6 +103,7 @@ const TurnViewWireSchema = z.object({
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
   derivation: z.string().nullable().default(null),
+  answered_gate_id: z.string().nullable().default(null),
   stop_request: StopRequestSchema.nullable().default(null),
 });
 
@@ -122,6 +123,11 @@ export interface ChatTurn {
    * redelivery or first turn): the transcript renders no user bubble for it.
    */
   derivation: string | null;
+  /**
+   * The agent gate this turn answered (R-11.4): answering a card shows only on the card, so the
+   * transcript renders no user bubble for this turn. Absent on turns built before the field.
+   */
+  answeredGateId?: string | null;
   stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
@@ -144,6 +150,7 @@ export const ChatTurnListResponseSchema = z
         generationAttempts: item.generation_attempts,
         stopRequest: item.stop_request,
         derivation: item.derivation,
+        answeredGateId: item.answered_gate_id,
         submissionMessage:
           item.submission_message === null
             ? null
