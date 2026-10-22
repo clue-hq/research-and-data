@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from clue_api.crm import writes
 from clue_api.crm.connections import CrmConnection
@@ -246,3 +247,38 @@ def test_members_added_for_one_project_are_not_removable_as_anothers(tmp_path: P
         assert [change.scope_key for change in batch.changes] == ["kind:list_removal"]
 
     _run(tmp_path, "members", body)
+
+
+def test_a_list_found_again_after_it_was_gone_is_offered_again(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        stored = await _store(conn, seeded, connection)
+        await mark_gone(conn, connection_id=connection.connection_id, crm_list_id="17")
+        found = await _store(conn, seeded, connection)
+        assert found.list_id == stored.list_id and found.gone_at is None
+        assert await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        ) == [found]
+
+    _run(tmp_path, "foundagain", body)
+
+
+def test_a_list_is_never_linked_to_a_project_of_another_workspace(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        stored = await _store(conn, seeded, connection)
+        foreign = await seed_project(conn, f"{seeded.workspace_id}-other", name="Elsewhere")
+        for workspace_id in (seeded.workspace_id, foreign.workspace_id):
+            savepoint = await conn.begin_nested()
+            with pytest.raises(IntegrityError):
+                await link_project(
+                    conn,
+                    list_id=stored.list_id,
+                    project_id=foreign.project_id,
+                    workspace_id=workspace_id,
+                    linked_by="person_named",
+                )
+            await savepoint.rollback()
+
+    _run(tmp_path, "foreign", body)

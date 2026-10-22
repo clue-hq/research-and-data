@@ -80,7 +80,8 @@ async def store_list(
     project_id: str,
 ) -> CrmList:
     """Keep a list of this connection and link it to ``project_id``. Storing it again returns the
-    row already kept (its name is refreshed; it never forgets that Clue created it)."""
+    row already kept: its name is refreshed, it never forgets that Clue created it, and a list
+    marked gone is offered again (it was found again, R-11.11)."""
     row = (
         await conn.execute(
             text(
@@ -89,6 +90,7 @@ async def store_list(
                 "VALUES (:list_id, :ws, :connection_id, :provider, :crm_object, :crm_list_id, "
                 ":name, :kind, :created_by_clue, :created_by_write_id) "
                 "ON CONFLICT (connection_id, crm_list_id) DO UPDATE SET name = EXCLUDED.name, "
+                "gone_at = NULL, "
                 "created_by_clue = crm_list.created_by_clue OR EXCLUDED.created_by_clue, "
                 "created_by_write_id = COALESCE(crm_list.created_by_write_id, "
                 f"EXCLUDED.created_by_write_id) RETURNING {_COLUMNS}"

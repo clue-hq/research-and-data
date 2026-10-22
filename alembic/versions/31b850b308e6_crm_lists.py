@@ -7,7 +7,8 @@ Create Date: 2026-10-22 21:23:09.781900+00:00
 CRM Phase 3, Task 2 (ruling R-11.11): Clue keeps the ids of the CRM lists (HubSpot) and campaigns
 (Salesforce) it uses itself. ``crm_list`` is one row per connection and CRM id (``gone_at`` set
 when the CRM no longer has it); ``crm_list_project`` links a list to every project that uses it,
-saying whether Clue created it for that project or a person named it. Membership stays per list
+saying whether Clue created it for that project or a person named it, and only to a
+project of the list's own workspace (composite FKs). Membership stays per list
 member in ``crm_record_link``. ``crm_write`` gains ``source_claim_ids`` (the claims a write puts
 into the CRM; empty for every write before this revision) and ``clue_entity_id`` (the Clue entity
 the written record is), which later Phase 3 tasks fill.
@@ -61,7 +62,10 @@ def upgrade() -> None:
             CONSTRAINT crm_list_provider CHECK (provider IN ('hubspot', 'salesforce')),
             CONSTRAINT crm_list_crm_object CHECK (crm_object IN ('company', 'contact')),
             CONSTRAINT crm_list_kind CHECK (kind IN ('hubspot_list', 'salesforce_campaign')),
-            CONSTRAINT crm_list_connection_crm_id UNIQUE (connection_id, crm_list_id)
+            CONSTRAINT crm_list_connection_crm_id UNIQUE (connection_id, crm_list_id),
+            -- The anchor crm_list_project's composite FK needs, so a link stays in the list's
+            -- workspace.
+            CONSTRAINT crm_list_workspace_anchor UNIQUE (list_id, workspace_id)
         )
         """
     )
@@ -74,12 +78,12 @@ def upgrade() -> None:
             linked_at timestamptz NOT NULL DEFAULT now(),
             linked_by text NOT NULL,
             CONSTRAINT crm_list_project_pkey PRIMARY KEY (list_id, project_id),
+            -- Both composite: a list is linked only to a project of its own workspace.
             CONSTRAINT crm_list_project_list_fk
-                FOREIGN KEY (list_id) REFERENCES crm_list (list_id),
+                FOREIGN KEY (list_id, workspace_id) REFERENCES crm_list (list_id, workspace_id),
             CONSTRAINT crm_list_project_project_fk
-                FOREIGN KEY (project_id) REFERENCES project (project_id),
-            CONSTRAINT crm_list_project_workspace_fk
-                FOREIGN KEY (workspace_id) REFERENCES workspace (workspace_id),
+                FOREIGN KEY (project_id, workspace_id)
+                REFERENCES project (project_id, workspace_id),
             CONSTRAINT crm_list_project_linked_by
                 CHECK (linked_by IN ('clue_created', 'person_named'))
         )
