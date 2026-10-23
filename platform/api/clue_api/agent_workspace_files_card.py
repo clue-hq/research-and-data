@@ -43,11 +43,13 @@ WORKSPACE_FILES_SCHEMA_VERSION: Final = "1"
 #: rather than by path: the agent still knows it has not been shown everything.
 WORKSPACE_FILES_MAX_LISTED: Final = 200
 
-#: The one line that explains the card to the agent. **Empty until Task 8 of the Phase 2 plan
-#: replaces it with the founder-approved wording** — agent-facing prose is reviewed, never
-#: invented here. The key is in the payload from the first version so filling it is a one-line
-#: edit and not a schema change.
-NOTE: Final = ""
+#: The one line that explains the card to the agent: the founder-approved wording of 2026-10-23
+#: (Phase 2, Task 8). Agent-facing prose is reviewed, never invented here, so this string is
+#: changed only by the same route.
+NOTE: Final = (
+    "Files are deleted by age: what a tool pulled down after 48 hours, your own working files "
+    "after 7 days. outputs/ is kept for the life of the chat."
+)
 
 
 def build_workspace_files_card(

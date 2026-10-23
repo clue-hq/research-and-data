@@ -19,6 +19,7 @@ from clue_agents.ports import ReceiptSource, WorkspaceSnapshotStore
 from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
 from clue_agents.workspace_policy import PreparedWorkspaceRoot, WorkspaceRootPolicy
 from clue_agents.workspace_snapshot import (
+    UNKNOWN_RECEIPT,
     LeaseFence,
     Receipt,
     SaveStatus,
@@ -640,9 +641,7 @@ def test_without_a_receipt_source_a_new_file_still_gets_one(tmp_path: Path) -> N
     machine = _machine(tmp_path, "a", store)
     _turn(machine, {"reads/op-1.json": b"{}", "outputs/t.csv": b"a,b"})
     saved = _current(store)
-    assert saved["reads/op-1.json"].receipt == Receipt(
-        source="unknown", operation_id=None, produced_at=None, details={}, read_again=""
-    )
+    assert saved["reads/op-1.json"].receipt == UNKNOWN_RECEIPT
     assert saved["outputs/t.csv"].receipt is None
 
 

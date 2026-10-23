@@ -295,7 +295,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, the new skill
     # `crm-writing` v1, `stage0-interview@v50` (v49 with its manual paths repointed),
     # `manual-*@v23` and recipe 37. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v77",
+    # v78 (2026-10-23, F3 Phase 2 - the chat's rough work expires): v77's surface exactly - no
+    # tool address moves, the same prompt v18, grant, workspace, caps and recipe 37. The manual
+    # re-mints at `manual-*@v24` for the founder-approved retention text (the folder table, the
+    # `workspace_files.json` card, the staleness instruction, the limits chapter's retention
+    # bullet) and `stage0-interview@v51` is v50 with its manual paths repointed.
+    AgentRole.HEAD_OF_ABM: "v78",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

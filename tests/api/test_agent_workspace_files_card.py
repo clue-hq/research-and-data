@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from clue_agents.workspace_snapshot import Receipt, SnapshotEntry, SnapshotManifest, tier_for
+from clue_agents.workspace_snapshot import (
+    UNKNOWN_RECEIPT,
+    Receipt,
+    SnapshotEntry,
+    SnapshotManifest,
+    tier_for,
+)
 from clue_api.agent_workspace_files_card import (
     WORKSPACE_FILES_MAX_LISTED,
     WORKSPACE_FILES_MEDIA_TYPE,
@@ -141,7 +147,7 @@ def test_an_expired_entry_with_no_receipt_still_reads_as_a_receipt() -> None:
         "operation_id": None,
         "produced_at": None,
         "details": {},
-        "read_again": "",
+        "read_again": UNKNOWN_RECEIPT.read_again,
     }
 
 

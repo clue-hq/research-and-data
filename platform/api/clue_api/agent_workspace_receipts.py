@@ -47,23 +47,26 @@ __all__ = ["READ_AGAIN", "DbReceiptSource"]
 log = get_logger("clue_api.agent_workspace_receipts")
 
 #: The one sentence each receipt shows the agent once the bytes are gone, keyed by the receipt's
-#: source. Task 8 of the Phase 2 plan replaces this wording with the founder-approved text; it all
-#: lives here, in one mapping, so that is a single-file edit and never a hunt through branches.
+#: source. The wording is the founder-approved text of 2026-10-23 (Phase 2, Task 8) and is not
+#: paraphrased anywhere else: every branch below picks a key from here and formats it.
+#:
+#: ``"tool"`` is the CRM read's sentence, and it is used only when the receipt knows both values
+#: it names. A ``reads/`` spill from any other governed tool — and a CRM read whose result row no
+#: longer says which provider answered — takes ``"large_tool_results"``, which is true of it
+#: word for word.
 READ_AGAIN: Final[Mapping[str, str]] = {
-    "tool": "These bytes are gone. Call {tool} again with the same parameters ({params}) to get "
-    "the same thing back.",
-    "run_python": "These bytes are gone. Run the same code again with run_python to print this "
-    "{stream} again.",
-    "conversation_history": "These bytes are gone. This was part of this conversation's own "
-    "history, which is never deleted — say what you need from it and it is rebuilt from the "
-    "conversation.",
-    "large_tool_results": "These bytes are gone. This was the overflow of a tool result; call "
-    "that tool again to get it.",
-    "unknown": "",
+    "tool": "Run run_crm_action again with the same action and arguments: {action} on {provider}.",
+    "run_python": "Run the script again; this was its {stream}.",
+    "conversation_history": "Nothing to do: this was a copy of this conversation, which the "
+    "platform still has in full.",
+    "large_tool_results": "Run the tool again that produced it.",
+    "unknown": UNKNOWN_RECEIPT.read_again,
 }
 
-#: The ``references`` keys of a read's result that say how much came back (``RunCrmActionOutput``).
-_COUNT_KEYS: Final = ("record_count", "total", "done")
+#: The ``references`` keys of a read's result the receipt keeps (``RunCrmActionOutput``): how much
+#: came back, and which CRM answered. ``provider`` is here and not among the displayed parameters
+#: because the ``"tool"`` sentence names it and ``safe_display_fields`` carries only the slug.
+_KEPT_REFERENCE_KEYS: Final = ("record_count", "total", "done", "provider")
 
 _UUID: Final = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 #: ``AgentWorkspaceBackend.write_spill`` names a result spill after its operation id.
@@ -74,6 +77,22 @@ _STREAM: Final = re.compile(
 )
 _HISTORY: Final = re.compile(r"work/conversation_history/(?:media/.+|(?P<execution>[^/]+)\.md)")
 _LARGE_RESULTS: Final = "work/large_tool_results/"
+
+
+def _read_again_for(tool_name: str, details: Mapping[str, JsonValue]) -> str:
+    """The sentence a spilled governed read is shown once its bytes are gone.
+
+    A CRM read names the action and the CRM it ran against, because those two words are what the
+    agent types to run it again. Anything else — another tool's spill, or a CRM read whose result
+    row can no longer say which provider answered — gets the general sentence, which is still
+    exactly true: the tool that produced the file is named by the receipt's ``source``.
+    """
+
+    action, provider = details.get("slug"), details.get("provider")
+    if tool_name == "run_crm_action" and isinstance(action, str) and isinstance(provider, str):
+        return READ_AGAIN["tool"].format(action=action, provider=provider)
+    return READ_AGAIN["large_tool_results"]
+
 
 _NODE_SQL: Final = text(
     """
@@ -155,13 +174,11 @@ class DbReceiptSource(ReceiptSource):
             operation_id=operation,
             produced_at=row["created_at"],
             details=details,
-            read_again=READ_AGAIN["tool"].format(
-                tool=row["tool_name"], params=json.dumps(display, sort_keys=True, default=str)
-            ),
+            read_again=_read_again_for(str(row["tool_name"]), details),
         )
 
     async def _counts(self, workspace_id: str, row: Any) -> dict[str, JsonValue]:
-        """How much the read returned, from its result artifact — ``{}`` when it cannot be read.
+        """What the read's own result says about itself — ``{}`` when it cannot be read.
 
         The call is already named by the time this runs, so a missing result row, an erased
         artifact or bytes storage cannot serve must leave the receipt poorer, never absent.
@@ -190,4 +207,6 @@ class DbReceiptSource(ReceiptSource):
             return {}
         if not isinstance(references, dict):
             return {}
-        return {key: references[key] for key in _COUNT_KEYS if references.get(key) is not None}
+        return {
+            key: references[key] for key in _KEPT_REFERENCE_KEYS if references.get(key) is not None
+        }

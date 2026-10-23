@@ -71,8 +71,10 @@ __all__ = [
 # v76 grants the CRM reads (`connect_crm`, `find_crm_actions`, `run_crm_action`) and
 # `write_brand_document`, with the `crm-sales-analysis` skill.
 # v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
-# the `crm-writing` skill.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v77"
+# the `crm-writing` skill. v78 adds no tool: it carries the re-minted manual (`manual-*@v24`),
+# which tells the agent what each folder keeps and for how long now that a chat's rough work
+# expires.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v78"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

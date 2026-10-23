@@ -138,7 +138,15 @@ class Receipt:
 #: What a new expiring entry carries when nothing could say where it came from. Never ``None``:
 #: a file is not dropped for want of a receipt.
 UNKNOWN_RECEIPT: Final = Receipt(
-    source="unknown", operation_id=None, produced_at=None, details={}, read_again=""
+    source="unknown",
+    operation_id=None,
+    produced_at=None,
+    details={},
+    # The founder-approved sentence of 2026-10-23 (Phase 2, Task 8). It lives here rather than in
+    # ``clue_api``'s ``READ_AGAIN`` map because this constant is what the snapshotter and the
+    # expiry job stamp, and the agents package may not import the API's; ``READ_AGAIN["unknown"]``
+    # reads it back, so there is still one copy of the words.
+    read_again="No record of what made this file.",
 )
 
 

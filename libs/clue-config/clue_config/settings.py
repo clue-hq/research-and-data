@@ -817,10 +817,6 @@ class Settings(BaseSettings):
     # clamps this to the account's durable research budget when one exists.
     # Env: ``CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS``.
     agent_account_plan_budget_limit_millicents: int = Field(default=1_000_000, ge=0)
-    # Since F3 nothing purges by this number any more (the worker-area cache sweep below replaced
-    # the C6.8 job); it survives only because the agent manual still quotes it, and that text
-    # waits for a founder-reviewed rewrite. Env: ``CLUE_AGENT_WORKSPACE_RETENTION_S``.
-    agent_workspace_retention_s: float = Field(default=86400.0, ge=0)
     # F3 (spec docs/superpowers/specs/agent-workspace/, WS-21): a chat's agent folders are saved as
     # a versioned snapshot in the artifact store and a worker's disk is only a cache. Off is the
     # emergency switch only: local folders, no snapshots, a 24-hour idle window.
@@ -842,7 +838,7 @@ class Settings(BaseSettings):
     # this long after it was written; the agent can always fetch it again.
     # Env: ``CLUE_AGENT_WORKSPACE_RAW_RETENTION_S``.
     agent_workspace_raw_retention_s: float = Field(default=172800.0, gt=0)
-    # What the agent itself made (notes, drafts, outputs) is kept longer than a raw read, because
+    # What the agent itself made (notes, drafts) is kept longer than a raw read, because
     # re-making it costs a turn. Env: ``CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S``.
     agent_workspace_working_retention_s: float = Field(default=604800.0, gt=0)
     # How often the expiry job runs. Daily: nothing here is urgent, and a sweep that wakes more
