@@ -125,6 +125,17 @@ when no other snapshot holds them. A chat with a queued, claimed or leased turn 
 left for the next pass. Set either window or the interval only with the founder's agreement: they
 are what the agent manual promises the agent in words.
 
+**What to watch when retention stops.** Each pass logs `fleet.workspace_retention.ran` with
+`chats_checked`, `chats_expired`, `files_expired`, `skipped_busy`, `stale` and `failed`. A chat
+the pass cannot read or save — most often a manifest blob the rows still name but storage has
+lost — is logged as `agent_workspace.retention.chat_failed` with its workspace and thread, and
+counted in `failed`; the pass carries on. So a chat broken for good shows a non-zero `failed`
+every day: **alert on `failed > 0` persisting**, and on `fleet.workspace_retention.ran` not
+appearing for more than two intervals. The second case means the pass itself is raising
+(`fleet.workspace_retention.error`) — and a pass that raises deliberately does *not* record its
+`maintenance_run` row, so the fleet simply retries it on the next check rather than skipping a
+day. Nothing is lost by a failed pass; files that should have expired expire late.
+
 DSAR is separate and stronger: it tombstones and erases subject-bound durable bodies, blocks
 resurrection, marks affected turns unreplayable, and removes matching live workspaces immediately.
 Retention cleanup must not be used as a substitute for DSAR.

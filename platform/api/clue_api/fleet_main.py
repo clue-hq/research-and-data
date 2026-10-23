@@ -471,6 +471,7 @@ async def _workspace_retention_loop(
                     files_expired=report.files_expired,
                     skipped_busy=report.skipped_busy,
                     stale=report.stale,
+                    failed=report.failed,
                 )
         except Exception as exc:  # noqa: BLE001 — a cleanup fault must not sink run execution
             log.warning("fleet.workspace_retention.error", exc_info=True)

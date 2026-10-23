@@ -26,6 +26,7 @@ on — it never retries inside the run.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
@@ -70,7 +71,9 @@ _ACTIVITY_EXPR = """
         )
 """
 
-# The chats whose newest activity is at or before the cutoff, coldest first.
+# The chats whose newest activity is at or before the cutoff, coldest first, one page at a time.
+# ``:after_*`` is the previous page's last row — the keyset the walk resumes from, so a backlog of
+# any size is read in bounded bites and the pass is restartable rather than one huge result set.
 _CANDIDATES = text(
     f"""
     SELECT workspace_id, thread_id, project_id, version, last_activity
@@ -80,7 +83,13 @@ _CANDIDATES = text(
         FROM agent_workspace_snapshot s
     ) AS chat
     WHERE last_activity <= :cutoff
+      AND (
+          CAST(:after_activity AS timestamptz) IS NULL
+          OR (last_activity, workspace_id, thread_id)
+             > (CAST(:after_activity AS timestamptz), :after_ws, :after_thread)
+      )
     ORDER BY last_activity, workspace_id, thread_id
+    LIMIT :limit
     """
 )
 
@@ -129,6 +138,9 @@ class RetentionReport:
     files_expired: int = 0
     skipped_busy: int = 0
     stale: int = 0
+    #: Chats this pass could not read or save. Each one is logged and stepped over; a chat that
+    #: fails every day shows up here every day, which is what an operator watches (runbook).
+    failed: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +162,11 @@ class AgentWorkspaceRetentionJob:
         conn_factory: ConnFactory = transaction,
         raw_s: float,
         working_s: float,
+        page_size: int = 500,
     ) -> None:
         self._store = store
         self._conn_factory = conn_factory
+        self._page_size = max(1, page_size)
         self._windows: dict[SnapshotTier, timedelta | None] = {
             "raw_input": timedelta(seconds=raw_s),
             "working_file": timedelta(seconds=working_s),
@@ -161,15 +175,36 @@ class AgentWorkspaceRetentionJob:
         }
 
     async def run_once(self, *, now: datetime | None = None) -> RetentionReport:
+        """Sweep every cold chat, one page of candidates and one chat at a time.
+
+        **No single chat may end the pass** (review I1). A manifest blob the rows still name but
+        storage has lost raises :class:`SnapshotCorrupt`, and before this that raise left the
+        whole fleet's retention off: ``run_retention_if_due`` records nothing when ``run_once``
+        raises, so the next pass re-read the same deterministic ordering and died on the same
+        chat, for ever, behind one warning. A chat that cannot be read is counted in ``failed``,
+        logged with its ids, and stepped over.
+        """
+
         now = now or datetime.now(UTC)
         soonest = min(window for window in self._windows.values() if window is not None)
-        checked = expired_chats = expired_files = busy = stale = 0
-        for chat in await self._candidates(cutoff=now - soonest):
+        checked = expired_chats = expired_files = busy = stale = failed = 0
+        async for chat in self._candidates(cutoff=now - soonest):
             checked += 1
-            if await self._busy(chat, now=now):
-                busy += 1
+            try:
+                if await self._busy(chat, now=now):
+                    busy += 1
+                    continue
+                count, outcome = await self._expire(chat, now=now)
+            except Exception as exc:  # noqa: BLE001 — one bad chat may not stop the others
+                failed += 1
+                log.warning(
+                    "agent_workspace.retention.chat_failed",
+                    workspace_id=chat.workspace_id,
+                    thread_id=chat.thread_id,
+                    error=type(exc).__name__,
+                    detail=str(exc),
+                )
                 continue
-            count, outcome = await self._expire(chat, now=now)
             if outcome == "stale":
                 stale += 1
             elif count:
@@ -181,23 +216,50 @@ class AgentWorkspaceRetentionJob:
             files_expired=expired_files,
             skipped_busy=busy,
             stale=stale,
+            failed=failed,
         )
 
     # --- internals ------------------------------------------------------------------------------
 
-    async def _candidates(self, *, cutoff: datetime) -> tuple[_Chat, ...]:
-        async with self._conn_factory() as conn:
-            rows = (await conn.execute(_CANDIDATES, {"cutoff": cutoff})).mappings().all()
-        return tuple(
-            _Chat(
-                workspace_id=str(row["workspace_id"]),
-                thread_id=str(row["thread_id"]),
-                project_id=str(row["project_id"]),
-                version=int(row["version"]),
-                last_activity=row["last_activity"],
-            )
-            for row in rows
-        )
+    async def _candidates(self, *, cutoff: datetime) -> AsyncIterator[_Chat]:
+        """Every cold chat, read a page at a time and resumed by its ordering key.
+
+        The pass still reaches them all — paging bounds what one query costs and what is held in
+        memory, never the sweep's reach. An expiry does not move a chat's activity (WS-24), so a
+        swept chat stays in the candidate set and answers "nothing due" cheaply; a page is
+        therefore a window on the ordering, and the keyset is what walks it forward.
+        """
+
+        after: tuple[datetime, str, str] | None = None
+        while True:
+            async with self._conn_factory() as conn:
+                rows = (
+                    (
+                        await conn.execute(
+                            _CANDIDATES,
+                            {
+                                "cutoff": cutoff,
+                                "limit": self._page_size,
+                                "after_activity": None if after is None else after[0],
+                                "after_ws": None if after is None else after[1],
+                                "after_thread": None if after is None else after[2],
+                            },
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            for row in rows:
+                after = (row["last_activity"], str(row["workspace_id"]), str(row["thread_id"]))
+                yield _Chat(
+                    workspace_id=str(row["workspace_id"]),
+                    thread_id=str(row["thread_id"]),
+                    project_id=str(row["project_id"]),
+                    version=int(row["version"]),
+                    last_activity=row["last_activity"],
+                )
+            if len(rows) < self._page_size:
+                return
 
     async def _busy(self, chat: _Chat, *, now: datetime) -> bool:
         work_id = thread_work_id(workspace_id=chat.workspace_id, thread_id=chat.thread_id)

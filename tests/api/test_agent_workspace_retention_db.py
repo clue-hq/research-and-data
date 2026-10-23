@@ -414,6 +414,68 @@ def test_reading_identical_bytes_again_works_after_expiry(tmp_path: Path) -> Non
     _scenario(body, tmp_path)
 
 
+def test_one_unreadable_chat_does_not_abort_the_pass(tmp_path: Path) -> None:
+    """Review I1: a chat whose manifest blob is gone is counted and stepped over, not fatal.
+
+    It happened in anger during the Task 9 live check. Without isolation the raise leaves
+    ``run_retention_if_due`` without its ``maintenance_run`` row, so the next pass starts on the
+    same deterministic ordering and dies on the same chat — retention off fleet-wide, for good,
+    with nothing but a warning to say so.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        broken, healthy = "thr-ret-broken", "thr-ret-healthy"
+        await _save_bodies(store, ws, {"reads/r.json": b"lost raw"}, thread=broken)
+        await _save_bodies(store, ws, {"reads/r.json": b"good raw"}, thread=healthy)
+        # The oldest chat is swept first, so the broken one is reached before the healthy one.
+        await _age(ws, days=10, thread=broken)
+        await _age(ws, days=9, thread=healthy)
+        pointer = await store.current(workspace_id=ws, thread_id=broken)
+        assert pointer is not None
+        # This lane's R2 lost blobs the rows still name; the local equivalent is one delete.
+        await storage.delete(pointer.manifest_key)
+
+        report = await _job(store).run_once()
+
+        assert (report.chats_checked, report.failed) == (2, 1)
+        # The chat behind the broken one in the ordering is still swept.
+        assert (report.chats_expired, report.files_expired) == (1, 1)
+        _, manifest = await _manifest(store, ws, healthy)
+        assert [entry.path for entry in manifest.expired()] == ["reads/r.json"]
+        # And the broken chat is left exactly as it was, for a human to look at.
+        after = await store.current(workspace_id=ws, thread_id=broken)
+        assert after is not None and after.version == 1
+
+    _scenario(body, tmp_path)
+
+
+def test_the_scan_walks_every_cold_chat_one_bounded_page_at_a_time(tmp_path: Path) -> None:
+    """Ledger T5-a: the candidate scan is paged, so no backlog is ever read whole.
+
+    Paging may not cost the pass its reach: every cold chat is still swept in the one run, and
+    the keyset resumes where the page ended rather than starting over.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        threads = ("thr-ret-p1", "thr-ret-p2", "thr-ret-p3")
+        for index, thread in enumerate(threads):
+            await _save_bodies(store, ws, {"reads/r.json": f"raw {index}".encode()}, thread=thread)
+            await _age(ws, days=8 + index, thread=thread)
+
+        report = await AgentWorkspaceRetentionJob(
+            store=store, conn_factory=transaction, raw_s=RAW_S, working_s=WORKING_S, page_size=1
+        ).run_once()
+
+        assert (report.chats_checked, report.chats_expired) == (3, 3)
+        for thread in threads:
+            _, manifest = await _manifest(store, ws, thread)
+            assert [entry.path for entry in manifest.expired()] == ["reads/r.json"]
+
+    _scenario(body, tmp_path)
+
+
 class _TurnLandsFirst(DbWorkspaceSnapshotStore):
     """The store, with one turn completing the first time the job looks the chat up.
 
