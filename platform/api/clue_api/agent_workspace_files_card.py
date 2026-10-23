@@ -28,6 +28,7 @@ from clue_agents.workspace_snapshot import UNKNOWN_RECEIPT, Receipt, SnapshotEnt
 __all__ = [
     "NOTE",
     "WORKSPACE_FILES_CARD_NAME",
+    "WORKSPACE_FILES_MAX_EXPIRED",
     "WORKSPACE_FILES_MAX_LISTED",
     "WORKSPACE_FILES_MEDIA_TYPE",
     "WORKSPACE_FILES_SCHEMA_VERSION",
@@ -42,6 +43,11 @@ WORKSPACE_FILES_SCHEMA_VERSION: Final = "1"
 #: How many live files the card names. A chat with more is told the rest by count and folder
 #: rather than by path: the agent still knows it has not been shown everything.
 WORKSPACE_FILES_MAX_LISTED: Final = 200
+#: How many expired files the card names, newest first. The expired half is the one that grows
+#: without bound — an entry is kept for the chat's life (WS-25) and a CRM-heavy chat spills a
+#: ``reads/`` file every turn — and all of it, receipts included, is re-sent in every turn's
+#: context. Newest first because the file the agent has just lost is the one it will ask about.
+WORKSPACE_FILES_MAX_EXPIRED: Final = 200
 
 #: The one line that explains the card to the agent: the founder-approved wording of 2026-10-23
 #: (Phase 2, Task 8). Agent-facing prose is reviewed, never invented here, so this string is
@@ -68,9 +74,13 @@ def build_workspace_files_card(
     """
 
     live_entries = sorted(manifest.live(), key=lambda entry: entry.path) if manifest else ()
-    expired_entries = sorted(manifest.expired(), key=lambda entry: entry.path) if manifest else ()
+    expired_entries = sorted(manifest.expired(), key=_newest_first) if manifest else ()
     listed = live_entries[:WORKSPACE_FILES_MAX_LISTED]
     omitted = Counter(_folder(entry.path) for entry in live_entries[WORKSPACE_FILES_MAX_LISTED:])
+    gone = expired_entries[:WORKSPACE_FILES_MAX_EXPIRED]
+    omitted_expired = Counter(
+        _folder(entry.path) for entry in expired_entries[WORKSPACE_FILES_MAX_EXPIRED:]
+    )
     return {
         "schema_version": WORKSPACE_FILES_SCHEMA_VERSION,
         "generated_at": now.isoformat(),
@@ -84,6 +94,8 @@ def build_workspace_files_card(
             }
             for entry in listed
         ],
+        # Newest first and bounded: this list never shrinks on its own, so an old chat would
+        # otherwise spend more of its context on files it no longer has than on the ones it does.
         "expired": [
             {
                 "path": entry.path,
@@ -91,11 +103,23 @@ def build_workspace_files_card(
                 "expired_at": _iso(entry.expired_at),
                 "receipt": _receipt(entry),
             }
-            for entry in expired_entries
+            for entry in gone
         ],
         "omitted": dict(sorted(omitted.items())),
+        "omitted_expired": dict(sorted(omitted_expired.items())),
         "note": NOTE,
     }
+
+
+def _newest_first(entry: SnapshotEntry) -> tuple[float, str]:
+    """Most recently expired first, with the path breaking ties so the card is deterministic.
+
+    An entry in :meth:`~clue_agents.workspace_snapshot.SnapshotManifest.expired` always has an
+    ``expired_at``; the ``0.0`` is only so the key is total.
+    """
+
+    when = entry.expired_at
+    return (0.0 if when is None else -_aware(when).timestamp(), entry.path)
 
 
 def _folder(path: str) -> str:

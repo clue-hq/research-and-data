@@ -16,6 +16,7 @@ from clue_agents.workspace_snapshot import (
     tier_for,
 )
 from clue_api.agent_workspace_files_card import (
+    WORKSPACE_FILES_MAX_EXPIRED,
     WORKSPACE_FILES_MAX_LISTED,
     WORKSPACE_FILES_MEDIA_TYPE,
     build_workspace_files_card,
@@ -113,6 +114,37 @@ def test_card_bounds_the_live_list_and_says_what_was_left_out() -> None:
     assert len(live) == WORKSPACE_FILES_MAX_LISTED == 200
     assert [item["path"] for item in live[:2]] == ["work/f0000.txt", "work/f0001.txt"]
     assert card["omitted"] == {"work": 50}
+
+
+def test_card_bounds_the_expired_list_newest_first_and_says_what_was_left_out() -> None:
+    """Review I6: the expired half grows for the chat's life, so it is bounded like the live one.
+
+    Expired entries are never dropped from the file list (WS-25) and a CRM-heavy chat spills
+    ``reads/`` every turn, so after a few months the unbounded list was thousands of entries —
+    each with its whole receipt — re-sent in every turn's context. Newest first, because the
+    file the agent just lost is the one it is about to ask about.
+    """
+
+    manifest = SnapshotManifest(
+        entries=tuple(
+            _entry(
+                f"reads/r{index:04d}.json",
+                written_at=NOW - timedelta(days=30),
+                expired_at=NOW - timedelta(hours=index + 1),
+            )
+            for index in range(250)
+        )
+    )
+
+    card = build_workspace_files_card(manifest, now=NOW)
+
+    expired = card["expired"]
+    assert isinstance(expired, list)
+    assert len(expired) == WORKSPACE_FILES_MAX_EXPIRED == 200
+    # The two most recently expired, not the two alphabetically first.
+    assert [item["path"] for item in expired[:2]] == ["reads/r0000.json", "reads/r0001.json"]
+    assert expired[-1]["path"] == "reads/r0199.json"
+    assert card["omitted_expired"] == {"reads": 50}
 
 
 def test_an_empty_or_missing_manifest_gives_an_empty_card() -> None:
