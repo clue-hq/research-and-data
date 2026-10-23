@@ -209,3 +209,40 @@ Still unowned after this wave: an index on `artifact (expires_at) WHERE purged_a
 the fleet sweep (pre-existing, daily, off the request path); gathering a save's receipts
 concurrently; whether very old expired entries should be compacted out of the stored file list
 (Phase 3). The nine Minor findings not listed above were left as the review filed them.
+
+### Phase 2 close-out: review, fix wave, and what is left (2026-10-24)
+
+**Review** (fresh reviewer, whole branch `1eeb5a12d..e2f4689e5`): 0 Critical, 8 Important, 11 Minor,
+verdict "merge with fixes". The AW-26/AW-21 line was checked and holds: the own storage area is written
+by one module, the migration's CHECK makes the key shape unforgeable, both byte-destroying calls are
+key-guarded, and `outputs/` cannot expire under any window including 0 (hard-coded, not a setting).
+
+**Fix wave** (13 commits `4eae81b7b..d56c1c48e`, each test-first): all 8 Important + 2 must-fix minors.
+The worst was a data-loss race — the job judged due-ness on the candidate scan's stale `last_activity`
+while compare-and-setting on a re-read version, so a turn completing mid-pass had its brand-new `reads/`
+and `scratch/` files expired and purged. Fixed by reading version+activity in one statement, bailing
+`stale` on a mismatch, and judging on the fresh activity. The clock-winding-back finding was fixed by
+DELETING the write-back: `save(activity=False)` + `_ADVANCE_QUIET`, so the job's save never stamps
+activity at all. **Scoped re-review: 9/9 ADDRESSED, no new Critical/Important, "ready to merge."**
+
+**Residuals, worth picking up (nothing blocks merge):**
+- **N2 (do this first):** the `"stale"` outcome has ZERO test coverage — including the new version-mismatch
+  guard that closes the data-loss race. The guard is three lines and correct by inspection, but untested.
+- Four other per-key `purge_erased_artifacts` callers still run the table-wide `expires_at` UPDATE.
+- No index on `artifact (expires_at) WHERE purged_at IS NULL` (another owner's table; daily, off the
+  request path — deliberately not added).
+- Receipt lookups are sequential, one per new file per save (the `operation_id` index landed; the
+  concurrent gather did not).
+- `run_retention_if_due` holds its advisory lock and an open transaction for the whole pass.
+- A benign `_activity`→`read_manifest` race now counts as `failed`, the metric the runbook says to alert on.
+- A save refused `stale`/`fenced` leaves orphan own-area rows nothing references (pre-existing in shape).
+- Phase 1 snapshot bytes under the shared `<ws>/<sha>` keys are never reclaimed (AW-26 forbids it); a chat
+  moves to the new area only on its next save. 502 kB on the dev stack.
+- An agent-written file that expires gets the approved "unknown" receipt sentence ("No record of what made
+  this file."), correct by design but reads oddly; a sixth approved sentence would be better.
+- **Environment, not this branch:** this lane's shared R2 bucket is missing blobs the DB still references,
+  including the Phase 1 live check's project document, so every turn in `prj_d29bc5f5…` fails
+  `ArtifactIntegrityError`. The Phase 2 live check ran in `prj_f6369d2f…`.
+- **Version claim for the merge:** this branch mints manual **v24**, head-of-abm **v78**, stage0-interview
+  **v51**. The CRM lane is at v23/v77/v50 and was NOT messaged (no session addressable); if it mints the
+  same numbers the merge has a clash to resolve by hand, as the 2026-09-21 merge did.
