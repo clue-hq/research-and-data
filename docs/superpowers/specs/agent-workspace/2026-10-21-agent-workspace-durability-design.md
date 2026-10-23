@@ -667,6 +667,9 @@ with the one line that says how to get it again.
   - a save.
 
   It is kept in `last_activity_at` on the version record (written from Phase 1, used from Phase 2).
+  The expiry job's own save is the one exception: it is housekeeping on a cold chat, so it passes
+  `activity=False` and leaves the stamp exactly where the chat left it. Counting it would restart
+  the 48-hour clock every pass and the 7-day window would never elapse.
 - **WS-25 [P2] Receipts.** Every raw input carries a receipt, built at save time from durable rows
   the turn already wrote. A receipt holds:
   - **what produced it:** the tool and operation id. The file name is the operation id: a CRM read
@@ -915,6 +918,14 @@ and WS-28's list contents for live and expired files (P2).
 
 ## 14. Change log
 
+- 2026-10-24: final-review fix wave (no requirement changed). WS-24 now states the one exception
+  it always had in practice: the expiry job's save is not activity, and it is expressed as a flag
+  on the save rather than as a stamp put back afterwards (review I3 — a `touch()` landing in that
+  window was reverted). WS-26's "no queued or running turn" is a courtesy, not the guarantee: the
+  job reads a chat's activity and version together and compare-and-sets on that version, so it
+  can never act on a chat that has moved since it looked (I2), and one unreadable chat is counted
+  and stepped over rather than ending the pass (I1). WS-28's bound now applies to the expired
+  half of the card as well as the live half (I6).
 - 2026-10-21: first draft (Claude), from rulings AW-1–AW-8 and the footprint findings. WS-1–WS-32
   in topic order; open questions Q1–Q4.
 - 2026-10-22: v2 (Claude), after the founder asked which phase each part belongs to.
