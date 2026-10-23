@@ -97,6 +97,9 @@ class FakeStore(WorkspaceSnapshotStore):
         expected_version: int | None,
         manifest: SnapshotManifest,
         fence: LeaseFence | None,
+        # Only the expiry job passes False, and it drives the real store; this fake has no
+        # activity stamp to leave alone.
+        activity: bool = True,
     ) -> tuple[SaveStatus, SnapshotPointer | None]:
         if self.fenced:
             return "fenced", None
