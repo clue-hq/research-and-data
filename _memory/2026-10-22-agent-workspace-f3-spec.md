@@ -114,3 +114,61 @@ Chats: Conduit `thr_65d4c3d4…` (new, legacy-planted) and `thr_b32c99d4…`. To
   `.env` has no Composio keys, so CRM is off on this stack (`crm_write.handler_not_composed`).
 - `.env`: added the three `CLUE_CRM_WRITE_*` keys. Pre-existing parity gap: ~40 example keys absent
   from the dushanbe `.env` (Composio/CRM among them).
+
+## Closing note — Phase 2 built and live-checked (2026-10-24)
+
+Branch `feat/agent-workspace-retention` (stacked on `feat/agent-workspace-durability`). Plan and
+ledger: `.superpowers/sdd/2026-10-23-agent-workspace-phase-2-retention/`.
+
+**What was built (Tasks 1–9, in commit order):** `aa9465b86` the `<ws>/agent-workspace/<sha>` key
+and the three retention settings; `44641a2b2` snapshot files moved into that area and released when
+no snapshot holds them; `8bc04d27c` manifest schema 2 (tier, receipt, `expired_at`); `e10246224`
+`DbReceiptSource` over the rows the turn already wrote, and a save that rebases over an expiry-only
+move; `7b508fb9c` `AgentWorkspaceRetentionJob` — daily, one runner at a time, busy chats skipped;
+`952a9f955` `context/project/workspace_files.json` at the start of every turn; `d56292515` spec
+tests 5, 6, 7 in `tests/api/test_agent_workspace_scenarios_db.py`; `b986f6fa8` manual v24 +
+head-of-abm v78; `a19ddc24b` the two extra founder-approved lines of 2026-10-24 (the files card in
+the manual's `context/` table; a non-CRM `reads/` spill gets "Run {tool} again with the same
+arguments." instead of the `large_tool_results` sentence). Manual v24 was amended in place, not
+re-minted, and the v78 profile's pin was re-digested.
+
+**Live check (2026-10-24, dushanbe stack, $0.24 — 6 grok-4.6 generations over two turns).**
+Stack DB `clue_nashville_pm_clone` migrated in place `01baa2e73e84 → 22172f5ba3cb`; API and workers
+restarted clean. Turns were driven in-process (a script that calls `persist_user_turn` →
+`insert_submission` → `dispatch_next_thread_turn`, exactly the route's sequence) because the stack
+runs Clerk auth and there is no browser here. New chat `thr_88c1d61d57…` in project
+`prj_f6369d2f…` ("Conduit for hotel groups").
+- Turn 1 (37 s): `run_python` wrote `scratch/note.md` (21 B, `working_file`) and
+  `outputs/table.csv` (26 B, `work_product`); restore `warm=true version=null`, save `saved` v1,
+  2 uploaded.
+- Job with the production windows (172800 / 604800) at a clock 8 days past the chat's last
+  activity: `RetentionReport(chats_checked=1, chats_expired=1, files_expired=1, skipped_busy=0,
+  stale=0)` in 1403 ms; version 2 published; `last_activity_at` correctly put back.
+- Proof from the data: `scratch/note.md` is in `expired()` with a receipt, its `artifact` row has
+  `erased_at=2026-10-23 22:29:25+00` and its blob is gone from R2 (`ArtifactNotFound`);
+  `outputs/table.csv` is still in `live()` and its bytes still read back as `name,value/alpha,1/
+  beta,2`.
+- Turn 2 (56 s) restored version 2 **cold on a different worker** and the agent answered:
+  "scratch/note.md is no longer there. It was written last turn and now shows as expired.
+  outputs/table.csv is still present." It listed `context/project/workspace_files.json` among its
+  context cards. Save `unchanged`, 0 uploaded.
+
+**Found during the check, none of it Phase 2's own, all unowned:**
+1. `agent_turn_submission` is append-only (a trigger), and the job's activity is
+   `GREATEST(snapshot stamp, newest submission)`, so a chat cannot be aged by SQL alone — the check
+   moved the job's clock forward by the same 8 days instead. Identical arithmetic; worth knowing
+   for the next live check.
+2. `AgentWorkspaceRetentionJob.run_once` has **no per-chat error isolation**: the first chat whose
+   manifest blob cannot be read raises out of the whole pass. On this lane that happened at once
+   (see 3). In production one damaged chat would stop the sweep for every other chat. A
+   `try/except` per chat with a counted `failed` in `RetentionReport` is the obvious fix.
+3. This lane's shared R2 bucket has lost blobs that its DB still references — the Phase 1 live
+   check's own project document `notes/f3-shared-document-check.md` (so every turn in project
+   `prj_d29bc5f5…` now fails `ArtifactIntegrityError` in the project-library compile) and at least
+   one older chat's snapshot manifest. A sibling lane's orphan sweep is the likely cause; dushanbe's
+   own is off. Environment damage, not code.
+
+**Deferred / owed:** WS-27 (rebuilding a large tool result from its existing `result_ref` instead of
+storing it again) was the builder's call and is not done — a large tool result is stored like any
+other raw input. Phase 3 still owns tests 9 and 12 (research reconciliation; the final clean-machine
+timing). The Phase 1 live compaction walk is still owed. The two findings above are unassigned.

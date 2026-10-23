@@ -97,17 +97,33 @@ Alert on:
 
 ## Cleanup and recovery
 
-`AgentWorkspaceCleanupJob` selects only durably terminal `completed`, `failed`, `abandoned`, or
-`privacy_tombstoned` turns whose latest event is older than
-`CLUE_AGENT_WORKSPACE_RETENTION_S`. `awaiting_input` is live resumable state and is never selected.
-The job purges by normalized
-`(workspace_id, project_id, execution_id)` identity, never by a model-visible path, and writes an
-append-only `agent_workspace_cleanup_event`. A missing root is recorded honestly as already
-absent. Durable artifact and context/history/finalization receipts remain for cold replay.
+Since F3 (`docs/superpowers/specs/agent-workspace/`) a chat's agent folders live durably as a
+versioned snapshot and a worker's disk is only a cache, so there are two cleanups and they do
+different jobs. The old turn-keyed `AgentWorkspaceCleanupJob` and its
+`CLUE_AGENT_CLEANUP_INTERVAL_S` cadence are gone; folders left by the layout that preceded it are
+removed once with `scripts/remove_legacy_agent_workspaces.py` (dry run by default).
 
-The fleet process runs cleanup every `CLUE_AGENT_CLEANUP_INTERVAL_S`. A cleanup error is logged
-and does not terminate run execution. Set the cadence to zero to disable scheduling during an
-incident; do not delete roots with broad shell globs.
+**The per-worker cache sweep (Phase 1) deletes nothing durable.** Each fleet worker owns one area
+under `CLUE_AGENT_WORKSPACE_ROOT` and checks it every
+`CLUE_AGENT_WORKSPACE_CACHE_SWEEP_INTERVAL_S` (300 s). A chat folder unused for
+`CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (30 min) is removed, and once the area passes
+`CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` (10 GiB) idle folders go oldest first; the chats this
+worker is running are never swept, and a worker wipes its whole area at start-up. The next turn
+restores the chat from its snapshot, so a sweep costs a download, never a file.
+
+**The retention job (Phase 2) is what actually expires files**, fleet-wide, once per
+`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (86400 s) with one runner at a time behind an
+advisory lock and a `maintenance_run` row (`agent_workspace_retention`). For a chat nothing has
+touched for a while — the newest of its snapshot stamp and its newest submission — it publishes one
+new snapshot version with the due entries marked expired: raw inputs (`reads/`,
+`work/conversation_history/`, `work/large_tool_results/`) after
+`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` (48 h), the agent's own working files (`scratch/` and the
+rest of `work/`) after `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` (7 days), and `outputs/` never —
+it is kept for the chat's life. An expired entry keeps a receipt saying what the file was and how
+to get it again, and the save releases its key, so the bytes are erased and purged from storage
+when no other snapshot holds them. A chat with a queued, claimed or leased turn is skipped and
+left for the next pass. Set either window or the interval only with the founder's agreement: they
+are what the agent manual promises the agent in words.
 
 DSAR is separate and stronger: it tombstones and erases subject-bound durable bodies, blocks
 resurrection, marks affected turns unreplayable, and removes matching live workspaces immediately.

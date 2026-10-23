@@ -330,8 +330,8 @@ From the code on this branch. File references are for the builder.
 | One turn per chat | enforced in Postgres: an advisory lock plus one queued or claimed task; the fleet `work_lease` per chat has a generation that goes up on every takeover | `agent_turn_submission.py:693-794`, `platform/fleet/clue_fleet/lease.py` |
 | Profile per turn | each turn starts a new execution of the currently promoted conversation recipe and profile | `agent_turn_fleet_wiring.py:~800-840` |
 | CRM reads registry | `CrmReadSinks`: a per-process map from a turn to its `reads/` folder, filled while the turn holds the lease | `platform/api/clue_api/crm/read_sinks.py`, `fleet_main.py:1120` |
-| Cleanup | an hourly job deletes a thread folder 24 h after its newest turn ended; it skips `awaiting_input`; its receipt id collides on a second purge | `platform/api/clue_api/agent_cleanup.py` |
-| Artifact store | files stored in R2 under `ws/sha256` with an `artifact` row; owners hold references (`retain_artifact`/`release_artifacts`); a sweep deletes the files of rows already marked erased or expired, and stored files with no `artifact` row. **It does not delete a live row that nothing references any more** (corrected 2026-10-22; `storage_wiring.py:212`, `artifacts.py:459`) | `libs/clue-storage/clue_storage/artifacts.py` |
+| Cleanup | **changed by P1 and P2.** The 24-hour job and `CLUE_AGENT_CLEANUP_INTERVAL_S` are gone. Two cleanups now: each worker sweeps its own area every 5 min for chat folders idle 30 min (and over the 10 GiB cap), which costs a later download and no file; and a daily fleet-wide job expires a cold chat's raw inputs after 48 h and its working files after 7 days by publishing one new snapshot version, leaving a receipt in each expired entry's place | `agent_workspace_retention.py`, `fleet_main.py:448-504`, `workspace.py` cache sweep |
+| Artifact store | files stored in R2 under `ws/sha256` with an `artifact` row; owners hold references (`retain_artifact`/`release_artifacts`); a sweep deletes the files of rows already marked erased or expired, and stored files with no `artifact` row. **It does not delete a live row that nothing references any more** (corrected 2026-10-22; `storage_wiring.py:212`, `artifacts.py:459`). **Changed by P2:** a chat's own files live in their own area, `ws/agent-workspace/sha256` (ruling AW-26), so expiring one can never reach an upload, a Gallery artifact or an evidence snapshot that happens to hold the same bytes; and the snapshot save itself erases and purges every own-area key its new version released and no other snapshot holds, rather than waiting for a sweep | `libs/clue-storage/clue_storage/artifacts.py`, `protocol.py:66`, `agent_workspace_snapshots.py:305-343` |
 | The precedent | design site turns: a version record `(workspace, document) → (version, manifest_sha256)`, a compare-and-set update, a local version note, restore when stale | `clue_design/sessions.py:122-157`, `lumen_api/main.py:12093-12340`, `lumen_agent/session_sync.py` |
 
 What lands in the agent folders today:
@@ -345,6 +345,13 @@ What lands in the agent folders today:
   summariser's overflow clips.
 - `scratch/`, `outputs/` and other `work/` files: written by the agent and its sandbox runs,
   including binary files (`.csv .xlsx .docx .pptx .pdf .png`).
+
+**Changed by P2.** Every file above is saved with a tier, and the tier decides how long it lives:
+the `reads/` files and the two compaction folders are raw inputs (48 h), `scratch/` and the rest of
+`work/` are working files (7 days), `outputs/` is kept for the chat's life. An expired file keeps a
+receipt in the manifest and nothing else, and every turn now opens with
+`context/project/workspace_files.json` — what the chat has, how old each file is, and what expired
+with the one line that says how to get it again.
 
 ---
 
@@ -829,15 +836,15 @@ What lands in the agent folders today:
 Per the founder's standing rule, these are scenario tests through the real code paths, plus live
 checks.
 
-| # | Test | Phase |
-|---|---|---|
+| # | Test | Phase | Status |
+|---|---|---|---|
 | 1 | **Two machines, one chat:** two factories with different cache roots, one database and one storage. A turn on A writes `scratch/`, `outputs/` and a CRM read; the next turn on B sees exactly those files; a third turn back on A notices its copy is stale and restores B's version | P1 |
 | 2 | **Warm path:** a second turn on the same root makes no storage calls | P1 |
 | 3 | **Kill mid-turn:** a turn dies before the save, and another after it; the retry on another root sees the right version and finalizes once | P1 |
 | 4 | **Zombie save** is refused, both for a stale version and for a lost lease generation | P1 |
-| 5 | **Raw expiry:** with a 0-second window, the expiry job removes the `reads/` bytes and keeps the receipt; the next turn's list shows it; reading identical bytes again works | P2 |
-| 6 | **Work products survive** a cache wipe (P1) and the expiry job (P2) | P1, P2 |
-| 7 | **Erasure:** version records, file lists and stored files are gone after the purge; a cached folder on another root is never used and is removed by the next cleanup | P2 |
+| 5 | **Raw expiry:** with a 0-second window, the expiry job removes the `reads/` bytes and keeps the receipt; the next turn's list shows it; reading identical bytes again works | P2 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_5_raw_expiry_removes_bytes_keeps_receipt_and_the_next_turn_sees_it` |
+| 6 | **Work products survive** a cache wipe (P1) and the expiry job (P2) | P1, P2 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_6_work_products_survive_the_expiry_job` |
+| 7 | **Erasure:** version records, file lists and stored files are gone after the purge; a cached folder on another root is never used and is removed by the next cleanup | P2 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_7_erasing_a_chat_leaves_nothing_in_storage_and_no_root_reuses_its_copy` |
 | 8 | **Cleanup stays in its own area:** a worker's start-up wipe removes its whole area and nothing in another worker's area, even while that worker runs a turn; the idle job removes an idle chat's folder and skips the chats this worker is running | P1 |
 | 9 | **Research reconciliation** across two roots reads the source run's snapshot | P3 |
 | 10 | **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, policy sweep) | P1 |
@@ -979,3 +986,25 @@ and WS-28's list contents for live and expired files (P2).
   worker holding the current copy restored warm (2 ms, nothing downloaded) and wrote only
   `inputs/user-message.txt` among the recipe folders. Seven turns cost about $1.39. §12's
   compaction path was real and is fixed; a live compaction is still owed.
+- 2026-10-24: **Phase 2 built** on `feat/agent-workspace-retention` (plan
+  `.superpowers/sdd/2026-10-23-agent-workspace-phase-2-retention/`, Tasks 1–9): a chat's files moved
+  into their own storage area `<ws>/agent-workspace/<sha>`; the manifest records a tier, a receipt
+  and an `expired_at` per entry; `DbReceiptSource` answers from the rows the turn already wrote;
+  `AgentWorkspaceRetentionJob` runs daily behind one advisory lock; and every turn opens with
+  `context/project/workspace_files.json`. §11 tests 5, 6 and 7 pass in
+  `tests/api/test_agent_workspace_scenarios_db.py`; §5's cleanup, artifact-store and
+  "what lands in the agent folders" entries are updated.
+  **Live check on the dushanbe stack (2026-10-24, $0.24 over two turns, 6 model calls).** A new chat
+  wrote `scratch/note.md` (21 B, `working_file`) and `outputs/table.csv` (26 B, `work_product`) with
+  `run_python`; version 1 saved, 2 files uploaded, 37 s turn. Run with the production windows
+  (172800 / 604800) at a clock 8 days past the chat's last activity, the job reported
+  `chats_checked=1, chats_expired=1, files_expired=1, skipped_busy=0, stale=0` in 1403 ms and
+  published version 2: `scratch/note.md` is in `expired()` with a receipt, its `artifact` row is
+  erased and its blob gone from R2 (`ArtifactNotFound`), while `outputs/table.csv` is still live and
+  its bytes still read back as written. The next turn restored version 2 cold on a different worker
+  and the agent answered: "scratch/note.md is no longer there. It was written last turn and now
+  shows as expired. outputs/table.csv is still present." — and listed
+  `context/project/workspace_files.json` among its context cards. Two findings, neither Phase 2's
+  own: `agent_turn_submission` is append-only, so the chat was aged by moving the job's clock
+  forward rather than the row back; and `run_once` has no per-chat error isolation, so one chat
+  whose manifest blob is missing from this lane's shared R2 bucket aborts the whole pass.

@@ -19,13 +19,20 @@ again in its own folders, Postgres or R2); (2) no new in-memory registries of fo
 `CrmReadSinks`); (3) no code that relies on `outputs/` being emptied or on a turn running on the same
 machine as the last one (since `f799a9830` `outputs/` is kept between turns); (4) raw reads record
 enough to repeat them (action, parameters, when, how many records).
-**Phase 1 is built on `feat/agent-workspace-durability` (2026-10-22)** and may ship before Phase 2
-(ruling AW-23; until Phase 2 nothing in a snapshot is deleted): each fleet worker claims its own area
-under `<root>/workers/area-<n>`, each chat has its own folder there (`chats/<ws>/<project>/<thread>/`
-with its own `brand/`, `project/`, `attachments/` copies), every turn restores from and saves to the
-chat's snapshot, and the area is a cache swept after 30 minutes idle. The old 24-hour purge
-(`agent_cleanup.py`, `CLUE_AGENT_CLEANUP_INTERVAL_S`) is gone. Leftover folders of the old layout
-are removed with `scripts/remove_legacy_agent_workspaces.py` (dry run by default).
+**Phase 1 is built on `feat/agent-workspace-durability` (2026-10-22)**: each fleet worker claims its
+own area under `<root>/workers/area-<n>`, each chat has its own folder there
+(`chats/<ws>/<project>/<thread>/` with its own `brand/`, `project/`, `attachments/` copies), every
+turn restores from and saves to the chat's snapshot, and the area is a cache swept after 30 minutes
+idle. The old 24-hour purge (`agent_cleanup.py`, `CLUE_AGENT_CLEANUP_INTERVAL_S`) is gone. Leftover
+folders of the old layout are removed with `scripts/remove_legacy_agent_workspaces.py` (dry run by
+default). **Phase 2 is built on `feat/agent-workspace-retention` (2026-10-24, live-checked on the
+dushanbe stack):** a snapshot's files live in their own storage area `<ws>/agent-workspace/<sha>`, so
+expiring one can never reach anybody else's bytes; a daily fleet job expires a cold chat's raw inputs
+(`reads/`, `work/conversation_history/`, `work/large_tool_results/`) 48 h after its last activity and
+its working files (`scratch/`, the rest of `work/`) after 7 days, while `outputs/` is kept for the
+chat's life; an expired entry keeps a receipt saying what it was and how to get it again, and its
+bytes are erased and purged; and every turn opens with `context/project/workspace_files.json`, which
+tells the agent what it has, each file's age, and what has gone.
 
 ## ARV2 work — coding agents start here (added 2026-09-04)
 If your task concerns account research, contact research, the display layer, the accounts screens,
