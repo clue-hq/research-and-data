@@ -52,10 +52,11 @@ log = get_logger("clue_api.agent_workspace_receipts")
 #:
 #: ``"tool"`` is the CRM read's sentence, and it is used only when the receipt knows both values
 #: it names. A ``reads/`` spill from any other governed tool — and a CRM read whose result row no
-#: longer says which provider answered — takes ``"large_tool_results"``, which is true of it
-#: word for word.
+#: longer says which provider answered — takes ``"read_spill"``, which names the tool the
+#: ``execution_node`` row recorded.
 READ_AGAIN: Final[Mapping[str, str]] = {
     "tool": "Run run_crm_action again with the same action and arguments: {action} on {provider}.",
+    "read_spill": "Run {tool} again with the same arguments.",
     "run_python": "Run the script again; this was its {stream}.",
     "conversation_history": "Nothing to do: this was a copy of this conversation, which the "
     "platform still has in full.",
@@ -84,14 +85,14 @@ def _read_again_for(tool_name: str, details: Mapping[str, JsonValue]) -> str:
 
     A CRM read names the action and the CRM it ran against, because those two words are what the
     agent types to run it again. Anything else — another tool's spill, or a CRM read whose result
-    row can no longer say which provider answered — gets the general sentence, which is still
-    exactly true: the tool that produced the file is named by the receipt's ``source``.
+    row can no longer say which provider answered — names the tool the ``execution_node`` row
+    recorded, which is the one word the agent needs to run it again.
     """
 
     action, provider = details.get("slug"), details.get("provider")
     if tool_name == "run_crm_action" and isinstance(action, str) and isinstance(provider, str):
         return READ_AGAIN["tool"].format(action=action, provider=provider)
-    return READ_AGAIN["large_tool_results"]
+    return READ_AGAIN["read_spill"].format(tool=tool_name)
 
 
 _NODE_SQL: Final = text(

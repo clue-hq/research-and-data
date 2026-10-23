@@ -131,6 +131,7 @@ carry a hash you cannot derive from an id, so list the folder rather than guessi
 | `context/project/budget.json` | `limit_millicents`, an `external_research_budget_cents` literal, and a scope sentence. |
 | `context/project/brand_knowledge_index.json` | the brand document index, the project's confirmed ICP reference, and the confirmed product set. Present only when at least one brand document is pinned. |
 | `context/project/project_library_index.json` | the manifest of the `project/` mount you are reading: one line per file with its path, its workspace path, kind, version, status, a one line summary and the digest of the bytes installed there, plus the digest of the whole generation and how many artifacts `project/artifacts/index.json` names. It is the same manifest the mount serves as `project/index.json`. |
+| `context/project/workspace_files.json` | what is in your folders right now, each file's age, and every file deleted for age with a receipt saying what it was and how to get it again. |
 | `context/focus/*` | the hydrated row for each attached account, contact or project. A contact card is deliberately minimal: name, title, persona, account name, account domain. |
 | `context/workspace-product/*` | the brand row, and the product row when one is pinned. |
 | `context/memory/*` | advisory preferences and learnings, when any are selected. |

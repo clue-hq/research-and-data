@@ -261,6 +261,24 @@ def test_a_tool_read_with_no_result_row_still_names_the_call(tmp_path: Path) -> 
     run_async(scenario())
 
 
+def test_a_non_crm_spill_is_told_to_run_its_own_tool_again(tmp_path: Path) -> None:
+    """Any other governed read names the tool the execution row recorded, not the CRM sentence."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "store")
+            seeds = await _seed_tool_call(
+                conn, storage, tool_name="search_accounts", display_params={"query": "robotics"}
+            )
+            receipt = await _source(conn, storage).receipt_for(
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["path"]
+            )
+        assert receipt.source == "search_accounts"
+        assert receipt.read_again == "Run search_accounts again with the same arguments."
+
+    run_async(scenario())
+
+
 def test_a_file_with_no_row_gets_an_unknown_receipt(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:

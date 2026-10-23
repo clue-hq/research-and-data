@@ -109,7 +109,7 @@ skills:
   sha256: 28a1ca704169c7ceb9d70aecc4244fa08ff2bbe14f5cc52a36832fb190dc8592
 - name: manual-workspace
   version: v24
-  sha256: 1541b70267e62201c3cc1ea0459f1b2bd7c9da3f44934f471bd251c9e8c1a73d
+  sha256: 7db6be3ddff8c8c2fc1f9984b14e9350751e5bfea408f4c06909922f88decfea
 - name: manual-tools
   version: v24
   sha256: 42169a9def5f41accd227685bfcef8cd6a09b165de0ae1446876ac87d3ae2ca5
