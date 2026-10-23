@@ -180,7 +180,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `crm-sales-analysis@v1`, stage0-interview@v49 and manual@v22.
         # v77 (2026-10-22, CRM integration Phase 2): three CRM write tools granted; the new
         # `crm-writing@v1`, stage0-interview@v50 and manual@v23.
-        AgentRole.HEAD_OF_ABM: ("16679128af6884f988b0f6b819d7fb647ba46f61b85ac3d910ec238a853eaa88"),
+        # v78 (2026-10-23, CRM integration Phase 3): read_crm_targets, find_crm_list and
+        # link_crm_list granted; `crm-writing@v2`, stage0-interview@v51 and manual@v24.
+        AgentRole.HEAD_OF_ABM: ("44b2e59c413eb49d5d9c043f551d462c53a78f8e357b8aa9bb1108b566603918"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -332,7 +334,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (181 -> 182); crm_write_log@1 and manage_crm_grants@1 likewise (182 -> 184). All three are
     # granted at head-of-abm@v77; the count is unmoved. read_crm_targets@1 (CRM integration
     # Phase 3), ungranted until the Phase 3 catalog bump (184 -> 185); find_crm_list@1 and
-    # link_crm_list@1 likewise (185 -> 187).
+    # link_crm_list@1 likewise (185 -> 187). All three are granted at head-of-abm@v78; the count
+    # is unmoved.
     assert len(by_address) == 187
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
@@ -469,7 +472,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (180 -> 181); propose_crm_changes@1 (CRM integration Phase 2), ungranted (181 -> 182);
     # crm_write_log@1 and manage_crm_grants@1 likewise (182 -> 184); all three granted at
     # head-of-abm@v77, the count unmoved; read_crm_targets@1 (Phase 3), ungranted (184 -> 185);
-    # find_crm_list@1 and link_crm_list@1 likewise (185 -> 187).
+    # find_crm_list@1 and link_crm_list@1 likewise (185 -> 187); all three granted at
+    # head-of-abm@v78, the count unmoved.
     assert len(by_address) == 187  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
@@ -586,6 +590,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "propose_crm_changes@1",
         "crm_write_log@1",
         "manage_crm_grants@1",
+        # CRM integration Phase 3 (head-of-abm@v78, 2026-10-23).
+        "read_crm_targets@1",
+        "find_crm_list@1",
+        "link_crm_list@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research@2",
@@ -665,9 +673,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v77"
+    assert production.profile_ref.address == "profile:head-of-abm@v78"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v50"
+        "skill:stage0-interview@v51"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -707,7 +715,7 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     stage0-interview version whose section 7b teaches how to write the brief.
     """
 
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v77"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v78"
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
     # v72 re-pins it at `@3` (the brief's exclude list, spec 2026-10-16).
@@ -716,8 +724,8 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     assert "launch_arv2_discovery@1" not in granted
     assert "read_discovery_run@3" in granted
     assert "read_discovery_run@2" not in granted
-    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v50"
-    body = head.open_skill("skill:stage0-interview@v50")
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v51"
+    body = head.open_skill("skill:stage0-interview@v51")
     assert "## 7b. Discover accounts for this project" in body
     assert "`must_not`" in body
     assert "discovery_in_progress" in body
@@ -740,7 +748,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v50")
+    body = production.open_skill("skill:stage0-interview@v51")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -800,7 +808,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v50",
+        "skill:stage0-interview@v51",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -816,8 +824,9 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         "skill:crm-sales-analysis@v2",
         # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
         # with it (and `connect_crm@1` and `find_crm_actions@1`).
-        "skill:crm-writing@v1",
-        *(f"skill:manual-{name}@v23" for name in MANUAL_CHAPTERS),
+        # v78 re-pins it at v2, which adds section 3b for the three Phase 3 tools.
+        "skill:crm-writing@v2",
+        *(f"skill:manual-{name}@v24" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -827,7 +836,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v23")
+    assert briefing_path in head.open_skill("skill:manual-tools@v24")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -940,7 +949,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v50")
+    body = head.open_skill("skill:stage0-interview@v51")
 
     assert required_guidance in body
 
@@ -994,7 +1003,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v50" not in remaining
+    assert "skill:stage0-interview@v51" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -1011,8 +1020,9 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         "skill:crm-sales-analysis@v2",
         # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
         # with it (and `connect_crm@1` and `find_crm_actions@1`).
-        "skill:crm-writing@v1",
-        *(f"skill:manual-{name}@v23" for name in MANUAL_CHAPTERS),
+        # v78 re-pins it at v2, which adds section 3b for the three Phase 3 tools.
+        "skill:crm-writing@v2",
+        *(f"skill:manual-{name}@v24" for name in MANUAL_CHAPTERS),
     ]
 
 

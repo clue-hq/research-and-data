@@ -72,7 +72,9 @@ __all__ = [
 # `write_brand_document`, with the `crm-sales-analysis` skill.
 # v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
 # the `crm-writing` skill.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v77"
+# v78 grants the project's first CRM writes (`read_crm_targets`, `find_crm_list`,
+# `link_crm_list`), with `crm-writing` v2.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v78"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

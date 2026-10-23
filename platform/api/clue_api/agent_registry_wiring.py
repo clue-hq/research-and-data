@@ -295,7 +295,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, the new skill
     # `crm-writing` v1, `stage0-interview@v50` (v49 with its manual paths repointed),
     # `manual-*@v23` and recipe 37. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v77",
+    # v78 (2026-10-23, CRM integration Phase 3 - first writes): v77's surface plus
+    # `read_crm_targets@1`, `find_crm_list@1` and `link_crm_list@1`, `crm-writing` v2 (section 3b:
+    # writing a project's research into the CRM), `propose_crm_changes@1` at its new input digest,
+    # `stage0-interview@v51` (v50 with its manual paths repointed), `manual-*@v24` and recipe 38.
+    # Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v78",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -546,14 +551,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "propose_crm_changes": (AgentRole.HEAD_OF_ABM,),
     "crm_write_log": (AgentRole.HEAD_OF_ABM,),
     "manage_crm_grants": (AgentRole.HEAD_OF_ABM,),
-    # CRM integration Phase 3 (first writes, Task 4): `read_crm_targets` reads a project's accounts
-    # and committee reduced to what R-8.7 allows. Registered UNGRANTED until the Phase 3 catalog
-    # bump (Task 8), which grants it to the Head of ABM.
-    "read_crm_targets": (),
-    # Phase 3 (Task 7): `find_crm_list` / `link_crm_list` find a project's CRM list and keep one
-    # the person names (R-11.11). Registered UNGRANTED until the Phase 3 catalog bump (Task 8).
-    "find_crm_list": (),
-    "link_crm_list": (),
+    # CRM integration Phase 3 (first writes): granted to the Head of ABM at `head-of-abm@v78`
+    # (docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md, Task 8).
+    # `read_crm_targets` reads a project's accounts and committee reduced to what R-8.7 allows;
+    # `find_crm_list` / `link_crm_list` find a project's CRM list and keep one the person names
+    # (R-11.11).
+    "read_crm_targets": (AgentRole.HEAD_OF_ABM,),
+    "find_crm_list": (AgentRole.HEAD_OF_ABM,),
+    "link_crm_list": (AgentRole.HEAD_OF_ABM,),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -784,6 +789,12 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "propose_crm_changes",
                 "crm_write_log",
                 "manage_crm_grants",
+                # The Phase 3 CRM tools (head-of-abm@v78) read a project's accounts for the CRM,
+                # or read and keep the workspace's real CRM lists; a dev-harness turn carries no
+                # project, so installed they could only refuse.
+                "read_crm_targets",
+                "find_crm_list",
+                "link_crm_list",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to

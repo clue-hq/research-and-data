@@ -501,6 +501,13 @@ class Stage0StepPinProvider:
             # ``crm_write_log`` joins at recipe0-stage0@37 on the same terms: its body is a set of
             # filters, never a project.
             "crm_write_log",
+            # CRM integration Phase 3 (recipe0-stage0@38): ``read_crm_targets``,
+            # ``find_crm_list`` and ``link_crm_list`` name a ``project_id`` in their body, which is
+            # model-authored, so the pin is the execution's own project (the tools refuse a
+            # project outside the workspace themselves).
+            "find_crm_list",
+            "link_crm_list",
+            "read_crm_targets",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

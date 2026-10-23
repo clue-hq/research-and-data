@@ -144,6 +144,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "propose_crm_changes@1",
     "crm_write_log@1",
     "manage_crm_grants@1",
+    # CRM integration Phase 3 (recipe0-stage0@38), granted at `head-of-abm@v78`.
+    # `read_crm_targets@1` and `find_crm_list@1` are effect-free reads; `link_crm_list@1` is a
+    # WRITE that keeps a CRM list for the project (nothing changes in the CRM). All three take the
+    # execution's ``project`` pin.
+    "read_crm_targets@1",
+    "find_crm_list@1",
+    "link_crm_list@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

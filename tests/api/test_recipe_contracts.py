@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 37
+    assert CONVERSATION_RECIPE_VERSION == 38
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -1110,3 +1110,40 @@ def test_crm_writes_mint_recipe_v37_without_rewriting_v36() -> None:
     assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
     assert (v36["version"], v37["version"]) == (36, 37)
     assert slot["dynamic_pin_kinds"] == v36_slot["dynamic_pin_kinds"]
+
+
+def test_crm_first_writes_mint_recipe_v38_without_rewriting_v37() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v37 = json.loads((root / "recipe0-stage0-v37.json").read_text())
+    v38 = json.loads((root / "recipe0-stage0-v38.json").read_text())
+    # Three addresses JOIN and none leaves: the Phase 3 CRM tools, which `head-of-abm@v78` grants.
+    added = {
+        ("read_crm_targets", "1"),
+        ("find_crm_list", "1"),
+        ("link_crm_list", "1"),
+    }
+    addresses = {f"{key}@{version}" for key, version in added}
+    v37_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v37.json")
+    assert SYSTEM_RECIPE_FILENAMES[v37_index : v37_index + 2] == (
+        "recipe0-stage0-v37.json",
+        "recipe0-stage0-v38.json",
+    )
+    assert set(v37["graph"]["tool_allowlist"]) | addresses == set(v38["graph"]["tool_allowlist"])
+    slot = next(node for node in v38["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v37_slot = next(
+        node for node in v37["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v37_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v37_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v37["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v38["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v37["version"], v38["version"]) == (37, 38)
+    assert slot["dynamic_pin_kinds"] == v37_slot["dynamic_pin_kinds"]
