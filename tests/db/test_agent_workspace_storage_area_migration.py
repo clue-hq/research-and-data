@@ -66,3 +66,26 @@ def test_the_two_older_shapes_still_pass() -> None:
         await _insert(conn, f"ws_x/design/{_SHA}")
 
     run_async(_with_rollback(body))
+
+
+@pytest.mark.usefixtures("require_db")
+def test_a_receipt_lookup_by_operation_id_has_an_index() -> None:
+    """Final review I5: the receipt read runs per saved file, inside the turn's save.
+
+    ``execution_node``'s other indexes both lead with ``execution_id``, so without this one a
+    lookup by operation id alone is a sequential scan of the execution journal.
+    """
+
+    async def body(conn: AsyncConnection) -> None:
+        indexed = (
+            await conn.execute(
+                text(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE tablename = 'execution_node' AND indexname = 'execution_node_operation'"
+                )
+            )
+        ).scalar_one_or_none()
+        assert indexed is not None, "no index serves execution_node (operation_id)"
+        assert "(operation_id)" in indexed
+
+    run_async(_with_rollback(body))
