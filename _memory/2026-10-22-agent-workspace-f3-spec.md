@@ -172,3 +172,40 @@ runs Clerk auth and there is no browser here. New chat `thr_88c1d61d57…` in pr
 storing it again) was the builder's call and is not done — a large tool result is stored like any
 other raw input. Phase 3 still owns tests 9 and 12 (research reconciliation; the final clean-machine
 timing). The Phase 1 live compaction walk is still owed. The two findings above are unassigned.
+
+## Final review fix wave (2026-10-24)
+
+The fresh whole-branch review returned 0 Critical, 8 Important, 11 Minor, "merge with fixes". All
+eight Important plus two must-fix minors are fixed on `feat/agent-workspace-retention`
+(`4eae81b7b`..`7ed948ac1`); each has a test that was watched to fail first. Full write-up:
+`.superpowers/sdd/2026-10-23-agent-workspace-phase-2-retention/fix-wave-report.md` (gitignored).
+
+What changed that a later lane should know:
+
+- **The expiry decides on one read.** `_expire` reads the chat's activity and version together
+  and compare-and-sets the save on that version; the candidate scan now hands on only *which*
+  chat (`_Chat` no longer carries version or activity). Before, due-ness came from the scan and
+  the CAS from a re-read, so a turn finishing in between had its brand-new `reads/`/`scratch/`
+  files expired and erased. The busy-chat skip is a courtesy, not the guarantee.
+- **`WorkspaceSnapshotStore.save` takes `activity: bool = True`.** The job passes `False` and the
+  stamp is simply not moved; the "put the old value back afterwards" statement is gone (it
+  reverted a `touch()` landing in the window — worst for research runs and delegations, which
+  have no submissions and which `_BUSY` cannot see).
+- **`RetentionReport.failed`** and per-chat isolation: one unreadable chat (finding 2 above, hit
+  in anger on this lane) is logged as `agent_workspace.retention.chat_failed` and stepped over.
+  The candidate scan is paged with a keyset resume (`page_size`, default 500). The runbook says
+  what to alert on.
+- **`purge_erased_artifacts(..., sweep_expired=False)`** for the per-key caller: the store's save
+  no longer runs the sweep's table-wide `expires_at` tombstone on every turn. Nothing changes for
+  the fleet sweep or the DSAR callers.
+- **The receipt lookup joins `execution`** so it is workspace-scoped (the operation id comes from
+  a file name the agent writes), and `execution_node (operation_id)` is indexed
+  (migration `3f0b61c7a2d4`, single head).
+- **The card's expired list is bounded** at 200, newest first, with `omitted_expired` by folder.
+- The research path's card is now proven by driving `run`, not by `inspect.getsource`; the card's
+  founder-approved `note` is asserted verbatim in two suites.
+
+Still unowned after this wave: an index on `artifact (expires_at) WHERE purged_at IS NULL` for
+the fleet sweep (pre-existing, daily, off the request path); gathering a save's receipts
+concurrently; whether very old expired entries should be compacted out of the stored file list
+(Phase 3). The nine Minor findings not listed above were left as the review filed them.
