@@ -291,6 +291,36 @@ def test_a_file_with_no_row_gets_an_unknown_receipt(tmp_path: Path) -> None:
     run_async(scenario())
 
 
+def test_another_tenants_operation_id_is_never_read(tmp_path: Path) -> None:
+    """Review I4: the file name is the agent's, so the lookup is scoped to its own workspace.
+
+    ``execution_node`` carries no ``workspace_id`` of its own — it is scoped through
+    ``execution`` — so without that join an agent writing ``reads/<any-uuid>.json`` has another
+    tenant's tool name and displayed parameters copied into its durable file list and into the
+    card it is handed at the start of its next turn. Fail closed, as every account and thread
+    read in this codebase does (B3, 2026-07-23).
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "store")
+            theirs = await _seed_tool_call(
+                conn,
+                storage,
+                display_params={"slug": "HUBSPOT_SEARCH_DEALS"},
+                references={"provider": "hubspot", "record_count": 12},
+            )
+            mine = f"ws_receipt_{uuid4().hex[:12]}"
+            await seed_project(conn, mine, name="the other tenant")
+            # My chat, their operation id: the only thing that may come back is "unknown".
+            receipt = await _source(conn, storage).receipt_for(
+                workspace_id=mine, thread_id=THREAD, path=theirs["path"]
+            )
+        assert receipt == UNKNOWN_RECEIPT
+
+    run_async(scenario())
+
+
 def test_a_lookup_that_raises_falls_back_to_the_unknown_receipt(tmp_path: Path) -> None:
     """A receipt is a convenience, never the file: a broken lookup may not fail the save."""
 

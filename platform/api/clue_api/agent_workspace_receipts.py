@@ -95,11 +95,20 @@ def _read_again_for(tool_name: str, details: Mapping[str, JsonValue]) -> str:
     return READ_AGAIN["read_spill"].format(tool=tool_name)
 
 
+#: The call behind a ``reads/<operation_id>.json`` spill, **scoped to the asking workspace**.
+#:
+#: ``execution_node`` has no ``workspace_id`` of its own; it is scoped through ``execution``, so
+#: that join is the scoping and it is an inner one. Without it the driving row came from whichever
+#: workspace owns the operation id, and the id comes from a file name the agent writes — the
+#: ``agent_tool_result`` join is scoped but LEFT, so it cannot constrain anything (review I4). The
+#: result join stays LEFT: a call with no result row still names itself, and must still degrade
+#: rather than fail.
 _NODE_SQL: Final = text(
     """
     SELECT n.tool_name, n.display_params_json, n.created_at,
            r.result_artifact_key, r.result_sha256, a.media_type, a.size_bytes
     FROM execution_node n
+    JOIN execution e ON e.id = n.execution_id AND e.workspace_id = :workspace
     LEFT JOIN agent_tool_result r
            ON r.operation_id = n.operation_id AND r.workspace_id = :workspace
     LEFT JOIN artifact a ON a.storage_key = r.result_artifact_key
