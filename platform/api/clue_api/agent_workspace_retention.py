@@ -56,26 +56,43 @@ log = get_logger("clue_api.agent_workspace_retention")
 RETENTION_SWEEP = "agent_workspace_retention"
 _RETENTION_LOCK = "agent-workspace-retention"
 
-# The chats whose newest activity is at or before the cutoff. ``GREATEST`` over the snapshot row's
-# own stamp and the chat's newest submission is WS-24's definition of activity; the correlated max
-# rides ``agent_turn_submission_thread_order (workspace_id, thread_id, requested_at, turn_id)``.
+# WS-24's definition of a chat's activity, written once and read by both the scan and the expiry:
+# ``GREATEST`` over the snapshot row's own stamp and the chat's newest submission. The correlated
+# max rides ``agent_turn_submission_thread_order (workspace_id, thread_id, requested_at, turn_id)``.
+_ACTIVITY_EXPR = """
+        GREATEST(
+            s.last_activity_at,
+            COALESCE(
+                (SELECT max(t.requested_at) FROM agent_turn_submission t
+                  WHERE t.workspace_id = s.workspace_id AND t.thread_id = s.thread_id),
+                s.last_activity_at
+            )
+        )
+"""
+
+# The chats whose newest activity is at or before the cutoff, coldest first.
 _CANDIDATES = text(
-    """
+    f"""
     SELECT workspace_id, thread_id, project_id, version, last_activity
     FROM (
         SELECT s.workspace_id, s.thread_id, s.project_id, s.version,
-               GREATEST(
-                   s.last_activity_at,
-                   COALESCE(
-                       (SELECT max(t.requested_at) FROM agent_turn_submission t
-                         WHERE t.workspace_id = s.workspace_id AND t.thread_id = s.thread_id),
-                       s.last_activity_at
-                   )
-               ) AS last_activity
+               {_ACTIVITY_EXPR} AS last_activity
         FROM agent_workspace_snapshot s
     ) AS chat
     WHERE last_activity <= :cutoff
     ORDER BY last_activity, workspace_id, thread_id
+    """
+)
+
+# The same chat's activity and version read together, as late as possible — the one read the
+# expiry decision is actually made on. The candidate scan's copy is minutes old by the time a chat
+# comes up (review I2): a turn can have completed since, leaving no queued task and no live lease
+# for ``_BUSY`` to see, and expiring on the stale value would destroy files written since.
+_ACTIVITY = text(
+    f"""
+    SELECT s.version, {_ACTIVITY_EXPR} AS last_activity
+    FROM agent_workspace_snapshot s
+    WHERE s.workspace_id = :ws AND s.thread_id = :thread
     """
 )
 
@@ -192,6 +209,14 @@ class AgentWorkspaceRetentionJob:
 
         Returns how many entries were expired and the save's status (``"skipped"`` when there was
         nothing due, so no version is burned on a chat that only has outputs left).
+
+        **Due-ness is judged on the activity read here, never on the candidate scan's** (review
+        I2). The scan's value is minutes old at scale, and a turn that completed since has left no
+        queued task and no live lease for :meth:`_busy` to find — expiring on the stale value
+        would mark the files that turn had just written and erase their bytes. The version read in
+        the same statement is what the save compare-and-sets on, so the decision and the write are
+        anchored to one and the same state of the chat: anything that moves it loses the race
+        loudly and is retried tomorrow.
         """
 
         pointer = await self._store.current(
@@ -199,8 +224,18 @@ class AgentWorkspaceRetentionJob:
         )
         if pointer is None:
             return 0, "skipped"
+        fresh = await self._activity(chat)
+        if fresh is None:
+            return 0, "skipped"
+        version, last_activity = fresh
+        if version != pointer.version:
+            # A turn saved between the two reads: the file list just read is already superseded.
+            return 0, "stale"
         manifest = await self._store.read_manifest(workspace_id=chat.workspace_id, pointer=pointer)
-        entries = tuple(self._maybe_expire(entry, chat=chat, now=now) for entry in manifest.entries)
+        entries = tuple(
+            self._maybe_expire(entry, last_activity=last_activity, now=now)
+            for entry in manifest.entries
+        )
         count = sum(
             1
             for before, after in zip(manifest.entries, entries, strict=True)
@@ -212,7 +247,7 @@ class AgentWorkspaceRetentionJob:
             workspace_id=chat.workspace_id,
             project_id=chat.project_id,
             thread_id=chat.thread_id,
-            expected_version=pointer.version,
+            expected_version=version,
             manifest=SnapshotManifest(entries=entries),
             fence=None,
         )
@@ -225,7 +260,7 @@ class AgentWorkspaceRetentionJob:
                 status=status,
             )
             return 0, "stale"
-        await self._restore_activity(chat, version=pointer.version + 1)
+        await self._restore_activity(chat, at=last_activity, version=version + 1)
         log.info(
             "agent_workspace.retention.expired",
             workspace_id=chat.workspace_id,
@@ -234,7 +269,18 @@ class AgentWorkspaceRetentionJob:
         )
         return count, status
 
-    def _maybe_expire(self, entry: SnapshotEntry, *, chat: _Chat, now: datetime) -> SnapshotEntry:
+    async def _activity(self, chat: _Chat) -> tuple[int, datetime] | None:
+        """This chat's version and newest activity, read together — ``None`` when it is gone."""
+
+        async with self._conn_factory() as conn:
+            row = (
+                await conn.execute(_ACTIVITY, {"ws": chat.workspace_id, "thread": chat.thread_id})
+            ).first()
+        return None if row is None else (int(row[0]), row[1])
+
+    def _maybe_expire(
+        self, entry: SnapshotEntry, *, last_activity: datetime, now: datetime
+    ) -> SnapshotEntry:
         """``entry`` itself when it stays, else a copy stamped expired with a receipt.
 
         An entry saved before Phase 2, or one whose source could not be named, carries no receipt —
@@ -245,16 +291,16 @@ class AgentWorkspaceRetentionJob:
         window = self._windows[entry.tier]
         if entry.expired_at is not None or window is None:
             return entry
-        if chat.last_activity + window > now:
+        if last_activity + window > now:
             return entry
         return replace(entry, expired_at=now, receipt=entry.receipt or UNKNOWN_RECEIPT)
 
-    async def _restore_activity(self, chat: _Chat, *, version: int) -> None:
+    async def _restore_activity(self, chat: _Chat, *, at: datetime, version: int) -> None:
         async with self._conn_factory() as conn:
             await conn.execute(
                 _RESTORE_ACTIVITY,
                 {
-                    "at": chat.last_activity,
+                    "at": at,
                     "ws": chat.workspace_id,
                     "thread": chat.thread_id,
                     "version": version,

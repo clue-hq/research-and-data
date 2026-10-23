@@ -414,6 +414,68 @@ def test_reading_identical_bytes_again_works_after_expiry(tmp_path: Path) -> Non
     _scenario(body, tmp_path)
 
 
+class _TurnLandsFirst(DbWorkspaceSnapshotStore):
+    """The store, with one turn completing the first time the job looks the chat up.
+
+    The candidate scan has already read this chat as cold. By the time ``_expire`` reads it the
+    turn has committed — a finished turn, so no queued task and no live lease: ``_busy`` cannot
+    see it. Everything the job then decides must be decided on what the turn left behind.
+    """
+
+    def __init__(self, *, storage: CountingStorage, turn: Callable[[], Awaitable[None]]) -> None:
+        super().__init__(storage=storage)
+        self._turn = turn
+        self.fired = False
+
+    async def current(self, *, workspace_id: str, thread_id: str):  # type: ignore[no-untyped-def]
+        if not self.fired:
+            self.fired = True
+            await self._turn()
+        return await super().current(workspace_id=workspace_id, thread_id=thread_id)
+
+
+def test_a_turn_that_lands_after_the_scan_keeps_its_brand_new_files(tmp_path: Path) -> None:
+    """The one race that destroys a person's data: due-ness judged on a stale scan (review I2)."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        cold = {"reads/old.json": b"old raw", "outputs/o": b"finished"}
+        fresh = b"the turn's brand-new notes"
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save_bodies(store, ws, cold)
+        await _age(ws, days=8)
+
+        async def turn() -> None:
+            """A whole turn: new rough work saved, the chat's activity stamped now."""
+
+            bodies = {**cold, "scratch/new.md": fresh, "reads/new.json": fresh}
+            await _save(
+                store,
+                ws,
+                [_entry(path, data) for path, data in bodies.items()],
+                bodies,
+                expected=1,
+            )
+
+        racing = _TurnLandsFirst(storage=storage, turn=turn)
+
+        report = await _job(racing).run_once()
+
+        assert racing.fired
+        # The chat is active as of a second ago. Nothing of it may be expired on this pass.
+        assert (report.chats_expired, report.files_expired) == (0, 0)
+        pointer, manifest = await _manifest(store, ws)
+        assert pointer.version == 2
+        assert manifest.expired() == ()
+        # And the bytes the turn just wrote are still there to be read.
+        key = agent_workspace_key(ws, _sha(fresh))
+        assert await storage.exists(key) is True
+        assert key not in storage.deletes
+        for path in ("scratch/new.md", "reads/new.json"):
+            assert await store.read_file(workspace_id=ws, entry=manifest.by_path()[path]) == fresh
+
+    _scenario(body, tmp_path)
+
+
 async def _seed_submission(ws: str, *, requested_at: datetime) -> str:
     """The workspace/project/thread/user chain one ``agent_turn_submission`` needs, and its thread.
 
