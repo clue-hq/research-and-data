@@ -349,12 +349,17 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
     async def _purge(self, keys: tuple[str, ...]) -> None:
         """Phase 2 of erasure: delete the blobs, in a fresh transaction after the one that
         stamped ``erased_at`` committed (``clue_storage.artifacts`` module docstring — storage is
-        never mutated inside the transaction whose rollback would have to undo it)."""
+        never mutated inside the transaction whose rollback would have to undo it).
+
+        ``sweep_expired=False``: this runs on nearly every content-changing turn, and the pass's
+        opening table-wide expiry tombstone is the fleet sweep's work, not a chat's (review I7).
+        Those rows are the orphan sweep's to converge on, as they were before Phase 2.
+        """
 
         if not keys:
             return
         async with self._conn_factory() as conn:
-            await purge_erased_artifacts(conn, self._storage, keys=keys)
+            await purge_erased_artifacts(conn, self._storage, keys=keys, sweep_expired=False)
 
     async def _read_verified(
         self, *, workspace_id: str, keys: Sequence[str], sha256: str, size: int | None

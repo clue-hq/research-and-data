@@ -462,6 +462,7 @@ async def purge_erased_artifacts(
     *,
     keys: tuple[str, ...] | None = None,
     privacy_purged_since: datetime | None = None,
+    sweep_expired: bool = True,
 ) -> PurgeResult:
     """Phase 2 of erasure: physically delete the blobs of erased-but-unpurged rows and stamp
     ``purged_at``. Run in a **fresh transaction after** the transaction that stamped
@@ -478,16 +479,23 @@ async def purge_erased_artifacts(
       :func:`record_artifact` upsert blocks until this commits, then resurrects and re-puts),
       and ``purged_at`` is stamped. ``delete`` is idempotent, so a crash after delete but
       before commit converges on the next pass.
+
+    The pass opens by tombstoning every row whose own ``expires_at`` has passed — table-wide, by
+    design, because that is the converging sweep's job. ``sweep_expired=False`` turns it off for a
+    caller that purges its own keys on a hot path and has no business doing fleet work on other
+    owners' rows (the agent-workspace save, review I7). It changes nothing for the sweep itself:
+    the rows it skips are the ones the next keyless pass tombstones.
     """
     # Expiry was committed with the source. Reads already refuse it, even if a purge rolls back.
-    await conn.execute(
-        text(
-            "UPDATE artifact SET privacy_erased=true, "
-            "erasure_reason=COALESCE(erasure_reason,'retention'), "
-            "erased_at=COALESCE(erased_at,now()), source_url=NULL WHERE "
-            "expires_at<=now() AND purged_at IS NULL"
+    if sweep_expired:
+        await conn.execute(
+            text(
+                "UPDATE artifact SET privacy_erased=true, "
+                "erasure_reason=COALESCE(erasure_reason,'retention'), "
+                "erased_at=COALESCE(erased_at,now()), source_url=NULL WHERE "
+                "expires_at<=now() AND purged_at IS NULL"
+            )
         )
-    )
     where = "erased_at IS NOT NULL AND purged_at IS NULL"
     params: dict[str, object] = {}
     if keys is not None:

@@ -584,6 +584,51 @@ def test_forget_erases_every_file_no_other_chat_holds(tmp_path: Path) -> None:
     _scenario(body, tmp_path)
 
 
+def test_a_chats_save_does_no_fleet_wide_work_on_other_owners_rows(tmp_path: Path) -> None:
+    """Review I7: the purge a save runs is about this chat's keys and nothing else.
+
+    ``purge_erased_artifacts`` opens with an unfiltered ``UPDATE artifact ... WHERE expires_at <=
+    now()``, which the keyless fleet sweep wants and a per-key caller does not. Before Phase 2
+    the function ran from the sweep and the DSAR paths; now a save calls it on almost every
+    content-changing turn, so that statement had moved onto the turn's critical path — a
+    sequential scan of ``artifact``, and the tombstoning of rows belonging to research quality
+    artifacts and ARV2 media (both set ``expires_at``) inside somebody's chat.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save(store, ws, {"scratch/a.md": b"first"}, expected=None)
+        # Another owner's artifact, past its own expiry and not yet swept.
+        someone_else = await _record_legacy(ws, storage, b"a media transcript", "other-owner")
+        async with transaction() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET expires_at = now() - interval '1 second' "
+                    "WHERE storage_key = :k"
+                ),
+                {"k": someone_else},
+            )
+
+        # An ordinary turn: new content, so the previous manifest key is released and purged.
+        status, _ = await _save(store, ws, {"scratch/a.md": b"second"}, expected=1)
+        assert status == "saved"
+
+        async with transaction() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT privacy_erased, erasure_reason, erased_at, purged_at "
+                        "FROM artifact WHERE storage_key = :k"
+                    ),
+                    {"k": someone_else},
+                )
+            ).first()
+        assert row == (False, None, None, None)
+        assert await storage.exists(someone_else)
+
+    _scenario(body, tmp_path)
+
+
 def test_erasure_never_touches_a_key_of_another_shape(tmp_path: Path) -> None:
     """AW-26: a released key outside the agent-workspace area is some other owner's bytes — an
     upload or a Gallery artifact — and neither a new version nor a forget may erase it."""
