@@ -19,9 +19,16 @@ delegation — has no submissions and answers with its own column.
 
 **A busy chat is skipped, never raced.** A queued or claimed ``agent_turn`` task for the thread's
 work id, or a live ``work_lease`` on it, means a turn is about to save or is saving; the chat is
-counted as skipped and left for tomorrow. The save itself still carries ``expected_version``, so a
-turn that slips in between the read and the write wins and the job records a ``stale`` and moves
-on — it never retries inside the run.
+counted as skipped and left for tomorrow. That check is a courtesy, not the guarantee: a turn can
+complete between the candidate scan and the expiry and leave nothing for it to see. The guarantee
+is that the decision and the write are anchored to one read — the chat's activity and version
+taken together, as late as possible, with the save compare-and-setting on that same version. The
+job never acts on a chat whose state has moved since it looked; it records a ``stale`` and leaves
+it for tomorrow, and it never retries inside the run.
+
+**The job's own save is not activity.** It passes ``activity=False``, so the version moves and the
+chat's ``last_activity_at`` stays exactly where the chat left it. Stamping it would restart the
+48-hour clock every pass and the 7-day window would never elapse.
 """
 
 from __future__ import annotations
@@ -117,15 +124,6 @@ _BUSY = text(
             SELECT 1 FROM work_lease WHERE work_id = :work_id AND expires_at > :now
            )
     """
-)
-
-# A save stamps ``last_activity_at = now()`` — right for a turn, wrong for this job: the chat has
-# had no activity, and letting the raw expiry restart the clock would hold the working files two
-# days past their window. The version guard is what makes putting it back safe: if a turn saved
-# between the store's commit and this statement, the version has moved and nothing is written.
-_RESTORE_ACTIVITY = text(
-    "UPDATE agent_workspace_snapshot SET last_activity_at = :at "
-    "WHERE workspace_id = :ws AND thread_id = :thread AND version = :version"
 )
 
 
@@ -312,6 +310,11 @@ class AgentWorkspaceRetentionJob:
             expected_version=version,
             manifest=SnapshotManifest(entries=entries),
             fence=None,
+            # Housekeeping on a cold chat is not the chat being used: the version moves and the
+            # activity stamp stays exactly where the chat left it. Stamping it and putting the
+            # old value back afterwards would revert a ``touch()`` landing in between (I3), and
+            # not stamping at all would restart the 48-hour clock every pass.
+            activity=False,
         )
         if status != "saved":
             # A turn beat us to the version record. Nothing was expired; tomorrow's pass retries.
@@ -322,7 +325,6 @@ class AgentWorkspaceRetentionJob:
                 status=status,
             )
             return 0, "stale"
-        await self._restore_activity(chat, at=last_activity, version=version + 1)
         log.info(
             "agent_workspace.retention.expired",
             workspace_id=chat.workspace_id,
@@ -356,18 +358,6 @@ class AgentWorkspaceRetentionJob:
         if last_activity + window > now:
             return entry
         return replace(entry, expired_at=now, receipt=entry.receipt or UNKNOWN_RECEIPT)
-
-    async def _restore_activity(self, chat: _Chat, *, at: datetime, version: int) -> None:
-        async with self._conn_factory() as conn:
-            await conn.execute(
-                _RESTORE_ACTIVITY,
-                {
-                    "at": at,
-                    "ws": chat.workspace_id,
-                    "thread": chat.thread_id,
-                    "version": version,
-                },
-            )
 
 
 async def run_retention_if_due(

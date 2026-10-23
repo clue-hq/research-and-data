@@ -231,6 +231,11 @@ class WorkspaceSnapshotStore(Protocol):
     the ones they released that no other snapshot still holds. Nothing outside that area is ever
     erased — bytes a person can see (uploads, Gallery artifacts, evidence snapshots) are some
     other owner's, however exactly they match a chat's file (ruling AW-26).
+
+    A save is the chat being used, so it stamps the chat's last activity — except the expiry
+    job's, which passes ``activity=False``. A version the job publishes is housekeeping on a cold
+    chat: counting it as use would restart the 48-hour clock every pass and the 7-day window
+    would never elapse at all.
     """
 
     async def current(self, *, workspace_id: str, thread_id: str) -> SnapshotPointer | None: ...
@@ -254,6 +259,7 @@ class WorkspaceSnapshotStore(Protocol):
         expected_version: int | None,
         manifest: SnapshotManifest,
         fence: LeaseFence | None,
+        activity: bool = True,
     ) -> tuple[SaveStatus, SnapshotPointer | None]: ...
 
     async def touch(self, *, workspace_id: str, thread_id: str) -> None: ...

@@ -82,6 +82,17 @@ _ADVANCE = text(
     "manifest_sha256 = :sha, last_activity_at = now(), updated_at = now() "
     "WHERE workspace_id = :ws AND thread_id = :thread AND version = :expected RETURNING version"
 )
+#: The same advance for a save that is **not** the chat being used — today only the expiry job's
+#: (``activity=False``). It leaves ``last_activity_at`` exactly as it found it, which is the only
+#: way to leave it: a save that stamps ``now()`` and a bookkeeping statement that puts the old
+#: value back cannot tell a concurrent ``touch()`` — a turn that finished having changed no files,
+#: and the only activity signal a research run or a delegation has — from its own stamp, and would
+#: revert it (review I3).
+_ADVANCE_QUIET = text(
+    "UPDATE agent_workspace_snapshot SET version = version + 1, manifest_artifact_key = :key, "
+    "manifest_sha256 = :sha, updated_at = now() "
+    "WHERE workspace_id = :ws AND thread_id = :thread AND version = :expected RETURNING version"
+)
 _TOUCH = text(
     "UPDATE agent_workspace_snapshot SET last_activity_at = now() "
     "WHERE workspace_id = :ws AND thread_id = :thread"
@@ -177,6 +188,7 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
         expected_version: int | None,
         manifest: SnapshotManifest,
         fence: LeaseFence | None,
+        activity: bool = True,
     ) -> tuple[SaveStatus, SnapshotPointer | None]:
         body = encode_manifest(manifest)
         manifest_sha = hashlib.sha256(body).hexdigest()
@@ -203,7 +215,10 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
                 "sha": manifest_sha,
                 "expected": expected_version,
             }
-            statement = _INSERT_FIRST if expected_version is None else _ADVANCE
+            if expected_version is None:
+                statement = _INSERT_FIRST
+            else:
+                statement = _ADVANCE if activity else _ADVANCE_QUIET
             row = (await conn.execute(statement, params)).first()
             if row is None:
                 return "stale", None

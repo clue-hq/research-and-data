@@ -476,6 +476,41 @@ def test_the_scan_walks_every_cold_chat_one_bounded_page_at_a_time(tmp_path: Pat
     _scenario(body, tmp_path)
 
 
+class _TouchesAfterSaving(DbWorkspaceSnapshotStore):
+    """A turn that changed no files finishing just after the job's save.
+
+    ``touch()`` is what such a turn calls: it moves ``last_activity_at`` and leaves the version
+    alone, so a version guard cannot see it.
+    """
+
+    async def save(self, **kwargs):  # type: ignore[no-untyped-def,override]
+        result = await super().save(**kwargs)
+        await self.touch(workspace_id=kwargs["workspace_id"], thread_id=kwargs["thread_id"])
+        return result
+
+
+def test_a_turn_touching_the_chat_is_not_stamped_back_to_cold(tmp_path: Path) -> None:
+    """Review I3: the job's save is not activity, and it must not erase somebody else's.
+
+    A research run or a delegation has no submissions, so the snapshot row's own stamp is the
+    only activity signal it has — and ``_BUSY`` cannot see either of them. Reverting the stamp
+    there costs the thread a whole window.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = _TouchesAfterSaving(storage=storage)
+        await _save_bodies(store, ws, {"reads/r.json": b"raw bytes", "outputs/o": b"finished"})
+        aged = await _age(ws, days=3)
+
+        report = await _job(store).run_once()
+
+        assert report.files_expired == 1
+        # The touch happened; the chat is warm, and the job's bookkeeping may not say otherwise.
+        assert await _last_activity(ws) > aged
+
+    _scenario(body, tmp_path)
+
+
 class _TurnLandsFirst(DbWorkspaceSnapshotStore):
     """The store, with one turn completing the first time the job looks the chat up.
 
