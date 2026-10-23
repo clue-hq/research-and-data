@@ -83,9 +83,9 @@ _ACTIVITY_EXPR = """
 # any size is read in bounded bites and the pass is restartable rather than one huge result set.
 _CANDIDATES = text(
     f"""
-    SELECT workspace_id, thread_id, project_id, version, last_activity
+    SELECT workspace_id, thread_id, project_id, last_activity
     FROM (
-        SELECT s.workspace_id, s.thread_id, s.project_id, s.version,
+        SELECT s.workspace_id, s.thread_id, s.project_id,
                {_ACTIVITY_EXPR} AS last_activity
         FROM agent_workspace_snapshot s
     ) AS chat
@@ -143,11 +143,17 @@ class RetentionReport:
 
 @dataclass(frozen=True, slots=True)
 class _Chat:
+    """Which chat the scan found — and deliberately nothing about its state.
+
+    The scan's version and activity are its ordering key and its cutoff test, and they are
+    minutes old by the time the chat is reached. Carrying them here is how the expiry came to be
+    decided on a stale reading of the world (review I2), so they are not carried: ``_expire``
+    reads the chat's state itself.
+    """
+
     workspace_id: str
     thread_id: str
     project_id: str
-    version: int
-    last_activity: datetime
 
 
 class AgentWorkspaceRetentionJob:
@@ -253,8 +259,6 @@ class AgentWorkspaceRetentionJob:
                     workspace_id=str(row["workspace_id"]),
                     thread_id=str(row["thread_id"]),
                     project_id=str(row["project_id"]),
-                    version=int(row["version"]),
-                    last_activity=row["last_activity"],
                 )
             if len(rows) < self._page_size:
                 return
