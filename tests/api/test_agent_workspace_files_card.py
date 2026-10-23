@@ -92,9 +92,12 @@ def test_card_lists_live_files_with_age_and_expired_files_with_receipts() -> Non
     assert expired[0]["receipt"]["read_again"] == (
         "Call run_crm_action again with the same parameters."
     )
-    # Founder-reviewed wording (Task 8): the key is part of the contract from the start, so the
-    # agent-facing sentence is one edit away and never a schema change.
-    assert "note" in card
+    # The founder-approved sentence of 2026-10-23, verbatim: agent-facing text is reviewed, so a
+    # careless edit must fail the build rather than reach an agent.
+    assert card["note"] == (
+        "Files are deleted by age: what a tool pulled down after 48 hours, your own working "
+        "files after 7 days. outputs/ is kept for the life of the chat."
+    )
 
 
 def test_card_bounds_the_live_list_and_says_what_was_left_out() -> None:

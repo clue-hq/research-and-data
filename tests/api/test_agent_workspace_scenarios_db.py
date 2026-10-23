@@ -473,6 +473,12 @@ def test_5_raw_expiry_removes_bytes_keeps_receipt_and_the_next_turn_sees_it(
                     "details": {"action": "list_contacts", "path": "reads/r.json"},
                     "read_again": receipts.read_again,
                 }
+                # And the one line that explains all of this to the agent, in the words the
+                # founder approved on 2026-10-23 and no others (ledger T7-c).
+                assert card["note"] == (
+                    "Files are deleted by age: what a tool pulled down after 48 hours, your own "
+                    "working files after 7 days. outputs/ is kept for the life of the chat."
+                )
                 # WS-26: the agent reads the same thing again and saves it. The erased row is
                 # resurrected and the blob put back — an erasure must never poison a key.
                 _write(lease, {"reads/r2.json": raw})
