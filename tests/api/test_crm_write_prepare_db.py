@@ -1854,7 +1854,7 @@ async def _researched(conn: Any, seeded: Any) -> Any:
         "vari_email",
         world.vari,
         "core.work_email",
-        {"address": "vari@zafran.io", "status": "catch_all_valid"},
+        {"address": "vari@zafran.io", "status": "unverified"},
     )
     return world
 
@@ -1926,7 +1926,7 @@ def test_an_email_the_agent_typed_is_refused_but_the_rest_proposes(tmp_path: Pat
     _run(tmp_path, "typedemail", body)
 
 
-def test_a_catch_all_email_is_refused_with_its_reason(tmp_path: Path) -> None:
+def test_an_unverified_email_is_refused_with_its_reason(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         world = await _researched(conn, seeded)
         batch = await _prepare_batch(
@@ -1942,7 +1942,7 @@ def test_a_catch_all_email_is_refused_with_its_reason(tmp_path: Path) -> None:
             ],
         )
         assert _refusal(batch) == [(0, "crm_personal_data_not_allowed")]
-        assert "not verified (catch_all_valid)" in batch.refused[0].message
+        assert "not verified (unverified)" in batch.refused[0].message
         assert "vari@zafran.io" not in batch.refused[0].message
         assert batch.changes == []
 

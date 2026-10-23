@@ -11,10 +11,10 @@ plain words.
 
 The person-data gate (R-12.5): a value comes only from a live claim that the read gate would serve
 (:func:`~clue_api.arv2.read_tools.claim_gate_reason`: not sensitive, not marked unsafe for
-outreach) and whose identity binding is not ``weak``. A work email is offered only when its
-verdict is ``verified_smtp`` (R-12.2). The LinkedIn URL comes from the contact row, and only when
-none of the contact's claims read here is a weak identity match. Phone numbers, interests, posts
-and ``contact.facet.*`` are never read.
+outreach) and whose identity binding is not ``weak``. A work email is offered only when the
+provider graded it ``verified_smtp`` or ``catch_all_valid`` (R-12.10). The LinkedIn URL comes from
+the contact row, and only when none of the contact's claims read here is a weak identity match.
+Phone numbers, interests, posts and ``contact.facet.*`` are never read.
 
 Only the latest **live** claim of a field is considered. A superseded or ``rejected`` claim is not
 live: it is dropped before the latest is picked, so it is never offered and never hides an older
@@ -73,8 +73,9 @@ _LABELS = {
     EMAIL_KEY: "email",
 }
 
-#: The only work-email verdict Clue writes (R-12.2).
-VERIFIED_EMAIL = "verified_smtp"
+#: The work-email verdicts Clue writes (R-12.10): the provider's two graded "valid" answers.
+#: ``unverified``, ``unknown`` and ``invalid`` are never written.
+WRITABLE_EMAIL_STATUSES = frozenset({"verified_smtp", "catch_all_valid"})
 
 FitBand = Literal["high", "medium", "low"]
 _BAND: dict[str, FitBand] = {"High": "high", "Medium": "medium", "Low": "low"}
@@ -144,7 +145,7 @@ class TargetContact:
     buying_role: TargetValue | None
     work_email: TargetValue | None
     linkedin_url: TargetValue | None
-    #: Each field Clue holds but may not offer, and why ("email: not verified (catch_all_valid)").
+    #: Each field Clue holds but may not offer, and why ("email: not verified (unverified)").
     withheld: tuple[str, ...]
     crm_record_id: str | None
 
@@ -490,7 +491,7 @@ async def _committee_contacts(
             value = email_claim.value_json
             address = _text(value, inner_key="address")
             status = value.get("status") if isinstance(value, Mapping) else None
-            if address is not None and status == VERIFIED_EMAIL:
+            if address is not None and status in WRITABLE_EMAIL_STATUSES:
                 work_email = TargetValue(address, (UUID(str(email_claim.id)),))
             elif address is not None:
                 withheld.append(f"email: not verified ({status or 'no verification recorded'})")

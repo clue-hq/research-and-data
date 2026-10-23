@@ -246,11 +246,14 @@ def test_accounts_carry_their_project_fit_and_tier(tmp_path: Path) -> None:
 
 
 @_db
-def test_only_a_verified_smtp_email_is_offered(tmp_path: Path) -> None:
+def test_only_a_graded_valid_email_is_offered(tmp_path: Path) -> None:
+    """R-12.10: ``verified_smtp`` and ``catch_all_valid`` are offered; the rest is held back."""
+
     async def body(conn: Any, world: _World, seeded: Any) -> None:
         account = await world.account("Zafran Security", "zafran.io")
         nick = await world.person(account, "Nick Fisher")
         vari = await world.person(account, "Vari Bindra")
+        cath = await world.person(account, "Cath Allan")
         await world.claim("nick_persona", nick, "contact.persona", "champion")
         verified = await world.claim(
             "nick_email",
@@ -263,7 +266,14 @@ def test_only_a_verified_smtp_email_is_offered(tmp_path: Path) -> None:
             "vari_email",
             vari,
             "core.work_email",
-            {"address": "vari@zafran.io", "status": "catch_all_valid"},
+            {"address": "vari@zafran.io", "status": "unverified"},
+        )
+        await world.claim("cath_persona", cath, "contact.persona", "user")
+        catch_all = await world.claim(
+            "cath_email",
+            cath,
+            "core.work_email",
+            {"address": "cath@zafran.io", "status": "catch_all_valid"},
         )
 
         page = await _targets(world)
@@ -271,8 +281,11 @@ def test_only_a_verified_smtp_email_is_offered(tmp_path: Path) -> None:
         assert by_last["Fisher"].work_email is not None
         assert by_last["Fisher"].work_email.value == "nick@zafran.io"
         assert by_last["Fisher"].work_email.claim_ids == (verified,)
+        assert by_last["Allan"].work_email is not None
+        assert by_last["Allan"].work_email.value == "cath@zafran.io"
+        assert by_last["Allan"].work_email.claim_ids == (catch_all,)
         assert by_last["Bindra"].work_email is None
-        assert "email: not verified (catch_all_valid)" in by_last["Bindra"].withheld
+        assert "email: not verified (unverified)" in by_last["Bindra"].withheld
 
     _run(tmp_path, "email", body)
 
@@ -594,7 +607,7 @@ def test_a_superseded_email_is_not_offered(tmp_path: Path) -> None:
             "replacement",
             nick,
             "core.work_email",
-            {"address": "nick@zafran.io", "status": "catch_all_valid"},
+            {"address": "nick@zafran.io", "status": "unverified"},
         )
         stale = await world.claim(
             "stale",
@@ -611,7 +624,7 @@ def test_a_superseded_email_is_not_offered(tmp_path: Path) -> None:
         )
         contact = (await _targets(world)).contacts[0]
         assert contact.work_email is None
-        assert contact.withheld == ("email: not verified (catch_all_valid)",)
+        assert contact.withheld == ("email: not verified (unverified)",)
         assert "old-nick@zafran.io" not in repr(contact)
 
     _run(tmp_path, "superseded", body)
@@ -620,8 +633,8 @@ def test_a_superseded_email_is_not_offered(tmp_path: Path) -> None:
 @_db
 def test_the_newest_work_email_wins(tmp_path: Path) -> None:
     """The newest live ``core.work_email`` claim is the mailbox's current verdict (the screens read
-    it the same way): a newer catch-all hides an older verified address, and a newer verified
-    address beats an older catch-all."""
+    it the same way): a newer unverified address hides an older verified one, and a newer verified
+    address beats an older unverified one."""
 
     async def body(conn: Any, world: _World, seeded: Any) -> None:
         account = await world.account("Zafran Security", "zafran.io")
@@ -637,13 +650,13 @@ def test_the_newest_work_email_wins(tmp_path: Path) -> None:
             "demoted_new",
             demoted,
             "core.work_email",
-            {"address": "dee@zafran.io", "status": "catch_all_valid"},
+            {"address": "dee@zafran.io", "status": "unverified"},
         )
         await world.claim(
             "promoted_old",
             promoted,
             "core.work_email",
-            {"address": "pro@zafran.io", "status": "catch_all_valid"},
+            {"address": "pro@zafran.io", "status": "unverified"},
         )
         newest = await world.claim(
             "promoted_new",
@@ -653,7 +666,7 @@ def test_the_newest_work_email_wins(tmp_path: Path) -> None:
         )
         by_first = {c.first_name.value: c for c in (await _targets(world)).contacts if c.first_name}
         assert by_first["Dee"].work_email is None
-        assert by_first["Dee"].withheld == ("email: not verified (catch_all_valid)",)
+        assert by_first["Dee"].withheld == ("email: not verified (unverified)",)
         email = by_first["Pro"].work_email
         assert email is not None and email.claim_ids == (newest,)
 

@@ -421,8 +421,9 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
 - **R-12.1 (2026-10-23)** **HubSpot ICP tier comes from Clue's fit bands:** High → Tier 1, Medium →
   Tier 2, Low → Tier 3, using the same thresholds the screens use (0.70 / 0.40); an account with no
   fit gets no tier change. (ARV2 has no tier of its own.)
-- **R-12.2 (2026-10-23)** **"Verified" email means `verified_smtp` only.** A catch-all, unknown or
-  unverified address is never written, and a person without a verified email is not created (R-8.7).
+- ~~**R-12.2 (2026-10-23)** **"Verified" email means `verified_smtp` only.** A catch-all, unknown or
+  unverified address is never written, and a person without a verified email is not created (R-8.7).~~
+  *Superseded by R-12.10.*
 - **R-12.3 (2026-10-23)** **What goes on the list:** HubSpot — one list of the target **companies** per
   project ("Clue: <project>"); Salesforce — one **campaign** per project holding the committee
   **contacts** Clue wrote (Salesforce campaigns cannot hold accounts).
@@ -449,3 +450,9 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
 - **R-12.9 (2026-10-23)** **Clue creates its Salesforce campaigns active, with status "In Progress".** A
   target list is in use from the moment it is created; an inactive "Planned" campaign is hidden
   from most campaign reports and pickers.
+- **R-12.10 (2026-10-23, replaces R-12.2)** **"Verified" email, for now, means the provider graded it
+  valid: `verified_smtp` or `catch_all_valid`.** A catch-all address (the company's mail server
+  accepts any address, so the mailbox itself is unproven) is written like a verified one — the same
+  two verdicts the account and contact screens already show. `unverified` (Exa Websets, Sumble: no
+  check), `unknown` and `invalid` are never written, and a person with none of the two is not
+  created (R-8.7). "For now": revisit if catch-all addresses bounce in practice.
