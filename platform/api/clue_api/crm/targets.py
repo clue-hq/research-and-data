@@ -163,10 +163,26 @@ class ProjectTargets:
     contacts_note: str | None = None
 
 
+#: One of these leading a name is dropped (case ignored); only the first (R-12.12).
+_HONORIFICS = frozenset(
+    {"dr.", "dr", "mr.", "mr", "mrs.", "mrs", "ms.", "ms", "miss", "prof.", "prof", "rev.", "rev"}
+)
+#: These ending a name are dropped (case ignored). Jr., Sr., II, III and IV stay in the last name.
+_DEGREES = frozenset({"phd", "ph.d.", "md", "m.d."})
+
+
 def split_name(full_name: str) -> tuple[str | None, str]:
-    """One word is a last name with no first name; otherwise the first word is the first name
-    and the rest is the last name."""
-    words = full_name.split()
+    """The name cleaned (R-12.12: everything from the first comma, one leading honorific and
+    trailing degrees dropped), then split: one word is a last name with no first name; otherwise
+    the first word is the first name and the rest is the last name. A name with nothing left
+    after cleaning ("Dr.") is split as it was written, never into an empty one."""
+    words = full_name.split(",", 1)[0].split()
+    if words and words[0].lower() in _HONORIFICS:
+        words = words[1:]
+    while words and words[-1].lower() in _DEGREES:
+        words = words[:-1]
+    if not words:
+        words = full_name.split()
     if len(words) <= 1:
         return None, " ".join(words)
     return words[0], " ".join(words[1:])

@@ -200,7 +200,12 @@ test("a list Clue creates and a company list are worded by what they hold (Phase
           scope_key: "kind:list_create",
           always_allow: `creating Clue ${crm === "hubspot" ? "lists" : "campaigns"}`,
         },
-        { ...base, object: "company", list_ref: "17", title: 'Add 2 companies to the list "17"' },
+        {
+          ...base,
+          object: "company",
+          list_ref: "Clue: Conduit AI hotel operators",
+          title: 'Add 2 companies to the list "Clue: Conduit AI hotel operators"',
+        },
       ],
     });
   const hubspot = create("hubspot");
@@ -223,9 +228,52 @@ test("a list Clue creates and a company list are worded by what they hold (Phase
   // A HubSpot company list holds companies, not contacts.
   assert.equal(
     crmWriteDoneLine("hubspot", hubspot.groups[1]!, two),
-    'Added 2 companies to the list "17"',
+    'Added 2 companies to the list "Clue: Conduit AI hotel operators"',
   );
   assert.equal(crmWriteRecordsCaption(hubspot.groups[1]!), "2 companies");
+});
+
+test("a card names lists, campaigns and companies by the names the server sends (R-12.13)", () => {
+  const base = snapshot("salesforce").groups[0]!;
+  const model = crmWriteCard({
+    ...snapshot("salesforce"),
+    groups: [
+      {
+        ...base,
+        list_ref: "Clue: US employer benefits",
+        title: 'Add 4 contacts to the campaign "Clue: US employer benefits"',
+        count: 4,
+      },
+      {
+        ...snapshot("hubspot").groups[1]!,
+        object: "contact",
+        field: "associatedcompanyid",
+        field_label: "Primary Associated Company ID",
+        title: 'Set "Primary Associated Company ID" on 1 contact',
+        count: 1,
+        value_summary: "Empty today → Atrium Hospitality (1)",
+        records: [
+          {
+            write_id: W(7),
+            record_ref: "201",
+            name: "Holly Herrera",
+            before: null,
+            after: "Atrium Hospitality",
+          },
+        ],
+      },
+    ],
+  });
+  assert.ok(model);
+  const [campaign, company] = model.groups;
+  assert.equal(campaign!.title, 'Add 4 contacts to the campaign "Clue: US employer benefits"');
+  assert.equal(
+    crmWriteDoneLine("salesforce", campaign!, { chosen: 4, done: 4, failed: 0, skipped: 0, pending: 0 }),
+    'Added 4 contacts to the campaign "Clue: US employer benefits"',
+  );
+  assert.equal(company!.title, 'Set "Primary Associated Company ID" on 1 contact');
+  assert.equal(company!.valueSummary, "Empty today → Atrium Hospitality (1)");
+  assert.ok(!JSON.stringify(model).includes('"17"'));
 });
 
 test("a list create that did not happen never reads as created", () => {

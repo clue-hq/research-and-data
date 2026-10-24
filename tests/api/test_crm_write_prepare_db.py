@@ -98,6 +98,7 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
     ],
     "contacts": [
         {"name": "email", "label": "Email", "type": "string", "fieldType": "text"},
+        {"name": "work_email", "label": "Work email", "type": "string", "fieldType": "text"},
         {"name": "jobtitle", "label": "Job title", "type": "string", "fieldType": "text"},
         {"name": "firstname", "label": "First name", "type": "string", "fieldType": "text"},
         {"name": "lastname", "label": "Last name", "type": "string", "fieldType": "text"},
@@ -632,7 +633,7 @@ def test_the_card_snapshot_groups_by_action_and_field_with_counts_and_lists_over
         assert card["description"] == 'For "Q4 hotel groups". Nothing is sent until you allow it.'
         lists, tiers = card["groups"]
         assert lists["count"] == 48 and lists["value_summary"] is None
-        assert lists["title"] == 'Add 48 contacts to the list "9"'
+        assert lists["title"] == 'Add 48 contacts to the list "List 9"'
         assert lists["reason"] == "the buying committees found for the 12 accounts"
         assert tiers["count"] == 12 and tiers["title"] == 'Set "ICP tier" on 12 companies'
         assert tiers["value_summary"] == "Empty today → Tier 1 (5), Tier 2 (7)"
@@ -1603,7 +1604,7 @@ def test_company_list_membership_parses_companies(tmp_path: Path) -> None:
 
         card = card_snapshot([company], provider="hubspot", project_name="Q4")
         (group,) = card["groups"]
-        assert group["title"] == 'Add 1 company to the list "17"'
+        assert group["title"] == 'Add 1 company to the list "Clue: Q4 hotel groups"'
         assert group["object"] == "company"
         # R-12.8: one scope for every list and campaign add, worded for all of them.
         assert group["always_allow"] == "adding records to Clue lists and campaigns"
@@ -2933,3 +2934,240 @@ def test_two_creates_of_one_person_by_email_and_work_email_are_refused(tmp_path:
         assert "proposed twice in this batch" in str(refused.value)
 
     _run(tmp_path, "twiceworkemail", body)
+
+
+# --- Task 11: clean names, readable card labels (R-12.12, R-12.13) ---------------------------
+
+
+async def _atrium(conn: Any, seeded: Any) -> Any:
+    """Atrium Hospitality in this project with one researched person, stored under the name the
+    research found her by: "Dr. Holly Herrera" (verified email)."""
+    world = await _researched(conn, seeded)
+    world.atrium = await world.account("Atrium Hospitality", "atriumhospitality.com")
+    world.holly = await world.person(world.atrium, "Dr. Holly Herrera")
+    await world.claim(
+        "holly_email",
+        world.holly,
+        "core.work_email",
+        {"address": "holly@atriumhospitality.com", "status": "verified_smtp"},
+    )
+    return world
+
+
+def test_a_person_name_is_compared_as_clue_cleans_it(tmp_path: Path) -> None:
+    """R-12.12 (L-5): "Dr. Holly Herrera" is first name Holly, last name Herrera."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _atrium(conn, seeded)
+        email = {"email": "holly@atriumhospitality.com"}
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_person(
+                    {"firstname": "Dr.", "lastname": "Holly Herrera", **email}, world.holly
+                )
+            ],
+        )
+        assert _refusal(batch) == [(0, "crm_personal_data_not_allowed")]
+        assert "not what Clue researched" in batch.refused[0].message
+        (created,) = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [_create_person({"firstname": "Holly", "lastname": "Herrera", **email}, world.holly)],
+        )
+        assert (created.parsed.fields["firstname"], created.parsed.fields["lastname"]) == (
+            "Holly",
+            "Herrera",
+        )
+
+    _run(tmp_path, "cleanname", body)
+
+
+def test_a_card_names_a_kept_list_by_its_name(tmp_path: Path) -> None:
+    """R-12.13 (L-6): never 'list "17"' when Clue keeps the list under a name."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _keep_list(conn, seeded, connection, "17", "Clue: Conduit AI hotel operators")
+        records = [str(101 + i) for i in range(10)]
+        prepared = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [_add_to_list(record, "17") for record in records],
+        )
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["title"] == 'Add 10 companies to the list "Clue: Conduit AI hotel operators"'
+        assert group["list_ref"] == "Clue: Conduit AI hotel operators"
+        # What is sent still names the list by its id.
+        assert {c.arguments["list_id"] for c in prepared} == {"17"}
+
+    _run(tmp_path, "listname", body)
+
+
+def test_a_card_names_a_kept_campaign_by_its_name(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _keep_list(conn, seeded, connection, "701A", "Clue: US employer benefits", "contact")
+        gateway = _FakeCrm()
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                    {"campaign_id": "701A", "contact_id": contact},
+                    "committee",
+                )
+                for contact in ("003A", "003B", "003C", "003D")
+            ],
+            _FakeBudget(gateway),
+        )
+        card = card_snapshot(prepared, provider="salesforce", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["title"] == 'Add 4 contacts to the campaign "Clue: US employer benefits"'
+
+    _run(tmp_path, "campaignname", body, provider="salesforce")
+
+
+def test_a_company_id_value_is_shown_by_the_company_name(tmp_path: Path) -> None:
+    """R-12.13: a company link shows the company Clue knows (its record link, or a create on the
+    same card); what is stored and sent stays the id."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _atrium(conn, seeded)
+        await _link(conn, seeded, connection, "company", "501", world.atrium)
+        gateway = _FakeCrm(
+            records={"201": {"email": "holly@atriumhospitality.com", "firstname": "Holly"}}
+        )
+        (change,) = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _contact_update(
+                    "201", {"associatedcompanyid": "501"}, clue_entity_id=str(world.holly)
+                )
+            ],
+        )
+        assert change.after == "501" and change.arguments["inputs"][0]["properties"] == {
+            "associatedcompanyid": "501"
+        }
+        card = card_snapshot([change], provider="hubspot", project_name="Q4")
+        (group,) = card["groups"]
+        assert group["title"] == 'Set "Primary Associated Company ID" on 1 contact'
+        assert [r["after"] for r in group["records"]] == ["Atrium Hospitality"]
+        assert group["value_summary"] == "Empty today → Atrium Hospitality (1)"
+
+    _run(tmp_path, "companyname", body)
+
+
+def test_a_new_persons_company_created_on_the_card_is_shown_by_its_name(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        prepared = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_company("Zafran Security", "zafran.io", world.zafran),
+                _linked_person(_NICK, "new:company:zafran.io", world.nick),
+            ],
+        )
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+        group = next(g for g in card["groups"] if g["kind"] == "create_contact")
+        (record,) = group["records"]
+        assert record["after"]["associatedcompanyid"] == "Zafran Security"
+        person = next(c for c in prepared if c.spec.slug == "HUBSPOT_CREATE_CONTACT")
+        assert person.parsed.fields["associatedcompanyid"] == "new:company:zafran.io"
+
+    _run(tmp_path, "newcompanyname", body)
+
+
+# --- Task 11 controller rulings: (a) no create of a company Clue knows in the CRM; (b) find a
+# work_email-only person by that email ---------------------------------------------------------
+
+
+def test_a_create_of_an_account_clue_knows_in_the_crm_is_refused_with_what_uses_it(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        gateway = _FakeCrm()
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                _create_company("Zafran Security", "zafran.io", world.zafran),
+                _add_to_new("new:company:zafran.io"),
+            ],
+        )
+        assert _refusal(batch) == [(1, "crm_write_not_parsable"), (2, "crm_write_not_parsable")]
+        message = batch.refused[0].message
+        assert "already in HubSpot as 101" in message and "Update that record" in message
+        assert [c.parsed.change_kind(c.spec) for c in batch.changes] == ["list_create"]
+        assert not any(slug == "HUBSPOT_SEARCH_COMPANIES" for slug, _ in gateway.calls)
+
+    _run(tmp_path, "knowncreate", body)
+
+
+def test_a_salesforce_create_of_an_account_clue_knows_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "account", "001AAA", world.zafran)
+        gateway = _FakeCrm()
+        change = _create_account("Zafran Security", "https://zafran.io")
+        change = ProposedChange(
+            change.slug, change.arguments, change.reason, clue_entity_id=str(world.zafran)
+        )
+        batch = await _prepare_batch(
+            conn, gateway, connection, proposal_id, [change], _FakeBudget(gateway)
+        )
+        assert _refusal(batch) == [(0, "crm_write_not_parsable")]
+        assert "already in Salesforce as 001AAA" in batch.refused[0].message
+
+    _run(tmp_path, "knowncreatesf", body, provider="salesforce")
+
+
+def test_a_hubspot_person_create_with_only_a_work_email_is_found_by_it(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(
+            records={"301": {"email": "nick@zafran.io", "firstname": "Nick", "lastname": None}}
+        )
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _create_person(
+                    {"firstname": "Nick", "lastname": "Fisher", "work_email": "Nick@Zafran.io "},
+                    world.nick,
+                )
+            ],
+        )
+        search = next(a for s, a in gateway.calls if s == "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA")
+        assert search["filterGroups"][0]["filters"][0] == {
+            "propertyName": "email",
+            "operator": "EQ",
+            "value": "nick@zafran.io",
+        }
+        # Found: the create becomes an update of record 301.
+        assert {c.parsed.record_ref for c in prepared} == {"301"}
+        assert {c.field for c in prepared} == {"lastname", "work_email"}
+
+    _run(tmp_path, "workemailfind", body)

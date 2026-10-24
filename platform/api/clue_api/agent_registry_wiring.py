@@ -304,7 +304,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `crm-writing` v3 (one card can use the records it creates: `new:company:<domain>` /
     # `new:contact:<email>`), `stage0-interview@v52` (v51 with its manual paths repointed),
     # `manual-*@v25` and recipe 39. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v79",
+    # v80 (2026-10-24, Phase 3 Task 11 / R-12.14): v79's surface unchanged; `stage0-interview@v53`
+    # (v52 plus one passage: a message Clue wrote is never recorded as the person's words, and its
+    # manual paths repointed), `manual-*@v26` and recipe 40. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v80",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

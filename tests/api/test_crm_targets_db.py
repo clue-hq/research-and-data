@@ -76,6 +76,27 @@ def test_split_name_handles_one_and_many_words() -> None:
     assert split_name("Mary Ann van der Berg") == ("Mary", "Ann van der Berg")
 
 
+@pytest.mark.parametrize(
+    ("full_name", "expected"),
+    [
+        # R-12.12 (live check L-5): a name is cleaned before it is split.
+        ("Dr. Holly Herrera", ("Holly", "Herrera")),
+        ("Bethany Maciel, MBA, SHRM-CP", ("Bethany", "Maciel")),
+        ("John Smith Jr.", ("John", "Smith Jr.")),
+        ("Jane Doe PhD", ("Jane", "Doe")),
+        ("Madonna", (None, "Madonna")),
+        ("Dr.", (None, "Dr.")),  # nothing left: the raw name, never an empty one
+        ("prof Ana Ruiz M.D.", ("Ana", "Ruiz")),
+        ("Mrs Ann Lee III", ("Ann", "Lee III")),
+        ("Dr. Mr. Bean", ("Mr.", "Bean")),  # only one leading honorific is dropped
+    ],
+)
+def test_split_name_cleans_honorifics_degrees_and_credentials(
+    full_name: str, expected: tuple[str | None, str]
+) -> None:
+    assert split_name(full_name) == expected
+
+
 def test_buying_roles_are_hubspots_own_values() -> None:
     assert hubspot_buying_role("champion") == "CHAMPION"
     assert hubspot_buying_role("economic_buyer") == "BUDGET_HOLDER"

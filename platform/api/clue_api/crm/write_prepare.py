@@ -130,6 +130,9 @@ class PreparedChange:
     clue_entity_id: str | None = None
     #: The claims the written value came from (R-8.7: an erasure can list what reached the CRM).
     source_claim_ids: tuple[UUID, ...] = ()
+    #: The name of the list or campaign a membership change names, for the card only (R-12.13):
+    #: the one Clue keeps under that id, or the one the same card creates.
+    list_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,6 +265,11 @@ class _Item:
     #: person's company as a CRM record: (the link field, that record). The link passes only when
     #: the create finds exactly that record (:func:`_company_links_not_known`).
     known_company: tuple[str, str] | None = None
+    #: The name of the list or campaign a membership change names, when Clue knows it (R-12.13).
+    list_name: str | None = None
+    #: For the card only: each field's company/account ids by the company's name (R-12.13), as
+    #: picklist option labels are shown.
+    value_labels: Mapping[str, Mapping[str, str]] = dataclasses.field(default_factory=dict)
 
 
 def _words(*names: str) -> str:
@@ -714,7 +722,7 @@ async def _find_existing(
     """The record a create would duplicate (R-7.1): its id and its current values."""
     assert item.spec.find_existing is not None
     slug, key = item.spec.find_existing
-    value = item.parsed.fields.get(key)
+    value = _find_value(item)
     if value is None or str(value).strip() == "":
         return None
     fields = sorted(item.parsed.fields)
@@ -923,10 +931,20 @@ def _owner_values(provider: CrmProvider, item: _Item) -> Mapping[str, object]:
     research, so the record holds it (a search answer may leave the field out)."""
     if item.spec.find_existing is None:
         return {}
+    return {_OWNER_FIELDS[item.owner[0]][provider]: _find_value(item)} if item.owner else {}
+
+
+def _find_value(item: _Item) -> object | None:
+    """What a create is looked for by: its ``find_existing`` field; a HubSpot person carrying
+    only ``work_email`` is looked for by that email, as other changes refer to it
+    (:func:`~clue_api.crm.write_actions.created_reference`)."""
+    assert item.spec.find_existing is not None
     key = item.spec.find_existing[1]
-    return (
-        {_OWNER_FIELDS[item.owner[0]][provider]: item.parsed.fields.get(key)} if item.owner else {}
-    )
+    value = item.parsed.fields.get(key)
+    if key == "email" and (value is None or str(value).strip() == ""):
+        made = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
+        return made[len(NEW_CONTACT_PREFIX) :] if made is not None else None
+    return value
 
 
 def owner_mismatch(
@@ -1040,6 +1058,7 @@ def _check_person(
     buying_role: tuple[str, str] | None = None
     as_researched: dict[str, str] = {}
     known_company: tuple[str, str] | None = None
+    value_labels: dict[str, Mapping[str, str]] = {}
     for field, value in item.parsed.fields.items():
         meta = metas.get(field)
         label = meta.label if meta else field
@@ -1056,6 +1075,8 @@ def _check_person(
                 continue
             if known is not None and _sf_key(known) != _sf_key(str(value).strip()):
                 return f"{named}: not the company Clue knows this person by."
+            if known is not None and account is not None:  # shown by its name (R-12.13)
+                value_labels[field] = {str(value).strip(): account.name}
             continue
         target = _person_target(provider, field, label)
         if target is None:
@@ -1089,6 +1110,7 @@ def _check_person(
         buying_role=buying_role,
         owner=("person", contact.crm_record_id, email),
         known_company=known_company,
+        value_labels={**item.value_labels, **value_labels},
     )
 
 
@@ -1256,6 +1278,21 @@ async def check_against_targets(
                 checked = "The Clue account named is not an account of this workspace."
             elif entity_id not in accounts:
                 checked = "That Clue account is not one of this project's accounts."
+            elif (
+                item.spec.find_existing is not None
+                and (known := accounts[entity_id].crm_record_id) is not None
+            ):
+                # Clue knows this account's CRM record: it is updated, never created again.
+                refused.append(
+                    _refused(
+                        index,
+                        item,
+                        f"This account is already in {_CRM_NAMES[provider]} as {known}. Update "
+                        "that record instead of creating it.",
+                        "crm_write_not_parsable",
+                    )
+                )
+                continue
             else:
                 checked = _check_company(item, accounts[entity_id], object_metas)
         if isinstance(checked, str):
@@ -1394,7 +1431,11 @@ async def _with_list_objects(
 
     An add to ``new:<name>`` (R-12.7) is to the list the same batch creates under exactly that
     name: it holds that create's object. One that names no create, or a removal from a list not
-    made yet, is refused on its own (``crm_write_not_parsable``)."""
+    made yet, is refused on its own (``crm_write_not_parsable``).
+
+    Each membership change carries the name of its list or campaign for the card (R-12.13): the
+    create's, or the name Clue keeps it under (a Salesforce campaign Clue does not keep is shown
+    by its id)."""
     resolved: list[_Item] = []
     refused: dict[int, RefusedChange] = {}
     created = {
@@ -1419,9 +1460,9 @@ async def _with_list_objects(
                         "created in the same call, and is used only to add to it."
                     ),
                 )
-            elif create.parsed.object != item.parsed.object:
+            else:
                 parsed = dataclasses.replace(item.parsed, object=create.parsed.object)
-                item = dataclasses.replace(item, parsed=parsed)
+                item = dataclasses.replace(item, parsed=parsed, list_name=create.parsed.label)
         elif connection.provider == "hubspot" and kind in ("list_membership", "list_removal"):
             kept = await stored_list(
                 conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
@@ -1439,9 +1480,15 @@ async def _with_list_objects(
                     reason_code=code,
                     message=message,
                 )
-            elif kept.crm_object != item.parsed.object:
+            else:
                 parsed = dataclasses.replace(item.parsed, object=kept.crm_object)
-                item = dataclasses.replace(item, parsed=parsed)
+                item = dataclasses.replace(item, parsed=parsed, list_name=kept.name)
+        elif kind in ("list_membership", "list_removal"):  # a Salesforce campaign
+            kept = await stored_list(
+                conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
+            )
+            if kept is not None:
+                item = dataclasses.replace(item, list_name=kept.name)
         resolved.append(item)
     return resolved, refused
 
@@ -1593,7 +1640,7 @@ class _Builder:
             overwrites=overwrites,
             arguments=single_field_arguments(spec, record_ref, field, after),
             field_label=meta.label if meta else field,
-            option_labels=self._option_labels(parsed.object, [field]),
+            option_labels=self._option_labels(item, parsed.object, [field]),
         )
 
     def whole(self, item: _Item, *, before: object, after: object) -> None:
@@ -1607,18 +1654,24 @@ class _Builder:
             overwrites=False,
             arguments=dict(item.proposed.arguments),
             field_label=None,
-            option_labels=self._option_labels(item.parsed.object, list(item.parsed.fields)),
+            option_labels=self._option_labels(item, item.parsed.object, list(item.parsed.fields)),
         )
 
     def _option_labels(
-        self, object_name: str, fields: Sequence[str]
+        self, item: _Item, object_name: str, fields: Sequence[str]
     ) -> dict[str, Mapping[str, str]]:
+        """Each field's labels for the card: its picklist options, and a company id by the
+        company's name (R-12.13)."""
         metas = self._metas.get(object_name, {})
-        return {
-            field: metas[field].option_labels
-            for field in fields
-            if field in metas and metas[field].option_labels
-        }
+        labels: dict[str, Mapping[str, str]] = {}
+        for field in fields:
+            merged = {
+                **(metas[field].option_labels if field in metas else {}),
+                **item.value_labels.get(field, {}),
+            }
+            if merged:
+                labels[field] = merged
+        return labels
 
     def _add(
         self,
@@ -1656,6 +1709,7 @@ class _Builder:
                 reverses_write_id=item.proposed.reverses_write_id,
                 option_labels=option_labels,
                 clue_entity_id=item.proposed.clue_entity_id,
+                list_name=item.list_name,
                 source_claim_ids=(
                     item.claims.get(field, ())
                     if field is not None
@@ -1769,6 +1823,7 @@ async def prepare_changes(
         reference = _reference(item)
         if reference is not None and reference in found_ids:
             kept[index] = _with_reference(item, found_ids[reference])
+    kept = _with_created_company_names(kept, found_ids)
     for index in _company_links_not_known(provider, kept):
         refused.append(
             _refused(
@@ -1877,14 +1932,14 @@ async def prepare_changes(
             # The list is made under the name the card shows; a Salesforce campaign is made
             # active, "In Progress" (R-12.9). What is stored is what is sent, on every try.
             made: dict[str, object] = {**item.proposed.arguments, "name": item.parsed.label}
-            after: dict[str, object] = {"name": item.parsed.label}
+            new_list: dict[str, object] = {"name": item.parsed.label}
             if provider == "salesforce":
                 made.update(CLUE_CAMPAIGN_SETTINGS)
-                after.update(CLUE_CAMPAIGN_SETTINGS)
+                new_list.update(CLUE_CAMPAIGN_SETTINGS)
             item = dataclasses.replace(
                 item, proposed=dataclasses.replace(item.proposed, arguments=made)
             )
-            builder.whole(item, before=None, after=after)
+            builder.whole(item, before=None, after=new_list)
         elif kind in ("create_contact", "create_company"):
             found = (
                 looked_up[index]
@@ -1922,6 +1977,31 @@ async def prepare_changes(
     # the order the executor sends (R-12.7).
     ordered = sorted(prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
     return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
+
+
+def _with_created_company_names(
+    kept: Mapping[int, _Item], found_ids: Mapping[str, str]
+) -> dict[int, _Item]:
+    """R-12.13: a person's company link that names a company the card creates (by its reference,
+    or by the id that create found) is shown on the card by that create's name."""
+    names: dict[str, str] = {}
+    for item in kept.values():
+        made = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
+        if made is not None and item.parsed.change_kind(item.spec) == "create_company":
+            names[made] = item.parsed.label
+            if made in found_ids:
+                names[found_ids[made]] = item.parsed.label
+    labelled: dict[int, _Item] = {}
+    for index, item in kept.items():
+        extra = {
+            field: {str(value): names[str(value)]}
+            for field, value in item.parsed.fields.items()
+            if field in _COMPANY_LINK_FIELDS and str(value) in names
+        }
+        if extra and _person_change(item):
+            item = dataclasses.replace(item, value_labels={**item.value_labels, **extra})
+        labelled[index] = item
+    return labelled
 
 
 def _company_links_not_known(provider: CrmProvider, kept: Mapping[int, _Item]) -> list[int]:
@@ -2071,7 +2151,10 @@ def _display(value: object) -> str:
 
 
 def _labelled(labels: Mapping[str, str] | None, value: object) -> object:
-    """A picklist value as its option label; a value with no option shows as it is."""
+    """A picklist value as its option label (a company id as its company's name); a value with
+    no option shows as it is."""
+    if labels and isinstance(value, int) and not isinstance(value, bool):
+        return labels.get(str(value), value)
     if not labels or not isinstance(value, str):
         return value
     if value in labels:
@@ -2137,8 +2220,9 @@ def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
 
 
 def _list_shown(change: PreparedChange) -> str | None:
-    """The list a membership change names on the card: a list not made yet by its name."""
-    return new_list_name(change.parsed.list_ref) or change.parsed.list_ref
+    """The list a membership change names on the card: by its name (R-12.13) when Clue keeps it
+    or the card creates it, else by its id."""
+    return change.list_name or new_list_name(change.parsed.list_ref) or change.parsed.list_ref
 
 
 def _group_object(provider: CrmProvider, change: PreparedChange) -> str:
