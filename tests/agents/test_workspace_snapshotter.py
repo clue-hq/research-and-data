@@ -850,3 +850,40 @@ def test_gathering_the_receipts_changes_nothing_about_the_file_list(tmp_path: Pa
     ) == encode_manifest(
         SnapshotManifest(entries=tuple(replace(e, written_at=stamp) for e in one_at_a_time.entries))
     )
+
+
+def test_a_chat_already_holding_a_temporary_folder_still_restores(tmp_path: Path) -> None:
+    """Review A2-I3: a version saved before the file list refused ``outputs/.clue-tmp-a/r.md``
+    made every restore raise on every machine, for ever (``outputs/`` never expires). The entry no
+    disk can hold is skipped; the rest of the chat restores and saves again."""
+
+    store = FakeStore()
+    ok, bad = b"finished work", b"written by a script"
+    body = (
+        b'{"entries":['
+        + b",".join(
+            (
+                b'{"media_type":"text/plain","path":"%s","sha256":"%s","size":%d,'
+                b'"tier":"work_product","written_at":"2026-10-22T09:30:00+00:00"}'
+            )
+            % (path, hashlib.sha256(data).hexdigest().encode(), len(data))
+            for path, data in ((b"outputs/.clue-tmp-a/r.md", bad), (b"outputs/ok.md", ok))
+        )
+        + b'],"schema_version":2}'
+    )
+    sha = hashlib.sha256(body).hexdigest()
+    store.blobs.update({sha: body, hashlib.sha256(ok).hexdigest(): ok})
+    store.blobs[hashlib.sha256(bad).hexdigest()] = bad
+    store.pointer = SnapshotPointer(version=1, manifest_sha256=sha, manifest_key=f"{WS}/{sha}")
+    machine = _machine(tmp_path, "a", store)
+
+    lease = _open(machine)
+    try:
+        assert (machine.agent() / "outputs" / "ok.md").read_bytes() == ok
+        assert not (machine.agent() / "outputs" / ".clue-tmp-a").exists()
+        _write(lease, "scratch/next.md", b"the chat goes on")
+        report = asyncio.run(lease.save_snapshot())
+        assert (report.status, report.version) == ("saved", 2)
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    assert sorted(_current(store)) == ["outputs/ok.md", "scratch/next.md"]

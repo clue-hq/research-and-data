@@ -34,6 +34,10 @@ from uuid import UUID
 
 from pydantic import JsonValue
 
+from clue_agents.tree_sync import check_segment, is_temporary_name
+from clue_agents.workspace_policy import WorkspaceSecurityError
+from clue_obs import get_logger
+
 __all__ = [
     "MANIFEST_MEDIA_TYPE",
     "MANIFEST_SCHEMA_VERSION",
@@ -73,6 +77,8 @@ _READABLE_SCHEMA_VERSIONS: Final = (1, 2)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
+log = get_logger("clue_agents.workspace_snapshot")
+
 
 class SnapshotCorrupt(RuntimeError):
     """A file list or a stored file is not what it claims to be. Never restored."""
@@ -90,8 +96,11 @@ def validate_snapshot_path(path: str) -> str:
     """``path`` if it names a file inside one of the saved folders, else :class:`SnapshotCorrupt`.
 
     The path is the one recorded in a file list, so it is checked as untrusted input: a restore
-    writes it to disk. Relative, ``/``-separated, no empty, ``.`` or ``..`` segment, first segment
-    one of :data:`SAVED_FOLDERS`, and at least one segment below it.
+    writes it to disk. Relative, ``/``-separated, first segment one of :data:`SAVED_FOLDERS`, at
+    least one segment below it, and every segment one the disk layer would write
+    (:func:`~clue_agents.tree_sync.check_segment` — no empty, ``.``, ``..`` or ``.clue-tmp-*``
+    segment). That last rule is the disk's own, not a copy of it: a path the file list accepted
+    and a restore then refused would make the chat unrestorable on every machine (review A2-I3).
     """
 
     if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
@@ -99,8 +108,11 @@ def validate_snapshot_path(path: str) -> str:
     segments = path.split("/")
     if len(segments) < 2 or segments[0] not in SAVED_FOLDERS:
         raise SnapshotCorrupt(f"snapshot path is outside the saved folders: {path!r}")
-    if any(segment in ("", ".", "..") or "\x00" in segment for segment in segments):
-        raise SnapshotCorrupt(f"snapshot path has an invalid segment: {path!r}")
+    for segment in segments:
+        try:
+            check_segment(segment)
+        except WorkspaceSecurityError as exc:
+            raise SnapshotCorrupt(f"snapshot path has an invalid segment: {path!r}") from exc
     return path
 
 
@@ -251,8 +263,14 @@ def _encode_entry(entry: SnapshotEntry) -> dict[str, object]:
 
 
 def encode_manifest(manifest: SnapshotManifest) -> bytes:
-    """Canonical bytes: entries sorted by path, keys sorted, no whitespace, UTC ISO-8601 times."""
+    """Canonical bytes: entries sorted by path, keys sorted, no whitespace, UTC ISO-8601 times.
 
+    Every path is checked exactly as a restore checks it, so no file list is ever saved that some
+    machine would refuse to restore.
+    """
+
+    for entry in manifest.entries:
+        validate_snapshot_path(entry.path)
     document = {
         "schema_version": manifest.schema_version,
         "entries": [
@@ -285,12 +303,27 @@ def _decode_receipt(path: str, raw: object) -> Receipt:
     )
 
 
+def _names_a_temporary_folder(path: object) -> bool:
+    """A saved path no disk will write only because a folder in it has a reserved name."""
+
+    if not isinstance(path, str) or not any(is_temporary_name(part) for part in path.split("/")):
+        return False
+    log.warning("agent_workspace.manifest_entry_skipped", path=path, reason="temporary_folder")
+    return True
+
+
 def decode_manifest(data: bytes) -> SnapshotManifest:
     """The file list in ``data``, every field checked, or :class:`SnapshotCorrupt`.
 
     Schema 1 still decodes (a Phase 1 snapshot must keep restoring): its entries carry no receipt
     and are not expired, and their tier is re-derived from the path by :func:`tier_for`, which is
     how they gain the ``working_file`` tier without a migration.
+
+    An entry under a ``.clue-tmp-*`` folder is dropped with a warning, not refused: before the
+    save checked paths as a restore does, such an entry could be saved, and refusing the whole
+    list would leave that chat unrestorable on every machine for ever — under ``outputs/`` it
+    never even expires (review A2-I3). No disk can hold that file, so dropping it loses nothing a
+    restore could have given back. Every other bad path still refuses the list.
     """
 
     try:
@@ -300,6 +333,8 @@ def decode_manifest(data: bytes) -> SnapshotManifest:
         entries = []
         seen: set[str] = set()
         for raw in document["entries"]:
+            if _names_a_temporary_folder(raw["path"]):
+                continue
             path = validate_snapshot_path(raw["path"])
             sha = raw["sha256"]
             size = raw["size"]

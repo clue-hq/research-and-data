@@ -185,3 +185,59 @@ def test_same_files_notices_an_expiry() -> None:
     assert not live.same_files(gone)
     assert not gone.same_files(live)
     assert gone.same_files(gone)
+
+
+# --- One path rule for save and restore (fix pass 1, review A2-I3) --------------------------------
+
+
+@pytest.mark.parametrize("segment", [".clue-tmp-a", ".clue-tmp-", "..", ".", "", "a\x00b"])
+def test_a_segment_the_disk_refuses_is_refused_by_the_file_list(segment: str) -> None:
+    """The disk layer's rule is the file list's rule: a path a restore could never write is never
+    accepted, so it can never be saved and then refuse every restore on every machine."""
+
+    from clue_agents.tree_sync import check_segment
+    from clue_agents.workspace_policy import WorkspaceSecurityError
+
+    with pytest.raises(WorkspaceSecurityError):
+        check_segment(segment)
+    with pytest.raises(SnapshotCorrupt):
+        validate_snapshot_path(f"outputs/{segment}/r.md")
+
+
+@pytest.mark.parametrize("segment", ["clue-tmp-a", ".clue-tmpa", "a.clue-tmp-", ".hidden"])
+def test_a_segment_the_disk_accepts_is_accepted_by_the_file_list(segment: str) -> None:
+    from clue_agents.tree_sync import check_segment
+
+    assert check_segment(segment) == segment
+    assert validate_snapshot_path(f"outputs/{segment}/r.md") == f"outputs/{segment}/r.md"
+
+
+def test_a_file_list_naming_a_temporary_folder_is_refused_at_save() -> None:
+    """``outputs/.clue-tmp-a/r.md`` used to be saved and then refused on every restore — and,
+    under ``outputs/``, it never expired, so the chat could never run again (review A2-I3)."""
+
+    poisoned = SnapshotManifest(entries=(entry("outputs/ok.md"), entry("outputs/.clue-tmp-a/r.md")))
+    with pytest.raises(SnapshotCorrupt):
+        encode_manifest(poisoned)
+
+
+def test_a_stored_file_list_naming_a_temporary_folder_drops_only_that_entry() -> None:
+    """A file list saved before the save refused it still decodes: the entry no disk can hold is
+    dropped, and every other entry is kept. Anything else wrong with a path still refuses."""
+
+    good, bad = entry("outputs/ok.md", b"ok"), entry("outputs/.clue-tmp-a/r.md", b"r")
+    body = (
+        b'{"entries":['
+        + b",".join(
+            (
+                b'{"media_type":"text/plain","path":"%s","sha256":"%s","size":%d,'
+                b'"tier":"work_product","written_at":"2026-10-22T09:30:00+00:00"}'
+            )
+            % (item.path.encode(), item.sha256.encode(), item.size)
+            for item in (bad, good)
+        )
+        + b'],"schema_version":2}'
+    )
+    assert [item.path for item in decode_manifest(body).entries] == ["outputs/ok.md"]
+    with pytest.raises(SnapshotCorrupt):
+        decode_manifest(body.replace(b"outputs/.clue-tmp-a/r.md", b"outputs/../r.md"))

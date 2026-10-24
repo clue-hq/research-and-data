@@ -36,9 +36,11 @@ a ``.clue-tmp-*`` name as an interrupted atomic write and refuses to walk a tree
 so a script that writes that name — deliberately or by copying the convention — would brick the
 thread's workspace for every later turn. It is removed on the same grounds as the rest.
 
-Directories are walked, never removed: ``write_file`` creates parent directories, so a nested
-tree is legitimate workspace state. Symlinks are unlinked and never traversed, so a link pointing
-out of the workspace cannot make the sweep delete anything outside it.
+Directories are walked, never removed — except one with a ``.clue-tmp-*`` name, which goes with
+everything in it for the same reason as the file — because ``write_file`` creates parent
+directories, so a nested tree is legitimate workspace state. Symlinks are unlinked and never
+traversed, so a link pointing out of the workspace cannot make the sweep delete anything outside
+it.
 
 Quotas here are read over the read-write directories as a set. That is narrower than the
 workspace's own quota (which also charges the thread's other folders), and deliberately so: this
@@ -127,7 +129,7 @@ def sweep(mounts: SandboxMounts, *, before: Mapping[str, tuple[int, float]]) -> 
     allowed = {extension.lower() for extension in policy.allowed_extensions}
     allowed.update(SANDBOX_OUTPUT_EXTENSIONS)
 
-    removed: list[tuple[str, str]] = []
+    removed: list[tuple[str, str]] = _remove_residue_folders(mounts)
     survivors: list[_Entry] = []
     for path, host, metadata in _walk(mounts):
         reason = _disallowed_reason(
@@ -220,6 +222,53 @@ def _trim_to_quota(
         total -= entry.size
         count -= 1
     return [entry for entry in survivors if entry.path not in doomed], removed
+
+
+def _remove_residue_folders(mounts: SandboxMounts) -> list[tuple[str, str]]:
+    """Delete every folder with a ``.clue-tmp-*`` name, and everything in it, before the walk.
+
+    The backend's walk refuses that name on a folder exactly as on a file, and a saved snapshot
+    would carry the folder to every machine (review A2-I3) — so the file-name check alone is not
+    enough. Each entry inside is reported as ``atomic_write_residue``. A link inside is unlinked
+    and never followed, so nothing outside the workspace can be reached.
+    """
+
+    removed: list[tuple[str, str]] = []
+    for name in sorted(mounts.read_write):
+        stack = [(mounts.read_write[name], name)]
+        while stack:
+            host, prefix = stack.pop()
+            try:
+                with os.scandir(host) as entries:
+                    children = list(entries)
+            except (FileNotFoundError, NotADirectoryError, PermissionError):
+                continue
+            for child in children:
+                path = f"{prefix}/{child.name}"
+                if not child.is_dir(follow_symlinks=False):
+                    continue
+                if child.name.startswith(_ATOMIC_WRITE_PREFIX):
+                    removed.extend(_remove_tree(Path(child.path), path))
+                else:
+                    stack.append((Path(child.path), path))
+    return removed
+
+
+def _remove_tree(host: Path, prefix: str) -> list[tuple[str, str]]:
+    """Remove a real folder bottom-up without following any link; report each non-folder."""
+
+    removed: list[tuple[str, str]] = []
+    with os.scandir(host) as entries:
+        children = list(entries)
+    for child in children:
+        path = f"{prefix}/{child.name}"
+        if child.is_dir(follow_symlinks=False):
+            removed.extend(_remove_tree(Path(child.path), path))
+        else:
+            os.unlink(child.path)
+            removed.append((path, "atomic_write_residue"))
+    os.rmdir(host)
+    return removed
 
 
 def _walk(mounts: SandboxMounts) -> Iterator[tuple[str, Path, os.stat_result]]:

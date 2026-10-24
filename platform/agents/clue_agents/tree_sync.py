@@ -26,7 +26,13 @@ from typing import Final
 
 from clue_agents.workspace_policy import WorkspaceSecurityError
 
-__all__ = ["TreeSyncReport", "read_directory", "sync_directory"]
+__all__ = [
+    "TreeSyncReport",
+    "check_segment",
+    "is_temporary_name",
+    "read_directory",
+    "sync_directory",
+]
 
 _DIRECTORY_MODE: Final = 0o700
 _FROZEN_DIRECTORY_MODE: Final = 0o500
@@ -67,7 +73,7 @@ def sync_directory(
     private and writable (0700 / 0600). The folder is created if missing.
     """
 
-    _check_segment(name)
+    check_segment(name)
     desired = {_check_relative(path): data for path, data in files.items()}
     _check_no_file_dir_clash(desired)
     root_fd = _open_or_create(parent_fd, name)
@@ -102,7 +108,7 @@ def read_directory(parent_fd: int, name: str) -> dict[str, bytes]:
     refused, never followed.
     """
 
-    _check_segment(name)
+    check_segment(name)
     try:
         root_fd = _open_dir(parent_fd, name)
     except WorkspaceSecurityError:
@@ -135,13 +141,25 @@ def read_directory(parent_fd: int, name: str) -> dict[str, bytes]:
 # --- validation ---------------------------------------------------------------------------------
 
 
-def _check_segment(segment: str) -> str:
+def is_temporary_name(segment: str) -> bool:
+    """A name this module reserves for a write in progress (``.clue-tmp-*``)."""
+
+    return segment.startswith(_TEMP_PREFIX)
+
+
+def check_segment(segment: str) -> str:
+    """``segment`` if a sync may write a file or folder by this name, else refuse it.
+
+    The one rule for a path segment on disk. The snapshot file list checks its paths with this
+    same function, so a path is never saved that a restore would refuse to write (review A2-I3).
+    """
+
     if (
         not segment
         or segment in (".", "..")
         or "/" in segment
         or "\x00" in segment
-        or segment.startswith(_TEMP_PREFIX)
+        or is_temporary_name(segment)
     ):
         raise WorkspaceSecurityError(f"invalid path segment {segment!r}")
     return segment
@@ -151,7 +169,7 @@ def _check_relative(path: str) -> str:
     if not path or path.startswith("/"):
         raise WorkspaceSecurityError(f"invalid relative path {path!r}")
     for segment in path.split("/"):
-        _check_segment(segment)
+        check_segment(segment)
     return path
 
 
