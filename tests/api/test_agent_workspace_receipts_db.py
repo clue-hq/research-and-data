@@ -22,9 +22,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.execution import operation_id_for_plan_node
 from clue_agents.workspace_snapshot import UNKNOWN_RECEIPT
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_receipts import READ_AGAIN, DbReceiptSource
+from clue_core import ExecutionId, operation_id_from_key
+from clue_execution import execution_node_id
 from clue_storage import FsStorage
 from tests._workspace import seed_project
 from tests.db.conftest import run_async
@@ -76,7 +79,21 @@ async def _seed_tool_call(
     display_params: dict[str, Any] | None = None,
     references: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """One governed tool call as production writes it: the node, and optionally its result."""
+    """One governed tool call, with the rows and the ids production writes for it.
+
+    A governed call has **two** operation ids, and the receipt must answer for a file named by
+    either. The plan operation (``agent_plan_operation``, which ``agent_tool_result`` is keyed on)
+    is ``operation_id_for_plan_node(execution, node_key)``; the executor's node
+    (``execution_node``) is ``operation_id_from_key(execution, node_key)``. A spilled governed
+    result is named after the first (``_receipt_reference_values``); anything a tool writes
+    itself through its ``ToolContext`` — a CRM read, a sandbox stream — after the second.
+
+    Both ids are derived here with the functions production uses, never chosen: an earlier copy
+    of this seed gave both tables one ``uuid4()``, and every receipt test passed while every
+    spilled governed result in production read "No record of what made this file" (2026-10-24).
+    The plan rows are written whether or not the call has a result yet, as the plan is validated
+    and journalled before the tool runs; ``references`` adds the result row.
+    """
 
     ws = f"ws_receipt_{uuid4().hex[:12]}"
     project = await seed_project(conn, ws, name="receipts")
@@ -84,7 +101,11 @@ async def _seed_tool_call(
         text("INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :p)"),
         {"id": THREAD, "ws": ws, "p": project.project_id},
     )
-    execution_id, operation_id = uuid4(), uuid4()
+    execution_id = ExecutionId(uuid4())
+    node_key = f"agent_{tool_name}_{uuid4().hex[:24]}"
+    node_operation = operation_id_from_key(str(execution_id), node_key)
+    plan_operation = operation_id_for_plan_node(execution_id, node_key)
+    assert node_operation != plan_operation
     await conn.execute(
         text(
             "INSERT INTO execution (id, workspace_id, project_id, started_by, "
@@ -102,19 +123,25 @@ async def _seed_tool_call(
             " CAST(:display AS jsonb), :at)"
         ),
         {
-            "id": uuid4(),
+            "id": execution_node_id(execution_id, node_key),
             "execution": execution_id,
-            "node": f"{tool_name}_n1",
+            "node": node_key,
             "tool": tool_name,
-            "operation": operation_id,
+            "operation": node_operation,
             "sha": "f" * 64,
             "display": json.dumps(display_params or {}),
             "at": NOW,
         },
     )
-    seeds = {"ws": ws, "operation_id": operation_id, "path": f"reads/{operation_id}.json"}
-    if references is None:
-        return seeds
+    seeds: dict[str, Any] = {
+        "ws": ws,
+        "plan_operation_id": plan_operation,
+        "node_operation_id": node_operation,
+        # A governed result spill (``_receipt_reference_values``) and a tool's own spill
+        # (``run_crm_action``'s ``write_spill(str(ctx.operation_id), …)``) respectively.
+        "plan_path": f"reads/{plan_operation}.json",
+        "node_path": f"reads/{node_operation}.json",
+    }
 
     manifest_key = await _artifact(conn, ws, "d" * 64)
     turn_id, plan_id = uuid4(), uuid4()
@@ -165,7 +192,6 @@ async def _seed_tool_call(
             "at": NOW,
         },
     )
-    node_key = f"{tool_name}_n1"
     await conn.execute(
         text(
             "INSERT INTO agent_plan_operation "
@@ -178,13 +204,16 @@ async def _seed_tool_call(
             "plan": plan_id,
             "ws": ws,
             "node": node_key,
-            "operation": operation_id,
+            "operation": plan_operation,
             "address": f"{tool_name}@1",
             "key": parameter_key,
             "sha": "c" * 64,
             "auth": "e" * 64,
         },
     )
+    if references is None:
+        return seeds
+
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_session_factory(conn))
     result_ref = await artifacts.persist_body(
         workspace_id=ws,
@@ -202,7 +231,7 @@ async def _seed_tool_call(
             "VALUES (:operation, :plan, :node, :ws, :address, :key, :sha, false, :count)"
         ),
         {
-            "operation": operation_id,
+            "operation": plan_operation,
             "plan": plan_id,
             "node": node_key,
             "ws": ws,
@@ -225,6 +254,13 @@ def _source(conn: AsyncConnection, storage: FsStorage) -> DbReceiptSource:
 
 
 def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> None:
+    """``run_crm_action`` names its spill after its ``ToolContext`` — the executor node's id.
+
+    Its count and its CRM live on the result row, which is keyed on the *plan* operation's id, so
+    the receipt has to cross from one id to the other to say "12 records from hubspot". Joining
+    the result on the node's id found nothing, and the sentence fell back to the generic one.
+    """
+
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "store")
@@ -242,10 +278,10 @@ def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> No
                 },
             )
             receipt = await _source(conn, storage).receipt_for(
-                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["path"]
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["node_path"]
             )
         assert receipt.source == "run_crm_action"
-        assert receipt.operation_id == str(seeds["operation_id"])
+        assert receipt.operation_id == str(seeds["node_operation_id"])
         assert receipt.produced_at == NOW
         assert receipt.details["slug"] == "HUBSPOT_SEARCH_DEALS"
         assert receipt.details["record_count"] == 12
@@ -262,7 +298,8 @@ def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> No
     run_async(scenario())
 
 
-def test_a_tool_read_with_no_result_row_still_names_the_call(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named_by", ["plan_path", "node_path"])
+def test_a_tool_read_with_no_result_row_still_names_the_call(tmp_path: Path, named_by: str) -> None:
     """Degrade, never fail: the tool name and the time are useful on their own."""
 
     async def scenario() -> None:
@@ -272,28 +309,70 @@ def test_a_tool_read_with_no_result_row_still_names_the_call(tmp_path: Path) -> 
                 conn, storage, display_params={"slug": "HUBSPOT_SEARCH_DEALS"}
             )
             receipt = await _source(conn, storage).receipt_for(
-                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["path"]
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds[named_by]
             )
         assert receipt.source == "run_crm_action"
+        assert receipt.produced_at == NOW
         assert receipt.details == {"slug": "HUBSPOT_SEARCH_DEALS"}
 
     run_async(scenario())
 
 
 def test_a_non_crm_spill_is_told_to_run_its_own_tool_again(tmp_path: Path) -> None:
-    """Any other governed read names the tool the execution row recorded, not the CRM sentence."""
+    """Any other governed read names the tool the execution row recorded, not the CRM sentence.
+
+    The file is named as ``_receipt_reference_values`` names it — after the *plan* operation —
+    and the receipt keeps the call's displayed parameters and the counts its result reported.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "store")
             seeds = await _seed_tool_call(
-                conn, storage, tool_name="search_accounts", display_params={"query": "robotics"}
+                conn,
+                storage,
+                tool_name="search_accounts",
+                display_params={"query": "robotics"},
+                references={"accounts": ["a"] * 3, "total": 40, "done": False},
             )
             receipt = await _source(conn, storage).receipt_for(
-                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["path"]
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["plan_path"]
             )
         assert receipt.source == "search_accounts"
+        assert receipt.operation_id == str(seeds["plan_operation_id"])
+        assert receipt.produced_at == NOW
+        assert receipt.details == {"query": "robotics", "total": 40, "done": False}
         assert receipt.read_again == "Run search_accounts again with the same arguments."
+
+    run_async(scenario())
+
+
+def test_a_spilled_run_python_result_is_told_to_run_run_python_again(tmp_path: Path) -> None:
+    """The live failure of 2026-10-24, rebuilt with the ids production gave it.
+
+    One ``run_python@1`` call's result was too big for its receipt and was spilled to
+    ``reads/<plan operation id>.json``; its ``execution_node`` row carries the node's id (the one
+    its ``reads/<id>.stdout.txt`` stream is named by). The lookup keyed only on the node's id, so
+    the expired file read "No record of what made this file" instead of the approved sentence.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "store")
+            seeds = await _seed_tool_call(
+                conn,
+                storage,
+                tool_name="run_python",
+                references={"exit_code": 0, "stdout": "x" * 64, "files_written": []},
+            )
+            receipt = await _source(conn, storage).receipt_for(
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["plan_path"]
+            )
+        assert receipt != UNKNOWN_RECEIPT
+        assert receipt.source == "run_python"
+        assert receipt.operation_id == str(seeds["plan_operation_id"])
+        assert receipt.produced_at == NOW
+        assert receipt.read_again == "Run run_python again with the same arguments."
 
     run_async(scenario())
 
@@ -310,7 +389,8 @@ def test_a_file_with_no_row_gets_an_unknown_receipt(tmp_path: Path) -> None:
     run_async(scenario())
 
 
-def test_another_tenants_operation_id_is_never_read(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named_by", ["plan_path", "node_path"])
+def test_another_tenants_operation_id_is_never_read(tmp_path: Path, named_by: str) -> None:
     """Review I4: the file name is the agent's, so the lookup is scoped to its own workspace.
 
     ``execution_node`` carries no ``workspace_id`` of its own — it is scoped through
@@ -333,7 +413,7 @@ def test_another_tenants_operation_id_is_never_read(tmp_path: Path) -> None:
             await seed_project(conn, mine, name="the other tenant")
             # My chat, their operation id: the only thing that may come back is "unknown".
             receipt = await _source(conn, storage).receipt_for(
-                workspace_id=mine, thread_id=THREAD, path=theirs["path"]
+                workspace_id=mine, thread_id=THREAD, path=theirs[named_by]
             )
         assert receipt == UNKNOWN_RECEIPT
 
@@ -376,7 +456,7 @@ def test_an_unreadable_result_artifact_keeps_the_call_it_can_still_name(tmp_path
             # The bytes are gone from storage; the rows that name the call are not.
             await storage.delete(str(seeds["result_key"]))
             receipt = await _source(conn, storage).receipt_for(
-                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["path"]
+                workspace_id=seeds["ws"], thread_id=THREAD, path=seeds["node_path"]
             )
         assert receipt.source == "run_crm_action"
         assert receipt.details == {"slug": "HUBSPOT_SEARCH_DEALS"}

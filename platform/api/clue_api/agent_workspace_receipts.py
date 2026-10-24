@@ -8,10 +8,11 @@ a path.
 The path says which rule answers:
 
 ``reads/<operation_id>.json``
-    A governed tool's whole result, written by the runtime's spill sink. The ``execution_node``
-    row for that operation names the tool and its displayed parameters; the ``agent_tool_result``
-    row, when there is one, points at the result artifact whose ``references`` say how much came
-    back.
+    A governed tool's whole result, written by the runtime's spill sink, or a tool's own spill
+    (a CRM read). The ``execution_node`` row for that call names the tool and its displayed
+    parameters; the ``agent_tool_result`` row, when there is one, points at the result artifact
+    whose ``references`` say how much came back. One governed call has two operation ids and the
+    file may be named by either — see :data:`_NODE_SQL`.
 ``reads/<operation_id>.stdout.txt`` / ``.stderr.txt``
     One ``run_python`` output stream.
 ``work/conversation_history/**``
@@ -36,6 +37,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 
 from clue_agents.contracts import ArtifactRef
+from clue_agents.execution import operation_id_for_plan_node
 from clue_agents.ports import ReceiptSource
 from clue_agents.workspace_snapshot import UNKNOWN_RECEIPT, Receipt
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -97,24 +99,46 @@ def _read_again_for(tool_name: str, details: Mapping[str, JsonValue]) -> str:
 
 #: The call behind a ``reads/<operation_id>.json`` spill, **scoped to the asking workspace**.
 #:
+#: One governed tool call carries two operation ids, both derived from its execution and its
+#: ``node_key``: the plan operation's (``operation_id_for_plan_node``; ``agent_plan_operation``
+#: and ``agent_tool_result`` are keyed on it) and the executor node's (``operation_id_from_key``;
+#: ``execution_node`` and the tool's own ``ToolContext``). A spilled governed result is named after
+#: the first (``_receipt_reference_values``); a tool that spills for itself — ``run_crm_action`` —
+#: after the second. Files already saved are named both ways, so the node is found by either: its
+#: own id, or the plan operation at the same ``node_key`` of the same execution. Keying on the
+#: node's id alone left every spilled governed result "unknown" (live run, 2026-10-24).
+#:
 #: ``execution_node`` has no ``workspace_id`` of its own; it is scoped through ``execution``, so
 #: that join is the scoping and it is an inner one. Without it the driving row came from whichever
-#: workspace owns the operation id, and the id comes from a file name the agent writes — the
-#: ``agent_tool_result`` join is scoped but LEFT, so it cannot constrain anything (review I4). The
-#: result join stays LEFT: a call with no result row still names itself, and must still degrade
-#: rather than fail.
+#: workspace owns the operation id, and the id comes from a file name the agent writes (review I4).
 _NODE_SQL: Final = text(
     """
-    SELECT n.tool_name, n.display_params_json, n.created_at,
-           r.result_artifact_key, r.result_sha256, a.media_type, a.size_bytes
-    FROM execution_node n
+    WITH named AS (
+        SELECT n.id FROM execution_node n WHERE n.operation_id = :operation
+        UNION ALL
+        SELECT n.id
+        FROM agent_plan_operation o
+        JOIN agent_plan p ON p.id = o.plan_id
+        JOIN execution_node n ON n.execution_id = p.execution_id AND n.node_key = o.node_key
+        WHERE o.operation_id = :operation
+    )
+    SELECT n.execution_id, n.node_key, n.tool_name, n.display_params_json, n.created_at
+    FROM named
+    JOIN execution_node n ON n.id = named.id
     JOIN execution e ON e.id = n.execution_id AND e.workspace_id = :workspace
-    LEFT JOIN agent_tool_result r
-           ON r.operation_id = n.operation_id AND r.workspace_id = :workspace
-    LEFT JOIN artifact a ON a.storage_key = r.result_artifact_key
-    WHERE n.operation_id = :operation
     ORDER BY n.created_at DESC
     LIMIT 1
+    """
+)
+
+#: The result of that call, keyed on its plan operation — whichever id named the file. Absent for
+#: a call with no result row, which must still name itself, so this is a separate, optional read.
+_RESULT_SQL: Final = text(
+    """
+    SELECT r.result_artifact_key, r.result_sha256, a.media_type, a.size_bytes
+    FROM agent_tool_result r
+    JOIN artifact a ON a.storage_key = r.result_artifact_key
+    WHERE r.operation_id = :operation AND r.workspace_id = :workspace
     """
 )
 
@@ -175,10 +199,15 @@ class DbReceiptSource(ReceiptSource):
         async with self._conn_factory() as conn:
             parameters = {"operation": UUID(operation), "workspace": workspace_id}
             row = (await conn.execute(_NODE_SQL, parameters)).mappings().first()
-        if row is None or not row["tool_name"]:
-            return UNKNOWN_RECEIPT
+            if row is None or not row["tool_name"]:
+                return UNKNOWN_RECEIPT
+            # The result row is the plan operation's, whichever of the two ids named the file.
+            parameters["operation"] = operation_id_for_plan_node(
+                row["execution_id"], row["node_key"]
+            )
+            result = (await conn.execute(_RESULT_SQL, parameters)).mappings().first()
         display: dict[str, JsonValue] = dict(row["display_params_json"] or {})
-        details: dict[str, JsonValue] = {**display, **await self._counts(workspace_id, row)}
+        details: dict[str, JsonValue] = {**display, **await self._counts(workspace_id, result)}
         return Receipt(
             source=str(row["tool_name"]),
             operation_id=operation,
@@ -194,7 +223,7 @@ class DbReceiptSource(ReceiptSource):
         artifact or bytes storage cannot serve must leave the receipt poorer, never absent.
         """
 
-        if row["result_artifact_key"] is None or row["media_type"] is None:
+        if row is None:
             return {}
         try:
             body = await self._artifacts.read(
