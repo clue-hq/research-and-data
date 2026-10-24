@@ -307,7 +307,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v80 (2026-10-24, Phase 3 Task 11 / R-12.14): v79's surface unchanged; `stage0-interview@v53`
     # (v52 plus one passage: a message Clue wrote is never recorded as the person's words, and its
     # manual paths repointed), `manual-*@v26` and recipe 40. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v80",
+    # v81 (2026-10-24, Phase 3 Task 12 / R-12.17): v80's surface, `crm_write_log@1` at its new
+    # output digest (write_id / proposal_id are Clue's internal ids, for undo only), `crm-writing`
+    # v4 (never show the person Clue's write or proposal ids), `stage0-interview@v54` (v53 with its
+    # manual paths repointed), `manual-*@v27` and recipe 41. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v81",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

@@ -309,6 +309,15 @@ _LIST_GONE_BODY = (
 _LIST_GONE = ExecuteResult(
     False, {"http_error": "404", "status_code": 404, "message": "Not Found"}, _LIST_GONE_BODY
 )
+#: HubSpot's answer to an add to a list deleted in HubSpot (live check L-12; the message verbatim).
+_LIST_DELETED_BODY = (
+    '{"status":"error","message":"Attempted to modify membership for deleted lists: '
+    '[PortalListId{portalId=247744687, listId=17}]; Aborting operations.","correlationId":"c",'
+    '"category":"OBJECT_NOT_FOUND"}'
+)
+_LIST_DELETED = ExecuteResult(
+    False, {"http_error": "404", "status_code": 404, "message": "Not Found"}, _LIST_DELETED_BODY
+)
 #: Salesforce's refusal of a campaign create by a user who is not a Marketing User (Task 1).
 _NOT_A_MARKETING_USER = (
     '[{"message":"entity type cannot be inserted: Campaign",'
@@ -1712,8 +1721,16 @@ def test_a_list_made_since_the_card_is_not_created_again(tmp_path: Path) -> None
     _run(tmp_path, "listmadeby", body)
 
 
-def test_a_deleted_list_is_marked_gone_and_the_change_fails(tmp_path: Path) -> None:
-    """Review Focus 3: the stored list was deleted in HubSpot."""
+@pytest.mark.parametrize(
+    ("answer", "answer_body"),
+    [(_LIST_GONE, _LIST_GONE_BODY), (_LIST_DELETED, _LIST_DELETED_BODY)],
+    ids=["list-id-does-not-exist", "deleted-lists"],
+)
+def test_a_deleted_list_is_marked_gone_and_the_change_fails(
+    tmp_path: Path, answer: ExecuteResult, answer_body: str
+) -> None:
+    """Review Focus 3 / R-12.15: the stored list was deleted in HubSpot. HubSpot answers either
+    ``LIST_ID_DOES_NOT_EXIST`` or "Attempted to modify membership for deleted lists"."""
 
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         await store_list(
@@ -1731,7 +1748,7 @@ def test_a_deleted_list_is_marked_gone_and_the_change_fails(tmp_path: Path) -> N
         )
         gateway = _WritingCrm(
             lists={"101": [], "102": []},
-            failures={"HUBSPOT_UPDATE_LIST_MEMBERSHIPS": [_LIST_GONE]},
+            failures={"HUBSPOT_UPDATE_LIST_MEMBERSHIPS": [answer]},
         )
         add = [
             ProposedChange(
@@ -1753,7 +1770,7 @@ def test_a_deleted_list_is_marked_gone_and_the_change_fails(tmp_path: Path) -> N
             assert changes[record]["crm_message"] == (
                 "The list no longer exists in HubSpot; find it by name or create it again."
             )
-            assert changes[record]["crm_response"] == json.loads(_LIST_GONE_BODY)
+            assert changes[record]["crm_response"] == json.loads(answer_body)
         # One call found it gone: the changes are not sent one by one after it.
         assert len(gateway.writes) == 1
         # The kept list is gone, so it is no longer offered for the project.
@@ -1769,6 +1786,56 @@ def test_a_deleted_list_is_marked_gone_and_the_change_fails(tmp_path: Path) -> N
         assert gone is True
 
     _run(tmp_path, "listgone", body)
+
+
+def test_a_deleted_lists_answer_naming_another_list_does_not_mark_this_one_gone(
+    tmp_path: Path,
+) -> None:
+    """R-12.15: only the list HubSpot names as deleted is gone; an answer naming another list
+    id is an ordinary refusal and the kept list stays offered."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await store_list(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            crm_object="company",
+            crm_list_id="17",
+            name="Clue: Q4",
+            kind="hubspot_list",
+            created_by_clue=True,
+            created_by_write_id=None,
+            project_id=seeded.project_id,
+        )
+        other = ExecuteResult(
+            False,
+            {"http_error": "404", "status_code": 404, "message": "Not Found"},
+            _LIST_DELETED_BODY.replace("listId=17", "listId=170"),
+        )
+        gateway = _WritingCrm(
+            lists={"101": []}, failures={"HUBSPOT_UPDATE_LIST_MEMBERSHIPS": [other]}
+        )
+        add = ProposedChange(
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+            {"list_id": "17", "operation": "add", "record_ids": ["101"]},
+            "Target accounts.",
+        )
+        proposal_id = await _propose(conn, seeded, connection, gateway, add)
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = (await _writes(conn, proposal_id))["101"]
+        assert change["status"] == "failed"
+        assert change["crm_message"] != (
+            "The list no longer exists in HubSpot; find it by name or create it again."
+        )
+        gone = await conn.scalar(
+            text("SELECT gone_at IS NOT NULL FROM crm_list WHERE crm_list_id = '17'")
+        )
+        assert gone is False
+
+    _run(tmp_path, "listgoneother", body)
 
 
 MARKETING_USER = "Your Salesforce user needs the Marketing User permission to create campaigns."

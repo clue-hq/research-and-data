@@ -23,13 +23,19 @@ import pytest
 
 from clue_agents import AgentRole, AgentTurnRequest, ArtifactRef, FinalizeStatus
 from clue_api.agent_execution_wiring import C5AgentExecutionAdapter
-from clue_api.agent_gate import GATE_OBJECT_TYPE
+from clue_api.agent_gate import (
+    GATE_OBJECT_TYPE,
+    KIND_CRM_WRITE_PERMISSION,
+    KIND_DIRECTIVE_CONFIRMATION,
+    insert_gate_answer,
+)
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.turn_action import derive_turn_action_ref
 from tests.agents.conftest import NOW, artifact, constitution, domain_ref
 from tests.agents.test_runtime import _DelegationArtifacts, _EmptyOutputBackend
-from tests.api.test_lane_d4_agent_gate_db import _present, _seed
+from tests.api.test_lane_d4_agent_gate_db import USER_ID, _present, _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
     migrated_db,  # noqa: F401 -- exposes the fixture to this test module
@@ -205,5 +211,105 @@ def test_a_gate_of_another_workspace_is_not_this_turns_card(tmp_path: Path) -> N
             )
 
             assert len(authority.envelopes) == 1
+
+    run_async(scenario())
+
+
+# --- R-12.16: a card the turn created cannot go missing ------------------------------------------
+
+
+def _message_only(status: str = "awaiting_input") -> dict[str, Any]:
+    return {"status": status, "user_message": "I've put the changes on a card for you."}
+
+
+def _gate_links(envelope: Any) -> list[tuple[str, str]]:
+    return [(r.object_type, r.object_id) for r in envelope.open_gate_refs]
+
+
+@pytest.mark.parametrize("kind", [KIND_CRM_WRITE_PERMISSION, KIND_DIRECTIVE_CONFIRMATION])
+def test_an_open_card_the_turn_created_is_linked_when_the_agent_leaves_it_out(
+    tmp_path: Path, kind: str
+) -> None:
+    """Live check L-13: the agent proposed CRM changes, then finalized ``awaiting_input`` with
+    only a message. The card must still be linked, so the chat emits its gate part."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-gate-own", label="gl_own")
+            gate, _created = await _present(conn, seeded, kind=kind)
+            finalize, authority = _finalizer(seeded)
+
+            await finalize(runtime=cast(Any, object()), **_message_only())
+
+            [envelope] = authority.envelopes
+            assert _gate_links(envelope) == [(GATE_OBJECT_TYPE, str(gate.gate_id))]
+            assert envelope.open_gate_refs[0].workspace_id == seeded.workspace_id
+
+    run_async(scenario())
+
+
+def test_a_card_the_agent_linked_is_not_linked_twice(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-gate-twice", label="gl_twice")
+            gate, _created = await _present(conn, seeded)
+            other, _created = await _present(conn, seeded, digest="b" * 64)
+            finalize, authority = _finalizer(seeded)
+
+            await finalize(
+                runtime=cast(Any, object()),
+                **_awaiting(seeded.workspace_id, GATE_OBJECT_TYPE, str(other.gate_id)),
+            )
+
+            [envelope] = authority.envelopes
+            # The agent's own link first, then the one it left out — each once.
+            assert _gate_links(envelope) == [
+                (GATE_OBJECT_TYPE, str(other.gate_id)),
+                (GATE_OBJECT_TYPE, str(gate.gate_id)),
+            ]
+
+    run_async(scenario())
+
+
+def test_an_answered_card_is_not_linked(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-gate-done", label="gl_done")
+            gate, _created = await _present(conn, seeded)
+            await insert_gate_answer(
+                conn,
+                gate_id=gate.gate_id,
+                workspace_id=seeded.workspace_id,
+                turn_id=seeded.turn_id,
+                action_ref=derive_turn_action_ref(seeded.turn_id),
+                decision="approved",
+                expected_subject_sha256=gate.expected_subject_sha256,
+                answered_by_user_id=USER_ID,
+            )
+            finalize, authority = _finalizer(seeded)
+
+            await finalize(runtime=cast(Any, object()), **_message_only())
+
+            [envelope] = authority.envelopes
+            assert envelope.open_gate_refs == ()
+
+    run_async(scenario())
+
+
+def test_an_open_card_of_another_turn_is_not_linked(tmp_path: Path) -> None:
+    """Only the cards THIS turn created: an older turn's card is not re-linked to this one."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            earlier = await _seed(conn, tmp_path, workspace_id="ws-gate-turns", label="gl_t1")
+            await _present(conn, earlier)
+            # A later turn of the same thread and workspace.
+            seeded = SimpleNamespace(**{**vars(earlier), "turn_id": uuid4()})
+            finalize, authority = _finalizer(seeded)
+
+            await finalize(runtime=cast(Any, object()), **_message_only())
+
+            [envelope] = authority.envelopes
+            assert envelope.open_gate_refs == ()
 
     run_async(scenario())

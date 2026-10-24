@@ -527,8 +527,15 @@ class CrmWriteLogInput(ToolInput):
     limit: int = Field(default=50, ge=1, le=_LOG_MAX_ROWS)
 
 
+#: R-12.17 (live check L-15): Clue's own ids are the agent's handles, never the person's words.
+_INTERNAL_ID = (
+    "Clue's internal id, for undo only, never shown to the person: name the record and what "
+    "changed instead."
+)
+
+
 class CrmLoggedWrite(BaseModel):
-    write_id: str
+    write_id: str = Field(description=_INTERNAL_ID)
     #: The write action and what it acts on, so an undo is one propose_crm_changes call.
     slug: str
     object: str
@@ -543,7 +550,7 @@ class CrmLoggedWrite(BaseModel):
     failure_kind: str | None
     crm_message: str | None
     reason: str
-    proposal_id: str
+    proposal_id: str = Field(description=_INTERNAL_ID)
 
 
 class CrmWriteLogOutput(ToolOutput):

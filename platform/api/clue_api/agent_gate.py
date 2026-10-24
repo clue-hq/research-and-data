@@ -30,6 +30,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -63,6 +64,7 @@ __all__ = [
     "insert_gate_answer",
     "money_text",
     "open_gates_for_thread",
+    "open_gates_for_turn",
     "redact_gate_snapshots_for_subject",
     "refuse_misnamed_gate_links",
 ]
@@ -579,6 +581,29 @@ async def open_gates_for_thread(
     gate (a CRM write card whose proposal moved on without an answer) is not open either.
     """
 
+    return await _open_gates(conn, workspace_id=workspace_id, scope="thread_id", value=thread_id)
+
+
+async def open_gates_for_turn(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[AgentGateRow, ...]:
+    """Every gate one turn presented that is still open, oldest first — the same openness as
+    :func:`open_gates_for_thread` (unanswered, not erased, not withdrawn). The turn's finalization
+    links these so a card the turn created always shows (R-12.16)."""
+
+    return await _open_gates(conn, workspace_id=workspace_id, scope="turn_id", value=turn_id)
+
+
+async def _open_gates(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    scope: Literal["thread_id", "turn_id"],
+    value: str | UUID,
+) -> tuple[AgentGateRow, ...]:
     rows = (
         (
             await conn.execute(
@@ -587,12 +612,12 @@ async def open_gates_for_thread(
                     "FROM agent_gate g "
                     "LEFT JOIN agent_gate_answer a "
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
-                    "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
+                    f"WHERE g.workspace_id = :workspace_id AND g.{scope} = :value "
                     "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
                     f"  AND NOT {GATE_WITHDRAWN_SQL} "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
-                {"workspace_id": workspace_id, "thread_id": thread_id},
+                {"workspace_id": workspace_id, "value": value},
             )
         )
         .mappings()

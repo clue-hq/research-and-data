@@ -1522,10 +1522,26 @@ class CrmWriteHandler:
         await queue_crm_writes_finished_turn(conn, self._artifacts, proposal=proposal)
 
 
+#: HubSpot's answer to a membership change of a list deleted in HubSpot (live check L-12):
+#: "Attempted to modify membership for deleted lists: [PortalListId{portalId=…, listId=18}];
+#: Aborting operations." The list ids it names are read out of it.
+_DELETED_LISTS = "Attempted to modify membership for deleted lists"
+_DELETED_LIST_ID = re.compile(r"listId=(\d+)")
+
+
 def _list_gone(call: Sequence[_Write], result: ExecuteResult) -> bool:
-    """A membership call HubSpot refused because the list does not exist (composio-api-notes.md
-    § Phase 3 shapes: ``ListError.LIST_ID_DOES_NOT_EXIST``)."""
-    return call[0].kind in _MEMBERSHIP and "LIST_ID_DOES_NOT_EXIST" in (result.error or "")
+    """A membership call HubSpot refused because the list does not exist
+    (composio-api-notes.md § Phase 3 shapes: ``ListError.LIST_ID_DOES_NOT_EXIST``) or was
+    deleted (R-12.15: the "deleted lists" answer, only when it names this call's list)."""
+    if call[0].kind not in _MEMBERSHIP:
+        return False
+    error = result.error or ""
+    if "LIST_ID_DOES_NOT_EXIST" in error:
+        return True
+    if _DELETED_LISTS not in error:
+        return False
+    deleted = error.split(_DELETED_LISTS, 1)[1]
+    return str(call[0].list_ref) in _DELETED_LIST_ID.findall(deleted)
 
 
 def _expired_reason(connection: CrmConnection) -> tuple[str, str]:

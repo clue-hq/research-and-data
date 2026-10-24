@@ -21,6 +21,7 @@ from clue_api.crm.connections import activate_from_attempt, start_attempt
 from clue_api.crm.write_tools import (
     CrmChangeInput,
     CrmWriteLogInput,
+    CrmWriteLogOutput,
     CrmWriteLogTool,
     ManageCrmGrantsInput,
     ManageCrmGrantsTool,
@@ -459,3 +460,12 @@ def test_a_list_create_grant_is_worded_like_the_card() -> None:
             _grant_phrase(provider, "kind", "list_removal", None, None)
             == "removing records from Clue lists and campaigns"
         )
+
+
+def test_the_logs_write_and_proposal_ids_are_marked_internal() -> None:
+    """R-12.17 (live check L-15): the agent showed the person Clue's write ids. The log still
+    returns them (undo needs ``write_id``), and its output schema says they are for undo only."""
+
+    rows = CrmWriteLogOutput.model_json_schema()["$defs"]["CrmLoggedWrite"]["properties"]
+    for field in ("write_id", "proposal_id"):
+        assert "for undo only, never shown to the person" in rows[field]["description"]

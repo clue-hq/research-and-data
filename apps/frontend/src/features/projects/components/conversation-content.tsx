@@ -80,6 +80,7 @@ export function ConversationContent({
       onOpenPlan,
       openClarificationTurnId,
       gateFor: chat.gateFor,
+      crmWritesFinished: chat.crmWritesFinished,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
         input: Parameters<ProjectChatController["answerGate"]>[1],

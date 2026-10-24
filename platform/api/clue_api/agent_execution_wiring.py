@@ -55,7 +55,11 @@ from clue_agents.contracts import (
 )
 from clue_agents.execution import SPILL_THRESHOLD_BYTES, spill_stub
 from clue_agents.ports import ExecutionProgress, OperationFailure, SpillSink
-from clue_api.agent_gate import refuse_misnamed_gate_links
+from clue_api.agent_gate import (
+    GATE_OBJECT_TYPE,
+    open_gates_for_turn,
+    refuse_misnamed_gate_links,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
@@ -2133,11 +2137,36 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             status=FinalizeStatus(envelope.status.value),
             open_gate_refs=envelope.open_gate_refs,
         )
+        open_gate_refs = await self._with_open_turn_gates(envelope.open_gate_refs)
+        if open_gate_refs != envelope.open_gate_refs:
+            envelope = envelope.model_copy(update={"open_gate_refs": open_gate_refs})
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,
             envelope=envelope,
         )
+
+    async def _with_open_turn_gates(
+        self, refs: tuple[DomainObjectRef, ...]
+    ) -> tuple[DomainObjectRef, ...]:
+        """``refs`` plus every card this turn created that is still open and that the agent left
+        out (R-12.16, live check L-13): the turn's links and the chat's gate parts come from the
+        envelope's ``open_gate_refs``, so a card missing there is a card the person never sees.
+        Every gate kind; an answered, erased or withdrawn card is not open and is not added."""
+        workspace_id = self._constitution.workspace_id
+        async with self._conn_factory() as conn:
+            gates = await open_gates_for_turn(
+                conn, workspace_id=workspace_id, turn_id=self._turn_id
+            )
+        linked = {(ref.object_type, ref.object_id) for ref in refs}
+        missing = tuple(
+            DomainObjectRef(
+                workspace_id=workspace_id, object_type=GATE_OBJECT_TYPE, object_id=str(gate.gate_id)
+            )
+            for gate in gates
+            if (GATE_OBJECT_TYPE, str(gate.gate_id)) not in linked
+        )
+        return (*refs, *missing)
 
     def bind_finalization_authority(self, authority: object) -> None:
         if hasattr(self, "_finalization_authority"):

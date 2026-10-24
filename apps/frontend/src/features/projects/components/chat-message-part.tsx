@@ -46,6 +46,8 @@ export interface ChatPartActions {
   onGateRecovery(card: GateCardModel): void;
   /** Send a plain chat message (e.g. the CRM card's "I'll give the numbers myself"). */
   onSendMessage?: (message: string) => void;
+  /** The thread's count of "changes finished" wake-up turns; a CRM write card re-reads when it moves. */
+  crmWritesFinished?: number;
   /** The CRM connect card's action: a fresh login link (R-3.10). */
   onCrmConnect?: (requestId: string, provider: CrmProvider) => Promise<string>;
 }
@@ -129,6 +131,7 @@ export function ChatMessagePartView({
             busy={actions.busy}
             card={card}
             onDecide={actions.onGateDecision}
+            wake={actions.crmWritesFinished ?? 0}
           />
         );
       }

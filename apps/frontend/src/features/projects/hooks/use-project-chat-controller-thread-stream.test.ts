@@ -45,7 +45,7 @@ function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
   const oldFetch = globalThis.fetch;
   const encoder = new TextEncoder();
   const server = {
-    turns: new Map<string, Array<{ turn_id: string; state: string; last_event_id?: number }>>([
+    turns: new Map<string, Array<{ turn_id: string; state: string; last_event_id?: number; derivation?: string }>>([
       [THREAD_A, [{ turn_id: "done", state: "completed", last_event_id: 7 }]],
       [THREAD_B, [{ turn_id: "done-b", state: "completed" }]],
     ]),
@@ -121,9 +121,10 @@ function harness({ startHidden = false }: { startHidden?: boolean } = {}) {
     if (turnsList) {
       const threadId = turnsList[1]!;
       server.turnReads.set(threadId, (server.turnReads.get(threadId) ?? 0) + 1);
-      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state, last_event_id }) => ({
+      return Response.json({ data: (server.turns.get(threadId) ?? []).map(({ turn_id, state, last_event_id, derivation }) => ({
         turn_id, thread_id: threadId, project_id: PROJECT, state,
         requested_at: TIMESTAMP, last_event_id: last_event_id ?? null, generation_attempts: 1, submission_message: null,
+        derivation: derivation ?? null,
       })), meta: { thread_status: "idle" } });
     }
     if (/\/threads\/[^/]+\/(messages|gates)$/.test(path)) {
@@ -233,6 +234,23 @@ test("test_a_turn_the_server_started_attaches_without_a_reload", async () => {
     await h.emitOnThread({ id: 20, type: "turn.accepted", turnId: "wake" });
     await h.flushUntil(() => h.turnStreams.has("wake"), "the wake turn attached");
     assert.equal(h.server.turnReads.get(THREAD_A), reads + 1, "one re-read found it");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("test_a_crm_writes_finished_wake_turn_counts_as_a_card_wake", async () => {
+  // R-12.18 (live check L-16): the chat learns of the "changes finished" wake turn from the
+  // thread stream; the CRM cards re-read at once when this count moves.
+  const h = harness();
+  try {
+    await h.mount(THREAD_A);
+    assert.equal(h.controller().crmWritesFinished, 0);
+    h.server.turns.get(THREAD_A)!.push({
+      turn_id: "wake", state: "running", derivation: "crm_writes_finished",
+    });
+    await h.emitOnThread({ id: 20, type: "turn.accepted", turnId: "wake" });
+    await h.flushUntil(() => h.controller().crmWritesFinished === 1, "the wake counted");
   } finally {
     await h.teardown();
   }

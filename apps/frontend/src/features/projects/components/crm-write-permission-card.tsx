@@ -52,14 +52,17 @@ export function CrmWritePermissionCard({
   busy,
   card,
   onDecide,
+  wake = 0,
 }: {
   busy: boolean;
   card: GateCardModel;
   onDecide: (card: GateCardModel, input: GateDecisionInput) => void;
+  /** The chat's count of "changes finished" wake-ups: the card re-reads when it moves (R-12.18). */
+  wake?: number;
 }) {
   const write = card.crmWrite;
   const answeredOrClosed = card.state !== "requested";
-  const progress = useCrmProposalProgress(card.crmProposalId, answeredOrClosed);
+  const progress = useCrmProposalProgress(card.crmProposalId, answeredOrClosed, wake);
   if (write === null) return null;
   const gateState =
     card.state === "responded" || card.state === "denied" || card.state === "withdrawn"
