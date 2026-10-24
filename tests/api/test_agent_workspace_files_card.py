@@ -252,3 +252,45 @@ def test_an_expired_entry_says_how_much_it_held() -> None:
         "work/large_tool_results/clip.txt": 48_213,
         "scratch/model.py": 7,
     }
+
+
+def test_an_expired_entry_says_when_it_was_made() -> None:
+    """Fix pass 2: the same approved line (Task 8, text (b)) says a deleted file's receipt tells
+    the agent "what made it, when, how much it held". A receipt's ``produced_at`` is set only for
+    a tool's read, and ``expired_at`` is when the file was deleted, not made — so for a script's
+    output, a working file or an unknown file the card said nothing about when it was made. It
+    now carries the entry's ``written_at`` for every expired file, whatever its receipt."""
+
+    made = NOW - timedelta(days=9, hours=3)
+    manifest = SnapshotManifest(
+        entries=(
+            _entry(
+                "reads/0d7c.stdout.txt",
+                written_at=made,
+                receipt=Receipt(
+                    source="run_python",
+                    operation_id="0d7c",
+                    details={"stream": "stdout"},
+                    read_again="Run the script again; this was its stdout.",
+                ),
+                expired_at=NOW - timedelta(days=7),
+            ),
+            _entry(
+                "scratch/model.py",
+                written_at=made - timedelta(days=1),
+                receipt=UNKNOWN_RECEIPT,
+                expired_at=NOW - timedelta(days=1),
+            ),
+        )
+    )
+
+    card = build_workspace_files_card(manifest, now=NOW)
+
+    expired = card["expired"]
+    assert isinstance(expired, list)
+    assert {item["path"]: item["written_at"] for item in expired} == {
+        "reads/0d7c.stdout.txt": made.isoformat(),
+        "scratch/model.py": (made - timedelta(days=1)).isoformat(),
+    }
+    # Neither receipt could have said it.
+    assert [item["receipt"]["produced_at"] for item in expired] == [None, None]

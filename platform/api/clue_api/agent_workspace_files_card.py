@@ -104,6 +104,10 @@ def build_workspace_files_card(
                 # for every deleted file (Task 8, text (b)), and only a CRM read's receipt counts
                 # its records — so the card says it for all of them.
                 "size": entry.size,
+                # When it was made: the same manual line promises "when", and a receipt's
+                # ``produced_at`` is filled only for a tool's read — a script's output, a working
+                # file or an unknown file would otherwise say only when it was deleted.
+                "written_at": _iso(entry.written_at),
                 "expired_at": _iso(entry.expired_at),
                 "receipt": _receipt(entry),
             }
