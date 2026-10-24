@@ -17,15 +17,16 @@ released that no other snapshot still holds. The area is what makes that safe: a
 any other shape is some other owner's bytes (an upload, a Gallery artifact, an evidence snapshot)
 that merely deduped onto the same content address, so erasure is guarded by
 :func:`~clue_storage.is_agent_workspace_key` and never touches one. Phase 1 bytes still live under
-the bare ``{workspace}/{sha}`` key, so a read falls back to it and a re-save simply re-stores the
-bytes in the new area and releases the old key without erasing it.
+the bare ``{workspace}/{sha}`` key, so a read falls back to it, and the chat's next save stores
+again in the new area every live file that is not already there (:meth:`unmoved_files` is how the
+caller finds them) and releases the old key without erasing it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import text
@@ -99,6 +100,10 @@ _TOUCH = text(
 )
 _FORGET = text(
     "DELETE FROM agent_workspace_snapshot WHERE workspace_id = :ws AND thread_id = :thread"
+)
+_HELD_AMONG = text(
+    "SELECT storage_key FROM artifact_reference WHERE workspace_id = :ws "
+    "AND reference_kind = :kind AND reference_id = :thread AND storage_key = ANY(:keys)"
 )
 _HELD = text(
     "SELECT storage_key FROM artifact_reference WHERE workspace_id = :ws "
@@ -178,6 +183,34 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
             *(one(sha, media_type, data) for sha, (media_type, data) in unique.items())
         )
         return sum(results)
+
+    async def unmoved_files(
+        self, *, workspace_id: str, thread_id: str, sha256s: Collection[str]
+    ) -> frozenset[str]:
+        """The ``sha256s`` this chat holds under their Phase 1 bare key — one query for the set.
+
+        A chat Phase 1 saved holds its bytes under ``{ws}/{sha}``, and ``save`` holds
+        ``{ws}/agent-workspace/{sha}`` for every live file, so a file a turn left untouched reached
+        ``save`` with nothing there to hold (review C1). The caller stores what this returns and
+        the chat has moved to its own area on that save. Asking what the chat *holds*, rather than
+        what the area lacks, is deliberate: an own-area file the expiry job just erased is not
+        held any more, and storing it again would bring back bytes that were meant to go.
+        """
+
+        wanted = {artifact_key(workspace_id, sha): sha for sha in sha256s}
+        if not wanted:
+            return frozenset()
+        async with self._conn_factory() as conn:
+            rows = await conn.execute(
+                _HELD_AMONG,
+                {
+                    "ws": workspace_id,
+                    "kind": SNAPSHOT_REFERENCE_KIND,
+                    "thread": thread_id,
+                    "keys": list(wanted),
+                },
+            )
+            return frozenset(wanted[str(row[0])] for row in rows)
 
     async def save(
         self,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import stat
 import uuid
@@ -41,14 +42,21 @@ from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
 from clue_api.agent_workspace_files_card import build_workspace_files_card
 from clue_api.agent_workspace_retention import AgentWorkspaceRetentionJob
-from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
+from clue_api.agent_workspace_snapshots import SNAPSHOT_REFERENCE_KIND, DbWorkspaceSnapshotStore
 from clue_api.sandbox.policy_sweep import snapshot as sweep_snapshot
 from clue_api.sandbox.policy_sweep import sweep
 from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
 from clue_core import ExecutionId
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
-from clue_storage import FsStorage, agent_workspace_key
+from clue_storage import (
+    FsStorage,
+    agent_workspace_key,
+    artifact_key,
+    is_agent_workspace_key,
+    record_artifact,
+    retain_artifact,
+)
 from tests.agents.workspace_helpers import RecordingArtifactSink, policy, resource_snapshot
 from tests.db.conftest import run_async
 
@@ -911,3 +919,194 @@ def test_16_a_run_longer_than_its_window_keeps_its_files(tmp_path: Path, thread:
 
 
 _ = asyncio
+
+
+# --- A chat saved before Phase 2 (fix pass 1, review C1) ------------------------------------------
+
+PHASE_1_FILES = {
+    "outputs/t.csv": b"deal,amount\nA,10\n",
+    "reads/00000000-0000-0000-0000-000000000001.json": b'{"deals": 28}',
+    "scratch/notes.md": b"cycle ~42 days",
+}
+
+
+async def _plant_phase_1_chat(world: World, files: dict[str, bytes]) -> dict[str, str]:
+    """A chat exactly as Phase 1 left it, and return the bare key of each file's bytes.
+
+    A schema-1 file list (every non-raw file called a work product, no receipts, no expiries),
+    every byte — the list's own included — recorded, held and stored ONLY under the bare
+    ``{ws}/{sha}`` key, and a version record whose manifest key has that old shape too. Nothing in
+    the chat's own area: that is what a Phase 1 chat looks like the moment Phase 2 deploys.
+    """
+
+    written = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
+    document = {
+        "schema_version": 1,
+        "entries": [
+            {
+                "path": path,
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size": len(data),
+                "media_type": "text/plain",
+                "tier": "raw_input" if path.startswith("reads/") else "work_product",
+                "written_at": written.isoformat(),
+            }
+            for path, data in sorted(files.items())
+        ],
+    }
+    body = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    manifest_sha = hashlib.sha256(body).hexdigest()
+    blobs = {hashlib.sha256(data).hexdigest(): data for data in files.values()}
+    blobs[manifest_sha] = body
+    async with transaction() as conn:
+        for sha, data in blobs.items():
+            key = artifact_key(world.ws, sha)
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=world.ws,
+                content_sha256=sha,
+                media_type="text/plain",
+                size_bytes=len(data),
+            )
+            await retain_artifact(
+                conn,
+                workspace_id=world.ws,
+                storage_key=key,
+                reference_kind=SNAPSHOT_REFERENCE_KIND,
+                reference_id=THREAD,
+            )
+        await conn.execute(
+            text(
+                "INSERT INTO agent_workspace_snapshot (workspace_id, thread_id, project_id, "
+                "version, manifest_artifact_key, manifest_sha256) "
+                "VALUES (:ws, :th, :prj, 1, :key, :sha)"
+            ),
+            {
+                "ws": world.ws,
+                "th": THREAD,
+                "prj": PROJECT,
+                "key": artifact_key(world.ws, manifest_sha),
+                "sha": manifest_sha,
+            },
+        )
+    for sha, data in blobs.items():
+        await FsStorage.put(
+            world.storage, artifact_key(world.ws, sha), data, media_type="text/plain"
+        )
+    keys = {
+        path: artifact_key(world.ws, hashlib.sha256(data).hexdigest())
+        for path, data in files.items()
+    }
+    keys["<manifest>"] = artifact_key(world.ws, manifest_sha)
+    return keys
+
+
+async def _held(world: World, thread: str = THREAD) -> set[str]:
+    async with transaction() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact_reference WHERE workspace_id = :ws "
+                "AND reference_kind = :kind AND reference_id = :th"
+            ),
+            {"ws": world.ws, "kind": SNAPSHOT_REFERENCE_KIND, "th": thread},
+        )
+    return {str(row[0]) for row in rows}
+
+
+def test_17_a_phase_1_chat_moves_to_its_own_area_on_its_next_save(tmp_path: Path) -> None:
+    """Review C1: a turn on a chat Phase 1 saved changes one file and leaves the others alone.
+
+    The snapshotter uploads only what changed, so the unchanged files' bytes existed only under
+    the old bare key and the save — which holds every live file in the chat's own area — had
+    nothing to hold: ``ArtifactIntegrityError``, the turn failed, and its outputs were never saved,
+    on every later turn too. The save must carry the unchanged files into the new area from the
+    bytes the turn already has on disk, release the old keys and erase none of them (AW-26).
+    """
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            old = await _plant_phase_1_chat(world, PHASE_1_FILES)
+            a, c = world.machine(), world.machine()
+
+            lease = await _open(world, a, fence=await world.fence("worker-a"))
+            try:
+                for path, data in PHASE_1_FILES.items():
+                    assert _bytes(a, world.ws, path) == data, path
+                _write(lease, {"scratch/notes.md": b"cycle ~40 days, revised"})
+                report = await lease.save_snapshot()
+                assert (report.status, report.version) == ("saved", 2)
+            finally:
+                await a.factory.release_saved(lease)
+
+            expected = {**PHASE_1_FILES, "scratch/notes.md": b"cycle ~40 days, revised"}
+            manifest = await world.manifest()
+            assert {entry.path for entry in manifest.live()} == set(expected)
+            # Every live file of the new version is held, and stored, in the chat's own area.
+            held = await _held(world)
+            assert all(is_agent_workspace_key(key) for key in held), held
+            for data in expected.values():
+                assert world.key(data) in held
+                assert await world.stored(world.key(data))
+            # The old keys are only released — their bytes may be an upload's (AW-26).
+            for key in old.values():
+                assert key not in held
+                assert await world.erasure(key) == (False, False)
+                assert await world.storage.exists(key)
+            assert not any(key in world.storage.deletes for key in old.values())
+
+            # A third machine needs nothing from the old area: take its bytes away and restore.
+            for key in old.values():
+                await FsStorage.delete(world.storage, key)
+            lease = await _open(world, c, fence=await world.fence("worker-c"))
+            try:
+                assert lease.restore_report is not None and lease.restore_report.warm is False
+                for path, data in expected.items():
+                    assert _bytes(c, world.ws, path) == data, path
+            finally:
+                await c.factory.release_saved(lease)
+
+    run_async(scenario())
+
+
+def test_18_the_expiry_job_moves_a_cold_phase_1_chat_to_its_own_area(tmp_path: Path) -> None:
+    """Review C1, the job's side: its save of a cold Phase 1 chat holds the files it keeps in the
+    chat's own area too, and it has no local copy to upload them from — so before the fix the
+    chat failed every pass and never expired. It must carry them over from the old keys."""
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            old = await _plant_phase_1_chat(world, PHASE_1_FILES)
+            raw_path = "reads/00000000-0000-0000-0000-000000000001.json"
+            await world.age(days=3)
+
+            await world.job(raw_s=RAW_S, working_s=WORKING_S).run_once()
+
+            manifest = await world.manifest()
+            assert [entry.path for entry in manifest.expired()] == [raw_path]
+            assert {entry.path for entry in manifest.live()} == {
+                "outputs/t.csv",
+                "scratch/notes.md",
+            }
+            held = await _held(world)
+            assert all(is_agent_workspace_key(key) for key in held), held
+            for path in ("outputs/t.csv", "scratch/notes.md"):
+                assert await world.stored(world.key(PHASE_1_FILES[path]))
+                assert world.key(PHASE_1_FILES[path]) in held
+            for key in old.values():
+                assert key not in held
+                assert await world.erasure(key) == (False, False)
+                assert await world.storage.exists(key)
+
+            for key in old.values():
+                await FsStorage.delete(world.storage, key)
+            b = world.machine()
+            lease = await _open(world, b, fence=await world.fence("worker-b"))
+            try:
+                assert not _has(b, world.ws, raw_path)
+                for path in ("outputs/t.csv", "scratch/notes.md"):
+                    assert _bytes(b, world.ws, path) == PHASE_1_FILES[path]
+            finally:
+                await b.factory.release_saved(lease)
+
+    run_async(scenario())

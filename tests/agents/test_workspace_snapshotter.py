@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -88,6 +88,11 @@ class FakeStore(WorkspaceSnapshotStore):
                 count += 1
         self.uploads += count
         return count
+
+    async def unmoved_files(
+        self, *, workspace_id: str, thread_id: str, sha256s: Collection[str]
+    ) -> frozenset[str]:
+        return frozenset()  # this fake keeps every file in one place: nothing ever moves
 
     async def save(
         self,

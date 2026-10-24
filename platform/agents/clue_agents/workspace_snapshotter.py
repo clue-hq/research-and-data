@@ -344,7 +344,7 @@ class WorkspaceSnapshotter:
             return self._report(
                 lease, "unchanged", uploaded=0, size=0, version=None, started=started
             )
-        new_files = _new_files(manifest, base=base, local=local)
+        new_files = await self._files_to_upload(chat, manifest, base=base, local=local)
         try:
             uploaded, status, pointer = await self._save_with_retries(
                 lease, base=base, manifest=manifest, new_files=new_files
@@ -353,7 +353,7 @@ class WorkspaceSnapshotter:
                 rebased = await self._rebase_over_expiry(lease, base=base, local=local)
                 if rebased is not None:
                     base, local, manifest = rebased
-                    new_files = _new_files(manifest, base=base, local=local)
+                    new_files = await self._files_to_upload(chat, manifest, base=base, local=local)
                     again, status, pointer = await self._save_with_retries(
                         lease, base=base, manifest=manifest, new_files=new_files
                     )
@@ -523,6 +523,38 @@ class WorkspaceSnapshotter:
         )
         manifest = await self._manifest_for(local, previous=published, chat=chat)
         return rebased, local, manifest
+
+    async def _files_to_upload(
+        self,
+        chat: ChatScope,
+        manifest: SnapshotManifest,
+        *,
+        base: SnapshotBase,
+        local: Mapping[str, bytes],
+    ) -> list[tuple[SnapshotEntry, bytes]]:
+        """What this save must store: the new bytes, plus any this chat still holds only where
+        the store no longer keeps a chat's files.
+
+        Skipping a file the base already holds is what keeps a save cheap — but a base saved
+        before the store moved a chat's files to their own area (F3 Phase 2, WS-30) holds bytes
+        the save cannot hold, and skipping those failed every later save of the chat (review
+        C1). The turn has every live file on disk, so it stores those again from there, and the
+        chat moves to the new area on this save. The common case — everything already there —
+        costs one query for the whole set; nothing is asked when nothing was skipped.
+        """
+
+        new_files = _new_files(manifest, base=base, local=local)
+        uploading = {entry.sha256 for entry, _ in new_files}
+        skipped = {entry.sha256 for entry in manifest.live()} - uploading
+        if not skipped:
+            return new_files
+        missing = await self._store.unmoved_files(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id, sha256s=skipped
+        )
+        return [
+            *new_files,
+            *((entry, local[entry.path]) for entry in manifest.live() if entry.sha256 in missing),
+        ]
 
     async def _receipts_for(
         self, chat: ChatScope, paths: Sequence[str]

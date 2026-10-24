@@ -311,6 +311,7 @@ class AgentWorkspaceRetentionJob:
         )
         if not count:
             return 0, "skipped"
+        await self._carry_into_area(chat, entries)
         status, _ = await self._store.save(
             workspace_id=chat.workspace_id,
             project_id=chat.project_id,
@@ -340,6 +341,31 @@ class AgentWorkspaceRetentionJob:
             files=count,
         )
         return count, status
+
+    async def _carry_into_area(self, chat: _Chat, entries: tuple[SnapshotEntry, ...]) -> None:
+        """Store in the chat's own area every file the new version keeps that is not there yet.
+
+        A chat Phase 1 saved keeps its bytes under the old bare keys, and the save holds every
+        live file in the chat's own area (review C1). A turn stores those again from its disk;
+        the job has no disk, so it reads each one back from where it is — the read falls back to
+        the old key — and stores it. Only a chat that has not moved costs anything beyond the one
+        query that says so.
+        """
+
+        live = {entry.sha256: entry for entry in entries if entry.expired_at is None}
+        missing = await self._store.unmoved_files(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id, sha256s=live
+        )
+        if not missing:
+            return
+        files = [
+            (
+                live[sha],
+                await self._store.read_file(workspace_id=chat.workspace_id, entry=live[sha]),
+            )
+            for sha in sorted(missing)
+        ]
+        await self._store.store_files(workspace_id=chat.workspace_id, files=files)
 
     async def _activity(self, chat: _Chat) -> tuple[int, datetime] | None:
         """This chat's version and newest activity, read together — ``None`` when it is gone."""

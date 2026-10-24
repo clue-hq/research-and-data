@@ -33,6 +33,7 @@ from clue_api.agent_workspace_snapshots import (
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_storage import (
+    ArtifactIntegrityError,
     FsStorage,
     StorageError,
     agent_workspace_key,
@@ -494,18 +495,61 @@ def test_files_are_stored_under_the_agent_workspace_area(tmp_path: Path) -> None
 def test_a_phase_1_file_is_read_from_the_old_key_and_restored_under_the_new_one(
     tmp_path: Path,
 ) -> None:
+    """A Phase 1 file reads through its old key, and moves to the new area on the next save.
+
+    The save is driven the way a turn drives it — only the bytes that changed are uploaded — not
+    with every file stored first, which is what hid review C1: an untouched Phase 1 file reached
+    ``save`` with nothing in the new area to hold, and every save of that chat failed.
+    """
+
     async def body(ws: str, storage: CountingStorage) -> None:
         store = DbWorkspaceSnapshotStore(storage=storage)
         data = b"written before Phase 2"
         entry = _entry("scratch/a.md", data)
         old_key = await _record_legacy(ws, storage, data, "thr-1")
+        changed = b"written this turn"
+        new_entry = _entry("scratch/b.md", changed)
+        manifest = SnapshotManifest(entries=(entry, new_entry))
 
         assert await store.read_file(workspace_id=ws, entry=entry) == data
 
-        await _save(store, ws, {"scratch/a.md": data}, expected=None)
+        # A turn uploads only what changed. Without the move, that is the C1 failure.
+        await store.store_files(workspace_id=ws, files=[(new_entry, changed)])
+        with pytest.raises(ArtifactIntegrityError):
+            await store.save(
+                workspace_id=ws,
+                project_id="prj-1",
+                thread_id="thr-1",
+                expected_version=None,
+                manifest=manifest,
+                fence=None,
+            )
+        # What the store says the turn must also store: the untouched file it holds under the
+        # old key — not the one that is already in the new area.
+        unmoved = await store.unmoved_files(
+            workspace_id=ws, thread_id="thr-1", sha256s={entry.sha256, new_entry.sha256}
+        )
+        assert unmoved == {entry.sha256}
+        await store.store_files(workspace_id=ws, files=[(entry, data)])
+        status, pointer = await store.save(
+            workspace_id=ws,
+            project_id="prj-1",
+            thread_id="thr-1",
+            expected_version=None,
+            manifest=manifest,
+            fence=None,
+        )
+        assert status == "saved" and pointer is not None
+
         new_key = agent_workspace_key(ws, entry.sha256)
         assert await storage.exists(new_key)
         assert new_key in await _reference_keys(ws)
+        assert old_key not in await _reference_keys(ws)
+        # Moved: nothing left for the next save to carry.
+        assert (
+            await store.unmoved_files(workspace_id=ws, thread_id="thr-1", sha256s={entry.sha256})
+            == frozenset()
+        )
         # The Phase 1 key is only released: its bytes may belong to an upload (AW-26).
         assert await _erasure(old_key) == (False, False)
         assert await storage.exists(old_key)

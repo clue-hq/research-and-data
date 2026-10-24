@@ -9,7 +9,7 @@ surface.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
@@ -249,6 +249,22 @@ class WorkspaceSnapshotStore(Protocol):
     async def store_files(
         self, *, workspace_id: str, files: Sequence[tuple[SnapshotEntry, bytes]]
     ) -> int: ...
+
+    async def unmoved_files(
+        self, *, workspace_id: str, thread_id: str, sha256s: Collection[str]
+    ) -> frozenset[str]:
+        """The content addresses in ``sha256s`` this chat still holds where ``save`` will not.
+
+        A save skips the bytes its base version already holds — that is what keeps it cheap —
+        and holds every live file of the new version where the store keeps a chat's files today.
+        A version saved before the store moved them (F3 Phase 2's own area, WS-30) holds its
+        bytes somewhere else, so the skipped ones have to be stored again before that chat can
+        save at all (review C1). Only what this chat's current version holds is answered: bytes
+        that are gone because they expired are not "unmoved", and storing them again would bring
+        an expired file back. Where the store keeps files is its own business; this is the one
+        question a caller needs answered about it, in one round trip for the whole set.
+        """
+        ...
 
     async def save(
         self,
