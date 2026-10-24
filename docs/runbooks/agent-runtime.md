@@ -136,6 +136,49 @@ appearing for more than two intervals. The second case means the pass itself is 
 `maintenance_run` row, so the fleet simply retries it on the next check rather than skipping a
 day. Nothing is lost by a failed pass; files that should have expired expire late.
 
+**Measured timings (final live check, dushanbe stack, 2026-10-24 UTC).** One chat with 4 files
+(69,194 bytes): the first save (version 1, 4 files uploaded) took 968 ms; after the whole
+`CLUE_AGENT_WORKSPACE_ROOT` was deleted and every worker restarted, the cold restore (4 files
+downloaded, 69,194 bytes) took 583 ms; an unchanged save took 5–10 ms; restoring a chat with no
+version yet took 4 ms. After expiry the chat held 1 file (19 bytes) and restored in 348 ms and
+370 ms. The expiry of 3 files (version 1 → 2, bytes erased and purged from R2) took 1.5 s. A warm
+restore (this worker already holds the current copy) downloads nothing: 2 ms in the Phase 1 live
+check. Read these as the order of magnitude for a small chat, not as a budget.
+
+**Snapshot log lines to alert on.** Each is a `warning` carrying the workspace and thread (or the
+keys) it concerns:
+
+- `agent_workspace.save_unavailable` — storage could not be reached after the save's retries; the
+  turn fails, the worker keeps its copy marked unsaved, and the chat's next turn saves it. **Alert
+  on a sustained rate**: it means R2 trouble.
+- `agent_workspace.save_refused` — a save was refused (`status` says why: `stale`, another writer
+  saved first and the rebase could not apply, or `fenced`, the turn lost its lease). An occasional
+  one is a zombie or a lost race doing what it should; **alert when one chat repeats it** or the
+  rate climbs.
+- `agent_workspace.release_save_failed` — a turn that stopped or failed could not save on its way
+  out, so what it wrote since the last save is not in the chat's snapshot and a turn on another
+  worker will not see it. **Alert on any.**
+- `agent_workspace.purge_failed` — deleting erased bytes after a committed save failed. The turn
+  is unaffected and the fleet's orphan sweep deletes them later; **alert only if it persists**.
+- `agent_workspace.retention.chat_failed` — see above; alert when `failed > 0` persists.
+- `agent_workspace.retention.claim_not_released` — a retention pass that raised could not release
+  its claim, so no other pass starts until the claim is 6 hours old. Nothing is lost; **alert if it
+  repeats**, and look for the `fleet.workspace_retention.error` beside it.
+
+**The emergency switch (`CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED=false`).** Use it only when
+snapshots themselves are the problem (storage down for a long time, a snapshot bug). Set it and
+restart the workers. Each snapshots-off worker then runs every chat from one shared folder,
+`<root>/local`, holding a shared lock on `<root>/workers/local.lock` for its whole life; turns
+neither restore nor save, so a chat starts there **without** its saved files (its `outputs/`
+included) and whatever it writes stays on that machine's disk only. The saved versions are left
+exactly as they were. To turn it back on, set `true` and restart the workers: every chat restores
+its last saved version on its next turn, and **everything written while the switch was off is
+lost** — by design, it was never saved. Nothing needs cleaning by hand: a snapshots-on worker
+removes `<root>/local` as soon as it can take that lock exclusively, i.e. once no snapshots-off
+worker is alive — at its area claim and again on each cache sweep. During a rolling restart the
+folder can outlive the restart for a moment while the old workers exit (seen in the live check);
+it goes at the next claim or sweep.
+
 DSAR is separate and stronger: it tombstones and erases subject-bound durable bodies, blocks
 resurrection, marks affected turns unreplayable, and removes matching live workspaces immediately.
 Retention cleanup must not be used as a substitute for DSAR.

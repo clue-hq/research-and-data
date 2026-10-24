@@ -32,7 +32,13 @@ expiring one can never reach anybody else's bytes; a daily fleet job expires a c
 its working files (`scratch/`, the rest of `work/`) after 7 days, while `outputs/` is kept for the
 chat's life; an expired entry keeps a receipt saying what it was and how to get it again, and its
 bytes are erased and purged; and every turn opens with `context/project/workspace_files.json`, which
-tells the agent what it has, each file's age, and what has gone.
+tells the agent what it has, each file's age, and what has gone. **Phase 3 is built on `feat/agent-workspace-phase-3`
+(2026-10-25, live-proven on the dushanbe stack):** a turn that restores marks the chat active, so the
+expiry job never expires a run in flight; research reconciliation reads the source run's snapshot on
+any machine and says when the source never saved one; every other caller (account research,
+delegations, onboarding synthesis, research quality) is proven end to end; and the snapshots-off
+emergency switch is exercised — its shared `<root>/local` is held by a shared lock on
+`<root>/workers/local.lock` and removed by a snapshots-on worker once no snapshots-off worker is alive.
 
 ## ARV2 work — coding agents start here (added 2026-09-04)
 If your task concerns account research, contact research, the display layer, the accounts screens,

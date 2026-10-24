@@ -197,7 +197,7 @@ evidence for the first two.
 | **P0: the spec** | this document | the agreed text every plan is built from | — | you approve it, with the §4 decisions answered |
 | **P1: the core** | version record and snapshot in R2; restore at turn start; save at turn end; recipe folders updated only where changed; each worker its own disk area and each chat its own copy of the brand and project files; the disk becomes a cache; the old cleanup job retired; the flag | **Fixes F3.** Any worker can continue any chat with all of its files. No residue on disk. Research runs, delegations, account research and onboarding synthesis get it too, through the shared workspace layer | WS-1–WS-22, WS-36, WS-37 | §11 tests 1–4, 6, 8, 10, 11, 13, 14 pass; the first live check passes with timings recorded. **Status: P1 built; live check passed 2026-10-22** (branch `feat/agent-workspace-durability`; not in production until P2) |
 | **P2: retention and honesty** | tiers; 48-hour expiry of raw inputs; receipts; the expiry job; the turn-start file list; the staleness instruction; the manual rewrite; erasure; deleting a chat's own stored files once no snapshot holds them (AW-26) | Raw CRM data no longer kept beyond 48 hours. The agent always knows what it has, how old it is and what expired. Privacy erasure reaches the snapshots | WS-23–WS-32 | §11 tests 5 and 7 pass; you have reviewed and approved the skill and manual text |
-| **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes |
+| **P3: remaining workspaces and proof** | research reconciliation reads snapshots; every other caller checked; the full robustness tests; final live measurement; rollout | Every agent workspace is machine-independent, and it is proven | WS-33–WS-35 | §11 tests 9 and 12 pass; the full robustness suite passes. **Status: P3 built and proven on `feat/agent-workspace-phase-3` (2026-10-25)**; tests 9 and 12 pass and the final live check passed on the dushanbe stack 2026-10-24. **Rollout is the founder's call and is not done:** what remains is landing the four stacked branches in order — CRM → Phase 1 → Phase 2 → Phase 3 — and, at that merge, renumbering F3's skill and profile versions (manual v24, head-of-abm v78, stage0-interview v51) above the CRM lane's. The flag already ships on |
 | **Follow-up spec** | design ad and web sessions | — | separate document | — |
 
 **Release rule (AW-23, 2026-10-22): P1 may ship without P2** — there are no customers yet. Until
@@ -818,6 +818,9 @@ with the one line that says how to get it again.
   prevention, and it is unproven for these callers because no research snapshot has ever been
   expired (the stack holds chat snapshots only). Phase 3 teaches the busy check the fleet kinds
   these callers actually run under, and proves it with a run that is live while a pass walks it.
+  *Built 2026-10-25 another way:* those callers lease on their execution id, which a thread id
+  cannot name, so instead a turn that restores stamps the chat's activity — a run in flight is then
+  never a candidate, for every caller alike; `_BUSY` stays as an extra guard for chats.
   The ARV2 entity-research fleet (`account_research_fleet_launch`, `contact_research_fleet_launch`,
   `contact_entity_research`) is **out of scope**: it opens no agent workspace at all — its state is
   LangGraph checkpoints, Postgres rows and artifacts — so neither the cleanup nor this gap touches it.
@@ -861,10 +864,10 @@ checks.
 | 6 | **Work products survive** a cache wipe (P1) and the expiry job (P2) | P1, P2 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_6_work_products_survive_the_expiry_job` |
 | 7 | **Erasure:** version records, file lists and stored files are gone after the purge; a cached folder on another root is never used and is removed by the next cleanup | P2 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_7_erasing_a_chat_leaves_nothing_in_storage_and_no_root_reuses_its_copy` |
 | 8 | **Cleanup stays in its own area:** a worker's start-up wipe removes its whole area and nothing in another worker's area, even while that worker runs a turn; the idle job removes an idle chat's folder and skips the chats this worker is running | P1 |
-| 9 | **Research reconciliation** across two roots reads the source run's snapshot | P3 |
+| 9 | **Research reconciliation** across two roots reads the source run's snapshot | P3 | **PASSES** — `tests/api/test_agent_workspace_scenarios_db.py::test_9_research_reconciliation_reads_the_source_snapshot_across_roots`; the no-snapshot report (WS-33) in `tests/api/test_quality_reconciliation_source_db.py::test_a_source_run_with_no_snapshot_is_reported_not_silently_empty` and `::test_a_source_with_a_snapshot_reports_its_version_and_count` |
 | 10 | **Sandbox after restore:** `run_python` reads and writes restored files (ownership, modes, policy sweep) | P1 |
 | 11 | **Migration** up, down and up again, with a single Alembic head | P1 |
-| 12 | **Clean-machine restore and final live check:** on the dushanbe stack, a real chat turn; delete the whole cache root; continue the chat; the agent finds its files; warm and cold timings recorded (WS-20) | P1 (first run), P3 (final) |
+| 12 | **Clean-machine restore and final live check:** on the dushanbe stack, a real chat turn; delete the whole cache root; continue the chat; the agent finds its files; warm and cold timings recorded (WS-20) | P1 (first run), P3 (final) | **PASSES** — automated half (the emergency switch, WS-35): `tests/api/test_agent_workspace_scenarios_db.py::test_17_the_emergency_flag_turns_snapshots_off_and_back_on`; live half: the dushanbe stack, 2026-10-24 (see the 2026-10-25 change-log entry) |
 | 13 | **Recipe folders updated in place:** a second turn on the same root with no changes writes only its new input file; a changed budget replaces only `budget.json`; a removed document's file is deleted; a new skill version rewrites only `.deepagent/` | P1 |
 | 14 | **Chats never share a folder:** two chats of one project on one worker each get their own copy of the brand and project files; deleting one chat's folder leaves the other's turn untouched; a project document written in one chat appears in the other's next turn | P1 |
 
@@ -1035,3 +1038,54 @@ and WS-28's list contents for live and expired files (P2).
   own: `agent_turn_submission` is append-only, so the chat was aged by moving the job's clock
   forward rather than the row back; and `run_once` has no per-chat error isolation, so one chat
   whose manifest blob is missing from this lane's shared R2 bucket aborts the whole pass.
+- 2026-10-25: **Phase 3 built and proven** on `feat/agent-workspace-phase-3` (plan
+  `docs/superpowers/plans/2026-10-24-agent-workspace-phase-3-proof.md`, Tasks 1–7). WS-34a: a
+  restore of a chat that has a version record stamps its activity, so a run in flight — chat,
+  research, delegation or onboarding synthesis — is never an expiry candidate while it runs; the
+  job's `_BUSY` check stays as an extra guard for chats (the other callers lease on their execution
+  id, which the thread id cannot name). WS-33: reconciliation writes a `source_snapshot` block
+  (source thread, version, files copied) into `work/reconciliation/input.json` and logs
+  `research.reconciliation.source_snapshot`, so a source that never saved is reported, not silently
+  empty. WS-34: `test_15` (four caller shapes round-trip across two roots and expire) and `test_16`
+  (a run longer than its window keeps its files through the rebase) in the scenarios suite. §11
+  test 9 and test 12 pass (§11 names the functions). Found and fixed on the way: a stored path
+  under a `.clue-tmp-*` folder is renamed rather than dropped (founder, 2026-10-24); and once
+  snapshots are back on nothing removed the shared `<root>/local` of the emergency switch, and
+  switching off again reopened that stale copy — every snapshots-off worker now holds a shared lock
+  on `<root>/workers/local.lock` and a snapshots-on worker removes `local` when it can take that
+  lock exclusively (at its area claim and on every cache sweep).
+  **Final live check on the dushanbe stack (2026-10-24 UTC, chat
+  `thr_4f4d80ca71885ecf84723fcb784c8295`; 14 model calls, $0.89).**
+  - Turn 1 wrote `scratch/f3-proof-notes.txt`, `outputs/f3-proof-summary.md`, a spilled stdout in
+    `reads/` and a spilled governed result `reads/<id>.json`. Its restore of the empty chat took
+    4 ms; the first save was version 1, 4 files uploaded, 69,194 bytes, 968 ms.
+  - Clean machine: the whole `CLUE_AGENT_WORKSPACE_ROOT` was deleted and every worker restarted.
+    Turn 2 restored version 1 cold — 4 files downloaded, 69,194 bytes, 583 ms — and the agent
+    quoted both marker lines and the spilled stdout's last line (10000). Its save was "unchanged",
+    10 ms.
+  - Expiry: run on this one chat with the real clock and short windows (raw 60 s, working 120 s),
+    because `agent_turn_submission` is append-only (it cannot be backdated) and a future clock would
+    stamp future expiry dates on the files card; the 48 h / 7 d arithmetic is covered by tests.
+    Version 1 → 2, 3 files expired in 1.5 s: the two `reads/` files and the scratch file have
+    `erased_at` and `purged_at` stamped on their artifact rows and their objects are gone from R2;
+    `outputs/` stayed live and present.
+  - Turn 3 restored version 2 (1 file, 19 bytes, 348 ms); the agent listed `outputs/` as kept and
+    the 3 expired files with their receipts (the stdout: "Run the script again; this was its
+    stdout.").
+  - It found a Phase 2 bug: a spilled governed result is named by the plan operation id, but the
+    receipt lookup keyed on the execution node's id, so such files got "No record of what made this
+    file". Fixed in `b61c09453` and checked live against the real file. Entries that expired before
+    the fix keep the receipt they were stamped with (receipts are stamped at save time).
+  - Switch off: workers restarted with `CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED=false`; all 4 held
+    the shared lock on `workers/local.lock`; turn 4 ran from `<root>/local` (`run_python` 1.06 s)
+    with no restore or save, and saw no `outputs/` (off mode does not restore). Switch back on and
+    restart: `local` was still there just after the restart (the old workers were still exiting —
+    the rolling-deploy case) and was removed at the first area claim. Turn 5 restored version 2
+    (1 file, 19 bytes, 370 ms); its save was unchanged, 5 ms; the file written while off was gone,
+    by design.
+  - Dev-stack environment finding, not a product bug: nashville's storage orphan sweep (every 6 h;
+    deletes blobs older than 24 h that have no artifact row in *its* database) shares the
+    `clue-dev-bench` bucket with dushanbe, whose database is a copy — so dushanbe's dev snapshots
+    lose their bytes after a day (the likely reason the three Phase 1 dev chats cannot restore).
+    Production has one database per bucket. The fix is a separate bucket for this lane, pending the
+    founder creating it.

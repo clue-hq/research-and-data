@@ -272,3 +272,37 @@ activity at all. **Scoped re-review: 9/9 ADDRESSED, no new Critical/Important, "
   twice. CRM lane told (msg 323af79f). **At merge:** re-mint F3's manual (v24), head-of-abm (v78) and
   stage0-interview (v51) above CRM's highest, move the registry pin in `agent_registry_wiring.py`, and
   update the drift tests and every doc/test reference to the old numbers. F3 Phase 3 mints nothing.
+
+### Phase 3 close-out: built, live-proven, rollout is the founder's (2026-10-25)
+
+Branch `feat/agent-workspace-phase-3` (from Phase 2); plan
+`docs/superpowers/plans/2026-10-24-agent-workspace-phase-3-proof.md`; ledger with every task's commits
+and the live evidence in full: `.superpowers/sdd/2026-10-24-agent-workspace-phase-3-proof/progress.md`.
+
+- **Built:** a restore of a chat with a version record stamps activity (WS-34a; `_BUSY` stays as an extra
+  chat-only guard); reconciliation writes `source_snapshot` into `work/reconciliation/input.json` and logs
+  `research.reconciliation.source_snapshot` (WS-33); scenario tests 15/16 (four caller shapes, a run longer
+  than its window), 9 (reconciliation across two roots) and 17 (the emergency switch). Then, from findings:
+  a `.clue-tmp-*` path in a stored list is renamed, not dropped (`7509a5524`, founder); the switch's shared
+  `<root>/local` is held by a shared lock on `<root>/workers/local.lock` and removed by a snapshots-on
+  worker once no snapshots-off worker is alive (`3e8f2c1d3`); a spilled governed result's receipt is found
+  by its plan operation id (`b61c09453`, found by the live run). The Opus 5 close review of Phase 2 found
+  1 Critical + 5 Important, all fixed and verified (ledger).
+- **Live check (dushanbe stack, 2026-10-24 UTC, chat `thr_4f4d80ca71885ecf84723fcb784c8295`, 14 calls,
+  $0.89):** save v1 4 files 69,194 B 968 ms; whole root deleted → cold restore 4 files 69,194 B 583 ms,
+  agent quoted its files; expiry with short windows on the real clock (submissions cannot be backdated):
+  3 files expired in 1.5 s, erased + purged, `outputs/` kept; restore of v2 1 file 19 B 348 ms with the
+  receipts listed; switch off → turn ran from `local`, no restore/save; back on → `local` removed at the
+  first area claim, v2 restored 370 ms, the off-turn's file gone by design. Full figures in the spec's
+  2026-10-25 change-log entry and the runbook.
+- **Dev-stack environment finding:** nashville's storage orphan sweep (every 6 h; deletes blobs >24 h old
+  with no artifact row in ITS database) shares the `clue-dev-bench` bucket with dushanbe, whose database is
+  a copy, so dushanbe's dev snapshots lose their bytes after a day. Dev-only (production has one database
+  per bucket). Fix: a separate bucket for this lane — pending the founder creating it.
+- **Rollout (founder's call, not done):** land the four stacked branches CRM → Phase 1 → Phase 2 →
+  Phase 3; at that merge renumber F3's manual v24, head-of-abm v78 and stage0-interview v51 above the CRM
+  lane's highest. The flag already ships on.
+- **Still open:** the founder's call on stripping the `Co-Authored-By` trailer from the earlier branch
+  commits (CLAUDE.md forbids it); entries that expired before `b61c09453` keep their "unknown" receipt;
+  latent reconciliation issues for a future `run_python` grant (dotted/uppercase `reads/` stems,
+  text-only copy) — pre-existing, recorded in the ledger.
