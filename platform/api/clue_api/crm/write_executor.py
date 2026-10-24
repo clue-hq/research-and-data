@@ -48,8 +48,8 @@ fields (:mod:`clue_api.crm.clue_fields_setup`), records what the CRM has in ``cr
 the refused step named. A connection already ``ready`` skips it without a call.
 
 A change to one of Clue's own fields that the CRM answers as a field it does not have (HubSpot
-``PROPERTY_DOESNT_EXIST``, Salesforce "No such column" / ``INVALID_FIELD``) — in the read before
-the send or in the send itself, and only when the answer names that field — marks the field gone
+"Property "x" does not exist", Salesforce "No such column 'x'") — in the read before the send or in
+the send itself, and only when that phrase names that field — marks the field gone
 (:func:`~clue_api.crm.clue_fields.mark_clue_field_gone`) and fails the change saying Clue's
 fields must be set up again; the CRM's answer is kept.
 
@@ -332,17 +332,9 @@ def _refusal_kind(result: ExecuteResult) -> FailureKind:
     return failure_kind(result.error)
 
 
-#: A CRM's answer that a field does not exist: HubSpot's ``PROPERTY_DOESNT_EXIST`` ("Property
-#: "x" does not exist"), Salesforce's "No such column 'x'" / ``INVALID_FIELD`` (never
-#: ``INVALID_FIELD_FOR_INSERT_UPDATE``, which is a field the user may not edit).
-_FIELD_MISSING = re.compile(
-    r"PROPERTY_DOESNT_EXIST|does not exist|No such column|INVALID_FIELD(?!_)", re.IGNORECASE
-)
-
-
 def _gone_clue_field(provider: CrmProvider, write: _Write, outcome: _Outcome) -> ClueField | None:
     """The Clue field a failed change writes that the CRM's answer says it no longer has: the
-    answer must say a field is missing **and** name this field."""
+    answer must say this field is missing (:func:`_names_missing`)."""
     if outcome.status != "failed":
         return None
     answer = " ".join(
@@ -350,8 +342,6 @@ def _gone_clue_field(provider: CrmProvider, write: _Write, outcome: _Outcome) ->
         for part in (outcome.crm_message, _response_param(outcome.crm_response))
         if part is not None
     )
-    if not _FIELD_MISSING.search(answer):
-        return None
     if write.kind in ("field_update", _LINK) and write.field is not None:
         names = [str(write.field)]
     elif write.kind in _CREATES and isinstance(write.after, Mapping):
@@ -360,11 +350,20 @@ def _gone_clue_field(provider: CrmProvider, write: _Write, outcome: _Outcome) ->
         return None
     for name in names:
         field = clue_field_written(provider, write.object, name)
-        if field is not None and re.search(
-            rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", answer, re.IGNORECASE
-        ):
+        if field is not None and _names_missing(answer, name):
             return field
     return None
+
+
+def _names_missing(answer: str, name: str) -> bool:
+    """Whether ``answer`` says ``name`` itself is missing: the name inside the phrase, never
+    anywhere (Salesforce's INVALID_FIELD repeats the whole query, which names every field read).
+    Salesforce: ``No such column 'x'``; HubSpot: ``Property "x" does not exist`` (its quotes may
+    be escaped, once inside a JSON message and again in the kept answer)."""
+    quoted = rf"\\*[\"']{re.escape(name)}\\*[\"']"
+    return bool(
+        re.search(rf"No such column {quoted}|Property {quoted} does not exist", answer, re.I)
+    )
 
 
 # --- the run's pieces ------------------------------------------------------------------------

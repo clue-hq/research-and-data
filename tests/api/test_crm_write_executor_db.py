@@ -3469,6 +3469,59 @@ def test_two_fields_of_one_hubspot_company_are_one_batch_input(tmp_path: Path) -
     _run(tmp_path, "hsonerecord", body)
 
 
+def test_a_missing_salesforce_field_named_in_the_repeated_query_is_not_a_clue_field(
+    tmp_path: Path,
+) -> None:
+    """Final fix pass item 3: Salesforce's INVALID_FIELD repeats the whole query, so an answer
+    about another missing field also names Clue_Tier__c. Only the field inside "No such column"
+    is the one missing."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm(
+            records={
+                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None, "Tier__c": None}
+            }
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT",
+                {
+                    "account_id": "001A",
+                    "custom_fields": {"Clue_Tier__c": "Tier 1", "Tier__c": "T1"},
+                },
+                "x",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+        gateway.failures["SALESFORCE_RUN_SOQL_QUERY"] = [
+            ExecuteResult(
+                False,
+                None,
+                "SELECT Id, Clue_Tier__c, Tier__c FROM Account WHERE Id IN ('001A')\n"
+                "ERROR at Row:1:Column:27\nNo such column 'Tier__c' on entity 'Account'. "
+                "(INVALID_FIELD)",
+            )
+        ]
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        rows = await conn.execute(
+            text("SELECT field, crm_message FROM crm_write WHERE proposal_id = :id"),
+            {"id": proposal_id},
+        )
+        assert all("no longer exists" not in str(row.crm_message) for row in rows)
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "ready" and state.gone_names == ()
+
+    _run(tmp_path, "sfotherfield", body, provider="salesforce")
+
+
 def test_a_salesforce_create_sends_the_clue_id(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         world = await _researched(conn, seeded)
