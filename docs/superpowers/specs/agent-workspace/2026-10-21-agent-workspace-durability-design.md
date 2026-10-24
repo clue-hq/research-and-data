@@ -809,6 +809,18 @@ with the one line that says how to get it again.
   onboarding synthesis already get restore and save from Phase 1 (WS-12). Phase 3 checks each one
   end to end, with its own thread id, and fixes any caller that bypasses the shared layer. Short-lived
   threads expire like any other.
+- **WS-34a [P3] The expiry job cannot see a research run as busy** (found 2026-10-24, while closing
+  Phase 2). The job skips a chat whose turn is queued, claimed or holding a lease, but it reads only
+  `agent_turn` fleet tasks and that thread's `work_lease`. A research run, a delegation or an
+  onboarding synthesis is a different fleet kind, so the job cannot tell one is in flight and may
+  expire its files mid-run. **Nothing is lost today:** the run's save then rebases over an
+  expiry-only move (WS-26, Phase 2) and keeps its files — but that is the recovery path, not
+  prevention, and it is unproven for these callers because no research snapshot has ever been
+  expired (the stack holds chat snapshots only). Phase 3 teaches the busy check the fleet kinds
+  these callers actually run under, and proves it with a run that is live while a pass walks it.
+  The ARV2 entity-research fleet (`account_research_fleet_launch`, `contact_research_fleet_launch`,
+  `contact_entity_research`) is **out of scope**: it opens no agent workspace at all — its state is
+  LangGraph checkpoints, Postgres rows and artifacts — so neither the cleanup nor this gap touches it.
 - **WS-35 [P3] Proof and rollout.**
   - The full robustness suite (§11) passes.
   - The final live measurement of restore time is recorded.
@@ -967,6 +979,10 @@ and WS-28's list contents for live and expired files (P2).
 - 2026-10-22: founder confirmed the Phase 1 plan's decisions: AW-18 (a failed save does not
   re-run the turn; amends AW-15), AW-19 (worker areas claimed by lock), AW-20 (project library
   epoch; no shared library on disk). WS-9, WS-15, WS-16, §10 and §12 updated.
+- 2026-10-24: WS-34a added to Phase 3 (founder): the expiry job cannot see a research run,
+  delegation or onboarding synthesis as busy — it reads only `agent_turn` tasks and leases. The
+  Phase 2 rebase recovers the files; Phase 3 adds the prevention and proves it. The ARV2
+  entity-research fleet is out of scope (it opens no agent workspace).
 - 2026-10-23: AW-26 amended (founder): a chat's own files ARE swept once no snapshot holds them,
   in their own storage area `<ws>/agent-workspace/<sha>`; nothing a person or another system owns
   (uploads, Gallery artifacts, research outputs, provider data) is ever swept automatically.
