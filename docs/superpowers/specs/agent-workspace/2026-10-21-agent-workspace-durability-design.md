@@ -1074,7 +1074,7 @@ and WS-28's list contents for live and expired files (P2).
     stdout.").
   - It found a Phase 2 bug: a spilled governed result is named by the plan operation id, but the
     receipt lookup keyed on the execution node's id, so such files got "No record of what made this
-    file". Fixed in `b61c09453` and checked live against the real file. Entries that expired before
+    file". Fixed in `89fc3d3af` and checked live against the real file. Entries that expired before
     the fix keep the receipt they were stamped with (receipts are stamped at save time).
   - Switch off: workers restarted with `CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED=false`; all 4 held
     the shared lock on `workers/local.lock`; turn 4 ran from `<root>/local` (`run_python` 1.06 s)

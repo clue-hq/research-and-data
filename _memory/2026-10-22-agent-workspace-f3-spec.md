@@ -283,10 +283,10 @@ and the live evidence in full: `.superpowers/sdd/2026-10-24-agent-workspace-phas
   chat-only guard); reconciliation writes `source_snapshot` into `work/reconciliation/input.json` and logs
   `research.reconciliation.source_snapshot` (WS-33); scenario tests 15/16 (four caller shapes, a run longer
   than its window), 9 (reconciliation across two roots) and 17 (the emergency switch). Then, from findings:
-  a `.clue-tmp-*` path in a stored list is renamed, not dropped (`7509a5524`, founder); the switch's shared
+  a `.clue-tmp-*` path in a stored list is renamed, not dropped (`43ed424fb`, founder); the switch's shared
   `<root>/local` is held by a shared lock on `<root>/workers/local.lock` and removed by a snapshots-on
-  worker once no snapshots-off worker is alive (`3e8f2c1d3`); a spilled governed result's receipt is found
-  by its plan operation id (`b61c09453`, found by the live run). The Opus 5 close review of Phase 2 found
+  worker once no snapshots-off worker is alive (`a048afb19`); a spilled governed result's receipt is found
+  by its plan operation id (`89fc3d3af`, found by the live run). The Opus 5 close review of Phase 2 found
   1 Critical + 5 Important, all fixed and verified (ledger).
 - **Live check (dushanbe stack, 2026-10-24 UTC, chat `thr_4f4d80ca71885ecf84723fcb784c8295`, 14 calls,
   $0.89):** save v1 4 files 69,194 B 968 ms; whole root deleted → cold restore 4 files 69,194 B 583 ms,
@@ -305,7 +305,10 @@ and the live evidence in full: `.superpowers/sdd/2026-10-24-agent-workspace-phas
 - **Rollout (founder's call, not done):** land the four stacked branches CRM → Phase 1 → Phase 2 →
   Phase 3; at that merge renumber F3's manual v24, head-of-abm v78 and stage0-interview v51 above the CRM
   lane's highest. The flag already ships on.
-- **Still open:** the founder's call on stripping the `Co-Authored-By` trailer from the earlier branch
-  commits (CLAUDE.md forbids it); entries that expired before `b61c09453` keep their "unknown" receipt;
+- **Done 2026-10-25 (founder go):** the `Co-Authored-By` trailer stripped from the 22 unpushed
+  commits on `feat/agent-workspace-phase-3` (history rewritten, tree identical, SHAs in this note
+  updated; backup branch `backup/agent-workspace-phase-3-before-trailer-strip`). 13 more carry it
+  but are already pushed (on `origin/main` and other branches) and were left alone.
+- **Still open:** entries that expired before `89fc3d3af` keep their "unknown" receipt;
   latent reconciliation issues for a future `run_python` grant (dotted/uppercase `reads/` stems,
   text-only copy) — pre-existing, recorded in the ledger.
