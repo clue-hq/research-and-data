@@ -570,6 +570,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "read_crm_targets": (AgentRole.HEAD_OF_ABM,),
     "find_crm_list": (AgentRole.HEAD_OF_ABM,),
     "link_crm_list": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 4 (Task 2): `propose_clue_fields_setup` proposes setting up Clue's own
+    # fields (R-13.3, R-13.4). Registered UNGRANTED until the Phase 4 catalog bump (Task 6).
+    "propose_clue_fields_setup": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge

@@ -35,6 +35,7 @@ from clue_api.agent_gate import (
     insert_gate,
 )
 from clue_api.agent_gate_tools import gate_ref
+from clue_api.crm.clue_fields import clue_fields_state
 from clue_api.crm.composio_gateway import ComposioError, ComposioGateway
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
@@ -52,6 +53,8 @@ from clue_api.crm.write_prepare import (
     WriteRefused,
     _noun,
     card_snapshot,
+    clue_fields_setup_change,
+    clue_fields_setup_snapshot,
     prepare_changes,
 )
 from clue_api.crm.writes import (
@@ -66,7 +69,7 @@ from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import Settings
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkId, WorkQueue
-from clue_spine import get_project
+from clue_spine import get_project, get_project_for_workspace
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -95,6 +98,9 @@ __all__ = [
     "ManageCrmGrantsInput",
     "ManageCrmGrantsOutput",
     "ManageCrmGrantsTool",
+    "ProposeClueFieldsSetupInput",
+    "ProposeClueFieldsSetupOutput",
+    "ProposeClueFieldsSetupTool",
     "ProposeCrmChangesInput",
     "ProposeCrmChangesOutput",
     "ProposeCrmChangesTool",
@@ -506,6 +512,232 @@ async def _stored_output(
         groups=groups,
         overwrites=sum(group.count for group in groups if group.overwrites_person),
     )
+
+
+# --- setting up Clue's own fields (Phase 4, Task 2) -------------------------------------------
+
+_SETUP_REASON = "So Clue can write its research into fields of its own."
+_CRM_NAMES = {"hubspot": "HubSpot", "salesforce": "Salesforce"}
+
+
+class ProposeClueFieldsSetupInput(ToolInput):
+    #: This conversation's project.
+    project_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+    source_turn_ref: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+
+
+class ProposeClueFieldsSetupOutput(ToolOutput):
+    proposal_id: str
+    #: Always "awaiting_permission": only a workspace owner or admin allows the setup, on its card.
+    state: Literal["awaiting_permission"]
+    gate_id: str
+    gate_ref: str
+    gate_kind: str
+
+
+def setup_proposal_id_for(source_turn_ref: str, connection_id: UUID) -> UUID:
+    """One setup proposal per presenting turn and connection."""
+    return uuid5(
+        _PROPOSAL_NAMESPACE,
+        f"clue_fields_setup:{connection_id}:{len(source_turn_ref)}:{source_turn_ref}",
+    )
+
+
+class ProposeClueFieldsSetupTool(Tool):
+    """Propose setting up Clue's own fields in the connected CRM (R-13.3, R-13.4).
+
+    The change is built from code (``CLUE_FIELDS``): the agent names only the project. It always
+    asks on a card, which only a workspace owner or admin can allow; nothing is sent here, and the
+    executor runs the setup once it is allowed.
+    """
+
+    name = "propose_clue_fields_setup"
+    version = "1"
+    model_description = (
+        "Propose setting up Clue's own fields in the connected CRM (Clue tier, research link, "
+        "committee role, contact link and Clue id; on Salesforce also a permission set that gives "
+        "the connected user access to them). Clue builds the setup itself: give only this "
+        "conversation's project_id. A permission card asks the person, and only a workspace owner "
+        "or admin can allow it: tell them to use the card (or ask an owner or admin) and end your "
+        "turn. " + tool_manual_link("propose_clue_fields_setup")
+    )
+    input_model: ClassVar[type[ToolInput]] = ProposeClueFieldsSetupInput
+    output_model: ClassVar[type[ToolOutput]] = ProposeClueFieldsSetupOutput
+    effect_class = ToolEffectClass.WRITE
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "one crm_write_proposal per presenting turn and connection "
+            "(proposal_id = uuid5 of the connection and the turn ref)"
+        ),
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes="Nothing is read from or sent to the CRM; a replay finds the stored proposal.",
+    )
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_id",))
+    pin_requirements = ("project",)
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        gateway: ComposioGateway | None,
+        conn_factory: ConnFactory = transaction,
+    ) -> None:
+        # No work queue: the setup always asks first, and the answer offers the executor.
+        self._settings = settings
+        self._gateway = gateway
+        self._conn_factory = conn_factory
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ProposeClueFieldsSetupInput)
+        try:
+            await self._checked(inputs, ctx)
+        except _Refused as exc:
+            return (PreconditionFailure(reason_code=exc.reason_code, message=str(exc)),)
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ProposeClueFieldsSetupInput)
+        try:
+            turn, connection = await self._checked(inputs, ctx)
+        except _Refused as exc:
+            raise _refuse(exc.reason_code, str(exc)) from exc
+        proposal_id = setup_proposal_id_for(inputs.source_turn_ref, connection.connection_id)
+        async with self._conn_factory() as conn:
+            gate_id = await conn.scalar(
+                text(
+                    "SELECT gate_id FROM crm_write_proposal "
+                    "WHERE proposal_id = :id AND workspace_id = :ws"
+                ),
+                {"id": proposal_id, "ws": ctx.workspace_id},
+            )
+            if gate_id is None:
+                gate_id = await self._record(conn, ctx, turn, connection, proposal_id)
+        output = ProposeClueFieldsSetupOutput(
+            proposal_id=str(proposal_id),
+            state="awaiting_permission",
+            gate_id=str(gate_id),
+            gate_ref=gate_ref(gate_id),
+            gate_kind=KIND_CRM_WRITE_PERMISSION,
+        )
+        return ToolResult(
+            tool=self.name, version=self.version, references=output.model_dump(mode="json")
+        )
+
+    async def _checked(
+        self, inputs: ProposeClueFieldsSetupInput, ctx: ToolContext
+    ) -> tuple[Any, CrmConnection]:
+        """The turn and the active connection, once the project is this turn's and the
+        connection's Clue fields are not already set up."""
+        _require_gateway(self._gateway)
+        turn = await _proposing_turn(self._conn_factory, inputs.source_turn_ref, ctx)
+        async with self._conn_factory() as conn:
+            project = await get_project_for_workspace(
+                conn, workspace_id=ctx.workspace_id, project_id=inputs.project_id
+            )
+        if project is None or project.project_id != turn.project_id:
+            raise _Refused("project_not_found", "Use this conversation's own project id.")
+        connection = await _active_connection(self._conn_factory, ctx.workspace_id)
+        async with self._conn_factory() as conn:
+            state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        if state is not None and state.status == "ready":
+            raise _Refused(
+                "crm_clue_fields_ready",
+                f"Clue's fields are already set up in {_CRM_NAMES[connection.provider]}.",
+            )
+        return turn, connection
+
+    async def _record(
+        self,
+        conn: AsyncConnection,
+        ctx: ToolContext,
+        turn: Any,
+        connection: CrmConnection,
+        proposal_id: UUID,
+    ) -> UUID:
+        change = clue_fields_setup_change(
+            connection.provider,
+            write_id=uuid5(proposal_id, "clue_fields_setup"),
+            reason=_SETUP_REASON,
+        )
+        await insert_proposal(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=ctx.workspace_id,
+            connection_id=connection.connection_id,
+            project_id=turn.project_id,
+            thread_id=turn.thread_id,
+            turn_id=turn.turn_id,
+        )
+        await insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=ctx.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=[change],
+        )
+        # One live card per chat, as propose_crm_changes keeps it (the same guarded UPDATE).
+        await conn.execute(
+            text(
+                "UPDATE crm_write_proposal SET status = 'replaced', finished_at = now() "
+                "WHERE workspace_id = :ws AND thread_id = :thread "
+                "AND status = 'awaiting_permission' AND proposal_id <> :proposal_id"
+            ),
+            {"ws": ctx.workspace_id, "thread": turn.thread_id, "proposal_id": proposal_id},
+        )
+        project = await get_project(conn, turn.project_id)
+        snapshot = clue_fields_setup_snapshot(
+            change,
+            provider=connection.provider,
+            project_name=project.name if project is not None else "",
+        )
+        gate_id = crm_write_permission_gate_id(
+            workspace_id=ctx.workspace_id, proposal_id=proposal_id
+        )
+        await insert_gate(
+            conn,
+            gate_id=gate_id,
+            workspace_id=ctx.workspace_id,
+            project_id=turn.project_id,
+            thread_id=turn.thread_id,
+            turn_id=turn.turn_id,
+            kind=KIND_CRM_WRITE_PERMISSION,
+            subject_ref=f"crm_write_proposal:{proposal_id}",
+            subject_revision=None,
+            expected_subject_sha256=_snapshot_digest(snapshot),
+            subject_snapshot=snapshot,
+            max_spend_cents=None,
+            currency=None,
+            addressee_user_id=turn.submitted_by_user_id,
+            permitted_decisions=("approved", "rejected"),
+        )
+        await set_proposal_status(
+            conn, proposal_id=proposal_id, status="awaiting_permission", gate_id=gate_id
+        )
+        return gate_id
+
+
+async def _proposing_turn(conn_factory: ConnFactory, source_turn_ref: str, ctx: ToolContext) -> Any:
+    try:
+        turn_id = parse_turn_action_ref(source_turn_ref)
+    except TurnActionUnresolvable as exc:
+        raise _Refused("crm_turn_not_found", "The current turn is unavailable.") from exc
+    async with conn_factory() as conn:
+        turn = await load_turn_identity(conn, workspace_id=ctx.workspace_id, turn_id=turn_id)
+    if turn is None or not turn.submitted_by_user_id:
+        raise _Refused("crm_turn_not_found", "The current turn has no person to ask.")
+    return turn
 
 
 # --- the write log ---------------------------------------------------------------------------

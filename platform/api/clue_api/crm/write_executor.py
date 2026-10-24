@@ -141,6 +141,9 @@ _READ_AGAIN_AFTER_S = 5.0
 NOT_APPLIED_MESSAGE = "The CRM reported success but the value did not change."
 NOT_CHOSEN_MESSAGE = "Not chosen on the permission card, so it was not sent."
 NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sent."
+#: Phase 4 Task 2 proposes Clue's fields setup; Task 3 runs it. Until then an allowed setup fails
+#: closed: nothing is sent to the CRM.
+SETUP_NOT_BUILT_MESSAGE = "Setting up Clue's fields is not built yet, so nothing was sent."
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
 #: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
@@ -1908,6 +1911,16 @@ async def _load_writes(
     )
     writes = []
     for row in rows.all():
+        if row.kind == "clue_fields_setup":
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET status = 'failed', failure_kind = 'other', "
+                    "crm_message = :message, retryable = false, finished_at = now() "
+                    "WHERE write_id = :id"
+                ),
+                {"id": row.write_id, "message": SETUP_NOT_BUILT_MESSAGE},
+            )
+            continue
         spec = write_spec(connection.provider, row.slug)
         arguments = json.loads(row.arguments)
         try:

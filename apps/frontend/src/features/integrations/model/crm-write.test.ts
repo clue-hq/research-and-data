@@ -351,3 +351,95 @@ test("a refusal says what happened, never what Clue will do next", () => {
     assert.doesNotMatch(crmWriteRefusal(code), /propose/i, code);
   }
 });
+
+// --- setting up Clue's own fields (CRM integration Phase 4, Task 2) -------
+
+const SALESFORCE_LINE =
+  "Creates a 'Clue fields' permission set and gives your connected Salesforce user access to these fields.";
+
+/** A setup card as `clue_fields_setup_snapshot` (write_prepare.py) stores it on the gate. */
+function setupSnapshot() {
+  return {
+    crm: "salesforce",
+    project_name: "Q4 hotel groups",
+    state: "asking",
+    title: "Clue wants to set up its own fields in Salesforce",
+    description:
+      'For "Q4 hotel groups". Nothing changes in Salesforce until a workspace owner or admin allows it.',
+    groups: [
+      {
+        kind: "clue_fields_setup",
+        object: "clue_fields",
+        field: null,
+        field_label: null,
+        list_ref: null,
+        title: "Set up Clue's fields in Salesforce",
+        count: 1,
+        value_summary: null,
+        reason: "So Clue can write its research into fields of its own.",
+        records: [{ write_id: W(9), record_ref: null, name: "Clue's fields", before: null, after: null }],
+        scope_key: "kind:clue_fields_setup",
+        always_allow: "",
+        selected: true,
+        setup_fields: [
+          { object: "Account", label: "Clue tier", crm_name: "Clue_Tier__c", type: "Dropdown" },
+          { object: "Contact", label: "Clue id", crm_name: "Clue_Id__c", type: "Text" },
+        ],
+        setup_notes: [SALESFORCE_LINE, "Clue never deletes these; an admin can remove them in Salesforce."],
+      },
+    ],
+    overwrites_heading: null,
+    overwrites: [],
+    standing_permissions: [],
+    allow_count: 1,
+    caption: "Only a workspace owner or admin can allow this.",
+  };
+}
+
+test("the setup card lists Clue's fields and what else changes, and offers no Always allow", () => {
+  const model = crmWriteCard(setupSnapshot());
+  assert.ok(model);
+  assert.equal(model.caption, "Only a workspace owner or admin can allow this.");
+  assert.deepEqual(model.standingPermissions, []);
+  const [group] = model.groups;
+  assert.ok(group);
+  assert.equal(group.kind, "clue_fields_setup");
+  assert.deepEqual(
+    group.setupFields.map((field) => `${field.object} · ${field.label} (${field.type})`),
+    ["Account · Clue tier (Dropdown)", "Contact · Clue id (Text)"],
+  );
+  assert.ok(group.setupNotes.includes(SALESFORCE_LINE));
+  // The one change is ticked; Allow sends it and grants nothing.
+  const selection = initialSelection(model);
+  assert.deepEqual(crmWriteAnswer(model, selection, new Set(["kind:clue_fields_setup"])), {
+    selected_write_ids: [W(9)],
+    always_allow: [],
+  });
+});
+
+test("an ordinary group has no setup fields", () => {
+  const model = card();
+  assert.deepEqual(model.groups[0]!.setupFields, []);
+  assert.deepEqual(model.groups[0]!.setupNotes, []);
+});
+
+test("the setup outcome says whether Clue's fields were set up", () => {
+  const model = crmWriteCard(setupSnapshot());
+  assert.ok(model);
+  const group = model.groups[0]!;
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 1, failed: 0, skipped: 0, pending: 0 }),
+    { mark: "done", line: "Set up Clue's fields in Salesforce" },
+  );
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 0, failed: 1, skipped: 0, pending: 0 }),
+    { mark: "failed", line: "Could not set up Clue's fields in Salesforce — 1 failed" },
+  );
+});
+
+test("an operator's Allow on the setup card is refused in plain words", () => {
+  assert.equal(
+    crmWriteRefusal("crm_setup_needs_admin"),
+    "Only a workspace owner or admin can set up Clue's fields.",
+  );
+});

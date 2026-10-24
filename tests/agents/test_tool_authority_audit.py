@@ -184,7 +184,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # (158 -> 159); `find_crm_list@1` and `link_crm_list@1` likewise (159 -> 161). All three are
     # GRANTED to the Head of ABM as of `head-of-abm@v78` (2026-10-23), the reviewed bump that pins
     # their schema digests and mints `crm-writing` v2. No new NAME joins.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 161
+    # CRM integration Phase 4: `propose_clue_fields_setup@1`, ungranted until the Phase 4 catalog
+    # bump (161 -> 162).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 162
+    assert C6_AGENT_TOOL_AUTHORITY["propose_clue_fields_setup"] == ()
     for phase3_tool in ("read_crm_targets", "find_crm_list", "link_crm_list"):
         assert C6_AGENT_TOOL_AUTHORITY[phase3_tool] == (AgentRole.HEAD_OF_ABM,)
         assert c6_roles_for_tool(f"{phase3_tool}@1") == (AgentRole.HEAD_OF_ABM,)

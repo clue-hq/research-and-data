@@ -2,7 +2,8 @@
 
 Spec: docs/superpowers/specs/crm-integration/2026-10-22-crm-write-permission-card-design.md
 (§3 states, §6 what the card receives); rulings R-6.5 (an overwrite always asks, so its scope is
-never granted from the card), R-6.8 (any workspace member answers and grants "Always allow").
+never granted from the card), R-6.8 (any workspace member answers and grants "Always allow"),
+R-13.3 (only a workspace owner or admin allows setting up Clue's own fields).
 
 The card is a ``crm_write_permission`` gate answered through the chat's turn route. This module
 holds that answer's CRM half:
@@ -44,6 +45,8 @@ from clue_core import ProjectRunId
 from clue_fleet import FleetTaskKind, enqueue_task
 
 __all__ = [
+    "SETUP_NEEDS_ADMIN",
+    "SETUP_NEEDS_ADMIN_MESSAGE",
     "CrmAnswerRefused",
     "allowed_sentence",
     "answer_summary",
@@ -126,10 +129,13 @@ async def check_answer(
     decision: str,
     selected_write_ids: list[UUID] | None,
     always_allow: list[str] | None,
+    answered_by_user_id: str,
 ) -> None:
     """Prove this answer may be applied to the card's proposal, or raise :class:`CrmAnswerRefused`.
 
-    Runs only for a first answer (a retried click of the same turn replays without it)."""
+    Runs only for a first answer (a retried click of the same turn replays without it). Setting
+    up Clue's own fields is allowed only by a workspace owner or admin (R-13.3); anyone may
+    decline it."""
     choices = _choices(decision, selected_write_ids, always_allow)
     proposal = await _proposal_for_gate(conn, gate, lock=True)
     if proposal is None:
@@ -162,6 +168,16 @@ async def check_answer(
             "the CRM connection this card was made for is no longer active (expired, reconnected "
             "or switched); reconnect the CRM and ask Clue to propose the changes again",
         )
+    if decision == "approved" and await _sets_up_clue_fields(conn, proposal.proposal_id):
+        role = await conn.scalar(
+            text(
+                "SELECT role_key FROM workspace_membership WHERE workspace_id = :ws "
+                "AND user_id = :user AND status = 'active'"
+            ),
+            {"ws": gate.workspace_id, "user": answered_by_user_id},
+        )
+        if role not in _SETUP_ROLES:
+            raise CrmAnswerRefused(403, SETUP_NEEDS_ADMIN, SETUP_NEEDS_ADMIN_MESSAGE)
     if decision != "approved":
         if choices.selected_write_ids or choices.always_allow:
             raise CrmAnswerRefused(
@@ -191,6 +207,24 @@ async def check_answer(
             "the card did not offer that standing permission (overwriting a value a person set "
             "always asks)",
         )
+
+
+#: Who may allow setting up Clue's own fields (R-13.3).
+_SETUP_ROLES = ("owner", "admin")
+SETUP_NEEDS_ADMIN = "crm_setup_needs_admin"
+SETUP_NEEDS_ADMIN_MESSAGE = "Only a workspace owner or admin can set up Clue's fields."
+
+
+async def _sets_up_clue_fields(conn: AsyncConnection, proposal_id: UUID) -> bool:
+    return bool(
+        await conn.scalar(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM crm_write WHERE proposal_id = :id "
+                "AND kind = 'clue_fields_setup')"
+            ),
+            {"id": proposal_id},
+        )
+    )
 
 
 async def answer_summary(

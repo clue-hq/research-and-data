@@ -34,6 +34,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.crm.clue_fields import CLUE_FIELDS, ClueField
 from clue_api.crm.composio_gateway import (
     ComposioGateway,
     CrmProvider,
@@ -53,6 +54,8 @@ from clue_api.crm.write_actions import (
     ParsedChange,
     WriteActionSpec,
     WriteNotParsable,
+    clue_fields_setup_arguments,
+    clue_fields_setup_spec,
     created_reference,
     field_update_spec,
     find_value,
@@ -87,6 +90,8 @@ __all__ = [
     "WriteRefused",
     "card_snapshot",
     "check_against_targets",
+    "clue_fields_setup_change",
+    "clue_fields_setup_snapshot",
     "prepare_changes",
 ]
 
@@ -2299,6 +2304,8 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
         return f"Create {count} {people}"
     if kind == "create_company":
         return f"Create {count} {_noun(change.spec.object, count)}"
+    if kind == "clue_fields_setup":
+        return f"Set up Clue's fields in {_CRM_NAMES[provider]}"
     return f"Mark {count} possible duplicate{'' if count == 1 else 's'}"
 
 
@@ -2448,4 +2455,129 @@ def card_snapshot(
         ],
         "allow_count": sum(group["count"] for group in groups),
         "caption": "Any member of this workspace can answer.",
+    }
+
+
+# --- setting up Clue's own fields (Phase 4, Task 2; R-13.1, R-13.3, R-13.4) ----------------------
+
+#: The line the setup card adds on Salesforce (R-13.1): Clue changes access settings in the org.
+#: The plan's draft copy; Task 6 may adjust it with the skill wording.
+SALESFORCE_PERMISSION_SET_LINE = (
+    "Creates a 'Clue fields' permission set and gives your connected Salesforce user access to "
+    "these fields."
+)
+
+SETUP_CAPTION = "Only a workspace owner or admin can allow this."
+
+#: How the card names each object (Salesforce calls a company an account).
+_SETUP_OBJECTS: Mapping[CrmProvider, Mapping[str, str]] = {
+    "hubspot": {"company": "Company", "contact": "Contact"},
+    "salesforce": {"company": "Account", "contact": "Contact"},
+}
+
+
+def clue_fields_setup_change(
+    provider: CrmProvider, *, write_id: UUID, reason: str
+) -> PreparedChange:
+    """The one ``clue_fields_setup`` change of ``provider``, built from code (R-13.4). It is never
+    covered by a standing permission: an owner or admin allows it on its card (R-13.3)."""
+    spec = clue_fields_setup_spec(provider)
+    arguments = clue_fields_setup_arguments(provider)
+    parsed = spec.parse(arguments)
+    return PreparedChange(
+        write_id=write_id,
+        spec=spec,
+        parsed=parsed,
+        field=None,
+        before=None,
+        after=None,
+        overwrites_person=False,
+        scope_key=scope_key(spec, parsed, None),
+        covered_by=None,
+        reason=reason,
+        source_ref=None,
+        arguments=arguments,
+    )
+
+
+def _setup_type(field: ClueField) -> str:
+    """What kind of field the card says it is, in a person's words."""
+    if field.options:
+        return "Dropdown"
+    if field.reference_to is not None:
+        return "Link to a contact"
+    if field.type == "Url" or field.key.endswith("_link"):
+        return "Link"
+    return "Text"
+
+
+def _setup_notes(provider: CrmProvider) -> list[str]:
+    name = _CRM_NAMES[provider]
+    if provider == "hubspot":
+        notes = [
+            "Creates a 'Clue' property group on companies and contacts, and a 'Possible "
+            "duplicate' label for linking two contacts.",
+        ]
+    else:
+        notes = [SALESFORCE_PERMISSION_SET_LINE]
+    notes.append(f"Clue never deletes these; an admin can remove them in {name}.")
+    return notes
+
+
+def clue_fields_setup_snapshot(
+    change: PreparedChange, *, provider: CrmProvider, project_name: str
+) -> dict[str, Any]:
+    """What the setup card shows (the same shape as :func:`card_snapshot`, one group): every Clue
+    field it creates, what else changes in the CRM, and no "Always allow" (R-13.3)."""
+    name = _CRM_NAMES[provider]
+    objects = _SETUP_OBJECTS[provider]
+    group = {
+        "kind": change.parsed.change_kind(change.spec),
+        "object": change.parsed.object,
+        "field": None,
+        "field_label": None,
+        "list_ref": None,
+        "title": _title(provider, change, 1),
+        "count": 1,
+        "value_summary": None,
+        "reason": change.reason.strip(),
+        "records": [
+            {
+                "write_id": str(change.write_id),
+                "record_ref": None,
+                "name": change.parsed.label,
+                "before": None,
+                "after": None,
+            }
+        ],
+        "scope_key": change.scope_key,
+        # Never offered: no standing permission covers the setup.
+        "always_allow": "",
+        "selected": True,
+        "setup_fields": [
+            {
+                "object": objects[field.object],
+                "label": field.label,
+                "crm_name": field.crm_name,
+                "type": _setup_type(field),
+            }
+            for field in CLUE_FIELDS[provider]
+        ],
+        "setup_notes": _setup_notes(provider),
+    }
+    return {
+        "crm": provider,
+        "project_name": project_name,
+        "state": "asking",
+        "title": f"Clue wants to set up its own fields in {name}",
+        "description": (
+            f'For "{project_name}". Nothing changes in {name} until a workspace owner or admin '
+            "allows it."
+        ),
+        "groups": [group],
+        "overwrites_heading": None,
+        "overwrites": [],
+        "standing_permissions": [],
+        "allow_count": 1,
+        "caption": SETUP_CAPTION,
     }

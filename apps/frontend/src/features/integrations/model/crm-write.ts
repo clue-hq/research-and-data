@@ -36,6 +36,11 @@ const GroupSchema = z.object({
   records: z.array(RecordSchema).min(1),
   scope_key: z.string(),
   always_allow: z.string(),
+  /** Setting up Clue's own fields (Phase 4): the fields it creates and what else changes. */
+  setup_fields: z
+    .array(z.object({ object: z.string(), label: z.string(), type: z.string() }))
+    .default([]),
+  setup_notes: z.array(z.string()).default([]),
 });
 
 const OverwriteSchema = z.object({
@@ -80,7 +85,14 @@ export interface CrmWriteGroup {
   reason: string;
   records: readonly CrmWriteRecord[];
   alwaysAllowPhrase: string;
+  /** Only on the setup of Clue's own fields: each field it creates ("Account", "Clue tier"). */
+  setupFields: readonly { object: string; label: string; type: string }[];
+  /** Only on the setup of Clue's own fields: what else changes in the CRM, one line each. */
+  setupNotes: readonly string[];
 }
+
+/** The kind of change that sets up Clue's own fields; only an owner or admin allows it. */
+export const CLUE_FIELDS_SETUP_KIND = "clue_fields_setup";
 
 export interface CrmWriteOverwrite {
   writeId: string;
@@ -149,6 +161,8 @@ export function crmWriteCard(snapshot: unknown): CrmWriteCardModel | null {
           change: varied ? (changes?.[index] ?? null) : null,
         })),
         alwaysAllowPhrase: group.always_allow,
+        setupFields: group.setup_fields,
+        setupNotes: group.setup_notes,
       };
     }),
     overwritesHeading: card.overwrites.length > 0 ? card.overwrites_heading : null,
@@ -328,6 +342,12 @@ export function crmWriteDoneLine(
       return `Created ${count} ${people}`;
     case "create_company":
       return `Created ${count} ${things}`;
+    case CLUE_FIELDS_SETUP_KIND: {
+      const crm = CRM_PROVIDER_NAMES[provider];
+      return tally.done > 0
+        ? `Set up Clue's fields in ${crm}`
+        : `Could not set up Clue's fields in ${crm}`;
+    }
     default:
       return `Marked ${count} possible ${tally.chosen === 1 ? "duplicate" : "duplicates"}`;
   }
@@ -362,6 +382,8 @@ export function crmWriteRefusal(code: string): string {
       return "This card can no longer be answered.";
     case "CRM_WRITE_ALREADY_ANSWERED":
       return "Someone answered this card first.";
+    case "crm_setup_needs_admin":
+      return "Only a workspace owner or admin can set up Clue's fields.";
     case "GATE_ALREADY_ANSWERED":
       return "Someone already answered this card.";
     default:

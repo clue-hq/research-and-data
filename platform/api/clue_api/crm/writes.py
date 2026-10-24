@@ -361,7 +361,11 @@ def covering_grant(grants: Sequence[Grant], scope_key: str, kind: str) -> UUID |
     """The grant that covers a change of this scope and kind, if any.
 
     The caller never asks for an overwrite of a person's value: no grant covers one (R-6.5).
+    Setting up Clue's own fields is never covered either: an owner or admin allows it on its
+    card each time (R-13.3).
     """
+    if kind == "clue_fields_setup":
+        return None
     for grant in grants:
         if grant.scope_kind == FULLY_AUTOMATIC:
             return grant.grant_id

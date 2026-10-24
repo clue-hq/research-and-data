@@ -16,6 +16,13 @@ Never allowlisted: merges, deletes, GDPR/erase actions and Composio's natural-la
 the batch ``HUBSPOT_UPDATE_CONTACTS``); the Salesforce ``*_BY_ID`` update tools (deprecated in the
 pinned toolkit). ``link_duplicate`` is a declared kind with no action until Phase 4.
 
+``clue_fields_setup`` (Phase 4, Task 2; R-13.3, R-13.4) sets up Clue's own fields in the CRM. It is
+not on the allowlist: no Composio action of its own, never proposed through ``propose_crm_changes``.
+``propose_clue_fields_setup`` builds the one change from ``CLUE_FIELDS``
+(:mod:`clue_api.crm.clue_fields`) with :func:`clue_fields_setup_spec`, so the agent never chooses a
+field; the executor runs it (Task 3). Only a workspace owner or admin may allow it, and no
+standing permission covers it.
+
 ``list_create`` (Phase 3, Task 3) creates a Clue list: a **manual** HubSpot list of companies or
 contacts, or a Salesforce campaign (which holds contacts). Its ``label`` is the list's name; it
 sets no field and names no record until the CRM gives it an id. A HubSpot list membership change
@@ -38,6 +45,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from clue_api.crm.clue_fields import CLUE_FIELDS
 from clue_api.crm.composio_gateway import CrmProvider
 
 __all__ = [
@@ -47,12 +55,16 @@ __all__ = [
     "NEW_LIST_PREFIX",
     "WRITE_ACTIONS",
     "CLUE_CAMPAIGN_SETTINGS",
+    "CLUE_FIELDS_SETUP",
+    "CLUE_FIELDS_SETUP_SLUG",
     "BatchSpec",
     "ItemOutcome",
     "ParsedChange",
     "WriteActionSpec",
     "WriteKind",
     "WriteNotParsable",
+    "clue_fields_setup_arguments",
+    "clue_fields_setup_spec",
     "field_update_spec",
     "forbidden_fields",
     "is_forbidden_field",
@@ -78,7 +90,14 @@ WriteKind = Literal[
     "create_company",
     "list_create",
     "link_duplicate",
+    "clue_fields_setup",
 ]
+
+#: The kind no standing permission ("Always allow", "Fully automatic") ever covers (R-13.3).
+CLUE_FIELDS_SETUP: WriteKind = "clue_fields_setup"
+#: What a ``clue_fields_setup`` change is logged as in ``crm_write.slug``: Clue's own name, not a
+#: Composio action (the setup is many calls, run by the executor).
+CLUE_FIELDS_SETUP_SLUG = "CLUE_FIELDS_SETUP"
 
 Arguments = Mapping[str, Any]
 
@@ -894,6 +913,39 @@ def write_spec(provider: CrmProvider, slug: str) -> WriteActionSpec | None:
 
 def is_write(provider: CrmProvider, slug: str) -> bool:
     return (provider, slug) in WRITE_ACTIONS
+
+
+# --- setting up Clue's own fields (Phase 4, R-13.4) -----------------------------------------------
+
+
+def clue_fields_setup_arguments(provider: CrmProvider) -> dict[str, Any]:
+    """The setup change's arguments: every Clue field of ``provider``, by qualified name, in
+    :data:`CLUE_FIELDS` order. Built from code; the agent gives none of it."""
+    return {"fields": [field.qualified_name for field in CLUE_FIELDS[provider]]}
+
+
+def _clue_fields_setup_parse(provider: CrmProvider) -> Callable[[Arguments], ParsedChange]:
+    def parse(arguments: Arguments) -> ParsedChange:
+        if dict(arguments) != clue_fields_setup_arguments(provider):
+            raise WriteNotParsable("Clue's fields are set up exactly as Clue defines them.")
+        return ParsedChange("clue_fields", None, {}, None, "Clue's fields")
+
+    return parse
+
+
+def clue_fields_setup_spec(provider: CrmProvider) -> WriteActionSpec:
+    """The ``clue_fields_setup`` change of ``provider``. Not in :data:`WRITE_ACTIONS`: nothing
+    proposes it but ``propose_clue_fields_setup``."""
+    return WriteActionSpec(
+        provider=provider,
+        slug=CLUE_FIELDS_SETUP_SLUG,
+        kind=CLUE_FIELDS_SETUP,
+        object="clue_fields",
+        parse=_clue_fields_setup_parse(provider),
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    )
 
 
 # --- fields never written (ruling R-8.7) -------------------------------------------------------

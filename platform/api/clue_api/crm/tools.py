@@ -603,6 +603,7 @@ def build_crm_tools(
     from clue_api.crm.write_tools import (
         CrmWriteLogTool,
         ManageCrmGrantsTool,
+        ProposeClueFieldsSetupTool,
         ProposeCrmChangesTool,
     )
 
@@ -627,4 +628,7 @@ def build_crm_tools(
         # the Phase 3 catalog bump (Task 8).
         FindCrmListTool(settings=settings, gateway=gateway, conn_factory=conn_factory),
         LinkCrmListTool(settings=settings, gateway=gateway, conn_factory=conn_factory),
+        # Phase 4 (Task 2): propose setting up Clue's own fields. Ungranted until the Phase 4
+        # catalog bump (Task 6).
+        ProposeClueFieldsSetupTool(settings=settings, gateway=gateway, conn_factory=conn_factory),
     )

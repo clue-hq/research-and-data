@@ -340,8 +340,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # granted at head-of-abm@v77; the count is unmoved. read_crm_targets@1 (CRM integration
     # Phase 3), ungranted until the Phase 3 catalog bump (184 -> 185); find_crm_list@1 and
     # link_crm_list@1 likewise (185 -> 187). All three are granted at head-of-abm@v78; the count
-    # is unmoved.
-    assert len(by_address) == 187
+    # is unmoved. propose_clue_fields_setup@1 (Phase 4), ungranted until the Phase 4 catalog
+    # bump (187 -> 188).
+    assert len(by_address) == 188
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -478,8 +479,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # crm_write_log@1 and manage_crm_grants@1 likewise (182 -> 184); all three granted at
     # head-of-abm@v77, the count unmoved; read_crm_targets@1 (Phase 3), ungranted (184 -> 185);
     # find_crm_list@1 and link_crm_list@1 likewise (185 -> 187); all three granted at
-    # head-of-abm@v78, the count unmoved.
-    assert len(by_address) == 187  # + read_account_research@3 (2026-10-05)
+    # head-of-abm@v78, the count unmoved; propose_clue_fields_setup@1 (Phase 4), ungranted
+    # (187 -> 188).
+    assert len(by_address) == 188  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
