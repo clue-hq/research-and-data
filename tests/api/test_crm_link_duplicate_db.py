@@ -495,7 +495,7 @@ def test_a_hubspot_link_is_never_undone_by_clue(tmp_path: Path) -> None:
             [_hubspot_link("201", "202", world.nick, reverses_write_id=proposal_id)],
         )
         ((_, code, message),) = _refused(batch)
-        assert code == "crm_write_not_parsable"
+        assert code == "crm_removal_not_allowed"
         assert "HubSpot" in message and "remove" in message
 
         # Another label than Clue's is never sent.

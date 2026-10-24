@@ -860,6 +860,16 @@ _CLUE_TARGETS: Mapping[str, str] = {
     "clue_contact_link": "contact link",
 }
 _CLUE_LINKS = frozenset({"clue_research_link", "clue_contact_link"})
+
+
+def _clue_word(provider: CrmProvider, key: str) -> str | None:
+    """The word ``withheld`` names a Clue field's value by. Salesforce has no buying role, so the
+    role read_crm_targets holds back there is named "committee role" (Task 6 fix round 1)."""
+    if key == "clue_committee_role" and provider == "salesforce":
+        return "committee role"
+    return _CLUE_TARGETS.get(key)
+
+
 _LOCAL_LINK = "Clue writes its links only from its public address, not from a local one."
 _NAME_THE_CONTACT = "Name the Clue contact this is about."
 _NOT_RESEARCHED = "not what Clue researched"
@@ -1210,7 +1220,7 @@ def _check_person(
             continue
         clue = clue_field_written(provider, item.parsed.object, field)
         if clue is not None:
-            word = _CLUE_TARGETS.get(clue.key)
+            word = _clue_word(provider, clue.key)
             target = None if word is None else (clue.key, word)
         else:
             target = _person_target(provider, field, label)
@@ -1386,7 +1396,9 @@ async def check_against_targets(
             and item.proposed.reverses_write_id is not None
             and _link_change(item)
         ):
-            refused.append(_refused(index, item, HUBSPOT_LINK_NOT_UNDONE, "crm_write_not_parsable"))
+            refused.append(
+                _refused(index, item, HUBSPOT_LINK_NOT_UNDONE, "crm_removal_not_allowed")
+            )
             continue
         if (
             item.proposed.reverses_write_id is not None

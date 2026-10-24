@@ -189,7 +189,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # digest, `crm-writing@v4`, stage0-interview@v54 and manual@v27.
         # v82 (2026-10-25, Phase 4 Task 6): propose_clue_fields_setup@1 granted; read_crm_targets@1
         # at its new output digest, `crm-writing@v5`, stage0-interview@v55 and manual@v28.
-        AgentRole.HEAD_OF_ABM: ("5242ed3c0a3de44c4b397a2fb6f71941eccf8aa55d9ed0d9804654888f43478d"),
+        AgentRole.HEAD_OF_ABM: ("0bc3e24a8ab5200437683676ed1d10e90ff7603fd52f9fdddd0071d2a061e727"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

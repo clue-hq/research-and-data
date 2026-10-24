@@ -1753,8 +1753,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, so Clue cannot set up its fields. |
 | `crm_turn_not_found` | Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved. |
 | `project_not_found` | Use this conversation's own project id. |
-| `crm_not_connected` | Call connect_crm to ask the person to connect the CRM, and propose the setup again once it is connected. |
-| `crm_connection_expired` | Call connect_crm; it shows the person a Reconnect card. Propose the setup again once they reconnect. |
+| `crm_not_connected` | Call connect_crm to ask the person to connect (or reconnect) the CRM, and propose the setup again once it is connected. |
 | `crm_clue_fields_ready` | Clue's fields are already set up; do not propose the setup again. Write the Clue fields read_crm_targets gives. |
 
 **Afterwards.** Clue built the setup itself and the chat now shows the person a permission card. Only a workspace owner or admin can allow it; if someone else answers Allow, the card refuses it (crm_setup_needs_admin): tell them to ask an owner or admin. On Salesforce, say the card also creates a "Clue fields" permission set that gives the connected user access to the fields, and that this user must be a Salesforce admin. End your turn with one line on what is waiting.

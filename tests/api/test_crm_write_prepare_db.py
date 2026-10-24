@@ -3697,6 +3697,68 @@ def test_salesforce_clue_fields_are_written_through_custom_fields(tmp_path: Path
     _run(tmp_path, "cluesf", body, provider="salesforce")
 
 
+def test_a_withheld_salesforce_committee_role_is_refused_with_its_reason(tmp_path: Path) -> None:
+    """Fix round 1 (Task 6): on Salesforce the held-back role is Clue's committee role, so a
+    Clue_Committee_Role__c write for a contact whose role is withheld names the real reason
+    (identity not confirmed; rejected), never "not what Clue researched"."""
+
+    from clue_core import IdentityBinding, VerificationStatus
+    from clue_research.claimstore import record_verification
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        weak = await world.person(world.zafran, "Weak Person")
+        await world.claim(
+            "weak_persona",
+            weak,
+            "contact.persona",
+            "champion",
+            identity_binding=IdentityBinding.WEAK,
+        )
+        await world.claim("weak_title", weak, "contact.current_title", "VP Sales")
+        rejected = await world.person(world.zafran, "Rejected Person")
+        claim = await world.claim("rejected_persona", rejected, "contact.persona", "blocker")
+        await record_verification(conn, claim, status=VerificationStatus.REJECTED)  # type: ignore[arg-type]
+        await world.claim("rejected_title", rejected, "contact.current_title", "CFO")
+        gateway = _FakeCrm(records={"003W": {"Email": None}, "003R": {"Email": None}})
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_UPDATE_CONTACT",
+                    {"contact_id": "003W", "custom_fields": {"Clue_Committee_Role__c": "Champion"}},
+                    "x",
+                    clue_entity_id=str(weak),
+                ),
+                ProposedChange(
+                    "SALESFORCE_UPDATE_CONTACT",
+                    {"contact_id": "003R", "custom_fields": {"Clue_Committee_Role__c": "Blocker"}},
+                    "x",
+                    clue_entity_id=str(rejected),
+                ),
+            ],
+            _FakeBudget(gateway),
+        )
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (
+                0,
+                "crm_personal_data_not_allowed",
+                "Clue committee role (Clue_Committee_Role__c): identity not confirmed.",
+            ),
+            (
+                1,
+                "crm_personal_data_not_allowed",
+                "Clue committee role (Clue_Committee_Role__c): rejected.",
+            ),
+        ]
+
+    _run(tmp_path, "sfrolewithheld", body, provider="salesforce")
+
+
 def _sf_creates(world: Any) -> list[ProposedChange]:
     return [
         ProposedChange(
