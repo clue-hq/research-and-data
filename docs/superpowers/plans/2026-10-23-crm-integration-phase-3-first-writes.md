@@ -297,6 +297,28 @@ Added 2026-10-24 after the live check (founder chose option a; design and skill 
 
 ---
 
+### Task 11: Clean names, readable card labels, no system message as the person's words (R-12.12–R-12.14; live-check L-5, L-6, L-7)
+
+Added 2026-10-24 (founder approved; runs after Task 10 — same files).
+
+**Files:**
+- Modify: `platform/api/clue_api/crm/targets.py` (`split_name` → clean then split), `platform/api/clue_api/crm/write_prepare.py` (compare against the cleaned name; labels), `platform/api/clue_api/crm/write_answer.py` (card payload names), `apps/frontend/src/features/integrations/model/crm-write.ts` (+ test) if the title is built there
+- Create: `platform/agents/catalog/skills/stage0-interview/v<next>/SKILL.md` with the one added line; Head of ABM next version / recipe next / manual re-mint (Task 8's pattern)
+- Test: `tests/api/test_crm_targets_db.py` (or a unit test file for the name cleaner), `tests/api/test_crm_write_prepare_db.py`, the card payload tests, `crm-write.test.ts`, the pinning tests
+
+**Name cleaning (R-12.12):** drop everything from the first comma; drop one leading honorific from {Dr., Dr, Mr., Mr, Mrs., Mrs, Ms., Ms, Miss, Prof., Prof, Rev., Rev} (case-insensitive); drop trailing {PhD, Ph.D., MD, M.D.}; keep Jr./Sr./II/III/IV in the last name; then split at the first space (one word → last name only). Cases: "Dr. Holly Herrera" → ("Holly", "Herrera"); "Bethany Maciel, MBA, SHRM-CP" → ("Bethany", "Maciel"); "John Smith Jr." → ("John", "Smith Jr."); "Jane Doe PhD" → ("Jane", "Doe"); "Madonna" → (None, "Madonna"); "Dr." alone → keep the raw name rather than produce an empty one.
+
+**Labels (R-12.13):** the card's group title and rows name a list/campaign by its stored `crm_list.name` (or the name of a list/campaign the same card creates), and a field value that is a company/account id by that company's name when Clue knows it (record link label, a create on the same card, or the before-read); otherwise the id. Expected titles: 'Add 10 companies to the list "Clue: Conduit AI hotel operators"', 'Add 4 contacts to the campaign "Clue: US employer benefits"', 'Set "Primary Associated Company ID" on 1 contact' with the row value "Atrium Hospitality".
+
+**Skill line (R-12.14, wording waived from review):** in stage0-interview, where `record_interview_answer` is taught, add: "Only the person's own words are recorded. A message Clue wrote — a wake-up after CRM changes, a finished discovery, a connected CRM — is never recorded as an interview answer."
+
+- [ ] **Step 1:** Failing tests for the six name cases, the prepare comparison against the cleaned name, and the three label cases (backend payload + frontend title).
+- [ ] **Step 2:** Implement until green; keep every CRM test green.
+- [ ] **Step 3:** Skill line; mint the next Head of ABM / recipe / manual; pinning tests.
+- [ ] **Step 4:** Run the CRM suites, the Task 8 test files, `test_toolbelt_wiring.py`, `manual_build --check`, and the frontend gate for `crm-write` (`npm run lint` + the vitest file) → PASS. Commit `fix(crm): clean names, readable card labels, no system message as the person's words`.
+
+---
+
 ## Not in this plan (and why)
 
 - Duplicate links (R-6.13): Phase 4 per D-4.

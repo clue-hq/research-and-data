@@ -462,3 +462,15 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   Salesforce campaign add), and the executor sends the creates first and fills in their new CRM ids,
   the way it already fills in a new list's id. A change whose create fails or does not land is not
   sent. Before: "create + add/link" needed one card per step (two or three cards in a row).
+- **R-12.12 (2026-10-24)** **A person's name is cleaned before it is split (live-check L-5).** Clue's
+  research holds one `full_name`; `read_crm_targets` drops everything after the first comma
+  (credentials: ", MBA, SHRM-CP"), leading honorifics (Dr., Mr., Mrs., Ms., Miss, Prof., Rev.) and
+  trailing degree abbreviations (PhD, MD), then splits; Jr./Sr./II/III stay in the last name. The
+  prepare check compares against the cleaned name. The title is not written anywhere (no Salutation
+  field — outside R-8.7's person fields).
+- **R-12.13 (2026-10-24)** **The card shows names, not raw ids (live-check L-6):** a list or campaign by
+  its stored name, a company id in a field by the company's name (from Clue's records or the
+  before-read); the id only when Clue knows no name.
+- **R-12.14 (2026-10-24)** **A message Clue wrote is not recorded as the person's words (live-check
+  L-7): prompt only (option B), no code check.** The stage0-interview skill says so; the founder
+  waived reviewing that wording for this edit.
