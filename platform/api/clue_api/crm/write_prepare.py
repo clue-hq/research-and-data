@@ -66,6 +66,7 @@ from clue_api.crm.write_actions import (
     NEW_COMPANY_PREFIX,
     NEW_CONTACT_PREFIX,
     NEW_LIST_PREFIX,
+    SALESFORCE_DUPLICATE_FIELD,
     ParsedChange,
     WriteActionSpec,
     WriteNotParsable,
@@ -74,6 +75,7 @@ from clue_api.crm.write_actions import (
     created_reference,
     field_update_spec,
     find_value,
+    hubspot_link_label,
     is_forbidden_field,
     new_list_name,
     record_reference,
@@ -98,6 +100,7 @@ from clue_config import Settings
 
 __all__ = [
     "CLUE_FIELDS_NOT_SET_UP",
+    "POSSIBLE_DUPLICATE",
     "PERSONAL_DATA_NOT_ALLOWED",
     "PreparedBatch",
     "PreparedChange",
@@ -171,7 +174,11 @@ class RefusedChange:
     #: ``crm_field_unknown``: the object has no such field (final review M-2);
     #: ``crm_list_not_kept`` / ``crm_list_gone``: a HubSpot list Clue does not keep, or a kept
     #: one HubSpot no longer has; ``crm_personal_data_not_allowed``: a person value (or a
-    #: company's ICP tier) that is not what Clue researched and cleared (R-8.7).
+    #: company's ICP tier) that is not what Clue researched and cleared (R-8.7), or a duplicate
+    #: link to a record that is not the person; ``crm_clue_fields_not_set_up``: Clue's fields (or,
+    #: for a duplicate link, its label or lookup) are not set up; ``crm_possible_duplicate``: a
+    #: person create that found more than one CRM contact for the person (R-13.5);
+    #: ``crm_removal_not_allowed``: a possible-duplicate link Clue did not make (R-6.13).
     reason_code: str
     message: str
 
@@ -241,6 +248,9 @@ _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _SALESFORCE_ID = re.compile(r"^[A-Za-z0-9]{1,18}$")
 _SOQL_CHUNK = 200
 _MAX_LISTED_VALUES = 50
+#: How many records a create's search reads: more than one for a person is a possible duplicate
+#: (R-13.5), named in full up to this many.
+_FIND_LIMIT = 10
 
 _HUBSPOT_OBJECT_TYPES = {"company": "companies", "contact": "contacts"}
 #: HubSpot objects whose current values are read many records per call (R-7.4), and how many
@@ -582,11 +592,13 @@ def create_key(key: str, value: object) -> str:
 
 def salesforce_find_query(sobject: str, key: str, value: object, fields: Sequence[str]) -> str:
     """The SOQL that looks for the record a create would duplicate. A website is looked for
-    broadly (any spelling that contains its host); :func:`salesforce_match` then keeps only the
+    broadly (any spelling that contains its host); :func:`salesforce_matches` then keeps only the
     records whose website is that host."""
     select = ", ".join(dict.fromkeys(["Id", *fields, key]))
     if key not in _HOST_KEYS:
-        return f"SELECT {select} FROM {sobject} WHERE {key} = {_soql_text(value)} LIMIT 2"
+        return (
+            f"SELECT {select} FROM {sobject} WHERE {key} = {_soql_text(value)} LIMIT {_FIND_LIMIT}"
+        )
     host = website_host(value)
     for special in ("\\", "%", "_"):
         host = host.replace(special, "\\" + special)
@@ -594,12 +606,12 @@ def salesforce_find_query(sobject: str, key: str, value: object, fields: Sequenc
     return f"SELECT {select} FROM {sobject} WHERE {key} LIKE {pattern} LIMIT {_SOQL_CHUNK}"
 
 
-def salesforce_match(
+def salesforce_matches(
     key: str, value: object, records: Sequence[Mapping[str, Any]]
-) -> Mapping[str, Any] | None:
-    """The record of :func:`salesforce_find_query`'s answer that the create would duplicate."""
+) -> list[Mapping[str, Any]]:
+    """The records of :func:`salesforce_find_query`'s answer that the create would duplicate."""
     wanted = create_key(key, value)
-    return next((r for r in records if create_key(key, r.get(key)) == wanted), None)
+    return [r for r in records if create_key(key, r.get(key)) == wanted]
 
 
 def _display_name(
@@ -742,15 +754,17 @@ async def _memberships(
     return members
 
 
-async def _find_existing(
-    reader: _Reader, provider: CrmProvider, item: _Item
-) -> tuple[str, Mapping[str, object]] | None:
-    """The record a create would duplicate (R-7.1): its id and its current values."""
+_Hit = tuple[str, Mapping[str, object]]
+
+
+async def _find_existing(reader: _Reader, provider: CrmProvider, item: _Item) -> list[_Hit]:
+    """The records a create would duplicate (R-7.1), each with its id and its current values; the
+    first is the one a create that finds its record updates."""
     assert item.spec.find_existing is not None
     slug, key = item.spec.find_existing
     value = _find_value(item)
     if value is None or str(value).strip() == "":
-        return None
+        return []
     fields = sorted(item.parsed.fields)
     if provider == "hubspot":
         # HubSpot keeps a company's ``domain`` as its bare host: look for that host, so
@@ -763,25 +777,24 @@ async def _find_existing(
                     {"filters": [{"propertyName": key, "operator": "EQ", "value": wanted}]}
                 ],
                 "properties": fields,
-                "limit": 2,
+                "limit": _FIND_LIMIT,
             },
         )
-        results = _list(body, "results", f"the {item.parsed.object} search")
-        if not results:
-            return None
-        properties = results[0].get("properties")
-        if not isinstance(properties, Mapping) or results[0].get("id") is None:
-            raise _unreadable(f"the {item.parsed.object} search")
-        return str(results[0]["id"]), properties
+        hits: list[_Hit] = []
+        for result in _list(body, "results", f"the {item.parsed.object} search"):
+            properties = result.get("properties")
+            if not isinstance(properties, Mapping) or result.get("id") is None:
+                raise _unreadable(f"the {item.parsed.object} search")
+            hits.append((str(result["id"]), properties))
+        return hits
     if not create_key(key, value):
-        return None
+        return []
     query = salesforce_find_query(_SALESFORCE_SOBJECTS[item.parsed.object], key, value, fields)
     what = f"the {item.parsed.object} search"
     records = _list(await reader.read(slug, {"query": query}), "records", what)
     if any(record.get("Id") is None for record in records):
         raise _unreadable(what)
-    match = salesforce_match(key, value, records)
-    return (str(match["Id"]), match) if match is not None else None
+    return [(str(match["Id"]), match) for match in salesforce_matches(key, value, records)]
 
 
 # --- what Clue researched and cleared (R-8.7 in code, Phase 3 Task 5) -----------------------
@@ -794,6 +807,36 @@ CLUE_FIELDS_NOT_SET_UP = "crm_clue_fields_not_set_up"
 
 def clue_fields_not_set_up_message(provider: CrmProvider) -> str:
     return f"Clue's fields are not set up in {_CRM_NAMES[provider]} yet."
+
+
+#: A person create that finds more than one CRM contact for the person (R-13.5).
+POSSIBLE_DUPLICATE = "crm_possible_duplicate"
+
+
+def cant_link_message(provider: CrmProvider) -> str:
+    """Said for a duplicate link while Clue's fields are not set up (R-6.14)."""
+    return f"Clue can't link duplicates in {_CRM_NAMES[provider]} until Clue's fields are set up."
+
+
+def possible_duplicate_message(provider: CrmProvider, ids: Sequence[str]) -> str:
+    """Said for a person create that finds ``ids`` (two or more) for one Clue person: Clue
+    creates nothing and never merges them; the agent may link them (R-6.13, R-13.5)."""
+    named = ", ".join(ids[:-1]) + f" and {ids[-1]}"
+    first, second = ids[0], ids[1]
+    if provider == "hubspot":
+        how = f"HUBSPOT_CREATE_OBJECT_ASSOCIATION with objectId {first} and toObjectId {second}"
+    else:
+        how = (
+            f"SALESFORCE_UPDATE_CONTACT on {first} setting custom_fields "
+            f"{SALESFORCE_DUPLICATE_FIELD} to {second}"
+        )
+    return (
+        f"{_CRM_NAMES[provider]} already has {len(ids)} contacts with this person's email "
+        f"({named}), so Clue does not create another and never merges them. To mark them as "
+        f"possible duplicates, propose a link_duplicate between them for this Clue contact: {how}"
+        + (f" (and one from {first} to each other one)" if len(ids) > 2 else "")
+        + "."
+    )
 
 
 def clue_field_gone_message(provider: CrmProvider, field: ClueField) -> str:
@@ -867,6 +910,32 @@ def _person_change(item: _Item) -> bool:
         "create_contact",
         "field_update",
     )
+
+
+def _link_change(item: _Item) -> bool:
+    """A duplicate link (R-6.13): about one Clue person, written on two of their CRM records."""
+    return item.parsed.change_kind(item.spec) == "link_duplicate"
+
+
+def _clears_duplicate_link(item: _Item) -> bool:
+    """A Salesforce field update clearing Clue's possible-duplicate lookup."""
+    return (
+        item.spec.provider == "salesforce"
+        and item.parsed.object == "contact"
+        and item.parsed.change_kind(item.spec) == "field_update"
+        and SALESFORCE_DUPLICATE_FIELD in item.parsed.fields
+    )
+
+
+#: Clue removes a possible-duplicate link only by undoing its own (R-6.13).
+LINK_NOT_REMOVED = (
+    "Clue only removes a possible-duplicate link it made itself, by undoing that change "
+    "(reverses_write_id); a link someone else made stays."
+)
+#: HubSpot has no allowlisted action that removes an association label.
+HUBSPOT_LINK_NOT_UNDONE = (
+    "Clue cannot remove a possible-duplicate label in HubSpot; the person can remove it there."
+)
 
 
 def _company_change(item: _Item) -> bool:
@@ -1042,7 +1111,8 @@ async def _reversed_writes(
             "SELECT write_id, object, record_ref, field, before_value::text AS before_value, "
             "clue_entity_id, reverses_write_id "
             "FROM crm_write WHERE write_id = ANY(:ids) AND workspace_id = :ws "
-            "AND connection_id = :connection AND status = 'succeeded' AND kind = 'field_update'"
+            "AND connection_id = :connection AND status = 'succeeded' "
+            "AND kind IN ('field_update', 'link_duplicate')"
         ),
         {"ids": ids, "ws": connection.workspace_id, "connection": connection.connection_id},
     )
@@ -1168,6 +1238,19 @@ def _check_person(
     )
 
 
+def _check_link(item: _Item, contact: TargetContact) -> _Item | str:
+    """A duplicate link is checked by the person's work email: both records must hold it (read
+    before the card; :func:`owner_mismatch`), so Clue needs that email as it researched it. The
+    link cites the email's claims."""
+    email = contact.work_email
+    if email is None:
+        reason = _withheld_reason(contact.withheld, "email")
+        return f"The duplicate link: Clue has no work email to match both records by ({reason})."
+    # Cited by the field it sets (Salesforce), or as the whole change's claims (HubSpot).
+    claims = dict.fromkeys(item.parsed.fields or ("email",), email.claim_ids)
+    return dataclasses.replace(item, claims=claims, owner=("person", None, email.value))
+
+
 def _with_values(item: _Item, values: Mapping[str, object]) -> _Item:
     """``item`` with these fields set to these values, in its parsed fields and in the arguments
     sent (an update's properties, a create's own or custom properties; on Salesforce under the
@@ -1286,6 +1369,13 @@ async def check_against_targets(
     pending: dict[int, _Item] = {}
     for index, item in items.items():
         if (
+            provider == "hubspot"
+            and item.proposed.reverses_write_id is not None
+            and _link_change(item)
+        ):
+            refused.append(_refused(index, item, HUBSPOT_LINK_NOT_UNDONE, "crm_write_not_parsable"))
+            continue
+        if (
             item.proposed.reverses_write_id is not None
             and item.parsed.change_kind(item.spec) == "field_update"
         ):
@@ -1297,20 +1387,24 @@ async def check_against_targets(
                 cleared[index] = undo
                 continue
             item = undo
+        if _clears_duplicate_link(item):
+            refused.append(_refused(index, item, LINK_NOT_REMOVED, "crm_removal_not_allowed"))
+            continue
         pending[index] = item
     items = pending
 
     named = {
         uid
         for item in items.values()
-        if (_person_change(item) or _company_change(item))
+        if (_person_change(item) or _company_change(item) or _link_change(item))
         and (uid := _uuid(item.proposed.clue_entity_id)) is not None
     }
     owned_contacts, owned_accounts = await _owned_entities(conn, connection.workspace_id, named)
     person_ids = {
         str(_uuid(item.proposed.clue_entity_id))
         for item in items.values()
-        if _person_change(item) and str(_uuid(item.proposed.clue_entity_id)) in owned_contacts
+        if (_person_change(item) or _link_change(item))
+        and str(_uuid(item.proposed.clue_entity_id)) in owned_contacts
     }
     company_ids = {
         str(_uuid(item.proposed.clue_entity_id))
@@ -1333,7 +1427,16 @@ async def check_against_targets(
         entity_id = str(entity) if entity is not None else None
         object_metas = metas.get(item.parsed.object, {})
         checked: _Item | str = item
-        if _person_change(item):
+        if _link_change(item):
+            if item.proposed.clue_entity_id is None:
+                checked = _NAME_THE_CONTACT
+            elif entity_id not in owned_contacts:
+                checked = "The Clue contact named is not a contact of this workspace."
+            elif entity_id not in contacts:
+                checked = "That Clue contact is not one of this project's researched contacts."
+            else:
+                checked = _check_link(item, contacts[entity_id])
+        elif _person_change(item):
             if item.proposed.clue_entity_id is None:
                 checked = _NAME_THE_CONTACT
             elif entity_id not in owned_contacts:
@@ -1488,7 +1591,11 @@ def _check_once_per_record_field(items: Sequence[_Item]) -> None:
         keys: list[tuple[object, ...]]
         if parsed.record_ref is None:
             continue
-        if parsed.fields:
+        if parsed.change_kind(item.spec) == "link_duplicate":
+            # One link per pair of records, whichever way round it is named.
+            pair = sorted((parsed.record_ref, str(parsed.duplicate_ref)))
+            keys = [(parsed.object, *pair, "duplicate")]
+        elif parsed.fields:
             keys = [(parsed.object, parsed.record_ref, field) for field in parsed.fields]
         else:
             keys = [(parsed.object, parsed.record_ref, "list", parsed.list_ref)]
@@ -1845,6 +1952,34 @@ class _Builder:
             option_labels=self._option_labels(item, item.parsed.object, list(item.parsed.fields)),
         )
 
+    def link(
+        self,
+        item: _Item,
+        *,
+        record_ref: str,
+        field: str | None,
+        before: object,
+        label: str,
+        arguments: Mapping[str, object],
+    ) -> None:
+        """A duplicate link: one change, scoped by its kind (an "Always allow" covers marking
+        possible duplicates), though on Salesforce it sets Clue's lookup field."""
+        parsed = dataclasses.replace(item.parsed, record_ref=record_ref, label=label)
+        meta = self._metas.get(parsed.object, {}).get(field) if field is not None else None
+        self._add(
+            item,
+            item.spec,
+            parsed,
+            field=field,
+            before=before,
+            after=parsed.duplicate_ref,
+            overwrites=False,
+            arguments=arguments,
+            field_label=meta.label if meta else field,
+            option_labels={},
+            scope=scope_key(item.spec, parsed, None),
+        )
+
     def _option_labels(
         self, item: _Item, object_name: str, fields: Sequence[str]
     ) -> dict[str, Mapping[str, str]]:
@@ -1874,8 +2009,9 @@ class _Builder:
         arguments: Mapping[str, object],
         field_label: str | None,
         option_labels: Mapping[str, Mapping[str, str]],
+        scope: str | None = None,
     ) -> None:
-        scope = scope_key(spec, parsed, field)
+        scope = scope or scope_key(spec, parsed, field)
         grant = (
             None if overwrites else covering_grant(self._grants, scope, parsed.change_kind(spec))
         )
@@ -1917,9 +2053,10 @@ async def _clue_state(
         clue_field_written(provider, item.parsed.object, field) is not None
         for item in items
         for field in item.parsed.fields
-    ) or (
-        provider == "salesforce"
-        and any(item.parsed.change_kind(item.spec) in _RECORD_CREATES for item in items)
+    ) or any(
+        (provider == "salesforce" and item.parsed.change_kind(item.spec) in _RECORD_CREATES)
+        or _link_change(item)
+        for item in items
     )
     if not wanted:
         return None
@@ -1938,6 +2075,16 @@ def _clue_fields_ready_for(
 
 
 _RECORD_CREATES = ("create_contact", "create_company")
+
+
+def _can_link(provider: CrmProvider, state: ClueFieldsState | None) -> bool:
+    """Whether Clue's setup made what a duplicate link writes (R-6.14): HubSpot's "Possible
+    duplicate" label (its type id kept), Salesforce's lookup field."""
+    if state is None or state.status != "ready":
+        return False
+    if provider == "hubspot":
+        return state.label_type_id is not None
+    return clue_field_ready(state, clue_field("salesforce", "contact", SALESFORCE_DUPLICATE_FIELD))
 
 
 def _with_clue_ids(
@@ -2016,7 +2163,13 @@ async def prepare_changes(
     # Clue's own fields (Phase 4) are written only once they are set up (Tasks 1–3).
     clue_state = await _clue_state(conn, connection, items)
     for index, item in enumerate(items):
-        if index not in alone and not _clue_fields_ready_for(provider, item, clue_state):
+        if index in alone:
+            continue
+        if _link_change(item) and not _can_link(provider, clue_state):
+            alone[index] = _refused(
+                index, item, cant_link_message(provider), CLUE_FIELDS_NOT_SET_UP
+            )
+        elif not _clue_fields_ready_for(provider, item, clue_state):
             alone[index] = _refused(
                 index, item, clue_fields_not_set_up_message(provider), CLUE_FIELDS_NOT_SET_UP
             )
@@ -2093,13 +2246,14 @@ async def prepare_changes(
     # R-12.11: a create that finds its record already there gives that record's id to the
     # changes that use it, before anything is read for them.
     used = {ref for item in kept.values() if (ref := _reference(item)) is not None}
-    looked_up: dict[int, tuple[str, Mapping[str, object]] | None] = {}
+    looked_up: dict[int, list[_Hit]] = {}
     found_ids: dict[str, str] = {}
     for index, item in kept.items():
         own = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
         if own is None or own not in used:
             continue
-        hit = looked_up[index] = await _find_existing(reader, provider, item)
+        hits = looked_up[index] = await _find_existing(reader, provider, item)
+        hit = _one_found(item, hits)
         if hit is not None and (
             owner_mismatch(provider, item, hit[0], {**hit[1], **_owner_values(provider, item)})
             is None
@@ -2126,18 +2280,27 @@ async def prepare_changes(
     # Before-values: field updates in batches per object where the CRM has a batch read
     # (HubSpot companies, every Salesforce object), else per record (HubSpot contacts).
     updates = [i for i in kept.values() if i.parsed.change_kind(i.spec) == "field_update"]
+    # A duplicate link reads both its records: whose they are, and what they are called.
+    linked = [
+        (item, str(ref), first)
+        for item in kept.values()
+        if _link_change(item)
+        for ref, first in ((item.parsed.record_ref, True), (item.parsed.duplicate_ref, False))
+    ]
     current: dict[tuple[str, str], Mapping[str, object]] = {}
     if provider == "hubspot":
         by_record: dict[str, dict[str, list[str]]] = {}
-        for item in updates:
+        for item, record_ref, written in [
+            *((i, str(i.parsed.record_ref), True) for i in updates),
+            *linked,
+        ]:
             display = (
                 *_DISPLAY_FIELDS[provider].get(item.parsed.object, ()),
                 *_owner_field(provider, item),
             )
-            fields = by_record.setdefault(item.parsed.object, {}).setdefault(
-                str(item.parsed.record_ref), []
-            )
-            fields.extend(f for f in (*item.parsed.fields, *display) if f not in fields)
+            fields = by_record.setdefault(item.parsed.object, {}).setdefault(record_ref, [])
+            written_fields = item.parsed.fields if written else ()
+            fields.extend(f for f in (*written_fields, *display) if f not in fields)
         for object_name, record_fields in by_record.items():
             batch = await hubspot_batch_values(reader.call, object_name, record_fields)
             for record_ref, fields in record_fields.items():
@@ -2148,10 +2311,14 @@ async def prepare_changes(
                     current[(object_name, record_ref)] = values
     else:
         by_object: dict[str, dict[str, set[str]]] = {}
-        for item in updates:
+        for item, record_ref, written in [
+            *((i, str(i.parsed.record_ref), True) for i in updates),
+            *linked,
+        ]:
             records = by_object.setdefault(item.parsed.object, {})
-            wanted_fields = records.setdefault(str(item.parsed.record_ref), set())
-            wanted_fields.update(item.parsed.fields)
+            wanted_fields = records.setdefault(record_ref, set())
+            if written:
+                wanted_fields.update(item.parsed.fields)
             wanted_fields.update(_DISPLAY_FIELDS[provider].get(item.parsed.object, ()))
             wanted_fields.update(_owner_field(provider, item))
         for object_name, records in by_object.items():
@@ -2226,12 +2393,29 @@ async def prepare_changes(
                 item, proposed=dataclasses.replace(item.proposed, arguments=made)
             )
             builder.whole(item, before=None, after=new_list)
+        elif kind == "link_duplicate":
+            link = _prepare_link(provider, index, item, current, clue_state)
+            if isinstance(link, RefusedChange):
+                refused.append(link)
+            elif link is not None:
+                builder.link(item, **link)
         elif kind in ("create_contact", "create_company"):
-            found = (
+            hits = (
                 looked_up[index]
                 if index in looked_up
                 else await _find_existing(reader, provider, item)
             )
+            if kind == "create_contact" and len(hits) > 1:
+                refused.append(
+                    _refused(
+                        index,
+                        item,
+                        possible_duplicate_message(provider, [hit[0] for hit in hits]),
+                        POSSIBLE_DUPLICATE,
+                    )
+                )
+                continue
+            found = hits[0] if hits else None
             if found is not None:
                 mismatch = owner_mismatch(
                     provider, item, found[0], {**found[1], **_owner_values(provider, item)}
@@ -2256,13 +2440,108 @@ async def prepare_changes(
                 if field == match_key and create_key(field, held) == create_key(field, after):
                     continue  # the website it was found by, spelled another way: not a change
                 await builder.field(item, update, record_ref, field, held, after)
-        else:  # link_duplicate has no action until Phase 4 (R-12.4)
-            raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
+        else:
+            raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed.")
     prepared = _without_changes_of_records_not_made(kept, builder.prepared, starts, refused)
     # A list is created before anything is added to it: creates come first, on the card and in
     # the order the executor sends (R-12.7).
     ordered = sorted(prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
     return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
+
+
+def _one_found(item: _Item, hits: Sequence[_Hit]) -> _Hit | None:
+    """The record a create finds; none for a person found more than once (R-13.5: the create
+    is refused, so what uses it is too)."""
+    if not hits or (item.parsed.change_kind(item.spec) == "create_contact" and len(hits) > 1):
+        return None
+    return hits[0]
+
+
+_LINK_ONLY_CLUES_LABEL = (
+    "A duplicate link carries only Clue's 'Possible duplicate' label: leave 'labels' out and "
+    "Clue adds it."
+)
+
+
+def _type_id(value: str) -> int | str:
+    """HubSpot's association type id as HubSpot gives it (a number)."""
+    return int(value) if value.isdigit() else value
+
+
+def _prepare_link(
+    provider: CrmProvider,
+    index: int,
+    item: _Item,
+    current: Mapping[tuple[str, str], Mapping[str, object]],
+    state: ClueFieldsState | None,
+) -> dict[str, Any] | RefusedChange | None:
+    """A duplicate link's card entry (:meth:`_Builder.link`), its refusal, or ``None`` when the
+    records are linked already. Both records must be the person Clue researched -- each holds
+    their work email, read before the card -- and are named on the card by what they are called.
+    HubSpot links them with Clue's label; Salesforce sets Clue's lookup on the first to the
+    second, never replacing a link it holds (R-6.13: Clue removes only its own)."""
+    assert state is not None and item.owner is not None  # set up (_can_link) and checked
+    obj = item.parsed.object
+    record_ref, other = str(item.parsed.record_ref), str(item.parsed.duplicate_ref)
+    values: dict[str, Mapping[str, object]] = {}
+    for ref in (record_ref, other):
+        held = current.get((obj, ref))
+        if held is None:
+            return _record_not_found(provider, index, item, ref)
+        mismatch = owner_mismatch(provider, item, ref, held)
+        if mismatch is not None:
+            return dataclasses.replace(mismatch, index=index)
+        values[ref] = held
+    first, second = (
+        _display_name(provider, obj, values[ref]) or ref for ref in (record_ref, other)
+    )
+    email = item.owner[2]
+    people = f"two records of {first}" if first == second else f"{first} and {second}"
+    label = f"{people} ({email})"
+    if provider == "hubspot":
+        assert state.label_type_id is not None
+        given = hubspot_link_label(item.proposed.arguments)
+        if given is not None and str(given) != state.label_type_id:
+            return _refused(index, item, _LINK_ONLY_CLUES_LABEL, "crm_write_not_parsable")
+        arguments: dict[str, Any] = {
+            "objectType": "contacts",
+            "objectId": record_ref,
+            "toObjectType": "contacts",
+            "toObjectId": other,
+            "labels": [
+                {
+                    "associationCategory": "USER_DEFINED",
+                    "associationTypeId": _type_id(state.label_type_id),
+                }
+            ],
+        }
+        return {
+            "record_ref": record_ref,
+            "field": None,
+            "before": None,
+            "label": label,
+            "arguments": arguments,
+        }
+    linked_to = values[record_ref].get(SALESFORCE_DUPLICATE_FIELD)
+    if not same_value(linked_to, None):
+        if same_record(provider, other, linked_to):
+            return None  # linked already: nothing to change
+        return _refused(
+            index,
+            item,
+            f"{first} is already marked as a possible duplicate of another contact. "
+            + LINK_NOT_REMOVED,
+            "crm_removal_not_allowed",
+        )
+    return {
+        "record_ref": record_ref,
+        "field": SALESFORCE_DUPLICATE_FIELD,
+        "before": None,
+        "label": label,
+        "arguments": single_field_arguments(
+            item.spec, record_ref, SALESFORCE_DUPLICATE_FIELD, other
+        ),
+    }
 
 
 def _with_created_company_names(
@@ -2554,10 +2833,12 @@ def card_snapshot(
         first = changes[0]
         count = len(changes)
         kind = first.parsed.change_kind(first.spec)
+        # A duplicate link is shown by the two people's names, never by record ids.
+        link = kind == "link_duplicate"
         summary = None
         if kind == "list_create" and provider == "salesforce":
             summary = f'Active, status "{CLUE_CAMPAIGN_SETTINGS["status"]}"'
-        if first.field is not None:
+        if first.field is not None and not link:
             befores = [change.before for change in changes]
             before_text = (
                 "Empty today"
@@ -2570,8 +2851,8 @@ def card_snapshot(
                 "kind": kind,
                 # What the group's records are: a list created is a list (or campaign).
                 "object": _group_object(provider, first),
-                "field": first.field,
-                "field_label": first.field_label,
+                "field": None if link else first.field,
+                "field_label": None if link else first.field_label,
                 "list_ref": _list_shown(first),
                 "title": _title(provider, first, count),
                 "count": count,
@@ -2582,8 +2863,8 @@ def card_snapshot(
                         "write_id": str(change.write_id),
                         "record_ref": change.parsed.record_ref,
                         "name": change.parsed.label,
-                        "before": _shown(change, change.before),
-                        "after": _shown(change, change.after),
+                        "before": None if link else _shown(change, change.before),
+                        "after": None if link else _shown(change, change.after),
                     }
                     for change in changes
                 ],

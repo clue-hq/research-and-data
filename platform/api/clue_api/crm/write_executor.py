@@ -52,6 +52,12 @@ A change to one of Clue's own fields that the CRM answers as a field it does not
 the send or in the send itself, and only when the answer names that field — marks the field gone
 (:func:`~clue_api.crm.clue_fields.mark_clue_field_gone`) and fails the change saying Clue's
 fields must be set up again; the CRM's answer is kept.
+
+A ``link_duplicate`` change (Phase 4, Task 5; R-6.13) marks two contacts of one person as possible
+duplicates. On Salesforce it sets Clue's lookup field and is checked, sent in the composite update
+and read back like a field update. On HubSpot it is one ``HUBSPOT_CREATE_OBJECT_ASSOCIATION`` call
+with Clue's label: there is no read before it (linking two contacts again changes nothing), and
+the CRM's accepting answer is its confirmation.
 """
 
 from __future__ import annotations
@@ -110,6 +116,7 @@ from clue_api.crm.write_actions import (
 )
 from clue_api.crm.write_prepare import (
     _CRM_NAMES,
+    _FIND_LIMIT,
     _HUBSPOT_OBJECT_TYPES,
     _SALESFORCE_SOBJECTS,
     _sf_key,
@@ -119,8 +126,9 @@ from clue_api.crm.write_prepare import (
     clue_field_gone_message,
     create_key,
     hubspot_batch_values,
+    possible_duplicate_message,
     salesforce_find_query,
-    salesforce_match,
+    salesforce_matches,
     temporary_failure,
 )
 from clue_api.crm.writes import (
@@ -150,6 +158,7 @@ _TERMINAL = ("succeeded", "failed", "skipped")
 _CREATES = ("create_contact", "create_company")
 _MEMBERSHIP = ("list_membership", "list_removal")
 _LIST_CREATE = "list_create"
+_LINK = "link_duplicate"
 #: Every kind that makes something new in the CRM and stores the id the CRM gives it.
 _MAKES = (*_CREATES, _LIST_CREATE)
 _HUBSPOT_READ = "HUBSPOT_READ_CRM_OBJECT_BY_ID"
@@ -343,7 +352,7 @@ def _gone_clue_field(provider: CrmProvider, write: _Write, outcome: _Outcome) ->
     )
     if not _FIELD_MISSING.search(answer):
         return None
-    if write.kind == "field_update":
+    if write.kind in ("field_update", _LINK) and write.field is not None:
         names = [str(write.field)]
     elif write.kind in _CREATES and isinstance(write.after, Mapping):
         names = [str(name) for name in write.after]
@@ -424,6 +433,8 @@ class _Seen:
     name: str | None = None
     #: More than one Salesforce campaign has the name looked for (``list_create`` only).
     ambiguous: bool = False
+    #: Every contact a person create found by its email, when it found more than one (R-13.5).
+    duplicates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -730,7 +741,7 @@ async def _read_created(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen
                         {"filters": [{"propertyName": key, "operator": "EQ", "value": str(value)}]}
                     ],
                     "properties": [key],
-                    "limit": 2,
+                    "limit": _FIND_LIMIT,
                 },
             )
             records = _records(_unwrap(result.data), "results") if result.successful else None
@@ -740,16 +751,17 @@ async def _read_created(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen
             result = await crm.call(slug, {"query": query})
             records = _records(_unwrap(result.data), "records") if result.successful else None
             if records is not None:  # a website matches by its host, not its spelling
-                match = salesforce_match(key, value, records)
-                records = [] if match is None else [match]
+                records = salesforce_matches(key, value, records)
             id_key = "Id"
         if not result.successful:
             seen[write.write_id] = _Seen(error=result.error or "No answer.")
         elif records is None:
             seen[write.write_id] = _unreadable(crm, f"the {write.object} search")
         else:
+            ids = tuple(str(r[id_key]) for r in records if r.get(id_key))
             seen[write.write_id] = _Seen(
-                value=str(records[0].get(id_key)) if records and records[0].get(id_key) else None
+                value=ids[0] if ids else None,
+                duplicates=ids if write.kind == "create_contact" and len(ids) > 1 else (),
             )
     return seen
 
@@ -858,7 +870,9 @@ def _text(value: object) -> str | None:
 
 async def _read(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
     seen: dict[UUID, _Seen] = {}
-    fields = [w for w in writes if w.kind == "field_update"]
+    # A Salesforce duplicate link sets a field and is read like one; a HubSpot one is not read.
+    fields = [w for w in writes if w.kind == "field_update" or (w.kind == _LINK and w.field)]
+    seen.update({w.write_id: _Seen() for w in writes if w.kind == _LINK and not w.field})
     memberships = [w for w in writes if w.kind in _MEMBERSHIP]
     creates = [w for w in writes if w.kind in _CREATES]
     lists = [w for w in writes if w.kind == _LIST_CREATE]
@@ -929,6 +943,14 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
                     "so it was not created again."
                     + (" It may be the one an earlier send created." if write.attempts else "")
                 ),
+            )
+        if seen.duplicates:
+            # More than one record of the person (R-13.5): none is taken for theirs, and none
+            # is linked to the Clue contact. Clue never merges them; the agent may link them.
+            return _Outcome(
+                "skipped",
+                failure_kind="conflict",
+                crm_message=possible_duplicate_message(crm.connection.provider, seen.duplicates),
             )
         if seen.value is not None:
             return _Outcome(
@@ -1441,6 +1463,12 @@ class CrmWriteHandler:
         if refused is not None:
             kind = None if result.successful else _refusal_kind(result)
             await self._record(crm, call, {write.write_id: _failed(refused, kind)})
+            return []
+        if write.kind == _LINK and write.field is None:
+            # A HubSpot label has no read-back: the CRM's accepting answer confirms it.
+            await self._record(
+                crm, call, {write.write_id: _Outcome("succeeded", crm_id=write.record_ref)}
+            )
             return []
         if write.kind not in _MAKES:
             return [write]

@@ -443,3 +443,48 @@ test("an operator's Allow on the setup card is refused in plain words", () => {
     "Only a workspace owner or admin can set up Clue's fields.",
   );
 });
+
+test("a duplicate link names both people and no record ids (Phase 4, R-6.13)", () => {
+  const model = crmWriteCard({
+    crm: "salesforce",
+    project_name: "Q4",
+    title: "Clue wants to update Salesforce",
+    description: 'For "Q4". Nothing is sent until you allow it.',
+    groups: [
+      {
+        kind: "link_duplicate",
+        object: "contact",
+        field: null,
+        field_label: null,
+        list_ref: null,
+        title: "Mark 1 possible duplicate",
+        count: 1,
+        value_summary: null,
+        reason: "Two Salesforce contacts for Nick",
+        records: [
+          {
+            write_id: W(11),
+            record_ref: "003A",
+            name: "Nick Fisher and Nicholas Fisher (nick@zafran.io)",
+            before: null,
+            after: null,
+          },
+        ],
+        scope_key: "kind:link_duplicate",
+        always_allow: "marking possible duplicates",
+      },
+    ],
+  });
+  assert.ok(model);
+  const group = model.groups[0]!;
+  assert.equal(group.title, "Mark 1 possible duplicate");
+  assert.deepEqual(
+    group.records.map((record) => [record.name, record.change]),
+    [["Nick Fisher and Nicholas Fisher (nick@zafran.io)", null]],
+  );
+  assert.equal(group.alwaysAllowPhrase, "marking possible duplicates");
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 1, failed: 0, skipped: 0, pending: 0 }),
+    { mark: "done", line: "Marked 1 possible duplicate" },
+  );
+});

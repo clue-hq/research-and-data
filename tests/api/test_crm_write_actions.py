@@ -78,6 +78,10 @@ _EXAMPLES: dict[tuple[str, str], tuple[dict[str, Any], ParsedChange]] = {
         {"name": "Clue: Q4 hotel groups", "object_type_id": "0-2", "processing_type": "MANUAL"},
         ParsedChange("company", None, {}, None, "Clue: Q4 hotel groups"),
     ),
+    ("hubspot", "HUBSPOT_CREATE_OBJECT_ASSOCIATION"): (
+        {"objectId": "201", "toObjectId": "202"},
+        ParsedChange("contact", "201", {}, None, "201", duplicate_ref="202"),
+    ),
     ("salesforce", "SALESFORCE_CREATE_CAMPAIGN"): (
         {"name": "Clue: Q4 hotel groups"},
         ParsedChange("contact", None, {}, None, "Clue: Q4 hotel groups"),
@@ -145,7 +149,7 @@ def test_no_allowlisted_write_merges_deletes_or_runs_an_llm() -> None:
     assert write_spec("hubspot", "HUBSPOT_SEARCH_DEALS") is None
 
 
-def test_the_allowlist_covers_every_kind_but_link_duplicate() -> None:
+def test_the_allowlist_covers_every_kind() -> None:
     for provider in ("hubspot", "salesforce"):
         kinds = {spec.kind for (p, _s), spec in WRITE_ACTIONS.items() if p == provider}
         assert kinds >= {
@@ -155,8 +159,24 @@ def test_the_allowlist_covers_every_kind_but_link_duplicate() -> None:
             "create_company",
             "list_create",
         }
-        assert "link_duplicate" not in kinds
-    assert {spec.kind for spec in WRITE_ACTIONS.values()} >= {"list_removal"}
+    assert {spec.kind for spec in WRITE_ACTIONS.values()} >= {"list_removal", "link_duplicate"}
+
+
+def test_a_salesforce_duplicate_link_is_a_contact_update_of_clues_lookup_alone() -> None:
+    """Phase 4 (R-6.13): setting Clue_Possible_Duplicate__c is a link_duplicate, scoped by its
+    kind; clearing it is an ordinary field update (only Clue's own undo passes preparation)."""
+    spec = write_spec("salesforce", "SALESFORCE_UPDATE_CONTACT")
+    assert spec is not None
+    link = spec.parse(
+        {"contact_id": "003A", "custom_fields": {"Clue_Possible_Duplicate__c": "003B"}}
+    )
+    assert (link.change_kind(spec), link.duplicate_ref) == ("link_duplicate", "003B")
+    assert scope_key(spec, link, None) == "kind:link_duplicate"
+    cleared = spec.parse(
+        {"contact_id": "003A", "custom_fields": {"Clue_Possible_Duplicate__c": None}}
+    )
+    assert cleared.change_kind(spec) == "field_update"
+    assert cleared.duplicate_ref is None
 
 
 def test_consent_and_phone_fields_are_forbidden() -> None:

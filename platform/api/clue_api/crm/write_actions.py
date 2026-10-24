@@ -14,7 +14,15 @@ arguments (``industry``), so they are mapped here.
 Never allowlisted: merges, deletes, GDPR/erase actions and Composio's natural-language
 (``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write — use
 the batch ``HUBSPOT_UPDATE_CONTACTS``); the Salesforce ``*_BY_ID`` update tools (deprecated in the
-pinned toolkit). ``link_duplicate`` is a declared kind with no action until Phase 4.
+pinned toolkit).
+
+``link_duplicate`` (Phase 4, Task 5; R-6.13, R-13.5) marks two CRM contacts of one person as
+possible duplicates; Clue never merges them. On HubSpot it is ``HUBSPOT_CREATE_OBJECT_ASSOCIATION``
+between two contacts with Clue's "Possible duplicate" label (preparation fills in the label's type
+id from Clue's setup); on Salesforce it is ``SALESFORCE_UPDATE_CONTACT`` setting Clue's lookup
+field ``Clue_Possible_Duplicate__c`` on one contact to the other's id — that change alone, parsed
+as a ``link_duplicate`` (:attr:`ParsedChange.kind`). Clearing that field is a plain field update,
+allowed only as the undo of Clue's own link. HubSpot has no allowlisted way to remove a label.
 
 ``clue_fields_setup`` (Phase 4, Task 2; R-13.3, R-13.4) sets up Clue's own fields in the CRM. It is
 not on the allowlist: no Composio action of its own, never proposed through ``propose_crm_changes``.
@@ -53,6 +61,7 @@ __all__ = [
     "NEW_COMPANY_PREFIX",
     "NEW_CONTACT_PREFIX",
     "NEW_LIST_PREFIX",
+    "SALESFORCE_DUPLICATE_FIELD",
     "WRITE_ACTIONS",
     "CLUE_CAMPAIGN_SETTINGS",
     "CLUE_FIELDS_SETUP",
@@ -67,6 +76,7 @@ __all__ = [
     "clue_fields_setup_spec",
     "field_update_spec",
     "forbidden_fields",
+    "hubspot_link_label",
     "is_forbidden_field",
     "is_write",
     "created_reference",
@@ -117,9 +127,11 @@ class ParsedChange:
     list_ref: str | None
     #: What the card calls the record: its name or email, else its id.
     label: str
-    #: Set only when one action carries two kinds (HubSpot's list membership adds and removes);
-    #: read it through :meth:`change_kind`.
+    #: Set only when one action carries two kinds (HubSpot's list membership adds and removes;
+    #: a Salesforce contact update that is a duplicate link); read it through :meth:`change_kind`.
     kind: WriteKind | None = None
+    #: A ``link_duplicate``'s other contact: the CRM id ``record_ref`` is linked to.
+    duplicate_ref: str | None = None
 
     def change_kind(self, spec: WriteActionSpec) -> WriteKind:
         return self.kind or spec.kind
@@ -477,6 +489,51 @@ def _hubspot_create(object_name: str, *label_fields: str) -> Callable[[Arguments
     return parse
 
 
+#: How a HubSpot association action may name the contacts object.
+_HUBSPOT_CONTACT_TYPES = frozenset({"contacts", "contact", "0-1"})
+
+
+def _not_itself(record: str, other: str, *, same: bool) -> None:
+    if same:
+        raise WriteNotParsable(
+            f"A contact is not a duplicate of itself: {record} and {other} are one record."
+        )
+
+
+def _hubspot_link_duplicate(arguments: Arguments) -> ParsedChange:
+    """Two contacts linked with Clue's "Possible duplicate" label. The agent names the two
+    contacts; preparation adds Clue's label (``labels`` may only carry a user-defined one, checked
+    against Clue's there)."""
+    _only(arguments, {"objectType", "objectId", "toObjectType", "toObjectId", "labels"})
+    for name in ("objectType", "toObjectType"):
+        if name in arguments and str(arguments[name]).lower() not in _HUBSPOT_CONTACT_TYPES:
+            raise WriteNotParsable("Clue links two contacts only: both object types are contacts.")
+    record = _id(arguments, "objectId")
+    other = _id(arguments, "toObjectId")
+    _not_itself(record, other, same=record == other)
+    labels = arguments.get("labels")
+    if labels not in (None, []) and not (
+        isinstance(labels, list)
+        and len(labels) == 1
+        and isinstance(labels[0], Mapping)
+        and set(labels[0]) <= {"associationCategory", "associationTypeId"}
+        and labels[0].get("associationCategory") == "USER_DEFINED"
+    ):
+        raise WriteNotParsable(
+            "A duplicate link carries only Clue's \"Possible duplicate\" label: leave 'labels' "
+            "out and Clue adds it."
+        )
+    return ParsedChange("contact", record, {}, None, record, duplicate_ref=other)
+
+
+def hubspot_link_label(arguments: Arguments) -> object | None:
+    """The association type id a HubSpot duplicate link's arguments carry, if any."""
+    labels = arguments.get("labels")
+    if isinstance(labels, list) and labels and isinstance(labels[0], Mapping):
+        return labels[0].get("associationTypeId")
+    return None
+
+
 def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
         if id_arg == "inputs":  # already the batch shape, one input each
@@ -608,15 +665,35 @@ def _salesforce_fields(
     return _require_fields(fields)  # type: ignore[return-value]
 
 
+#: Clue's Salesforce lookup that marks a contact as a possible duplicate of another (R-6.13).
+SALESFORCE_DUPLICATE_FIELD = next(
+    field.crm_name for field in CLUE_FIELDS["salesforce"] if field.key == "clue_possible_duplicate"
+)
+
+
 def _salesforce_update(
     object_name: str, id_arg: str, names: Mapping[str, str], *labels: str
 ) -> Callable[[Arguments], ParsedChange]:
     def parse(arguments: Arguments) -> ParsedChange:
         record = _id(arguments, id_arg)
         fields = _salesforce_fields(arguments, names, id_arg)
-        return ParsedChange(
+        change = ParsedChange(
             object_name, record, fields, None, _label(fields, *labels, fallback=record)
         )
+        if object_name != "contact" or SALESFORCE_DUPLICATE_FIELD not in fields:
+            return change
+        if len(fields) != 1:
+            raise WriteNotParsable(
+                f"A duplicate link ({SALESFORCE_DUPLICATE_FIELD}) is proposed on its own, "
+                "with no other field."
+            )
+        value = fields[SALESFORCE_DUPLICATE_FIELD]
+        if value is None or str(value).strip() == "":
+            return change  # clearing it: a field update (only Clue's own undo passes)
+        other = _id({SALESFORCE_DUPLICATE_FIELD: value}, SALESFORCE_DUPLICATE_FIELD)
+        # Salesforce answers 18-character ids for 15-character ones.
+        _not_itself(record, other, same=record[:15] == other[:15])
+        return dataclasses.replace(change, kind="link_duplicate", duplicate_ref=other)
 
     return parse
 
@@ -807,6 +884,17 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         kind="list_create",
         object="company",  # or contact: the parsed change carries the list's object
         parse=_hubspot_create_list,
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    ),
+    # Verified in the Phase 4 spike (two contacts linked with the label); answer unverified.
+    WriteActionSpec(
+        provider="hubspot",
+        slug="HUBSPOT_CREATE_OBJECT_ASSOCIATION",
+        kind="link_duplicate",
+        object="contact",
+        parse=_hubspot_link_duplicate,
         read_before=None,
         find_existing=None,
         batch=None,
