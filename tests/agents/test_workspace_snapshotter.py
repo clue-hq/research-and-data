@@ -951,8 +951,9 @@ def test_gathering_the_receipts_changes_nothing_about_the_file_list(tmp_path: Pa
 
 def test_a_chat_already_holding_a_temporary_folder_still_restores(tmp_path: Path) -> None:
     """Review A2-I3: a version saved before the file list refused ``outputs/.clue-tmp-a/r.md``
-    made every restore raise on every machine, for ever (``outputs/`` never expires). The entry no
-    disk can hold is skipped; the rest of the chat restores and saves again."""
+    made every restore raise on every machine, for ever (``outputs/`` never expires). Founder
+    ruling 2026-10-24: the entry is renamed to ``outputs/clue-tmp-a/r.md``, not dropped — the
+    restore writes its bytes there and the next save lists it, by the same hash, at that path."""
 
     store = FakeStore()
     ok, bad = b"finished work", b"written by a script"
@@ -978,9 +979,13 @@ def test_a_chat_already_holding_a_temporary_folder_still_restores(tmp_path: Path
     try:
         assert (machine.agent() / "outputs" / "ok.md").read_bytes() == ok
         assert not (machine.agent() / "outputs" / ".clue-tmp-a").exists()
+        assert (machine.agent() / "outputs" / "clue-tmp-a" / "r.md").read_bytes() == bad
         _write(lease, "scratch/next.md", b"the chat goes on")
         report = asyncio.run(lease.save_snapshot())
         assert (report.status, report.version) == ("saved", 2)
     finally:
         asyncio.run(machine.factory.release_saved(lease))
-    assert sorted(_current(store)) == ["outputs/ok.md", "scratch/next.md"]
+    saved = _current(store)
+    assert sorted(saved) == ["outputs/clue-tmp-a/r.md", "outputs/ok.md", "scratch/next.md"]
+    assert saved["outputs/clue-tmp-a/r.md"].sha256 == hashlib.sha256(bad).hexdigest()
+    assert saved["outputs/clue-tmp-a/r.md"].written_at == datetime(2026, 10, 22, 9, 30, tzinfo=UTC)

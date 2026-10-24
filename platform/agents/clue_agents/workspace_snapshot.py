@@ -29,7 +29,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Final, Literal, get_args
+from typing import Any, Final, Literal, get_args
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -304,13 +304,77 @@ def _decode_receipt(path: str, raw: object) -> Receipt:
     )
 
 
-def _names_a_temporary_folder(path: object) -> bool:
-    """A saved path no disk will write only because a folder in it has a reserved name."""
+def _names_a_temporary_name(path: object) -> bool:
+    """A saved path no disk will write only because a folder or file in it has a reserved name."""
 
-    if not isinstance(path, str) or not any(is_temporary_name(part) for part in path.split("/")):
-        return False
-    log.warning("agent_workspace.manifest_entry_skipped", path=path, reason="temporary_folder")
-    return True
+    return isinstance(path, str) and any(is_temporary_name(part) for part in path.split("/"))
+
+
+def _numbered(name: str, number: int) -> str:
+    """``name`` numbered before its extension: ``r.md`` → ``r-1.md``, ``notes`` → ``notes-1``."""
+
+    stem, dot, extension = name.rpartition(".")
+    if not stem:
+        return f"{name}-{number}"
+    return f"{stem}-{number}{dot}{extension}"
+
+
+def _folders_of(path: str) -> set[str]:
+    segments = path.split("/")
+    return {"/".join(segments[:depth]) for depth in range(1, len(segments))}
+
+
+def _legal_path(path: str, *, taken: set[str], folders: set[str]) -> str:
+    """The path a stored entry named under a ``.clue-tmp-*`` folder or file is renamed to.
+
+    Every reserved segment loses its leading dot (``.clue-tmp-a`` → ``clue-tmp-a``), which is the
+    smallest change that makes it a name the disk writes. When that lands on a path the list
+    already holds, the file name is numbered (``r.md`` → ``r-1.md``, then ``r-2.md``) until it is
+    free; when one of its folders is a file the list already holds, that folder is numbered the
+    same way. ``taken`` and ``folders`` are every path already kept and every folder of one, so the
+    caller decides the order — and, the rules being fixed, the same list always gives the same path.
+    """
+
+    segments = [part[1:] if is_temporary_name(part) else part for part in path.split("/")]
+    # Depth 0 is the saved folder, never a file; the last segment is the file itself.
+    for depth in range(1, len(segments) - 1):
+        name, number = segments[depth], 0
+        while "/".join(segments[: depth + 1]) in taken:
+            number += 1
+            segments[depth] = _numbered(name, number)
+    name, number = segments[-1], 0
+    while (candidate := "/".join(segments)) in taken or candidate in folders:
+        number += 1
+        segments[-1] = _numbered(name, number)
+    return validate_snapshot_path(candidate)
+
+
+def _decode_entry(raw: Mapping[str, Any], *, path: str, named: str) -> SnapshotEntry:
+    """The entry ``raw`` describes, kept at ``path``. ``named`` is the path the list stored."""
+
+    sha = raw["sha256"]
+    size = raw["size"]
+    tier = raw["tier"]
+    expired_at = raw.get("expired_at")
+    receipt = raw.get("receipt")
+    if not isinstance(sha, str) or not _SHA256.match(sha):
+        raise SnapshotCorrupt(f"file list entry {named!r} has a bad hash")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise SnapshotCorrupt(f"file list entry {named!r} has a bad size")
+    if tier not in get_args(SnapshotTier):
+        raise SnapshotCorrupt(f"file list entry {named!r} has a bad tier")
+    return SnapshotEntry(
+        path=path,
+        sha256=sha,
+        size=size,
+        media_type=str(raw["media_type"]),
+        # The stored tier is read only to check the list is well formed; the path is what
+        # decides, so an old list's "work_product" on scratch/ does not stick.
+        tier=tier_for(path),
+        written_at=datetime.fromisoformat(raw["written_at"]),
+        receipt=None if receipt is None else _decode_receipt(named, receipt),
+        expired_at=None if expired_at is None else datetime.fromisoformat(expired_at),
+    )
 
 
 def decode_manifest(data: bytes) -> SnapshotManifest:
@@ -320,53 +384,46 @@ def decode_manifest(data: bytes) -> SnapshotManifest:
     and are not expired, and their tier is re-derived from the path by :func:`tier_for`, which is
     how they gain the ``working_file`` tier without a migration.
 
-    An entry under a ``.clue-tmp-*`` folder is dropped with a warning, not refused: before the
-    save checked paths as a restore does, such an entry could be saved, and refusing the whole
-    list would leave that chat unrestorable on every machine for ever — under ``outputs/`` it
-    never even expires (review A2-I3). No disk can hold that file, so dropping it loses nothing a
-    restore could have given back. Every other bad path still refuses the list.
+    An entry whose path has a ``.clue-tmp-*`` folder or file name is **renamed**, with a warning,
+    not refused and not dropped (founder ruling 2026-10-24). Before the save checked paths as a
+    restore does, such an entry could be saved; refusing the whole list left that chat
+    unrestorable on every machine for ever (review A2-I3), and dropping the entry made the next
+    save release its bytes, which then erased them — under ``outputs/``, the agent's finished
+    work, which is never deleted. Only the path is wrong: the bytes are stored by their hash, so
+    the renamed entry (:func:`_legal_path`) names the same stored file, a restore writes it there,
+    and the next save holds the same hash under the new path. Every other field is kept as stored.
+    Renamed entries are placed after every other entry, in the order of their stored paths, so an
+    entry that was always legal keeps its path and the result does not depend on the list's order.
+    Every other bad path still refuses the list.
     """
 
     try:
         document = json.loads(data)
         if document["schema_version"] not in _READABLE_SCHEMA_VERSIONS:
             raise SnapshotCorrupt(f"unknown file list schema {document['schema_version']!r}")
-        entries = []
-        seen: set[str] = set()
+        kept: dict[str, SnapshotEntry] = {}
+        reserved: dict[str, Mapping[str, Any]] = {}
         for raw in document["entries"]:
-            if _names_a_temporary_folder(raw["path"]):
+            stored = raw["path"]
+            if _names_a_temporary_name(stored):
+                if stored in reserved:
+                    raise SnapshotCorrupt(f"file list names {stored!r} twice")
+                reserved[stored] = raw
                 continue
-            path = validate_snapshot_path(raw["path"])
-            sha = raw["sha256"]
-            size = raw["size"]
-            tier = raw["tier"]
-            expired_at = raw.get("expired_at")
-            receipt = raw.get("receipt")
-            if not isinstance(sha, str) or not _SHA256.match(sha):
-                raise SnapshotCorrupt(f"file list entry {path!r} has a bad hash")
-            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-                raise SnapshotCorrupt(f"file list entry {path!r} has a bad size")
-            if tier not in get_args(SnapshotTier):
-                raise SnapshotCorrupt(f"file list entry {path!r} has a bad tier")
-            if path in seen:
+            path = validate_snapshot_path(stored)
+            if path in kept:
                 raise SnapshotCorrupt(f"file list names {path!r} twice")
-            seen.add(path)
-            entries.append(
-                SnapshotEntry(
-                    path=path,
-                    sha256=sha,
-                    size=size,
-                    media_type=str(raw["media_type"]),
-                    # The stored tier is read only to check the list is well formed; the path is
-                    # what decides, so an old list's "work_product" on scratch/ does not stick.
-                    tier=tier_for(path),
-                    written_at=datetime.fromisoformat(raw["written_at"]),
-                    receipt=None if receipt is None else _decode_receipt(path, receipt),
-                    expired_at=None if expired_at is None else datetime.fromisoformat(expired_at),
-                )
-            )
+            kept[path] = _decode_entry(raw, path=path, named=path)
+        taken = set(kept)
+        folders = {folder for path in kept for folder in _folders_of(path)}
+        for stored in sorted(reserved):
+            path = _legal_path(stored, taken=taken, folders=folders)
+            kept[path] = _decode_entry(reserved[stored], path=path, named=stored)
+            taken.add(path)
+            folders |= _folders_of(path)
+            log.warning("agent_workspace.manifest_entry_renamed", old_path=stored, new_path=path)
     except SnapshotCorrupt:
         raise
     except (ValueError, KeyError, TypeError) as exc:
         raise SnapshotCorrupt("file list is not readable") from exc
-    return SnapshotManifest(entries=tuple(sorted(entries, key=lambda item: item.path)))
+    return SnapshotManifest(entries=tuple(sorted(kept.values(), key=lambda item: item.path)))

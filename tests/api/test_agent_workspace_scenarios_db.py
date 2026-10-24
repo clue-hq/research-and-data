@@ -1436,3 +1436,130 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
             assert final is not None and final.version == 2
 
     run_async(scenario())
+
+
+# --- A stored path with a reserved name (founder ruling 2026-10-24, review A2-I3) ----------------
+
+
+async def _plant_reserved_name_chat(world: World, thread: str, files: dict[str, bytes]) -> None:
+    """A chat as a save made before fix pass 1 left it, when a list could name a ``.clue-tmp-*``
+    folder: a schema-2 list naming ``files`` as given, every byte — the list's own included —
+    recorded, held and stored in the chat's own area under its hash, and a version record naming
+    that list. Planted by hand because today's save refuses to write such a list at all."""
+
+    written = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
+    document = {
+        "schema_version": 2,
+        "entries": [
+            {
+                "path": path,
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size": len(data),
+                "media_type": "text/markdown",
+                "tier": "work_product",
+                "written_at": written.isoformat(),
+            }
+            for path, data in sorted(files.items())
+        ],
+    }
+    body = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    manifest_sha = hashlib.sha256(body).hexdigest()
+    blobs = {hashlib.sha256(data).hexdigest(): data for data in files.values()}
+    blobs[manifest_sha] = body
+    async with transaction() as conn:
+        for sha, data in blobs.items():
+            key = agent_workspace_key(world.ws, sha)
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=world.ws,
+                content_sha256=sha,
+                media_type="text/markdown",
+                size_bytes=len(data),
+            )
+            await retain_artifact(
+                conn,
+                workspace_id=world.ws,
+                storage_key=key,
+                reference_kind=SNAPSHOT_REFERENCE_KIND,
+                reference_id=thread,
+            )
+        await conn.execute(
+            text(
+                "INSERT INTO agent_workspace_snapshot (workspace_id, thread_id, project_id, "
+                "version, manifest_artifact_key, manifest_sha256) "
+                "VALUES (:ws, :th, :prj, 1, :key, :sha)"
+            ),
+            {
+                "ws": world.ws,
+                "th": thread,
+                "prj": PROJECT,
+                "key": agent_workspace_key(world.ws, manifest_sha),
+                "sha": manifest_sha,
+            },
+        )
+    for sha, data in blobs.items():
+        await FsStorage.put(
+            world.storage, agent_workspace_key(world.ws, sha), data, media_type="text/markdown"
+        )
+
+
+def test_19_a_reserved_name_under_outputs_is_renamed_and_its_bytes_are_never_erased(
+    tmp_path: Path,
+) -> None:
+    """Founder ruling 2026-10-24. A version saved before fix pass 1 lists the agent's finished
+    work at ``outputs/.clue-tmp-a/r.md`` — a path no disk writes. Fix pass 1 dropped that entry on
+    restore, so the next save no longer listed the file's hash, released it and erased its bytes
+    from R2: work under ``outputs/``, which is never deleted. Now the entry is renamed to
+    ``outputs/clue-tmp-a/r.md``: the restore writes the same stored bytes there, the next save
+    lists that path by the same hash, and the bytes stay stored and held."""
+
+    thread = f"thread-reserved-{uuid.uuid4().hex[:8]}"
+    report = b"# Account plan\nThe agent's finished work.\n"
+    kept = b"finished, and always at a legal path"
+    planted = {"outputs/.clue-tmp-a/r.md": report, "outputs/ok.md": kept}
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            await _plant_reserved_name_chat(world, thread, planted)
+            a, b = world.machine(), world.machine()
+
+            lease = await _open(world, a, fence=await world.fence("worker-a"), thread=thread)
+            try:
+                assert lease.restore_report is not None and lease.restore_report.warm is False
+                assert _bytes(a, world.ws, "outputs/clue-tmp-a/r.md", thread) == report
+                assert _bytes(a, world.ws, "outputs/ok.md", thread) == kept
+                assert not _has(a, world.ws, "outputs/.clue-tmp-a", thread)
+                # The turn changes something, so the save writes a new version (an unchanged
+                # turn writes nothing and releases nothing).
+                _write(lease, {"scratch/next.md": b"the chat goes on"})
+                saved = await lease.save_snapshot()
+                assert (saved.status, saved.version) == ("saved", 2)
+            finally:
+                await a.factory.release_saved(lease)
+
+            entries = (await world.manifest(thread)).by_path()
+            assert sorted(entries) == [
+                "outputs/clue-tmp-a/r.md",
+                "outputs/ok.md",
+                "scratch/next.md",
+            ]
+            renamed = entries["outputs/clue-tmp-a/r.md"]
+            assert renamed.sha256 == hashlib.sha256(report).hexdigest()
+            assert renamed.tier == "work_product" and renamed.expired_at is None
+            assert renamed.written_at == datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
+            # The bytes were never released: still held by the chat, still stored, never erased.
+            key = world.key(report)
+            assert key in await _held(world, thread)
+            assert await world.stored(key)
+            assert key not in world.storage.deletes
+
+            # A second machine, with nothing local, gets the file back from R2 alone.
+            lease = await _open(world, b, fence=await world.fence("worker-b"), thread=thread)
+            try:
+                assert lease.restore_report is not None and lease.restore_report.warm is False
+                assert _bytes(b, world.ws, "outputs/clue-tmp-a/r.md", thread) == report
+            finally:
+                await b.factory.release_saved(lease)
+
+    run_async(scenario())
