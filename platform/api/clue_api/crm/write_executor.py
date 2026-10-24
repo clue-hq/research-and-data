@@ -78,6 +78,7 @@ from clue_api.crm.write_actions import (
     WriteActionSpec,
     WriteNotParsable,
     created_reference,
+    find_value,
     new_list_name,
     reference_in,
     with_reference_filled,
@@ -644,7 +645,7 @@ async def _read_created(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen
         assert write.spec.find_existing is not None
         slug, key = write.spec.find_existing
         fields = write.after if isinstance(write.after, Mapping) else {}
-        value = fields.get(key)
+        value = find_value(key, fields)
         if not create_key(key, value):
             seen[write.write_id] = _Seen(value=None)
             continue

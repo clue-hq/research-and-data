@@ -175,17 +175,23 @@ def split_name(full_name: str) -> tuple[str | None, str]:
     """The name cleaned (R-12.12: everything from the first comma, one leading honorific and
     trailing degrees dropped), then split: one word is a last name with no first name; otherwise
     the first word is the first name and the rest is the last name. A name with nothing left
-    after cleaning ("Dr.") is split as it was written, never into an empty one."""
-    words = full_name.split(",", 1)[0].split()
+    after cleaning ("Dr.") is split as it was written, never into an empty one. A part that is
+    only punctuation (a stray comma) is never a name."""
+    words = _name_parts(full_name.split(",", 1)[0])
     if words and words[0].lower() in _HONORIFICS:
         words = words[1:]
     while words and words[-1].lower() in _DEGREES:
         words = words[:-1]
     if not words:
-        words = full_name.split()
+        words = _name_parts(full_name.replace(",", " "))
     if len(words) <= 1:
         return None, " ".join(words)
     return words[0], " ".join(words[1:])
+
+
+def _name_parts(text: str) -> list[str]:
+    """The words of ``text`` that hold a letter or digit."""
+    return [word for word in text.split() if any(ch.isalnum() for ch in word)]
 
 
 def hubspot_tier(fit: float | None, *, settings: Settings) -> str | None:

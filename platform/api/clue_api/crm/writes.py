@@ -33,6 +33,7 @@ __all__ = [
     "clue_added_members",
     "clue_wrote_current_value",
     "forget_membership_link",
+    "forget_record_link",
     "get_proposal",
     "proposal_counts",
     "proposal_linked_records",
@@ -508,6 +509,20 @@ async def record_membership_link(
         crm_id=membership_link_id(list_ref, record_ref),
         created_by_clue=True,
         created_by_write_id=write_id,
+    )
+
+
+async def forget_record_link(
+    conn: AsyncConnection, *, connection_id: UUID, crm_object: str, crm_id: str
+) -> None:
+    """Forget a record link of this connection whose CRM record the CRM no longer has (Task 11
+    fix round 1): Clue no longer knows the entity by it, so a create of it may go ahead."""
+    await conn.execute(
+        text(
+            "DELETE FROM crm_record_link WHERE connection_id = :connection_id "
+            "AND crm_object = :object AND crm_id = :crm_id"
+        ),
+        {"connection_id": connection_id, "object": crm_object, "crm_id": crm_id},
     )
 
 

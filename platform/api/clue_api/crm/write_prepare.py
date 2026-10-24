@@ -55,6 +55,7 @@ from clue_api.crm.write_actions import (
     WriteNotParsable,
     created_reference,
     field_update_spec,
+    find_value,
     is_forbidden_field,
     new_list_name,
     record_reference,
@@ -71,6 +72,7 @@ from clue_api.crm.writes import (
     clue_added_members,
     clue_wrote_current_value,
     covering_grant,
+    forget_record_link,
     live_grants,
     same_value,
 )
@@ -935,16 +937,9 @@ def _owner_values(provider: CrmProvider, item: _Item) -> Mapping[str, object]:
 
 
 def _find_value(item: _Item) -> object | None:
-    """What a create is looked for by: its ``find_existing`` field; a HubSpot person carrying
-    only ``work_email`` is looked for by that email, as other changes refer to it
-    (:func:`~clue_api.crm.write_actions.created_reference`)."""
+    """What a create is looked for by (:func:`~clue_api.crm.write_actions.find_value`)."""
     assert item.spec.find_existing is not None
-    key = item.spec.find_existing[1]
-    value = item.parsed.fields.get(key)
-    if key == "email" and (value is None or str(value).strip() == ""):
-        made = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
-        return made[len(NEW_CONTACT_PREFIX) :] if made is not None else None
-    return value
+    return find_value(item.spec.find_existing[1], item.parsed.fields)
 
 
 def owner_mismatch(
@@ -1191,6 +1186,7 @@ async def check_against_targets(
     settings: Settings,
     items: Mapping[int, _Item],
     metas: Mapping[str, Mapping[str, _FieldMeta]],
+    reader: _Reader | None = None,
 ) -> tuple[dict[int, _Item], list[RefusedChange]]:
     """R-8.7 in code. A change that creates or updates a person must name the Clue contact it is
     about, and each person value it writes must be the one ``read_crm_targets`` offers for that
@@ -1198,7 +1194,11 @@ async def check_against_targets(
     normalised). A company change that names its Clue account may set the ICP tier only to the
     tier of the project's fit, and the target-account flag only to true. Each change that is not
     is refused on its own, naming the field and why, never the value. The rest go on, carrying
-    the claim ids their values came from."""
+    the claim ids their values came from.
+
+    A create of an account Clue already knows in the CRM is refused (update it instead), unless
+    ``reader`` reads that record and the CRM no longer has it: the stale link is forgotten and
+    the create goes ahead as one of an account Clue knows no record for."""
     provider = connection.provider
     cleared: dict[int, _Item] = {}
     refused: list[RefusedChange] = []
@@ -1247,6 +1247,8 @@ async def check_against_targets(
         account_ids={owned_contacts[c] for c in person_ids} | company_ids,
         contact_ids=person_ids,
     )
+    if reader is not None:
+        await _forget_deleted_accounts(conn, reader, connection, items, accounts)
 
     for index, item in items.items():
         entity = _uuid(item.proposed.clue_entity_id)
@@ -1300,6 +1302,49 @@ async def check_against_targets(
         else:
             cleared[index] = checked
     return dict(sorted(cleared.items())), refused
+
+
+async def _forget_deleted_accounts(
+    conn: AsyncConnection,
+    reader: _Reader,
+    connection: CrmConnection,
+    items: Mapping[int, _Item],
+    accounts: dict[str, TargetAccount],
+) -> None:
+    """For each account a change creates although Clue knows its CRM record: read that record by
+    its id; when the CRM says it is not there, forget the link and treat the account as having
+    no record. A read that fails any other way (rate limit, no answer) keeps the link, so the
+    create is refused as before."""
+    for item in items.values():
+        entity = _uuid(item.proposed.clue_entity_id)
+        account = accounts.get(str(entity)) if entity is not None else None
+        if (
+            account is None
+            or account.crm_record_id is None
+            or not _company_change(item)
+            or item.spec.find_existing is None
+        ):
+            continue
+        known = account.crm_record_id
+        try:
+            if connection.provider == "hubspot":
+                gone = (
+                    await _hubspot_field_values(reader, item.parsed.object, known, ["name"]) is None
+                )
+            else:
+                gone = not await _salesforce_field_values(
+                    reader, item.parsed.object, {known: {"Name"}}
+                )
+        except WriteRefused:
+            continue
+        if gone:
+            await forget_record_link(
+                conn,
+                connection_id=connection.connection_id,
+                crm_object=item.parsed.object,
+                crm_id=known,
+            )
+            accounts[account.account_entity_id] = dataclasses.replace(account, crm_record_id=None)
 
 
 def _with_buying_role(
@@ -1742,7 +1787,8 @@ async def prepare_changes(
     (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the same pause the executor keeps between its calls).
     ``settings`` holds the fit bands and verification posture the targets read uses: a person
     value, and a company's ICP tier, is written only as :mod:`clue_api.crm.targets` offers it.
-    Writes nothing but the Salesforce budget's call count; the caller logs the result with
+    Writes nothing but the Salesforce budget's call count and the forgetting of a record link
+    whose CRM record is gone (:func:`check_against_targets`); the caller logs the result with
     :func:`clue_api.crm.writes.insert_writes` under ``proposal_id``.
     """
     del proposal_id  # the caller logs the prepared changes under it
@@ -1800,6 +1846,7 @@ async def prepare_changes(
         settings=settings,
         items=kept,
         metas=metas,
+        reader=reader,
     )
     kept = cleared
     refused.extend(person_refused)

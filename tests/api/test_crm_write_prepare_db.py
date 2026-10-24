@@ -3128,7 +3128,7 @@ def test_a_salesforce_create_of_an_account_clue_knows_is_refused(tmp_path: Path)
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         world = await _researched(conn, seeded)
         await _link(conn, seeded, connection, "account", "001AAA", world.zafran)
-        gateway = _FakeCrm()
+        gateway = _FakeCrm(records={"001AAA": {"Name": "Zafran Security"}})
         change = _create_account("Zafran Security", "https://zafran.io")
         change = ProposedChange(
             change.slug, change.arguments, change.reason, clue_entity_id=str(world.zafran)
@@ -3171,3 +3171,100 @@ def test_a_hubspot_person_create_with_only_a_work_email_is_found_by_it(tmp_path:
         assert {c.field for c in prepared} == {"lastname", "work_email"}
 
     _run(tmp_path, "workemailfind", body)
+
+
+# --- Task 11 fix round 1: a link to a record the CRM no longer has does not block a create ------
+
+
+async def _company_links(conn: Any, connection: CrmConnection) -> list[str]:
+    rows = await conn.execute(
+        text(
+            "SELECT crm_id FROM crm_record_link WHERE connection_id = :c "
+            "AND crm_object IN ('company', 'account') ORDER BY crm_id"
+        ),
+        {"c": connection.connection_id},
+    )
+    return [str(row.crm_id) for row in rows]
+
+
+def test_a_create_whose_known_record_was_deleted_in_the_crm_proceeds(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        gateway = _FakeCrm(missing=frozenset({"101"}))
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                _create_company("Zafran Security", "zafran.io", world.zafran),
+                _add_to_new("new:company:zafran.io"),
+            ],
+        )
+        assert [c.parsed.change_kind(c.spec) for c in prepared] == [
+            "list_create",
+            "create_company",
+            "list_membership",
+        ]
+        assert ("HUBSPOT_READ_CRM_OBJECT_BY_ID", "101") in [
+            (slug, str(args.get("objectId"))) for slug, args in gateway.calls
+        ]
+        assert await _company_links(conn, connection) == []  # the stale link is gone
+
+    _run(tmp_path, "staledeleted", body)
+
+
+def test_a_create_whose_known_record_is_live_is_still_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(records={"101": {"name": "Zafran Security"}}),
+            connection,
+            proposal_id,
+            [_create_company("Zafran Security", "zafran.io", world.zafran)],
+        )
+        assert _refusal(batch) == [(0, "crm_write_not_parsable")]
+        assert await _company_links(conn, connection) == ["101"]
+
+    _run(tmp_path, "stalelive", body)
+
+
+def test_a_create_whose_known_record_cannot_be_read_is_still_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(failing={"HUBSPOT_READ_CRM_OBJECT_BY_ID": _RATE_LIMITED}),
+            connection,
+            proposal_id,
+            [_create_company("Zafran Security", "zafran.io", world.zafran)],
+        )
+        assert _refusal(batch) == [(0, "crm_write_not_parsable")]
+        assert "already in HubSpot as 101" in batch.refused[0].message
+        assert await _company_links(conn, connection) == ["101"]
+
+    _run(tmp_path, "staleunread", body)
+
+
+def test_a_salesforce_create_whose_known_account_was_deleted_proceeds(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "account", "001AAA", world.zafran)
+        gateway = _FakeCrm()
+        change = _create_account("Zafran Security", "https://zafran.io")
+        change = ProposedChange(
+            change.slug, change.arguments, change.reason, clue_entity_id=str(world.zafran)
+        )
+        budget = _FakeBudget(gateway)
+        (created,) = await _prepare(conn, gateway, connection, proposal_id, [change], budget)
+        assert created.parsed.change_kind(created.spec) == "create_company"
+        assert any("001AAA" in str(args.get("query")) for _, args in gateway.calls)
+        assert len(budget.taken_at) == len(gateway.calls)  # every read taken from the budget
+        assert await _company_links(conn, connection) == []
+
+    _run(tmp_path, "staledeletedsf", body, provider="salesforce")

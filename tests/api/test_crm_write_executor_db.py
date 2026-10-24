@@ -2459,6 +2459,41 @@ def test_a_create_found_existing_at_send_links_the_found_record(tmp_path: Path) 
     _run(tmp_path, "linkfound", body)
 
 
+def test_a_work_email_only_create_is_looked_for_by_that_email_at_send(tmp_path: Path) -> None:
+    """Task 11 fix round 1: a HubSpot person create carrying only ``work_email`` is looked for by
+    that email before it is sent, as ``created_reference`` spells it."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from tests.api.test_crm_write_prepare_db import _create_person, _researched
+
+        world = await _researched(conn, seeded)
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_person(
+                {"firstname": "Nick", "lastname": "Fisher", "work_email": "Nick@Zafran.io"},
+                world.nick,
+            ),
+        )
+        gateway.records["777"] = {"email": "nick@zafran.io", "firstname": "Nick"}
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = await _created(conn, proposal_id)
+        assert change["status"] == "skipped"
+        assert "HUBSPOT_CREATE_CONTACT" not in [slug for slug, _ in gateway.writes]
+        searches = [a for slug, a in gateway.calls if slug == "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA"]
+        assert searches[-1]["filterGroups"][0]["filters"][0] == {
+            "propertyName": "email",
+            "operator": "EQ",
+            "value": "nick@zafran.io",
+        }
+
+    _run(tmp_path, "workemailsend", body)
+
+
 # --- one card can use the records it creates (R-12.11) -----------------------------------------
 
 COMPANY_NOT_CREATED = "The company it needs was not created, so it was not sent."

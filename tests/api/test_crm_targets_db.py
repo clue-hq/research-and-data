@@ -89,6 +89,9 @@ def test_split_name_handles_one_and_many_words() -> None:
         ("prof Ana Ruiz M.D.", ("Ana", "Ruiz")),
         ("Mrs Ann Lee III", ("Ann", "Lee III")),
         ("Dr. Mr. Bean", ("Mr.", "Bean")),  # only one leading honorific is dropped
+        (", John", (None, "John")),  # fix round 1: no punctuation-only name part
+        ("Ada Lovelace ,", ("Ada", "Lovelace")),
+        ("Dr. ,", (None, "Dr.")),  # cleans to empty: the raw name, trimmed of commas
     ],
 )
 def test_split_name_cleans_honorifics_degrees_and_credentials(

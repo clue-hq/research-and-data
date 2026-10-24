@@ -58,6 +58,7 @@ __all__ = [
     "is_forbidden_field",
     "is_write",
     "created_reference",
+    "find_value",
     "new_list_name",
     "record_reference",
     "record_references",
@@ -275,6 +276,17 @@ def created_reference(kind: str, fields: Mapping[str, object]) -> str | None:
         )
         return NEW_CONTACT_PREFIX + email if email else None
     return None
+
+
+def find_value(key: str, fields: Mapping[str, object]) -> object | None:
+    """What a create is looked for by before it is made (R-7.1): its ``find_existing`` field.
+    A person created with only ``work_email`` is looked for by that email under ``key``, spelled
+    as :func:`created_reference` spells it, so preparation and the send find the same record."""
+    value = fields.get(key)
+    if key == "email" and (value is None or str(value).strip() == ""):
+        made = created_reference("create_contact", fields)
+        return made[len(NEW_CONTACT_PREFIX) :] if made is not None else None
+    return value
 
 
 def _reference_path(slug: str, arguments: Arguments) -> tuple[list[str | int], str] | None:
