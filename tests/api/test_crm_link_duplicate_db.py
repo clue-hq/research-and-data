@@ -75,7 +75,26 @@ class _Crm(_WritingCrm):
                 if str(rec.get("Email") or "").lower() == wanted
             ]
             return {"records": found, "totalSize": len(found), "done": True}
+        by_id = re.search(r"WHERE Id IN \(([^)]*)\)", query)
+        if slug == "SALESFORCE_RUN_SOQL_QUERY" and by_id is not None:
+            # Salesforce finds a record by its 15- or 18-character id and answers 18 characters.
+            wanted = {i.strip("' ")[:15] for i in by_id.group(1).split(",")}
+            found = [
+                {"attributes": {"type": "Contact"}, "Id": rid, **rec}
+                for rid, rec in self.records.items()
+                if rid[:15] in wanted
+            ]
+            return {"records": found, "totalSize": len(found), "done": True}
         return super()._answer(slug, arguments)
+
+    def _write(self, slug: str, arguments: Mapping[str, Any]) -> Any:
+        if slug == "SALESFORCE_PATCH_COMPOSITE_SOBJECTS":  # an id written as Salesforce keeps it
+            records = [
+                {**r, "Id": next((k for k in self.records if k[:15] == r["Id"][:15]), r["Id"])}
+                for r in arguments["records"]
+            ]
+            arguments = {**arguments, "records": records}
+        return super()._write(slug, arguments)
 
     async def execute(self, *, slug: str, arguments: Mapping[str, Any], **kwargs: Any) -> Any:
         if slug == _LINK_SLUG:
@@ -614,3 +633,110 @@ def test_a_create_meeting_two_contacts_at_send_is_skipped_naming_both(tmp_path: 
         assert not [call for call in gateway.calls if call[0] in _WRITE_SLUGS]
 
     _run(tmp_path, "dupatsend", body)
+
+
+_SF_18 = {
+    "003A00000000001AAA": {"Email": "nick@zafran.io", "Name": "Nick Fisher", _SF_LINK_FIELD: None},
+    "003B00000000002AAA": {"Email": "nick@zafran.io", "Name": "N. Fisher", _SF_LINK_FIELD: None},
+}
+
+
+async def _send(
+    conn: Any,
+    seeded: Any,
+    connection: CrmConnection,
+    tmp_path: Path,
+    batch: Any,
+    proposal_id: UUID,
+    gateway: _Crm,
+) -> None:
+    await writes.insert_writes(
+        conn,
+        proposal_id=proposal_id,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        prepared=batch.changes,
+    )
+    await writes.set_proposal_status(conn, proposal_id=proposal_id, status="queued")
+    await _handle(_handler(conn, tmp_path, gateway), connection)
+
+
+def test_a_salesforce_link_named_by_15_character_ids_lands_and_can_be_undone(
+    tmp_path: Path,
+) -> None:
+    """Salesforce answers 18-character ids: Clue sends and keeps the id it read, so its read-back
+    finds the link, and its own undo knows the value as its own."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _set_up(conn, connection)
+        gateway = _Crm(records=_SF_18)
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_sf_link("003A00000000001", "003B00000000002", world.nick)],
+            _FakeBudget(gateway),
+        )
+        (link,) = batch.changes
+        assert link.after == "003B00000000002AAA"
+        assert link.arguments["custom_fields"] == {_SF_LINK_FIELD: "003B00000000002AAA"}
+        await _send(conn, seeded, connection, tmp_path, batch, proposal_id, gateway)
+        row = (
+            await conn.execute(
+                text("SELECT write_id, status FROM crm_write WHERE proposal_id = :p"),
+                {"p": proposal_id},
+            )
+        ).one()
+        assert row.status == "succeeded"
+
+        undo = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_sf_link("003A00000000001", None, None, reverses_write_id=row.write_id)],
+            _FakeBudget(gateway),
+        )
+        assert undo.refused == []
+        (back,) = undo.changes
+        assert back.after is None and not back.overwrites_person
+
+    _run(tmp_path, "link15", body, provider="salesforce")
+
+
+def test_an_undo_never_removes_a_link_someone_repointed(tmp_path: Path) -> None:
+    """Clue linked 003A to 003B; someone pointed 003A at 003Z since. Undoing Clue's write would
+    remove their link (R-6.13), so it is refused."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _set_up(conn, connection)
+        gateway = _Crm(records=_SF_18)
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_sf_link("003A00000000001AAA", "003B00000000002AAA", world.nick)],
+            _FakeBudget(gateway),
+        )
+        await _send(conn, seeded, connection, tmp_path, batch, proposal_id, gateway)
+        write_id = await conn.scalar(
+            text("SELECT write_id FROM crm_write WHERE proposal_id = :p AND status = 'succeeded'"),
+            {"p": proposal_id},
+        )
+        gateway.records["003A00000000001AAA"][_SF_LINK_FIELD] = "003Z00000000009AAA"
+        undo = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_sf_link("003A00000000001AAA", None, None, reverses_write_id=write_id)],
+            _FakeBudget(gateway),
+        )
+        assert _refusal(undo) == [(0, "crm_removal_not_allowed")]
+        assert undo.changes == []
+
+    _run(tmp_path, "linkrepointed", body, provider="salesforce")

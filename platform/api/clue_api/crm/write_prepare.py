@@ -295,6 +295,9 @@ class _Item:
     owner: tuple[str, str | None, str | None] | None = None
     #: Clue's own undo restoring its before-value (ruling #2/#3): no research check applies.
     exempt: bool = False
+    #: An exempt undo of Clue's own duplicate link: the contact that link pointed at. The undo
+    #: passes only while the lookup still points there (R-6.13: never a link someone else made).
+    undoes_link: str | None = None
     #: A new person linked to a company the batch creates (R-12.11) when Clue already knows the
     #: person's company as a CRM record: (the link field, that record). The link passes only when
     #: the create finds exactly that record (:func:`_company_links_not_known`).
@@ -1108,7 +1111,8 @@ async def _reversed_writes(
         return {}
     rows = await conn.execute(
         text(
-            "SELECT write_id, object, record_ref, field, before_value::text AS before_value, "
+            "SELECT write_id, kind, object, record_ref, field, "
+            "before_value::text AS before_value, after_value::text AS after_value, "
             "clue_entity_id, reverses_write_id "
             "FROM crm_write WHERE write_id = ANY(:ids) AND workspace_id = :ws "
             "AND connection_id = :connection AND status = 'succeeded' "
@@ -1120,6 +1124,7 @@ async def _reversed_writes(
         str(row.write_id): {
             **row._mapping,
             "before_value": None if row.before_value is None else json.loads(row.before_value),
+            "after_value": None if row.after_value is None else json.loads(row.after_value),
         }
         for row in rows
     }
@@ -1152,7 +1157,15 @@ def _undo(item: _Item, reversed_write: Mapping[str, Any] | None) -> _Item | str:
         )
         return dataclasses.replace(item, proposed=named)
     proposed = dataclasses.replace(item.proposed, clue_entity_id=reversed_write["clue_entity_id"])
-    return dataclasses.replace(item, proposed=proposed, claims={}, owner=None, exempt=True)
+    linked = reversed_write["after_value"] if reversed_write["kind"] == "link_duplicate" else None
+    return dataclasses.replace(
+        item,
+        proposed=proposed,
+        claims={},
+        owner=None,
+        exempt=True,
+        undoes_link=None if linked is None else str(linked),
+    )
 
 
 def _person_target(provider: CrmProvider, field: str, label: str) -> tuple[str, str] | None:
@@ -1959,12 +1972,15 @@ class _Builder:
         record_ref: str,
         field: str | None,
         before: object,
+        after: str,
         label: str,
         arguments: Mapping[str, object],
     ) -> None:
         """A duplicate link: one change, scoped by its kind (an "Always allow" covers marking
         possible duplicates), though on Salesforce it sets Clue's lookup field."""
-        parsed = dataclasses.replace(item.parsed, record_ref=record_ref, label=label)
+        parsed = dataclasses.replace(
+            item.parsed, record_ref=record_ref, label=label, duplicate_ref=after
+        )
         meta = self._metas.get(parsed.object, {}).get(field) if field is not None else None
         self._add(
             item,
@@ -1972,7 +1988,7 @@ class _Builder:
             parsed,
             field=field,
             before=before,
-            after=parsed.duplicate_ref,
+            after=after,
             overwrites=False,
             arguments=arguments,
             field_label=meta.label if meta else field,
@@ -2355,6 +2371,16 @@ async def prepare_changes(
             if mismatch is not None:
                 refused.append(dataclasses.replace(mismatch, index=index))
                 continue
+            if item.undoes_link is not None:
+                points_at = values.get(SALESFORCE_DUPLICATE_FIELD)
+                if not same_value(points_at, None) and not same_record(
+                    provider, item.undoes_link, points_at
+                ):
+                    # Repointed since Clue linked it: that link is someone else's now.
+                    refused.append(
+                        _refused(index, item, LINK_NOT_REMOVED, "crm_removal_not_allowed")
+                    )
+                    continue
             composed = _with_buying_role(index, item, values)
             if isinstance(composed, RefusedChange):
                 refused.append(composed)
@@ -2519,9 +2545,13 @@ def _prepare_link(
             "record_ref": record_ref,
             "field": None,
             "before": None,
+            "after": other,
             "label": label,
             "arguments": arguments,
         }
+    # Sent and kept as Salesforce answers it (18 characters), so the read-back and Clue's own
+    # undo find exactly that value.
+    other = str(values[other].get("Id") or other)
     linked_to = values[record_ref].get(SALESFORCE_DUPLICATE_FIELD)
     if not same_value(linked_to, None):
         if same_record(provider, other, linked_to):
@@ -2537,6 +2567,7 @@ def _prepare_link(
         "record_ref": record_ref,
         "field": SALESFORCE_DUPLICATE_FIELD,
         "before": None,
+        "after": other,
         "label": label,
         "arguments": single_field_arguments(
             item.spec, record_ref, SALESFORCE_DUPLICATE_FIELD, other
