@@ -299,7 +299,9 @@ and the live evidence in full: `.superpowers/sdd/2026-10-24-agent-workspace-phas
   with no artifact row in ITS database) shares the `clue-dev-bench` bucket with dushanbe, whose database is
   a copy, so dushanbe's dev snapshots lose their bytes after a day. Dev-only (production has one database
   per bucket). Separate bucket declined by the founder 2026-10-25; proposed fix: nashville's
-  `CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S=0` + restart of its workers — awaiting the founder's go.
+  `CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S=0` — set in nashville's `.env` 2026-10-25 on the founder's go;
+  nashville's workers were NOT restarted (tests running there), so its sweep keeps running until
+  their next restart. Dushanbe dev files older than a day stay at risk until then.
 - **Rollout (founder's call, not done):** land the four stacked branches CRM → Phase 1 → Phase 2 →
   Phase 3; at that merge renumber F3's manual v24, head-of-abm v78 and stage0-interview v51 above the CRM
   lane's highest. The flag already ships on.
