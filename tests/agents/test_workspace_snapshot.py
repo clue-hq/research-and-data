@@ -170,11 +170,40 @@ def test_round_trip_keeps_receipt_and_expired_at() -> None:
     assert [e.path for e in decoded.expired()] == ["reads/op-7.json"]
 
 
-def test_a_file_list_with_no_receipts_writes_neither_key() -> None:
-    """A Phase 1-shaped list round-trips to the same bytes: no nulls are written."""
+def _phase_1_list(path: str) -> bytes:
+    """A one-file list exactly as Phase 1 wrote it: schema 1, every non-raw file a work product."""
 
-    data = encode_manifest(SnapshotManifest(entries=(entry("outputs/a.csv"),)))
-    assert b"receipt" not in data and b"expired_at" not in data
+    return (
+        b'{"entries":[{"media_type":"text/plain","path":"'
+        + path.encode()
+        + b'","sha256":"'
+        + hashlib.sha256(b"x").hexdigest().encode()
+        + b'","size":1,"tier":"work_product","written_at":"2026-10-22T09:30:00+00:00"}],'
+        b'"schema_version":1}'
+    )
+
+
+def test_a_phase_1_list_re_encodes_with_its_entries_unchanged_but_not_byte_identical() -> None:
+    """What omitting the two new keys does and does not buy (review area 2, M4).
+
+    It was claimed that a list with no receipt and no expiry "round-trips to the same bytes" as
+    the Phase 1 shape. It does not: the list is re-written as schema 2, and a ``scratch/`` or
+    ``work/`` entry's stored ``work_product`` becomes ``working_file`` because the path decides
+    the tier. What is true is narrower, and is what this pins: an entry with neither key is
+    written with exactly the keys a Phase 1 entry had, and no nulls — so an ``outputs/`` file's
+    entry comes back byte for byte and only the schema number moves. (Nothing re-hashes a
+    re-encoded list: an unchanged chat is only touched, never re-saved.)
+    """
+
+    outputs = _phase_1_list("outputs/a.csv")
+    assert encode_manifest(decode_manifest(outputs)) == outputs.replace(
+        b'"schema_version":1', b'"schema_version":2'
+    )
+
+    scratch = _phase_1_list("scratch/a.md")
+    assert encode_manifest(decode_manifest(scratch)) == scratch.replace(
+        b'"schema_version":1', b'"schema_version":2'
+    ).replace(b'"tier":"work_product"', b'"tier":"working_file"')
 
 
 def test_same_files_notices_an_expiry() -> None:

@@ -253,8 +253,9 @@ def _encode_entry(entry: SnapshotEntry) -> dict[str, object]:
         "tier": entry.tier,
         "written_at": entry.written_at.isoformat(),
     }
-    # Omitted rather than written as null, so a file list with neither is byte-identical to the
-    # Phase 1 shape and an unchanged chat's manifest hash does not move.
+    # Omitted rather than written as null, so an entry with neither has exactly the keys a Phase 1
+    # entry had. The list as a whole is not byte-identical to a Phase 1 one: it says schema 2, and
+    # the path re-derives a scratch/ or work/ entry's tier (pinned in test_workspace_snapshot.py).
     if entry.receipt is not None:
         document["receipt"] = _encode_receipt(entry.receipt)
     if entry.expired_at is not None:
