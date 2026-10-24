@@ -36,8 +36,21 @@ NOW = datetime(2026, 10, 22, 9, 30, tzinfo=UTC)
 THREAD = "thr-receipts"
 
 
-def _never() -> Any:
-    raise AssertionError("this path must answer from its shape, with no database round trip")
+class _NoDatabase:
+    """A connection factory for the paths that must answer from their shape alone.
+
+    It counts every call, and the tests assert the count is zero. Raising alone proved nothing
+    (review area 2, M5): ``receipt_for`` turns any exception into :data:`UNKNOWN_RECEIPT`, which is
+    exactly what some of these paths are expected to answer, so a path that wrongly went to the
+    database still came out "unknown" and passed.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> Any:
+        self.calls += 1
+        raise AssertionError("this path must answer from its shape, with no database round trip")
 
 
 async def _artifact(conn: AsyncConnection, ws: str, sha: str) -> str:
@@ -238,7 +251,13 @@ def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> No
         assert receipt.details["record_count"] == 12
         assert receipt.details["total"] == 12
         assert receipt.details["done"] is True
-        assert "run_crm_action" in receipt.read_again
+        # The founder-approved sentence (Task 8, text (d)), written out rather than read from
+        # READ_AGAIN, so a change to the constant fails here too. Asserting only that it named
+        # run_crm_action passed with the generic spill sentence (review area 2, M6).
+        assert receipt.read_again == (
+            "Run run_crm_action again with the same action and arguments: "
+            "HUBSPOT_SEARCH_DEALS on hubspot."
+        )
 
     run_async(scenario())
 
@@ -369,13 +388,15 @@ def test_an_unreadable_result_artifact_keeps_the_call_it_can_still_name(tmp_path
 def test_a_sandbox_spill_is_a_run_python_receipt(tmp_path: Path, stream: str) -> None:
     async def scenario() -> None:
         operation = uuid4()
+        no_database = _NoDatabase()
         source = DbReceiptSource(
-            conn_factory=_never,
+            conn_factory=no_database,
             artifacts=DurableAgentArtifactStore(storage=FsStorage(tmp_path / "store")),
         )
         receipt = await source.receipt_for(
             workspace_id="ws-x", thread_id=THREAD, path=f"reads/{operation}.{stream}.txt"
         )
+        assert no_database.calls == 0
         assert receipt.source == "run_python"
         assert receipt.operation_id == str(operation)
         assert receipt.details == {"stream": stream}
@@ -402,11 +423,13 @@ def test_the_other_paths_answer_from_their_shape(
     tmp_path: Path, path: str, source: str, details: dict[str, Any]
 ) -> None:
     async def scenario() -> None:
+        no_database = _NoDatabase()
         receipts = DbReceiptSource(
-            conn_factory=_never,
+            conn_factory=no_database,
             artifacts=DurableAgentArtifactStore(storage=FsStorage(tmp_path / "store")),
         )
         receipt = await receipts.receipt_for(workspace_id="ws-x", thread_id=THREAD, path=path)
+        assert no_database.calls == 0
         assert (receipt.source, dict(receipt.details)) == (source, details)
         assert receipt.read_again == READ_AGAIN[source]
 
@@ -415,13 +438,15 @@ def test_the_other_paths_answer_from_their_shape(
 
 def test_the_uuid_rule_does_not_claim_an_ordinary_reads_file(tmp_path: Path) -> None:
     async def scenario() -> None:
+        no_database = _NoDatabase()
         receipts = DbReceiptSource(
-            conn_factory=_never,
+            conn_factory=no_database,
             artifacts=DurableAgentArtifactStore(storage=FsStorage(tmp_path / "store")),
         )
         receipt = await receipts.receipt_for(
             workspace_id="ws-x", thread_id=THREAD, path="reads/notes.json"
         )
+        assert no_database.calls == 0
         assert receipt == UNKNOWN_RECEIPT
 
     run_async(scenario())
