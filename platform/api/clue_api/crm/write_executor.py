@@ -73,10 +73,14 @@ from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
 from clue_api.crm.write_actions import (
     HUBSPOT_OBJECT_TYPE_IDS,
+    NEW_COMPANY_PREFIX,
     NEW_LIST_PREFIX,
     WriteActionSpec,
     WriteNotParsable,
+    created_reference,
     new_list_name,
+    reference_in,
+    with_reference_filled,
     write_spec,
 )
 from clue_api.crm.write_prepare import (
@@ -136,6 +140,10 @@ RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
 #: An add to a list the same proposal was to create, when the create did not happen (R-12.7).
 NOT_CREATED_MESSAGE = "The list was not created, so nothing was added to it."
+#: A change that uses a company or person the same proposal was to create, when the create did
+#: not happen (R-12.11).
+COMPANY_NOT_CREATED_MESSAGE = "The company it needs was not created, so it was not sent."
+PERSON_NOT_CREATED_MESSAGE = "The person it needs was not created, so it was not sent."
 #: Salesforce refuses "In Progress" when the org's Campaign.Status picklist lacks it (R-12.9).
 NO_IN_PROGRESS_MESSAGE = (
     'Salesforce has no campaign status "In Progress"; ask your Salesforce admin to add it.'
@@ -993,33 +1001,38 @@ class CrmWriteHandler:
         async with self._conn_factory() as conn:
             writes = await _start_proposal(conn, crm.connection, proposal_id)
         try:
-            # Lists first (R-12.7): an add to a list the proposal creates names it ``new:<name>``
-            # until the create has an id. The id is then kept on those adds' rows, so a later run
-            # never sends the placeholder; when the create did not happen they are skipped.
-            creates = [write for write in writes if write.kind == _LIST_CREATE]
-            for spec, chunk in _chunks(creates):
-                if context.stop_requested.is_set() or context.lease_lost.is_set():
-                    return WorkResult(outcome="interrupted", references={}, requeue=True)
-                await self._send_chunk(crm, spec, chunk)
-            if creates or any(new_list_name(write.list_ref) for write in writes):
-                async with self._conn_factory() as conn:
-                    await _fill_new_lists(conn, crm.connection, proposal_id)
-                    writes = await _load_writes(conn, crm.connection, proposal_id)
-            rest = [
-                write
-                for write in writes
-                if write.kind != _LIST_CREATE and new_list_name(write.list_ref) is None
-            ]
-            for spec, chunk in _chunks(rest):
-                if context.stop_requested.is_set() or context.lease_lost.is_set():
-                    return WorkResult(outcome="interrupted", references={}, requeue=True)
-                await self._send_chunk(crm, spec, chunk)
+            # Creates first: lists and companies (R-12.7, R-12.11), then people, then the rest. A
+            # change that uses one of them names it ``new:<name>`` / ``new:company:<domain>`` /
+            # ``new:contact:<email>`` until the create has an id. The id is then kept on that
+            # change's row, so a later run never sends the placeholder; when the create did not
+            # happen the change is skipped.
+            handled: set[UUID] = set()
+            for stage in _STAGES:
+                picked = [
+                    write
+                    for write in writes
+                    if (stage is None or write.kind in stage)
+                    and write.write_id not in handled
+                    and not _waits(write)
+                ]
+                handled.update(write.write_id for write in picked)
+                for spec, chunk in _chunks(picked):
+                    if context.stop_requested.is_set() or context.lease_lost.is_set():
+                        return WorkResult(outcome="interrupted", references={}, requeue=True)
+                    await self._send_chunk(crm, spec, chunk)
+                if stage is not None and any(_waits(write) for write in writes):
+                    async with self._conn_factory() as conn:
+                        await _fill_new_lists(conn, crm.connection, proposal_id)
+                        await _fill_new_records(conn, proposal_id)
+                        writes = await _load_writes(conn, crm.connection, proposal_id)
         except _Stop as stop:
             return await self._stopped(crm, proposal_id, stop)
         async with self._conn_factory() as conn:
-            # "Finished" means every change was decided: an add still naming a list not made
-            # is skipped, never left waiting (Task 3b review I-1).
+            # "Finished" means every change was decided: an add still naming a list not made,
+            # or a change still waiting for a record, is skipped, never left waiting (Task 3b
+            # review I-1).
             await _skip_adds_to_lists_not_made(conn, crm.connection, proposal_id)
+            await _skip_waiting_for_records(conn, proposal_id)
             await set_proposal_status(conn, proposal_id=proposal_id, status="finished")
             proposal = await get_proposal(conn, proposal_id=proposal_id)
             assert proposal is not None
@@ -1346,11 +1359,13 @@ class CrmWriteHandler:
                         "retryable": outcome.retryable,
                         "crm_id": outcome.crm_id,
                         # A create that succeeded names its new record (L9): the write log and
-                        # the wake message read it like any other change's record.
+                        # the wake message read it like any other change's record. One that found
+                        # the record already there names that record, whose id the changes that
+                        # use it then take (R-12.11).
                         "created": (
                             outcome.crm_id
                             if outcome.status == "succeeded" and by_id[write_id].kind in _MAKES
-                            else None
+                            else outcome.found_id
                         ),
                     },
                 )
@@ -1645,6 +1660,122 @@ async def _skip_adds_to_lists_not_made(
             "message": NOT_CREATED_MESSAGE,
         },
     )
+
+
+#: The order a proposal's changes are sent in: what others may use is created first (lists and
+#: companies, then people, who may be linked to a new company), then everything else.
+_STAGES: tuple[tuple[str, ...] | None, ...] = (
+    (_LIST_CREATE, "create_company"),
+    ("create_contact",),
+    None,
+)
+
+
+def _waits(write: _Write) -> bool:
+    """The change still names a list or record the proposal has not created yet."""
+    return (
+        new_list_name(write.list_ref) is not None
+        or reference_in(write.spec.slug, write.arguments) is not None
+    )
+
+
+def _not_created_message(reference: str) -> str:
+    return (
+        COMPANY_NOT_CREATED_MESSAGE
+        if reference.startswith(NEW_COMPANY_PREFIX)
+        else PERSON_NOT_CREATED_MESSAGE
+    )
+
+
+async def _fill_new_records(conn: AsyncConnection, proposal_id: UUID) -> None:
+    """Every company or person the proposal created — or found already there when it came to
+    create it — gives its id to the undecided changes that name it ``new:company:<domain>`` /
+    ``new:contact:<email>``; a change whose create failed, was skipped without finding the
+    record, or was not chosen is skipped, never sent (R-12.11). A create still undecided leaves
+    its changes waiting."""
+    creates = await conn.execute(
+        text(
+            "SELECT kind, status, crm_id, record_ref, after_value::text AS after_value "
+            "FROM crm_write WHERE proposal_id = :id "
+            "AND kind IN ('create_company', 'create_contact')"
+        ),
+        {"id": proposal_id},
+    )
+    #: Each reference to a create and the id of its record; ``None`` when it will never have one.
+    made: dict[str, str | None] = {}
+    for create in creates.all():
+        after = json.loads(create.after_value) if create.after_value else None
+        reference = created_reference(create.kind, after if isinstance(after, Mapping) else {})
+        if reference is None:
+            continue
+        if create.status == "succeeded" and create.crm_id:
+            made[reference] = str(create.crm_id)
+        elif create.status == "skipped" and create.record_ref:  # it found the record
+            made[reference] = str(create.record_ref)
+        elif create.status in _TERMINAL:
+            made[reference] = None
+    if not made:
+        return
+    waiting = await conn.execute(
+        text(
+            "SELECT write_id, slug, arguments::text AS arguments, record_ref, "
+            "after_value::text AS after_value FROM crm_write WHERE proposal_id = :id "
+            "AND status NOT IN ('succeeded', 'failed', 'skipped')"
+        ),
+        {"id": proposal_id},
+    )
+    for row in waiting.all():
+        arguments = json.loads(row.arguments)
+        reference = reference_in(row.slug, arguments)
+        if reference is None or reference not in made:
+            continue
+        crm_id = made[reference]
+        if crm_id is None:
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET status = 'skipped', crm_message = :message, "
+                    "finished_at = now() WHERE write_id = :id"
+                ),
+                {"id": row.write_id, "message": _not_created_message(reference)},
+            )
+            continue
+        after = json.loads(row.after_value) if row.after_value else None
+        if isinstance(after, Mapping):  # a new person's company link
+            after = {key: crm_id if value == reference else value for key, value in after.items()}
+        await conn.execute(
+            text(
+                "UPDATE crm_write SET arguments = CAST(:arguments AS jsonb), "
+                "record_ref = :record_ref, after_value = CAST(:after AS jsonb) WHERE write_id = :id"
+            ),
+            {
+                "id": row.write_id,
+                "arguments": json.dumps(with_reference_filled(row.slug, arguments, crm_id)),
+                "record_ref": crm_id if row.record_ref == reference else row.record_ref,
+                "after": None if after is None else json.dumps(after, default=str),
+            },
+        )
+
+
+async def _skip_waiting_for_records(conn: AsyncConnection, proposal_id: UUID) -> None:
+    """Skip every undecided change that still names a record by ``new:company:`` /
+    ``new:contact:``."""
+    rows = await conn.execute(
+        text(
+            "SELECT write_id, slug, arguments::text AS arguments FROM crm_write "
+            "WHERE proposal_id = :id AND status NOT IN ('succeeded', 'failed', 'skipped')"
+        ),
+        {"id": proposal_id},
+    )
+    for row in rows.all():
+        reference = reference_in(row.slug, json.loads(row.arguments))
+        if reference is not None:
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET status = 'skipped', crm_message = :message, "
+                    "finished_at = now() WHERE write_id = :id"
+                ),
+                {"id": row.write_id, "message": _not_created_message(reference)},
+            )
 
 
 def _entity(write: _Write) -> UUID | None:

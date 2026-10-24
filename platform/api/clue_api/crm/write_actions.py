@@ -30,8 +30,10 @@ the record back after writing.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -40,6 +42,8 @@ from clue_api.crm.composio_gateway import CrmProvider
 
 __all__ = [
     "HUBSPOT_OBJECT_TYPE_IDS",
+    "NEW_COMPANY_PREFIX",
+    "NEW_CONTACT_PREFIX",
     "NEW_LIST_PREFIX",
     "WRITE_ACTIONS",
     "CLUE_CAMPAIGN_SETTINGS",
@@ -53,9 +57,15 @@ __all__ = [
     "forbidden_fields",
     "is_forbidden_field",
     "is_write",
+    "created_reference",
     "new_list_name",
+    "record_reference",
+    "record_references",
+    "reference_in",
     "scope_key",
     "single_field_arguments",
+    "website_host",
+    "with_reference_filled",
     "write_spec",
 ]
 
@@ -200,6 +210,124 @@ def new_list_name(list_ref: str | None) -> str | None:
     if list_ref is None or not list_ref.startswith(NEW_LIST_PREFIX):
         return None
     return list_ref[len(NEW_LIST_PREFIX) :]
+
+
+def website_host(value: object) -> str:
+    """A website as the lower-case host it names: ``https://www.Acme.com/about`` is
+    ``acme.com``. No scheme, ``www.``, port, path, query or trailing slash."""
+    host = str(value or "").strip().lower()
+    host = re.sub(r"^[a-z][a-z0-9+.-]*://", "", host)
+    host = re.split(r"[/?#]", host, maxsplit=1)[0].rsplit("@", 1)[-1].split(":", 1)[0]
+    host = host.strip(".")
+    return host.removeprefix("www.")
+
+
+#: A change may also use a record the same batch creates, before it has an id (R-12.11): a
+#: company or account by ``new:company:<domain>``, a person by ``new:contact:<email>``, spelled
+#: like the create's domain (HubSpot ``domain``, Salesforce ``website``, matched as the host it
+#: names) or email (without case or surrounding spaces). Only in the places
+#: :func:`reference_in` reads; preparation checks the batch holds that create, and the executor
+#: sends the create first and puts the new record's id in.
+NEW_COMPANY_PREFIX = "new:company:"
+NEW_CONTACT_PREFIX = "new:contact:"
+
+
+def record_reference(value: object) -> str | None:
+    """The reference ``value`` makes to a record the batch creates, spelled as Clue matches it
+    (``new:company:<host>`` or ``new:contact:<email in lower case>``); ``None`` for any other
+    value."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    lowered = text.lower()
+    if lowered.startswith(NEW_COMPANY_PREFIX):
+        return NEW_COMPANY_PREFIX + website_host(text[len(NEW_COMPANY_PREFIX) :])
+    if lowered.startswith(NEW_CONTACT_PREFIX):
+        return NEW_CONTACT_PREFIX + text[len(NEW_CONTACT_PREFIX) :].strip().lower()
+    return None
+
+
+def record_references(value: object) -> list[str]:
+    """Every record reference anywhere in ``value`` (arguments, at any depth), in order."""
+    if isinstance(value, Mapping):
+        return [ref for item in value.values() for ref in record_references(item)]
+    if isinstance(value, list):
+        return [ref for item in value for ref in record_references(item)]
+    reference = record_reference(value)
+    return [] if reference is None else [reference]
+
+
+def created_reference(kind: str, fields: Mapping[str, object]) -> str | None:
+    """The reference other changes use for the record a create makes: a company by the host of
+    its domain or website, a person by their email. ``None`` for any other change, or a create
+    with nothing to match on."""
+    if kind == "create_company":
+        host = website_host(fields.get("domain") or fields.get("Website") or "")
+        return NEW_COMPANY_PREFIX + host if host else None
+    if kind == "create_contact":
+        email = next(
+            (
+                str(fields[name]).strip().lower()
+                for name in ("email", "work_email", "Email")
+                if isinstance(fields.get(name), str) and str(fields[name]).strip()
+            ),
+            None,
+        )
+        return NEW_CONTACT_PREFIX + email if email else None
+    return None
+
+
+def _reference_path(slug: str, arguments: Arguments) -> tuple[list[str | int], str] | None:
+    """Where a change of ``slug`` may hold a record reference, and of which kind (R-12.11):
+    a company added to a HubSpot list, a new person's company, a person added to a Salesforce
+    campaign."""
+    if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS" and arguments.get("operation") == "add":
+        return ["record_ids", 0], NEW_COMPANY_PREFIX
+    if slug == "HUBSPOT_CREATE_CONTACT":
+        return ["associations", 0, "to", "id"], NEW_COMPANY_PREFIX
+    if slug == "SALESFORCE_CREATE_CONTACT":
+        return ["account_id"], NEW_COMPANY_PREFIX
+    if slug == "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN":
+        return ["contact_id"], NEW_CONTACT_PREFIX
+    return None
+
+
+def _at(arguments: Any, path: Sequence[str | int]) -> Any:
+    value = arguments
+    for step in path:
+        if isinstance(step, int):
+            if not isinstance(value, list) or len(value) <= step:
+                return None
+        elif not isinstance(value, Mapping):
+            return None
+        value = value[step] if isinstance(step, int) else value.get(step)
+    return value
+
+
+def reference_in(slug: str, arguments: Arguments) -> str | None:
+    """The record reference a change holds in the one place its action may hold one; ``None``
+    when that place holds a CRM id (or a reference of the other kind)."""
+    place = _reference_path(slug, arguments)
+    if place is None:
+        return None
+    path, prefix = place
+    reference = record_reference(_at(arguments, path))
+    return reference if reference is not None and reference.startswith(prefix) else None
+
+
+def with_reference_filled(slug: str, arguments: Arguments, value: str) -> dict[str, Any]:
+    """``arguments`` with the record reference :func:`reference_in` reads replaced by ``value``
+    (the record's CRM id, or the reference as Clue spells it)."""
+    place = _reference_path(slug, arguments)
+    filled: dict[str, Any] = copy.deepcopy(dict(arguments))
+    if place is None or _at(filled, place[0]) is None:
+        return filled
+    path = place[0]
+    holder: Any = filled
+    for step in path[:-1]:
+        holder = holder[step]
+    holder[path[-1]] = value
+    return filled
 
 
 # --- HubSpot ----------------------------------------------------------------------------------

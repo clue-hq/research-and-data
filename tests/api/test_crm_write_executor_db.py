@@ -226,6 +226,15 @@ class _WritingCrm(_FakeCrm):
             campaign_id = f"701jV00000Hd83x{len(self.crm_lists):03d}"
             self.crm_lists[str(arguments["name"])] = campaign_id
             return {"errors": [], "id": campaign_id, "success": True}
+        if slug == "HUBSPOT_CREATE_COMPANY":
+            record_id = str(600 + len(self.records))
+            self.records[record_id] = dict(arguments)
+            return {"id": record_id, "properties": dict(arguments), "createdAt": "2026-10-24"}
+        if slug in ("SALESFORCE_CREATE_ACCOUNT", "SALESFORCE_CREATE_CONTACT"):
+            prefix = "001" if slug == "SALESFORCE_CREATE_ACCOUNT" else "003"
+            record_id = f"{prefix}N{len(self.records):03d}"
+            self.records[record_id] = dict(arguments)
+            return {"id": record_id, "success": True, "errors": []}
         if slug == "HUBSPOT_CREATE_CONTACT":
             record_id = str(500 + len(self.records))
             self.records[record_id] = dict(arguments)
@@ -274,7 +283,10 @@ _WRITE_SLUGS = frozenset(
         "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
         "SALESFORCE_PATCH_COMPOSITE_SOBJECTS",
         "HUBSPOT_CREATE_CONTACT",
+        "HUBSPOT_CREATE_COMPANY",
         "HUBSPOT_CREATE_LIST",
+        "SALESFORCE_CREATE_ACCOUNT",
+        "SALESFORCE_CREATE_CONTACT",
         "SALESFORCE_CREATE_CAMPAIGN",
         "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
     }
@@ -2445,3 +2457,249 @@ def test_a_create_found_existing_at_send_links_the_found_record(tmp_path: Path) 
         assert "Linked 1 Clue record to its CRM record." in message
 
     _run(tmp_path, "linkfound", body)
+
+
+# --- one card can use the records it creates (R-12.11) -----------------------------------------
+
+COMPANY_NOT_CREATED = "The company it needs was not created, so it was not sent."
+#: The company of the person clear_people researches (its project account's website).
+_PEOPLE_DOMAIN = "acme-people.example"
+
+
+def _create_company(domain: str = _PEOPLE_DOMAIN) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_CREATE_COMPANY", {"name": "Acme People", "domain": domain}, "A project account."
+    )
+
+
+def _person_at(company: str) -> ProposedChange:
+    association = {
+        "to": {"id": company},
+        "types": [{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 279}],
+    }
+    return ProposedChange(
+        "HUBSPOT_CREATE_CONTACT",
+        {"email": "ana@acme-people.example", "firstname": "Ana", "associations": [association]},
+        "A buying-committee member Clue found.",
+    )
+
+
+async def _by_slug(conn: Any, proposal_id: UUID) -> dict[str, dict[str, Any]]:
+    rows = await conn.execute(
+        text(
+            "SELECT slug, status, crm_message, record_ref, arguments, sent_at IS NOT NULL AS sent "
+            "FROM crm_write WHERE proposal_id = :id"
+        ),
+        {"id": proposal_id},
+    )
+    return {row.slug: dict(row._mapping) for row in rows}
+
+
+def test_a_new_company_is_created_then_added_to_a_new_list_with_its_id(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _add_to_new(f"new:company:{_PEOPLE_DOMAIN}"),
+            _create_company(),
+            _create_list("Clue: Q4"),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_CREATE_COMPANY",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        ]
+        company = next(rid for rid, rec in gateway.records.items() if rec.get("domain"))
+        assert gateway.writes[2][1] == {
+            "list_id": "17",
+            "operation": "add",
+            "record_ids": [company],
+        }
+        logged = await _by_slug(conn, proposal_id)
+        assert {slug: row["status"] for slug, row in logged.items()} == {
+            "HUBSPOT_CREATE_LIST": "succeeded",
+            "HUBSPOT_CREATE_COMPANY": "succeeded",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS": "succeeded",
+        }
+        add = logged["HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]
+        assert add["record_ref"] == company and add["arguments"]["record_ids"] == [company]
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, "refnewlist", body)
+
+
+def test_a_new_person_is_created_linked_to_the_new_company(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _person_at(f"new:company:{_PEOPLE_DOMAIN}"),
+            _create_company(),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "HUBSPOT_CREATE_COMPANY",
+            "HUBSPOT_CREATE_CONTACT",
+        ]
+        company = next(rid for rid, rec in gateway.records.items() if rec.get("domain"))
+        sent = gateway.writes[1][1]
+        assert sent["associations"][0]["to"]["id"] == company
+        logged = await _by_slug(conn, proposal_id)
+        person = logged["HUBSPOT_CREATE_CONTACT"]
+        assert person["status"] == "succeeded"
+        # The person is still linked to their Clue contact (Task 6).
+        crm_object, entity, created_by_clue, _ = (await _links(conn, connection))[
+            person["record_ref"]
+        ]
+        assert (crm_object, created_by_clue) == ("contact", True) and entity is not None
+
+    _run(tmp_path, "refperson", body)
+
+
+def test_a_salesforce_card_creates_an_account_its_contact_and_their_campaign(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "SALESFORCE_CREATE_ACCOUNT",
+                {"name": "Acme People", "website": f"https://www.{_PEOPLE_DOMAIN}/"},
+                "A project account.",
+            ),
+            ProposedChange(
+                "SALESFORCE_CREATE_CONTACT",
+                {
+                    "first_name": "Ana",
+                    "last_name": "Lopez",
+                    "email": "ana@acme-people.example",
+                    "account_id": f"new:company:{_PEOPLE_DOMAIN}",
+                },
+                "A buying-committee member Clue found.",
+            ),
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+            ProposedChange(
+                "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                {
+                    "campaign_id": "new:Clue: Q4",
+                    "contact_id": "new:contact:ana@acme-people.example",
+                },
+                "committee",
+            ),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "SALESFORCE_CREATE_CAMPAIGN",
+            "SALESFORCE_CREATE_ACCOUNT",
+            "SALESFORCE_CREATE_CONTACT",
+            "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+        ]
+        account = next(rid for rid in gateway.records if rid.startswith("001"))
+        contact = next(rid for rid in gateway.records if rid.startswith("003"))
+        campaign = gateway.crm_lists["Clue: Q4"]
+        assert gateway.writes[2][1]["account_id"] == account
+        assert gateway.writes[3][1] == {"campaign_id": campaign, "contact_id": contact}
+        logged = await _by_slug(conn, proposal_id)
+        assert {row["status"] for row in logged.values()} == {"succeeded"}
+
+    _run(tmp_path, "refsf", body, provider="salesforce")
+
+
+@pytest.mark.parametrize("how", ["refused", "not_chosen"])
+def test_changes_that_need_a_company_not_created_are_skipped(tmp_path: Path, how: str) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        refusal = ExecuteResult(
+            False,
+            {"http_error": "400", "status_code": 400},
+            '{"status":"error","message":"Property values were not valid"}',
+        )
+        failures = {"HUBSPOT_CREATE_COMPANY": [refusal]} if how == "refused" else {}
+        gateway = _WritingCrm(records={}, failures=failures)
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_list("Clue: Q4"),
+            _create_company(),
+            _person_at(f"new:company:{_PEOPLE_DOMAIN}"),
+            _add_to_new(f"new:company:{_PEOPLE_DOMAIN}"),
+        )
+        if how == "not_chosen":
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET selected = false "
+                    "WHERE proposal_id = :id AND kind = 'create_company'"
+                ),
+                {"id": proposal_id},
+            )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        sent = [slug for slug, _ in gateway.writes]
+        assert "HUBSPOT_CREATE_CONTACT" not in sent
+        assert "HUBSPOT_UPDATE_LIST_MEMBERSHIPS" not in sent
+        logged = await _by_slug(conn, proposal_id)
+        for slug in ("HUBSPOT_CREATE_CONTACT", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS"):
+            assert (logged[slug]["status"], logged[slug]["crm_message"]) == (
+                "skipped",
+                COMPANY_NOT_CREATED,
+            )
+            assert logged[slug]["sent"] is False
+        assert logged["HUBSPOT_CREATE_LIST"]["status"] == "succeeded"
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, f"refskip{how}", body)
+
+
+def test_a_company_found_at_send_gives_its_id_to_the_changes_that_need_it(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_list("Clue: Q4"),
+            _create_company(),
+            _person_at(f"new:company:{_PEOPLE_DOMAIN}"),
+            _add_to_new(f"new:company:{_PEOPLE_DOMAIN}"),
+        )
+        # Someone made the company meanwhile.
+        gateway.records["901"] = {"domain": _PEOPLE_DOMAIN, "name": "Acme People"}
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_CREATE_CONTACT",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        ]
+        assert gateway.writes[1][1]["associations"][0]["to"]["id"] == "901"
+        assert gateway.writes[2][1]["record_ids"] == ["901"]
+        logged = await _by_slug(conn, proposal_id)
+        company = logged["HUBSPOT_CREATE_COMPANY"]
+        assert (company["status"], company["record_ref"]) == ("skipped", "901")
+        assert logged["HUBSPOT_CREATE_CONTACT"]["status"] == "succeeded"
+        assert logged["HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]["status"] == "succeeded"
+
+    _run(tmp_path, "reffound", body)

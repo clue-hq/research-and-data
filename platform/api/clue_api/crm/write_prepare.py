@@ -47,15 +47,23 @@ from clue_api.crm.write_actions import (
     _SALESFORCE_CONTACT_ARGS,
     CLUE_CAMPAIGN_SETTINGS,
     HUBSPOT_OBJECT_TYPE_IDS,
+    NEW_COMPANY_PREFIX,
+    NEW_CONTACT_PREFIX,
     NEW_LIST_PREFIX,
     ParsedChange,
     WriteActionSpec,
     WriteNotParsable,
+    created_reference,
     field_update_spec,
     is_forbidden_field,
     new_list_name,
+    record_reference,
+    record_references,
+    reference_in,
     scope_key,
     single_field_arguments,
+    website_host,
+    with_reference_filled,
     write_spec,
 )
 from clue_api.crm.writes import (
@@ -524,16 +532,6 @@ def _sf_key(record_id: object) -> str:
 #: Create keys that hold a website: matched as the host they name, never as the string
 #: (R-7.1 "companies/accounts by domain"; final review I-5).
 _HOST_KEYS = frozenset({"Website", "domain"})
-
-
-def website_host(value: object) -> str:
-    """A website as the lower-case host it names: ``https://www.Acme.com/about`` is
-    ``acme.com``. No scheme, ``www.``, port, path, query or trailing slash."""
-    host = str(value or "").strip().lower()
-    host = re.sub(r"^[a-z][a-z0-9+.-]*://", "", host)
-    host = re.split(r"[/?#]", host, maxsplit=1)[0].rsplit("@", 1)[-1].split(":", 1)[0]
-    host = host.strip(".")
-    return host.removeprefix("www.")
 
 
 def create_key(key: str, value: object) -> str:
@@ -1042,6 +1040,12 @@ def _check_person(
         label = meta.label if meta else field
         named = f"{label} ({field})"
         if field in _COMPANY_LINK_FIELDS:
+            reference = record_reference(value)
+            if reference is not None:  # a company the batch creates (R-12.11): by its website
+                domain = account.domain if account is not None else None
+                if domain and reference != NEW_COMPANY_PREFIX + website_host(domain):
+                    return f"{named}: not the company Clue knows this person by."
+                continue
             known = account.crm_record_id if account is not None else None
             if known is not None and _sf_key(known) != _sf_key(str(value).strip()):
                 return f"{named}: not the company Clue knows this person by."
@@ -1433,6 +1437,80 @@ async def _with_list_objects(
     return resolved, refused
 
 
+#: Where a record the batch creates may be used (R-12.11).
+_REFERENCE_PLACES = (
+    f"{NEW_COMPANY_PREFIX}<domain> is used only to add a new company to a HubSpot list or to "
+    f"link a new person to their new company, and {NEW_CONTACT_PREFIX}<email> only to add a new "
+    "person to a Salesforce campaign"
+)
+
+
+def _with_record_references(items: Sequence[_Item]) -> tuple[list[_Item], dict[int, RefusedChange]]:
+    """A change may use a company or person the same batch creates by ``new:company:<domain>`` /
+    ``new:contact:<email>`` (R-12.11), in the one place its action allows. Each such reference
+    is kept spelled as Clue matches it, so the executor finds it exactly, and an add names the
+    record by its create's name. A reference that names no create of the batch, or stands in
+    any other place, refuses its own change (``crm_write_not_parsable``)."""
+    creates: dict[str, _Item] = {}
+    for item in items:
+        made = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
+        if made is not None:
+            creates.setdefault(made, item)
+    resolved: list[_Item] = []
+    refused: dict[int, RefusedChange] = {}
+    for index, item in enumerate(items):
+        found = record_references(item.proposed.arguments)
+        if not found:
+            resolved.append(item)
+            continue
+        reference = reference_in(item.proposed.slug, item.proposed.arguments)
+        others = list(found)
+        if reference is not None:
+            others.remove(reference)
+        create = creates.get(reference) if reference is not None else None
+        kind = item.parsed.change_kind(item.spec)
+        message: str | None = None
+        if others:
+            message = f'"{others[0]}" cannot be used here: {_REFERENCE_PLACES}.'
+        elif create is None:
+            message = (
+                f'"{reference}" names no record this batch creates: it must be spelled exactly '
+                "like the domain or email of a create in the same call."
+            )
+        elif kind == "list_membership" and create.parsed.object != item.parsed.object:
+            message = (
+                f"The list holds {_noun(item.parsed.object, 2)}, so "
+                f"{_noun(create.parsed.object, 1)} {reference} cannot be added to it."
+            )
+        if message is not None:
+            refused[index] = RefusedChange(
+                index=index,
+                slug=item.proposed.slug,
+                record_ref=item.parsed.record_ref,
+                reason_code="crm_write_not_parsable",
+                message=message,
+            )
+            resolved.append(item)
+            continue
+        assert create is not None and reference is not None
+        label = create.parsed.label if kind == "list_membership" else item.parsed.label
+        resolved.append(_with_reference(item, reference, label=label))
+    return resolved, refused
+
+
+def _with_reference(item: _Item, value: str, *, label: str | None = None) -> _Item:
+    """``item`` with its record reference replaced by ``value`` (the reference as Clue spells
+    it, or the id of the record it names), in what is sent and in what the card shows."""
+    arguments = with_reference_filled(item.proposed.slug, item.proposed.arguments, value)
+    parsed = dataclasses.replace(
+        item.spec.parse(arguments),
+        object=item.parsed.object,
+        label=item.parsed.label if label is None else label,
+    )
+    proposed = dataclasses.replace(item.proposed, arguments=arguments)
+    return dataclasses.replace(item, proposed=proposed, parsed=parsed)
+
+
 async def _check_list_creates(
     conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
 ) -> None:
@@ -1609,6 +1687,9 @@ async def prepare_changes(
     items, list_refused = await _with_list_objects(
         conn, connection, [_parse(provider, change) for change in changes]
     )
+    items, record_refused = _with_record_references(items)
+    # Each of these changes alone is left out; a misplaced record reference says so first.
+    alone = {**list_refused, **record_refused}
     _check_once_per_record_field(items)
     _check_once_per_created_record(items)
     await _check_list_creates(conn, connection, items)
@@ -1631,16 +1712,16 @@ async def prepare_changes(
         conn,
         connection,
         project_id,
-        [item for index, item in enumerate(items) if index not in list_refused],
+        [item for index, item in enumerate(items) if index not in alone],
     )
 
     # A field the object does not have refuses only its own change (final review M-2), as a
     # missing record does (R-11.7), and so does a change to a list Clue cannot use: the agent
     # learns it before any card, the rest go on.
-    refused: list[RefusedChange] = list(list_refused.values())
+    refused: list[RefusedChange] = list(alone.values())
     kept: dict[int, _Item] = {}
     for index, item in enumerate(items):
-        if index in list_refused:
+        if index in alone:
             continue
         unknown = next((f for f in item.parsed.fields if f not in metas[item.parsed.object]), None)
         if unknown is None:
@@ -1659,6 +1740,26 @@ async def prepare_changes(
     )
     kept = cleared
     refused.extend(person_refused)
+
+    # R-12.11: a create that finds its record already there gives that record's id to the
+    # changes that use it, before anything is read for them.
+    used = {ref for item in kept.values() if (ref := _reference(item)) is not None}
+    looked_up: dict[int, tuple[str, Mapping[str, object]] | None] = {}
+    found_ids: dict[str, str] = {}
+    for index, item in kept.items():
+        own = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
+        if own is None or own not in used:
+            continue
+        hit = looked_up[index] = await _find_existing(reader, provider, item)
+        if hit is not None and (
+            owner_mismatch(provider, item, hit[0], {**hit[1], **_owner_values(provider, item)})
+            is None
+        ):
+            found_ids[own] = hit[0]
+    for index, item in kept.items():
+        reference = _reference(item)
+        if reference is not None and reference in found_ids:
+            kept[index] = _with_reference(item, found_ids[reference])
 
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
@@ -1706,6 +1807,7 @@ async def prepare_changes(
         for item in kept.values()
         if item.parsed.change_kind(item.spec) in ("list_membership", "list_removal")
         and new_list_name(item.parsed.list_ref) is None
+        and _reference(item) is None  # nor has a record not made yet
     ]
     members = (
         await _memberships(reader, provider, memberships_proposed)
@@ -1713,7 +1815,9 @@ async def prepare_changes(
         else set()
     )
 
+    starts: dict[int, int] = {}
     for index, item in kept.items():
+        starts[index] = len(builder.prepared)
         kind = item.parsed.change_kind(item.spec)
         if kind == "field_update":
             record_ref = str(item.parsed.record_ref)
@@ -1743,6 +1847,8 @@ async def prepare_changes(
                 before=False,
                 after=True,
             )
+        elif kind == "list_membership" and _reference(item) is not None:
+            builder.whole(item, before=False, after=True)  # a record not made yet is in no list
         elif kind in ("list_membership", "list_removal"):
             before = (str(item.parsed.list_ref), str(item.parsed.record_ref)) in members
             after = kind == "list_membership"
@@ -1762,7 +1868,11 @@ async def prepare_changes(
             )
             builder.whole(item, before=None, after=after)
         elif kind in ("create_contact", "create_company"):
-            found = await _find_existing(reader, provider, item)
+            found = (
+                looked_up[index]
+                if index in looked_up
+                else await _find_existing(reader, provider, item)
+            )
             if found is not None:
                 mismatch = owner_mismatch(
                     provider, item, found[0], {**found[1], **_owner_values(provider, item)}
@@ -1789,10 +1899,72 @@ async def prepare_changes(
                 await builder.field(item, update, record_ref, field, held, after)
         else:  # link_duplicate has no action until Phase 3
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
+    prepared = _without_changes_of_records_not_made(kept, builder.prepared, starts, refused)
     # A list is created before anything is added to it: creates come first, on the card and in
     # the order the executor sends (R-12.7).
-    ordered = sorted(builder.prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
+    ordered = sorted(prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
     return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
+
+
+def _reference(item: _Item) -> str | None:
+    """The record of the batch a change uses before it exists (R-12.11), else ``None``."""
+    return reference_in(item.proposed.slug, item.proposed.arguments)
+
+
+def _without_changes_of_records_not_made(
+    kept: Mapping[int, _Item],
+    prepared: Sequence[PreparedChange],
+    starts: Mapping[int, int],
+    refused: list[RefusedChange],
+) -> list[PreparedChange]:
+    """The prepared changes without those that use a record whose create is not on the card
+    (refused, or left out): each of those is refused on its own, and so is what uses it in turn
+    (a campaign add of a person linked to a company that is not created). ``starts`` is where
+    each kept change's prepared changes begin."""
+    order = list(starts)
+    added = {
+        index: list(prepared[starts[index] : starts[order[i + 1]] if i + 1 < len(order) else None])
+        for i, index in enumerate(order)
+    }
+    made = {
+        ref
+        for index, changes in added.items()
+        if changes
+        and changes[0].parsed.change_kind(changes[0].spec) in ("create_contact", "create_company")
+        and (
+            ref := created_reference(
+                changes[0].parsed.change_kind(changes[0].spec), kept[index].parsed.fields
+            )
+        )
+        is not None
+    }
+    dropped: set[int] = set()
+    changed = True
+    while changed:
+        changed = False
+        for index, changes in added.items():
+            reference = _reference(kept[index])
+            if index in dropped or not changes or reference is None or reference in made:
+                continue
+            dropped.add(index)
+            changed = True
+            what = "company" if reference.startswith(NEW_COMPANY_PREFIX) else "person"
+            refused.append(
+                _refused(
+                    index,
+                    kept[index],
+                    f"The {what} it needs ({reference}) is not created by this batch, so it is "
+                    "not proposed.",
+                    "crm_write_not_parsable",
+                )
+            )
+            own = created_reference(
+                changes[0].parsed.change_kind(changes[0].spec), kept[index].parsed.fields
+            )
+            made.discard(own or "")
+    return [
+        change for index, changes in added.items() if index not in dropped for change in changes
+    ]
 
 
 #: The argument that names a membership change's list (HubSpot) or campaign (Salesforce).

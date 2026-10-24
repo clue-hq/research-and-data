@@ -124,6 +124,12 @@ _HUBSPOT_PROPERTIES: dict[str, list[dict[str, Any]]] = {
             ],
         },
         {"name": "city", "label": "City", "type": "string", "fieldType": "text"},
+        {
+            "name": "associatedcompanyid",
+            "label": "Primary Associated Company ID",
+            "type": "number",
+            "fieldType": "number",
+        },
     ],
 }
 
@@ -155,6 +161,10 @@ _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
     ],
     "Contact": [
         {"name": "Title", "label": "Title", "type": "string", "custom": False},
+        {"name": "FirstName", "label": "First Name", "type": "string", "custom": False},
+        {"name": "LastName", "label": "Last Name", "type": "string", "custom": False},
+        {"name": "Email", "label": "Email", "type": "email", "custom": False},
+        {"name": "AccountId", "label": "Account ID", "type": "reference", "custom": False},
     ],
 }
 
@@ -2624,3 +2634,213 @@ def test_an_undo_on_another_record_or_of_another_workspace_is_refused(tmp_path: 
             ]
 
     _run(tmp_path, "undoelsewhere", body)
+
+
+# --- one card can use the records it creates (R-12.11) -----------------------------------------
+
+
+def _create_company(name: str, domain: str, clue_entity_id: object | None = None) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_CREATE_COMPANY",
+        {"name": name, "domain": domain},
+        "a project account",
+        clue_entity_id=None if clue_entity_id is None else str(clue_entity_id),
+    )
+
+
+def _linked_person(fields: Mapping[str, object], company: str, entity: object) -> ProposedChange:
+    association = {
+        "to": {"id": company},
+        "types": [{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 279}],
+    }
+    return _create_person({**fields, "associations": [association]}, entity)
+
+
+def test_an_add_to_a_company_the_batch_creates_is_named_by_the_company(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        prepared = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _add_to_new(" new:company:WWW.AtriumHospitality.com/ "),
+                _create_list("Clue: Q4"),
+                _create_company("Atrium Hospitality", "atriumhospitality.com"),
+            ],
+        )
+        add = next(c for c in prepared if c.parsed.change_kind(c.spec) == "list_membership")
+        # Spelled as Clue matches it, so the executor finds it exactly; named by the company.
+        assert add.parsed.record_ref == "new:company:atriumhospitality.com"
+        assert add.arguments["record_ids"] == ["new:company:atriumhospitality.com"]
+        assert add.parsed.label == "Atrium Hospitality"
+        card = card_snapshot(prepared, provider="hubspot", project_name="Q4")
+        group = next(g for g in card["groups"] if g["kind"] == "list_membership")
+        assert group["title"] == 'Add 1 company to the list "Clue: Q4"'
+        assert [r["name"] for r in group["records"]] == ["Atrium Hospitality"]
+
+    _run(tmp_path, "refadd", body)
+
+
+def test_a_reference_to_no_create_or_in_another_place_is_refused_alone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(records={"101": {"icp_tier": None}}),
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                _create_company("Acme", "acme.com"),
+                _add_to_new("new:company:other.com"),  # no create of other.com
+                _set_company("new:company:acme.com", "icp_tier", "Tier 1"),  # not a link place
+                _add_to_new("new:company:acme.com", operation="remove"),
+                _add_to_new("new:contact:ana@acme.com"),  # a list add takes a company
+                _add_to_new("new:company:acme.com"),
+                _set_company("101", "icp_tier", "Tier 1"),
+            ],
+        )
+        assert _refusal(batch) == [
+            (2, "crm_write_not_parsable"),
+            (3, "crm_write_not_parsable"),
+            (4, "crm_write_not_parsable"),
+            (5, "crm_write_not_parsable"),
+        ]
+        assert "new:company:other.com" in batch.refused[0].message
+        assert [c.parsed.record_ref for c in batch.changes] == [
+            None,
+            None,
+            "new:company:acme.com",
+            "101",
+        ]
+
+    _run(tmp_path, "refbad", body)
+
+
+def test_a_new_persons_company_may_be_a_company_the_batch_creates(tmp_path: Path) -> None:
+    """The company link is the company-link field of R-8.7: a reference passes when it is the
+    company Clue knows the person by."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        prepared = await _prepare(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_company("Zafran Security", "zafran.io", world.zafran),
+                _linked_person(_NICK, "new:company:Zafran.io", world.nick),
+            ],
+        )
+        person = next(c for c in prepared if c.spec.slug == "HUBSPOT_CREATE_CONTACT")
+        assert person.parsed.fields["associatedcompanyid"] == "new:company:zafran.io"
+        assert person.arguments["associations"][0]["to"]["id"] == "new:company:zafran.io"
+
+        # Another company the batch creates is not the one Clue knows Nick by.
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_company("Other", "other.example"),
+                _linked_person(_NICK, "new:company:other.example", world.nick),
+            ],
+        )
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+        assert "not the company Clue knows this person by" in batch.refused[0].message
+
+    _run(tmp_path, "refperson", body)
+
+
+def test_a_salesforce_card_creates_an_account_its_contact_and_their_campaign(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm()
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _create_account("Zafran Security", "https://www.zafran.io/"),
+                ProposedChange(
+                    "SALESFORCE_CREATE_CONTACT",
+                    {
+                        "first_name": "Nick",
+                        "last_name": "Fisher",
+                        "email": "nick@zafran.io",
+                        "account_id": "new:company:zafran.io",
+                    },
+                    "committee",
+                    clue_entity_id=str(world.nick),
+                ),
+                ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+                ProposedChange(
+                    "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                    {"campaign_id": "new:Clue: Q4", "contact_id": "new:contact:Nick@Zafran.io"},
+                    "committee",
+                ),
+            ],
+            _FakeBudget(gateway),
+        )
+        add = next(c for c in prepared if c.spec.slug == "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN")
+        assert add.parsed.record_ref == "new:contact:nick@zafran.io"
+        assert add.parsed.label == "nick@zafran.io"
+        contact = next(c for c in prepared if c.spec.slug == "SALESFORCE_CREATE_CONTACT")
+        assert contact.arguments["account_id"] == "new:company:zafran.io"
+        card = card_snapshot(prepared, provider="salesforce", project_name="Q4")
+        group = next(g for g in card["groups"] if g["kind"] == "list_membership")
+        assert group["title"] == 'Add 1 contact to the campaign "Clue: Q4"'
+
+    _run(tmp_path, "refsf", body, provider="salesforce")
+
+
+def test_a_create_that_finds_its_company_gives_its_id_to_the_changes_that_use_it(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm(records={"501": {"domain": "acme.com", "name": "Acme"}})
+        prepared = await _prepare(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                _create_company("Acme", "acme.com"),
+                _add_to_new("new:company:acme.com"),
+            ],
+        )
+        add = next(c for c in prepared if c.parsed.change_kind(c.spec) == "list_membership")
+        assert add.parsed.record_ref == "501"
+        assert add.arguments["record_ids"] == ["501"]
+
+    _run(tmp_path, "reffound", body)
+
+
+def test_a_change_whose_create_is_refused_is_refused_too(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_list("Clue: Q4"),
+                # Not Zafran's website: the create is refused, so nothing can use it.
+                _create_company("Zafran", "zafran-security.example", world.zafran),
+                _add_to_new("new:company:zafran-security.example"),
+            ],
+        )
+        assert _refusal(batch) == [
+            (1, "crm_personal_data_not_allowed"),
+            (2, "crm_write_not_parsable"),
+        ]
+        assert [c.parsed.change_kind(c.spec) for c in batch.changes] == ["list_create"]
+
+    _run(tmp_path, "refchain", body)

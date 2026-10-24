@@ -74,7 +74,8 @@ __all__ = [
 # the `crm-writing` skill.
 # v78 grants the project's first CRM writes (`read_crm_targets`, `find_crm_list`,
 # `link_crm_list`), with `crm-writing` v2.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v78"
+# v79 re-pins `crm-writing` at v3 (one card can use the records it creates).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v79"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

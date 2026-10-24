@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 38
+    assert CONVERSATION_RECIPE_VERSION == 39
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -1147,3 +1147,17 @@ def test_crm_first_writes_mint_recipe_v38_without_rewriting_v37() -> None:
     assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
     assert (v37["version"], v38["version"]) == (37, 38)
     assert slot["dynamic_pin_kinds"] == v37_slot["dynamic_pin_kinds"]
+
+
+def test_records_a_card_creates_mint_recipe_v39_without_rewriting_v38() -> None:
+    """Phase 3 Task 10 (R-12.11): v39 moves with `head-of-abm@v79` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v38 = json.loads((root / "recipe0-stage0-v38.json").read_text())
+    v39 = json.loads((root / "recipe0-stage0-v39.json").read_text())
+    v38_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v38.json")
+    assert SYSTEM_RECIPE_FILENAMES[v38_index : v38_index + 2] == (
+        "recipe0-stage0-v38.json",
+        "recipe0-stage0-v39.json",
+    )
+    assert (v38["version"], v39["version"]) == (38, 39)
+    assert {**v39, "version": 38} == v38

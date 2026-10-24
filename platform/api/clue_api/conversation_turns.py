@@ -218,7 +218,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 38 (CRM integration Phase 3, 2026-10-23) admits three addresses and removes none:
 # ``read_crm_targets@1``, ``find_crm_list@1`` and ``link_crm_list@1``, granted by
 # `head-of-abm@v78`.
-CONVERSATION_RECIPE_VERSION = 38
+# Revision 39 (CRM integration Phase 3 Task 10, 2026-10-24) admits and removes no address: it
+# moves with `head-of-abm@v79` (`crm-writing` v3, `manual-*@v25`).
+CONVERSATION_RECIPE_VERSION = 39
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

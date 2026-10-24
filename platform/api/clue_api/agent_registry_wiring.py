@@ -300,7 +300,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # writing a project's research into the CRM), `propose_crm_changes@1` at its new input digest,
     # `stage0-interview@v51` (v50 with its manual paths repointed), `manual-*@v24` and recipe 38.
     # Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v78",
+    # v79 (2026-10-24, CRM integration Phase 3, Task 10 / R-12.11): v78's surface unchanged;
+    # `crm-writing` v3 (one card can use the records it creates: `new:company:<domain>` /
+    # `new:contact:<email>`), `stage0-interview@v52` (v51 with its manual paths repointed),
+    # `manual-*@v25` and recipe 39. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v79",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
