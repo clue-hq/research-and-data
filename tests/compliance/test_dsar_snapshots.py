@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -204,5 +205,81 @@ def test_without_injected_storage_intent_is_durable_and_a_later_sweep_converges(
             assert not await storage.exists(key)
             record = await get_artifact(conn, key)
             assert record is not None and record.purged_at is not None
+
+    run_async(scenario())
+
+
+async def _expired_row_of_another_owner(conn: AsyncConnection, storage: StorageBackend) -> str:
+    """One live blob whose row's own ``expires_at`` has passed, owned by nobody in this DSAR.
+
+    Research quality artifacts and ARV2 media both set ``expires_at``; tombstoning them is the
+    keyless maintenance sweep's job, converged on its own schedule.
+    """
+
+    key = f"{_CLIENT}/{'e' * 64}"
+    await storage.put(key, b"somebody else's expiring bytes", media_type="text/plain")
+    await conn.execute(
+        text(
+            "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
+            "size_bytes, expires_at) VALUES (:key, :ws, :sha, 'text/plain', 30, "
+            "now() - interval '1 second')"
+        ),
+        {"key": key, "ws": _CLIENT, "sha": "e" * 64},
+    )
+    return key
+
+
+def test_a_keyed_erasure_does_no_fleet_work_on_other_owners_rows(tmp_path: object) -> None:
+    """Review of F3 Phase 2: ``sweep_expired`` belongs to the keyless sweep, not to an erasure.
+
+    ``purge_erased_artifacts`` opens with an unfiltered ``UPDATE artifact … WHERE expires_at <=
+    now()`` and a sequential scan of ``artifact``. That is the converging maintenance pass's
+    work. A DSAR erasure purges the handful of keys its own just-committed transaction marked,
+    and has no business tombstoning rows that belong to other owners — nor paying for the scan.
+    The retention sweep, which *is* that maintenance pass, keeps doing it.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(str(tmp_path))
+        async with rollback_conn() as conn:
+            jana = await _contact(conn)
+            key = await _snapshot(conn, storage)
+            claim = await _insert_cited_facet(conn, jana, key)
+            other = await _expired_row_of_another_owner(conn, storage)
+
+            await _rights_with_storage(conn, storage).erase(jana)
+
+            # Jana's own evidence is purged, exactly as before.
+            assert not await storage.exists(key)
+            record = await get_artifact(conn, key)
+            assert record is not None and record.erased_at is not None
+            # The other owner's expired row is not this erasure's to touch.
+            untouched = await get_artifact(conn, other)
+            assert untouched is not None
+            assert (untouched.erased_at, untouched.purged_at, untouched.privacy_erased) == (
+                None,
+                None,
+                False,
+            )
+            assert await storage.exists(other)
+
+            # …and the keyless maintenance sweep still converges on it.
+            candidate = AgeOutCandidate(
+                claim_id=claim.id,
+                entity_id=jana,
+                field_key=FieldKey(_FACET),
+                age_days=40.0,
+                retention_days=30.0,
+            )
+            await RetentionSweep(
+                _StubFreshness((candidate,)),
+                conn_factory=lambda: _yield(conn),
+                storage=storage,
+            ).sweep_expired()
+
+            swept = await get_artifact(conn, other)
+            assert swept is not None and swept.privacy_erased
+            assert swept.purged_at is not None
+            assert not await storage.exists(other)
 
     run_async(scenario())

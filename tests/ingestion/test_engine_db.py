@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 from clue_core import (
     AccountStatus,
@@ -36,7 +37,7 @@ from clue_research.ingestion import (
 )
 from clue_research.ingestion.adapters import paid_ocr_manifest
 from clue_research.ingestion.models import IngestionFailureCode
-from clue_storage import FsStorage, SnapshotSink, flush_snapshots
+from clue_storage import FsStorage, SnapshotSink, flush_snapshots, get_artifact
 from tests._run_lineage import assert_written_claims_are_attributable
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
@@ -579,7 +580,32 @@ def test_erasure_removes_projection_segment_and_blob_reach(tmp_path: Path) -> No
                 is not None
             )
 
+            # Review of F3 Phase 2: an erasure purges the keys it just marked, and does no
+            # fleet-wide work. ``purge_erased_artifacts`` opens with an unfiltered
+            # ``UPDATE artifact … WHERE expires_at <= now()`` plus a sequential scan — the
+            # keyless maintenance sweep's job, converged on its own schedule, not one
+            # ingestion job's to do on another owner's rows.
+            expiring = f"{project.workspace_id}/{'e' * 64}"
+            await storage.put(expiring, b"another owner's bytes", media_type="text/plain")
+            await conn.execute(
+                text(
+                    "INSERT INTO artifact (storage_key, workspace_id, content_sha256, "
+                    "media_type, size_bytes, expires_at) VALUES (:key, :ws, :sha, "
+                    "'text/plain', 21, now() - interval '1 second')"
+                ),
+                {"key": expiring, "ws": project.workspace_id, "sha": "e" * 64},
+            )
+
             assert await engine.erase(workspace_id=project.workspace_id, job_id=job.id)
+
+            untouched = await get_artifact(conn, expiring)
+            assert untouched is not None
+            assert (untouched.erased_at, untouched.purged_at, untouched.privacy_erased) == (
+                None,
+                None,
+                False,
+            )
+            assert await storage.exists(expiring)
 
             assert (
                 await ingestion_status(

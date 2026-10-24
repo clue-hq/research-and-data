@@ -2257,7 +2257,12 @@ class AgentPrivacyService:
 
         if keys:
             async with self._conn_factory() as conn:
-                result = await purge_erased_artifacts(conn, self._storage, keys=keys)
+                # ``sweep_expired=False``: the keys were erased by the transaction that just
+                # committed, so the pass's opening table-wide expiry tombstone adds nothing
+                # here — it is the keyless fleet sweep's work (review I7).
+                result = await purge_erased_artifacts(
+                    conn, self._storage, keys=keys, sweep_expired=False
+                )
                 if result.resurrected_keys:
                     raise RuntimeError(
                         "agent DSAR requires upstream live claim references to be erased first"

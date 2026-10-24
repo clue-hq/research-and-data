@@ -38,6 +38,9 @@ class DynamicClientKbWorkspaceEraser:
                 conn,
                 self._storage,
                 keys=result.marked_artifact_keys,
+                # The marks this erasure just committed, and nothing else: tombstoning every
+                # expired row fleet-wide belongs to the keyless sweep (review I7).
+                sweep_expired=False,
             )
         if purged.resurrected_keys:
             raise RuntimeError(

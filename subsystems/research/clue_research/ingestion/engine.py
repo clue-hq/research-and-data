@@ -263,7 +263,10 @@ class IngestionEngine:
             marked = tuple(marked_list)
         if marked:
             async with self._conn_factory() as conn:
-                await purge_erased_artifacts(conn, self._storage, keys=marked)
+                # ``sweep_expired=False``: ``marked`` is what this erasure itself stamped.
+                # Tombstoning every expired row fleet-wide is the keyless sweep's work, not
+                # one ingestion job's (review I7).
+                await purge_erased_artifacts(conn, self._storage, keys=marked, sweep_expired=False)
         return changed
 
     async def _drive(self, job: IngestionJob) -> IngestionJob:
