@@ -25,6 +25,7 @@ from sqlalchemy import text
 from clue_api.agent_turn_submission import DERIVATION_CRM_WRITES_FINISHED
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.crm import writes
+from clue_api.crm.clue_fields import clue_fields_state
 from clue_api.crm.composio_gateway import ComposioError, ExecuteResult
 from clue_api.crm.connections import (
     CrmConnection,
@@ -50,7 +51,12 @@ from tests.api._crm_people import clear_people
 from tests.api.test_crm_propose_db import _ctx
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_log_tools_db import _log_tool
-from tests.api.test_crm_write_prepare_db import _FakeBudget, _FakeCrm
+from tests.api.test_crm_write_prepare_db import (
+    _clue_fields_ready,
+    _FakeBudget,
+    _FakeCrm,
+    _researched,
+)
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -3131,3 +3137,167 @@ def test_an_add_to_another_projects_list_links_the_list_to_this_project(tmp_path
         assert linked_by == "person_named"
 
     _run(tmp_path, "otherproject", body)
+
+
+# --- Phase 4: a Clue field the CRM no longer has (Task 4) -------------------------------------
+
+_HUBSPOT_NO_PROPERTY = (
+    '{"status":"error","message":"Property values were not valid: [{\\"isValid\\":false,'
+    '\\"message\\":\\"Property \\\\\\"{name}\\\\\\" does not exist\\",'
+    '\\"error\\":\\"PROPERTY_DOESNT_EXIST\\",\\"name\\":\\"{name}\\"}]",'
+    '"correlationId":"c-1","category":"VALIDATION_ERROR"}'
+)
+_GONE_TIER = "Clue's field Clue tier no longer exists in {crm}; set up Clue's fields again."
+
+
+def _clue_company(world: Any, record: str, fields: Mapping[str, object]) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_COMPANY",
+        {"companyId": record, "properties": dict(fields)},
+        "Clue's fields",
+        clue_entity_id=str(world.zafran),
+    )
+
+
+def test_a_clue_field_hubspot_no_longer_has_is_marked_gone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm(
+            records={"101": {"domain": "zafran.io"}, "102": {"domain": "zafran.io"}}
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _clue_company(world, "101", {"clue_tier": "tier_1"}),
+            _clue_company(world, "102", {"clue_id": str(world.zafran)}),
+        )
+        refusal = ExecuteResult(False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_tier"))
+        # The batch is refused whole, then each change is sent alone (the clue_id one lands).
+        gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [refusal, refusal]
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == "failed"
+        assert logged["101"]["crm_message"] == _GONE_TIER.format(crm="HubSpot")
+        assert logged["101"]["retryable"] is False
+        assert logged["101"]["crm_response"]["category"] == "VALIDATION_ERROR"
+        assert logged["102"]["status"] == "succeeded"
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "gone"
+        assert state.gone_names == ("companies.clue_tier",)
+
+    _run(tmp_path, "cluegonehs", body)
+
+
+def test_a_refusal_naming_another_field_does_not_mark_a_clue_field_gone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm(records={"101": {"domain": "zafran.io"}})
+        proposal_id = await _propose(
+            conn, seeded, connection, gateway, _clue_company(world, "101", {"clue_tier": "tier_1"})
+        )
+        gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [
+            ExecuteResult(False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_tier_old"))
+        ]
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert logged["101"]["status"] == "failed"
+        assert "no longer exists" not in logged["101"]["crm_message"]
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "ready" and state.gone_names == ()
+
+    _run(tmp_path, "cluenotgone", body)
+
+
+def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm(
+            records={
+                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None},
+                "001B": {"Website": "https://zafran.io", "Clue_Tier__c": None},
+            }
+        )
+
+        def tier(record: str) -> ProposedChange:
+            return ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT",
+                {"account_id": record, "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                "x",
+                clue_entity_id=str(world.zafran),
+            )
+
+        proposal_id = await _propose(conn, seeded, connection, gateway, tier("001A"))
+        error = {
+            "statusCode": "INVALID_FIELD",
+            "message": "No such column 'Clue_Tier__c' on sobject of type Account",
+            "fields": [],
+        }
+        gateway.failures["SALESFORCE_PATCH_COMPOSITE_SOBJECTS"] = [
+            ExecuteResult(
+                True,
+                {"data": {"results": [{"id": "001A", "success": False, "errors": [error]}]}},
+                None,
+            )
+        ]
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        logged = await _writes(conn, proposal_id)
+        assert logged["001A"]["status"] == "failed"
+        assert logged["001A"]["crm_message"] == _GONE_TIER.format(crm="Salesforce")
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.gone_names == ("Account.Clue_Tier__c",)
+
+        # The read before sending meets the missing column too: the same, without a send.
+        await _clue_fields_ready(conn, connection)
+        second = await _propose(conn, seeded, connection, gateway, tier("001B"))
+        gateway.failures["SALESFORCE_RUN_SOQL_QUERY"] = [
+            ExecuteResult(
+                False,
+                None,
+                "SELECT Id, Clue_Tier__c FROM Account WHERE Id IN ('001B')\n"
+                "ERROR at Row:1:Column:12\nNo such column 'Clue_Tier__c' on entity 'Account'. "
+                "(INVALID_FIELD)",
+            )
+        ]
+        writes_before = len(gateway.writes)
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        assert (await _writes(conn, second))["001B"]["crm_message"] == _GONE_TIER.format(
+            crm="Salesforce"
+        )
+        assert len(gateway.writes) == writes_before
+
+    _run(tmp_path, "cluegonesf", body, provider="salesforce")
+
+
+def test_a_salesforce_create_sends_the_clue_id(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm()
+        await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "SALESFORCE_CREATE_ACCOUNT",
+                {"name": "Zafran Security", "website": "https://zafran.io"},
+                "x",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+        (create,) = [args for slug, args in gateway.writes if slug == "SALESFORCE_CREATE_ACCOUNT"]
+        assert create["custom_fields"] == {"Clue_Id__c": str(world.zafran)}
+
+    _run(tmp_path, "clueidsend", body, provider="salesforce")

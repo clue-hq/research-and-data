@@ -46,6 +46,12 @@ A ``clue_fields_setup`` change (Phase 4) is not a record change: it runs the set
 fields (:mod:`clue_api.crm.clue_fields_setup`), records what the CRM has in ``crm_clue_fields``
 (``ready`` or ``partial``), and is ``succeeded`` only when every step is done, else ``failed`` with
 the refused step named. A connection already ``ready`` skips it without a call.
+
+A change to one of Clue's own fields that the CRM answers as a field it does not have (HubSpot
+``PROPERTY_DOESNT_EXIST``, Salesforce "No such column" / ``INVALID_FIELD``) — in the read before
+the send or in the send itself, and only when the answer names that field — marks the field gone
+(:func:`~clue_api.crm.clue_fields.mark_clue_field_gone`) and fails the change saying Clue's
+fields must be set up again; the CRM's answer is kept.
 """
 
 from __future__ import annotations
@@ -66,7 +72,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.crm.clue_fields import (
     CLUE_FIELDS,
+    ClueField,
+    clue_field_written,
     clue_fields_state,
+    mark_clue_field_gone,
     record_clue_fields,
     record_partial_clue_fields,
 )
@@ -74,6 +83,7 @@ from clue_api.crm.clue_fields_setup import SetupOutcome, run_clue_fields_setup
 from clue_api.crm.composio_gateway import (
     ComposioError,
     ComposioGateway,
+    CrmProvider,
     ExecuteResult,
     build_composio_gateway,
     composio_user_id,
@@ -106,6 +116,7 @@ from clue_api.crm.write_prepare import (
     _soql_text,
     _status_code,
     _unwrap,
+    clue_field_gone_message,
     create_key,
     hubspot_batch_values,
     salesforce_find_query,
@@ -310,6 +321,41 @@ def _refusal_kind(result: ExecuteResult) -> FailureKind:
     if _status_code(result) == 404:
         return "not_found"
     return failure_kind(result.error)
+
+
+#: A CRM's answer that a field does not exist: HubSpot's ``PROPERTY_DOESNT_EXIST`` ("Property
+#: "x" does not exist"), Salesforce's "No such column 'x'" / ``INVALID_FIELD`` (never
+#: ``INVALID_FIELD_FOR_INSERT_UPDATE``, which is a field the user may not edit).
+_FIELD_MISSING = re.compile(
+    r"PROPERTY_DOESNT_EXIST|does not exist|No such column|INVALID_FIELD(?!_)", re.IGNORECASE
+)
+
+
+def _gone_clue_field(provider: CrmProvider, write: _Write, outcome: _Outcome) -> ClueField | None:
+    """The Clue field a failed change writes that the CRM's answer says it no longer has: the
+    answer must say a field is missing **and** name this field."""
+    if outcome.status != "failed":
+        return None
+    answer = " ".join(
+        part
+        for part in (outcome.crm_message, _response_param(outcome.crm_response))
+        if part is not None
+    )
+    if not _FIELD_MISSING.search(answer):
+        return None
+    if write.kind == "field_update":
+        names = [str(write.field)]
+    elif write.kind in _CREATES and isinstance(write.after, Mapping):
+        names = [str(name) for name in write.after]
+    else:
+        return None
+    for name in names:
+        field = clue_field_written(provider, write.object, name)
+        if field is not None and re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", answer, re.IGNORECASE
+        ):
+            return field
+    return None
 
 
 # --- the run's pieces ------------------------------------------------------------------------
@@ -1534,6 +1580,26 @@ class CrmWriteHandler:
         connection = crm.connection
         async with self._conn_factory() as conn:
             for write_id, outcome in outcomes.items():
+                gone = _gone_clue_field(connection.provider, by_id[write_id], outcome)
+                if gone is not None:
+                    # The CRM no longer has Clue's field: set up again (Phase 4, Task 4).
+                    await mark_clue_field_gone(
+                        conn,
+                        connection_id=connection.connection_id,
+                        obj=gone.object,
+                        crm_name=gone.crm_name,
+                    )
+                    outcome = _Outcome(
+                        "failed",
+                        failure_kind="other",
+                        crm_message=clue_field_gone_message(connection.provider, gone),
+                        retryable=False,
+                        crm_response=(
+                            outcome.crm_response
+                            if outcome.crm_response is not None
+                            else outcome.crm_message
+                        ),
+                    )
                 await conn.execute(
                     text(
                         "UPDATE crm_write SET status = :status, failure_kind = :kind, "

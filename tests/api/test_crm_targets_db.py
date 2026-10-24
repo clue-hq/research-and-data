@@ -840,3 +840,82 @@ def test_a_salesforce_account_link_is_read_as_the_executor_stores_it(tmp_path: P
         assert page.accounts[0].crm_record_id == "001XX0000001"
 
     _run(tmp_path, "sf-link", body)
+
+
+# -- Clue's own fields (Phase 4, Task 4; R-12.1, R-12.6, R-13.2, R-13.6) --------------------------
+
+PUBLIC = Settings(_env_file=None, app_origin="https://app.cluehq.ai/")
+
+
+@_db
+def test_clues_own_field_values_are_offered_on_both_crms(tmp_path: Path) -> None:
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        fit = await world.fit("fit", account, 0.55, world.project_id)
+        safe = await world.person(account, "Safe Person")
+        persona = await world.claim("persona", safe, "contact.persona", "economic_buyer")
+        weak = await world.person(account, "Weak Person")
+        await world.claim(
+            "weak_persona",
+            weak,
+            "contact.persona",
+            "champion",
+            identity_binding=IdentityBinding.WEAK,
+        )
+
+        hubspot = await _targets(world, settings=PUBLIC)
+        (zafran,) = hubspot.accounts
+        assert zafran.clue_tier is not None
+        assert (zafran.clue_tier.value, zafran.clue_tier.claim_ids) == ("tier_2", (fit,))
+        assert zafran.clue_id is not None and zafran.clue_id.value == str(account)
+        assert zafran.clue_research_link is not None
+        assert zafran.clue_research_link.value == f"https://app.cluehq.ai/accounts/{account}"
+        by_first = {c.first_name.value: c for c in hubspot.contacts if c.first_name is not None}
+        role = by_first["Safe"].clue_committee_role
+        assert role is not None and (role.value, role.claim_ids) == ("BUDGET_HOLDER", (persona,))
+        assert by_first["Safe"].clue_id is not None
+        assert by_first["Safe"].clue_id.value == str(safe)
+        link = by_first["Safe"].clue_contact_link
+        assert link is not None
+        assert link.value == f"https://app.cluehq.ai/accounts/{account}/contacts/{safe}"
+        assert by_first["Weak"].clue_committee_role is None
+
+        # Salesforce stores the labels of the same options (R-13.2): the role too.
+        salesforce = await _targets(world, provider="salesforce", settings=PUBLIC)
+        (sf_zafran,) = salesforce.accounts
+        assert sf_zafran.clue_tier is not None and sf_zafran.clue_tier.value == "Tier 2"
+        sf_by_first = {
+            c.first_name.value: c for c in salesforce.contacts if c.first_name is not None
+        }
+        sf_role = sf_by_first["Safe"].clue_committee_role
+        assert sf_role is not None and sf_role.value == "Budget holder"
+        assert sf_by_first["Safe"].buying_role is None  # still no standard field (R-12.6)
+        assert "buying role: identity not confirmed" in sf_by_first["Weak"].withheld
+
+    _run(tmp_path, "cluefields", body)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:3020",
+        "http://127.0.0.1:8000",
+        "http://[::1]:3000",
+        "http://clue.localhost:3033",
+    ],
+)
+@_db
+def test_no_link_is_offered_from_a_local_address(tmp_path: Path, origin: str) -> None:
+    """R-13.6: a link to a local address is useless in a customer's CRM."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        person = await world.person(account, "Safe Person")
+        await world.claim("persona", person, "contact.persona", "champion")
+        page = await _targets(world, settings=Settings(_env_file=None, app_origin=origin))
+        (zafran,) = page.accounts
+        (safe,) = page.contacts
+        assert zafran.clue_research_link is None and safe.clue_contact_link is None
+        assert zafran.clue_id is not None and safe.clue_id is not None
+
+    _run(tmp_path, "locallink", body)

@@ -20,6 +20,13 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.crm import writes
+from clue_api.crm.clue_fields import (
+    CLUE_FIELDS,
+    ClueField,
+    clue_fields_state,
+    mark_clue_field_gone,
+    record_clue_fields,
+)
 from clue_api.crm.composio_gateway import ComposioError, ExecuteResult
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.write_prepare import (
@@ -170,6 +177,41 @@ _SALESFORCE_FIELDS: dict[str, list[dict[str, Any]]] = {
 }
 
 
+def _hubspot_property(field: ClueField) -> dict[str, Any]:
+    prop: dict[str, Any] = {
+        "name": field.crm_name,
+        "label": field.label,
+        "type": field.type,
+        "fieldType": field.field_type,
+        "groupName": "clue",
+    }
+    if field.options:
+        prop["options"] = [{"label": o.label, "value": o.value} for o in field.options]
+    return prop
+
+
+def _salesforce_field(field: ClueField) -> dict[str, Any]:
+    kinds = {"Picklist": "picklist", "Url": "url", "Text": "string", "Lookup": "reference"}
+    described: dict[str, Any] = {
+        "name": field.crm_name,
+        "label": field.label,
+        "type": kinds[field.type],
+        "custom": True,
+    }
+    if field.options:
+        described["picklistValues"] = [
+            {"value": o.value, "label": o.label, "active": True} for o in field.options
+        ]
+    return described
+
+
+# Clue's own fields (Phase 4), as a CRM where they were set up describes them.
+for _field in CLUE_FIELDS["hubspot"]:
+    _HUBSPOT_PROPERTIES[_field.crm_object].append(_hubspot_property(_field))
+for _field in CLUE_FIELDS["salesforce"]:
+    _SALESFORCE_FIELDS[_field.crm_object].append(_salesforce_field(_field))
+
+
 #: HubSpot's answer to reading a record that is not there (HTTP 404 inside a refused call).
 HUBSPOT_NOT_FOUND = ExecuteResult(
     False,
@@ -191,7 +233,10 @@ class _FakeCrm:
         missing: frozenset[str] = frozenset(),
         failing: Mapping[str, ExecuteResult | Exception] | None = None,
         crm_list_ids: frozenset[str] = frozenset(),
+        without_fields: frozenset[str] = frozenset(),
     ) -> None:
+        #: Fields the CRM's describe leaves out (deleted in the CRM).
+        self.without_fields = without_fields
         #: The HubSpot lists and Salesforce campaigns (by id) the CRM still has.
         self.crm_list_ids = crm_list_ids
         #: Reads answered with a body of an unexpected shape.
@@ -228,7 +273,13 @@ class _FakeCrm:
 
     def _answer(self, slug: str, arguments: Mapping[str, Any]) -> Any:
         if slug == "HUBSPOT_READ_ALL_PROPERTIES_FOR_OBJECT_TYPE":
-            return {"results": _HUBSPOT_PROPERTIES[arguments["objectType"]]}
+            return {
+                "results": [
+                    p
+                    for p in _HUBSPOT_PROPERTIES[arguments["objectType"]]
+                    if p["name"] not in self.without_fields
+                ]
+            }
         if slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID":
             record = self.records.get(str(arguments["objectId"]), {})
             props = {name: record.get(name) for name in arguments["properties"]}
@@ -278,7 +329,13 @@ class _FakeCrm:
             ]
             return {"lists": lists, "total": len(lists), "offset": 0, "hasMore": False}
         if slug == "SALESFORCE_GET_ALL_FIELDS_FOR_OBJECT":
-            return {"fields": _SALESFORCE_FIELDS[arguments["object_name"]]}
+            return {
+                "fields": [
+                    f
+                    for f in _SALESFORCE_FIELDS[arguments["object_name"]]
+                    if f["name"] not in self.without_fields
+                ]
+            }
         if slug == "SALESFORCE_RUN_SOQL_QUERY":
             query = arguments["query"]
             if "FROM Campaign " in query:
@@ -369,6 +426,7 @@ async def _prepare_batch(
     proposal_id: UUID,
     changes: list[ProposedChange],
     budget: Any = None,
+    settings: Settings = SETTINGS,
     **pause: Any,
 ) -> PreparedBatch:
     project = await conn.execute(
@@ -384,7 +442,7 @@ async def _prepare_batch(
         project_id=project.scalar_one(),
         changes=changes,
         version="v-test",
-        settings=SETTINGS,
+        settings=settings,
         **pause,
     )
 
@@ -3395,3 +3453,327 @@ def test_a_salesforce_create_whose_known_account_was_deleted_proceeds(tmp_path: 
         assert await _company_links(conn, connection) == []
 
     _run(tmp_path, "staledeletedsf", body, provider="salesforce")
+
+
+# --- Phase 4: writing Clue's own fields (Task 4; R-13.2, R-13.6, R-8.7) -----------------------
+
+PUBLIC = Settings(_env_file=None, app_origin="https://app.cluehq.ai")
+_NOT_SET_UP = "Clue's fields are not set up in {crm} yet."
+
+
+async def _clue_fields_ready(
+    conn: Any, connection: CrmConnection, *, status: str = "ready", gone: str | None = None
+) -> None:
+    await record_clue_fields(
+        conn,
+        connection_id=connection.connection_id,
+        workspace_id=connection.workspace_id,
+        provider=connection.provider,
+        created=CLUE_FIELDS[connection.provider],
+        permission_set_id=None,
+        label_type_id=None,
+        status=status,  # type: ignore[arg-type]
+    )
+    if gone is not None:
+        obj, name = gone.split(".")
+        await mark_clue_field_gone(
+            conn,
+            connection_id=connection.connection_id,
+            obj="company" if obj == "company" else "contact",
+            crm_name=name,
+        )
+
+
+def _hubspot_company(world: Any, record: str, fields: Mapping[str, object]) -> ProposedChange:
+    return ProposedChange(
+        "HUBSPOT_UPDATE_COMPANY",
+        {"companyId": record, "properties": dict(fields)},
+        "Clue's fields",
+        clue_entity_id=str(world.zafran),
+    )
+
+
+def test_a_clue_field_is_refused_until_clues_fields_are_set_up(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"101": {"domain": "zafran.io"}})
+        change = _hubspot_company(world, "101", {"clue_tier": "tier_1"})
+        expected = [(0, "crm_clue_fields_not_set_up", _NOT_SET_UP.format(crm="HubSpot"))]
+
+        never = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert [(r.index, r.reason_code, r.message) for r in never.refused] == expected
+        assert never.changes == []
+
+        await _clue_fields_ready(conn, connection, status="partial")
+        partial = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert [(r.index, r.reason_code, r.message) for r in partial.refused] == expected
+
+        # Ready, but this field was found missing since: still not set up.
+        await _clue_fields_ready(conn, connection, gone="company.clue_tier")
+        gone = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert [(r.index, r.reason_code, r.message) for r in gone.refused] == expected
+
+        await _clue_fields_ready(conn, connection)
+        ready = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert ready.refused == []
+        (tier,) = ready.changes
+        assert (tier.field, tier.after) == ("clue_tier", "tier_1")
+        assert tier.source_claim_ids == (world.claims["fit"],)
+        assert tier.arguments == {"companyId": "101", "properties": {"clue_tier": "tier_1"}}
+
+    _run(tmp_path, "cluenotready", body)
+
+
+def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _FakeCrm(
+            records={
+                "101": {"domain": "zafran.io"},
+                "201": {"email": "nick@zafran.io"},
+                "202": {"email": "nick@zafran.io"},
+            }
+        )
+        link = f"https://app.cluehq.ai/accounts/{world.zafran}"
+        contact_link = f"{link}/contacts/{world.nick}"
+        nick = str(world.nick)
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                _hubspot_company(
+                    world,
+                    "101",
+                    {
+                        "clue_tier": "tier_1",
+                        "clue_research_link": link,
+                        "clue_id": str(world.zafran),
+                    },
+                ),
+                _contact_update(
+                    "201",
+                    {
+                        "clue_committee_role": "CHAMPION",
+                        "clue_contact_link": contact_link,
+                        "clue_id": nick,
+                    },
+                    clue_entity_id=nick,
+                ),
+                _contact_update("202", {"clue_committee_role": "BLOCKER"}, clue_entity_id=nick),
+                _hubspot_company(world, "102", {"clue_tier": "tier_2"}),
+                _hubspot_company(world, "103", {"clue_id": str(world.nick)}),
+                ProposedChange(
+                    "HUBSPOT_UPDATE_COMPANY",
+                    {"companyId": "104", "properties": {"clue_tier": "tier_1"}},
+                    "no account named",
+                ),
+            ],
+            settings=PUBLIC,
+        )
+        assert _refusal(batch) == [
+            (2, "crm_personal_data_not_allowed"),
+            (3, "crm_personal_data_not_allowed"),
+            (4, "crm_personal_data_not_allowed"),
+            (5, "crm_personal_data_not_allowed"),
+        ]
+        written = {(c.parsed.record_ref, c.field): c for c in batch.changes}
+        assert {key: c.after for key, c in written.items()} == {
+            ("101", "clue_tier"): "tier_1",
+            ("101", "clue_research_link"): link,
+            ("101", "clue_id"): str(world.zafran),
+            ("201", "clue_committee_role"): "CHAMPION",
+            ("201", "clue_contact_link"): contact_link,
+            ("201", "clue_id"): nick,
+        }
+        assert written[("201", "clue_committee_role")].source_claim_ids == (
+            world.claims["nick_persona"],
+        )
+        assert written[("201", "clue_id")].source_claim_ids == ()
+        # The value is never named in a refusal.
+        assert all("BLOCKER" not in r.message and "tier_2" not in r.message for r in batch.refused)
+
+    _run(tmp_path, "cluehubspot", body)
+
+
+def test_a_clue_link_is_refused_while_clue_runs_on_a_local_address(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _FakeCrm(records={"101": {"domain": "zafran.io"}})
+        link = f"http://localhost:3020/accounts/{world.zafran}"
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_hubspot_company(world, "101", {"clue_research_link": link})],
+        )
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (
+                0,
+                "crm_personal_data_not_allowed",
+                "Clue research link (clue_research_link): Clue writes its links only from its "
+                "public address, not from a local one.",
+            )
+        ]
+
+    _run(tmp_path, "cluelocal", body)
+
+
+def test_salesforce_clue_fields_are_written_through_custom_fields(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _FakeCrm(
+            records={"001A": {"Website": "https://zafran.io"}, "003A": {"Email": "nick@zafran.io"}}
+        )
+        nick = str(world.nick)
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_UPDATE_ACCOUNT",
+                    {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                    "x",
+                    clue_entity_id=str(world.zafran),
+                ),
+                ProposedChange(
+                    "SALESFORCE_UPDATE_CONTACT",
+                    {"contact_id": "003A", "custom_fields": {"Clue_Committee_Role__c": "Champion"}},
+                    "x",
+                    clue_entity_id=nick,
+                ),
+                ProposedChange(
+                    "SALESFORCE_UPDATE_CONTACT",
+                    {"contact_id": "003B", "custom_fields": {"Clue_Committee_Role__c": "Blocker"}},
+                    "x",
+                    clue_entity_id=nick,
+                ),
+            ],
+            _FakeBudget(gateway),
+        )
+        assert _refusal(batch) == [(2, "crm_personal_data_not_allowed")]
+        assert [(c.field, c.after, dict(c.arguments)) for c in batch.changes] == [
+            (
+                "Clue_Tier__c",
+                "Tier 1",
+                {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+            ),
+            (
+                "Clue_Committee_Role__c",
+                "Champion",
+                {"contact_id": "003A", "custom_fields": {"Clue_Committee_Role__c": "Champion"}},
+            ),
+        ]
+
+        # Not set up in this org: refused with Salesforce's name.
+        await conn.execute(
+            text("DELETE FROM crm_clue_fields WHERE connection_id = :c"),
+            {"c": connection.connection_id},
+        )
+        refused = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_UPDATE_ACCOUNT",
+                    {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                    "x",
+                    clue_entity_id=str(world.zafran),
+                )
+            ],
+            _FakeBudget(gateway),
+        )
+        assert [r.message for r in refused.refused] == [_NOT_SET_UP.format(crm="Salesforce")]
+
+    _run(tmp_path, "cluesf", body, provider="salesforce")
+
+
+def _sf_creates(world: Any) -> list[ProposedChange]:
+    return [
+        ProposedChange(
+            "SALESFORCE_CREATE_ACCOUNT",
+            {"name": "Zafran Security", "website": "https://zafran.io"},
+            "x",
+            clue_entity_id=str(world.zafran),
+        ),
+        ProposedChange(
+            "SALESFORCE_CREATE_CONTACT",
+            {
+                "first_name": "Nick",
+                "last_name": "Fisher",
+                "email": "nick@zafran.io",
+                "account_id": "new:company:zafran.io",
+            },
+            "x",
+            clue_entity_id=str(world.nick),
+        ),
+    ]
+
+
+def test_salesforce_creates_carry_the_clue_id_once_clues_fields_are_set_up(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm()
+        before = await _prepare(
+            conn, gateway, connection, proposal_id, _sf_creates(world), _FakeBudget(gateway)
+        )
+        assert all("custom_fields" not in c.arguments for c in before)
+
+        await _clue_fields_ready(conn, connection)
+        after = await _prepare(
+            conn, gateway, connection, proposal_id, _sf_creates(world), _FakeBudget(gateway)
+        )
+        account = next(c for c in after if c.spec.slug == "SALESFORCE_CREATE_ACCOUNT")
+        contact = next(c for c in after if c.spec.slug == "SALESFORCE_CREATE_CONTACT")
+        assert account.arguments["custom_fields"] == {"Clue_Id__c": str(world.zafran)}
+        assert contact.arguments["custom_fields"] == {"Clue_Id__c": str(world.nick)}
+        assert isinstance(account.after, Mapping)
+        assert account.after["Clue_Id__c"] == str(world.zafran)
+
+        # A Clue id field found missing since: the creates go on without it.
+        await _clue_fields_ready(conn, connection, gone="contact.Clue_Id__c")
+        gone = await _prepare(
+            conn, gateway, connection, proposal_id, _sf_creates(world), _FakeBudget(gateway)
+        )
+        contact = next(c for c in gone if c.spec.slug == "SALESFORCE_CREATE_CONTACT")
+        assert "custom_fields" not in contact.arguments
+
+    _run(tmp_path, "clueidcreate", body, provider="salesforce")
+
+
+def test_a_clue_field_the_crm_no_longer_describes_is_marked_gone(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _FakeCrm(
+            records={"101": {"domain": "zafran.io"}}, without_fields=frozenset({"clue_tier"})
+        )
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [_hubspot_company(world, "101", {"clue_tier": "tier_1"})],
+        )
+        assert [(r.reason_code, r.message) for r in batch.refused] == [
+            (
+                "crm_clue_fields_not_set_up",
+                "Clue's field Clue tier no longer exists in HubSpot; set up Clue's fields again.",
+            )
+        ]
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "gone"
+        assert state.gone_names == ("companies.clue_tier",)
+
+    _run(tmp_path, "cluedescribegone", body)

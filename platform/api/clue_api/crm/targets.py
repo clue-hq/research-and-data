@@ -24,6 +24,12 @@ be offered is not replaced by an older one: the newest live claim is what Clue c
 
 Contacts are capped per page (``contacts_limit``); ``total_contacts`` says how many the page's
 committees hold, and ``contacts_note`` says so in words when some were cut.
+
+Clue's own fields (Phase 4, R-13.2) are offered on both CRMs in the provider's own values: the
+tier from the same fit (R-12.1), the committee role from the same persona as the buying role
+(R-12.6), Clue's id, and the links to the account and contact pages, built from
+``CLUE_APP_ORIGIN`` and never offered when that is a local address (R-13.6). Whether the
+connection has Clue's fields set up is the write's check, not this read's.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import text
@@ -39,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.gather import committee_members_for_accounts
 from clue_api.arv2.read_tools import claim_gate_reason
+from clue_api.crm.clue_fields import ClueObject, clue_field
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.write_actions import WRITE_ACTIONS
 from clue_api.frontend_read.v1_shared import fit_band
@@ -53,6 +61,7 @@ __all__ = [
     "TargetAccount",
     "TargetContact",
     "TargetValue",
+    "clue_app_link",
     "hubspot_buying_role",
     "hubspot_tier",
     "project_targets",
@@ -131,6 +140,12 @@ class TargetAccount:
     crm_record_id: str | None
     #: The fit Clue holds but may not use, and why ("fit: rejected").
     withheld: tuple[str, ...] = ()
+    #: Clue's own fields (R-13.2), in the provider's values: the tier of the project's fit
+    #: (offered with a provider only), Clue's id, and the link to the account's page in Clue
+    #: (``None`` while Clue runs on a local address, R-13.6).
+    clue_tier: TargetValue | None = None
+    clue_id: TargetValue | None = None
+    clue_research_link: TargetValue | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +163,12 @@ class TargetContact:
     #: Each field Clue holds but may not offer, and why ("email: not verified (unverified)").
     withheld: tuple[str, ...]
     crm_record_id: str | None
+    #: Clue's own fields (R-13.2): the committee role from the same persona as the buying role,
+    #: on both CRMs in the provider's values (offered with a provider only), Clue's id, and the
+    #: link to the contact's page in Clue (``None`` while Clue runs on a local address, R-13.6).
+    clue_committee_role: TargetValue | None = None
+    clue_id: TargetValue | None = None
+    clue_contact_link: TargetValue | None = None
 
 
 @dataclass(frozen=True)
@@ -203,6 +224,29 @@ def hubspot_tier(fit: float | None, *, settings: Settings) -> str | None:
 def hubspot_buying_role(persona: str | None) -> str | None:
     """HubSpot's buying role for a Clue persona (R-12.6); ``None`` for no or an unknown persona."""
     return _HUBSPOT_BUYING_ROLE.get(persona or "")
+
+
+#: Hosts a link must never point at (R-13.6); any ``*.localhost`` name too.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def clue_app_link(settings: Settings, path: str) -> str | None:
+    """The page ``path`` of Clue's app at ``CLUE_APP_ORIGIN``; ``None`` when that origin is a
+    local address (R-13.6: a link to localhost is useless in a customer's CRM)."""
+    origin = settings.app_origin.strip().rstrip("/")
+    host = (urlsplit(origin).hostname or "").lower()
+    if not host or host in _LOCAL_HOSTS or host.endswith(".localhost"):
+        return None
+    return f"{origin}{path}"
+
+
+def _clue_value(provider: CrmProvider, obj: ClueObject, key: str, hubspot_value: str) -> str:
+    """A Clue picklist field's value on ``provider``: HubSpot stores the option's value
+    (``tier_1``, ``CHAMPION``), Salesforce its label ("Tier 1", "Champion")."""
+    if provider == "hubspot":
+        return hubspot_value
+    labels = {o.value: o.label for o in clue_field("hubspot", obj, key).options}
+    return labels[hubspot_value]
 
 
 # -- the reads ----------------------------------------------------------------------------------
@@ -315,6 +359,15 @@ async def project_targets(
                 ),
                 crm_record_id=account_links.get(account_id),
                 withheld=fit_withheld.get(account_id, ()),
+                clue_tier=(
+                    TargetValue(
+                        _clue_value(provider, "company", "clue_tier", tier), (UUID(str(fit.id)),)
+                    )
+                    if provider is not None and tier is not None and fit is not None
+                    else None
+                ),
+                clue_id=TargetValue(account_id, ()),
+                clue_research_link=_link(settings, f"/accounts/{account_id}"),
             )
         )
 
@@ -495,7 +548,7 @@ async def _committee_contacts(
         withheld = [
             f"{label}: rejected"
             for label in dict.fromkeys(_LABELS.values())
-            if (label != "buying role" or provider == "hubspot")
+            if (label != "buying role" or provider is not None)
             and any(_LABELS[key] == label for key in rejected)
             and not any(_LABELS[key] == label for key in latest)
         ]
@@ -503,9 +556,12 @@ async def _committee_contacts(
         title_claim = _offered(latest, TITLE_KEY, "title", withheld, settings=settings)
         title = _text(title_claim.value_json, inner_key="title") if title_claim else None
 
-        buying_role: TargetValue | None = None
-        if provider == "hubspot":
-            buying_role = _buying_role(latest, settings=settings, withheld=withheld)
+        # One role from the persona: HubSpot's buying role (R-12.6) and, on both CRMs, Clue's
+        # committee role field (R-13.2).
+        role: TargetValue | None = None
+        if provider is not None:
+            role = _buying_role(latest, settings=settings, withheld=withheld)
+        buying_role = role if provider == "hubspot" else None
 
         work_email: TargetValue | None = None
         email_claim = _offered(latest, EMAIL_KEY, "email", withheld, settings=settings)
@@ -553,9 +609,26 @@ async def _committee_contacts(
                 linkedin_url=linkedin_value,
                 withheld=tuple(withheld),
                 crm_record_id=links.get(member.id),
+                clue_committee_role=(
+                    TargetValue(
+                        _clue_value(provider, "contact", "clue_committee_role", role.value),
+                        role.claim_ids,
+                    )
+                    if provider is not None and role is not None
+                    else None
+                ),
+                clue_id=TargetValue(member.id, ()),
+                clue_contact_link=_link(
+                    settings, f"/accounts/{member.account_id}/contacts/{member.id}"
+                ),
             )
         )
     return contacts, total
+
+
+def _link(settings: Settings, path: str) -> TargetValue | None:
+    link = clue_app_link(settings, path)
+    return None if link is None else TargetValue(link, ())
 
 
 def _offered(

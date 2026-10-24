@@ -33,6 +33,8 @@ __all__ = [
     "ClueFieldsState",
     "ClueFieldsStatus",
     "clue_field",
+    "clue_field_ready",
+    "clue_field_written",
     "clue_fields_state",
     "mark_clue_field_gone",
     "record_clue_fields",
@@ -231,6 +233,38 @@ def clue_field(provider: CrmProvider, obj: ClueObject, crm_name: str) -> ClueFie
         if field.object == obj and field.crm_name == crm_name:
             return field
     raise KeyError(f"{provider} {obj} {crm_name}")
+
+
+#: Clue's object for each CRM object a write action names (HubSpot ``company``, Salesforce
+#: ``account``; ``contact`` on both).
+_WRITE_OBJECTS: Mapping[str, ClueObject] = {
+    "company": "company",
+    "account": "company",
+    "contact": "contact",
+}
+
+
+def clue_field_written(provider: CrmProvider, object_name: str, crm_name: str) -> ClueField | None:
+    """The Clue field a change writes when it sets ``crm_name`` on the write action's object
+    ``object_name``; ``None`` when that is not one of Clue's fields (an exact name only)."""
+    obj = _WRITE_OBJECTS.get(object_name)
+    if obj is None:
+        return None
+    try:
+        return clue_field(provider, obj, crm_name)
+    except KeyError:
+        return None
+
+
+def clue_field_ready(state: ClueFieldsState | None, field: ClueField) -> bool:
+    """Whether ``field`` may be written: the setup is ``ready`` and it created the field, which
+    has not been found missing since."""
+    return (
+        state is not None
+        and state.status == "ready"
+        and field.qualified_name in state.created_names
+        and field.qualified_name not in state.gone_names
+    )
 
 
 @dataclass(frozen=True)

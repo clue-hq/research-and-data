@@ -34,7 +34,17 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.crm.clue_fields import CLUE_FIELDS, ClueField
+from clue_api.crm.clue_fields import (
+    CLUE_FIELDS,
+    ClueField,
+    ClueFieldsState,
+    ClueObject,
+    clue_field,
+    clue_field_ready,
+    clue_field_written,
+    clue_fields_state,
+    mark_clue_field_gone,
+)
 from clue_api.crm.composio_gateway import (
     ComposioGateway,
     CrmProvider,
@@ -43,7 +53,12 @@ from clue_api.crm.composio_gateway import (
 )
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.lists import CrmList, live_list_named, mark_gone, stored_list
-from clue_api.crm.targets import TargetAccount, TargetContact, TargetValue, project_targets
+from clue_api.crm.targets import (
+    TargetAccount,
+    TargetContact,
+    TargetValue,
+    project_targets,
+)
 from clue_api.crm.write_actions import (
     _SALESFORCE_CONTACT_ARGS,
     CLUE_CAMPAIGN_SETTINGS,
@@ -82,6 +97,7 @@ from clue_api.crm.writes import (
 from clue_config import Settings
 
 __all__ = [
+    "CLUE_FIELDS_NOT_SET_UP",
     "PERSONAL_DATA_NOT_ALLOWED",
     "PreparedBatch",
     "PreparedChange",
@@ -90,6 +106,7 @@ __all__ = [
     "WriteRefused",
     "card_snapshot",
     "check_against_targets",
+    "clue_field_gone_message",
     "clue_fields_setup_change",
     "clue_fields_setup_snapshot",
     "prepare_changes",
@@ -306,6 +323,8 @@ def _check_fields(
             person
             and field not in _PERSON_FIELDS[provider]
             and not any(word in words for word in _PERSON_FIELD_WORDS)
+            # Clue's own fields (Phase 4): their values are checked against the targets.
+            and clue_field_written(provider, object_name, field) is None
         ):
             raise WriteRefused(
                 "crm_field_forbidden",
@@ -768,6 +787,34 @@ async def _find_existing(
 # --- what Clue researched and cleared (R-8.7 in code, Phase 3 Task 5) -----------------------
 
 PERSONAL_DATA_NOT_ALLOWED = "crm_personal_data_not_allowed"
+#: A change writing one of Clue's own fields while they are not set up (or one was found
+#: missing): set them up first (``propose_clue_fields_setup``).
+CLUE_FIELDS_NOT_SET_UP = "crm_clue_fields_not_set_up"
+
+
+def clue_fields_not_set_up_message(provider: CrmProvider) -> str:
+    return f"Clue's fields are not set up in {_CRM_NAMES[provider]} yet."
+
+
+def clue_field_gone_message(provider: CrmProvider, field: ClueField) -> str:
+    return (
+        f"Clue's field {field.label} no longer exists in {_CRM_NAMES[provider]}; set up Clue's "
+        "fields again."
+    )
+
+
+#: Each Clue field a change may write (R-13.2), the target value it must equal (an attribute of
+#: :class:`TargetAccount` or :class:`TargetContact`, by the field's key) and the word
+#: ``withheld`` names it by. Clue's possible-duplicate link is set only by a duplicate link.
+_CLUE_TARGETS: Mapping[str, str] = {
+    "clue_tier": "fit",
+    "clue_research_link": "research link",
+    "clue_id": "Clue id",
+    "clue_committee_role": "buying role",
+    "clue_contact_link": "contact link",
+}
+_CLUE_LINKS = frozenset({"clue_research_link", "clue_contact_link"})
+_LOCAL_LINK = "Clue writes its links only from its public address, not from a local one."
 _NAME_THE_CONTACT = "Name the Clue contact this is about."
 _NOT_RESEARCHED = "not what Clue researched"
 _NEVER_REMOVES = "Clue only adds its buying role; it never removes one"
@@ -1078,11 +1125,18 @@ def _check_person(
             if known is not None and account is not None:  # shown by its name (R-12.13)
                 value_labels[field] = {str(value).strip(): account.name}
             continue
-        target = _person_target(provider, field, label)
+        clue = clue_field_written(provider, item.parsed.object, field)
+        if clue is not None:
+            word = _CLUE_TARGETS.get(clue.key)
+            target = None if word is None else (clue.key, word)
+        else:
+            target = _person_target(provider, field, label)
         if target is None:
             return f"{named}: {_NOT_RESEARCHED}."
         attribute, word = target
         offered: TargetValue | None = getattr(contact, attribute)
+        if offered is None and attribute in _CLUE_LINKS:
+            return f"{named}: {_LOCAL_LINK}"
         if offered is None:
             return f"{named}: {_withheld_reason(contact.withheld, word)}."
         if attribute == "buying_role":
@@ -1150,21 +1204,39 @@ def _with_values(item: _Item, values: Mapping[str, object]) -> _Item:
     )
 
 
+def _no_fit_reason(account: TargetAccount) -> str:
+    """Why an account has no tier: its fit held back, or none scored in this project."""
+    return next(
+        (w.split(": ", 1)[1] for w in account.withheld if w.startswith("fit: ")),
+        "Clue has no fit for this account in this project",
+    )
+
+
 def _check_company(
-    item: _Item, account: TargetAccount, metas: Mapping[str, _FieldMeta]
+    provider: CrmProvider, item: _Item, account: TargetAccount, metas: Mapping[str, _FieldMeta]
 ) -> _Item | str:
     claims: dict[str, tuple[UUID, ...]] = {}
+    as_researched: dict[str, str] = {}
     for field, value in item.parsed.fields.items():
         meta = metas.get(field)
         named = f"{meta.label if meta else field} ({field})"
-        if field == _ICP_TIER_FIELD:
+        clue = clue_field_written(provider, item.parsed.object, field)
+        if clue is not None:
+            offered: TargetValue | None = (
+                getattr(account, clue.key) if clue.key in _CLUE_TARGETS else None
+            )
+            if offered is None and clue.key == "clue_tier":
+                return f"{named}: {_no_fit_reason(account)}."
+            if offered is None and clue.key in _CLUE_LINKS:
+                return f"{named}: {_LOCAL_LINK}"
+            if offered is None or _normalised(value) != _normalised(offered.value):
+                return f"{named}: {_NOT_RESEARCHED}."
+            as_researched[field] = offered.value
+            claims[field] = offered.claim_ids
+        elif field == _ICP_TIER_FIELD:
             tier = account.hubspot_icp_tier
             if tier is None:
-                reason = next(
-                    (w.split(": ", 1)[1] for w in account.withheld),
-                    "Clue has no fit for this account in this project",
-                )
-                return f"{named}: {reason}."
+                return f"{named}: {_no_fit_reason(account)}."
             if str(value).strip() != tier.value:
                 return f"{named}: not the tier of Clue's fit for this account."
             claims[field] = tier.claim_ids
@@ -1178,6 +1250,7 @@ def _check_company(
             account.domain
         ):
             return _NOT_THE_COMPANY
+    item = _with_values(item, as_researched)  # Clue's own spelling, as for a person
     return dataclasses.replace(
         item, claims=claims, owner=("company", account.crm_record_id, account.domain)
     )
@@ -1274,11 +1347,22 @@ async def check_against_targets(
                 )
         elif _company_change(item) and item.proposed.clue_entity_id is None:
             unnamed = sorted(_CLUE_ACCOUNT_FIELDS & set(item.parsed.fields))
+            clue_named = [
+                f
+                for f in item.parsed.fields
+                if clue_field_written(provider, item.parsed.object, f) is not None
+            ]
             if unnamed:
                 meta = object_metas.get(unnamed[0])
                 checked = (
                     f"{meta.label if meta else unnamed[0]} ({unnamed[0]}): it comes only from "
                     "Clue's fit; name the Clue account it is for (clue_entity_id)."
+                )
+            elif clue_named:
+                meta = object_metas.get(clue_named[0])
+                checked = (
+                    f"{meta.label if meta else clue_named[0]} ({clue_named[0]}): it comes only "
+                    "from Clue's research; name the Clue account it is for (clue_entity_id)."
                 )
         elif _company_change(item) and item.proposed.clue_entity_id is not None:
             if entity_id not in owned_accounts:
@@ -1301,7 +1385,7 @@ async def check_against_targets(
                 )
                 continue
             else:
-                checked = _check_company(item, accounts[entity_id], object_metas)
+                checked = _check_company(provider, item, accounts[entity_id], object_metas)
         if isinstance(checked, str):
             refused.append(_refused(index, item, checked))
         else:
@@ -1823,6 +1907,76 @@ class _Builder:
         )
 
 
+async def _clue_state(
+    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+) -> ClueFieldsState | None:
+    """The connection's Clue-fields record, read only when a change could use it: one writes a
+    Clue field, or a Salesforce create may carry Clue's id."""
+    provider = connection.provider
+    wanted = any(
+        clue_field_written(provider, item.parsed.object, field) is not None
+        for item in items
+        for field in item.parsed.fields
+    ) or (
+        provider == "salesforce"
+        and any(item.parsed.change_kind(item.spec) in _RECORD_CREATES for item in items)
+    )
+    if not wanted:
+        return None
+    return await clue_fields_state(conn, connection_id=connection.connection_id)
+
+
+def _clue_fields_ready_for(
+    provider: CrmProvider, item: _Item, state: ClueFieldsState | None
+) -> bool:
+    """Every Clue field the change writes is set up and not found missing since."""
+    return all(
+        clue_field_ready(state, clue)
+        for field in item.parsed.fields
+        if (clue := clue_field_written(provider, item.parsed.object, field)) is not None
+    )
+
+
+_RECORD_CREATES = ("create_contact", "create_company")
+
+
+def _with_clue_ids(
+    connection: CrmConnection,
+    kept: Mapping[int, _Item],
+    metas: Mapping[str, Mapping[str, _FieldMeta]],
+    state: ClueFieldsState | None,
+) -> dict[int, _Item]:
+    """A Salesforce create of a person or account that names its Clue entity also sets Clue's id
+    (``Clue_Id__c``, R-13.2), once Clue's fields are set up and the org still has that field.
+    A create that sets it itself was checked like any other value and is kept as it is."""
+    out: dict[int, _Item] = {}
+    for index, item in kept.items():
+        entity = _uuid(item.proposed.clue_entity_id)
+        if item.parsed.change_kind(item.spec) in _RECORD_CREATES and entity is not None:
+            obj: ClueObject = "company" if item.parsed.object == "account" else "contact"
+            field = clue_field(connection.provider, obj, "Clue_Id__c")
+            if (
+                clue_field_ready(state, field)
+                and field.crm_name in metas.get(item.parsed.object, {})
+                and field.crm_name not in item.parsed.fields
+            ):
+                item = _with_custom_field(item, field.crm_name, str(entity))
+        out[index] = item
+    return out
+
+
+def _with_custom_field(item: _Item, name: str, value: str) -> _Item:
+    """A Salesforce change that also sets the custom field ``name`` (in ``custom_fields``)."""
+    arguments = dict(item.proposed.arguments)
+    custom = arguments.get("custom_fields")
+    arguments["custom_fields"] = {**(custom if isinstance(custom, Mapping) else {}), name: value}
+    return dataclasses.replace(
+        item,
+        proposed=dataclasses.replace(item.proposed, arguments=arguments),
+        parsed=dataclasses.replace(item.parsed, fields={**item.parsed.fields, name: value}),
+    )
+
+
 async def prepare_changes(
     conn: AsyncConnection,
     *,
@@ -1859,6 +2013,13 @@ async def prepare_changes(
     items, record_refused = _with_record_references(items)
     # Each of these changes alone is left out; a misplaced record reference says so first.
     alone = {**list_refused, **record_refused}
+    # Clue's own fields (Phase 4) are written only once they are set up (Tasks 1–3).
+    clue_state = await _clue_state(conn, connection, items)
+    for index, item in enumerate(items):
+        if index not in alone and not _clue_fields_ready_for(provider, item, clue_state):
+            alone[index] = _refused(
+                index, item, clue_fields_not_set_up_message(provider), CLUE_FIELDS_NOT_SET_UP
+            )
     _check_once_per_record_field(items)
     _check_once_per_created_record(items)
 
@@ -1893,8 +2054,24 @@ async def prepare_changes(
         if index in alone:
             continue
         unknown = next((f for f in item.parsed.fields if f not in metas[item.parsed.object]), None)
+        clue = (
+            None if unknown is None else clue_field_written(provider, item.parsed.object, unknown)
+        )
         if unknown is None:
             kept[index] = item
+        elif clue is not None:
+            # Set up, yet the CRM no longer has it: it was deleted there. Set up again.
+            await mark_clue_field_gone(
+                conn,
+                connection_id=connection.connection_id,
+                obj=clue.object,
+                crm_name=clue.crm_name,
+            )
+            refused.append(
+                _refused(
+                    index, item, clue_field_gone_message(provider, clue), CLUE_FIELDS_NOT_SET_UP
+                )
+            )
         else:
             refused.append(_field_unknown(provider, index, item, unknown))
     # R-8.7 in code: a person value (and a company's ICP tier) only as Clue researched and
@@ -1910,6 +2087,8 @@ async def prepare_changes(
     )
     kept = cleared
     refused.extend(person_refused)
+    if provider == "salesforce":
+        kept = _with_clue_ids(connection, kept, metas, clue_state)
 
     # R-12.11: a create that finds its record already there gives that record's id to the
     # changes that use it, before anything is read for them.
