@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from clue_agents.ports import ReceiptSource, WorkspaceSnapshotStore
+from clue_agents.worker_area import ChatScope
 from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
 from clue_agents.workspace_policy import PreparedWorkspaceRoot, WorkspaceRootPolicy
 from clue_agents.workspace_snapshot import (
@@ -699,3 +700,105 @@ def test_a_save_still_refuses_a_real_conflict(tmp_path: Path) -> None:
     finally:
         asyncio.run(a.factory.release_saved(lease))
     assert sorted(_current(store)) == ["scratch/a.md"]
+
+
+@dataclass
+class _WatchfulReceipts(ReceiptSource):
+    """A receipt source that answers slowly, out of order, and records how many were in flight.
+
+    The slowest answer goes to the path that is asked for first, so an implementation that
+    paired answers with paths by the order they came back would put every receipt on the wrong
+    entry.
+    """
+
+    order: Sequence[str] = ()
+    inflight: int = 0
+    peak: int = 0
+
+    async def receipt_for(self, *, workspace_id: str, thread_id: str, path: str) -> Receipt:
+        self.inflight += 1
+        self.peak = max(self.peak, self.inflight)
+        try:
+            rank = self.order.index(path) if path in self.order else 0
+            await asyncio.sleep(0.01 * (len(self.order) - rank))
+        finally:
+            self.inflight -= 1
+        return Receipt(source="run_crm_action", details={"path": path}, read_again=f"redo {path}")
+
+
+class _SequentialSnapshotter(WorkspaceSnapshotter):
+    """The snapshotter as it was: one receipt looked up at a time, in path order."""
+
+    async def _receipts_for(self, chat, paths):  # type: ignore[no-untyped-def,override]
+        return {path: await self._receipt_for(chat, path) for path in paths}
+
+
+_NEW_FILES = {f"reads/op-{index}.json": f"body {index}".encode() for index in range(6)} | {
+    "outputs/t.csv": b"a,b"
+}
+
+
+def _snapshotter(cls: type[WorkspaceSnapshotter], receipts: ReceiptSource):
+    return cls(store=FakeStore(), concurrency=4, retry_delays=(0,), receipts=receipts)
+
+
+def test_a_saves_receipt_lookups_overlap_instead_of_queueing(tmp_path: Path) -> None:
+    """Two of the five receipt rules go to the database, and a turn writes many files at once.
+
+    Walked one at a time those round trips are all on the save path, in series. They do not
+    depend on each other, so they are gathered — under the same bound a restore's downloads
+    use, so a save cannot open more at once than a restore already does.
+    """
+
+    del tmp_path
+    receipts = _WatchfulReceipts(order=sorted(_NEW_FILES))
+    chat = ChatScope(workspace_id=WS, project_id=PROJECT, thread_id=THREAD)
+
+    manifest = asyncio.run(
+        _snapshotter(WorkspaceSnapshotter, receipts)._manifest_for(
+            _NEW_FILES, previous=None, chat=chat
+        )
+    )
+
+    assert receipts.peak > 1
+    assert receipts.peak <= 4  # …and never more than the transfer bound allows
+    assert len(manifest.entries) == len(_NEW_FILES)
+
+
+def test_gathering_the_receipts_changes_nothing_about_the_file_list(tmp_path: Path) -> None:
+    """Byte-identical to looking them up one at a time: same order, same receipt on each entry."""
+
+    del tmp_path
+    chat = ChatScope(workspace_id=WS, project_id=PROJECT, thread_id=THREAD)
+    order = sorted(_NEW_FILES)
+    # One file is unchanged since the previous version, so its carried receipt is exercised too.
+    previous = asyncio.run(
+        _snapshotter(_SequentialSnapshotter, _WatchfulReceipts(order=order))._manifest_for(
+            {"reads/op-0.json": _NEW_FILES["reads/op-0.json"]}, previous=None, chat=chat
+        )
+    )
+
+    gathered = asyncio.run(
+        _snapshotter(WorkspaceSnapshotter, _WatchfulReceipts(order=order))._manifest_for(
+            _NEW_FILES, previous=previous, chat=chat
+        )
+    )
+    one_at_a_time = asyncio.run(
+        _snapshotter(_SequentialSnapshotter, _WatchfulReceipts(order=order))._manifest_for(
+            _NEW_FILES, previous=previous, chat=chat
+        )
+    )
+
+    carried = gathered.by_path()["reads/op-0.json"]
+    assert carried.receipt == previous.by_path()["reads/op-0.json"].receipt
+    assert [entry.path for entry in gathered.entries] == order
+    assert {entry.path: entry.receipt for entry in gathered.entries} == {
+        entry.path: entry.receipt for entry in one_at_a_time.entries
+    }
+    # ``written_at`` is the one field a second run cannot reproduce, so it is normalised away.
+    stamp = datetime(2026, 10, 23, tzinfo=UTC)
+    assert encode_manifest(
+        SnapshotManifest(entries=tuple(replace(e, written_at=stamp) for e in gathered.entries))
+    ) == encode_manifest(
+        SnapshotManifest(entries=tuple(replace(e, written_at=stamp) for e in one_at_a_time.entries))
+    )

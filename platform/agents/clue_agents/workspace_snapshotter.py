@@ -391,27 +391,38 @@ class WorkspaceSnapshotter:
         had. An expired entry (AW-22) is carried forward as it is — unless a local file now sits
         at its path, in which case the agent wrote it again and a fresh live entry replaces it.
         A new raw input or working file is given a receipt, so that when its bytes expire the
-        agent is still told what was there and how to get it again.
+        agent is still told what was there and how to get it again. Those lookups are gathered
+        rather than walked, because a turn that writes many new files would otherwise pay their
+        round trips one after another on the save path.
         """
 
         earlier = previous.by_path() if previous is not None else {}
         now = datetime.now(UTC)
+        shas = {path: hashlib.sha256(data).hexdigest() for path, data in local.items()}
+
+        def carried(path: str) -> SnapshotEntry | None:
+            """The previous version's entry when this file is untouched, else ``None``."""
+
+            before = earlier.get(path)
+            if before is not None and before.expired_at is None and before.sha256 == shas[path]:
+                return before
+            return None
+
+        receipts = await self._receipts_for(
+            chat, tuple(path for path in sorted(local) if carried(path) is None)
+        )
         entries = []
         for path, data in sorted(local.items()):
-            sha = hashlib.sha256(data).hexdigest()
-            before = earlier.get(path)
-            unchanged = before is not None and before.expired_at is None and before.sha256 == sha
+            before = carried(path)
             entries.append(
                 SnapshotEntry(
                     path=path,
-                    sha256=sha,
+                    sha256=shas[path],
                     size=len(data),
                     media_type=mimetypes.guess_type(path)[0] or "application/octet-stream",
                     tier=tier_for(path),
-                    written_at=before.written_at if unchanged and before else now,
-                    receipt=before.receipt
-                    if unchanged and before
-                    else await self._receipt_for(chat, path),
+                    written_at=before.written_at if before is not None else now,
+                    receipt=before.receipt if before is not None else receipts[path],
                 )
             )
         entries.extend(
@@ -481,6 +492,31 @@ class WorkspaceSnapshotter:
         )
         manifest = await self._manifest_for(local, previous=published, chat=chat)
         return rebased, local, manifest
+
+    async def _receipts_for(
+        self, chat: ChatScope, paths: Sequence[str]
+    ) -> dict[str, Receipt | None]:
+        """Every new file's receipt, looked up concurrently under the transfer bound.
+
+        Two of the five rules a receipt is read by go to the database, so a turn that wrote many
+        new files pays that many round trips before its save can even start. The lookups are
+        independent of one another, so they are gathered. The bound is ``concurrency`` — the
+        same ``agent_workspace_transfer_concurrency`` a restore's downloads run under — so a
+        save never opens more at once than a restore already does.
+
+        Which receipt lands on which entry does not depend on the order they come back in: the
+        answers are keyed by path and the file list is sorted by path either way.
+        """
+
+        if not paths:
+            return {}
+        gate = asyncio.Semaphore(self._concurrency)
+
+        async def one(path: str) -> tuple[str, Receipt | None]:
+            async with gate:
+                return path, await self._receipt_for(chat, path)
+
+        return dict(await asyncio.gather(*(one(path) for path in paths)))
 
     async def _receipt_for(self, chat: ChatScope, path: str) -> Receipt | None:
         """What this new file was, for after its bytes expire; ``None`` for a work product."""
