@@ -18,9 +18,11 @@ from clue_api.crm.write_actions import (
     WRITE_ACTIONS,
     ParsedChange,
     WriteNotParsable,
+    field_update_spec,
     forbidden_fields,
     is_forbidden_field,
     scope_key,
+    single_field_arguments,
     write_spec,
 )
 
@@ -34,6 +36,10 @@ _EXAMPLES: dict[tuple[str, str], tuple[dict[str, Any], ParsedChange]] = {
     ("hubspot", "HUBSPOT_UPDATE_CONTACTS"): (
         {"inputs": [{"id": "201", "properties": {"jobtitle": "COO"}}]},
         ParsedChange("contact", "201", {"jobtitle": "COO"}, None, "201"),
+    ),
+    ("hubspot", "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"): (
+        {"objectType": "contacts", "objectId": "201", "properties": {"clue_id": "c-1"}},
+        ParsedChange("contact", "201", {"clue_id": "c-1"}, None, "201"),
     ),
     ("hubspot", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS"): (
         {"list_id": "9", "operation": "add", "record_ids": ["201"]},
@@ -208,6 +214,34 @@ def test_every_spec_has_an_example() -> None:
     assert set(WRITE_ACTIONS) == set(_EXAMPLES)
 
 
+def test_a_hubspot_contact_field_update_is_sent_by_id() -> None:
+    """Phase 4 live check: Composio's HUBSPOT_UPDATE_CONTACTS drops every non-standard property,
+    so a contact's field update is logged and sent as the by-id update, one record per call."""
+    proposed = write_spec("hubspot", "HUBSPOT_UPDATE_CONTACTS")
+    sent = field_update_spec("hubspot", "contact")
+    assert proposed is not None and proposed.batch is None
+    assert sent.slug == "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID" and sent.batch is None
+    assert (sent.kind, sent.object, sent.read_before) == (
+        "field_update",
+        "contact",
+        proposed.read_before,
+    )
+    arguments = single_field_arguments(sent, "201", "hs_buying_role", "CHAMPION")
+    assert arguments == {
+        "objectType": "contacts",
+        "objectId": "201",
+        "properties": {"hs_buying_role": "CHAMPION"},
+    }
+    assert sent.parse(arguments) == ParsedChange(
+        "contact", "201", {"hs_buying_role": "CHAMPION"}, None, "201"
+    )
+    # Scoped like the proposed action, so a grant covers both.
+    parsed = proposed.parse({"inputs": [{"id": "201", "properties": {"jobtitle": "COO"}}]})
+    assert scope_key(proposed, parsed, "jobtitle") == scope_key(sent, parsed, "jobtitle")
+    # Companies stay on their batch tool (custom properties work there).
+    assert field_update_spec("hubspot", "company").slug == "HUBSPOT_UPDATE_COMPANY"
+
+
 def test_hubspot_list_removal_is_its_own_kind_and_scope() -> None:
     spec = write_spec("hubspot", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS")
     assert spec is not None
@@ -331,6 +365,27 @@ def test_scope_keys() -> None:
             {"campaign_id": "7", "campaign_member_id": "00v"},
         ),
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"companyId": "1", "properties": {}}),
+        # the by-id update is locked to one contact
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "companies", "objectId": "1", "properties": {"a": 1}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectId": "1", "properties": {"a": 1}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "contacts", "objectId": "1", "properties": {}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "contacts", "objectId": "1", "properties": {"a": 1}, "idProperty": "x"},
+        ),
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"properties": {"name": "x"}}),
         ("salesforce", "SALESFORCE_CREATE_CONTACT", {"first_name": "Ana"}),
         # a list is named, of companies or contacts, and holds nothing the card cannot show

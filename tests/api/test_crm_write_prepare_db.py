@@ -628,7 +628,7 @@ def test_a_create_that_finds_the_record_becomes_an_update(tmp_path: Path) -> Non
         )
         assert len(prepared) == 1  # email and first name already match: nothing to change
         (change,) = prepared
-        assert change.spec.slug == "HUBSPOT_UPDATE_CONTACTS"
+        assert change.spec.slug == "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"
         assert change.parsed.record_ref == "77" and change.field == "jobtitle"
         assert change.before is None and change.after == "COO"
         assert change.scope_key == "field:contact.jobtitle"
@@ -2244,7 +2244,9 @@ def test_the_buying_role_is_added_and_never_removes_one(tmp_path: Path) -> None:
         assert added.parsed.record_ref == "201"
         assert added.after == "BLOCKER;END_USER;CHAMPION"
         assert added.arguments == {
-            "inputs": [{"id": "201", "properties": {"hs_buying_role": "BLOCKER;END_USER;CHAMPION"}}]
+            "objectType": "contacts",
+            "objectId": "201",
+            "properties": {"hs_buying_role": "BLOCKER;END_USER;CHAMPION"},
         }
         assert added.source_claim_ids == (world.claims["nick_persona"],)
         assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
@@ -2530,7 +2532,9 @@ def test_an_accepted_person_value_is_sent_as_clue_researched_it(tmp_path: Path) 
         )
         assert update.after == "VP Marketing"
         assert update.arguments == {
-            "inputs": [{"id": "202", "properties": {"jobtitle": "VP Marketing"}}]
+            "objectType": "contacts",
+            "objectId": "202",
+            "properties": {"jobtitle": "VP Marketing"},
         }
         (created,) = await _prepare(
             conn,
@@ -3243,7 +3247,7 @@ def test_a_company_id_value_is_shown_by_the_company_name(tmp_path: Path) -> None
                 )
             ],
         )
-        assert change.after == "501" and change.arguments["inputs"][0]["properties"] == {
+        assert change.after == "501" and change.arguments["properties"] == {
             "associatedcompanyid": "501"
         }
         card = card_snapshot([change], provider="hubspot", project_name="Q4")

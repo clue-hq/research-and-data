@@ -256,9 +256,24 @@ class _WritingCrm(_FakeCrm):
             for item in arguments["inputs"]:
                 record = self.records.setdefault(str(item["id"]), {})
                 record.update(
-                    {k: v for k, v in item["properties"].items() if k not in self.ignored}
+                    {
+                        k: v
+                        for k, v in item["properties"].items()
+                        if k not in self.ignored
+                        # Composio's schema keeps only standard contact properties: the rest is
+                        # dropped before HubSpot sees it, and the call still succeeds (live).
+                        and (slug != "HUBSPOT_UPDATE_CONTACTS" or k in _STANDARD_CONTACT_PROPS)
+                    }
                 )
             return {"status": "COMPLETE", "results": [{"id": i["id"]} for i in arguments["inputs"]]}
+        if slug == _HUBSPOT_CONTACT_UPDATE:
+            assert arguments["objectType"] == "contacts"
+            record = self.records.setdefault(str(arguments["objectId"]), {})
+            record.update(
+                {k: v for k, v in arguments["properties"].items() if k not in self.ignored}
+            )
+            # The live answer: the record with the properties it was sent.
+            return {"id": str(arguments["objectId"]), "properties": dict(arguments["properties"])}
         if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS":
             for record in arguments["record_ids"]:
                 lists = self.lists.setdefault(str(record), [])
@@ -288,10 +303,17 @@ class _WritingCrm(_FakeCrm):
         raise AssertionError(f"unexpected write {slug}")
 
 
+_HUBSPOT_CONTACT_UPDATE = "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"
+#: Some of the standard contact properties Composio's ``HUBSPOT_UPDATE_CONTACTS`` schema allows.
+_STANDARD_CONTACT_PROPS = frozenset(
+    {"email", "firstname", "lastname", "jobtitle", "company", "website", "associatedcompanyid"}
+)
+
 _WRITE_SLUGS = frozenset(
     {
         "HUBSPOT_UPDATE_COMPANIES",
         "HUBSPOT_UPDATE_CONTACTS",
+        _HUBSPOT_CONTACT_UPDATE,
         "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
         "SALESFORCE_PATCH_COMPOSITE_SOBJECTS",
         "HUBSPOT_CREATE_CONTACT",
@@ -669,7 +691,7 @@ def test_a_retried_task_never_sends_a_change_twice(tmp_path: Path) -> None:
         # The company batch goes through; the worker dies right after the CRM wrote the contact.
         gateway = _WritingCrm(
             records={"101": {"icp_tier": None}, "201": {"jobtitle": None}},
-            failures={"HUBSPOT_UPDATE_CONTACTS": ["crash"]},
+            failures={_HUBSPOT_CONTACT_UPDATE: ["crash"]},
         )
         proposal_id = await _propose(
             conn, seeded, connection, gateway, _tier("101", "Tier 1"), _title("201", "CFO")
@@ -688,7 +710,7 @@ def test_a_retried_task_never_sends_a_change_twice(tmp_path: Path) -> None:
         assert result.outcome == "done"
         assert [slug for slug, _ in gateway.writes] == [
             "HUBSPOT_UPDATE_COMPANIES",
-            "HUBSPOT_UPDATE_CONTACTS",
+            _HUBSPOT_CONTACT_UPDATE,
         ]
         logged = await _writes(conn, proposal_id)
         assert logged["101"]["status"] == logged["201"]["status"] == "succeeded"
@@ -708,7 +730,7 @@ def test_a_rate_limit_requeues_with_backoff_and_a_refusal_is_not_retried(tmp_pat
             records={"101": {"icp_tier": None}, "201": {"email": None}, "301": {"icp_tier": None}},
             failures={
                 "HUBSPOT_UPDATE_COMPANIES": [limited, limited, limited],
-                "HUBSPOT_UPDATE_CONTACTS": [refusal],
+                _HUBSPOT_CONTACT_UPDATE: [refusal],
             },
         )
         proposal_id = await _propose(
@@ -786,7 +808,7 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
         expired = ComposioError("connection_expired", 410, "Connected account expired")
         gateway = _WritingCrm(
             records={"101": {"icp_tier": None}, "201": {"jobtitle": None}},
-            failures={"HUBSPOT_UPDATE_CONTACTS": [expired]},
+            failures={_HUBSPOT_CONTACT_UPDATE: [expired]},
         )
         proposal_id = await _propose(
             conn, seeded, connection, gateway, _tier("101", "Tier 1"), _title("201", "CFO")
@@ -817,8 +839,8 @@ def test_an_expired_connection_pauses_and_resumes(tmp_path: Path) -> None:
         assert logged["201"]["status"] == "succeeded"
         assert [slug for slug, _ in gateway.writes] == [
             "HUBSPOT_UPDATE_COMPANIES",
-            "HUBSPOT_UPDATE_CONTACTS",
-            "HUBSPOT_UPDATE_CONTACTS",
+            _HUBSPOT_CONTACT_UPDATE,
+            _HUBSPOT_CONTACT_UPDATE,
         ]
         assert await _proposal_status(conn, proposal_id) == "finished"
         assert await _wake_messages(conn, seeded.workspace_id) == [
@@ -884,7 +906,7 @@ def test_a_paused_proposal_is_never_sent_on_a_different_connection(tmp_path: Pat
         expired = ComposioError("connection_expired", 410, "Connected account expired")
         gateway = _WritingCrm(
             records={"101": {"icp_tier": None}, "201": {"jobtitle": None}, "202": {}},
-            failures={"HUBSPOT_UPDATE_CONTACTS": [expired]},
+            failures={_HUBSPOT_CONTACT_UPDATE: [expired]},
         )
         paused = await _propose(
             conn, seeded, connection, gateway, _tier("101", "Tier 1"), _title("201", "CFO")
@@ -1437,7 +1459,7 @@ def test_a_proposal_queued_during_the_run_is_not_lost(tmp_path: Path) -> None:
         assert await _proposal_status(conn, later[0]) == "finished"
         assert [slug for slug, _ in gateway.writes] == [
             "HUBSPOT_UPDATE_COMPANIES",
-            "HUBSPOT_UPDATE_CONTACTS",
+            _HUBSPOT_CONTACT_UPDATE,
         ]
 
     _run(tmp_path, "notlost", body)
@@ -2992,9 +3014,9 @@ class _LaggingCrm(_WritingCrm):
         self.stale: dict[str, dict[str, Any]] = {}
 
     async def execute(self, *, slug: str, arguments: Mapping[str, Any], **kwargs: Any) -> Any:
-        if slug == "HUBSPOT_UPDATE_CONTACTS":
-            for item in arguments["inputs"]:
-                self.stale[str(item["id"])] = dict(self.records.get(str(item["id"]), {}))
+        if slug == _HUBSPOT_CONTACT_UPDATE:
+            record = str(arguments["objectId"])
+            self.stale[record] = dict(self.records.get(record, {}))
         if (
             slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID"
             and self.lag
@@ -3027,7 +3049,7 @@ def test_a_hubspot_value_applied_a_moment_later_is_confirmed(tmp_path: Path) -> 
         change = (await _writes(conn, proposal_id))["201"]
         assert change["status"] == "succeeded"
         assert waits and max(waits) > 0  # it waited before reading again
-        reads = [slug for slug, _ in gateway.calls if slug != "HUBSPOT_UPDATE_CONTACTS"]
+        reads = [slug for slug, _ in gateway.calls if slug != _HUBSPOT_CONTACT_UPDATE]
         # Before the send, after it, and once more: always by the record's id, never a search.
         assert reads == ["HUBSPOT_READ_CRM_OBJECT_BY_ID"] * 3
 
@@ -3277,6 +3299,63 @@ def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) ->
         assert len(gateway.writes) == writes_before
 
     _run(tmp_path, "cluegonesf", body, provider="salesforce")
+
+
+def test_a_clue_field_and_the_buying_role_land_on_a_hubspot_contact(tmp_path: Path) -> None:
+    """Final fix pass item 1 (live): Composio's HUBSPOT_UPDATE_CONTACTS silently drops every
+    property outside ~45 standard ones (clue_id, hs_buying_role). Contact field updates go
+    through HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID, one record per call, which applies them."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        nick = str(world.nick)
+        gateway = _WritingCrm(records={"201": {"email": "nick@zafran.io"}})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_UPDATE_CONTACTS",
+                {
+                    "inputs": [
+                        {"id": "201", "properties": {"clue_id": nick, "hs_buying_role": "CHAMPION"}}
+                    ]
+                },
+                "Clue's id and the buying role Clue researched.",
+                clue_entity_id=nick,
+            ),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        statuses = await conn.execute(
+            text("SELECT field, status FROM crm_write WHERE proposal_id = :id ORDER BY field"),
+            {"id": proposal_id},
+        )
+        assert [tuple(row) for row in statuses] == [
+            ("clue_id", "succeeded"),
+            ("hs_buying_role", "succeeded"),
+        ]
+        assert gateway.records["201"]["clue_id"] == nick
+        assert gateway.records["201"]["hs_buying_role"] == "CHAMPION"
+        assert sorted(gateway.writes, key=lambda call: str(call[1]["properties"])) == [
+            (
+                _HUBSPOT_CONTACT_UPDATE,
+                {"objectType": "contacts", "objectId": "201", "properties": {"clue_id": nick}},
+            ),
+            (
+                _HUBSPOT_CONTACT_UPDATE,
+                {
+                    "objectType": "contacts",
+                    "objectId": "201",
+                    "properties": {"hs_buying_role": "CHAMPION"},
+                },
+            ),
+        ]
+
+    _run(tmp_path, "cluecontacths", body)
 
 
 def test_a_salesforce_create_sends_the_clue_id(tmp_path: Path) -> None:

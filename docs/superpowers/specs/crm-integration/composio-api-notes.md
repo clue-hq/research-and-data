@@ -320,3 +320,16 @@ access is granted.**
   (`fromObjectType`, `toObjectType`) answers `{results: [{id, name}]}` (the v3 types), and the setup
   finds Clue's label there by its `name` (`clue_possible_duplicate`) before creating it.
   `HUBSPOT_CREATE_PROPERTY_FOR_SPECIFIED_OBJECT_TYPE` takes `hasUniqueValue`.
+
+**Phase 4 live check (2026-10-25) — `HUBSPOT_UPDATE_CONTACTS` drops non-standard properties.**
+Composio's schema of `HUBSPOT_UPDATE_CONTACTS` (`inputs[].properties`) allows only ~45 standard
+contact properties (e.g. `jobtitle`) and silently drops the rest: `{"inputs":[{"id":"576384067300",
+"properties":{"clue_id":"…"}}]}` answered success, yet HubSpot's `lastmodifieddate` did not move and
+`clue_id` stayed null (Clue's read-back marked it `not_applied`). Every Clue field on a contact and
+`hs_buying_role` are affected. `HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID` with
+`{"objectType":"contacts","objectId":"576384067300","properties":{"clue_id":"…"}}` applies it (its
+answer carries the updated properties; a by-id read shows them). → Clue sends every HubSpot contact
+field update through the by-id tool, one record per call; the agent still proposes
+`HUBSPOT_UPDATE_CONTACTS` and preparation maps it (§ (b) above and Phase 2's choice of the batch tool
+are superseded for contacts). Companies stay on `HUBSPOT_UPDATE_COMPANY`/`HUBSPOT_UPDATE_COMPANIES`
+(custom properties work there).

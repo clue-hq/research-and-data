@@ -12,9 +12,15 @@ Salesforce API names (``Industry``, ``Tier__c``). Salesforce's named tools take 
 arguments (``industry``), so they are mapped here.
 
 Never allowlisted: merges, deletes, GDPR/erase actions and Composio's natural-language
-(``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write — use
-the batch ``HUBSPOT_UPDATE_CONTACTS``); the Salesforce ``*_BY_ID`` update tools (deprecated in the
-pinned toolkit).
+(``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write); the
+Salesforce ``*_BY_ID`` update tools (deprecated in the pinned toolkit).
+
+A HubSpot contact's field update is proposed as ``HUBSPOT_UPDATE_CONTACTS`` (one input) but always
+sent through ``HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID`` (``objectType`` contacts, one record per
+call): Composio's schema of the batch tool keeps only ~45 standard contact properties and silently
+drops the rest -- Clue's own fields and ``hs_buying_role`` among them -- while answering success
+(Phase 4 live check). Preparation logs every field update under :func:`field_update_spec`, so a
+change proposed with either action is logged and sent, retried and undone as the by-id one.
 
 ``link_duplicate`` (Phase 4, Task 5; R-6.13, R-13.5) marks two CRM contacts of one person as
 possible duplicates; Clue never merges them. On HubSpot it is ``HUBSPOT_CREATE_OBJECT_ASSOCIATION``
@@ -45,6 +51,7 @@ the record back after writing.
 
 from __future__ import annotations
 
+import builtins
 import copy
 import dataclasses
 import json
@@ -122,7 +129,7 @@ class ParsedChange:
     #: The CRM id of the record; ``None`` for a record that does not exist yet.
     record_ref: str | None
     #: Field -> the value the change sets (empty for membership). ``None`` or ``""`` clears it.
-    fields: Mapping[str, object]
+    fields: Mapping[str, builtins.object]  # ``object`` is the field above
     #: The list (HubSpot) or campaign (Salesforce) for membership kinds.
     list_ref: str | None
     #: What the card calls the record: its name or email, else its id.
@@ -405,6 +412,24 @@ def _hubspot_update_contacts(arguments: Arguments) -> ParsedChange:
     )
 
 
+_HUBSPOT_CONTACT_UPDATE = "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"
+
+
+def _hubspot_update_contact_by_id(arguments: Arguments) -> ParsedChange:
+    """The by-id update, locked to one contact (``objectType`` exactly ``contacts``)."""
+    _only(arguments, {"objectType", "objectId", "properties"})
+    if arguments.get("objectType") != "contacts":
+        raise WriteNotParsable(
+            f"Clue updates contacts only with {_HUBSPOT_CONTACT_UPDATE}: 'objectType' must be "
+            '"contacts".'
+        )
+    record = _id(arguments, "objectId")
+    fields = _require_fields(_mapping(arguments, "properties"))
+    return ParsedChange(
+        "contact", record, dict(fields), None, _label(fields, "email", fallback=record)
+    )
+
+
 def _hubspot_list_membership(arguments: Arguments) -> ParsedChange:
     _only(arguments, {"list_id", "operation", "record_ids"})
     list_ref = _id(arguments, "list_id")
@@ -536,8 +561,6 @@ def hubspot_link_label(arguments: Arguments) -> object | None:
 
 def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
-        if id_arg == "inputs":  # already the batch shape, one input each
-            return {"inputs": [dict(item["inputs"][0]) for item in items]}
         return {
             "inputs": [
                 {"id": str(item[id_arg]), "properties": dict(item["properties"])} for item in items
@@ -548,8 +571,6 @@ def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[s
 
 
 def _hubspot_record_id(item: Arguments) -> str:
-    if "inputs" in item:
-        return str(item["inputs"][0]["id"])
     if "record_ids" in item:
         return str(item["record_ids"][0])
     return str(item["companyId"])
@@ -828,6 +849,8 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             split=_hubspot_split_results,
         ),
     ),
+    # Proposed, never sent: preparation logs its change as the by-id update below (the batch
+    # tool's Composio schema drops every non-standard contact property, Phase 4 live check).
     WriteActionSpec(
         provider="hubspot",
         slug="HUBSPOT_UPDATE_CONTACTS",
@@ -836,12 +859,19 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         parse=_hubspot_update_contacts,
         read_before=_HUBSPOT_READ,
         find_existing=None,
-        batch=BatchSpec(
-            slug="HUBSPOT_UPDATE_CONTACTS",
-            max_size=100,
-            build=_hubspot_inputs_build("inputs"),
-            split=_hubspot_split_results,
-        ),
+        batch=None,
+    ),
+    # Verified live (Phase 4 live check): applies custom properties and answers the record with
+    # the properties it was sent. One record per call (it has no batch form).
+    WriteActionSpec(
+        provider="hubspot",
+        slug=_HUBSPOT_CONTACT_UPDATE,
+        kind="field_update",
+        object="contact",
+        parse=_hubspot_update_contact_by_id,
+        read_before=_HUBSPOT_READ,
+        find_existing=None,
+        batch=None,
     ),
     # Verified live (Phase 3 Task 1, company lists): add answers {recordsIdsAdded}, remove
     # {recordIdsRemoved}; adding an existing member is successful with empty data.
@@ -1120,8 +1150,8 @@ def single_field_arguments(
         raise ValueError(f"{spec.slug} is not a field update.")
     if spec.slug == "HUBSPOT_UPDATE_COMPANY":
         return {"companyId": record_ref, "properties": {field: value}}
-    if spec.slug == "HUBSPOT_UPDATE_CONTACTS":
-        return {"inputs": [{"id": record_ref, "properties": {field: value}}]}
+    if spec.slug == _HUBSPOT_CONTACT_UPDATE:
+        return {"objectType": "contacts", "objectId": record_ref, "properties": {field: value}}
     names, id_arg = {
         "SALESFORCE_UPDATE_ACCOUNT": (_SALESFORCE_ACCOUNT_ARGS, "account_id"),
         "SALESFORCE_UPDATE_CONTACT": (_SALESFORCE_CONTACT_ARGS, "contact_id"),
@@ -1132,9 +1162,19 @@ def single_field_arguments(
     return {id_arg: record_ref, argument: value}
 
 
+#: The action each object's field update is logged and sent as, whichever one proposed it.
+_FIELD_UPDATE_SLUGS: Mapping[tuple[CrmProvider, str], str] = {
+    ("hubspot", "company"): "HUBSPOT_UPDATE_COMPANY",
+    ("hubspot", "contact"): _HUBSPOT_CONTACT_UPDATE,
+    ("salesforce", "account"): "SALESFORCE_UPDATE_ACCOUNT",
+    ("salesforce", "contact"): "SALESFORCE_UPDATE_CONTACT",
+}
+
+
 def field_update_spec(provider: CrmProvider, object: str) -> WriteActionSpec:  # noqa: A002
-    """The allowlisted field update of this CRM object (a create that finds its record uses it)."""
-    for spec in _SPECS:
-        if spec.provider == provider and spec.object == object and spec.kind == "field_update":
-            return spec
-    raise LookupError(f"No field update for {provider} {object}.")
+    """The field update this CRM object's changes are logged and sent as: a proposed update
+    (``HUBSPOT_UPDATE_CONTACTS`` becomes the by-id update) and a create that finds its record."""
+    slug = _FIELD_UPDATE_SLUGS.get((provider, object))
+    if slug is None:
+        raise LookupError(f"No field update for {provider} {object}.")
+    return WRITE_ACTIONS[(provider, slug)]

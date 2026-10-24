@@ -1938,6 +1938,8 @@ class _Builder:
     ) -> None:
         if same_value(before, after):
             return  # nothing would change
+        # Logged and sent as the object's field update (a HubSpot contact's is the by-id one).
+        spec = field_update_spec(spec.provider, spec.object)
         empty = same_value(before, None)
         overwrites = not empty and not await clue_wrote_current_value(
             self._conn,
