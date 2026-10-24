@@ -264,3 +264,11 @@ activity at all. **Scoped re-review: 9/9 ADDRESSED, no new Critical/Important, "
   `ListAgents` showed the `crm-integration` session busy on this machine. The earlier "no CRM session is
   addressable" came from reading only the linked-sessions note, which lists just the sessions this one
   started. Asked it to take head-of-abm v79 / manual v25 / stage0 v52 or later.
+- **2026-10-24: version CLASH confirmed, renumber DEFERRED TO MERGE (founder).** The CRM lane
+  (`feat/crm-integration-phase-3`) had already minted head-of-abm v78–v80, manual v24–v26, stage0
+  v51–v53 before it was told — verified from git refs. Same numbers as F3's, different content. The CRM
+  lane is still minting (Task 12 → v81 / manual v27 / stage0 v54 / recipe 41), so the founder ruled F3
+  renumbers ONCE, at merge, above wherever CRM has reached, rather than guess now and risk renumbering
+  twice. CRM lane told (msg 323af79f). **At merge:** re-mint F3's manual (v24), head-of-abm (v78) and
+  stage0-interview (v51) above CRM's highest, move the registry pin in `agent_registry_wiring.py`, and
+  update the drift tests and every doc/test reference to the old numbers. F3 Phase 3 mints nothing.
