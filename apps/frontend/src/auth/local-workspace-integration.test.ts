@@ -149,6 +149,24 @@ async function withRuntime(
   }
 }
 
+test("platformRoute refuses a page loaded for another workspace before forwarding (L4-4)", async () => {
+  await withRuntime(async (app, state) => {
+    const context = { params: Promise.resolve({ path: ["frontend", "v1", "projects"] }) };
+    const stale = await app.platformRoute.GET(new Request("http://localhost:3021/api/clue/test", {
+      headers: { "X-Clue-Page-Workspace": "ws_conduit" },
+    }), context);
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error.code, "WORKSPACE_CHANGED");
+    assert(!state.fetches.some((call) => call.url.pathname === "/frontend/v1/projects"));
+
+    const current = await app.platformRoute.GET(new Request("http://localhost:3021/api/clue/test", {
+      headers: { "X-Clue-Page-Workspace": "ws_aws" },
+    }), { params: Promise.resolve({ path: ["frontend", "v1", "projects"] }) });
+    assert.equal(current.status, 200);
+    assert.equal((await current.json()).workspace, "ws_aws");
+  });
+});
+
 test("real session resolution uses the pin, checks membership and rejects a mismatched principal", async () => {
   await withRuntime(async (app, state) => {
     for (const cookie of [null, "ws_conduit", "ws_stale"]) {

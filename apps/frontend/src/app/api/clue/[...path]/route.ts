@@ -11,6 +11,7 @@ import {
   fetchAuthenticatedClueBackend,
 } from "@/auth/authenticated-backend";
 import { localProvisioningRefusal, workspaceCookieName } from "@/auth/local-workspace";
+import { PAGE_WORKSPACE_HEADER } from "@/features/projects/data/chat-api";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -54,6 +55,17 @@ async function proxyRequest(request: Request, context: RouteContext) {
       );
     }
     throw error;
+  }
+  // A page names the workspace it was loaded for. When the selected workspace has changed since
+  // (a switch in another tab, or one that landed after the page loaded), its data would come from
+  // the new workspace while the page still shows the old one: refuse, and the page reloads (L4-4).
+  const pageWorkspace = request.headers.get(PAGE_WORKSPACE_HEADER);
+  if (pageWorkspace && pageWorkspace !== backendContext.workspaceId) {
+    return errorResponse(
+      409,
+      "WORKSPACE_CHANGED",
+      "The selected workspace changed since this page was loaded.",
+    );
   }
   if (backendContext.workspaceId !== backendContext.requestedWorkspaceId) {
     const cookieStore = await cookies();
