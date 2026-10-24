@@ -212,3 +212,36 @@ def test_the_card_counts_whole_hours_and_never_a_negative_age() -> None:
 
 def test_the_media_type_names_this_card() -> None:
     assert WORKSPACE_FILES_MEDIA_TYPE == "application/vnd.clue.agent-workspace-files+json"
+
+
+def test_an_expired_entry_says_how_much_it_held() -> None:
+    """Fix pass 1: the founder-approved manual (Task 8, text (b)) tells the agent a deleted file
+    keeps a receipt saying "how much it held". Only a CRM read's receipt counted records; every
+    other expired entry said nothing about its size. The file list has it, so the card says it."""
+
+    manifest = SnapshotManifest(
+        entries=(
+            _entry(
+                "work/large_tool_results/clip.txt",
+                written_at=NOW - timedelta(days=9),
+                size=48_213,
+                expired_at=NOW - timedelta(days=1),
+            ),
+            _entry(
+                "scratch/model.py",
+                written_at=NOW - timedelta(days=9),
+                size=7,
+                receipt=UNKNOWN_RECEIPT,
+                expired_at=NOW - timedelta(days=2),
+            ),
+        )
+    )
+
+    card = build_workspace_files_card(manifest, now=NOW)
+
+    expired = card["expired"]
+    assert isinstance(expired, list)
+    assert {item["path"]: item["size"] for item in expired} == {
+        "work/large_tool_results/clip.txt": 48_213,
+        "scratch/model.py": 7,
+    }

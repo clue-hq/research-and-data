@@ -100,6 +100,10 @@ def build_workspace_files_card(
             {
                 "path": entry.path,
                 "tier": entry.tier,
+                # How much it held, in bytes: the founder-approved manual promises the agent this
+                # for every deleted file (Task 8, text (b)), and only a CRM read's receipt counts
+                # its records — so the card says it for all of them.
+                "size": entry.size,
                 "expired_at": _iso(entry.expired_at),
                 "receipt": _receipt(entry),
             }
