@@ -5,6 +5,8 @@ F3 Phase 2, plan Task 7: tests 5, 6 and 7 — a cold chat's raw inputs lose thei
 turn is told so, finished work survives every window, and an erasure leaves nothing anywhere.
 F3 Phase 3, plan Task 4: test 9 — research reconciliation on one machine reads a source run
 another machine saved, from its snapshot.
+F3 Phase 3, plan Task 5 (WS-35): the snapshots switch turned off and back on loses no saved
+version — and leaves the switched-off period's ``<root>/local`` copy on the machine.
 
 Each scenario runs the real pieces end to end: one database (the lane's throwaway test database),
 one filesystem storage standing in for R2, and two or three worker areas claimed from one
@@ -23,6 +25,9 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
+import sys
+import time
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -45,10 +50,12 @@ from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
 from clue_api.agent_workspace_files_card import build_workspace_files_card
 from clue_api.agent_workspace_retention import AgentWorkspaceRetentionJob
 from clue_api.agent_workspace_snapshots import SNAPSHOT_REFERENCE_KIND, DbWorkspaceSnapshotStore
+from clue_api.agent_workspace_wiring import LOCAL_DIR, build_agent_workspace_factory
 from clue_api.quality_research_wiring import copy_source_run_files, write_reconciliation_files
 from clue_api.sandbox.policy_sweep import snapshot as sweep_snapshot
 from clue_api.sandbox.policy_sweep import sweep
 from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
+from clue_config import Settings
 from clue_core import ExecutionId
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
@@ -1198,5 +1205,234 @@ def test_18_the_expiry_job_moves_a_cold_phase_1_chat_to_its_own_area(tmp_path: P
                     assert _bytes(b, world.ws, path) == PHASE_1_FILES[path]
             finally:
                 await b.factory.release_saved(lease)
+
+    run_async(scenario())
+
+
+# --- F3 Phase 3, plan Task 5: the emergency switch (WS-35) --------------------------------------
+
+
+def _built_machine(world: World, root: Path, *, snapshots: bool) -> Machine:
+    """A machine composed by the production builder, with the switch set on its own settings.
+
+    The real ``build_agent_workspace_factory``, not a hand-built imitation: with snapshots on it
+    claims ``<root>/workers/area-<n>`` and has a snapshotter; with them off it opens the shared,
+    unlocked ``<root>/local`` and has none. The ``.env`` is never touched.
+    """
+
+    source, home = world.root.parent / "source", world.root.parent / "home"
+    for folder in (source, home):
+        folder.mkdir(mode=0o700, exist_ok=True)
+    factory = build_agent_workspace_factory(
+        storage=world.storage,
+        settings=Settings(
+            _env_file=None,
+            agent_workspace_root=str(root),
+            agent_workspace_snapshots_enabled=snapshots,
+        ),
+        source_root=source,
+        home_root=home,
+    )
+    assert factory.area is not None
+    machine = Machine(area=factory.area, factory=factory)
+    world.machines.append(machine)
+    return machine
+
+
+def _stop(machine: Machine) -> None:
+    """The process ends (the operator restarts it to flip the switch): its lock goes, its files
+    stay on disk for the next claimer of the area to wipe."""
+
+    machine.factory.close()
+    machine.area.close()
+
+
+def _blobs(world: World) -> set[str]:
+    """Every object in the storage standing in for R2, by its path."""
+
+    base = world.root.parent / "r2"
+    return {str(path.relative_to(base)) for path in base.rglob("*") if path.is_file()}
+
+
+async def _artifact_rows(world: World) -> int:
+    async with transaction() as conn:
+        return int(
+            (
+                await conn.execute(
+                    text("SELECT count(*) FROM artifact WHERE workspace_id = :ws"),
+                    {"ws": world.ws},
+                )
+            ).scalar_one()
+        )
+
+
+def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -> None:
+    """WS-35: ``CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED`` can be turned off and back on without
+    losing a saved version and without wedging.
+
+    With the switch off a chat's folder lives in ``<root>/local``, not in a worker area, and
+    nothing restores from or saves to R2 — so a turn run while it is off starts WITHOUT the files
+    the chat saved while it was on, and what it writes is never saved. Turned back on, every
+    machine restores the last saved version, untouched.
+
+    It also pins what happens to ``<root>/local`` afterwards (AW-1, D-2 say a machine keeps no
+    residue): once the switch is back on NOTHING removes it — not the area claim, not the cache
+    sweep, not the legacy-layout script — and if the switch is turned off again, the chat's turn
+    reopens that old copy rather than the newer saved version.
+    """
+
+    from clue_api.fleet_main import _workspace_cache_job
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            root_a, root_b = world.root, tmp_path / "workspaces-b"
+            v1 = {
+                "scratch/notes.md": b"cycle ~42 days",
+                "outputs/report.csv": b"deal,amount\nA,10\n",
+                "work/plan.md": "Renewal ≈ 42 days\n".encode(),
+            }
+            off_files = {
+                "scratch/notes.md": b"written while snapshots were off",
+                "outputs/off.csv": b"deal,amount\nB,20\n",
+            }
+
+            # 1. Snapshots ON, root A: the chat saves version 1.
+            on_a = _built_machine(world, root_a, snapshots=True)
+            assert on_a.factory.root_path == root_a / "workers" / on_a.area.name
+            assert await _turn(world, on_a, v1, worker="worker-on") == "saved"
+            v1_pointer = await world.store().current(workspace_id=world.ws, thread_id=THREAD)
+            assert v1_pointer is not None and v1_pointer.version == 1
+            v1_manifest = await world.manifest()
+            assert {entry.path for entry in v1_manifest.live()} == set(v1)
+            v1_blobs, v1_rows = _blobs(world), await _artifact_rows(world)
+            assert v1_blobs and v1_rows > 0
+            dead_copy = on_a.agent(world.ws)
+            _stop(on_a)
+            # The stopped process's copy is still on disk in its (now free) area.
+            assert (dead_copy / "scratch/notes.md").read_bytes() == v1["scratch/notes.md"]
+
+            # 2. Same root, snapshots OFF: the emergency path.
+            off = _built_machine(world, root_a, snapshots=False)
+            assert off.area.name == LOCAL_DIR
+            assert off.area.path == off.factory.root_path == root_a / LOCAL_DIR
+            lease = await _open(world, off, fence=await world.fence("worker-off"))
+            try:
+                agent = off.agent(world.ws)
+                assert agent == (
+                    root_a / LOCAL_DIR / "chats" / world.ws / PROJECT / THREAD / "agent"
+                )
+                # Nothing restores: the turn starts without version 1's files, which sit in R2
+                # and in the dead area's folder but are read from neither.
+                assert lease.restore_report is None
+                assert lease.snapshot_base is None
+                for path in v1:
+                    assert not _has(off, world.ws, path), path
+                # It reads and writes locally like any turn.
+                _write(lease, off_files)
+                for path, data in off_files.items():
+                    assert _bytes(off, world.ws, path) == data
+                # Its "save" saves nothing, and says so.
+                report = await lease.save_snapshot()
+                assert (report.status, report.version, report.uploaded, report.bytes) == (
+                    "unchanged",
+                    None,
+                    0,
+                    0,
+                )
+            finally:
+                await off.factory.release_saved(lease)
+            # Nothing reached R2 or the database: the version record is still version 1.
+            pointer = await world.store().current(workspace_id=world.ws, thread_id=THREAD)
+            assert pointer == v1_pointer
+            assert await world.manifest() == v1_manifest
+            assert _blobs(world) == v1_blobs
+            assert world.storage.deletes == []
+            assert await _artifact_rows(world) == v1_rows
+            # The local folder is the only copy of what the off turn wrote, and it stays.
+            for path, data in off_files.items():
+                assert _bytes(off, world.ws, path) == data
+            _stop(off)
+
+            # 3. Snapshots ON again, on a DIFFERENT root: a cold restore of version 1.
+            on_b = _built_machine(world, root_b, snapshots=True)
+            assert on_b.factory.root_path == root_b / "workers" / on_b.area.name
+            lease = await _open(world, on_b, fence=await world.fence("worker-b"))
+            try:
+                assert lease.restore_report is not None
+                assert lease.restore_report.warm is False
+                assert lease.restore_report.downloaded == len(v1)
+                for path, data in v1.items():
+                    assert _bytes(on_b, world.ws, path) == data, path
+                # The off turn's writes were never saved, so they are simply not here.
+                assert not _has(on_b, world.ws, "outputs/off.csv")
+                assert lease.snapshot_base is not None
+                assert lease.snapshot_base.pointer == v1_pointer
+                # And the chat carries on: the next save is version 2.
+                _write(lease, {"scratch/notes.md": b"v2, saved on root B"})
+                saved = await lease.save_snapshot()
+                assert (saved.status, saved.version) == ("saved", 2)
+            finally:
+                await on_b.factory.release_saved(lease)
+
+            # 4. The residue. Snapshots back ON at root A: a new process claims an area (wiping
+            # the dead one), and runs the fleet's own cache sweep long past every idle window.
+            local_chat = root_a / LOCAL_DIR / "chats" / world.ws / PROJECT / THREAD
+            on_a2 = _built_machine(world, root_a, snapshots=True)
+            assert not dead_copy.exists()
+            swept = _workspace_cache_job(
+                Settings(
+                    _env_file=None,
+                    agent_workspace_root=str(root_a),
+                    agent_workspace_snapshots_enabled=True,
+                ),
+                on_a2.area,
+            ).run_once(now=time.time() + 10 * 365 * 86400)
+            assert swept.removed == ()
+            # The legacy-layout script, run to remove everything it can, keeps ``local`` too.
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(
+                        Path(__file__).resolve().parents[2]
+                        / "scripts"
+                        / "remove_legacy_agent_workspaces.py"
+                    ),
+                    "--root",
+                    str(root_a),
+                    "--older-than-hours",
+                    "0",
+                    "--apply",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            # FINDING (pinned, not fixed): the off period's copy is left on the machine.
+            for path, data in off_files.items():
+                assert (local_chat / "agent" / path).read_bytes() == data, path
+            # While snapshots are on it is never read: a turn at root A gets version 2 from R2.
+            lease = await _open(world, on_a2, fence=await world.fence("worker-a2"))
+            try:
+                assert lease.restore_report is not None and lease.restore_report.warm is False
+                assert _bytes(on_a2, world.ws, "scratch/notes.md") == b"v2, saved on root B"
+                assert not _has(on_a2, world.ws, "outputs/off.csv")
+            finally:
+                await on_a2.factory.release_saved(lease)
+            _stop(on_a2)
+
+            # 5. Switched OFF again at root A: the chat reopens the old off-period copy — older
+            # than version 2 and never saved — rather than starting empty.
+            off_again = _built_machine(world, root_a, snapshots=False)
+            lease = await _open(world, off_again, fence=await world.fence("worker-off-2"))
+            try:
+                assert lease.restore_report is None
+                for path, data in off_files.items():
+                    assert _bytes(off_again, world.ws, path) == data, path
+                assert not _has(off_again, world.ws, "outputs/report.csv")
+            finally:
+                await off_again.factory.release_saved(lease)
+            # And reopening it saved nothing: the record is still version 2.
+            final = await world.store().current(workspace_id=world.ws, thread_id=THREAD)
+            assert final is not None and final.version == 2
 
     run_async(scenario())
