@@ -480,6 +480,8 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
 - **R-12.16 (2026-10-24)** **A card the turn created cannot go missing (live-check L-13).** When a turn
   ends, Clue itself shows every card that turn created which is still waiting for an answer, even
   if the agent left it out of its final answer. Applies to every card kind, not only CRM.
+  *Amended 2026-10-24 (Task 12 review, option a):* a card that a newer card of the same kind and
+  subject replaced in the same turn (a redrafted directive or product selection) is not shown.
 - **R-12.17 (2026-10-24)** **Clue's write and proposal ids are never shown to the person (live-check
   L-15).** `crm_write_log` marks them as internal ("for undo only, never shown to the person"), and
   crm-writing says: "Never show the person Clue's write or proposal ids; name the record and what
