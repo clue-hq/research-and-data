@@ -344,18 +344,23 @@ export function crmWriteDoneLine(
       return `Created ${count} ${things}`;
     case CLUE_FIELDS_SETUP_KIND: {
       const crm = CRM_PROVIDER_NAMES[provider];
-      return tally.done > 0
-        ? `Set up Clue's fields in ${crm}`
-        : `Could not set up Clue's fields in ${crm}`;
+      if (tally.done > 0) return `Set up Clue's fields in ${crm}`;
+      if (setupAlreadyDone(tally)) return `Clue's fields were already set up in ${crm}`;
+      return `Could not set up Clue's fields in ${crm}`;
     }
     default:
       return `Marked ${count} possible ${tally.chosen === 1 ? "duplicate" : "duplicates"}`;
   }
 }
 
+/** A setup change skipped, none failed: the connection already had Clue's fields. */
+function setupAlreadyDone(tally: CrmWriteTally): boolean {
+  return tally.skipped > 0 && tally.failed === 0;
+}
+
 /**
- * One group's done-state line and mark: ✓ when at least one change succeeded ("N of M"); ✕ with
- * the failed/skipped count when none did.
+ * One group's done-state line and mark: ✓ when at least one change succeeded ("N of M"), or a
+ * setup was skipped as already done; ✕ with the failed/skipped count when none did.
  */
 export function crmWriteGroupOutcome(
   provider: CrmProvider,
@@ -364,6 +369,7 @@ export function crmWriteGroupOutcome(
 ): { mark: "done" | "failed"; line: string } {
   const line = crmWriteDoneLine(provider, group, tally);
   if (tally.done > 0) return { mark: "done", line };
+  if (group.kind === CLUE_FIELDS_SETUP_KIND && setupAlreadyDone(tally)) return { mark: "done", line };
   return { mark: "failed", line: `${line} — ${countsLine(tally)}` };
 }
 

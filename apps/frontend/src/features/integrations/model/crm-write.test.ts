@@ -435,6 +435,11 @@ test("the setup outcome says whether Clue's fields were set up", () => {
     crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 0, failed: 1, skipped: 0, pending: 0 }),
     { mark: "failed", line: "Could not set up Clue's fields in Salesforce — 1 failed" },
   );
+  // Skipped because the connection was already set up: not a failure.
+  assert.deepEqual(
+    crmWriteGroupOutcome("salesforce", group, { chosen: 1, done: 0, failed: 0, skipped: 1, pending: 0 }),
+    { mark: "done", line: "Clue's fields were already set up in Salesforce" },
+  );
 });
 
 test("an operator's Allow on the setup card is refused in plain words", () => {
