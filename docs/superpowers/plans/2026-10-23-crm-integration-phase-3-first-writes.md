@@ -319,6 +319,30 @@ Added 2026-10-24 (founder approved; runs after Task 10 — same files).
 
 ---
 
+### Task 12: Deleted lists, cards that cannot go missing, no internal ids, live card progress (R-12.15–R-12.18; live-check L-12, L-13, L-15, L-16)
+
+Added 2026-10-24 after the re-run (founder approved).
+
+**Files:**
+- Modify: `platform/api/clue_api/crm/write_executor.py` (gone-list recognition), the agent finalize path (`platform/api/clue_api/agent_runtime_wiring.py` / `agent_execution_wiring.py` / `agent_turn_wiring.py` — wherever `open_gate_refs` is turned into the turn's gate links), `platform/api/clue_api/crm/write_tools.py` (`crm_write_log` output), `apps/frontend/src/features/projects/hooks/use-crm-proposal-progress.ts` (+ the chat controller seam for the wake), `platform/agents/catalog/manual/tool_notes.yaml`
+- Create: `platform/agents/catalog/skills/crm-writing/v4/SKILL.md` (v3 + one sentence); Head of ABM next / recipe next / manual re-mint (Task 8's pattern)
+- Test: `tests/api/test_crm_write_executor_db.py`, the finalize/gate tests, `crm_write_log` tests, a frontend test for the hook
+
+**L-12 / R-12.15:** HubSpot answered an add to a deleted list with "Attempted to modify membership for deleted lists: [PortalListId{portalId=…, listId=18}]; Aborting operations." (failure kind recorded `not_found`). The executor's gone-list handling (`_fail_gone_list`) must treat this answer like a not-found list: mark the kept `crm_list` gone, and give every change of that list in the call the existing gone message. Test with that exact response text.
+
+**L-13 / R-12.16:** when a turn ends `awaiting_input` (or any status that shows cards), every `agent_gate` this turn created that is still unanswered is added to the turn's open gate refs if the agent left it out, so its gate part is emitted and the card shows. No duplicates when the agent did list it. Every gate kind, not only `crm_write_permission`. Test: a turn whose finalize carries only a user message but which created a CRM proposal gate → the gate part is emitted / the gate is linked.
+
+**L-15 / R-12.17:** `crm_write_log` results mark `write_id`/`proposal_id` as internal (a field description or note: "for undo only, never shown to the person"); crm-writing v4 = v3 plus exactly: "Never show the person Clue's write or proposal ids; name the record and what changed instead." (founder-approved) in §8 (the write log and undo). Mint the next Head of ABM / recipe / manual.
+
+**L-16 / R-12.18:** `useCrmProposalProgress` keeps polling while the page is hidden at 15 000 ms (2 000 ms when visible) instead of stopping; and the card re-reads at once when the chat receives the proposal's "changes finished" wake-up (a derived `crm_writes_finished` turn for that thread — find the seam in the chat controller / thread stream). Test both.
+
+- [ ] **Step 1:** Failing tests for each of the four.
+- [ ] **Step 2:** Implement; keep every CRM, gate and chat test green.
+- [ ] **Step 3:** Skill sentence; mint; pinning tests.
+- [ ] **Step 4:** Run the CRM suites, the gate/finalize tests, the Task 8 test files, `test_toolbelt_wiring.py`, `manual_build --check`, the frontend tests for the hook and `npm run lint` → PASS. Commit `fix(crm): deleted lists, cards that cannot go missing, no internal ids, live card progress`.
+
+---
+
 ## Not in this plan (and why)
 
 - Duplicate links (R-6.13): Phase 4 per D-4.

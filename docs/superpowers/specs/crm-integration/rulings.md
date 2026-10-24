@@ -474,3 +474,17 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
 - **R-12.14 (2026-10-24)** **A message Clue wrote is not recorded as the person's words (live-check
   L-7): prompt only (option B), no code check.** The stage0-interview skill says so; the founder
   waived reviewing that wording for this edit.
+- **R-12.15 (2026-10-24)** **HubSpot's answer for a deleted list counts as gone (live-check L-12).**
+  "Attempted to modify membership for deleted lists …" marks Clue's kept list gone, like a not-found
+  list, so the agent can find it by name and create a new one.
+- **R-12.16 (2026-10-24)** **A card the turn created cannot go missing (live-check L-13).** When a turn
+  ends, Clue itself shows every card that turn created which is still waiting for an answer, even
+  if the agent left it out of its final answer. Applies to every card kind, not only CRM.
+- **R-12.17 (2026-10-24)** **Clue's write and proposal ids are never shown to the person (live-check
+  L-15).** `crm_write_log` marks them as internal ("for undo only, never shown to the person"), and
+  crm-writing says: "Never show the person Clue's write or proposal ids; name the record and what
+  changed instead." (Founder-approved wording.)
+- **R-12.18 (2026-10-24)** **A card keeps its progress current while the tab is hidden (live-check
+  L-16):** it re-reads every 15 s when hidden (2 s when shown) instead of pausing, and re-reads at
+  once when the chat receives the "changes finished" wake-up.
+- L-14 (the R-12.14 prompt line did not always hold): to be decided after R-12.15–R-12.18 land.
