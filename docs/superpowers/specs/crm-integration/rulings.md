@@ -514,3 +514,7 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   are not written when that origin is a localhost address.
 - **R-13.7 (2026-10-24, D-6)** **HubSpot's Clue id property is unique** and is used to find the record
   when Clue has no CRM id linked.
+  *Amended 2026-10-25 (founder):* the lookup by Clue id is **deferred**. Only records Clue wrote carry
+  a Clue id and Clue keeps a link to each of them, so the lookup would cover only a lost link; find
+  stays by email/domain. The field is still created unique. Revisit if links can be lost (e.g. a
+  restore).
