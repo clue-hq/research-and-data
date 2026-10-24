@@ -60,12 +60,15 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ✅ Card shows names, not ids (R-12.13) — live-checked; a Clue-written message is not recorded as the person's words (R-12.14, prompt only — held on most wake turns, not all: L-14 open)
 - ✅ A list deleted in the CRM counts as gone (R-12.15), a turn's open cards are always shown (R-12.16), no internal ids in replies (R-12.17), live card progress (R-12.18)
 - ⬜ L-14 (code check vs prompt) — founder to decide; live proof of the L-3 late-value re-read
-- ⏸ Duplicate tagging and "possible duplicate" links → Phase 4 (R-12.4)
+- ✅ "Possible duplicate" links → built in Phase 4 (R-12.4, R-13.5)
 
 ## Phase 4 — Clue's own fields (admin opt-in)
-- 🔨 Branch `feat/crm-integration-phase-4`; spike done 2026-10-24 (HubSpot schema writes work through Composio; Salesforce fields need field-level access → R-13.1); plan `docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md` drafted, decisions D-1–D-6 for the founder
-- ⬜ HubSpot "Clue" property group and fields
-- ⬜ Salesforce Clue custom fields (+ external-id field for upserts)
+- ✅ Branch `feat/crm-integration-phase-4` (unpushed); plan `docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md`, rulings R-13.1–R-13.7; Tasks 1–6 built and reviewed, final review 0 Critical / 0 Important, fix pass `52a84138e`…`e885c7cf1`
+- ✅ Setup card (owner/admin only): HubSpot "Clue" group, 6 fields, "Possible duplicate" label; Salesforce 6 fields, permission set + assignment (R-13.1), external id — live-checked on both test CRMs
+- ✅ Writing Clue's fields (tier, links, committee role, Clue id), gated on setup; a field deleted in the CRM is refused, marked gone and set up again — live-checked
+- ✅ "Possible duplicate" links (HubSpot association label; Salesforce lookup), undo only for Clue's own Salesforce link — live-checked on Salesforce
+- ⬜ Live check findings `2026-10-25-phase-4-live-check-findings.md`: L4-3 (direct duplicate-link request — skill/tool-note line, founder wording), L4-4 (= L12 workspace-switch card bug), minors L4-5/L4-6
+- ⏸ Looking a record up by Clue id (R-13.7, deferred)
 
 ## Production readiness
 - ⬜ Own OAuth apps (HubSpot app; Salesforce connected app) — needed for the reads deploy if real customers connect
