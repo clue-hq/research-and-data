@@ -490,3 +490,11 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   L-16):** it re-reads every 15 s when hidden (2 s when shown) instead of pausing, and re-reads at
   once when the chat receives the "changes finished" wake-up.
 - L-14 (the R-12.14 prompt line did not always hold): to be decided after R-12.15–R-12.18 land.
+
+## 13. Phase 4 — Clue's own fields (decisions, 2026-10-24)
+
+- **R-13.1 (2026-10-24)** **In Salesforce, Clue grants access to its own fields itself, inside the
+  admin's one-time setup approval.** A field created through the Tooling API is invisible to every
+  user until field-level access is granted (spike). Clue creates a "Clue fields" permission set with
+  read/edit on its fields and assigns it to the connected user, as part of the `clue_fields_setup`
+  approval; the card says plainly that this changes access settings in the org.

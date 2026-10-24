@@ -271,3 +271,38 @@ after the founder ticked it:
   Aldercare was added and removed again. Clue never deletes (R-6.13); delete by hand if wanted.
 - Salesforce (Garner test org): empty campaign **"Clue: spike"** (`701jV00000Hd83xQAB`) — one
   contact was added and removed again. Clue never deletes; delete by hand if wanted.
+
+## Phase 4 shapes (spike, 2026-10-24)
+
+Script: `scripts/crm_phase4_spike.py` (test CRMs only; everything named "spike"; nothing deleted).
+
+**HubSpot (Composio managed app, Conduit AI test portal) — schema writes work.**
+- `HUBSPOT_CREATE_AND_RETURN_A_NEW_PROPERTY_GROUP` (`objectType`, `name`, `label`; scope
+  `crm.schemas.{objectType}.write`) → created `clue_spike` on companies. Again → refused 409
+  `groupsErrorCode: GROUP_EXISTS` (setup can be re-run; treat as "already there").
+- `HUBSPOT_CREATE_PROPERTY_FOR_SPECIFIED_OBJECT_TYPE` (`objectType`, `name`, `label`, `type`,
+  `fieldType`, `groupName`, `options[]` of `{label, value, displayOrder, hidden}`) → enumeration
+  property `clue_spike_stage`; `modificationMetadata`: archivable, not read-only. Written with
+  `HUBSPOT_UPDATE_COMPANY` and read back with `HUBSPOT_READ_CRM_OBJECT_BY_ID` immediately.
+- `HUBSPOT_CREATE_ASSOCIATION_LABEL` (`from_object_type`, `to_object_type`, `name`, `label`) →
+  contacts↔contacts `USER_DEFINED` label, answer `results[].typeId` (1 here).
+  `HUBSPOT_CREATE_OBJECT_ASSOCIATION` (`objectType`, `objectId`, `toObjectType`, `toObjectId`,
+  `labels[{associationCategory: USER_DEFINED, associationTypeId}]`) linked two contacts with it.
+
+**Salesforce (Garner Health Developer Edition) — fields are created but invisible until field-level
+access is granted.**
+- `SALESFORCE_CREATE_CUSTOM_FIELD` (Tooling API; `object_api_name`, `field_api_name`, `field_type`,
+  `label`, `picklist_values[{full_name, label, default}]`, `length`, `external_id`, `unique`) created
+  `Account.Clue_Spike_Stage__c` (picklist) and `Contact.Clue_Spike_Ext_Id__c` (text, external id,
+  unique). Until field-level security grants access, every read/write says `INVALID_FIELD` "No such
+  column" and the external-id upsert says `NOT_FOUND` "Provided external ID field does not exist or
+  is not accessible". After granting Visible/Editable (done by hand in Setup for the spike), the
+  update, SOQL read and `SALESFORCE_UPSERT_SOBJECT_BY_EXTERNAL_ID` (`sobject`, `field_name`,
+  `field_value`, `fields`, `update_only`) all work.
+- **Trap:** creating a field that exists answers the call `successful: true` with inner
+  `success: false`, `errors[{message: "There is already a field named … on …"}]` and
+  `already_exists: false` — `check_existing` does not detect it. Read the inner `success`.
+- Granting access through Clue means creating a `PermissionSet`, `FieldPermissions` rows and a
+  `PermissionSetAssignment` (generic `SALESFORCE_CREATE_S_OBJECT_RECORD`). Not tried in the spike
+  (a security change in the org); Phase 4 does it inside the admin's one-time setup approval
+  (R-13.1).
