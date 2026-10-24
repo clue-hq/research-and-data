@@ -190,7 +190,10 @@ class _FakeCrm:
         malformed: frozenset[str] = frozenset(),
         missing: frozenset[str] = frozenset(),
         failing: Mapping[str, ExecuteResult | Exception] | None = None,
+        crm_list_ids: frozenset[str] = frozenset(),
     ) -> None:
+        #: The HubSpot lists and Salesforce campaigns (by id) the CRM still has.
+        self.crm_list_ids = crm_list_ids
         #: Reads answered with a body of an unexpected shape.
         self.malformed = malformed
         #: HubSpot record ids the CRM does not have: reading one by id answers 404.
@@ -266,10 +269,25 @@ class _FakeCrm:
                 if rec.get("domain") == wanted
             ]
             return {"results": found, "total": len(found)}
+        if slug == "HUBSPOT_SEARCH_CRM_LISTS":
+            # A list id HubSpot does not have (deleted) is simply left out (live check L-17).
+            lists = [
+                {"listId": i, "name": f"List {i}", "objectTypeId": arguments["objectTypeId"]}
+                for i in arguments.get("listIds") or []
+                if i in self.crm_list_ids
+            ]
+            return {"lists": lists, "total": len(lists), "offset": 0, "hasMore": False}
         if slug == "SALESFORCE_GET_ALL_FIELDS_FOR_OBJECT":
             return {"fields": _SALESFORCE_FIELDS[arguments["object_name"]]}
         if slug == "SALESFORCE_RUN_SOQL_QUERY":
             query = arguments["query"]
+            if "FROM Campaign " in query:
+                found = [
+                    {"attributes": {"type": "Campaign"}, "Id": i}
+                    for i in sorted(self.crm_list_ids)
+                    if f"'{i}'" in query
+                ]
+                return {"records": found, "totalSize": len(found), "done": True}
             like = re.search(r"Website LIKE '%(.*)%'", query)
             if like is not None:  # Salesforce's LIKE ignores case
                 wanted = like.group(1).replace("\\", "").lower()
@@ -1549,7 +1567,7 @@ def test_a_list_clue_already_keeps_is_not_created_again(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         from clue_api.crm.lists import mark_gone
 
-        gateway = _FakeCrm()
+        gateway = _FakeCrm(crm_list_ids=frozenset({"17"}))
         await _keep_list(conn, seeded, connection, "17", "Clue: Q4 hotel groups")
         with pytest.raises(WriteRefused) as refused:
             await _prepare(
@@ -1557,6 +1575,10 @@ def test_a_list_clue_already_keeps_is_not_created_again(tmp_path: Path) -> None:
             )
         assert refused.value.reason_code == "crm_list_exists"
         assert "17" in str(refused.value)
+        # Refused only after HubSpot said it still has the list (L-17).
+        assert gateway.calls == [
+            ("HUBSPOT_SEARCH_CRM_LISTS", {"objectTypeId": "0-2", "listIds": ["17"], "count": 1})
+        ]
 
         # Two creates of one name in one batch are refused too.
         with pytest.raises(WriteRefused) as twice:
@@ -1673,6 +1695,111 @@ def test_an_add_to_a_kept_list_that_is_gone_is_refused_alone(tmp_path: Path) -> 
         ]
 
     _run(tmp_path, "keptgone", body)
+
+
+CAMPAIGN_GONE = "The campaign no longer exists in Salesforce; find it by name or create it again."
+
+
+def test_an_add_to_a_kept_campaign_that_is_gone_is_refused_alone(tmp_path: Path) -> None:
+    """Final review: a Salesforce campaign Clue marked gone is refused like a HubSpot list."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        from clue_api.crm.lists import mark_gone
+
+        await _keep_list(conn, seeded, connection, "701A", "Clue: Q4", "contact")
+        await mark_gone(conn, connection_id=connection.connection_id, crm_list_id="701A")
+        gateway = _FakeCrm()
+        batch = await _prepare_batch(
+            conn,
+            gateway,
+            connection,
+            proposal_id,
+            [
+                ProposedChange(
+                    "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+                    {"campaign_id": "701A", "contact_id": "003A"},
+                    "committee",
+                )
+            ],
+            _FakeBudget(gateway),
+        )
+        assert batch.changes == []
+        assert [(r.index, r.reason_code, r.message) for r in batch.refused] == [
+            (0, "crm_list_gone", CAMPAIGN_GONE),
+        ]
+
+    _run(tmp_path, "keptcampaigngone", body, provider="salesforce")
+
+
+@pytest.mark.parametrize("provider", ["hubspot", "salesforce"])
+def test_a_kept_list_deleted_in_the_crm_may_be_created_again_at_once(
+    tmp_path: Path, provider: str
+) -> None:
+    """L-17: the name matches a list Clue keeps, but the CRM no longer has it. Clue reads it by
+    its id, marks it gone, and lets the create through (R-12.15) instead of refusing it."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        from clue_api.crm.lists import live_list_named
+
+        kept_id = "18" if provider == "hubspot" else "701A"
+        await _keep_list(conn, seeded, connection, kept_id, "Clue: Q4", "company")
+        gateway = _FakeCrm()  # the CRM has no list or campaign at all
+        change = (
+            _create_list("Clue: Q4")
+            if provider == "hubspot"
+            else ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee")
+        )
+        budget = _FakeBudget(gateway)
+        (prepared,) = await _prepare(conn, gateway, connection, proposal_id, [change], budget)
+        assert prepared.parsed.change_kind(prepared.spec) == "list_create"
+        (read,) = gateway.calls
+        if provider == "hubspot":
+            assert read == (
+                "HUBSPOT_SEARCH_CRM_LISTS",
+                {"objectTypeId": "0-2", "listIds": ["18"], "count": 1},
+            )
+        else:
+            assert read == (
+                "SALESFORCE_RUN_SOQL_QUERY",
+                {"query": "SELECT Id FROM Campaign WHERE Id = '701A'"},
+            )
+            assert budget.taken_at == [0]  # the read is taken from the org's budget
+        gone = await conn.scalar(
+            text("SELECT gone_at IS NOT NULL FROM crm_list WHERE crm_list_id = :i"),
+            {"i": kept_id},
+        )
+        assert gone is True
+        assert (
+            await live_list_named(conn, connection_id=connection.connection_id, name="Clue: Q4")
+            is None
+        )
+
+    _run(tmp_path, f"keptdeleted{provider[:2]}", body, provider=provider)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ExecuteResult(False, {"status_code": 400}, '{"message":"bad request"}'),
+        ExecuteResult(False, {"status_code": 503}, "Service Unavailable"),
+    ],
+    ids=["refused", "unavailable"],
+)
+def test_a_kept_list_that_cannot_be_read_still_refuses_the_create(
+    tmp_path: Path, failure: ExecuteResult
+) -> None:
+    """L-17: only the CRM saying the list is not there lets the create through."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        await _keep_list(conn, seeded, connection, "18", "Clue: Q4")
+        gateway = _FakeCrm(failing={"HUBSPOT_SEARCH_CRM_LISTS": failure})
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(conn, gateway, connection, proposal_id, [_create_list("Clue: Q4")])
+        assert refused.value.reason_code == "crm_list_exists"
+        gone = await conn.scalar(text("SELECT gone_at FROM crm_list WHERE crm_list_id = '18'"))
+        assert gone is None
+
+    _run(tmp_path, f"keptunread{failure.data['status_code']}", body)
 
 
 # --- Task 3b (R-12.7): a list Clue creates and its first members are one card ----------------

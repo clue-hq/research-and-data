@@ -41,7 +41,7 @@ from clue_api.crm.composio_gateway import (
     composio_user_id,
 )
 from clue_api.crm.connections import CrmConnection
-from clue_api.crm.lists import live_list_named, stored_list
+from clue_api.crm.lists import CrmList, live_list_named, mark_gone, stored_list
 from clue_api.crm.targets import TargetAccount, TargetContact, TargetValue, project_targets
 from clue_api.crm.write_actions import (
     _SALESFORCE_CONTACT_ARGS,
@@ -1464,6 +1464,10 @@ async def _check_removals(
 LIST_NOT_KEPT_MESSAGE = "Clue does not keep this list yet. Link it first with link_crm_list."
 #: Said for a change to a kept list HubSpot no longer has (R-11.11 (4)).
 LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
+#: Said for a change to a kept campaign Salesforce no longer has (R-12.15, final review).
+CAMPAIGN_GONE_MESSAGE = (
+    "The campaign no longer exists in Salesforce; find it by name or create it again."
+)
 
 
 async def _with_list_objects(
@@ -1472,7 +1476,8 @@ async def _with_list_objects(
     """A HubSpot list holds one object type, which its membership action does not name: read it
     from the list Clue keeps (a company list holds companies). A change to a list Clue does not
     keep (``crm_list_not_kept``: the person names one with ``link_crm_list`` first) or to a kept
-    list HubSpot no longer has (``crm_list_gone``) is refused on its own.
+    list HubSpot no longer has (``crm_list_gone``) is refused on its own; so is a change to a
+    kept Salesforce campaign Salesforce no longer has (``crm_list_gone``).
 
     An add to ``new:<name>`` (R-12.7) is to the list the same batch creates under exactly that
     name: it holds that create's object. One that names no create, or a removal from a list not
@@ -1532,7 +1537,15 @@ async def _with_list_objects(
             kept = await stored_list(
                 conn, connection_id=connection.connection_id, crm_list_id=str(item.parsed.list_ref)
             )
-            if kept is not None:
+            if kept is not None and kept.gone_at is not None:
+                refused[index] = RefusedChange(
+                    index=index,
+                    slug=item.proposed.slug,
+                    record_ref=item.parsed.record_ref,
+                    reason_code="crm_list_gone",
+                    message=CAMPAIGN_GONE_MESSAGE,
+                )
+            elif kept is not None:
                 item = dataclasses.replace(item, list_name=kept.name)
         resolved.append(item)
     return resolved, refused
@@ -1613,10 +1626,12 @@ def _with_reference(item: _Item, value: str, *, label: str | None = None) -> _It
 
 
 async def _check_list_creates(
-    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
+    conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item], reader: _Reader
 ) -> None:
     """One list of a name per connection: a name Clue already keeps, or proposed twice in one
-    batch, is refused (a list the CRM no longer has may be created again)."""
+    batch, is refused. A list the CRM no longer has may be created again: before refusing, the
+    kept list is read by its id, and one the CRM says it does not have is marked gone and lets
+    the create through (L-17, R-12.15). Any other answer keeps the refusal."""
     target = "list" if connection.provider == "hubspot" else "campaign"
     seen: set[str] = set()
     for item in items:
@@ -1629,13 +1644,52 @@ async def _check_list_creates(
                 f'The {target} "{name}" is created twice in this batch; propose it once.',
             )
         seen.add(name.lower())
-        kept = await live_list_named(conn, connection_id=connection.connection_id, name=name)
-        if kept is not None:
-            raise WriteRefused(
-                "crm_list_exists",
-                f'Clue already keeps the {target} "{kept.name}" ({kept.crm_list_id}) in '
-                f"{_CRM_NAMES[connection.provider]}. Use it instead of creating another.",
+        while (
+            kept := await live_list_named(conn, connection_id=connection.connection_id, name=name)
+        ) is not None:
+            if not await _kept_list_missing(reader, kept):
+                raise WriteRefused(
+                    "crm_list_exists",
+                    f'Clue already keeps the {target} "{kept.name}" ({kept.crm_list_id}) in '
+                    f"{_CRM_NAMES[connection.provider]}. Use it instead of creating another.",
+                )
+            await mark_gone(
+                conn, connection_id=connection.connection_id, crm_list_id=kept.crm_list_id
             )
+
+
+async def _kept_list_missing(reader: _Reader, kept: CrmList) -> bool:
+    """Whether the CRM says it no longer has this kept list or campaign: read by its id, the
+    answer is empty (a deleted HubSpot list is left out of ``HUBSPOT_SEARCH_CRM_LISTS``, verified
+    live; a deleted campaign is not returned by SOQL) or a not-found. Any other answer, or no
+    answer, is ``False``: the list is taken as still there."""
+    if kept.provider == "hubspot":
+        slug = "HUBSPOT_SEARCH_CRM_LISTS"
+        arguments: dict[str, Any] = {
+            "objectTypeId": HUBSPOT_OBJECT_TYPE_IDS[kept.crm_object],
+            "listIds": [kept.crm_list_id],
+            "count": 1,
+        }
+        key, id_key = "lists", "listId"
+    else:
+        slug = "SALESFORCE_RUN_SOQL_QUERY"
+        arguments = {"query": f"SELECT Id FROM Campaign WHERE Id = {_soql_text(kept.crm_list_id)}"}
+        key, id_key = "records", "Id"
+    try:
+        result = await reader.call(slug, arguments)
+    except WriteRefused:  # rate-limited or unreachable: not an answer about the list
+        return False
+    if not result.successful:
+        return _record_missing(result)
+    body = _unwrap(result.data)
+    found = body.get(key) if isinstance(body, Mapping) else None
+    if not isinstance(found, list):
+        return False
+    if kept.provider == "hubspot":
+        return not any(
+            isinstance(one, Mapping) and str(one.get(id_key)) == kept.crm_list_id for one in found
+        )
+    return not found
 
 
 class _Builder:
@@ -1787,8 +1841,9 @@ async def prepare_changes(
     (``CLUE_CRM_WRITE_MIN_INTERVAL_S``, the same pause the executor keeps between its calls).
     ``settings`` holds the fit bands and verification posture the targets read uses: a person
     value, and a company's ICP tier, is written only as :mod:`clue_api.crm.targets` offers it.
-    Writes nothing but the Salesforce budget's call count and the forgetting of a record link
-    whose CRM record is gone (:func:`check_against_targets`); the caller logs the result with
+    Writes nothing but the Salesforce budget's call count, the forgetting of a record link
+    whose CRM record is gone (:func:`check_against_targets`) and the marking gone of a kept list
+    the CRM no longer has (:func:`_check_list_creates`); the caller logs the result with
     :func:`clue_api.crm.writes.insert_writes` under ``proposal_id``.
     """
     del proposal_id  # the caller logs the prepared changes under it
@@ -1801,7 +1856,6 @@ async def prepare_changes(
     alone = {**list_refused, **record_refused}
     _check_once_per_record_field(items)
     _check_once_per_created_record(items)
-    await _check_list_creates(conn, connection, items)
 
     reader = _Reader(
         conn,
@@ -1812,6 +1866,7 @@ async def prepare_changes(
         min_interval_s=min_interval_s,
         sleep=sleep,
     )
+    await _check_list_creates(conn, connection, items, reader)
     metas: dict[str, dict[str, _FieldMeta]] = {}
     for object_name in dict.fromkeys(item.parsed.object for item in items if item.parsed.fields):
         metas[object_name] = await _field_metas(reader, provider, object_name)
@@ -2017,7 +2072,7 @@ async def prepare_changes(
                 if field == match_key and create_key(field, held) == create_key(field, after):
                     continue  # the website it was found by, spelled another way: not a change
                 await builder.field(item, update, record_ref, field, held, after)
-        else:  # link_duplicate has no action until Phase 3
+        else:  # link_duplicate has no action until Phase 4 (R-12.4)
             raise WriteRefused("crm_write_not_allowed", f"{kind} cannot be proposed yet.")
     prepared = _without_changes_of_records_not_made(kept, builder.prepared, starts, refused)
     # A list is created before anything is added to it: creates come first, on the card and in
