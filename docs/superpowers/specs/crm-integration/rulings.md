@@ -498,3 +498,19 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   user until field-level access is granted (spike). Clue creates a "Clue fields" permission set with
   read/edit on its fields and assigns it to the connected user, as part of the `clue_fields_setup`
   approval; the card says plainly that this changes access settings in the org.
+- **R-13.2 (2026-10-24, D-1)** **Starting Clue fields: what Clue can fill today.** Company — Clue tier,
+  Clue research link; contact — Clue committee role, Clue contact link; both — Clue id (Salesforce
+  external id; HubSpot unique property). ABM stage and committee status wait until Clue has the data.
+  Salesforce also gets `Clue_Possible_Duplicate__c` for duplicate links (R-6.13).
+- **R-13.3 (2026-10-24, D-2)** **Only a workspace owner or admin approves setting up Clue's fields**;
+  any member's agent may propose it; never covered by "Always allow" or "Fully automatic". The
+  founder asked whether every member could approve; kept to owners/admins because setup changes the
+  customer's CRM schema and, on Salesforce, its access settings (a one-line change if reopened).
+- **R-13.4 (2026-10-24, D-3)** **Setup is proposed by a dedicated tool that builds the fixed setup**
+  from code; the agent cannot choose field names, types or access.
+- **R-13.5 (2026-10-24, D-4)** **A duplicate is only two CRM records Clue finds for one Clue person**
+  (find-before-create matching more than one record); never a guess from names alone.
+- **R-13.6 (2026-10-24, D-5)** **The research and contact links are built from `CLUE_APP_ORIGIN`** and
+  are not written when that origin is a localhost address.
+- **R-13.7 (2026-10-24, D-6)** **HubSpot's Clue id property is unique** and is used to find the record
+  when Clue has no CRM id linked.
