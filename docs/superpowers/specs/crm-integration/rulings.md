@@ -456,3 +456,9 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   two verdicts the account and contact screens already show. `unverified` (Exa Websets, Sumble: no
   check), `unknown` and `invalid` are never written, and a person with none of the two is not
   created (R-8.7). "For now": revisit if catch-all addresses bounce in practice.
+- **R-12.11 (2026-10-24)** **One card can use the records it creates (live-check finding L-1, option a).**
+  R-12.7's `new:` reference is extended from lists to records: a change on a card may point at a
+  company/account or person the same card creates (for a list add, a person's company link, a
+  Salesforce campaign add), and the executor sends the creates first and fills in their new CRM ids,
+  the way it already fills in a new list's id. A change whose create fails or does not land is not
+  sent. Before: "create + add/link" needed one card per step (two or three cards in a row).

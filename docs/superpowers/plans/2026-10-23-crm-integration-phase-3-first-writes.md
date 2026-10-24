@@ -265,6 +265,38 @@ R-8.7 / D-2 / D-5 reductions (each a test): a value is offered only from a **liv
 
 ---
 
+### Task 10: One card can use the records it creates (R-12.11, live-check finding L-1)
+
+Added 2026-10-24 after the live check (founder chose option a; design and skill lines approved in chat).
+
+**Files:**
+- Modify: `platform/api/clue_api/crm/write_prepare.py` (parse/check record references), `platform/api/clue_api/crm/write_executor.py` (send creates first, fill ids, skip dependents), `platform/api/clue_api/crm/write_actions.py` (where the reference may appear), `platform/api/clue_api/crm/writes.py` if a column/helper is needed, `platform/agents/catalog/manual/tool_notes.yaml`
+- Create: `platform/agents/catalog/skills/crm-writing/v3/SKILL.md` (v2 + the two approved lines), Head of ABM v79 / recipe 39 / manual re-mint, following Task 8's pattern (commit `2190d64ce`)
+- Test: `tests/api/test_crm_write_prepare_db.py`, `tests/api/test_crm_write_executor_db.py`, the Task 8 pinning tests
+
+**Interfaces:**
+- Consumes: R-12.7's `new:<list name>` (`NEW_LIST_PREFIX`, `new_list_name`, `_with_list_objects` in prepare; the list-id fill/skip in the executor, around `write_executor.py:996` and `:1590–1640`).
+- Produces: record references `new:company:<domain>` (a HubSpot company or Salesforce account the same proposal creates) and `new:contact:<email>` (a person the same proposal creates). Matching is case- and whitespace-insensitive against the create's domain (HubSpot `domain` / Salesforce `website` host) or email.
+
+**Where a reference may appear (and nowhere else):**
+- HubSpot list add (`HUBSPOT_UPDATE_LIST_MEMBERSHIPS` `record_ids`, one record per change) → `new:company:<domain>`.
+- HubSpot person create (`HUBSPOT_CREATE_CONTACT` `associations` company id) → `new:company:<domain>`.
+- Salesforce person create (`SALESFORCE_CREATE_CONTACT` `account_id`) → `new:company:<domain>`.
+- Salesforce campaign add (`SALESFORCE_ADD_CONTACT_TO_CAMPAIGN` `contact_id`) → `new:contact:<email>` (the campaign may itself be `new:<name>`).
+
+**Behaviour:**
+- Prepare: a reference that matches no create on the same proposal is refused on its own (`crm_write_not_parsable`, plain message naming the reference). A person's company link that points at `new:company:…` still passes the R-8.7 person checks (the link is the company-link field). The card label uses the referenced record's name, never the `new:` string.
+- Executor order: list/campaign creates and company/account creates first, then person creates, then list/campaign adds. After each create (or a create that found the record already there — use the found id), fill its id into every undecided change that references it, the same way new list ids are filled.
+- A change whose referenced create failed, did not land, or was not ticked on the card is not sent: `skipped` with the message "The <company|person> it needs was not created, so it was not sent." Nothing it depends on is retried by itself.
+
+- [ ] **Step 1: Failing tests (prepare):** an add to `new:company:<domain>` with a matching create passes and its card label is the company name; one with no matching create is refused `crm_write_not_parsable`; a Salesforce contact create with `account_id = new:company:<domain>` passes; a campaign add with `contact_id = new:contact:<email>` passes; a reference in any other field is refused.
+- [ ] **Step 2: Failing tests (executor, fake CRM):** (a) HubSpot: create company + add `new:company` to a new list on one proposal → company created, its id filled, add sent with that id, both succeeded; (b) HubSpot: create company + create person linked `new:company` → person created with the association to the new id; (c) Salesforce: create account + create contact (`account_id` reference) + create campaign + add `new:contact` to `new:<campaign>` → all four in order with filled ids; (d) the company create fails → its dependent add and person are `skipped` with the message above, never sent; (e) the company create unticked on the card → same; (f) the create finds the company already exists → the found id is filled and the dependents are sent.
+- [ ] **Step 3:** Implement until Steps 1–2 pass; keep every existing CRM test green.
+- [ ] **Step 4:** crm-writing v3 = v2 plus exactly these founder-approved lines (2026-10-24): in §3b point 5, add "When a company or person is not in the CRM yet, put its create and everything that needs it on the same card: refer to it as `new:company:<domain>` or `new:contact:<email>`, spelled exactly like the create."; in §3b point 2, add "Add one record per change." Tool notes for `propose_crm_changes` name the two references. Mint Head of ABM v79, recipe 39, re-mint the manual (Task 8's pattern); pinning tests updated.
+- [ ] **Step 5:** Run the CRM suites, the six Task 8 test files, `test_toolbelt_wiring.py`, `manual_build --check` → PASS. Commit `feat(crm): one card can use the records it creates (R-12.11)`.
+
+---
+
 ## Not in this plan (and why)
 
 - Duplicate links (R-6.13): Phase 4 per D-4.
