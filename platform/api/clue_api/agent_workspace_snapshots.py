@@ -48,6 +48,7 @@ from clue_agents.workspace_snapshot import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet.lease import LeaseGeneration, WorkId, hold_work_lease
+from clue_obs import get_logger
 from clue_storage import (
     ArtifactNotFound,
     ArtifactRecord,
@@ -65,6 +66,8 @@ from clue_storage import (
 )
 
 __all__ = ["SNAPSHOT_REFERENCE_KIND", "DbWorkspaceSnapshotStore"]
+
+log = get_logger("clue_api.agent_workspace_snapshots")
 
 #: The ``artifact_reference`` kind a snapshot holds its files under; the id is the thread id.
 SNAPSHOT_REFERENCE_KIND = "agent_workspace_snapshot"
@@ -387,12 +390,28 @@ class DbWorkspaceSnapshotStore(WorkspaceSnapshotStore):
         ``sweep_expired=False``: this runs on nearly every content-changing turn, and the pass's
         opening table-wide expiry tombstone is the fleet sweep's work, not a chat's (review I7).
         Those rows are the orphan sweep's to converge on, as they were before Phase 2.
+
+        **Best-effort** (review A1-I2): it runs after the save or forget committed, so a failure
+        here must not reach the caller. A turn reported failed after its version was saved is
+        re-run by the person, re-running its tools — CRM writes included — and a privacy erasure
+        would report failure after it had happened. The erased marks are durable, and the fleet's
+        keyless orphan sweep deletes what this pass did not, exactly as ``dsar._purge_marked``
+        relies on.
         """
 
         if not keys:
             return
-        async with self._conn_factory() as conn:
-            await purge_erased_artifacts(conn, self._storage, keys=keys, sweep_expired=False)
+        try:
+            async with self._conn_factory() as conn:
+                await purge_erased_artifacts(conn, self._storage, keys=keys, sweep_expired=False)
+        except Exception as exc:  # noqa: BLE001 — post-commit cleanup the orphan sweep converges on
+            log.warning(
+                "agent_workspace.purge_failed",
+                keys=len(keys),
+                first_key=keys[0],
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
 
     async def _read_verified(
         self, *, workspace_id: str, keys: Sequence[str], sha256: str, size: int | None

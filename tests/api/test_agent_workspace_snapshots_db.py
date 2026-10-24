@@ -73,10 +73,13 @@ class CountingStorage(FsStorage):
         self.puts = 0
         self.fail_gets = False
         self.fail_next_puts = 0
+        self.fail_deletes = False
         self.deletes: list[str] = []
 
     async def delete(self, key: str) -> None:
         self.deletes.append(key)
+        if self.fail_deletes:
+            raise StorageError("storage is unreachable")
         await super().delete(key)
 
     async def put(self, key: str, data: bytes, *, media_type: str) -> None:
@@ -699,5 +702,54 @@ def test_erasure_never_touches_a_key_of_another_shape(tmp_path: Path) -> None:
         assert await _erasure(legacy) == (False, False)
         assert await storage.exists(legacy)
         assert legacy not in storage.deletes
+
+    _scenario(body, tmp_path)
+
+
+# --- The purge after a committed save is best-effort (fix pass 1, review A1-I2 = A2-I1) ----------
+
+
+def test_a_failed_blob_delete_does_not_fail_a_save_that_committed(tmp_path: Path) -> None:
+    """The save committed v+1 before the purge ran. A storage error deleting a released blob must
+    not make the turn report failure — the person would re-run it, re-running its tools, CRM
+    writes included. The erased marks are durable; the fleet's orphan sweep finishes the job."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        _, first = await _save(store, ws, {"scratch/a.md": b"old"}, expected=None)
+        assert first is not None
+        dropped = agent_workspace_key(ws, _sha(b"old"))
+        storage.fail_deletes = True
+
+        status, second = await _save(store, ws, {"scratch/a.md": b"new"}, expected=1)
+
+        assert status == "saved" and second is not None and second.version == 2
+        assert await store.current(workspace_id=ws, thread_id="thr-1") == second
+        assert storage.deletes  # the purge did try, and storage refused
+        # Erased for good, not yet purged: exactly what the orphan sweep converges on.
+        assert await _erasure(dropped) == (True, False)
+        assert await _erasure(first.manifest_key) == (True, False)
+
+    _scenario(body, tmp_path)
+
+
+def test_a_failed_blob_delete_does_not_fail_a_forget_that_committed(tmp_path: Path) -> None:
+    """A privacy erasure (WS-31) commits, then purges. A storage error in the purge must not
+    report the erasure as failed: it has happened, and the sweep removes the bytes."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        _, pointer = await _save(store, ws, {"scratch/m.md": b"only this chat"}, expected=None)
+        assert pointer is not None
+        mine = agent_workspace_key(ws, _sha(b"only this chat"))
+        storage.fail_deletes = True
+
+        await store.forget(workspace_id=ws, thread_id="thr-1")
+
+        assert await store.current(workspace_id=ws, thread_id="thr-1") is None
+        assert await _reference_keys(ws) == set()
+        assert storage.deletes  # the purge did try, and storage refused
+        assert await _erasure(mine) == (True, False)
+        assert await _erasure(pointer.manifest_key) == (True, False)
 
     _scenario(body, tmp_path)
