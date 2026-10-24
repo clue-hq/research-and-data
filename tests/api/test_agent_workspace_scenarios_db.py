@@ -1,8 +1,10 @@
-"""The agent-workspace proofs (ruling AW-16; spec §11 tests 1–8, 10, 13, 14 and WS-18).
+"""The agent-workspace proofs (ruling AW-16; spec §11 tests 1–10, 13, 14 and WS-18).
 
 F3 Phase 1, plan Task 11: tests 1–4, 8, 10, 13, 14 and WS-18.
 F3 Phase 2, plan Task 7: tests 5, 6 and 7 — a cold chat's raw inputs lose their bytes and the next
 turn is told so, finished work survives every window, and an erasure leaves nothing anywhere.
+F3 Phase 3, plan Task 4: test 9 — research reconciliation on one machine reads a source run
+another machine saved, from its snapshot.
 
 Each scenario runs the real pieces end to end: one database (the lane's throwaway test database),
 one filesystem storage standing in for R2, and two or three worker areas claimed from one
@@ -43,6 +45,7 @@ from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
 from clue_api.agent_workspace_files_card import build_workspace_files_card
 from clue_api.agent_workspace_retention import AgentWorkspaceRetentionJob
 from clue_api.agent_workspace_snapshots import SNAPSHOT_REFERENCE_KIND, DbWorkspaceSnapshotStore
+from clue_api.quality_research_wiring import copy_source_run_files, write_reconciliation_files
 from clue_api.sandbox.policy_sweep import snapshot as sweep_snapshot
 from clue_api.sandbox.policy_sweep import sweep
 from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
@@ -647,6 +650,85 @@ def test_8_cleanup_stays_in_its_own_area(tmp_path: Path) -> None:
                 assert b.agent(world.ws).is_dir()
             finally:
                 await b.factory.release_saved(running)
+
+    run_async(scenario())
+
+
+def test_9_research_reconciliation_reads_the_source_snapshot_across_roots(tmp_path: Path) -> None:
+    """§11 test 9: a reconciling research turn on one machine copies the notes and raw reads of
+    a source run another machine saved, byte for byte, and says which snapshot it read.
+
+    Root B holds nothing of the source run before the copy, so every byte the reconciling turn
+    gets must have come back from the source run's snapshot — not from a leftover local copy.
+    """
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            source_thread = f"research-quality-{uuid.uuid4()}"
+            reconciling_thread = f"research-quality-{uuid.uuid4()}"
+            # Non-ASCII text and a raw read: byte identity is about more than plain ASCII.
+            files = {
+                "work/notes.md": "Renewal cycle ≈ 42 days — confirmed by two reads.\n".encode(),
+                "reads/raw.json": b'{"deals": 28, "owner": "Zo\xc3\xab", "stages": ["won"]}',
+            }
+
+            a = world.machine()
+            source = await _open(
+                world, a, fence=await world.fence("worker-a"), thread=source_thread
+            )
+            try:
+                _write(source, files)
+                saved = await source.save_snapshot()
+                assert (saved.status, saved.version) == ("saved", 1)
+            finally:
+                await a.factory.release_saved(source)
+
+            b = world.machine()
+            assert b.area.path != a.area.path
+            # B is cold: nothing of the source run, under any path, is on its disk.
+            assert not b.agent(world.ws, source_thread).exists()
+            assert not any(source_thread in str(p) for p in b.area.path.rglob("*"))
+
+            lease = await _open(world, b, thread=reconciling_thread)
+            source_on_b = await _open(world, b, thread=source_thread)
+            try:
+                assert source_on_b.restore_report is not None
+                assert source_on_b.restore_report.warm is False
+                assert source_on_b.restore_report.downloaded == len(files)
+                block = await copy_source_run_files(
+                    lease=lease,
+                    source_lease=source_on_b,
+                    readable_prefixes=_policy().readable_prefixes,
+                    source_thread_id=source_thread,
+                )
+            finally:
+                await b.factory.release_saved(source_on_b)
+            try:
+                expected = {"thread_id": source_thread, "version": 1, "files_copied": 2}
+                assert block == expected
+                # The copies are in the reconciling turn's own folders on B, as A wrote them —
+                # ``work/`` through the text write, ``reads/`` through the spill path.
+                for path, data in files.items():
+                    assert _bytes(b, world.ws, path, thread=reconciling_thread) == data, path
+                assert (
+                    await lease.backend.read_text("work/notes.md")
+                    == files["work/notes.md"].decode()
+                )
+
+                await write_reconciliation_files(
+                    lease=lease,
+                    reconciliation={
+                        "claims": [{"id": "c-1", "status": "stale"}],
+                        "_editorial_system": "Reconcile the claims against the source notes.",
+                    },
+                    source_snapshot=block,
+                )
+                written = json.loads(
+                    await lease.backend.read_text("work/reconciliation/input.json")
+                )
+                assert written["source_snapshot"] == expected
+            finally:
+                await b.factory.release_saved(lease)
 
     run_async(scenario())
 
