@@ -16,6 +16,8 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.crm.clue_fields import (
+    CLUE_FIELDS,
+    clue_field,
     clue_fields_state,
     mark_clue_field_gone,
     record_clue_fields,
@@ -65,13 +67,28 @@ async def _other_connection(conn: Any, workspace_id: str, provider: str) -> UUID
     return connection_id
 
 
+_HUBSPOT = CLUE_FIELDS["hubspot"]
 _HUBSPOT_NAMES = (
-    "clue_tier",
-    "clue_research_link",
-    "clue_id",
-    "clue_committee_role",
-    "clue_contact_link",
+    "companies.clue_tier",
+    "companies.clue_research_link",
+    "companies.clue_id",
+    "contacts.clue_committee_role",
+    "contacts.clue_contact_link",
+    "contacts.clue_id",
 )
+
+
+async def _record_hubspot(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+    await record_clue_fields(
+        conn,
+        connection_id=connection.connection_id,
+        workspace_id=seeded.workspace_id,
+        provider="hubspot",
+        created=_HUBSPOT,
+        permission_set_id=None,
+        label_type_id="42",
+        status="ready",
+    )
 
 
 def test_nothing_is_recorded_before_setup(tmp_path: Path) -> None:
@@ -83,20 +100,12 @@ def test_nothing_is_recorded_before_setup(tmp_path: Path) -> None:
 
 def test_setup_is_recorded_per_connection(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
-        await record_clue_fields(
-            conn,
-            connection_id=connection.connection_id,
-            workspace_id=seeded.workspace_id,
-            provider="hubspot",
-            created=_HUBSPOT_NAMES,
-            permission_set_id=None,
-            label_type_id="42",
-            status="ready",
-        )
+        await _record_hubspot(conn, seeded, connection)
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
         assert state is not None
         assert state.status == "ready"
         assert state.provider == "hubspot"
+        # Names are object-qualified: Clue id exists on both objects.
         assert state.created_names == _HUBSPOT_NAMES
         assert state.gone_names == ()
         assert state.label_type_id == "42"
@@ -109,9 +118,52 @@ def test_setup_is_recorded_per_connection(tmp_path: Path) -> None:
     _run(tmp_path, "perconn", body)
 
 
+def test_a_partial_setup_says_which_of_two_same_named_fields_exists(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        sf = await _other_connection(conn, seeded.workspace_id, "salesforce")
+        account_id = clue_field("salesforce", "company", "Clue_Id__c")
+        contact_id = clue_field("salesforce", "contact", "Clue_Id__c")
+        await record_clue_fields(
+            conn,
+            connection_id=sf,
+            workspace_id=seeded.workspace_id,
+            provider="salesforce",
+            created=(account_id,),
+            permission_set_id=None,
+            label_type_id=None,
+            status="partial",
+        )
+        state = await clue_fields_state(conn, connection_id=sf)
+        assert state is not None
+        assert state.created_names == ("Account.Clue_Id__c",)
+        assert account_id.qualified_name in state.created_names
+        assert contact_id.qualified_name not in state.created_names
+
+    _run(tmp_path, "partial", body)
+
+
+def test_a_field_of_another_provider_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        with pytest.raises(ValueError, match="not a hubspot Clue field"):
+            await record_clue_fields(
+                conn,
+                connection_id=connection.connection_id,
+                workspace_id=seeded.workspace_id,
+                provider="hubspot",
+                created=CLUE_FIELDS["salesforce"],
+                permission_set_id=None,
+                label_type_id=None,
+                status="partial",
+            )
+
+    _run(tmp_path, "otherprov", body)
+
+
 def test_recording_again_replaces_the_row(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         sf = await _other_connection(conn, seeded.workspace_id, "salesforce")
+        tier = clue_field("salesforce", "company", "Clue_Tier__c")
+        account_id = clue_field("salesforce", "company", "Clue_Id__c")
         common = {
             "connection_id": sf,
             "workspace_id": seeded.workspace_id,
@@ -119,24 +171,20 @@ def test_recording_again_replaces_the_row(tmp_path: Path) -> None:
             "label_type_id": None,
         }
         await record_clue_fields(
-            conn,
-            **common,
-            created=("Clue_Tier__c",),
-            permission_set_id=None,
-            status="partial",
+            conn, **common, created=(tier,), permission_set_id=None, status="partial"
         )
-        await mark_clue_field_gone(conn, connection_id=sf, crm_name="Clue_Tier__c")
+        await mark_clue_field_gone(conn, connection_id=sf, obj="company", crm_name="Clue_Tier__c")
         await record_clue_fields(
             conn,
             **common,
-            created=("Clue_Tier__c", "Clue_Id__c"),
+            created=(tier, account_id),
             permission_set_id="0PS000000000001",
             status="ready",
         )
         state = await clue_fields_state(conn, connection_id=sf)
         assert state is not None
         assert state.status == "ready"
-        assert state.created_names == ("Clue_Tier__c", "Clue_Id__c")
+        assert state.created_names == ("Account.Clue_Tier__c", "Account.Clue_Id__c")
         assert state.permission_set_id == "0PS000000000001"
         # A completed setup put the field back: nothing is gone any more.
         assert state.gone_names == ()
@@ -147,43 +195,53 @@ def test_recording_again_replaces_the_row(tmp_path: Path) -> None:
 
 def test_a_field_found_gone_flips_the_state_to_gone(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
-        await record_clue_fields(
-            conn,
-            connection_id=connection.connection_id,
-            workspace_id=seeded.workspace_id,
-            provider="hubspot",
-            created=_HUBSPOT_NAMES,
-            permission_set_id=None,
-            label_type_id="42",
-            status="ready",
-        )
-        await mark_clue_field_gone(
-            conn, connection_id=connection.connection_id, crm_name="clue_tier"
-        )
-        first = await clue_fields_state(conn, connection_id=connection.connection_id)
+        await _record_hubspot(conn, seeded, connection)
+        cid = connection.connection_id
+        await mark_clue_field_gone(conn, connection_id=cid, obj="company", crm_name="clue_tier")
+        first = await clue_fields_state(conn, connection_id=cid)
         assert first is not None
         assert first.status == "gone"
-        assert first.gone_names == ("clue_tier",)
+        assert first.gone_names == ("companies.clue_tier",)
         assert first.gone_at is not None
         # Still recorded as created: Clue made it; the CRM no longer has it.
         assert first.created_names == _HUBSPOT_NAMES
 
-        await mark_clue_field_gone(
-            conn, connection_id=connection.connection_id, crm_name="clue_tier"
-        )
-        await mark_clue_field_gone(conn, connection_id=connection.connection_id, crm_name="clue_id")
-        second = await clue_fields_state(conn, connection_id=connection.connection_id)
+        await mark_clue_field_gone(conn, connection_id=cid, obj="company", crm_name="clue_tier")
+        await mark_clue_field_gone(conn, connection_id=cid, obj="contact", crm_name="clue_id")
+        second = await clue_fields_state(conn, connection_id=cid)
         assert second is not None
-        assert second.gone_names == ("clue_tier", "clue_id")
+        # Only the contact's Clue id is gone; the company's is not.
+        assert second.gone_names == ("companies.clue_tier", "contacts.clue_id")
+        assert "companies.clue_id" not in second.gone_names
         assert second.gone_at == first.gone_at  # when it was FIRST found gone
 
     _run(tmp_path, "gone", body)
 
 
+def test_marking_a_name_that_is_not_a_clue_field_is_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await _record_hubspot(conn, seeded, connection)
+        cid = connection.connection_id
+        with pytest.raises(KeyError):
+            await mark_clue_field_gone(conn, connection_id=cid, obj="company", crm_name="industry")
+        with pytest.raises(KeyError):  # Salesforce's name on a HubSpot connection
+            await mark_clue_field_gone(
+                conn, connection_id=cid, obj="company", crm_name="Clue_Tier__c"
+            )
+        with pytest.raises(KeyError):  # a contact field named on the company
+            await mark_clue_field_gone(
+                conn, connection_id=cid, obj="company", crm_name="clue_committee_role"
+            )
+        state = await clue_fields_state(conn, connection_id=cid)
+        assert state is not None and state.status == "ready"
+
+    _run(tmp_path, "notclue", body)
+
+
 def test_marking_gone_without_a_setup_records_nothing(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
         await mark_clue_field_gone(
-            conn, connection_id=connection.connection_id, crm_name="clue_tier"
+            conn, connection_id=connection.connection_id, obj="company", crm_name="clue_tier"
         )
         assert await clue_fields_state(conn, connection_id=connection.connection_id) is None
 

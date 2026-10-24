@@ -118,3 +118,13 @@ def test_every_field_is_labelled_and_keyed_once() -> None:
     assert {(f.object, f.key) for f in CLUE_FIELDS["hubspot"]} < {
         (f.object, f.key) for f in CLUE_FIELDS["salesforce"]
     }
+
+
+def test_qualified_names_tell_the_two_clue_ids_apart() -> None:
+    assert clue_field("salesforce", "company", "Clue_Id__c").qualified_name == "Account.Clue_Id__c"
+    assert clue_field("salesforce", "contact", "Clue_Id__c").qualified_name == "Contact.Clue_Id__c"
+    assert clue_field("hubspot", "company", "clue_id").qualified_name == "companies.clue_id"
+    assert clue_field("hubspot", "contact", "clue_id").qualified_name == "contacts.clue_id"
+    for fields in CLUE_FIELDS.values():
+        names = [f.qualified_name for f in fields]
+        assert len(names) == len(set(names))

@@ -7,10 +7,12 @@ Create Date: 2026-10-24 16:04:46.908841+00:00
 CRM Phase 4, Task 1 (rulings R-13.1, R-13.2): a workspace owner or admin lets Clue set up its own
 fields in the connected CRM (a HubSpot property group and properties plus a "Possible duplicate"
 contact association label; Salesforce custom fields plus a "Clue fields" permission set).
-``crm_clue_fields`` is one row per connection recording what that setup left in the CRM: the CRM
-names of the fields Clue created, the Salesforce permission set id, the HubSpot association label
-type id, its status (``ready`` everything is there; ``partial`` setup stopped part way; ``gone`` a
-field Clue created has since disappeared from the CRM), which names were found gone and when.
+``crm_clue_fields`` is one row per connection recording what that setup left in the CRM: the
+object-qualified names of the fields Clue created (``Account.Clue_Id__c``, ``contacts.clue_id``;
+the same CRM name exists on both objects), the Salesforce permission set id, the HubSpot
+association label type id, its status (``ready`` everything is there; ``partial`` setup stopped
+part way; ``gone`` a field Clue created has since disappeared from the CRM), which names were
+found gone and when.
 
 The row's workspace and provider must be its connection's own: the composite FK points at a new
 ``(connection_id, workspace_id, provider)`` key on ``workspace_integration_connection``. A

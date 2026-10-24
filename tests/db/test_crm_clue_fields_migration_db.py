@@ -58,7 +58,7 @@ async def _write_rows() -> dict[str, Any]:
             "ws": ws,
             "provider": "hubspot",
             "status": "ready",
-            "names": ["clue_tier", "clue_id"],
+            "names": ["companies.clue_tier", "contacts.clue_id"],
             "ps": None,
             "label": "17",
         }
@@ -118,7 +118,7 @@ def test_crm_clue_fields_round_trip_with_a_populated_row() -> None:
         assert at_head["anchor"] == 1
         row = at_head["row"]
         assert row["status"] == "ready"
-        assert row["created_names"] == ["clue_tier", "clue_id"]
+        assert row["created_names"] == ["companies.clue_tier", "contacts.clue_id"]
         assert row["gone_names"] == []
         assert row["gone_at"] is None
         assert row["label_type_id"] == "17"

@@ -78,6 +78,12 @@ class ClueField:
     reference_to: str | None = None
     relationship_name: str | None = None
 
+    @property
+    def qualified_name(self) -> str:
+        """The field's name with its CRM object (``Account.Clue_Id__c``, ``contacts.clue_id``):
+        the form the registry stores, since the same CRM name exists on both objects."""
+        return f"{self.crm_object}.{self.crm_name}"
+
 
 @dataclass(frozen=True)
 class HubSpotPropertyGroup:
@@ -234,7 +240,7 @@ class ClueFieldsState:
 
     connection_id: UUID
     workspace_id: str
-    provider: str
+    provider: CrmProvider
     status: ClueFieldsStatus
     created_names: tuple[str, ...]
     gone_names: tuple[str, ...]
@@ -275,13 +281,19 @@ async def record_clue_fields(
     connection_id: UUID,
     workspace_id: str,
     provider: CrmProvider,
-    created: Iterable[str],
+    created: Iterable[ClueField],
     permission_set_id: str | None,
     label_type_id: str | None,
     status: Literal["ready", "partial"],
 ) -> None:
-    """Record what a setup run left in the CRM. A later run replaces the record: it found or made
-    every field it lists, so nothing it lists is gone any more."""
+    """Record what a setup run left in the CRM: ``created`` are the Clue fields it found or made,
+    stored by :attr:`ClueField.qualified_name`. A later run replaces the record, so nothing it
+    lists is gone any more. A field that is not one of ``provider``'s is a ``ValueError``."""
+    names: list[str] = []
+    for field in created:
+        if field not in CLUE_FIELDS[provider]:
+            raise ValueError(f"{field.qualified_name} is not a {provider} Clue field")
+        names.append(field.qualified_name)
     await conn.execute(
         text(
             "INSERT INTO crm_clue_fields (connection_id, workspace_id, provider, status, "
@@ -297,7 +309,7 @@ async def record_clue_fields(
             "ws": workspace_id,
             "provider": provider,
             "status": status,
-            "created": list(created),
+            "created": names,
             "ps": permission_set_id,
             "label": label_type_id,
         },
@@ -305,10 +317,21 @@ async def record_clue_fields(
 
 
 async def mark_clue_field_gone(
-    conn: AsyncConnection, *, connection_id: UUID, crm_name: str
+    conn: AsyncConnection, *, connection_id: UUID, obj: ClueObject, crm_name: str
 ) -> None:
-    """Remember that the CRM no longer has the Clue field ``crm_name``: the setup is ``gone``
-    until set up again. Nothing is recorded for a connection that was never set up."""
+    """Remember that the CRM no longer has the Clue field ``crm_name`` on ``obj``: the setup is
+    ``gone`` until set up again. Nothing is recorded for a connection that was never set up; a
+    name that is not one of the connection's provider's Clue fields on ``obj`` is a ``KeyError``.
+    """
+    provider = (
+        await conn.execute(
+            text("SELECT provider FROM crm_clue_fields WHERE connection_id = :c"),
+            {"c": connection_id},
+        )
+    ).scalar_one_or_none()
+    if provider is None:
+        return
+    field = clue_field(provider, obj, crm_name)
     await conn.execute(
         text(
             "UPDATE crm_clue_fields SET status = 'gone', gone_at = COALESCE(gone_at, now()), "
@@ -316,5 +339,5 @@ async def mark_clue_field_gone(
             "ELSE array_append(gone_names, CAST(:name AS text)) END, updated_at = now() "
             "WHERE connection_id = :c"
         ),
-        {"c": connection_id, "name": crm_name},
+        {"c": connection_id, "name": field.qualified_name},
     )
