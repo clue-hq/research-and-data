@@ -345,6 +345,30 @@ def test_tampered_blob_raises_corrupt(tmp_path: Path) -> None:
     _scenario(body, tmp_path)
 
 
+def test_a_corrupt_file_in_the_area_never_falls_back_to_its_phase_1_key(tmp_path: Path) -> None:
+    """Review area 1, T3: ``read_file`` tries the file's own area, then its Phase 1 key. A live row
+    is the claim that these are the bytes, so bytes that fail their hash there are corrupt — not a
+    reason to quietly serve whatever the old key holds. ``test_tampered_blob_raises_corrupt`` has
+    no old key at all, so a read that wrongly fell through raised there too and proved nothing;
+    here the old key holds the GOOD bytes, so only a read that stops at the corrupt row raises."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        data = b"the file as it was saved"
+        entry = _entry("scratch/a.md", data)
+        old_key = await _record_legacy(ws, storage, data, "thr-1")
+        await store.store_files(workspace_id=ws, files=[(entry, data)])
+        new_key = agent_workspace_key(ws, entry.sha256)
+        await FsStorage.put(storage, new_key, b"evil", media_type="text/plain")
+        # Both rows live; the old key still serves the right bytes.
+        assert await storage.get(old_key) == data
+
+        with pytest.raises(SnapshotCorrupt, match="does not match its hash"):
+            await store.read_file(workspace_id=ws, entry=entry)
+
+    _scenario(body, tmp_path)
+
+
 def test_storage_down_raises_restore_unavailable(tmp_path: Path) -> None:
     async def body(ws: str, storage: CountingStorage) -> None:
         store = DbWorkspaceSnapshotStore(storage=storage)
