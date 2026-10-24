@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-24 — Phase 3 Tasks 1–11 built on `feat/crm-integration-phase-3` (unpushed); live check steps 1–3 passed on both test CRMs ([`2026-10-23-phase-3-live-check-findings.md`](2026-10-23-phase-3-live-check-findings.md)); L-1/L-5/L-6/L-7 fixed by Tasks 10–11; step 4 (deleted-list recovery), a live re-run of Tasks 10–11 and the whole-branch review remain._
+_Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `feat/crm-integration-phase-3`, unpushed; live check passed on both test CRMs incl. deleted-list recovery ([`2026-10-23-phase-3-live-check-findings.md`](2026-10-23-phase-3-live-check-findings.md)); whole-branch review done, fixes in. Open: L-14 (founder undecided), live proof of the L-3 re-read and a Salesforce deleted campaign._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -51,14 +51,15 @@ _Last updated: 2026-10-24 — Phase 3 Tasks 1–11 built on `feat/crm-integratio
 - ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 
 ## Phase 3 — first writes (a few at a time)
-- 🔨 Plan `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md` (branch `feat/crm-integration-phase-3`, unpushed): Tasks 1–11 built and reviewed task by task; Head of ABM v80 (recipe 40, manual v26, crm-writing v3, stage0-interview v53)
-- ✅ Clue's own list per project (R-11.11): HubSpot company list / Salesforce campaign (created active, "In Progress", R-12.9), kept by id, one list for many projects, `find_crm_list` / `link_crm_list`, marked gone when the CRM deleted it — live-checked on both CRMs (recovery after a deleted list: step 4, not yet run)
+- ✅ Plan `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md` (branch `feat/crm-integration-phase-3`, unpushed): Tasks 1–12 built and reviewed task by task, whole-branch review + one fix pass; Head of ABM v81 (recipe 41, manual v27, crm-writing v4, stage0-interview v54)
+- ✅ Clue's own list per project (R-11.11): HubSpot company list / Salesforce campaign (created active, "In Progress", R-12.9), kept by id, one list for many projects, `find_crm_list` / `link_crm_list`, marked gone when the CRM deleted it — live-checked on both CRMs — recovery after a deleted list live-checked (HubSpot); Salesforce deleted campaign unit-tested
 - ✅ HubSpot Target account + ICP tier from Clue's fit bands (R-12.1) — live-checked
 - ✅ `read_crm_targets`: what may be written about a project's accounts and committee (R-8.7 / R-12.5), emails graded `verified_smtp` or `catch_all_valid` (R-12.10), names cleaned before splitting (R-12.12), held-back fields named — live-checked (name cleaning: re-run owed)
 - ✅ Buying-committee contacts and missing companies/accounts created first (R-6.18); person values checked in prepare against the targets; record links Clue entity ↔ CRM record — live-checked on both CRMs
-- ✅ One card can use the records it creates (`new:company:<domain>`, `new:contact:<email>`, R-12.11) — tests only; live re-run owed
-- ✅ Card shows names, not ids (R-12.13); a Clue-written message is never recorded as the person's words (R-12.14) — tests only; live re-run owed
-- ⬜ Whole-branch review + one fix pass; live re-run of R-12.11–R-12.14; step 4
+- ✅ One card can use the records it creates (`new:company:<domain>`, `new:contact:<email>`, R-12.11) — live-checked on both CRMs
+- ✅ Card shows names, not ids (R-12.13) — live-checked; a Clue-written message is not recorded as the person's words (R-12.14, prompt only — held on most wake turns, not all: L-14 open)
+- ✅ A list deleted in the CRM counts as gone (R-12.15), a turn's open cards are always shown (R-12.16), no internal ids in replies (R-12.17), live card progress (R-12.18)
+- ⬜ L-14 (code check vs prompt) — founder to decide; live proof of the L-3 late-value re-read
 - ⏸ Duplicate tagging and "possible duplicate" links → Phase 4 (R-12.4)
 
 ## Phase 4 — Clue's own fields (admin opt-in)

@@ -87,10 +87,29 @@ Developer Edition. Driven through the in-app browser (founder asked Claude to dr
 
 The `retry_of` misuse (L-9) happened again.
 
-## Not exercised yet
+## Step 4 re-run after Task 12 (2026-10-24, Head of ABM v81): passed
 
-- Deleted-list recovery (step 4) passing end to end — after L-12 is fixed.
+"Add ATMA Hotel Group and Baywood Hotels to our Clue list" (list 18 deleted in HubSpot by the
+founder): the agent's first proposal (create the list again + both adds via `new:<name>`) was refused
+`crm_list_exists` — Clue still kept 18 as live (L-17). Its second proposal (adds to 18) was allowed;
+both adds failed with HubSpot's deleted-list answer and **Clue marked 18 gone** (R-12.15 / L-12
+fixed). The wake turn proposed creating "Clue: Conduit AI hotel operators" + both adds on one card;
+allowed → HubSpot list 19 created, both companies on it (read back from HubSpot), 19 kept for the
+project, 18 recorded gone. Every card showed (R-12.16); no wake turn recorded a Clue-written message
+(R-12.14 held on these turns).
+
+| # | What | Severity | Proposed |
+|---|---|---|---|
+| L-17 | A kept list deleted in the CRM is only discovered after a failing add: a fresh create of the same name is refused `crm_list_exists` first, costing one card the person would never want to allow | Important | Before refusing, read the kept list by id; if the CRM says it does not exist, mark it gone and let the create proceed (both CRMs) — final fix pass, under R-12.15 |
+
+The final whole-branch review (2026-10-24) found the Salesforce twin of L-12 (a campaign deleted in
+Salesforce never marked gone); fixed in the final fix pass with L-17 and L-3.
+
+## Not exercised live
+
 - Removing a member Clue did not add (unit-tested).
+- A Salesforce campaign deleted in Salesforce (unit-tested in the final fix pass).
+- L-14 (code check for Clue-written messages): left undecided by the founder; the prompt line stays.
 
 ## Cost
 
