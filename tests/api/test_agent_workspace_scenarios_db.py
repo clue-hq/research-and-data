@@ -285,12 +285,12 @@ async def _turn(
         await machine.factory.release_saved(lease)
 
 
-def _bytes(machine: Machine, ws: str, path: str) -> bytes:
-    return (machine.agent(ws) / path).read_bytes()
+def _bytes(machine: Machine, ws: str, path: str, thread: str = THREAD) -> bytes:
+    return (machine.agent(ws, thread) / path).read_bytes()
 
 
-def _has(machine: Machine, ws: str, path: str) -> bool:
-    return (machine.agent(ws) / path).exists()
+def _has(machine: Machine, ws: str, path: str, thread: str = THREAD) -> bool:
+    return (machine.agent(ws, thread) / path).exists()
 
 
 def _card(lease: AgentWorkspaceLease) -> dict[str, JsonValue]:
@@ -724,6 +724,186 @@ def test_ws18_resume_on_a_newer_profile(tmp_path: Path) -> None:
                 AgentResourceMaterializer().materialize(lease=lease, snapshot=old, seed_files=seeds)
                 assert (b.agent(world.ws) / ".deepagent" / "manifest.json").exists()
                 assert _bytes(b, world.ws, "scratch/plan.md") == b"my plan"
+            finally:
+                await b.factory.release_saved(lease)
+
+    run_async(scenario())
+
+
+#: The four other kinds of agent that open a workspace through the same layer, each with the
+#: thread id its production wiring builds (WS-34). None of them files ``agent_turn_submission``
+#: rows or leases the thread's work id, so the snapshot row's own ``last_activity_at`` is the only
+#: activity the expiry job sees for them — which is why each is proved here and not only chats.
+CALLER_SHAPES = {
+    # platform/api/clue_api/account_research_turn_wiring.py
+    "account-research": f"account-research-{uuid.uuid4()}",
+    # platform/api/clue_api/specialist_wiring.py
+    "delegation": f"delegation-{uuid.uuid4()}",
+    # platform/api/clue_api/onboarding_synthesis_wiring.py — the extra segments are the point
+    "onboarding-synthesis": f"onboarding-synthesis-{uuid.uuid4()}-persona-icp_key_1",
+    # platform/api/clue_api/quality_research_wiring.py
+    "research-quality": f"research-quality-{uuid.uuid4()}",
+}
+
+
+@pytest.mark.parametrize("thread", list(CALLER_SHAPES.values()), ids=list(CALLER_SHAPES))
+def test_15_every_caller_shape_round_trips_and_expires(tmp_path: Path, thread: str) -> None:
+    """WS-34: a research run, a delegation, onboarding synthesis and a quality run, end to end.
+
+    Each restores, saves, continues on another machine, goes cold and loses its rough work's
+    bytes exactly as a chat does — opened the way its wiring opens it: no fence, no submissions.
+    """
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            receipts = StubReceipts()
+            a, b = world.machine(receipts=receipts), world.machine(receipts=receipts)
+            raw = f'{{"run": "{thread}"}}'.encode()
+            rough = f"notes for {thread}".encode()
+            finished = f"account,score\n{thread},10\n".encode()
+            files = {"reads/r.json": raw, "scratch/a.md": rough, "outputs/o.csv": finished}
+
+            lease = await _open(world, a, thread=thread)
+            try:
+                assert lease.restore_report is not None
+                assert lease.snapshot_base is not None
+                assert lease.snapshot_base.pointer is None  # a new run: nothing to restore
+                _write(lease, files)
+                report = await lease.save_snapshot()
+                assert (report.status, report.version) == ("saved", 1)
+            finally:
+                await a.factory.release_saved(lease)
+            # A's copy is only a cache: the sweep finds this folder id under its own key.
+            swept = AgentWorkspaceCacheJob(area=a.area, idle_s=0, max_bytes=0).run_once()
+            assert f"{world.ws}/{PROJECT}/{thread}" in swept.removed
+            assert not a.factory.chat_host_path(world.chat(thread)).exists()
+
+            # The run continues on another machine, which has never seen it.
+            lease = await _open(world, b, thread=thread)
+            try:
+                assert lease.restore_report is not None
+                assert lease.restore_report.warm is False
+                assert lease.restore_report.downloaded == len(files)
+                for path, data in files.items():
+                    assert _bytes(b, world.ws, path, thread) == data, path
+            finally:
+                await b.factory.release_saved(lease)
+
+            # Aged after its last restore (a restore is activity, WS-34a): past both windows.
+            await world.age(days=8, thread=thread)
+
+            job = await world.job(raw_s=RAW_S, working_s=WORKING_S).run_once()
+
+            assert (job.chats_checked, job.chats_expired, job.files_expired) == (1, 1, 2)
+            assert (job.skipped_busy, job.stale, job.failed) == (0, 0, 0)
+            manifest = await world.manifest(thread)
+            assert [entry.path for entry in manifest.live()] == ["outputs/o.csv"]
+            assert sorted(entry.path for entry in manifest.expired()) == [
+                "reads/r.json",
+                "scratch/a.md",
+            ]
+            for entry in manifest.expired():
+                assert entry.expired_at is not None
+                assert entry.receipt is not None
+                assert entry.receipt.read_again == receipts.read_again
+            assert await world.gone_from_storage(world.key(raw))
+            assert await world.gone_from_storage(world.key(rough))
+            assert await world.stored(world.key(finished))
+
+            # The run's next turn on B: the copies of the expired files go, the card says so.
+            lease = await _open(world, b, thread=thread)
+            try:
+                assert lease.restore_report is not None
+                assert (lease.restore_report.deleted, lease.restore_report.downloaded) == (2, 0)
+                assert not _has(b, world.ws, "reads/r.json", thread)
+                assert not _has(b, world.ws, "scratch/a.md", thread)
+                assert _bytes(b, world.ws, "outputs/o.csv", thread) == finished
+                card = _card(lease)
+                assert _paths(card, "live") == ["outputs/o.csv"]
+                assert sorted(_paths(card, "expired")) == ["reads/r.json", "scratch/a.md"]
+                tiers = {str(item["path"]): item["tier"] for item in _section(card, "expired")}
+                assert tiers == {"reads/r.json": "raw_input", "scratch/a.md": "working_file"}
+            finally:
+                await b.factory.release_saved(lease)
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("thread", list(CALLER_SHAPES.values()), ids=list(CALLER_SHAPES))
+def test_16_a_run_longer_than_its_window_keeps_its_files(tmp_path: Path, thread: str) -> None:
+    """Review Focus 2: the expiry lands while a run is still open, and the run loses nothing.
+
+    The run's save loses its compare-and-set to the job's expiry-only version, rebases onto it
+    (AW-24), and keeps every file the run wrote; the expired entry stays expired and its bytes
+    stay gone — the run's stale local copy of it must not upload them again.
+    """
+
+    async def scenario() -> None:
+        async with _world(tmp_path) as world:
+            receipts = StubReceipts()
+            a, b = world.machine(receipts=receipts), world.machine(receipts=receipts)
+            raw = f'{{"run": "{thread}"}}'.encode()
+            rough = f"notes for {thread}".encode()
+            lease = await _open(world, a, thread=thread)
+            try:
+                _write(lease, {"reads/r.json": raw, "scratch/a.md": rough})
+                assert (await lease.save_snapshot()).status == "saved"
+            finally:
+                await a.factory.release_saved(lease)
+
+            # The run opens (the restore stamps its activity) and is still running when, 3 days
+            # later, the job comes round: the raw window has passed, the working one has not.
+            run = await _open(world, a, thread=thread)
+            try:
+                assert _bytes(a, world.ws, "reads/r.json", thread) == raw
+                await world.age(days=3, thread=thread)
+
+                job = await world.job(raw_s=RAW_S, working_s=WORKING_S).run_once()
+
+                assert (job.chats_checked, job.chats_expired, job.files_expired) == (1, 1, 1)
+                assert (job.skipped_busy, job.stale, job.failed) == (0, 0, 0)
+                assert [e.path for e in (await world.manifest(thread)).expired()] == [
+                    "reads/r.json"
+                ]
+                assert await world.gone_from_storage(world.key(raw))
+
+                # The run writes its own work and saves, on the version it restored.
+                new = {"outputs/new.csv": b"a,b\n1,2\n", "scratch/b.md": b"more notes"}
+                _write(run, new)
+                report = await run.save_snapshot()
+                assert (report.status, report.version) == ("saved", 3)
+            finally:
+                await a.factory.release_saved(run)
+
+            manifest = await world.manifest(thread)
+            assert [entry.path for entry in manifest.live()] == [
+                "outputs/new.csv",
+                "scratch/a.md",
+                "scratch/b.md",
+            ]
+            gone = manifest.by_path()["reads/r.json"]
+            assert gone.expired_at is not None
+            assert gone.receipt is not None and gone.receipt.read_again == receipts.read_again
+            # The bytes did not come back with the run's save: the expiry stands in storage.
+            assert await world.gone_from_storage(world.key(raw))
+            assert await world.stored(world.key(rough))
+            for data in new.values():
+                assert await world.stored(world.key(data))
+            # The rebase dropped the run's released copy, as a restore would have.
+            assert not _has(a, world.ws, "reads/r.json", thread)
+
+            # Another machine picks the run up: the run's files, and the expired one as a receipt.
+            lease = await _open(world, b, thread=thread)
+            try:
+                assert lease.restore_report is not None
+                assert lease.restore_report.downloaded == 3
+                assert not _has(b, world.ws, "reads/r.json", thread)
+                assert _bytes(b, world.ws, "scratch/a.md", thread) == rough
+                for path, data in new.items():
+                    assert _bytes(b, world.ws, path, thread) == data
+                card = _card(lease)
+                assert _paths(card, "expired") == ["reads/r.json"]
+                assert _paths(card, "live") == ["outputs/new.csv", "scratch/a.md", "scratch/b.md"]
             finally:
                 await b.factory.release_saved(lease)
 
