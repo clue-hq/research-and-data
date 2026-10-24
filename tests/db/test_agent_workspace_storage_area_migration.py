@@ -7,6 +7,12 @@ area, so expiring one can never reach an upload, a Gallery artifact or a researc
 
 from __future__ import annotations
 
+import importlib.util
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from types import ModuleType
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -89,3 +95,66 @@ def test_a_receipt_lookup_by_operation_id_has_an_index() -> None:
         assert "(operation_id)" in indexed
 
     run_async(_with_rollback(body))
+
+
+class _RecordingOp:
+    """Alembic's ``op``, recording each statement and whether it ran in the autocommit block."""
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, bool]] = []
+        self._autocommit = False
+
+    def execute(self, statement: str) -> None:
+        self.statements.append((" ".join(statement.split()), self._autocommit))
+
+    def get_context(self) -> _RecordingOp:
+        return self
+
+    @contextmanager
+    def autocommit_block(self) -> Iterator[None]:
+        self._autocommit = True
+        try:
+            yield
+        finally:
+            self._autocommit = False
+
+
+def _migration(monkeypatch: pytest.MonkeyPatch) -> tuple[ModuleType, _RecordingOp]:
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "3f0b61c7a2d4_execution_node_operation_index.py"
+    )
+    spec = importlib.util.spec_from_file_location("_migration_3f0b61c7a2d4", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    recorder = _RecordingOp()
+    monkeypatch.setattr(module, "op", recorder)
+    return module, recorder
+
+
+def test_the_operation_index_is_built_without_blocking_journal_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fix pass 1, review A1-I1: a plain ``CREATE INDEX`` takes a SHARE lock and blocks every
+    write to ``execution_node`` for the whole build — every agent turn and research run stalls
+    during the deploy. Built ``CONCURRENTLY`` in the autocommit block, as the repo's other index
+    migrations are, dropping an INVALID leftover of an interrupted build first."""
+
+    module, recorder = _migration(monkeypatch)
+    module.upgrade()
+    assert recorder.statements == [
+        ("DROP INDEX CONCURRENTLY IF EXISTS execution_node_operation", True),
+        (
+            "CREATE INDEX CONCURRENTLY execution_node_operation ON execution_node (operation_id)",
+            True,
+        ),
+    ]
+
+    recorder.statements.clear()
+    module.downgrade()
+    assert recorder.statements == [
+        ("DROP INDEX CONCURRENTLY IF EXISTS execution_node_operation", True),
+    ]

@@ -19,6 +19,16 @@ forty of them on its critical path.
 uuid), so a plain b-tree on it is both small and selective. Nothing about the journal's semantics
 changes; this is a read path only.
 
+Built ``CONCURRENTLY`` inside Alembic's autocommit block, so a production deploy never blocks
+writes to the journal while the index builds — a plain ``CREATE INDEX`` takes a SHARE lock, and
+every agent turn, research job and plan execution writes journal nodes (review A1-I1).
+``CONCURRENTLY`` cannot run in a transaction, which is why the block commits first. An interrupted
+concurrent build leaves an INVALID index behind, which ``IF NOT EXISTS`` would then skip, so the
+upgrade drops any index of this name before building — an index only this migration makes. As in
+``702784fe02b7``: in a multi-step downgrade that fails at a LATER step, this drop has already
+committed while the version row rolls back, so the index stays missing until
+``alembic downgrade 22172f5ba3cb && alembic upgrade head``. That costs speed, not correctness.
+
 Hand-written and reversible.
 """
 
@@ -36,8 +46,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE INDEX execution_node_operation ON execution_node (operation_id)")
+    with op.get_context().autocommit_block():
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS execution_node_operation")
+        op.execute(
+            "CREATE INDEX CONCURRENTLY execution_node_operation ON execution_node (operation_id)"
+        )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX execution_node_operation")
+    with op.get_context().autocommit_block():
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS execution_node_operation")
