@@ -67,7 +67,7 @@ from clue_api.crm.composio_gateway import (
     composio_user_id,
 )
 from clue_api.crm.connections import CrmConnection, get_connection
-from clue_api.crm.lists import mark_gone, store_list
+from clue_api.crm.lists import link_project, mark_gone, store_list, stored_list
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
 from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
@@ -132,6 +132,11 @@ _SOQL = "SALESFORCE_RUN_SOQL_QUERY"
 #: Salesforce ids are matched in one query per this many records.
 _SOQL_CHUNK = 200
 _RESUMABLE = ("queued", "sending", "paused")
+#: A HubSpot value the read-back did not find is read once more after this pause (live check
+#: L-3): HubSpot applies some values a moment after it answers the update — a contact's
+#: ``associatedcompanyid`` follows the association the update makes — so a by-id read two
+#: seconds later can still show the old value.
+_READ_AGAIN_AFTER_S = 5.0
 
 NOT_APPLIED_MESSAGE = "The CRM reported success but the value did not change."
 NOT_CHOSEN_MESSAGE = "Not chosen on the permission card, so it was not sent."
@@ -151,6 +156,10 @@ NO_IN_PROGRESS_MESSAGE = (
 )
 #: A membership change of a list HubSpot no longer has (R-11.11 (4); Review Focus 3).
 LIST_GONE_MESSAGE = "The list no longer exists in HubSpot; find it by name or create it again."
+#: A membership change of a campaign Salesforce no longer has (R-12.15; final review).
+CAMPAIGN_GONE_MESSAGE = (
+    "The campaign no longer exists in Salesforce; find it by name or create it again."
+)
 #: Salesforce lets only Marketing Users create campaigns (Phase 3 Task 1 ruling).
 MARKETING_USER_MESSAGE = (
     "Your Salesforce user needs the Marketing User permission to create campaigns."
@@ -351,6 +360,8 @@ class _Seen:
     kind: FailureKind | None = None
     #: The name the CRM holds for a list or campaign it found (``list_create`` only).
     name: str | None = None
+    #: More than one Salesforce campaign has the name looked for (``list_create`` only).
+    ambiguous: bool = False
 
 
 @dataclass(frozen=True)
@@ -720,10 +731,12 @@ async def _read_lists(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
         if crm.connection.provider == "hubspot":
             seen[write.write_id] = await _read_hubspot_list(crm, write, name)
             continue
+        # Salesforce allows two campaigns of one name: by name, the newest first, and two
+        # found are said to be two (never one picked).
         where = (
             f"Id = {_soql_text(write.crm_id)}"
             if write.crm_id is not None
-            else f"Name = {_soql_text(name)}"
+            else f"Name = {_soql_text(name)} ORDER BY CreatedDate DESC"
         )
         result = await crm.call(
             _SOQL, {"query": f"SELECT Id, Name FROM Campaign WHERE {where} LIMIT 2"}
@@ -740,7 +753,9 @@ async def _read_lists(crm: _Crm, writes: Sequence[_Write]) -> dict[UUID, _Seen]:
             # Salesforce may answer the 18-character form of the id it gave.
             same = write.crm_id is not None and _sf_key(found_id) == _sf_key(write.crm_id)
             seen[write.write_id] = _Seen(
-                value=write.crm_id if same else found_id, name=_text(records[0].get("Name"))
+                value=write.crm_id if same else found_id,
+                name=_text(records[0].get("Name")),
+                ambiguous=write.crm_id is None and len(records) > 1,
             )
     return seen
 
@@ -820,6 +835,18 @@ def _before_send(crm: _Crm, write: _Write, seen: _Seen) -> _Outcome | None:
                 f"{crm.name} named the new record ({write.crm_id}) but it cannot be found; check "
                 f"{crm.name} before proposing it again.",
                 "not_applied",
+            )
+        if (
+            seen.value is not None
+            and write.kind == _LIST_CREATE
+            and write.attempts > 0
+            and seen.name == write.label
+            and seen.ambiguous
+        ):
+            return _failed(
+                f'{crm.name} has more than one campaign named "{write.label}", so Clue cannot '
+                f"tell which one it created; check {crm.name} before proposing it again.",
+                "conflict",
             )
         if (
             seen.value is not None
@@ -1068,11 +1095,19 @@ class CrmWriteHandler:
         run's check confirms them without sending them again (a stopped check counts as an
         attempt, :meth:`_read_stopped`)."""
         back = await _read(crm, accepted)
-        await self._record(
-            crm,
-            accepted,
-            {write.write_id: _after_send(write, back[write.write_id]) for write in accepted},
-        )
+        outcomes = {write.write_id: _after_send(write, back[write.write_id]) for write in accepted}
+        late = [
+            write
+            for write in accepted
+            if crm.connection.provider == "hubspot"
+            and write.kind == "field_update"
+            and outcomes[write.write_id].failure_kind == "not_applied"
+        ]
+        if late:  # HubSpot may apply it a moment later (L-3): read those once more
+            await self._sleep(_READ_AGAIN_AFTER_S)
+            again = await _read(crm, late)
+            outcomes.update({w.write_id: _after_send(w, again[w.write_id]) for w in late})
+        await self._record(crm, accepted, outcomes)
 
     async def _read_stopped(self, writes: Sequence[_Write], stop: _Stop) -> bool:
         """The check before sending met a rate limit or an unreachable CRM: that counts as an
@@ -1204,6 +1239,9 @@ class CrmWriteHandler:
             return [write for write in call if write.write_id not in refusals]
         (write,) = call
         result = await crm.execute(spec.slug, write.arguments)
+        if not result.successful and await _campaign_gone(crm, write, result):
+            await self._fail_gone_list(crm, call, result)
+            return []
         refused = _refused_inside(result.data) if result.successful else result.error or "Refused."
         if refused is not None:
             kind = None if result.successful else _refusal_kind(result)
@@ -1251,8 +1289,8 @@ class CrmWriteHandler:
     async def _fail_gone_list(
         self, crm: _Crm, call: Sequence[_Write], result: ExecuteResult
     ) -> None:
-        """HubSpot no longer has the list: Clue stops offering it, and every change of the call
-        fails in plain words, keeping HubSpot's answer (R-11.11 (4))."""
+        """The CRM no longer has the list or campaign: Clue stops offering it, and every change of
+        the call fails in plain words, keeping the CRM's answer (R-11.11 (4), R-12.15)."""
         _, response = crm_reply(result.error or "")
         async with self._conn_factory() as conn:
             await mark_gone(
@@ -1265,7 +1303,11 @@ class CrmWriteHandler:
                 write.write_id: _Outcome(
                     "failed",
                     failure_kind="other",
-                    crm_message=LIST_GONE_MESSAGE,
+                    crm_message=(
+                        LIST_GONE_MESSAGE
+                        if crm.connection.provider == "hubspot"
+                        else CAMPAIGN_GONE_MESSAGE
+                    ),
                     retryable=False,
                     crm_response=response if response is not None else result.error,
                 )
@@ -1443,6 +1485,21 @@ class CrmWriteHandler:
                         record_ref=str(write.record_ref),
                         write_id=write_id,
                     )
+                    kept = await stored_list(
+                        conn,
+                        connection_id=connection.connection_id,
+                        crm_list_id=str(write.list_ref),
+                    )
+                    if kept is not None and write.project_id is not None:
+                        # A list Clue keeps for another project is now this project's too, so
+                        # find_crm_list lists it here (final review).
+                        await link_project(
+                            conn,
+                            list_id=kept.list_id,
+                            project_id=write.project_id,
+                            workspace_id=connection.workspace_id,
+                            linked_by="person_named",
+                        )
                 elif write.kind == "list_removal":
                     await forget_membership_link(
                         conn,
@@ -1542,6 +1599,32 @@ def _list_gone(call: Sequence[_Write], result: ExecuteResult) -> bool:
         return False
     deleted = error.split(_DELETED_LISTS, 1)[1]
     return str(call[0].list_ref) in _DELETED_LIST_ID.findall(deleted)
+
+
+#: Salesforce's answers to a campaign add or removal naming a record it does not have: a
+#: deleted one (``ENTITY_IS_DELETED``) or an id that names nothing
+#: (``INVALID_CROSS_REFERENCE_KEY``). Either may be about the contact as well as the campaign;
+#: the campaign is read to tell.
+_SALESFORCE_MISSING_RECORD = ("ENTITY_IS_DELETED", "INVALID_CROSS_REFERENCE_KEY")
+
+
+async def _campaign_gone(crm: _Crm, write: _Write, result: ExecuteResult) -> bool:
+    """A Salesforce campaign membership change refused because the campaign of this call no
+    longer exists (final review: the Salesforce twin of L-12). Salesforce's answer does not say
+    which record is missing, so the campaign is read by its id: only an empty answer means gone.
+    A failed read, or a campaign still there (the contact was the missing one), is not."""
+    if crm.connection.provider != "salesforce" or write.kind not in _MEMBERSHIP:
+        return False
+    error = result.error or ""
+    if not any(code in error for code in _SALESFORCE_MISSING_RECORD):
+        return False
+    query = f"SELECT Id FROM Campaign WHERE Id = {_soql_text(str(write.list_ref))}"
+    try:
+        found = await crm.call(_SOQL, {"query": query})
+    except _Stop:
+        return False
+    records = _records(_unwrap(found.data), "records") if found.successful else None
+    return records == []
 
 
 def _expired_reason(connection: CrmConnection) -> tuple[str, str]:

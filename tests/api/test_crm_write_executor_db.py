@@ -97,6 +97,8 @@ class _WritingCrm(_FakeCrm):
         self.crm_lists: dict[str, str] = {}
         #: (campaign id, contact id) of each Salesforce campaign member.
         self.campaign_members: set[tuple[str, str]] = set()
+        #: More Salesforce campaigns as (id, name): Salesforce allows two of one name.
+        self.extra_campaigns: list[tuple[str, str]] = []
 
     @property
     def writes(self) -> list[tuple[str, dict[str, Any]]]:
@@ -190,11 +192,15 @@ class _WritingCrm(_FakeCrm):
         if slug == "SALESFORCE_RUN_SOQL_QUERY" and "FROM Campaign" in query:
             by_name = re.search(r"Name = '(.*)'", query)
             by_id = re.search(r"Id = '(.*)'", query)
+            name = None if by_name is None else by_name.group(1).split("'")[0]
             found = [
                 {"attributes": {"type": "Campaign"}, "Id": i, "Name": n}
-                for n, i in self.crm_lists.items()
-                if (by_name is not None and n == by_name.group(1))
-                or (by_id is not None and i == by_id.group(1))
+                for n, i in [
+                    *((n, i) for n, i in self.crm_lists.items()),
+                    *((n, i) for i, n in self.extra_campaigns),
+                ]
+                if (name is not None and n == name)
+                or (by_id is not None and i == by_id.group(1).split("'")[0])
             ]
             return ExecuteResult(
                 True, {"data": {"records": found, "totalSize": len(found), "done": True}}, None
@@ -369,8 +375,17 @@ def _context(connection: CrmConnection) -> WorkContext:
     )
 
 
+async def _no_sleep(seconds: float) -> None:
+    del seconds
+
+
 def _handler(
-    conn: Any, tmp_path: Path, gateway: _FakeCrm, budget: Any = None, **settings: Any
+    conn: Any,
+    tmp_path: Path,
+    gateway: _FakeCrm,
+    budget: Any = None,
+    sleep: Callable[[float], Awaitable[None]] = _no_sleep,
+    **settings: Any,
 ) -> CrmWriteHandler:
     return CrmWriteHandler(
         settings=_settings(**settings),
@@ -380,6 +395,7 @@ def _handler(
         ),
         conn_factory=conn_session_factory(conn),
         budget=budget or _FakeBudget(gateway),
+        sleep=sleep,
     )
 
 
@@ -415,8 +431,10 @@ async def _propose(
     *changes: ProposedChange,
     status: str = "queued",
     unselect: frozenset[str] = frozenset(),
+    project_id: str | None = None,
 ) -> UUID:
     """Prepare and log a proposal the way propose_crm_changes does, then move it to ``status``."""
+    project_id = project_id or seeded.project_id
     proposal_id = uuid4()
     calls_before = len(gateway.calls)
     batch = await prepare_changes(
@@ -425,7 +443,7 @@ async def _propose(
         budget=_FakeBudget(gateway),
         connection=connection,
         proposal_id=proposal_id,
-        project_id=seeded.project_id,
+        project_id=project_id,
         changes=await clear_people(conn, seeded, changes),
         version="v",
         settings=Settings(_env_file=None),
@@ -438,7 +456,7 @@ async def _propose(
         proposal_id=proposal_id,
         workspace_id=seeded.workspace_id,
         connection_id=connection.connection_id,
-        project_id=seeded.project_id,
+        project_id=project_id,
         thread_id=seeded.thread_id,
         turn_id=seeded.turn_id,
     )
@@ -2862,3 +2880,254 @@ def test_a_run_that_dies_between_the_stages_resumes_and_sends_each_change_once(
         assert await _proposal_status(conn, proposal_id) == "finished"
 
     _run(tmp_path, f"refresume{dies_at[8:15].lower()}", body)
+
+
+# --- Final fix pass (whole-branch review + live check L-3, L-17) ----------------------------
+
+
+CAMPAIGN_GONE = "The campaign no longer exists in Salesforce; find it by name or create it again."
+_SF_ENTITY_DELETED = '[{"message":"entity is deleted","errorCode":"ENTITY_IS_DELETED","fields":[]}]'
+_SF_BAD_REFERENCE = (
+    '[{"message":"invalid cross reference id","errorCode":"INVALID_CROSS_REFERENCE_KEY",'
+    '"fields":[]}]'
+)
+
+
+async def _keep_campaign(conn: Any, seeded: Any, connection: CrmConnection, campaign: str) -> None:
+    await store_list(
+        conn,
+        workspace_id=seeded.workspace_id,
+        connection_id=connection.connection_id,
+        provider="salesforce",
+        crm_object="contact",
+        crm_list_id=campaign,
+        name="Clue: US employer benefits",
+        kind="salesforce_campaign",
+        created_by_clue=True,
+        created_by_write_id=None,
+        project_id=seeded.project_id,
+    )
+
+
+def _add_to_campaign(contact: str, campaign: str = "701A") -> ProposedChange:
+    return ProposedChange(
+        "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
+        {"campaign_id": campaign, "contact_id": contact},
+        "committee",
+    )
+
+
+@pytest.mark.parametrize("answer", [_SF_ENTITY_DELETED, _SF_BAD_REFERENCE], ids=["deleted", "xref"])
+def test_a_campaign_deleted_in_salesforce_is_marked_gone_and_the_add_fails(
+    tmp_path: Path, answer: str
+) -> None:
+    """Final review (the Salesforce twin of L-12): the person deleted the campaign in
+    Salesforce. The add is refused; Clue reads the campaign by its id, finds it gone, marks it
+    gone and says so, so the agent can create it again (R-12.15)."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await _keep_campaign(conn, seeded, connection, "701A")
+        refusal = ExecuteResult(False, {"http_error": "400", "status_code": 400}, answer)
+        gateway = _WritingCrm(failures={"SALESFORCE_ADD_CONTACT_TO_CAMPAIGN": [refusal]})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _add_to_campaign("003A"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = (await _writes(conn, proposal_id))["003A"]
+        assert (change["status"], change["retryable"]) == ("failed", False)
+        assert change["crm_message"] == CAMPAIGN_GONE
+        assert change["crm_response"] == json.loads(answer)
+        # Clue asked Salesforce about this call's campaign before calling it gone.
+        assert (
+            "SALESFORCE_RUN_SOQL_QUERY",
+            {"query": "SELECT Id FROM Campaign WHERE Id = '701A'"},
+        ) in gateway.calls
+        gone = await conn.scalar(
+            text("SELECT gone_at IS NOT NULL FROM crm_list WHERE crm_list_id = '701A'")
+        )
+        assert gone is True
+
+    _run(tmp_path, f"campaigngone{answer[14:18]}", body, provider="salesforce")
+
+
+def test_a_deleted_contact_does_not_mark_the_campaign_gone(tmp_path: Path) -> None:
+    """The same "entity is deleted" answer is about the contact when the campaign is still
+    there: an ordinary refusal, and the campaign stays offered."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        await _keep_campaign(conn, seeded, connection, "701A")
+        refusal = ExecuteResult(
+            False, {"http_error": "400", "status_code": 400}, _SF_ENTITY_DELETED
+        )
+        gateway = _WritingCrm(failures={"SALESFORCE_ADD_CONTACT_TO_CAMPAIGN": [refusal]})
+        gateway.crm_lists["Clue: US employer benefits"] = "701A"
+        proposal_id = await _propose(conn, seeded, connection, gateway, _add_to_campaign("003A"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = (await _writes(conn, proposal_id))["003A"]
+        assert change["status"] == "failed"
+        assert change["crm_message"] != CAMPAIGN_GONE
+        assert change["failure_kind"] == "not_found"
+        gone = await conn.scalar(text("SELECT gone_at FROM crm_list WHERE crm_list_id = '701A'"))
+        assert gone is None
+
+    _run(tmp_path, "campaignkept", body, provider="salesforce")
+
+
+class _LaggingCrm(_WritingCrm):
+    """HubSpot applies a contact's change, but reading it by id shows the old value for the
+    first ``lag`` reads after the write (what the live check saw for ``associatedcompanyid``,
+    which HubSpot derives from the association it makes)."""
+
+    def __init__(self, lag: int, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.lag = lag
+        self.stale: dict[str, dict[str, Any]] = {}
+
+    async def execute(self, *, slug: str, arguments: Mapping[str, Any], **kwargs: Any) -> Any:
+        if slug == "HUBSPOT_UPDATE_CONTACTS":
+            for item in arguments["inputs"]:
+                self.stale[str(item["id"])] = dict(self.records.get(str(item["id"]), {}))
+        if (
+            slug == "HUBSPOT_READ_CRM_OBJECT_BY_ID"
+            and self.lag
+            and arguments["objectId"] in (self.stale)
+        ):
+            self.lag -= 1
+            self.calls.append((slug, dict(arguments)))
+            old = self.stale[arguments["objectId"]]
+            props = {name: old.get(name) for name in arguments["properties"]}
+            return ExecuteResult(
+                True, {"data": {"id": arguments["objectId"], "properties": props}}, None
+            )
+        return await super().execute(slug=slug, arguments=arguments, **kwargs)
+
+
+def test_a_hubspot_value_applied_a_moment_later_is_confirmed(tmp_path: Path) -> None:
+    """L-3: HubSpot applied the contact's change, but the read 2 s after the send still showed
+    the old value. Clue reads it again after a short wait before calling it not applied."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _LaggingCrm(lag=1, records={"201": {"jobtitle": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _title("201", "CFO"))
+        waits: list[float] = []
+
+        async def sleep(seconds: float) -> None:
+            waits.append(seconds)
+
+        await _handle(_handler(conn, tmp_path, gateway, sleep=sleep), connection)
+
+        change = (await _writes(conn, proposal_id))["201"]
+        assert change["status"] == "succeeded"
+        assert waits and max(waits) > 0  # it waited before reading again
+        reads = [slug for slug, _ in gateway.calls if slug != "HUBSPOT_UPDATE_CONTACTS"]
+        # Before the send, after it, and once more: always by the record's id, never a search.
+        assert reads == ["HUBSPOT_READ_CRM_OBJECT_BY_ID"] * 3
+
+    _run(tmp_path, "lagging", body)
+
+
+def test_a_value_still_not_there_after_the_second_read_is_not_applied(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _LaggingCrm(lag=2, records={"201": {"jobtitle": None}})
+        proposal_id = await _propose(conn, seeded, connection, gateway, _title("201", "CFO"))
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        change = (await _writes(conn, proposal_id))["201"]
+        assert (change["status"], change["failure_kind"]) == ("failed", "not_applied")
+        assert len(gateway.writes) == 1  # read again, never sent again
+
+    _run(tmp_path, "laggingtoolong", body)
+
+
+def test_a_retry_does_not_adopt_one_of_two_campaigns_of_the_same_name(tmp_path: Path) -> None:
+    """Final review minor: the worker died after Salesforce made the campaign, and there is now
+    a second campaign of exactly that name. Clue cannot tell which it made: it does not guess."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(failures={"SALESFORCE_CREATE_CAMPAIGN": ["crash"]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange("SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "committee"),
+        )
+        handler = _handler(conn, tmp_path, gateway)
+        with pytest.raises(RuntimeError):
+            await _handle(handler, connection)
+        gateway.extra_campaigns.append(("701B", "Clue: Q4"))  # a person made one meanwhile
+
+        await _handle(handler, connection)
+
+        change = await _created(conn, proposal_id)
+        assert change["status"] == "failed"
+        assert change["crm_message"] == (
+            'Salesforce has more than one campaign named "Clue: Q4", so Clue cannot tell which '
+            "one it created; check Salesforce before proposing it again."
+        )
+        assert not await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=seeded.project_id,
+            connection_id=connection.connection_id,
+        )
+        by_name = [
+            args["query"]
+            for slug, args in gateway.calls
+            if slug == "SALESFORCE_RUN_SOQL_QUERY" and "Name =" in args["query"]
+        ]
+        assert by_name and all("ORDER BY CreatedDate DESC" in q for q in by_name)
+        assert [slug for slug, _ in gateway.writes] == ["SALESFORCE_CREATE_CAMPAIGN"]
+
+    _run(tmp_path, "campaigntwins", body, provider="salesforce")
+
+
+def test_an_add_to_another_projects_list_links_the_list_to_this_project(tmp_path: Path) -> None:
+    """Final review minor: project B adds to a list Clue keeps for project A; afterwards
+    project B finds the list among its own."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        from tests._workspace import seed_project
+
+        await store_list(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            provider="hubspot",
+            crm_object="company",
+            crm_list_id="17",
+            name="Clue: Q4",
+            kind="hubspot_list",
+            created_by_clue=True,
+            created_by_write_id=None,
+            project_id=seeded.project_id,
+        )
+        other = await seed_project(conn, seeded.workspace_id, name="Project B")
+        gateway = _WritingCrm(lists={"101": []})
+        add = ProposedChange(
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+            {"list_id": "17", "operation": "add", "record_ids": ["101"]},
+            "Target accounts.",
+        )
+        await _propose(conn, seeded, connection, gateway, add, project_id=other.project_id)
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert gateway.lists["101"] == ["17"]
+        (kept,) = await lists_for_project(
+            conn,
+            workspace_id=seeded.workspace_id,
+            project_id=other.project_id,
+            connection_id=connection.connection_id,
+        )
+        assert kept.crm_list_id == "17"
+        linked_by = await conn.scalar(
+            text("SELECT linked_by FROM crm_list_project WHERE list_id = :l AND project_id = :p"),
+            {"l": kept.list_id, "p": other.project_id},
+        )
+        assert linked_by == "person_named"
+
+    _run(tmp_path, "otherproject", body)
