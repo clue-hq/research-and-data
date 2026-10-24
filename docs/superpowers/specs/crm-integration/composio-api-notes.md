@@ -306,3 +306,17 @@ access is granted.**
   `PermissionSetAssignment` (generic `SALESFORCE_CREATE_S_OBJECT_RECORD`). Not tried in the spike
   (a security change in the org); Phase 4 does it inside the admin's one-time setup approval
   (R-13.1).
+
+**Phase 4 Task 3 — from Composio's tool schemas only (2026-10-24, not yet run on a CRM).**
+- `SALESFORCE_CREATE_CUSTOM_FIELD` lists `Lookup` in `field_type` and takes `reference_to` and
+  `relationship_name`; it has **no** delete-constraint or relationship-label argument, so the
+  Lookup `Clue_Possible_Duplicate__c` is sent with only those two (Salesforce's own default delete
+  constraint applies). Its answer: `{id, success, errors[{message, statusCode}], full_name,
+  already_exists}`.
+- `SALESFORCE_CREATE_S_OBJECT_RECORD` takes `sobject_type` and `fields`; it answers
+  `{id, success, errors[{message, errorCode}]}`. `SALESFORCE_WHO_AM_I` takes nothing and answers
+  `{data: {user_id, organization_id, …}, display_name}`.
+- HubSpot has no Composio tool for the v4 association-label list; `HUBSPOT_LIST_ASSOCIATION_TYPES`
+  (`fromObjectType`, `toObjectType`) answers `{results: [{id, name}]}` (the v3 types), and the setup
+  finds Clue's label there by its `name` (`clue_possible_duplicate`) before creating it.
+  `HUBSPOT_CREATE_PROPERTY_FOR_SPECIFIED_OBJECT_TYPE` takes `hasUniqueValue`.

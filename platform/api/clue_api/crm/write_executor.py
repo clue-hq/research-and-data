@@ -41,6 +41,11 @@ whose action is no longer allowlisted fails on its own and never blocks the queu
 
 Declined and replaced proposals are never picked up: only ``queued`` ones, plus ``sending`` (a run
 that died) and ``paused`` (waiting on a reconnect or the budget).
+
+A ``clue_fields_setup`` change (Phase 4) is not a record change: it runs the setup of Clue's own
+fields (:mod:`clue_api.crm.clue_fields_setup`), records what the CRM has in ``crm_clue_fields``
+(``ready`` or ``partial``), and is ``succeeded`` only when every step is done, else ``failed`` with
+the refused step named. A connection already ``ready`` skips it without a call.
 """
 
 from __future__ import annotations
@@ -59,6 +64,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.crm.clue_fields import CLUE_FIELDS, clue_fields_state, record_clue_fields
+from clue_api.crm.clue_fields_setup import SetupOutcome, run_clue_fields_setup
 from clue_api.crm.composio_gateway import (
     ComposioError,
     ComposioGateway,
@@ -72,11 +79,13 @@ from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
 from clue_api.crm.tools import composio_refusal
 from clue_api.crm.wake import queue_crm_writes_finished_turn, queue_crm_writes_paused_turn
 from clue_api.crm.write_actions import (
+    CLUE_FIELDS_SETUP,
     HUBSPOT_OBJECT_TYPE_IDS,
     NEW_COMPANY_PREFIX,
     NEW_LIST_PREFIX,
     WriteActionSpec,
     WriteNotParsable,
+    clue_fields_setup_spec,
     created_reference,
     find_value,
     new_list_name,
@@ -141,9 +150,8 @@ _READ_AGAIN_AFTER_S = 5.0
 NOT_APPLIED_MESSAGE = "The CRM reported success but the value did not change."
 NOT_CHOSEN_MESSAGE = "Not chosen on the permission card, so it was not sent."
 NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sent."
-#: Phase 4 Task 2 proposes Clue's fields setup; Task 3 runs it. Until then an allowed setup fails
-#: closed: nothing is sent to the CRM.
-SETUP_NOT_BUILT_MESSAGE = "Setting up Clue's fields is not built yet, so nothing was sent."
+#: An allowed setup of Clue's fields that finds them set up already (a second card, R-13.3).
+SETUP_ALREADY_READY_MESSAGE = "Clue's fields are already set up in {crm}."
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
 #: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
@@ -1032,6 +1040,12 @@ class CrmWriteHandler:
         async with self._conn_factory() as conn:
             writes = await _start_proposal(conn, crm.connection, proposal_id)
         try:
+            # Clue's fields are set up on their own (Phase 4): the setup is its own card.
+            for write in [write for write in writes if write.kind == CLUE_FIELDS_SETUP]:
+                if context.stop_requested.is_set() or context.lease_lost.is_set():
+                    return WorkResult(outcome="interrupted", references={}, requeue=True)
+                await self._run_setup(crm, write)
+            writes = [write for write in writes if write.kind != CLUE_FIELDS_SETUP]
             # Creates first: lists and companies (R-12.7, R-12.11), then people, then the rest. A
             # change that uses one of them names it ``new:<name>`` / ``new:company:<domain>`` /
             # ``new:contact:<email>`` until the create has an id. The id is then kept on that
@@ -1069,6 +1083,89 @@ class CrmWriteHandler:
             assert proposal is not None
             await self._wake(conn, proposal)
         return None
+
+    async def _run_setup(self, crm: _Crm, write: _Write) -> None:
+        """Set up Clue's fields (:mod:`clue_api.crm.clue_fields_setup`) and record what exists.
+
+        A connection already ``ready`` is skipped without a call: two cards may both be allowed,
+        and the one task per connection runs them one after the other. The run is idempotent, so a
+        retry after a rate limit, or a run resumed after a crash, starts from the top and makes
+        only what is missing. A stop keeps what the run found so far (``partial``) and leaves the
+        change to the run's usual stop handling."""
+        connection = crm.connection
+        async with self._conn_factory() as conn:
+            state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        if state is not None and state.status == "ready":
+            message = SETUP_ALREADY_READY_MESSAGE.format(crm=crm.name)
+            await self._record(
+                crm, [write], {write.write_id: _Outcome("skipped", crm_message=message)}
+            )
+            return
+        call = await self._mark_sending([write])
+        if not call:
+            return
+        outcome = SetupOutcome()
+        try:
+            await run_clue_fields_setup(crm, CLUE_FIELDS[connection.provider], outcome=outcome)
+        except _Stop as stop:
+            await self._record_setup(connection, outcome, status="partial")
+            waiting = await self._put_back(call, stop)
+            if waiting or stop.kind not in ("rate_limited", "unavailable"):
+                raise
+            return  # its attempts are used up: failed, retryable
+        await self._record_setup(
+            connection, outcome, status="ready" if outcome.ready else "partial"
+        )
+        steps = [step.as_json() for step in outcome.steps]
+        if outcome.ready:
+            result = _Outcome(
+                "succeeded",
+                crm_message=(
+                    f"Set up Clue's fields in {crm.name}: {outcome.counted('created')} created, "
+                    f"{outcome.counted('already there')} already there."
+                ),
+                crm_response={"steps": steps},
+            )
+        else:
+            assert outcome.failure is not None and outcome.failure_answer is not None
+            shown, answer = crm_reply(outcome.failure_answer)
+            result = _Outcome(
+                "failed",
+                failure_kind=failure_kind(outcome.failure_answer),
+                crm_message=outcome.failure.format(message=shown.rstrip(". ")),
+                retryable=False,
+                crm_response={
+                    "steps": steps,
+                    "crm_answer": answer if answer is not None else outcome.failure_answer,
+                },
+            )
+        await self._record(crm, call, {write.write_id: result})
+
+    async def _record_setup(
+        self,
+        connection: CrmConnection,
+        outcome: SetupOutcome,
+        *,
+        status: Literal["ready", "partial"],
+    ) -> None:
+        """Keep what the CRM has: ``ready`` only when every step is done, else ``partial`` —
+        recorded only once the run found or made something, so an earlier record is not lost to
+        a run that stopped before its first field."""
+        if status == "partial" and not (
+            outcome.fields or outcome.permission_set_id or outcome.label_type_id
+        ):
+            return
+        async with self._conn_factory() as conn:
+            await record_clue_fields(
+                conn,
+                connection_id=connection.connection_id,
+                workspace_id=connection.workspace_id,
+                provider=connection.provider,
+                created=outcome.fields,
+                permission_set_id=outcome.permission_set_id,
+                label_type_id=outcome.label_type_id,
+                status=status,
+            )
 
     async def _send_chunk(self, crm: _Crm, spec: WriteActionSpec, chunk: Sequence[_Write]) -> None:
         try:
@@ -1911,17 +2008,11 @@ async def _load_writes(
     )
     writes = []
     for row in rows.all():
-        if row.kind == "clue_fields_setup":
-            await conn.execute(
-                text(
-                    "UPDATE crm_write SET status = 'failed', failure_kind = 'other', "
-                    "crm_message = :message, retryable = false, finished_at = now() "
-                    "WHERE write_id = :id"
-                ),
-                {"id": row.write_id, "message": SETUP_NOT_BUILT_MESSAGE},
-            )
-            continue
-        spec = write_spec(connection.provider, row.slug)
+        spec = (
+            clue_fields_setup_spec(connection.provider)
+            if row.kind == CLUE_FIELDS_SETUP
+            else write_spec(connection.provider, row.slug)
+        )
         arguments = json.loads(row.arguments)
         try:
             if spec is None:

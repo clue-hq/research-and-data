@@ -6,8 +6,7 @@ integration Phase 4, Task 2; rulings R-13.1, R-13.3, R-13.4).
 every field, says on Salesforce that Clue creates a permission set, and never offers "Always
 allow". Only a workspace owner or admin may allow it: an operator's Allow is refused
 ``crm_setup_needs_admin`` with nothing queued. A connection whose fields are already ``ready`` is
-refused. The executor does not run the setup yet (Task 3): it fails the change closed, sending
-nothing.
+refused. The setup run itself is tested in ``test_crm_clue_fields_setup_run_db.py`` (Task 3).
 
 DB-backed and rollback-only, on the lane's test DB.
 """
@@ -23,7 +22,6 @@ from sqlalchemy import text
 
 from clue_api.crm import writes
 from clue_api.crm.clue_fields import CLUE_FIELDS, record_clue_fields
-from clue_api.crm.write_executor import SETUP_NOT_BUILT_MESSAGE, _load_writes
 from clue_api.crm.write_tools import (
     ProposeClueFieldsSetupInput,
     ProposeClueFieldsSetupTool,
@@ -327,23 +325,3 @@ def test_another_project_is_refused(tmp_path: Path) -> None:
         assert code == "project_not_found"
 
     _run(tmp_path, "other-project", body)
-
-
-def test_the_executor_sends_nothing_until_the_setup_run_exists(tmp_path: Path) -> None:
-    async def body(conn: Any, seeded: Any, connection: Any) -> None:
-        await _set_role(conn, seeded, OTHER_USER_ID, "admin")
-        proposed = await _propose(conn, seeded)
-        snapshot = await _snapshot(conn, seeded, proposed)
-        (row,) = await _write_rows(conn, proposed["proposal_id"])
-        async with _client(conn, seeded, OTHER_USER_ID) as client:
-            response = await _answer(
-                client, seeded, proposed, snapshot, key="admin", selected=[str(row.write_id)]
-            )
-        assert response.status_code == 202, response.text
-
-        loaded = await _load_writes(conn, connection, UUID(proposed["proposal_id"]))
-        assert loaded == []
-        (row,) = await _write_rows(conn, proposed["proposal_id"])
-        assert (row.status, row.crm_message) == ("failed", SETUP_NOT_BUILT_MESSAGE)
-
-    _run(tmp_path, "not-built", body)
