@@ -52,6 +52,7 @@ from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_storage import FsStorage, agent_workspace_key
 from tests._workspace import seed_project
 from tests.agents.workspace_helpers import RecordingArtifactSink, policy
+from tests.api.agent_workspace_retention_scope import ScopedRetentionJob
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
@@ -202,9 +203,12 @@ async def _last_activity(ws: str, thread: str = THREAD) -> datetime:
         ).scalar_one()
 
 
-def _job(store: DbWorkspaceSnapshotStore) -> AgentWorkspaceRetentionJob:
-    return AgentWorkspaceRetentionJob(
-        store=store, conn_factory=transaction, raw_s=RAW_S, working_s=WORKING_S
+def _job(store: DbWorkspaceSnapshotStore, ws: str) -> AgentWorkspaceRetentionJob:
+    """The real job, held to this test's workspace so it neither counts nor touches anyone
+    else's chats in the shared test database (fix pass 2, review area 3 M-3)."""
+
+    return ScopedRetentionJob(
+        workspaces={ws}, store=store, conn_factory=transaction, raw_s=RAW_S, working_s=WORKING_S
     )
 
 
@@ -251,7 +255,7 @@ def test_raw_inputs_expire_after_their_window_and_keep_their_receipt(tmp_path: P
         await _save_bodies(store, ws, bodies, receipts={"reads/r.json": READ_RECEIPT})
         aged = await _age(ws, days=3)
 
-        report = await _job(store).run_once()
+        report = await _job(store, ws).run_once()
 
         assert (report.chats_checked, report.chats_expired, report.files_expired) == (1, 1, 1)
         assert (report.skipped_busy, report.stale) == (0, 0)
@@ -284,7 +288,7 @@ def test_working_files_expire_after_seven_days_outputs_never(tmp_path: Path) -> 
         await _save_bodies(store, ws, bodies)
         await _age(ws, days=8)
 
-        report = await _job(store).run_once()
+        report = await _job(store, ws).run_once()
 
         assert (report.chats_expired, report.files_expired) == (1, 2)
         _, manifest = await _manifest(store, ws)
@@ -298,7 +302,7 @@ def test_working_files_expire_after_seven_days_outputs_never(tmp_path: Path) -> 
         assert await store.read_file(workspace_id=ws, entry=kept) == bodies["outputs/o"]
 
         # A second pass finds nothing left to do, and outputs/ still never expires.
-        again = await _job(store).run_once()
+        again = await _job(store, ws).run_once()
         assert (again.chats_expired, again.files_expired) == (0, 0)
 
     _scenario(body, tmp_path)
@@ -314,7 +318,7 @@ def test_a_busy_chat_is_skipped(tmp_path: Path) -> None:
         try:
             await _queue_agent_turn(ws)
 
-            queued = await _job(store).run_once()
+            queued = await _job(store, ws).run_once()
 
             assert (queued.chats_checked, queued.skipped_busy, queued.chats_expired) == (1, 1, 0)
             pointer, manifest = await _manifest(store, ws)
@@ -330,7 +334,7 @@ def test_a_busy_chat_is_skipped(tmp_path: Path) -> None:
                 )
             assert lease is not None
 
-            leased = await _job(store).run_once()
+            leased = await _job(store, ws).run_once()
 
             assert (leased.skipped_busy, leased.chats_expired) == (1, 0)
             pointer, _ = await _manifest(store, ws)
@@ -354,7 +358,7 @@ def test_a_recent_submission_counts_as_activity(tmp_path: Path) -> None:
         await _save_bodies(store, ws, {"reads/r.json": b"raw bytes"}, thread=thread)
         await _age(ws, days=3, thread=thread)
 
-        report = await _job(store).run_once()
+        report = await _job(store, ws).run_once()
 
         assert (report.chats_checked, report.chats_expired) == (0, 0)
         pointer, manifest = await _manifest(store, ws, thread)
@@ -368,7 +372,7 @@ def test_one_runner_at_a_time_and_only_when_due(tmp_path: Path) -> None:
         store = DbWorkspaceSnapshotStore(storage=storage)
         await _save_bodies(store, ws, {"reads/r.json": b"raw bytes", "outputs/o": b"kept"})
         await _age(ws, days=3)
-        job = _job(store)
+        job = _job(store, ws)
         every = timedelta(days=1)
 
         async def attempt() -> object:
@@ -399,7 +403,7 @@ def test_reading_identical_bytes_again_works_after_expiry(tmp_path: Path) -> Non
         raw = b"the very same bytes"
         await _save_bodies(store, ws, {"reads/r.json": raw, "outputs/o": b"kept"})
         await _age(ws, days=3)
-        assert (await _job(store).run_once()).files_expired == 1
+        assert (await _job(store, ws).run_once()).files_expired == 1
         key = agent_workspace_key(ws, _sha(raw))
         assert await _erasure(key) == (True, True)
 
@@ -446,7 +450,7 @@ def test_one_unreadable_chat_does_not_abort_the_pass(tmp_path: Path) -> None:
         # This lane's R2 lost blobs the rows still name; the local equivalent is one delete.
         await storage.delete(pointer.manifest_key)
 
-        report = await _job(store).run_once()
+        report = await _job(store, ws).run_once()
 
         assert (report.chats_checked, report.failed) == (2, 1)
         # The chat behind the broken one in the ordering is still swept.
@@ -474,8 +478,13 @@ def test_the_scan_walks_every_cold_chat_one_bounded_page_at_a_time(tmp_path: Pat
             await _save_bodies(store, ws, {"reads/r.json": f"raw {index}".encode()}, thread=thread)
             await _age(ws, days=8 + index, thread=thread)
 
-        report = await AgentWorkspaceRetentionJob(
-            store=store, conn_factory=transaction, raw_s=RAW_S, working_s=WORKING_S, page_size=1
+        report = await ScopedRetentionJob(
+            workspaces={ws},
+            store=store,
+            conn_factory=transaction,
+            raw_s=RAW_S,
+            working_s=WORKING_S,
+            page_size=1,
         ).run_once()
 
         assert (report.chats_checked, report.chats_expired) == (3, 3)
@@ -512,7 +521,7 @@ def test_a_turn_touching_the_chat_is_not_stamped_back_to_cold(tmp_path: Path) ->
         await _save_bodies(store, ws, {"reads/r.json": b"raw bytes", "outputs/o": b"finished"})
         aged = await _age(ws, days=3)
 
-        report = await _job(store).run_once()
+        report = await _job(store, ws).run_once()
 
         assert report.files_expired == 1
         # The touch happened; the chat is warm, and the job's bookkeeping may not say otherwise.
@@ -565,7 +574,7 @@ def test_a_turn_that_lands_after_the_scan_keeps_its_brand_new_files(tmp_path: Pa
 
         racing = _TurnLandsFirst(storage=storage, turn=turn)
 
-        report = await _job(racing).run_once()
+        report = await _job(racing, ws).run_once()
 
         assert racing.fired
         # The chat is active as of a second ago. Nothing of it may be expired on this pass.
@@ -659,7 +668,7 @@ async def _seed_submission(ws: str, *, requested_at: datetime) -> str:
     return thread_id
 
 
-class _JobWithATurnBetweenTheReads(AgentWorkspaceRetentionJob):
+class _JobWithATurnBetweenTheReads(ScopedRetentionJob):
     """The job, with one writer committing in the window between its two reads of a chat.
 
     ``_expire`` reads the pointer first — which names the file list it will publish from — and
@@ -713,6 +722,7 @@ def test_a_turn_landing_between_the_two_reads_is_recorded_stale(tmp_path: Path) 
 
         job = _JobWithATurnBetweenTheReads(
             turn=turn,
+            workspaces={ws},
             store=store,
             conn_factory=transaction,
             raw_s=RAW_S,
@@ -780,6 +790,7 @@ def test_a_version_move_between_the_reads_never_publishes_the_list_it_read(tmp_p
 
         job = _JobWithATurnBetweenTheReads(
             turn=interloper,
+            workspaces={ws},
             store=store,
             conn_factory=transaction,
             raw_s=RAW_S,
@@ -844,7 +855,7 @@ def test_a_save_that_loses_the_compare_and_set_is_recorded_stale(tmp_path: Path)
 
         racing = _TurnLandsJustBeforeTheSave(storage=storage, turn=turn)
 
-        report = await _job(racing).run_once()
+        report = await _job(racing, ws).run_once()
 
         assert racing.fired
         assert (report.stale, report.chats_expired, report.files_expired) == (1, 0, 0)
@@ -914,7 +925,7 @@ def test_a_research_run_that_just_restored_is_not_a_candidate(tmp_path: Path) ->
                 # The run has started, so the chat is warm and out of the candidate set.
                 assert await _last_activity(ws, thread) > cold
 
-                report = await _job(store).run_once()
+                report = await _job(store, ws).run_once()
 
                 assert (report.chats_checked, report.files_expired) == (0, 0)
                 pointer, manifest = await _manifest(store, ws, thread)
@@ -933,9 +944,52 @@ def test_a_research_run_that_just_restored_is_not_a_candidate(tmp_path: Path) ->
         # same two files go.
         await _age(ws, days=9, thread=thread)
 
-        after = await _job(store).run_once()
+        after = await _job(store, ws).run_once()
 
         assert (after.chats_checked, after.files_expired) == (1, 2)
+
+    _scenario(body, tmp_path)
+
+
+def test_a_scoped_pass_neither_counts_nor_touches_another_workspaces_chat(tmp_path: Path) -> None:
+    """Fix pass 2, review area 3 M-3: what holds every test here to its own chats.
+
+    The job sweeps the whole database, and the DB tests share one. A cold chat of another
+    workspace — another test's, running at the same moment — is a real candidate of the scan;
+    this test proves the test-only scope is what keeps it out of both the counts and the expiry,
+    even with a zero-second window that makes every chat due.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save_bodies(store, ws, {"reads/mine.json": b"mine"})
+        await _age(ws, days=9)
+        async with _workspace() as other:
+            theirs = b"another test's raw read"
+            await _save_bodies(store, other, {"reads/theirs.json": theirs})
+            await _age(other, days=9)
+            now = datetime.now(UTC)
+            unscoped = AgentWorkspaceRetentionJob(
+                store=store, conn_factory=transaction, raw_s=0.0, working_s=0.0
+            )
+            # A real candidate of the real scan (read only — nothing is swept here)...
+            seen = {
+                (chat.workspace_id, chat.thread_id)
+                async for chat in unscoped._candidates(cutoff=now)
+            }
+            assert (other, THREAD) in seen
+
+            report = await ScopedRetentionJob(
+                workspaces={ws}, store=store, conn_factory=transaction, raw_s=0.0, working_s=0.0
+            ).run_once(now=now)
+
+            # ...that the scoped pass neither counted nor touched.
+            assert (report.chats_checked, report.chats_expired, report.files_expired) == (1, 1, 1)
+            pointer, manifest = await _manifest(store, other)
+            assert pointer.version == 1 and manifest.expired() == ()
+            key = agent_workspace_key(other, _sha(theirs))
+            assert key not in storage.deletes
+            assert await store.read_file(workspace_id=other, entry=manifest.entries[0]) == theirs
 
     _scenario(body, tmp_path)
 

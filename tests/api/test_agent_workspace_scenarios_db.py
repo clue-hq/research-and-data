@@ -58,6 +58,7 @@ from clue_storage import (
     retain_artifact,
 )
 from tests.agents.workspace_helpers import RecordingArtifactSink, policy, resource_snapshot
+from tests.api.agent_workspace_retention_scope import ScopedRetentionJob
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
@@ -156,8 +157,15 @@ class World:
         return agent_workspace_key(self.ws, hashlib.sha256(data).hexdigest())
 
     def job(self, *, raw_s: float, working_s: float) -> AgentWorkspaceRetentionJob:
-        return AgentWorkspaceRetentionJob(
-            store=self.store(), conn_factory=transaction, raw_s=raw_s, working_s=working_s
+        """The real job, held to this world's workspace: a zero-second window here must not
+        expire the files of other tests' chats in the shared test database (fix pass 2)."""
+
+        return ScopedRetentionJob(
+            workspaces={self.ws},
+            store=self.store(),
+            conn_factory=transaction,
+            raw_s=raw_s,
+            working_s=working_s,
         )
 
     async def manifest(self, thread: str = THREAD) -> SnapshotManifest:
