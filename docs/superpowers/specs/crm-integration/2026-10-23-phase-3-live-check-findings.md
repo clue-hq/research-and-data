@@ -61,9 +61,35 @@ Developer Edition. Driven through the in-app browser (founder asked Claude to dr
 | L-10 | **A turn abandoned after a network drop is never re-run**: the wake turn lost the network (laptop asleep), was abandoned after 16 min; the fleet's later retries failed `ExecutionConflict`. Not CRM-specific. | Platform, note | Out of CRM scope; record for the turn-runtime owner |
 | L-11 | **Failed turn display**: a failed turn shows the raw code "a_p_i_error"; after a reload the chat showed "Thinking…" + Stop on a finished turn until it was scrolled. | Minor (frontend) | Add to the open frontend bugs (L12/L14) |
 
+## Re-run after Tasks 10–11 (2026-10-24, Head of ABM v80)
+
+**Passed**
+
+- Garner (Salesforce): "Add Holly Herrera and Bethany Maciel to Salesforce and to the project's Clue
+  campaign" → one card: 2 contacts created with cleaned names (Holly / Herrera, Bethany / Maciel —
+  R-12.12) on Carmel Clay Schools, plus 2 campaign adds by `new:contact:<email>` (R-12.11) filled
+  with the new ids; card title 'Add 2 contacts to the campaign "Clue: US employer benefits"'
+  (R-12.13). Salesforce read-back: both members, status Sent. The wake turn made no
+  `record_interview_answer` call.
+- Conduit (HubSpot): ATMA Hotel Group and Baywood Hotels created with tier and Target account, and
+  both list adds sent with the new company ids (`new:company:<domain>`); card title 'Add 2 companies
+  to the list "Clue: Conduit AI hotel operators"'.
+
+**Step 4 (deleted-list recovery): failed** — see L-12.
+
+| # | What | Severity | Proposed |
+|---|---|---|---|
+| L-12 | **A list deleted in HubSpot is not recognised as gone**: HubSpot answers an add to a deleted list with "Attempted to modify membership for deleted lists: [PortalListId{…listId=18}]", which `_fail_gone_list` does not match (it matches the 404/LIST_NOT_FOUND the spike saw). So `crm_list.gone_at` stays empty; the agent's recreate was refused `crm_list_exists`, and it re-proposed adds to the deleted list. | Important | Recognise this answer as gone; mark the list gone; the recreate then passes |
+| L-13 | **A card can be left invisible**: twice the agent finalized `awaiting_input` with a message but without `open_gate_refs`; the card existed (`awaiting_permission`) but no gate part reached the chat. The contract accepts a message alone. Not CRM-specific. | Important | At finalize, add every still-open gate this turn created to `open_gate_refs` |
+| L-14 | **L-7's prompt line did not hold**: on the Conduit wake turn the agent again recorded "aryan keshri allowed 4 of 4 changes…" as an interview answer (it did not on Garner). | Founder decision | Code check (R-12.14 option A) instead of / as well as the prompt |
+| L-15 | Wake replies list internal write ids ("write_id 0cc0e845-…") | Minor | Skill/tool note: don't quote write ids to the person |
+| L-16 | A finished card kept showing "Sending changes…" until reload (likely L12 in the open frontend bugs) | Minor (frontend) | With L12 |
+
+The `retry_of` misuse (L-9) happened again.
+
 ## Not exercised yet
 
-- Deleted-list recovery (step 4) — waiting for the founder to delete list 18 in HubSpot.
+- Deleted-list recovery (step 4) passing end to end — after L-12 is fixed.
 - Removing a member Clue did not add (unit-tested).
 
 ## Cost
