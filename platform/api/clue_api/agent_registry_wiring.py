@@ -317,7 +317,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # not-set-up note), `crm-writing` v5 (section 3c, Clue's own fields; founder-approved
     # 2026-10-25), `stage0-interview@v55` (v54 with its manual paths repointed), `manual-*@v28`
     # and recipe 42. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v82",
+    # v83 (2026-10-25, Phase 4 live-check finding L4-3): v82's surface, no address added or
+    # removed; `crm-writing` v6 (section 3c items 2 and 3: a created record carries its Clue id;
+    # possible duplicates are marked with the CRM's own actions), `stage0-interview@v56` (v55 with
+    # its manual paths repointed), `manual-*@v29` and recipe 43. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v83",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

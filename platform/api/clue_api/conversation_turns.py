@@ -226,7 +226,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # moves with `head-of-abm@v81` (`crm-writing` v4, `stage0-interview` v54, `manual-*@v27`).
 # Revision 42 (CRM integration Phase 4 Task 6, 2026-10-25) admits one address and removes none:
 # ``propose_clue_fields_setup@1``, granted by `head-of-abm@v82`.
-CONVERSATION_RECIPE_VERSION = 42
+# Revision 43 (CRM integration Phase 4 follow-up, 2026-10-25) admits and removes no address: it
+# moves with `head-of-abm@v83` (`crm-writing` v6, `stage0-interview` v56, `manual-*@v29`).
+CONVERSATION_RECIPE_VERSION = 43
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

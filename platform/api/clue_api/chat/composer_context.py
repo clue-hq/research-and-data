@@ -78,7 +78,8 @@ __all__ = [
 # v80 re-pins `stage0-interview` at v53 (a message Clue wrote is never the person's words).
 # v81 re-pins `crm-writing` at v4 (never show Clue's write or proposal ids).
 # v82 grants `propose_clue_fields_setup` and re-pins `crm-writing` at v5 (Clue's own fields).
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v82"
+# v83 re-pins `crm-writing` at v6 (possible duplicates marked with the CRM's own actions).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v83"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
