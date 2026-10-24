@@ -22,7 +22,8 @@ R-13.1–R-13.7 in `docs/superpowers/specs/crm-integration/rulings.md`; live che
   setup "already set up" done line.
 
 ## Live check (stack DB `clue_nashville_pm` at `53f06d57df36`)
-All passed on both test CRMs; the two fixes re-checked live after restarting on `e885c7cf1`.
+All passed on both test CRMs; the two fixes re-checked live after restarting on `e885c7cf1`; the
+follow-up fixes re-checked on v83.
 
 ## Gotchas
 - Composio `check_existing` doesn't detect existing Salesforce fields; outer `successful` hides an
@@ -31,8 +32,14 @@ All passed on both test CRMs; the two fixes re-checked live after restarting on 
   full reload (L12 / L4-4).
 - A stack restart cuts off a running wake turn (no reply; the write is already done).
 
+## Follow-up fixes (2026-10-25, all re-checked live)
+- L4-3: crm-writing v6 names the duplicate-link action per CRM → Head of ABM v83, manual v29,
+  stage0-interview v56, recipe 43 (`5acc1f44c`; v82 untouched — live turns pin it).
+- L4-4 (= L12): chat requests send `X-Clue-Page-Workspace`; the BFF answers `WORKSPACE_CHANGED`
+  (409) when the selected workspace moved, and the page reloads (`72bec6309`, founder's choice).
+- L4-5: HubSpot creates carry `custom_properties.clue_id`; L4-6: one-link card names the person
+  (`e9261082c`).
+
 ## Open
-- L4-3: skill/tool-note line naming the duplicate-link action per CRM (founder wording, re-mint).
-- L4-4 (= L12) frontend fix; minors L4-5 (HubSpot create can't carry clue_id), L4-6 (duplicate card
-  title has no name). R-13.7 lookup by Clue id deferred. L-14 (Phase 3) still undecided.
+- R-13.7 lookup by Clue id deferred. L-14 (Phase 3) still undecided. L4-8 harness retry error.
 - Not pushed; the founder decides when.

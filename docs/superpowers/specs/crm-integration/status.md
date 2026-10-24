@@ -67,7 +67,7 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ✅ Setup card (owner/admin only): HubSpot "Clue" group, 6 fields, "Possible duplicate" label; Salesforce 6 fields, permission set + assignment (R-13.1), external id — live-checked on both test CRMs
 - ✅ Writing Clue's fields (tier, links, committee role, Clue id), gated on setup; a field deleted in the CRM is refused, marked gone and set up again — live-checked
 - ✅ "Possible duplicate" links (HubSpot association label; Salesforce lookup), undo only for Clue's own Salesforce link — live-checked on Salesforce
-- ⬜ Live check findings `2026-10-25-phase-4-live-check-findings.md`: L4-3 (direct duplicate-link request — skill/tool-note line, founder wording), L4-4 (= L12 workspace-switch card bug), minors L4-5/L4-6
+- ✅ Live check findings `2026-10-25-phase-4-live-check-findings.md`: L4-1–L4-6 fixed and re-checked live (Head of ABM v83, crm-writing v6); L4-8 (harness retry error) not this lane's
 - ⏸ Looking a record up by Clue id (R-13.7, deferred)
 
 ## Production readiness

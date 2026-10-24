@@ -52,7 +52,7 @@ through the in-app browser.
   `HUBSPOT_UPDATE_CONTACTS` silently drops custom properties and `hs_buying_role`, so read-back
   failed (this also affected Phase 3's buying role). Contact updates now go through
   `HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID`. Re-checked live on Sandi Snead.
-- **L4-3 — A direct "link these two as duplicates" request fails (open, wording).** The exact
+- **L4-3 — A direct "link these two as duplicates" request fails (FIXED `5acc1f44c`, Head of ABM v83 / crm-writing v6; re-checked live: asked plainly, the agent proposed `SALESFORCE_UPDATE_CONTACT` + `Clue_Possible_Duplicate__c` itself).** The exact
   action per CRM reaches the agent only in the `crm_possible_duplicate` refusal, which comes from a
   contact create. When the person asks directly, the agent guessed `link_duplicate` as the action,
   was refused `crm_write_not_allowed`, and told the person to link them by hand. Fix: one line in
@@ -62,22 +62,26 @@ through the in-app browser.
   Related: the tool note says to link only records a refusal named, but a direct request with two
   CRM ids of one email was accepted — that is prompt judgement, not a code check (by design).
 - **L4-4 — "This review request belongs to a different conversation" after a workspace switch
-  (open, = Phase 2 L12).** The page keeps the workspace it was first loaded with
+  (FIXED `72bec6309`, = Phase 2 L12; founder chose the self-reload; re-checked live with a switch in a second tab).** The page keeps the workspace it was first loaded with
   (`chat-gate.ts:546` compares the card's workspace against it); after switching workspaces in the
   same tab, cards read as another conversation until a full reload. Not CRM-specific.
-- **L4-5 — A HubSpot contact create can't carry `clue_id` (minor).** Salesforce creates add
+- **L4-5 — A HubSpot contact create can't carry `clue_id` (FIXED `e9261082c`; re-checked live: Kimberly Furlong created with `clue_id` on one card, read back from HubSpot).** Salesforce creates add
   `Clue_Id__c` when ready; HubSpot creates don't, so Sandi took two cards (create, then the id on the
   wake turn) and the agent spent many steps working that out. Could add `clue_id` to HubSpot creates
   the same way.
-- **L4-6 — The duplicate card doesn't name the person (minor).** "Mark 1 possible duplicate" — the
+- **L4-6 — The duplicate card doesn't name the person (FIXED `e9261082c`; live card: "Mark two records of Holly Herrera (…) as possible duplicates").** "Mark 1 possible duplicate" — the
   record label exists ("two records of Holly Herrera …") but the card's title line does not use it.
 - **L4-7 — A wake turn was cut off by the stack restart (dev only).** The ATMA wake turn started as
   the workers restarted and ended without a reply; the write itself had already finished.
 
+- **L4-8 — A harness retry error on a repaired proposal (minor, not CRM).** After a refused
+  proposal the agent's corrected call failed once with "retry_of does not identify a failed
+  attempt"; its next call went through. Owned by the agent harness, not this lane.
+
 ## Left in the test CRMs
 
 HubSpot: the `clue` group and properties, the "Possible duplicate" label; Sandi Snead (contact
-576692661964, Atrium); Clue fields on Atrium, ATMA, Rob, Sandi. Salesforce: the 6 Clue fields,
+576692661964, Atrium); Kimberly Furlong (576723304126, Atrium); Clue fields on Atrium, ATMA, Rob, Sandi. Salesforce: the 6 Clue fields,
 permission set `Clue_Fields` (`0PSjV000003qstpWAA`) and its assignment; the second Holly Herrera
-(`003jV00000F7BNtQAN`, founder-made) linked from the first; Clue fields on Carmel Clay, Syracuse and
+(`003jV00000F7BNtQAN`, founder-made) linked both ways; Clue fields on Carmel Clay, Syracuse and
 four contacts.
