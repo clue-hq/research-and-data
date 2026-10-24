@@ -36,6 +36,7 @@ __all__ = [
     "clue_fields_state",
     "mark_clue_field_gone",
     "record_clue_fields",
+    "record_partial_clue_fields",
 ]
 
 ClueObject = Literal["company", "contact"]
@@ -313,6 +314,58 @@ async def record_clue_fields(
             "ps": permission_set_id,
             "label": label_type_id,
         },
+    )
+
+
+async def record_partial_clue_fields(
+    conn: AsyncConnection,
+    *,
+    connection_id: UUID,
+    workspace_id: str,
+    provider: CrmProvider,
+    found: Iterable[ClueField],
+    permission_set_id: str | None,
+    label_type_id: str | None,
+) -> None:
+    """Record what a setup run that did not finish found or made, without forgetting what an
+    earlier run recorded: the created names are the union (in :data:`CLUE_FIELDS` order), a
+    permission set or label id this run did not reach is kept, and a ``gone`` record stays gone
+    with its gone names (only a run that reaches ``ready`` clears them,
+    :func:`record_clue_fields`). Otherwise the record is ``partial``."""
+    seen = {field.qualified_name for field in found}
+    state = await clue_fields_state(conn, connection_id=connection_id)
+    known = set(state.created_names) if state is not None else set()
+    names = [
+        field.qualified_name
+        for field in CLUE_FIELDS[provider]
+        if field.qualified_name in seen | known
+    ]
+    if state is None:
+        await conn.execute(
+            text(
+                "INSERT INTO crm_clue_fields (connection_id, workspace_id, provider, status, "
+                "created_names, permission_set_id, label_type_id) "
+                "VALUES (:c, :ws, :provider, 'partial', :created, :ps, :label)"
+            ),
+            {
+                "c": connection_id,
+                "ws": workspace_id,
+                "provider": provider,
+                "created": names,
+                "ps": permission_set_id,
+                "label": label_type_id,
+            },
+        )
+        return
+    await conn.execute(
+        text(
+            "UPDATE crm_clue_fields SET created_names = :created, "
+            "permission_set_id = COALESCE(:ps, permission_set_id), "
+            "label_type_id = COALESCE(:label, label_type_id), "
+            "status = CASE WHEN status = 'gone' THEN 'gone' ELSE 'partial' END, "
+            "updated_at = now() WHERE connection_id = :c"
+        ),
+        {"c": connection_id, "created": names, "ps": permission_set_id, "label": label_type_id},
     )
 
 

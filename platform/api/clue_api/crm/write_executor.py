@@ -64,7 +64,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.crm.clue_fields import CLUE_FIELDS, clue_fields_state, record_clue_fields
+from clue_api.crm.clue_fields import (
+    CLUE_FIELDS,
+    clue_fields_state,
+    record_clue_fields,
+    record_partial_clue_fields,
+)
 from clue_api.crm.clue_fields_setup import SetupOutcome, run_clue_fields_setup
 from clue_api.crm.composio_gateway import (
     ComposioError,
@@ -1112,7 +1117,8 @@ class CrmWriteHandler:
             waiting = await self._put_back(call, stop)
             if waiting or stop.kind not in ("rate_limited", "unavailable"):
                 raise
-            return  # its attempts are used up: failed, retryable
+            await self._setup_out_of_attempts(write, stop, outcome)
+            return
         await self._record_setup(
             connection, outcome, status="ready" if outcome.ready else "partial"
         )
@@ -1122,7 +1128,12 @@ class CrmWriteHandler:
                 "succeeded",
                 crm_message=(
                     f"Set up Clue's fields in {crm.name}: {outcome.counted('created')} created, "
-                    f"{outcome.counted('already there')} already there."
+                    + (
+                        f"{outcome.counted('updated')} updated, "
+                        if outcome.counted("updated")
+                        else ""
+                    )
+                    + f"{outcome.counted('already there')} already there."
                 ),
                 crm_response={"steps": steps},
             )
@@ -1141,6 +1152,34 @@ class CrmWriteHandler:
             )
         await self._record(crm, call, {write.write_id: result})
 
+    async def _setup_out_of_attempts(
+        self, write: _Write, stop: _Stop, outcome: SetupOutcome
+    ) -> None:
+        """A setup that kept meeting a rate limit or an unreachable CRM until its attempts ran
+        out (already ``failed``, retryable): say which step it stopped at, and keep its steps."""
+        shown, _ = crm_reply(stop.message)
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE crm_write SET crm_message = :message, "
+                    "crm_response = CAST(:response AS jsonb) "
+                    "WHERE write_id = :id AND status = 'failed'"
+                ),
+                {
+                    "id": write.write_id,
+                    "message": (
+                        f"Setting up Clue's fields stopped at {outcome.at or 'its first step'}: "
+                        f"{shown.rstrip('. ')}. Propose the setup again to finish it."
+                    ),
+                    "response": _response_param(
+                        {
+                            "steps": [step.as_json() for step in outcome.steps],
+                            "crm_answer": stop.message,
+                        }
+                    ),
+                },
+            )
+
     async def _record_setup(
         self,
         connection: CrmConnection,
@@ -1148,12 +1187,22 @@ class CrmWriteHandler:
         *,
         status: Literal["ready", "partial"],
     ) -> None:
-        """Keep what the CRM has: ``ready`` only when every step is done, else ``partial`` —
-        recorded only once the run found or made something, so an earlier record is not lost to
-        a run that stopped before its first field."""
-        if status == "partial" and not (
-            outcome.fields or outcome.permission_set_id or outcome.label_type_id
-        ):
+        """Keep what the CRM has: ``ready`` (replacing the record) only when every step is done;
+        else ``partial``, merged into the earlier record so a run that did not finish never makes
+        it forget anything (:func:`record_partial_clue_fields`)."""
+        if status == "partial":
+            if not (outcome.fields or outcome.permission_set_id or outcome.label_type_id):
+                return
+            async with self._conn_factory() as conn:
+                await record_partial_clue_fields(
+                    conn,
+                    connection_id=connection.connection_id,
+                    workspace_id=connection.workspace_id,
+                    provider=connection.provider,
+                    found=outcome.fields,
+                    permission_set_id=outcome.permission_set_id,
+                    label_type_id=outcome.label_type_id,
+                )
             return
         async with self._conn_factory() as conn:
             await record_clue_fields(

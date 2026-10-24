@@ -28,8 +28,9 @@ from sqlalchemy import text
 
 from clue_api.crm import writes
 from clue_api.crm.clue_fields import CLUE_FIELDS, clue_fields_state, record_clue_fields
-from clue_api.crm.composio_gateway import ExecuteResult
+from clue_api.crm.composio_gateway import ComposioError, ExecuteResult
 from clue_api.crm.connections import CrmConnection
+from clue_api.crm.salesforce_budget import CrmBudgetExhausted
 from clue_api.crm.write_prepare import clue_fields_setup_change
 from clue_storage import FsStorage
 from tests.api.test_crm_clue_fields_setup_propose_db import (
@@ -99,7 +100,7 @@ class _SchemaCrm:
     def __init__(
         self,
         *,
-        failures: Mapping[str, list[ExecuteResult]] | None = None,
+        failures: Mapping[str, list[ExecuteResult | Exception]] | None = None,
         grants_ignored: bool = False,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -140,7 +141,10 @@ class _SchemaCrm:
         self.calls.append((slug, dict(arguments)))
         queued = self.failures.get(slug)
         if queued:
-            return queued.pop(0)
+            failure = queued.pop(0)
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
         return self._answer(slug, arguments)
 
     def _answer(self, slug: str, arguments: Mapping[str, Any]) -> ExecuteResult:
@@ -212,6 +216,14 @@ class _SchemaCrm:
             )
         if slug == "SALESFORCE_CREATE_S_OBJECT_RECORD":
             return self._create_record(str(arguments["sobject_type"]), arguments["fields"])
+        if slug == "SALESFORCE_PATCH_COMPOSITE_SOBJECTS":
+            assert arguments["sobject_name"] == "FieldPermissions"
+            results = []
+            for record in arguments["records"]:
+                row = next(r for r in self.field_permissions.values() if r["Id"] == record["Id"])
+                row.update({k: v for k, v in record.items() if k.startswith("Permissions")})
+                results.append({"id": record["Id"], "success": True, "errors": []})
+            return _ok(results)
         if slug == "SALESFORCE_RUN_SOQL_QUERY":
             return self._soql(str(arguments["query"]))
         raise AssertionError(f"unexpected call {slug}")
@@ -773,3 +785,219 @@ def test_an_owner_no_longer_active_cannot_allow_the_setup(tmp_path: Path, status
         )
 
     _run(tmp_path, f"owner-{status}", body)
+
+
+# --- fix round 1 -------------------------------------------------------------------------------
+
+EDIT_REFUSED = ExecuteResult(
+    True,
+    [
+        {
+            "id": "01k",
+            "success": False,
+            "errors": [
+                {
+                    "message": "insufficient access rights on object id",
+                    "statusCode": "INSUFFICIENT_ACCESS_OR_READONLY",
+                }
+            ],
+        }
+    ],
+    None,
+)
+
+
+async def _ready_then_edit_unticked(
+    conn: Any, seeded: Any, connection: Any, tmp_path: Path
+) -> tuple[_SchemaCrm, UUID]:
+    """A Salesforce setup made ready, after which an admin unticked Edit on one field's row and
+    Clue's record went back to partial (a later setup is allowed)."""
+    crm = _SchemaCrm()
+    await _queued_setup(conn, seeded, connection)
+    await _execute(conn, tmp_path, connection, crm)
+    row = next(r for r in crm.field_permissions.values() if r["Field"] == "Contact.Clue_Id__c")
+    row["PermissionsEdit"] = False
+    await conn.execute(text("UPDATE crm_clue_fields SET status = 'partial'"))
+    crm.calls.clear()
+    return crm, await _queued_setup(conn, seeded, connection)
+
+
+def test_a_field_permission_without_edit_is_given_edit_before_ready(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        crm, proposal_id = await _ready_then_edit_unticked(conn, seeded, connection, tmp_path)
+        await _execute(conn, tmp_path, connection, crm)
+
+        (patch,) = [
+            args for slug, args in crm.calls if slug == "SALESFORCE_PATCH_COMPOSITE_SOBJECTS"
+        ]
+        assert [r["Id"] for r in patch["records"]] == [
+            r["Id"] for r in crm.field_permissions.values() if r["Field"] == "Contact.Clue_Id__c"
+        ]
+        assert all(
+            r["PermissionsRead"] and r["PermissionsEdit"] for r in crm.field_permissions.values()
+        )
+        assert "SALESFORCE_CREATE_S_OBJECT_RECORD" not in crm.slugs()
+        write = await _setup_write(conn, proposal_id)
+        assert write.status == "succeeded"
+        assert ("access to Contact.Clue_Id__c", "updated") in _steps(write)
+        assert write.crm_message == (
+            "Set up Clue's fields in Salesforce: 0 created, 1 updated, 15 already there."
+        )
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "ready"
+
+    _run(tmp_path, "sf-edit-unticked", body, "salesforce")
+
+
+def test_a_refused_edit_grant_records_partial_and_names_the_field(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        crm, proposal_id = await _ready_then_edit_unticked(conn, seeded, connection, tmp_path)
+        crm.failures["SALESFORCE_PATCH_COMPOSITE_SOBJECTS"] = [EDIT_REFUSED]
+        await _execute(conn, tmp_path, connection, crm)
+
+        write = await _setup_write(conn, proposal_id)
+        assert write.status == "failed"
+        assert write.crm_message == (
+            "Salesforce refused read and edit access to the field Contact.Clue_Id__c in the "
+            "permission set: insufficient access rights on object id "
+            "(INSUFFICIENT_ACCESS_OR_READONLY). The connected user needs to be a Salesforce admin."
+        )
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "partial"
+
+    _run(tmp_path, "sf-edit-refused", body, "salesforce")
+
+
+def test_a_partial_run_never_shrinks_the_record(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        fields = CLUE_FIELDS["salesforce"]
+        await record_clue_fields(
+            conn,
+            connection_id=connection.connection_id,
+            workspace_id=seeded.workspace_id,
+            provider="salesforce",
+            created=fields,
+            permission_set_id="0PSjV0000000000",
+            label_type_id=None,
+            status="ready",
+        )
+        await conn.execute(
+            text(
+                "UPDATE crm_clue_fields SET status = 'gone', gone_at = now(), "
+                "gone_names = ARRAY['Account.Clue_Tier__c']"
+            )
+        )
+        await _queued_setup(conn, seeded, connection)
+        # The second field is refused: this run saw only the first one.
+        refused = _ok({"success": False, "errors": [{"message": "Bad label", "statusCode": "X"}]})
+        crm = _SchemaCrm(
+            failures={
+                "SALESFORCE_CREATE_CUSTOM_FIELD": [_ok({"success": True, "id": "00N1"}), refused]
+            }
+        )
+        await _execute(conn, tmp_path, connection, crm)
+
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None
+        assert state.created_names == tuple(f.qualified_name for f in fields)
+        assert state.permission_set_id == "0PSjV0000000000"
+        # Only a run that reaches ready replaces the gone state.
+        assert (state.status, state.gone_names) == ("gone", ("Account.Clue_Tier__c",))
+
+    _run(tmp_path, "sf-no-shrink", body, "salesforce")
+
+
+def test_a_setup_that_runs_out_of_attempts_names_the_step_it_stopped_at(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposal_id = await _queued_setup(conn, seeded, connection)
+        await conn.execute(
+            text("UPDATE crm_write SET attempts = 4 WHERE proposal_id = :id"), {"id": proposal_id}
+        )
+        crm = _SchemaCrm(
+            failures={"HUBSPOT_CREATE_PROPERTY_FOR_SPECIFIED_OBJECT_TYPE": [RATE_LIMITED]}
+        )
+        handler = _handler(conn, tmp_path, crm, crm_write_max_attempts=5)  # type: ignore[arg-type]
+        await handler.handle(_context(connection))
+
+        write = await _setup_write(conn, proposal_id)
+        assert (write.status, write.retryable, write.attempts) == ("failed", True, 5)
+        assert write.crm_message == (
+            'Setting up Clue\'s fields stopped at the field "Clue tier" on companies: You have '
+            "reached your ten secondly limit. Propose the setup again to finish it."
+        )
+        assert _steps(write) == [
+            ('the property group "Clue" on companies', "created"),
+            ('the property group "Clue" on contacts', "created"),
+        ]
+
+    _run(tmp_path, "hs-out-of-attempts", body)
+
+
+class _BudgetRunsOut(_FakeBudget):
+    """Salesforce's budget runs out before the ``at``-th call of the run, once."""
+
+    def __init__(self, gateway: Any, at: int) -> None:
+        super().__init__(gateway)
+        self.at = at
+
+    async def take_call(self, conn: Any, *, connection: Any, today: Any) -> None:
+        await super().take_call(conn, connection=connection, today=today)
+        if len(self.taken_at) == self.at:
+            raise CrmBudgetExhausted("salesforce_api_share_exhausted", "Clue's share is used up.")
+
+
+def test_a_budget_stop_mid_setup_keeps_partial_and_the_resume_finishes(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposal_id = await _queued_setup(conn, seeded, connection)
+        crm = _SchemaCrm()
+        # Calls 1-7 make the fields; the 8th (the permission set look-up) finds no budget.
+        result = await _execute(conn, tmp_path, connection, crm, budget=_BudgetRunsOut(crm, 8))
+        assert result.outcome == "crm_budget" and result.requeue
+        assert await _proposal_status(conn, proposal_id) == "paused"
+        write = await _setup_write(conn, proposal_id)
+        assert (write.status, write.attempts) == ("queued", 0)  # the attempt is refunded
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None
+        assert (state.status, len(state.created_names)) == ("partial", 7)
+
+        before = dict(crm.sf_fields)
+        await _execute(conn, tmp_path, connection, crm)
+        assert (await _setup_write(conn, proposal_id)).status == "succeeded"
+        assert crm.sf_fields == before
+        assert len(crm.permission_sets) == 1
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None and state.status == "ready"
+
+    _run(tmp_path, "sf-budget", body, "salesforce")
+
+
+def test_an_expired_connection_mid_setup_keeps_partial_and_pauses(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposal_id = await _queued_setup(conn, seeded, connection)
+        expired = ComposioError("connection_expired", 410, "Connected account expired")
+        crm = _SchemaCrm(failures={"SALESFORCE_CREATE_S_OBJECT_RECORD": [expired]})
+        result = await _execute(conn, tmp_path, connection, crm)
+        assert result.outcome == "crm_connection_expired"
+        assert await _proposal_status(conn, proposal_id) == "paused"
+        write = await _setup_write(conn, proposal_id)
+        assert (write.status, write.attempts) == ("queued", 0)
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None
+        assert (state.status, len(state.created_names)) == ("partial", 7)
+
+        # The same connection works again (Composio's account restored): the paused setup resumes
+        # and makes nothing twice.
+        await conn.execute(
+            text(
+                "UPDATE workspace_integration_connection SET status = 'active' "
+                "WHERE connection_id = :c"
+            ),
+            {"c": connection.connection_id},
+        )
+        before = dict(crm.sf_fields)
+        await _execute(conn, tmp_path, connection, crm)
+        assert (await _setup_write(conn, proposal_id)).status == "succeeded"
+        assert crm.sf_fields == before
+        assert len(crm.permission_sets) == 1
+
+    _run(tmp_path, "sf-expired", body, "salesforce")

@@ -47,7 +47,7 @@ __all__ = [
     "run_clue_fields_setup",
 ]
 
-StepResult = Literal["created", "already there", "checked", "failed"]
+StepResult = Literal["created", "updated", "already there", "checked", "failed"]
 
 _GROUP = "HUBSPOT_CREATE_AND_RETURN_A_NEW_PROPERTY_GROUP"
 _PROPERTY = "HUBSPOT_CREATE_PROPERTY_FOR_SPECIFIED_OBJECT_TYPE"
@@ -57,6 +57,7 @@ _SF_FIELD = "SALESFORCE_CREATE_CUSTOM_FIELD"
 _SF_CREATE = "SALESFORCE_CREATE_S_OBJECT_RECORD"
 _SF_WHO = "SALESFORCE_WHO_AM_I"
 _SOQL = "SALESFORCE_RUN_SOQL_QUERY"
+_SF_PATCH = "SALESFORCE_PATCH_COMPOSITE_SOBJECTS"
 
 #: HubSpot's answers for a group or property that exists (409; the spike saw ``GROUP_EXISTS``).
 _HUBSPOT_EXISTS = ("GROUP_EXISTS", "already exists")
@@ -98,6 +99,8 @@ class SetupOutcome:
     fields: list[ClueField] = field(default_factory=list)
     permission_set_id: str | None = None
     label_type_id: str | None = None
+    #: The step the run is on (the last one begun): what a stop interrupted.
+    at: str | None = None
     #: The refused step's sentence, with ``{message}`` where the CRM's message goes.
     failure: str | None = None
     #: The CRM's whole answer to the refused step.
@@ -170,7 +173,7 @@ def _named(result: ExecuteResult, name: str) -> bool:
 
 async def _hubspot(crm: SetupCrm, fields: Sequence[ClueField], outcome: SetupOutcome) -> None:
     for object_type in dict.fromkeys(f.crm_object for f in fields):
-        step = f'the property group "{HUBSPOT_GROUP.label}" on {object_type}'
+        step = outcome.at = f'the property group "{HUBSPOT_GROUP.label}" on {object_type}'
         result = await crm.call(
             _GROUP,
             {"objectType": object_type, "name": HUBSPOT_GROUP.name, "label": HUBSPOT_GROUP.label},
@@ -182,7 +185,7 @@ async def _hubspot(crm: SetupCrm, fields: Sequence[ClueField], outcome: SetupOut
         else:
             raise _refuse(outcome, step, f"HubSpot refused {step}: {{message}}.", _answer(result))
     for clue_field in fields:
-        step = f'the field "{clue_field.label}" on {clue_field.crm_object}'
+        step = outcome.at = f'the field "{clue_field.label}" on {clue_field.crm_object}'
         result = await crm.call(_PROPERTY, _hubspot_property(clue_field))
         if _hubspot_exists(result):
             outcome.steps.append(SetupStep(step, "already there"))
@@ -216,7 +219,7 @@ def _hubspot_property(clue_field: ClueField) -> dict[str, Any]:
 async def _hubspot_label(crm: SetupCrm, outcome: SetupOutcome) -> None:
     """The "Possible duplicate" contact label: found by name, else made (its ``typeId`` kept)."""
     label = HUBSPOT_DUPLICATE_LABEL
-    step = f'the "{label.label}" label for {label.from_object}'
+    step = outcome.at = f'the "{label.label}" label for {label.from_object}'
     found = await _hubspot_label_type(crm, outcome, step)
     if found is not None:
         outcome.label_type_id = found
@@ -313,7 +316,7 @@ def _salesforce_arguments(clue_field: ClueField) -> dict[str, Any]:
 
 
 async def _salesforce_field(crm: SetupCrm, clue_field: ClueField, outcome: SetupOutcome) -> None:
-    step = f'the field "{clue_field.label}" on {clue_field.crm_object}'
+    step = outcome.at = f'the field "{clue_field.label}" on {clue_field.crm_object}'
     result = await crm.call(_SF_FIELD, _salesforce_arguments(clue_field))
     body = _unwrap(result.data) if result.successful else None
     inner = body if isinstance(body, Mapping) else {}
@@ -351,7 +354,7 @@ async def _find_one(
 async def _permission_set(crm: SetupCrm, outcome: SetupOutcome) -> str:
     """The "Clue fields" permission set: found by its name, else made (R-13.1)."""
     name = SALESFORCE_PERMISSION_SET.name
-    step = f'the permission set "{SALESFORCE_PERMISSION_SET.label}"'
+    step = outcome.at = f'the permission set "{SALESFORCE_PERMISSION_SET.label}"'
     found = await _find_one(
         crm, outcome, step, f"SELECT Id FROM PermissionSet WHERE Name = {_soql_text(name)}"
     )
@@ -380,13 +383,16 @@ async def _permission_set(crm: SetupCrm, outcome: SetupOutcome) -> str:
 async def _field_permissions(
     crm: SetupCrm, fields: Sequence[ClueField], permission_set: str, outcome: SetupOutcome
 ) -> None:
-    """Read and edit on every field in the permission set; a field it already grants is left."""
-    step = "the access the permission set grants"
+    """Read and edit on every field in the permission set. A row that already grants both is
+    left; a row missing either (an admin unticked Edit) is given both again — the permission set
+    is Clue's own, managed inside the approved setup (R-13.1) — so the setup is never ready while
+    a field cannot be written."""
+    step = outcome.at = "the access the permission set grants"
     result = await crm.call(
         _SOQL,
         {
-            "query": "SELECT Id, Field FROM FieldPermissions WHERE ParentId = "
-            f"{_soql_text(permission_set)}"
+            "query": "SELECT Id, Field, PermissionsRead, PermissionsEdit FROM FieldPermissions "
+            f"WHERE ParentId = {_soql_text(permission_set)}"
         },
     )
     records = _records(result)
@@ -394,11 +400,19 @@ async def _field_permissions(
         raise _refuse(
             outcome, step, f"Salesforce could not look up {step}: {{message}}.", _answer(result)
         )
-    granted = {str(record.get("Field")) for record in records}
+    granted = {str(record.get("Field")): record for record in records}
     for clue_field in fields:
-        step = f"access to {clue_field.qualified_name}"
-        if clue_field.qualified_name in granted:
+        step = outcome.at = f"access to {clue_field.qualified_name}"
+        row = granted.get(clue_field.qualified_name)
+        if (
+            row is not None
+            and row.get("PermissionsRead") is True
+            and row.get("PermissionsEdit") is True
+        ):
             outcome.steps.append(SetupStep(step, "already there"))
+            continue
+        if row is not None:
+            await _grant_read_and_edit(crm, clue_field, str(row.get("Id")), outcome, step)
             continue
         made, answer = _created_record(
             await crm.call(
@@ -426,9 +440,44 @@ async def _field_permissions(
         outcome.steps.append(SetupStep(step, "created"))
 
 
+async def _grant_read_and_edit(
+    crm: SetupCrm, clue_field: ClueField, row_id: str, outcome: SetupOutcome, step: str
+) -> None:
+    result = await crm.call(
+        _SF_PATCH,
+        {
+            "sobject_name": "FieldPermissions",
+            "external_id_field_name": "Id",
+            "all_or_none": False,
+            "records": [
+                {
+                    "attributes": {"type": "FieldPermissions"},
+                    "Id": row_id,
+                    "PermissionsRead": True,
+                    "PermissionsEdit": True,
+                }
+            ],
+        },
+    )
+    body = _unwrap(result.data) if result.successful else None
+    items = body.get("results") if isinstance(body, Mapping) else body
+    first = items[0] if isinstance(items, list) and items else None
+    if isinstance(first, Mapping) and first.get("success") is True:
+        outcome.steps.append(SetupStep(step, "updated"))
+        return
+    errors = first.get("errors") if isinstance(first, Mapping) else None
+    raise _refuse(
+        outcome,
+        step,
+        f"Salesforce refused read and edit access to the field {clue_field.qualified_name} in "
+        f"the permission set: {{message}}. {_NEEDS_ADMIN}",
+        json.dumps(errors, default=str) if errors else _answer(result),
+    )
+
+
 async def _assignment(crm: SetupCrm, permission_set: str, outcome: SetupOutcome) -> None:
     """The permission set assigned to the connected user (found first, else made)."""
-    step = "the permission set for the connected user"
+    step = outcome.at = "the permission set for the connected user"
     who = await crm.call(_SF_WHO, {})
     body = _unwrap(who.data) if who.successful else None
     identity = body.get("data") if isinstance(body, Mapping) else None
@@ -475,7 +524,7 @@ async def _assignment(crm: SetupCrm, permission_set: str, outcome: SetupOutcome)
 async def _read_back(crm: SetupCrm, fields: Sequence[ClueField], outcome: SetupOutcome) -> None:
     """Every field read with SOQL as the connected user: Salesforce answers "No such column" for
     a field the user cannot see, so an answer proves access (one query per object)."""
-    step = "reading Clue's fields back as the connected user"
+    step = outcome.at = "reading Clue's fields back as the connected user"
     by_object: dict[str, list[str]] = {}
     for clue_field in fields:
         by_object.setdefault(clue_field.crm_object, []).append(clue_field.crm_name)
