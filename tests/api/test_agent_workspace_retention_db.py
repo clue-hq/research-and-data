@@ -647,3 +647,206 @@ async def _seed_submission(ws: str, *, requested_at: datetime) -> str:
             },
         )
     return thread_id
+
+
+class _JobWithATurnBetweenTheReads(AgentWorkspaceRetentionJob):
+    """The job, with one writer committing in the window between its two reads of a chat.
+
+    ``_expire`` reads the pointer first — which names the file list it will publish from — and
+    the version-and-activity second, which is what the save compare-and-sets on. A writer that
+    lands in between leaves the two disagreeing, and the whole decision resting on a file list
+    that is already superseded. The hook is here rather than on timing so the interleaving is
+    the same on every machine.
+    """
+
+    def __init__(self, *, turn: Callable[[], Awaitable[None]], **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._turn = turn
+        self.fired = False
+
+    async def _activity(self, chat):  # type: ignore[no-untyped-def,override]
+        if not self.fired:
+            self.fired = True
+            await self._turn()
+        return await super()._activity(chat)
+
+
+def test_a_turn_landing_between_the_two_reads_is_recorded_stale(tmp_path: Path) -> None:
+    """Review N2: the version guard's own outcome — ``stale``, never a silent skip.
+
+    The candidate scan said this chat was cold and ``_busy`` saw nothing, because the turn is
+    still committing. By the time the job reads the chat's version and activity the turn is
+    durable, and the file list the job read a moment earlier no longer describes the chat. The
+    job must leave the chat entirely alone and *say* it did: ``stale`` is what tells an operator
+    the pass raced rather than found nothing to do, and the chat is retried tomorrow. Without
+    the comparison it says ``failed`` instead — the superseded file list's blob is gone, erased
+    by the very save that superseded it, so reading it raises — and a chat that fails on every
+    pass is a chat whose rough work is never expired again.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        cold = {"reads/old.json": b"old raw", "outputs/o": b"finished"}
+        fresh = b"the turn's brand-new notes"
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save_bodies(store, ws, cold)
+        await _age(ws, days=8)
+
+        async def turn() -> None:
+            bodies = {**cold, "scratch/new.md": fresh, "reads/new.json": fresh}
+            await _save(
+                store,
+                ws,
+                [_entry(path, data) for path, data in bodies.items()],
+                bodies,
+                expected=1,
+            )
+
+        job = _JobWithATurnBetweenTheReads(
+            turn=turn,
+            store=store,
+            conn_factory=transaction,
+            raw_s=RAW_S,
+            working_s=WORKING_S,
+        )
+
+        report = await job.run_once()
+
+        assert job.fired
+        assert (report.chats_checked, report.stale) == (1, 1)
+        assert (report.chats_expired, report.files_expired, report.failed) == (0, 0, 0)
+        pointer, manifest = await _manifest(store, ws)
+        # The turn's version stands, un-superseded, with nothing of it expired.
+        assert pointer.version == 2
+        assert manifest.expired() == ()
+        key = agent_workspace_key(ws, _sha(fresh))
+        assert key not in storage.deletes
+        assert await storage.exists(key) is True
+        for path in ("scratch/new.md", "reads/new.json"):
+            assert await store.read_file(workspace_id=ws, entry=manifest.by_path()[path]) == fresh
+
+    _scenario(body, tmp_path)
+
+
+def test_a_version_move_between_the_reads_never_publishes_the_list_it_read(tmp_path: Path) -> None:
+    """Review N2: the file list read and the version saved on must be one and the same.
+
+    The guard is a version comparison and not an activity comparison for a reason. A writer that
+    moves the version **without** warming the chat — every ``activity=False`` save, which is the
+    shape of the job's own write — leaves the chat due *and* its file list superseded, so the
+    activity test alone would wave it through. Without the comparison the job goes on to read
+    the superseded list and publish an expiry derived from it; the entries the other writer
+    added are not in that list, so the store releases their keys and erases bytes written
+    seconds ago. Watched without the guard, this chat does not in fact reach that point: the
+    other writer's own save had already erased the superseded file list's blob, so the read
+    raises and the chat lands in ``failed`` — every pass, for ever, since nothing about it
+    changes. Either way the outcome is wrong, and only the comparison makes it ``stale``.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        cold = {"reads/old.json": b"old raw", "outputs/o": b"finished"}
+        fresh = b"bytes another writer just added"
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save_bodies(store, ws, cold)
+        await _age(ws, days=8)
+
+        async def interloper() -> None:
+            """A version move that is not the chat being used, so the chat stays cold."""
+
+            bodies = {**cold, "scratch/new.md": fresh}
+            entries = [_entry(path, data) for path, data in bodies.items()]
+            await store.store_files(
+                workspace_id=ws, files=[(entry, bodies[entry.path]) for entry in entries]
+            )
+            status, _ = await store.save(
+                workspace_id=ws,
+                project_id="prj-ret",
+                thread_id=THREAD,
+                expected_version=1,
+                manifest=SnapshotManifest(entries=tuple(entries)),
+                fence=None,
+                activity=False,
+            )
+            assert status == "saved"
+
+        job = _JobWithATurnBetweenTheReads(
+            turn=interloper,
+            store=store,
+            conn_factory=transaction,
+            raw_s=RAW_S,
+            working_s=WORKING_S,
+        )
+
+        report = await job.run_once()
+
+        assert (report.stale, report.chats_expired, report.files_expired) == (1, 0, 0)
+        pointer, manifest = await _manifest(store, ws)
+        assert pointer.version == 2
+        assert manifest.expired() == ()
+        # The file the job never saw is still listed, still held, and still readable.
+        key = agent_workspace_key(ws, _sha(fresh))
+        assert await _erasure(key) == (False, False)
+        assert key not in storage.deletes
+        entry = manifest.by_path()["scratch/new.md"]
+        assert await store.read_file(workspace_id=ws, entry=entry) == fresh
+
+    _scenario(body, tmp_path)
+
+
+class _TurnLandsJustBeforeTheSave(DbWorkspaceSnapshotStore):
+    """The store, with one turn committing between the job's reads and the job's save.
+
+    The version the job read is still current when it decides, so the version guard passes and
+    the job does the work — and then the compare-and-set finds the version gone. That is the
+    store's own ``"stale"``, the second way the chat can move under the pass.
+    """
+
+    def __init__(self, *, storage: CountingStorage, turn: Callable[[], Awaitable[None]]) -> None:
+        super().__init__(storage=storage)
+        self._turn = turn
+        self.fired = False
+
+    async def save(self, **kwargs):  # type: ignore[no-untyped-def,override]
+        if not self.fired:
+            self.fired = True
+            await self._turn()
+        return await super().save(**kwargs)
+
+
+def test_a_save_that_loses_the_compare_and_set_is_recorded_stale(tmp_path: Path) -> None:
+    """The store's own ``"stale"``: the write loses the race it was anchored to, and says so."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        cold = {"reads/old.json": b"old raw", "outputs/o": b"finished"}
+        fresh = b"written while the job was deciding"
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        await _save_bodies(store, ws, cold)
+        await _age(ws, days=8)
+
+        async def turn() -> None:
+            bodies = {**cold, "scratch/new.md": fresh}
+            await _save(
+                store,
+                ws,
+                [_entry(path, data) for path, data in bodies.items()],
+                bodies,
+                expected=1,
+            )
+
+        racing = _TurnLandsJustBeforeTheSave(storage=storage, turn=turn)
+
+        report = await _job(racing).run_once()
+
+        assert racing.fired
+        assert (report.stale, report.chats_expired, report.files_expired) == (1, 0, 0)
+        pointer, manifest = await _manifest(store, ws)
+        assert pointer.version == 2
+        assert manifest.expired() == ()
+        # Nothing was expired, so nothing was released: both the old raw input the job wanted to
+        # expire and the file the turn just wrote are intact.
+        for path, data in (("reads/old.json", cold["reads/old.json"]), ("scratch/new.md", fresh)):
+            key = agent_workspace_key(ws, _sha(data))
+            assert await _erasure(key) == (False, False)
+            assert key not in storage.deletes
+            assert await store.read_file(workspace_id=ws, entry=manifest.by_path()[path]) == data
+
+    _scenario(body, tmp_path)
