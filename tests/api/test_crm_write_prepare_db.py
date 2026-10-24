@@ -3818,6 +3818,56 @@ def test_salesforce_creates_carry_the_clue_id_once_clues_fields_are_set_up(
     _run(tmp_path, "clueidcreate", body, provider="salesforce")
 
 
+def _hs_creates(world: Any) -> list[ProposedChange]:
+    return [
+        ProposedChange(
+            "HUBSPOT_CREATE_COMPANY",
+            {"name": "Zafran Security", "domain": "zafran.io"},
+            "x",
+            clue_entity_id=str(world.zafran),
+        ),
+        ProposedChange(
+            "HUBSPOT_CREATE_CONTACT",
+            {"firstname": "Nick", "lastname": "Fisher", "email": "nick@zafran.io"},
+            "x",
+            clue_entity_id=str(world.nick),
+        ),
+    ]
+
+
+def test_hubspot_creates_carry_the_clue_id_once_clues_fields_are_set_up(
+    tmp_path: Path,
+) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm()
+        before = await _prepare(
+            conn, gateway, connection, proposal_id, _hs_creates(world), _FakeBudget(gateway)
+        )
+        assert all("custom_properties" not in c.arguments for c in before)
+
+        await _clue_fields_ready(conn, connection)
+        after = await _prepare(
+            conn, gateway, connection, proposal_id, _hs_creates(world), _FakeBudget(gateway)
+        )
+        company = next(c for c in after if c.spec.slug == "HUBSPOT_CREATE_COMPANY")
+        contact = next(c for c in after if c.spec.slug == "HUBSPOT_CREATE_CONTACT")
+        assert company.arguments["custom_properties"] == {"clue_id": str(world.zafran)}
+        assert contact.arguments["custom_properties"] == {"clue_id": str(world.nick)}
+        assert isinstance(company.after, Mapping)
+        assert company.after["clue_id"] == str(world.zafran)
+
+        # A Clue id field found missing since: the creates go on without it.
+        await _clue_fields_ready(conn, connection, gone="contact.clue_id")
+        gone = await _prepare(
+            conn, gateway, connection, proposal_id, _hs_creates(world), _FakeBudget(gateway)
+        )
+        contact = next(c for c in gone if c.spec.slug == "HUBSPOT_CREATE_CONTACT")
+        assert "custom_properties" not in contact.arguments
+
+    _run(tmp_path, "hsclueidcreate", body)
+
+
 def test_a_clue_field_the_crm_no_longer_describes_is_marked_gone(tmp_path: Path) -> None:
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         world = await _researched(conn, seeded)

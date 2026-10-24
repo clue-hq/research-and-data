@@ -274,7 +274,9 @@ def test_a_hubspot_link_between_two_records_of_the_person_is_proposed_and_sent(
         assert link.parsed.label == "Nick Fisher and Nicholas Fisher (nick@zafran.io)"
         snapshot = card_snapshot([link], provider="hubspot", project_name="Q4")
         (group,) = snapshot["groups"]
-        assert group["title"] == "Mark 1 possible duplicate"
+        assert group["title"] == (
+            "Mark Nick Fisher and Nicholas Fisher (nick@zafran.io) as possible duplicates"
+        )
         assert group["always_allow"] == "marking possible duplicates"
         assert group["value_summary"] is None and group["field"] is None
         assert [r["name"] for r in group["records"]] == [link.parsed.label]

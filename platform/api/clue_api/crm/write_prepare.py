@@ -836,7 +836,7 @@ def possible_duplicate_message(provider: CrmProvider, ids: Sequence[str]) -> str
     return (
         f"{_CRM_NAMES[provider]} already has {len(ids)} contacts with this person's email "
         f"({named}), so Clue does not create another and never merges them. To mark them as "
-        f"possible duplicates, propose a link_duplicate between them for this Clue contact: {how}"
+        f"possible duplicates for this Clue contact, propose {how}"
         + (f" (and one from {first} to each other one)" if len(ids) > 2 else "")
         + "."
     )
@@ -2077,15 +2077,14 @@ async def _clue_state(
     conn: AsyncConnection, connection: CrmConnection, items: Sequence[_Item]
 ) -> ClueFieldsState | None:
     """The connection's Clue-fields record, read only when a change could use it: one writes a
-    Clue field, or a Salesforce create may carry Clue's id."""
+    Clue field, or a create may carry Clue's id."""
     provider = connection.provider
     wanted = any(
         clue_field_written(provider, item.parsed.object, field) is not None
         for item in items
         for field in item.parsed.fields
     ) or any(
-        (provider == "salesforce" and item.parsed.change_kind(item.spec) in _RECORD_CREATES)
-        or _link_change(item)
+        item.parsed.change_kind(item.spec) in _RECORD_CREATES or _link_change(item)
         for item in items
     )
     if not wanted:
@@ -2123,30 +2122,41 @@ def _with_clue_ids(
     metas: Mapping[str, Mapping[str, _FieldMeta]],
     state: ClueFieldsState | None,
 ) -> dict[int, _Item]:
-    """A Salesforce create of a person or account that names its Clue entity also sets Clue's id
-    (``Clue_Id__c``, R-13.2), once Clue's fields are set up and the org still has that field.
-    A create that sets it itself was checked like any other value and is kept as it is."""
+    """A create of a person or company that names its Clue entity also sets Clue's id
+    (Salesforce ``Clue_Id__c``, HubSpot ``clue_id``; R-13.2), once Clue's fields are set up and the
+    CRM still has that field. A create that sets it itself was checked like any other value and is
+    kept as it is."""
     out: dict[int, _Item] = {}
     for index, item in kept.items():
         entity = _uuid(item.proposed.clue_entity_id)
         if item.parsed.change_kind(item.spec) in _RECORD_CREATES and entity is not None:
             obj: ClueObject = "company" if item.parsed.object == "account" else "contact"
-            field = clue_field(connection.provider, obj, "Clue_Id__c")
+            field = clue_field(connection.provider, obj, _CLUE_ID[connection.provider])
             if (
                 clue_field_ready(state, field)
                 and field.crm_name in metas.get(item.parsed.object, {})
                 and field.crm_name not in item.parsed.fields
             ):
-                item = _with_custom_field(item, field.crm_name, str(entity))
+                item = _with_custom_field(
+                    item, _CUSTOM_ARGUMENT[connection.provider], field.crm_name, str(entity)
+                )
         out[index] = item
     return out
 
 
-def _with_custom_field(item: _Item, name: str, value: str) -> _Item:
-    """A Salesforce change that also sets the custom field ``name`` (in ``custom_fields``)."""
+#: Clue's id field, and the argument a create carries custom fields in, per CRM.
+_CLUE_ID: Mapping[CrmProvider, str] = {"salesforce": "Clue_Id__c", "hubspot": "clue_id"}
+_CUSTOM_ARGUMENT: Mapping[CrmProvider, str] = {
+    "salesforce": "custom_fields",
+    "hubspot": "custom_properties",
+}
+
+
+def _with_custom_field(item: _Item, argument: str, name: str, value: str) -> _Item:
+    """A change that also sets the custom field ``name`` (in its ``argument`` mapping)."""
     arguments = dict(item.proposed.arguments)
-    custom = arguments.get("custom_fields")
-    arguments["custom_fields"] = {**(custom if isinstance(custom, Mapping) else {}), name: value}
+    custom = arguments.get(argument)
+    arguments[argument] = {**(custom if isinstance(custom, Mapping) else {}), name: value}
     return dataclasses.replace(
         item,
         proposed=dataclasses.replace(item.proposed, arguments=arguments),
@@ -2270,8 +2280,7 @@ async def prepare_changes(
     )
     kept = cleared
     refused.extend(person_refused)
-    if provider == "salesforce":
-        kept = _with_clue_ids(connection, kept, metas, clue_state)
+    kept = _with_clue_ids(connection, kept, metas, clue_state)
 
     # R-12.11: a create that finds its record already there gives that record's id to the
     # changes that use it, before anything is read for them.
@@ -2809,7 +2818,9 @@ def _title(provider: CrmProvider, change: PreparedChange, count: int) -> str:
         return f"Create {count} {_noun(change.spec.object, count)}"
     if kind == "clue_fields_setup":
         return f"Set up Clue's fields in {_CRM_NAMES[provider]}"
-    return f"Mark {count} possible duplicate{'' if count == 1 else 's'}"
+    if count == 1:  # one link names its person: "two records of Holly Herrera (…)"
+        return f"Mark {change.parsed.label} as possible duplicates"
+    return f"Mark {count} possible duplicates"
 
 
 def _phrase(provider: CrmProvider, change: PreparedChange) -> str:
