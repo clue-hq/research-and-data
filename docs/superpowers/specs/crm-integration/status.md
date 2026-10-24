@@ -63,6 +63,7 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ⏸ Duplicate tagging and "possible duplicate" links → Phase 4 (R-12.4)
 
 ## Phase 4 — Clue's own fields (admin opt-in)
+- 🔨 Branch `feat/crm-integration-phase-4`; spike done 2026-10-24 (HubSpot schema writes work through Composio; Salesforce fields need field-level access → R-13.1); plan `docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md` drafted, decisions D-1–D-6 for the founder
 - ⬜ HubSpot "Clue" property group and fields
 - ⬜ Salesforce Clue custom fields (+ external-id field for upserts)
 
