@@ -143,6 +143,8 @@ class _WritingCrm(_FakeCrm):
         if isinstance(failure, ExecuteResult):
             return failure
         answer = self._write(slug, arguments)
+        if isinstance(answer, ExecuteResult):  # the CRM's own refusal
+            return answer
         if failure == "crash":
             raise RuntimeError("the worker died after the CRM wrote")
         return ExecuteResult(True, {"data": answer}, None)
@@ -253,6 +255,15 @@ class _WritingCrm(_FakeCrm):
             # The created object, as the notes give it: {id, properties, createdAt, ...}.
             return {"id": record_id, "properties": dict(arguments), "createdAt": "2026-10-22"}
         if slug in ("HUBSPOT_UPDATE_COMPANIES", "HUBSPOT_UPDATE_CONTACTS"):
+            ids = [str(item["id"]) for item in arguments["inputs"]]
+            twice = sorted({i for i in ids if ids.count(i) > 1})
+            if twice:  # HubSpot refuses a batch naming one record twice, and writes nothing
+                return ExecuteResult(
+                    False,
+                    {"http_error": "400", "status_code": 400},
+                    '{"status":"error","message":"Duplicate IDs found in batch input: '
+                    f'{twice}. IDs must be unique","category":"VALIDATION_ERROR"}}',
+                )
             for item in arguments["inputs"]:
                 record = self.records.setdefault(str(item["id"]), {})
                 record.update(
@@ -284,8 +295,20 @@ class _WritingCrm(_FakeCrm):
             return {"recordsIdsAdded": arguments["record_ids"], "recordIdsMissing": []}
         if slug == "SALESFORCE_PATCH_COMPOSITE_SOBJECTS":
             results = []
+            ids = [str(record["Id"])[:15] for record in arguments["records"]]
             for record in arguments["records"]:
                 fields = {k: v for k, v in record.items() if k not in ("attributes", "Id")}
+                if ids.count(str(record["Id"])[:15]) > 1:
+                    # Live (Phase 4 check): one Id twice in a call refuses each of its entries.
+                    errors = [
+                        {
+                            "statusCode": "DUPLICATE_VALUE",
+                            "message": f"Duplicate id specified:{record['Id']}",
+                            "fields": [],
+                        }
+                    ]
+                    results.append({"id": record["Id"], "success": False, "errors": errors})
+                    continue
                 if record["Id"] in self.refused_records:
                     errors = [
                         {
@@ -3356,6 +3379,94 @@ def test_a_clue_field_and_the_buying_role_land_on_a_hubspot_contact(tmp_path: Pa
         ]
 
     _run(tmp_path, "cluecontacths", body)
+
+
+async def _field_statuses(conn: Any, proposal_id: UUID) -> dict[str, str]:
+    rows = await conn.execute(
+        text("SELECT field, status FROM crm_write WHERE proposal_id = :id"), {"id": proposal_id}
+    )
+    return {row.field: row.status for row in rows}
+
+
+def test_two_fields_of_one_salesforce_record_are_one_composite_entry(tmp_path: Path) -> None:
+    """Final fix pass item 4 (live): two changes of one account in one composite call named its
+    Id twice, and Salesforce refused both ("Duplicate id specified", DUPLICATE_VALUE). Changes of
+    one record (15- and 18-character ids alike) are one entry carrying all their fields."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        world = await _researched(conn, seeded)
+        await _clue_fields_ready(conn, connection)
+        gateway = _WritingCrm(
+            records={
+                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None, "Clue_Id__c": None}
+            }
+        )
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "SALESFORCE_UPDATE_ACCOUNT",
+                {
+                    "account_id": "001A",
+                    "custom_fields": {"Clue_Tier__c": "Tier 1", "Clue_Id__c": str(world.zafran)},
+                },
+                "Clue's fields",
+                clue_entity_id=str(world.zafran),
+            ),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert await _field_statuses(conn, proposal_id) == {
+            "Clue_Tier__c": "succeeded",
+            "Clue_Id__c": "succeeded",
+        }
+        (write,) = gateway.writes
+        assert write[0] == "SALESFORCE_PATCH_COMPOSITE_SOBJECTS"
+        (entry,) = write[1]["records"]
+        assert entry["Id"] == "001A"
+        assert {k: v for k, v in entry.items() if k not in ("attributes", "Id")} == {
+            "Clue_Tier__c": "Tier 1",
+            "Clue_Id__c": str(world.zafran),
+        }
+
+    _run(tmp_path, "sfonerecord", body, provider="salesforce")
+
+
+def test_two_fields_of_one_hubspot_company_are_one_batch_input(tmp_path: Path) -> None:
+    """The same for HubSpot's batch update, which refuses a batch naming one record twice: one
+    input per company, so the batch is not refused and re-sent one change at a time."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={"101": {"icp_tier": None, "name": None}})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            ProposedChange(
+                "HUBSPOT_UPDATE_COMPANY",
+                {"companyId": "101", "properties": {"icp_tier": "Tier 1", "name": "Acme"}},
+                "x",
+            ),
+        )
+
+        await _handle(_handler(conn, tmp_path, gateway), connection)
+
+        assert await _field_statuses(conn, proposal_id) == {
+            "icp_tier": "succeeded",
+            "name": "succeeded",
+        }
+        assert gateway.writes == [
+            (
+                "HUBSPOT_UPDATE_COMPANIES",
+                {"inputs": [{"id": "101", "properties": {"icp_tier": "Tier 1", "name": "Acme"}}]},
+            )
+        ]
+
+    _run(tmp_path, "hsonerecord", body)
 
 
 def test_a_salesforce_create_sends_the_clue_id(tmp_path: Path) -> None:

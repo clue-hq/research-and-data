@@ -159,6 +159,38 @@ def _one_group(arguments: Arguments) -> str:
     return ""
 
 
+def _as_is(record_ref: str) -> str:
+    return record_ref
+
+
+def _salesforce_record_key(record_ref: str) -> str:
+    """A Salesforce record by the 15 characters its 15- and 18-character ids share."""
+    return record_ref[:15]
+
+
+def _merged_records(keys: Sequence[str]) -> tuple[list[str], list[int]]:
+    """Each record once, in the order it first appears, and each item's record's position.
+
+    A batch call names each record once (live: Salesforce refuses a composite call naming one Id
+    twice, "Duplicate id specified", and HubSpot's batch update refuses duplicate ids), so the
+    changes of one record are one entry carrying all their fields, and share its outcome."""
+    order: list[str] = []
+    position: dict[str, int] = {}
+    for key in keys:
+        if key not in position:
+            position[key] = len(order)
+            order.append(key)
+    return order, [position[key] for key in keys]
+
+
+def _merge_fields(entry: dict[str, Any], fields: Mapping[str, object], record: str) -> None:
+    for name, value in fields.items():
+        if name in entry and entry[name] != value:
+            # The executor never puts two values of one field of a record in one call.
+            raise ValueError(f"Two values of {name} for {record} in one batch call.")
+        entry[name] = value
+
+
 @dataclass(frozen=True)
 class BatchSpec:
     #: The action that carries many changes in one call.
@@ -170,6 +202,9 @@ class BatchSpec:
     split: Callable[[Any, Sequence[Arguments]], list[ItemOutcome]]
     #: Changes join one call only when their group is equal (e.g. the same list and operation).
     group: Callable[[Arguments], str] = dataclasses.field(default=_one_group)
+    #: When two record ids are one record: a call merges such changes into one entry, and the
+    #: executor never puts two changes of one field of one record in one call.
+    record_key: Callable[[str], str] = dataclasses.field(default=_as_is)
 
 
 @dataclass(frozen=True)
@@ -561,9 +596,14 @@ def hubspot_link_label(arguments: Arguments) -> object | None:
 
 def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
+        order, positions = _merged_records([str(item[id_arg]) for item in items])
+        properties: list[dict[str, Any]] = [{} for _ in order]
+        for item, at in zip(items, positions, strict=True):
+            _merge_fields(properties[at], item["properties"], order[at])
         return {
             "inputs": [
-                {"id": str(item[id_arg]), "properties": dict(item["properties"])} for item in items
+                {"id": record, "properties": props}
+                for record, props in zip(order, properties, strict=True)
             ]
         }
 
@@ -769,13 +809,16 @@ def _salesforce_composite_build(
     sobject = _SALESFORCE_SOBJECT[object_name]
 
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
-        records = []
-        for item in items:
-            change = parse(item)
+        changes = [parse(item) for item in items]
+        _, positions = _merged_records(
+            [_salesforce_record_key(str(change.record_ref)) for change in changes]
+        )
+        records: list[dict[str, Any]] = []
+        for change, at in zip(changes, positions, strict=True):
+            if at == len(records):
+                records.append({"attributes": {"type": sobject}, "Id": change.record_ref})
             # ``None`` clears the field here, which the named update tools cannot do (undo).
-            records.append(
-                {"attributes": {"type": sobject}, "Id": change.record_ref, **change.fields}
-            )
+            _merge_fields(records[at], change.fields, str(change.record_ref))
         return {
             "sobject_name": sobject,
             "external_id_field_name": "Id",
@@ -796,8 +839,12 @@ def _salesforce_composite_split(
         body = _unwrap(data)
         results = body.get("results") if isinstance(body, Mapping) else body
         results = results if isinstance(results, list) else []
+        # One result per record entry: the changes merged into one share it.
+        _, positions = _merged_records(
+            [_salesforce_record_key(str(item[id_arg])) for item in items]
+        )
         outcomes = []
-        for index, item in enumerate(items):
+        for index, item in zip(positions, items, strict=True):
             record = str(item[id_arg])
             result = results[index] if index < len(results) else None
             if not isinstance(result, Mapping):
@@ -943,6 +990,7 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             max_size=200,
             build=_salesforce_composite_build("account", _sf_update_account),
             split=_salesforce_composite_split("account_id"),
+            record_key=_salesforce_record_key,
         ),
     ),
     WriteActionSpec(
@@ -958,6 +1006,7 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             max_size=200,
             build=_salesforce_composite_build("contact", _sf_update_contact),
             split=_salesforce_composite_split("contact_id"),
+            record_key=_salesforce_record_key,
         ),
     ),
     # Verified live (Phase 3 Task 1): answers {id, success, errors}; the member's Status is the

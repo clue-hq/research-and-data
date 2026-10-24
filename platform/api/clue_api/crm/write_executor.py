@@ -2204,8 +2204,26 @@ def _chunks(writes: Sequence[_Write]) -> list[tuple[WriteActionSpec, list[_Write
         groups.setdefault((write.spec.slug, group), (write.spec, []))[1].append(write)
     chunks: list[tuple[WriteActionSpec, list[_Write]]] = []
     for spec, members in groups.values():
-        size = spec.batch.max_size if spec.batch is not None else _SOQL_CHUNK
-        chunks.extend((spec, members[i : i + size]) for i in range(0, len(members), size))
+        if spec.batch is None:
+            chunks.extend(
+                (spec, members[i : i + _SOQL_CHUNK]) for i in range(0, len(members), _SOQL_CHUNK)
+            )
+            continue
+        # A call merges the changes of one record into one entry (the CRMs refuse an id named
+        # twice). Two changes of one field of one record cannot merge: preparation refuses them
+        # in one proposal ("changed twice"), and should one ever reach here they go in separate
+        # calls rather than one overwriting the other.
+        current: list[_Write] = []
+        seen: set[tuple[str, str | None]] = set()
+        for write in members:
+            key = (spec.batch.record_key(str(write.record_ref)), write.field)
+            if len(current) == spec.batch.max_size or key in seen:
+                chunks.append((spec, current))
+                current, seen = [], set()
+            current.append(write)
+            seen.add(key)
+        if current:
+            chunks.append((spec, current))
     return chunks
 
 

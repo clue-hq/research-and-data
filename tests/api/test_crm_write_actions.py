@@ -450,6 +450,54 @@ def test_hubspot_batches_join_records_and_split_by_id() -> None:
     assert [(o.ok, o.crm_id) for o in outcomes] == [(False, "1"), (True, "2")]
 
 
+def test_salesforce_batch_names_each_record_once() -> None:
+    """Live (Phase 4): Salesforce refuses a composite call naming one Id twice. Changes of one
+    record -- its 15- and 18-character ids alike -- are one entry, and share its result."""
+    spec = write_spec("salesforce", "SALESFORCE_UPDATE_ACCOUNT")
+    assert spec is not None and spec.batch is not None
+    batch = spec.batch
+    items = [
+        {"account_id": "001jV00000HsWdp", "custom_fields": {"Clue_Id__c": "c-1"}},
+        {"account_id": "001B", "industry": "Banking"},
+        {"account_id": "001jV00000HsWdpQAF", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+    ]
+    assert batch.record_key("001jV00000HsWdpQAF") == batch.record_key("001jV00000HsWdp")
+    assert batch.build(items)["records"] == [
+        {
+            "attributes": {"type": "Account"},
+            "Id": "001jV00000HsWdp",
+            "Clue_Id__c": "c-1",
+            "Clue_Tier__c": "Tier 1",
+        },
+        {"attributes": {"type": "Account"}, "Id": "001B", "Industry": "Banking"},
+    ]
+    refused = {"statusCode": "FIELD_CUSTOM_VALIDATION_EXCEPTION", "message": "no"}
+    data = {
+        "results": [
+            {"id": "001jV00000HsWdpQAF", "success": False, "errors": [refused]},
+            {"id": "001B", "success": True, "errors": []},
+        ]
+    }
+    assert [o.ok for o in batch.split(data, items)] == [False, True, False]
+    # Two values of one field of one record never share a call (the executor splits them).
+    with pytest.raises(ValueError):
+        batch.build([items[1], {"account_id": "001B", "industry": "Retail"}])
+
+
+def test_hubspot_batch_names_each_company_once() -> None:
+    spec = write_spec("hubspot", "HUBSPOT_UPDATE_COMPANY")
+    assert spec is not None and spec.batch is not None
+    items = [
+        {"companyId": "1", "properties": {"industry": "A"}},
+        {"companyId": "1", "properties": {"name": "Acme"}},
+    ]
+    assert spec.batch.build(items) == {
+        "inputs": [{"id": "1", "properties": {"industry": "A", "name": "Acme"}}]
+    }
+    answer = {"status": "COMPLETE", "results": [{"id": "1", "properties": {}}]}
+    assert [o.ok for o in spec.batch.split(answer, items)] == [True, True]
+
+
 def test_salesforce_batch_can_clear_and_keeps_per_record_failures() -> None:
     spec = write_spec("salesforce", "SALESFORCE_UPDATE_CONTACT")
     assert spec is not None and spec.batch is not None
