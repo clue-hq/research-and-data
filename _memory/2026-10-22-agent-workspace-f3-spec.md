@@ -226,13 +226,27 @@ DELETING the write-back: `save(activity=False)` + `_ADVANCE_QUIET`, so the job's
 activity at all. **Scoped re-review: 9/9 ADDRESSED, no new Critical/Important, "ready to merge."**
 
 **Residuals, worth picking up (nothing blocks merge):**
-- **N2 (do this first):** the `"stale"` outcome has ZERO test coverage — including the new version-mismatch
-  guard that closes the data-loss race. The guard is three lines and correct by inspection, but untested.
-- Four other per-key `purge_erased_artifacts` callers still run the table-wide `expires_at` UPDATE.
+- ~~**N2 (do this first):** the `"stale"` outcome has ZERO test coverage — including the new version-mismatch
+  guard that closes the data-loss race. The guard is three lines and correct by inspection, but untested.~~
+  **DONE 2026-10-24 (`80faa1497`)** — three tests. Correction to the premise: removing only the version
+  guard does not reach data loss, it reaches `failed` (`SnapshotCorrupt`, because the superseding save had
+  already erased that manifest blob), so the chat fails every pass and is never expired again. The
+  data-loss protection is the other half of the I2 fix — judging due-ness on the freshly read activity.
+- ~~Four other per-key `purge_erased_artifacts` callers still run the table-wide `expires_at` UPDATE.~~
+  **DONE 2026-10-24 (`768ec94f0`)** — `sweep_expired=False` at all FIVE per-key callers (the fifth,
+  `dynamic_client_kb_erasure`, was found while fixing); the fleet sweep in `storage_wiring.py` and the
+  compliance retention sweep's keyless call are byte-for-byte unchanged. Five tests plant another owner's
+  past-`expires_at` row and prove it untouched.
 - No index on `artifact (expires_at) WHERE purged_at IS NULL` (another owner's table; daily, off the
   request path — deliberately not added).
-- Receipt lookups are sequential, one per new file per save (the `operation_id` index landed; the
-  concurrent gather did not).
+- ~~Receipt lookups are sequential, one per new file per save.~~ **DONE 2026-10-24 (`c8a15a8fd`)** —
+  gathered under a semaphore bounded by `agent_workspace_transfer_concurrency`; `ReceiptSource` unchanged,
+  failure handling unchanged. Tests prove the lookups overlap and that the manifest is byte-identical to a
+  sequential run.
+- **Two more pre-existing failures found while doing the above** (verified against base versions, unowned):
+  `tests/execution/test_recipes.py::test_latest_recipe0_is_the_only_promoted_executable_stage0_revision`
+  (recipe0 version sequence has a hole, 15→30) and
+  `tests/compliance/test_governance_e2e.py::test_supported_tier4_synthesis_is_promoted_to_current_value`.
 - `run_retention_if_due` holds its advisory lock and an open transaction for the whole pass.
 - A benign `_activity`→`read_manifest` race now counts as `failed`, the metric the runbook says to alert on.
 - A save refused `stale`/`fenced` leaves orphan own-area rows nothing references (pre-existing in shape).
