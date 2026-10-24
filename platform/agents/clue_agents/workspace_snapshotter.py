@@ -8,7 +8,9 @@ which version this machine's copy holds and carries that version's file list, so
 machine that holds the current copy makes one database read and no storage call.
 
 Restore brings a stale copy up to date without wiping it: files whose hash already matches stay,
-missing or different ones are downloaded, files the version no longer lists are deleted. Save
+missing or different ones are downloaded, files the version no longer lists are deleted. It also
+stamps the chat's activity, because starting a turn is activity: that is what keeps Phase 2's
+expiry off a chat whose turn is still running, for every caller (WS-34a). Save
 stores only new bytes, then moves the version record with a compare-and-set under the turn's fleet
 lease. A save that loses the race removes the note, so the next turn restores the winner — unless
 it lost to Phase 2's expiry job alone (AW-24), which it re-aims at the version that job published
@@ -168,6 +170,8 @@ class WorkspaceSnapshotter:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(_remove_note, lease)
             raise
+        if pointer is not None:
+            await self._mark_active(chat)
         log.info(
             "agent_workspace.restore",
             workspace_id=chat.workspace_id,
@@ -181,6 +185,33 @@ class WorkspaceSnapshotter:
             imported_legacy=report.imported_legacy,
         )
         return report
+
+    async def _mark_active(self, chat: ChatScope) -> None:
+        """Stamp the chat's snapshot row: a turn has started, so it is not cold (WS-34a).
+
+        The expiry job (Phase 2) skips a chat it can see is busy, but it recognises only *chat*
+        turns — an ``agent_turn`` task or a lease on the thread's work id. A research run, a
+        delegated specialist and onboarding synthesis take their lease on their execution id,
+        which that query cannot match and cannot derive from a thread id, and they file no
+        submissions either, so the snapshot row's own ``last_activity_at`` is the only signal
+        they have. Restoring is the one hook every one of them goes through, so starting a turn
+        is what marks the chat active — and a run is then never a candidate while it runs.
+
+        There is nothing to stamp when the chat has no version record yet, so the caller only
+        asks on a restore that had a pointer. A stamp is bookkeeping and the restore is the
+        turn's doorway: a ``touch`` that fails is logged and the turn goes on, exactly as the
+        factory's last-used stamp does.
+        """
+
+        try:
+            await self._store.touch(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
+        except Exception as exc:  # noqa: BLE001 — best effort by design
+            log.warning(
+                "agent_workspace.restore_touch_failed",
+                workspace_id=chat.workspace_id,
+                thread_id=chat.thread_id,
+                error=type(exc).__name__,
+            )
 
     async def _restore_without_record(
         self, lease: AgentWorkspaceLease, *, note: _Note | None, started: float

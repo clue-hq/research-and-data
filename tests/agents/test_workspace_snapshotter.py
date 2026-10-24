@@ -398,7 +398,50 @@ def test_unchanged_save_only_touches(tmp_path: Path) -> None:
     _turn(machine, {"scratch/n.md": b"n"})
     assert _turn(machine, {}) == "unchanged"
     assert store.pointer is not None and store.pointer.version == 1
-    assert store.touches == 1
+    # Two stamps, one turn: the restore that started it and the save that changed nothing.
+    assert store.touches == 2
+
+
+def test_a_restore_marks_the_chat_active(tmp_path: Path) -> None:
+    """Starting a turn is activity (WS-34a).
+
+    A research run, a delegated specialist and onboarding synthesis all lease their work on their
+    execution id, which the expiry job's busy check cannot match and cannot derive from a thread
+    id. They also have no submissions, so the snapshot row's own stamp is the only activity signal
+    they have — and a restore is the one hook every one of them goes through.
+    """
+
+    store = FakeStore()
+    machine = _machine(tmp_path, "a", store)
+
+    # A brand-new chat has no version record, so there is no row to stamp.
+    lease = _open(machine)
+    try:
+        assert store.touches == 0
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+    assert store.touches == 0
+
+    _turn(machine, {"scratch/notes.md": b"note"})
+    store.touches = 0
+
+    # A warm restore — this machine already holds the current copy — still stamps it.
+    lease = _open(machine)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.warm is True
+        assert store.touches == 1
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+    # So does a restore that had to download the version, on a machine that was behind.
+    other = _machine(tmp_path, "b", store)
+    store.touches = 0
+    lease = _open(other)
+    try:
+        assert lease.restore_report is not None and lease.restore_report.warm is False
+        assert store.touches == 1
+    finally:
+        asyncio.run(other.factory.release_saved(lease))
 
 
 def test_stale_save_removes_note(tmp_path: Path) -> None:

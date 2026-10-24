@@ -24,6 +24,9 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import pytest
 from sqlalchemy import text
 
+from clue_agents.worker_area import claim_worker_area
+from clue_agents.workspace import AgentWorkspaceFactory
+from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_agents.workspace_snapshot import (
     UNKNOWN_RECEIPT,
     Receipt,
@@ -31,6 +34,7 @@ from clue_agents.workspace_snapshot import (
     SnapshotManifest,
     tier_for,
 )
+from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_submission import thread_work_id
 from clue_api.agent_workspace_retention import (
     RETENTION_SWEEP,
@@ -38,10 +42,12 @@ from clue_api.agent_workspace_retention import (
     run_retention_if_due,
 )
 from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
+from clue_core import ExecutionId
 from clue_db import db_lifespan, transaction
 from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_storage import FsStorage, agent_workspace_key
 from tests._workspace import seed_project
+from tests.agents.workspace_helpers import RecordingArtifactSink, policy
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
@@ -848,5 +854,83 @@ def test_a_save_that_loses_the_compare_and_set_is_recorded_stale(tmp_path: Path)
             assert await _erasure(key) == (False, False)
             assert key not in storage.deletes
             assert await store.read_file(workspace_id=ws, entry=manifest.by_path()[path]) == data
+
+    _scenario(body, tmp_path)
+
+
+@asynccontextmanager
+async def _worker(root: Path, storage: CountingStorage) -> AsyncIterator[AgentWorkspaceFactory]:
+    """One fleet worker's area and factory, saving through the real store (WS-34a)."""
+
+    root.mkdir(mode=0o700, exist_ok=True)
+    area = claim_worker_area(root)
+    factory = AgentWorkspaceFactory(
+        prepared_root=PreparedWorkspaceRoot(path=area.path),
+        artifact_sink=RecordingArtifactSink(),
+        area=area,
+        snapshotter=WorkspaceSnapshotter(
+            store=DbWorkspaceSnapshotStore(storage=storage),
+            concurrency=4,
+            retry_delays=(0, 0, 0),
+        ),
+    )
+    try:
+        yield factory
+    finally:
+        factory.close()
+        area.close()
+
+
+def test_a_research_run_that_just_restored_is_not_a_candidate(tmp_path: Path) -> None:
+    """WS-34a: a run whose lease the busy check cannot see is still never expired under itself.
+
+    A research run leases its work on its execution id, not on ``thread_work_id``, so
+    :data:`_BUSY` can never match it; and it files no submissions, so the snapshot row's own
+    stamp is its only activity signal. Restoring its folders is what sets that stamp.
+    """
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        thread = f"account-research-{uuid4()}"
+        store = DbWorkspaceSnapshotStore(storage=storage)
+        bodies = {"reads/r.json": b"raw bytes", "scratch/a": b"rough", "outputs/o": b"finished"}
+        await _save_bodies(store, ws, bodies, thread=thread)
+        cold = await _age(ws, days=9, thread=thread)
+
+        async with _worker(tmp_path / "workspaces", storage) as factory:
+            lease = await factory.acquire_restored(
+                workspace_id=ws,
+                project_id="prj-ret",
+                thread_id=thread,
+                execution_id=ExecutionId(uuid4()),
+                policy=policy(
+                    max_total_bytes=1_000_000, max_file_bytes=500_000, max_file_count=100
+                ),
+            )
+            try:
+                # The run has started, so the chat is warm and out of the candidate set.
+                assert await _last_activity(ws, thread) > cold
+
+                report = await _job(store).run_once()
+
+                assert (report.chats_checked, report.files_expired) == (0, 0)
+                pointer, manifest = await _manifest(store, ws, thread)
+                assert pointer.version == 1 and manifest.expired() == ()
+                for path, data in bodies.items():
+                    key = agent_workspace_key(ws, _sha(data))
+                    assert key not in storage.deletes
+                    assert (
+                        await store.read_file(workspace_id=ws, entry=manifest.by_path()[path])
+                        == data
+                    )
+            finally:
+                await factory.release_saved(lease)
+
+        # And the stamp is the only thing that held the job off: once the run is long over, the
+        # same two files go.
+        await _age(ws, days=9, thread=thread)
+
+        after = await _job(store).run_once()
+
+        assert (after.chats_checked, after.files_expired) == (1, 2)
 
     _scenario(body, tmp_path)

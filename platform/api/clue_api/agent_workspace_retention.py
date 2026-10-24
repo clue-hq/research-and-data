@@ -15,11 +15,15 @@ every own-area key the new version released that no other snapshot holds (ruling
 
 **What counts as activity** (WS-24) is the newest of the snapshot row's ``last_activity_at`` and the
 chat's newest ``agent_turn_submission``. A folder id that is not a chat — a research run, a
-delegation — has no submissions and answers with its own column.
+delegation — has no submissions and answers with its own column, which a turn stamps when it
+restores (WS-34a): starting a turn is activity, so a run in flight is never a candidate.
 
 **A busy chat is skipped, never raced.** A queued or claimed ``agent_turn`` task for the thread's
 work id, or a live ``work_lease`` on it, means a turn is about to save or is saving; the chat is
-counted as skipped and left for tomorrow. That check is a courtesy, not the guarantee: a turn can
+counted as skipped and left for tomorrow. It only recognises *chat* turns — a research run and a
+delegation lease their work on their execution id, which this query cannot match — and it is only
+an extra guard: what keeps the job off any running turn, whoever it belongs to, is the activity a
+restore stamps. That check is a courtesy, not the guarantee: a turn can
 complete between the candidate scan and the expiry and leave nothing for it to see. The guarantee
 is that the decision and the write are anchored to one read — the chat's activity and version
 taken together, as late as possible, with the save compare-and-setting on that same version. The
