@@ -128,12 +128,18 @@ def test_card_bounds_the_expired_list_newest_first_and_says_what_was_left_out() 
     file the agent just lost is the one it is about to ask about.
     """
 
+    # Age order is the REVERSE of path order (review area 3, M-2: when the two agreed, a card
+    # sorted by path, or not sorted at all, passed this test). The fifty oldest are under work/,
+    # which sorts after reads/, so the folder count of what was left out tells the orders apart
+    # too.
     manifest = SnapshotManifest(
         entries=tuple(
             _entry(
-                f"reads/r{index:04d}.json",
+                f"reads/r{index:04d}.json"
+                if index >= 50
+                else f"work/large_tool_results/r{index:04d}.txt",
                 written_at=NOW - timedelta(days=30),
-                expired_at=NOW - timedelta(hours=index + 1),
+                expired_at=NOW - timedelta(hours=250 - index),
             )
             for index in range(250)
         )
@@ -144,10 +150,11 @@ def test_card_bounds_the_expired_list_newest_first_and_says_what_was_left_out() 
     expired = card["expired"]
     assert isinstance(expired, list)
     assert len(expired) == WORKSPACE_FILES_MAX_EXPIRED == 200
-    # The two most recently expired, not the two alphabetically first.
-    assert [item["path"] for item in expired[:2]] == ["reads/r0000.json", "reads/r0001.json"]
-    assert expired[-1]["path"] == "reads/r0199.json"
-    assert card["omitted_expired"] == {"reads": 50}
+    # The most recently expired first — r0249 expired an hour ago — and in age order throughout.
+    assert [item["path"] for item in expired] == [
+        f"reads/r{index:04d}.json" for index in range(249, 49, -1)
+    ]
+    assert card["omitted_expired"] == {"work": 50}
 
 
 def test_an_empty_or_missing_manifest_gives_an_empty_card() -> None:
