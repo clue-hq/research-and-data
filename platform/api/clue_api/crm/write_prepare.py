@@ -258,6 +258,10 @@ class _Item:
     owner: tuple[str, str | None, str | None] | None = None
     #: Clue's own undo restoring its before-value (ruling #2/#3): no research check applies.
     exempt: bool = False
+    #: A new person linked to a company the batch creates (R-12.11) when Clue already knows the
+    #: person's company as a CRM record: (the link field, that record). The link passes only when
+    #: the create finds exactly that record (:func:`_company_links_not_known`).
+    known_company: tuple[str, str] | None = None
 
 
 def _words(*names: str) -> str:
@@ -1035,18 +1039,21 @@ def _check_person(
     claims: dict[str, tuple[UUID, ...]] = {}
     buying_role: tuple[str, str] | None = None
     as_researched: dict[str, str] = {}
+    known_company: tuple[str, str] | None = None
     for field, value in item.parsed.fields.items():
         meta = metas.get(field)
         label = meta.label if meta else field
         named = f"{label} ({field})"
         if field in _COMPANY_LINK_FIELDS:
             reference = record_reference(value)
+            known = account.crm_record_id if account is not None else None
             if reference is not None:  # a company the batch creates (R-12.11): by its website
                 domain = account.domain if account is not None else None
                 if domain and reference != NEW_COMPANY_PREFIX + website_host(domain):
                     return f"{named}: not the company Clue knows this person by."
+                if known is not None:  # it must turn out to be that record: checked once found
+                    known_company = (field, known)
                 continue
-            known = account.crm_record_id if account is not None else None
             if known is not None and _sf_key(known) != _sf_key(str(value).strip()):
                 return f"{named}: not the company Clue knows this person by."
             continue
@@ -1081,6 +1088,7 @@ def _check_person(
         claims=claims,
         buying_role=buying_role,
         owner=("person", contact.crm_record_id, email),
+        known_company=known_company,
     )
 
 
@@ -1327,12 +1335,13 @@ def _check_once_per_created_record(items: Sequence[_Item]) -> None:
     search before either exists (final review I-5)."""
     seen: set[tuple[str, str]] = set()
     for item in items:
-        if item.spec.find_existing is None:
+        # The value other changes refer to the record by (R-12.11): one record, one create.
+        made = created_reference(item.parsed.change_kind(item.spec), item.parsed.fields)
+        if made is None:
             continue
-        key = item.spec.find_existing[1]
-        value = create_key(key, item.parsed.fields.get(key))
-        if not value:
-            continue
+        company = made.startswith(NEW_COMPANY_PREFIX)
+        key = "domain" if company else "email"
+        value = made.removeprefix(NEW_COMPANY_PREFIX if company else NEW_CONTACT_PREFIX)
         if (item.parsed.object, value) in seen:
             raise WriteRefused(
                 "crm_write_not_parsable",
@@ -1760,6 +1769,15 @@ async def prepare_changes(
         reference = _reference(item)
         if reference is not None and reference in found_ids:
             kept[index] = _with_reference(item, found_ids[reference])
+    for index in _company_links_not_known(provider, kept):
+        refused.append(
+            _refused(
+                index,
+                kept.pop(index),
+                "The company link: not the company Clue knows this person by. Link the person to "
+                "the CRM company read_crm_targets gives for their account.",
+            )
+        )
 
     grants = await live_grants(conn, connection_id=connection.connection_id)
     builder = _Builder(conn, connection, grants, metas)
@@ -1904,6 +1922,30 @@ async def prepare_changes(
     # the order the executor sends (R-12.7).
     ordered = sorted(prepared, key=lambda c: c.parsed.change_kind(c.spec) != "list_create")
     return PreparedBatch(ordered, sorted(refused, key=lambda r: r.index))
+
+
+def _company_links_not_known(provider: CrmProvider, kept: Mapping[int, _Item]) -> list[int]:
+    """The new people linked to a company the batch creates although Clue already knows their
+    company as another CRM record (R-8.7 with R-12.11): the link still names the create (it
+    found nothing, so it would make a duplicate) or names the record it found, which is not the
+    known one."""
+    wrong = []
+    for index, item in kept.items():
+        if item.known_company is None:
+            continue
+        field, known = item.known_company
+        linked = item.parsed.fields.get(field)
+        if record_reference(linked) is not None or not same_record(provider, known, linked):
+            wrong.append(index)
+    return wrong
+
+
+def same_record(provider: CrmProvider, known: str, value: object) -> bool:
+    """Two CRM ids name one record (Salesforce answers 18 characters for 15)."""
+    text_value = str(value or "").strip()
+    if provider == "salesforce":
+        return _sf_key(known) == _sf_key(text_value)
+    return str(known) == text_value
 
 
 def _reference(item: _Item) -> str | None:

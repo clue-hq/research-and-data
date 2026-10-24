@@ -2703,3 +2703,60 @@ def test_a_company_found_at_send_gives_its_id_to_the_changes_that_need_it(
         assert logged["HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]["status"] == "succeeded"
 
     _run(tmp_path, "reffound", body)
+
+
+# --- fix round 1: a run that dies between the stages resumes without sending anything twice ----
+
+
+@pytest.mark.parametrize("dies_at", ["HUBSPOT_CREATE_COMPANY", "HUBSPOT_CREATE_CONTACT"])
+def test_a_run_that_dies_between_the_stages_resumes_and_sends_each_change_once(
+    tmp_path: Path, dies_at: str
+) -> None:
+    """The worker dies right after the CRM made the company (stage 1, before its id is kept and
+    filled in) or the person (mid stage 2). The next run creates nothing again: the create finds
+    the record it made, and the changes that need it are sent once, with its real id."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
+        gateway = _WritingCrm(records={}, failures={dies_at: ["crash"]})
+        proposal_id = await _propose(
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _create_list("Clue: Q4"),
+            _create_company(),
+            _person_at(f"new:company:{_PEOPLE_DOMAIN}"),
+            _add_to_new(f"new:company:{_PEOPLE_DOMAIN}"),
+        )
+        handler = _handler(conn, tmp_path, gateway)
+        with pytest.raises(RuntimeError):
+            await _handle(handler, connection)
+
+        await _handle(handler, connection)
+
+        sent = [slug for slug, _ in gateway.writes]
+        for slug in (
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_CREATE_COMPANY",
+            "HUBSPOT_CREATE_CONTACT",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        ):
+            assert sent.count(slug) == 1, slug
+        company = next(rid for rid, rec in gateway.records.items() if rec.get("domain"))
+        person = next(args for slug, args in gateway.writes if slug == "HUBSPOT_CREATE_CONTACT")
+        add = next(
+            args for slug, args in gateway.writes if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS"
+        )
+        assert person["associations"][0]["to"]["id"] == company
+        assert add == {"list_id": "17", "operation": "add", "record_ids": [company]}
+        logged = await _by_slug(conn, proposal_id)
+        assert logged["HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]["status"] == "succeeded"
+        assert logged["HUBSPOT_UPDATE_LIST_MEMBERSHIPS"]["record_ref"] == company
+        # The create that died is the record it made: found on the resume, never made twice.
+        assert (logged[dies_at]["status"], logged[dies_at]["record_ref"] is not None) == (
+            "skipped",
+            True,
+        )
+        assert await _proposal_status(conn, proposal_id) == "finished"
+
+    _run(tmp_path, f"refresume{dies_at[8:15].lower()}", body)

@@ -2844,3 +2844,92 @@ def test_a_change_whose_create_is_refused_is_refused_too(tmp_path: Path) -> None
         assert [c.parsed.change_kind(c.spec) for c in batch.changes] == ["list_create"]
 
     _run(tmp_path, "refchain", body)
+
+
+# --- fix round 1: a new company link must be the company Clue already knows -------------------
+
+
+def test_a_new_company_link_is_refused_when_clue_knows_the_persons_crm_company(
+    tmp_path: Path,
+) -> None:
+    """(A) Clue knows Zafran as CRM company 101: linking Nick to a company the batch creates
+    would attach him to a duplicate. (B) the same when the account has no domain at all."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_company("Zafran Security", "zafran.io"),
+                _linked_person(_NICK, "new:company:zafran.io", world.nick),
+            ],
+        )
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+        assert "not the company Clue knows this person by" in batch.refused[0].message
+
+        await conn.execute(
+            text("UPDATE account_entity SET primary_domain = NULL WHERE id = :id"),
+            {"id": world.zafran},
+        )
+        batch = await _prepare_batch(
+            conn,
+            _FakeCrm(),
+            connection,
+            proposal_id,
+            [
+                _create_company("Anything", "anything.example"),
+                _linked_person(_NICK, "new:company:anything.example", world.nick),
+            ],
+        )
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+
+    _run(tmp_path, "refknown", body)
+
+
+def test_a_new_company_link_must_find_the_crm_company_clue_knows(tmp_path: Path) -> None:
+    """(C) the create finds a company already there: the link passes only when that company is
+    the one Clue knows the person by."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        await _link(conn, seeded, connection, "company", "101", world.zafran)
+        changes = [
+            _create_company("Zafran Security", "zafran.io"),
+            _linked_person(_NICK, "new:company:zafran.io", world.nick),
+        ]
+        other = _FakeCrm(records={"202": {"domain": "zafran.io", "name": "Zafran"}})
+        batch = await _prepare_batch(conn, other, connection, proposal_id, changes)
+        assert _refusal(batch) == [(1, "crm_personal_data_not_allowed")]
+
+        known = _FakeCrm(records={"101": {"domain": "zafran.io", "name": "Zafran"}})
+        batch = await _prepare_batch(conn, known, connection, proposal_id, changes)
+        assert batch.refused == []
+        person = next(c for c in batch.changes if c.spec.slug == "HUBSPOT_CREATE_CONTACT")
+        assert person.parsed.fields["associatedcompanyid"] == "101"
+        assert person.arguments["associations"][0]["to"]["id"] == "101"
+
+    _run(tmp_path, "refknownfound", body)
+
+
+def test_two_creates_of_one_person_by_email_and_work_email_are_refused(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        gateway = _FakeCrm()
+        with pytest.raises(WriteRefused) as refused:
+            await _prepare(
+                conn,
+                gateway,
+                connection,
+                proposal_id,
+                [
+                    ProposedChange("HUBSPOT_CREATE_CONTACT", {"email": "Ana@acme.com"}, "x"),
+                    ProposedChange("HUBSPOT_CREATE_CONTACT", {"work_email": "ana@acme.com "}, "x"),
+                ],
+            )
+        assert refused.value.reason_code == "crm_write_not_parsable"
+        assert "proposed twice in this batch" in str(refused.value)
+
+    _run(tmp_path, "twiceworkemail", body)
