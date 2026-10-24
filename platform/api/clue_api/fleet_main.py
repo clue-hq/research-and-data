@@ -455,14 +455,14 @@ async def _workspace_retention_loop(
 
     ``every`` belongs to the fleet, not to this process:
     :func:`~clue_api.agent_workspace_retention.run_retention_if_due` keeps the last run in the
-    database, so a restart never resets it and one process runs while the others skip. A fault is
-    logged and the loop continues — expiring old files must never sink run execution."""
+    database, so a restart never resets it, and the pass claims itself in a short transaction, so
+    one process runs while the others skip however long it takes. A fault is logged and the loop
+    continues — expiring old files must never sink run execution."""
 
     while True:
         await sleep(interval_s)
         try:
-            async with conn_factory() as conn:
-                report = await run_retention_if_due(conn, job=job, every=every)
+            report = await run_retention_if_due(job=job, every=every, conn_factory=conn_factory)
             if report is not None:
                 log.info(
                     "fleet.workspace_retention.ran",

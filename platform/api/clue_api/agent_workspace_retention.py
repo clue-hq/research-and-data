@@ -42,7 +42,6 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.workspace_snapshot import (
     UNKNOWN_RECEIPT,
@@ -56,6 +55,8 @@ from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
 
 __all__ = [
+    "RETENTION_CLAIM",
+    "RETENTION_CLAIM_TTL",
     "RETENTION_SWEEP",
     "AgentWorkspaceRetentionJob",
     "RetentionReport",
@@ -67,6 +68,29 @@ log = get_logger("clue_api.agent_workspace_retention")
 #: The ``maintenance_run`` row and advisory-lock key of the fleet-wide expiry job.
 RETENTION_SWEEP = "agent_workspace_retention"
 _RETENTION_LOCK = "agent-workspace-retention"
+#: The ``maintenance_run`` row a running pass claims; its time is when that pass started.
+RETENTION_CLAIM = f"{RETENTION_SWEEP}.claim"
+#: How long a claim keeps every other worker off the pass. Longer than any pass should take, so
+#: two never overlap; short enough that a worker killed mid-pass holds retention up for hours,
+#: not days.
+RETENTION_CLAIM_TTL = timedelta(hours=6)
+
+_TRY_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))")
+_LOCK = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+_LAST_RUN = text("SELECT last_run_at FROM maintenance_run WHERE name = :name")
+_RECORD = text(
+    "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+    "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
+)
+# Takes the claim when there is none or the one there has expired; no row back means it is held.
+_CLAIM = text(
+    "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+    "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at "
+    "WHERE maintenance_run.last_run_at <= :expired_before "
+    "RETURNING last_run_at"
+)
+# Only this pass's own claim: one that expired and was taken over belongs to the new runner.
+_RELEASE = text("DELETE FROM maintenance_run WHERE name = :name AND last_run_at = :at")
 
 # WS-24's definition of a chat's activity, written once and read by both the scan and the expiry:
 # ``GREATEST`` over the snapshot row's own stamp and the chat's newest submission. The correlated
@@ -395,49 +419,64 @@ class AgentWorkspaceRetentionJob:
 
 
 async def run_retention_if_due(
-    conn: AsyncConnection,
     *,
     job: AgentWorkspaceRetentionJob,
     every: timedelta,
+    conn_factory: ConnFactory = transaction,
+    claim_ttl: timedelta = RETENTION_CLAIM_TTL,
     now: datetime | None = None,
 ) -> RetentionReport | None:
     """Run ``job`` for the whole fleet when the last run is ``every`` old, else ``None``.
 
-    Every fleet worker calls this on its check interval, exactly as
-    :func:`~clue_api.storage_wiring.run_orphan_blob_sweep_if_due` is called: the last run's time
-    lives in ``maintenance_run`` so a deploy never resets it, and a transaction-scoped advisory
-    lock on ``conn`` means one process runs while the others skip. ``None`` means nothing ran —
-    not due, or another process has it.
+    Every fleet worker calls this on its check interval. The last run's time lives in
+    ``maintenance_run`` so a deploy never resets it. ``None`` means nothing ran — not due, or
+    another worker's pass holds the claim.
 
-    Unlike the orphan sweep, the work does *not* share ``conn``: the job writes through the
-    snapshot store's own transactions. A job that raises therefore propagates with ``conn`` rolled
-    back, so the new timestamp is never recorded and tomorrow's check retries; whatever it managed
-    to expire before failing simply stays expired, which is the same answer the retry reaches.
+    **No transaction stays open across the pass** (review A3-I1). The job works through its own
+    transactions, and production Postgres kills a session idle in a transaction after 10 minutes
+    (``deploy/railway-postgres-start-command.txt``). This used to hold a transaction-scoped
+    advisory lock for the whole pass, so a pass over 10 minutes lost its lock mid-run and could
+    never record itself, and every worker's check then started another full pass, without end.
+    Instead the pass is *claimed* in one short transaction before it starts — a
+    :data:`RETENTION_CLAIM` row stamped with the pass's start, which every other worker sees and
+    respects until it is ``claim_ttl`` old — and recorded in another short one when it ends.
+
+    One runner at a time: a live claim makes every other check return ``None``. A failed pass is
+    retried later: a pass that raises releases its claim, so the next check (minutes later) runs
+    it again, and nothing is recorded; a worker that dies mid-pass leaves its claim, which the
+    first check after ``claim_ttl`` takes over. Whatever a failed pass managed to expire stays
+    expired, which is the same answer the retry reaches.
     """
 
     now = now or datetime.now(UTC)
-    won = (
-        await conn.execute(
-            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
-            {"key": _RETENTION_LOCK},
-        )
-    ).scalar_one()
-    if not won:
-        return None
-    last = (
-        await conn.execute(
-            text("SELECT last_run_at FROM maintenance_run WHERE name = :name"),
-            {"name": RETENTION_SWEEP},
-        )
-    ).scalar_one_or_none()
-    if last is not None and now - last < every:
-        return None
-    report = await job.run_once(now=now)
-    await conn.execute(
-        text(
-            "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
-            "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
-        ),
-        {"name": RETENTION_SWEEP, "at": now},
-    )
+    async with conn_factory() as conn:
+        # Serialises the due-check and the claim against another worker's claim or record, so a
+        # pass that has just recorded itself is never followed by a second one that read the old
+        # time. Held only for this short transaction.
+        won = (await conn.execute(_TRY_LOCK, {"key": _RETENTION_LOCK})).scalar_one()
+        if not won:
+            return None
+        last = (await conn.execute(_LAST_RUN, {"name": RETENTION_SWEEP})).scalar_one_or_none()
+        if last is not None and now - last < every:
+            return None
+        claimed = (
+            await conn.execute(
+                _CLAIM, {"name": RETENTION_CLAIM, "at": now, "expired_before": now - claim_ttl}
+            )
+        ).first()
+        if claimed is None:
+            return None
+    try:
+        report = await job.run_once(now=now)
+    except BaseException:
+        try:
+            async with conn_factory() as conn:
+                await conn.execute(_RELEASE, {"name": RETENTION_CLAIM, "at": now})
+        except Exception:  # noqa: BLE001 — the claim then simply expires after ``claim_ttl``
+            log.warning("agent_workspace.retention.claim_not_released", exc_info=True)
+        raise
+    async with conn_factory() as conn:
+        await conn.execute(_LOCK, {"key": _RETENTION_LOCK})
+        await conn.execute(_RECORD, {"name": RETENTION_SWEEP, "at": now})
+        await conn.execute(_RELEASE, {"name": RETENTION_CLAIM, "at": now})
     return report

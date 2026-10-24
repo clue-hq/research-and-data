@@ -23,6 +23,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.worker_area import claim_worker_area
 from clue_agents.workspace import AgentWorkspaceFactory
@@ -37,8 +38,11 @@ from clue_agents.workspace_snapshot import (
 from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_submission import thread_work_id
 from clue_api.agent_workspace_retention import (
+    RETENTION_CLAIM,
+    RETENTION_CLAIM_TTL,
     RETENTION_SWEEP,
     AgentWorkspaceRetentionJob,
+    RetentionReport,
     run_retention_if_due,
 )
 from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
@@ -117,7 +121,8 @@ async def _workspace() -> AsyncIterator[str]:
                 {"ws": ws},
             )
             await conn.execute(
-                text("DELETE FROM maintenance_run WHERE name = :name"), {"name": RETENTION_SWEEP}
+                text("DELETE FROM maintenance_run WHERE name IN (:name, :claim)"),
+                {"name": RETENTION_SWEEP, "claim": RETENTION_CLAIM},
             )
         # ``agent_turn_submission`` and its project/thread/user chain are append-only by trigger,
         # so the one test that seeds a submission leaves those rows behind under its own
@@ -367,8 +372,7 @@ def test_one_runner_at_a_time_and_only_when_due(tmp_path: Path) -> None:
         every = timedelta(days=1)
 
         async def attempt() -> object:
-            async with transaction() as conn:
-                return await run_retention_if_due(conn, job=job, every=every)
+            return await run_retention_if_due(job=job, every=every)
 
         # Two processes check at once: one holds the advisory lock, the other skips.
         both = await asyncio.gather(attempt(), attempt())
@@ -932,5 +936,139 @@ def test_a_research_run_that_just_restored_is_not_a_candidate(tmp_path: Path) ->
         after = await _job(store).run_once()
 
         assert (after.chats_checked, after.files_expired) == (1, 2)
+
+    _scenario(body, tmp_path)
+
+
+# --- The pass claims itself (fix pass 1, review A3-I1) --------------------------------------------
+
+
+class _FakeJob:
+    """A pass that touches no database: it waits for ``release`` (when given) and counts runs."""
+
+    def __init__(self, *, release: asyncio.Event | None = None, sleep_s: float = 0.0) -> None:
+        self.release = release
+        self.sleep_s = sleep_s
+        self.started = asyncio.Event()
+        self.runs = 0
+
+    async def run_once(self, *, now: datetime | None = None) -> RetentionReport:
+        self.runs += 1
+        self.started.set()
+        if self.release is not None:
+            await self.release.wait()
+        await asyncio.sleep(self.sleep_s)
+        return RetentionReport(chats_checked=self.runs)
+
+
+async def _maintenance(name: str) -> datetime | None:
+    async with transaction() as conn:
+        return (
+            await conn.execute(
+                text("SELECT last_run_at FROM maintenance_run WHERE name = :n"), {"n": name}
+            )
+        ).scalar_one_or_none()
+
+
+@asynccontextmanager
+async def _short_idle_timeout() -> AsyncIterator[AsyncConnection]:
+    """A transaction Postgres kills once it has sat idle for a second — production's 10-minute
+    ``idle_in_transaction_session_timeout``, shrunk so a test can outlast it."""
+
+    async with transaction() as conn:
+        await conn.execute(text("SET LOCAL idle_in_transaction_session_timeout = '1s'"))
+        yield conn
+
+
+def test_a_pass_longer_than_the_idle_timeout_still_records_itself(tmp_path: Path) -> None:
+    """Review A3-I1: the advisory lock's transaction used to sit idle for the whole pass, so in
+    production a pass over 10 minutes was killed, never recorded, and every worker's 5-minute
+    check started another — without end. No transaction may stay open across the pass."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        job = _FakeJob(sleep_s=1.5)
+
+        report = await run_retention_if_due(
+            job=job,  # type: ignore[arg-type]
+            every=timedelta(days=1),
+            conn_factory=_short_idle_timeout,
+        )
+
+        assert report is not None and job.runs == 1
+        assert await _maintenance(RETENTION_SWEEP) is not None
+        assert await _maintenance(RETENTION_CLAIM) is None
+
+    _scenario(body, tmp_path)
+
+
+def test_a_second_runner_skips_while_the_first_holds_the_claim(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        release = asyncio.Event()
+        first, second = _FakeJob(release=release), _FakeJob()
+        every = timedelta(days=1)
+
+        running = asyncio.create_task(run_retention_if_due(job=first, every=every))  # type: ignore[arg-type]
+        await asyncio.wait_for(first.started.wait(), timeout=10)
+        # The claim is committed while the pass runs: another worker can see it.
+        assert await _maintenance(RETENTION_CLAIM) is not None
+
+        assert await run_retention_if_due(job=second, every=every) is None  # type: ignore[arg-type]
+        assert second.runs == 0
+
+        release.set()
+        assert await asyncio.wait_for(running, timeout=10) is not None
+        assert await _maintenance(RETENTION_SWEEP) is not None
+        assert await _maintenance(RETENTION_CLAIM) is None
+        # Recorded, so not due again.
+        assert await run_retention_if_due(job=second, every=every) is None  # type: ignore[arg-type]
+        assert second.runs == 0
+
+    _scenario(body, tmp_path)
+
+
+def test_a_claim_left_by_a_pass_that_died_is_taken_over_once_it_expires(tmp_path: Path) -> None:
+    """A worker killed mid-pass leaves its claim behind. Until it expires nobody else runs; after
+    that the next check takes it over, so retention is never off for good."""
+
+    async def body(ws: str, storage: CountingStorage) -> None:
+        died_at = datetime.now(UTC)
+        async with transaction() as conn:
+            await conn.execute(
+                text("INSERT INTO maintenance_run (name, last_run_at) VALUES (:n, :at)"),
+                {"n": RETENTION_CLAIM, "at": died_at},
+            )
+        job = _FakeJob()
+        every = timedelta(days=1)
+
+        live = died_at + RETENTION_CLAIM_TTL - timedelta(minutes=1)
+        assert await run_retention_if_due(job=job, every=every, now=live) is None  # type: ignore[arg-type]
+        assert job.runs == 0
+
+        expired = died_at + RETENTION_CLAIM_TTL + timedelta(seconds=1)
+        assert await run_retention_if_due(job=job, every=every, now=expired) is not None  # type: ignore[arg-type]
+        assert job.runs == 1
+        assert await _maintenance(RETENTION_SWEEP) == expired
+        assert await _maintenance(RETENTION_CLAIM) is None
+
+    _scenario(body, tmp_path)
+
+
+def test_a_pass_that_raises_releases_its_claim_and_is_retried(tmp_path: Path) -> None:
+    async def body(ws: str, storage: CountingStorage) -> None:
+        class _Broken(_FakeJob):
+            async def run_once(self, *, now: datetime | None = None) -> RetentionReport:
+                self.runs += 1
+                raise RuntimeError("the database went away")
+
+        broken, healthy = _Broken(), _FakeJob()
+        every = timedelta(days=1)
+
+        with pytest.raises(RuntimeError):
+            await run_retention_if_due(job=broken, every=every)  # type: ignore[arg-type]
+        assert await _maintenance(RETENTION_SWEEP) is None
+        assert await _maintenance(RETENTION_CLAIM) is None
+
+        assert await run_retention_if_due(job=healthy, every=every) is not None  # type: ignore[arg-type]
+        assert healthy.runs == 1
 
     _scenario(body, tmp_path)
