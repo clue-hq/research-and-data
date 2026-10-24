@@ -13,7 +13,7 @@ from clue_agents import (
 )
 from clue_agents.contracts import normalize_virtual_path
 from clue_agents.ports import TurnBinding
-from clue_agents.worker_area import WorkerArea, process_worker_area
+from clue_agents.worker_area import LOCAL_DIR, process_local_area, process_worker_area
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_agents.workspace_snapshotter import WorkspaceSnapshotter
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -28,9 +28,6 @@ __all__ = [
     "StorageAgentArtifactSink",
     "build_agent_workspace_factory",
 ]
-
-#: The emergency switch's root below the configured root (snapshots off, WS-21).
-LOCAL_DIR = "local"
 
 
 class StorageAgentArtifactSink:
@@ -78,7 +75,9 @@ def build_agent_workspace_factory(
     F3 (WS-15, WS-21; AW-19): with snapshots on (the default), the factory's root is this
     process's own worker area under the configured root, claimed by lock and wiped at claim, and
     every lease is restored from and saved to the chat's snapshot. With snapshots off — the
-    emergency switch only — the root is ``<root>/local`` and folders are local only.
+    emergency switch only — the root is ``<root>/local``, shared by every process on the machine,
+    and folders are local only; this process holds a shared lock on ``<root>/workers/local.lock``
+    for its whole life, so no snapshots-on worker removes the folder while it runs.
 
     The returned backend exposes opaque relative paths. These host paths remain confined to the
     trusted composition root and never enter agent state, prompts, or tool results.
@@ -95,14 +94,13 @@ def build_agent_workspace_factory(
         home_root=service_home,
     ).prepare()
     if not resolved_settings.agent_workspace_snapshots_enabled:
-        local = prepared.path / LOCAL_DIR
-        local.mkdir(mode=0o700, exist_ok=True)
+        # Shared with every other snapshots-off process; the area lets the cache sweep skip the
+        # chats this process is using, and holds the shared lock that keeps ``local`` in place.
+        local = process_local_area(prepared.path)
         return AgentWorkspaceFactory(
-            prepared_root=PreparedWorkspaceRoot(path=local),
+            prepared_root=PreparedWorkspaceRoot(path=local.path),
             artifact_sink=DurableAgentArtifactStore(storage=storage),
-            # Unlocked: every process shares ``local``. It lets the cache sweep skip the chats
-            # this process is using; nothing else about the area applies.
-            area=WorkerArea(name=LOCAL_DIR, path=local, lock_fd=None),
+            area=local,
             turn_bindings=turn_bindings,
         )
     area = process_worker_area(prepared.path)

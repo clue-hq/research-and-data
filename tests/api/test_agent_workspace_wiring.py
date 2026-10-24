@@ -147,14 +147,16 @@ def test_the_factory_uses_a_local_root_when_snapshots_are_off(tmp_path: Path) ->
         home_root=home,
     )
     try:
-        # An unlocked area over the shared local folder, so the cache sweep can still tell which
-        # chats this process is using (snapshots off keeps folders a day, not 30 minutes).
+        # An area over the shared local folder, held by a shared lock, so the cache sweep can still
+        # tell which chats this process is using (snapshots off keeps folders a day, not 30 min).
         assert factory.area is not None
         assert factory.area.name == "local"
         assert factory.area.path == root / "local"
         assert factory.root_path == root / "local"
     finally:
         factory.close()
+        if factory.area is not None:
+            factory.area.close()
 
 
 def test_every_acquire_site_restores_and_saves() -> None:

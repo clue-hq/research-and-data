@@ -8,7 +8,9 @@ before F3 takes its files from its old folder on its first turn and the old fold
 this script removes whatever is left of the old layout once it has not been touched for a while.
 
 Dry run by default: it lists each old workspace folder, whether it is old enough to remove, and
-its size. ``--apply`` removes the old-enough ones. It never touches ``workers/`` or ``local/``.
+its size. ``--apply`` removes the old-enough ones. It never touches ``workers/`` or ``local/``,
+so it also keeps ``workers/local.lock``, the lock every snapshots-off worker holds on ``local/``
+(deleting it under a live one would let a snapshots-on worker remove that worker's files).
 
 Usage::
 

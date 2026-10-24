@@ -6,7 +6,12 @@ copy of the chat's snapshot, so deleting one never loses anything. The sweep del
 whole folder when it has not been used for the idle window (30 minutes by default), and, while the
 area is over its size cap (10 GiB by default), the least recently used idle folders first. It
 skips the chats this worker is running a turn for right now — which the worker knows itself, so no
-other worker and no database is consulted — and it never looks outside its own area.
+other worker and no database is consulted — and it never looks inside any other area.
+
+A snapshots-on sweep also removes the snapshots-off switch's leftover ``<root>/local`` once no
+snapshots-off process holds its lock (:func:`~clue_agents.worker_area.remove_unused_local`). The
+area claim tries that at start-up too, but during a rolling deploy a snapshots-off worker may still
+be alive then, so the sweep is what makes the folder go within one interval of the last one ending.
 
 The local version note is deleted before the files, so a turn that starts during the deletion
 restores instead of trusting a half-deleted folder; the area's guard makes the check and the
@@ -22,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from clue_agents.worker_area import ChatScope, WorkerArea, wipe_path
+from clue_agents.worker_area import ChatScope, WorkerArea, remove_unused_local, wipe_path
 from clue_obs import get_logger
 
 __all__ = ["AgentWorkspaceCacheJob", "CacheSweepResult"]
@@ -57,10 +62,20 @@ class _Chat:
 class AgentWorkspaceCacheJob:
     """Delete idle chat folders from this worker's own area (WS-16)."""
 
-    def __init__(self, *, area: WorkerArea, idle_s: float, max_bytes: int) -> None:
+    def __init__(
+        self,
+        *,
+        area: WorkerArea,
+        idle_s: float,
+        max_bytes: int,
+        leftover_local_root: Path | None = None,
+    ) -> None:
+        # ``leftover_local_root`` is the workspace root of a snapshots-ON worker, whose sweep also
+        # removes ``<root>/local`` once the emergency is over. Never set it with snapshots off.
         self._area = area
         self._idle_s = idle_s
         self._max_bytes = max_bytes
+        self._leftover_local_root = leftover_local_root
 
     @property
     def idle_s(self) -> float:
@@ -68,6 +83,8 @@ class AgentWorkspaceCacheJob:
 
     def run_once(self, *, now: float | None = None) -> CacheSweepResult:
         clock = time.time() if now is None else now
+        if self._leftover_local_root is not None and remove_unused_local(self._leftover_local_root):
+            log.info("agent_workspace.leftover_local_removed", area=self._area.name)
         chats = _list_chats(self._area.path / _CHATS_DIR)
         removed: list[_Chat] = []
         for chat in sorted(chats, key=lambda item: item.last_used):

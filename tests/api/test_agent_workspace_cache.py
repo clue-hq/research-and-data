@@ -3,6 +3,7 @@ AW-19) and the one-off removal of the layout from before F3 (WS-22)."""
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -150,6 +151,24 @@ def test_the_legacy_script_apply_removes_only_the_old_layout(tmp_path: Path) -> 
     assert (root / "local").exists()
 
 
+def test_the_legacy_script_keeps_the_local_lock_file(tmp_path: Path) -> None:
+    """``workers/local.lock`` is what every snapshots-off worker holds on ``local``; deleting it
+    under a live one would let a snapshots-on worker lock a fresh file and remove its files."""
+
+    root = tmp_path / "workspaces"
+    _legacy(root, age_s=3 * 86400)
+    (root / "local").mkdir()
+    (root / "workers").mkdir()
+    (root / "workers" / "local.lock").write_bytes(b"")
+    stamp = time.time() - 3 * 86400
+    for path in (root / "workers", root / "workers" / "local.lock"):
+        os.utime(path, (stamp, stamp))
+    _script(root, "--apply", "--older-than-hours", "0")
+    assert not (root / "ws_abc").exists()
+    assert (root / "workers" / "local.lock").is_file()
+    assert (root / "local").is_dir()
+
+
 def test_the_legacy_script_keeps_what_was_used_recently(tmp_path: Path) -> None:
     root = tmp_path / "workspaces"
     thread = _legacy(root, age_s=60)
@@ -250,6 +269,42 @@ def test_start_up_removes_this_users_old_media_temp_folders_only(tmp_path: Path)
     assert not old.exists()
     assert new.exists()
     assert other.exists()
+
+
+# --- the snapshots-off switch's leftover ``local`` folder (Task 5 finding) ----------------------
+
+
+def test_the_sweep_removes_local_once_the_last_snapshots_off_worker_of_a_rolling_deploy_ends(
+    tmp_path: Path,
+) -> None:
+    """A snapshots-on worker starts while a snapshots-off one is still alive, so its start-up
+    attempt has to leave ``local``; nothing removes it until that worker ends — and then the
+    fleet's own sweep does, without waiting for another restart."""
+
+    from clue_api.fleet_main import _workspace_cache_job
+    from tests.agents.workspace_helpers import hold_local_area
+
+    root = tmp_path / "workspaces"
+    root.mkdir(mode=0o700)
+    emergency = root / "local" / "chats" / "ws-1" / "p-1" / "t-1" / "agent" / "scratch"
+    context = multiprocessing.get_context("spawn")
+    ready, stop = context.Event(), context.Event()
+    off_worker = context.Process(target=hold_local_area, args=(str(root), ready, stop))
+    off_worker.start()
+    try:
+        assert ready.wait(30)
+        area = claim_worker_area(root)  # the returning snapshots-on worker starts
+    finally:
+        stop.set()
+        off_worker.join(30)
+    try:
+        assert (emergency / "emergency.md").read_text() == "only copy"
+        job = _workspace_cache_job(_settings(tmp_path, snapshots=True), area)  # type: ignore[arg-type]
+        job.run_once(now=NOW)
+        assert not (root / "local").exists()
+        assert (root / "workers" / "local.lock").is_file()
+    finally:
+        area.close()
 
 
 # --- review I2: a turn holds its chat before the lease, while it syncs the library copies --------

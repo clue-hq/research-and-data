@@ -196,3 +196,22 @@ def resource_snapshot() -> tuple[AgentResourceSnapshot, tuple[WorkspaceSeedFile,
         ),
     )
     return snapshot, seeds
+
+
+def hold_local_area(root: str, ready: object, stop: object) -> None:
+    """A stand-in snapshots-off worker in its own process (``spawn`` target).
+
+    It opens the shared ``<root>/local`` the way production does — a shared lock on
+    ``<root>/workers/local.lock`` for the whole process — writes one chat file there, signals
+    ``ready`` and holds until ``stop``; ending the process releases the lock, as a real worker's
+    death does.
+    """
+
+    from clue_agents.worker_area import process_local_area
+
+    area = process_local_area(Path(root))
+    chat = area.path / "chats" / "ws-1" / "p-1" / "t-1" / "agent" / "scratch"
+    chat.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (chat / "emergency.md").write_text("only copy")
+    ready.set()  # type: ignore[attr-defined]
+    stop.wait(60)  # type: ignore[attr-defined]

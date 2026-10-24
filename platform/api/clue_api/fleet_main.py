@@ -416,16 +416,18 @@ def _workspace_cache_job(settings: Settings, area: WorkerArea) -> AgentWorkspace
     """The sweep for this worker's area (WS-16, WS-17; AW-11, AW-17).
 
     With snapshots off a deleted folder is gone for good, so the idle window is a day, like the
-    old purge, instead of the 30 minutes a restorable copy can afford.
+    old purge, instead of the 30 minutes a restorable copy can afford. With snapshots on, each
+    sweep also removes the switch's leftover ``<root>/local`` once no snapshots-off process is
+    alive (only the snapshots-on side ever removes it).
     """
 
-    idle_s = (
-        settings.agent_workspace_cache_idle_s
-        if settings.agent_workspace_snapshots_enabled
-        else _LOCAL_IDLE_S
-    )
+    snapshots = settings.agent_workspace_snapshots_enabled
+    root = settings.agent_workspace_root
     return AgentWorkspaceCacheJob(
-        area=area, idle_s=idle_s, max_bytes=settings.agent_workspace_cache_max_bytes
+        area=area,
+        idle_s=settings.agent_workspace_cache_idle_s if snapshots else _LOCAL_IDLE_S,
+        max_bytes=settings.agent_workspace_cache_max_bytes,
+        leftover_local_root=Path(root) if snapshots and root is not None else None,
     )
 
 

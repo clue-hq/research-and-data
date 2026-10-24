@@ -1275,10 +1275,12 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
     the chat saved while it was on, and what it writes is never saved. Turned back on, every
     machine restores the last saved version, untouched.
 
-    It also pins what happens to ``<root>/local`` afterwards (AW-1, D-2 say a machine keeps no
-    residue): once the switch is back on NOTHING removes it — not the area claim, not the cache
-    sweep, not the legacy-layout script — and if the switch is turned off again, the chat's turn
-    reopens that old copy rather than the newer saved version.
+    It also pins what happens to ``<root>/local`` afterwards (AW-1, D-2: a machine keeps no
+    residue). Every snapshots-off process holds a shared lock on ``<root>/workers/local.lock``; a
+    snapshots-on worker removes ``local`` only once it can take that lock exclusively. So a
+    snapshots-on worker starting while the off one is still alive (a rolling deploy) leaves it,
+    the fleet's cache sweep removes it once the off one has ended, and if the switch is turned off
+    again the chat starts EMPTY instead of reopening the first emergency's files as if current.
     """
 
     from clue_api.fleet_main import _workspace_cache_job
@@ -1351,7 +1353,7 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
             # The local folder is the only copy of what the off turn wrote, and it stays.
             for path, data in off_files.items():
                 assert _bytes(off, world.ws, path) == data
-            _stop(off)
+            # The off process stays alive through step 4's start-up, as in a rolling deploy.
 
             # 3. Snapshots ON again, on a DIFFERENT root: a cold restore of version 1.
             on_b = _built_machine(world, root_b, snapshots=True)
@@ -1374,21 +1376,31 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
             finally:
                 await on_b.factory.release_saved(lease)
 
-            # 4. The residue. Snapshots back ON at root A: a new process claims an area (wiping
-            # the dead one), and runs the fleet's own cache sweep long past every idle window.
+            # 4. The residue. Snapshots back ON at root A while the off process is still alive
+            # (a rolling deploy): the new process claims an area (wiping the dead one) but must
+            # leave ``local`` — the off process's shared lock says it is in use.
             local_chat = root_a / LOCAL_DIR / "chats" / world.ws / PROJECT / THREAD
             on_a2 = _built_machine(world, root_a, snapshots=True)
             assert not dead_copy.exists()
-            swept = _workspace_cache_job(
+            for path, data in off_files.items():
+                assert (local_chat / "agent" / path).read_bytes() == data, path
+            sweep = _workspace_cache_job(
                 Settings(
                     _env_file=None,
                     agent_workspace_root=str(root_a),
                     agent_workspace_snapshots_enabled=True,
                 ),
                 on_a2.area,
-            ).run_once(now=time.time() + 10 * 365 * 86400)
-            assert swept.removed == ()
-            # The legacy-layout script, run to remove everything it can, keeps ``local`` too.
+            )
+            assert sweep.run_once(now=time.time()).removed == ()
+            assert local_chat.is_dir()
+            # The last off process ends; the fleet's own sweep then removes ``local`` entirely
+            # (its lock file stays, so every later process locks the same file).
+            _stop(off)
+            assert sweep.run_once(now=time.time()).removed == ()
+            assert not (root_a / LOCAL_DIR).exists()
+            assert (root_a / "workers" / f"{LOCAL_DIR}.lock").is_file()
+            # The legacy-layout script, run to remove everything it can, keeps the lock file.
             subprocess.run(
                 [
                     sys.executable,
@@ -1407,10 +1419,8 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
                 text=True,
                 check=True,
             )
-            # FINDING (pinned, not fixed): the off period's copy is left on the machine.
-            for path, data in off_files.items():
-                assert (local_chat / "agent" / path).read_bytes() == data, path
-            # While snapshots are on it is never read: a turn at root A gets version 2 from R2.
+            assert (root_a / "workers" / f"{LOCAL_DIR}.lock").is_file()
+            # While snapshots are on a turn at root A gets version 2 from R2.
             lease = await _open(world, on_a2, fence=await world.fence("worker-a2"))
             try:
                 assert lease.restore_report is not None and lease.restore_report.warm is False
@@ -1420,18 +1430,18 @@ def test_17_the_emergency_flag_turns_snapshots_off_and_back_on(tmp_path: Path) -
                 await on_a2.factory.release_saved(lease)
             _stop(on_a2)
 
-            # 5. Switched OFF again at root A: the chat reopens the old off-period copy — older
-            # than version 2 and never saved — rather than starting empty.
+            # 5. Switched OFF again at root A: the chat starts EMPTY, as in the first emergency —
+            # not with the first emergency's files, and not with anything saved in R2.
             off_again = _built_machine(world, root_a, snapshots=False)
             lease = await _open(world, off_again, fence=await world.fence("worker-off-2"))
             try:
                 assert lease.restore_report is None
-                for path, data in off_files.items():
-                    assert _bytes(off_again, world.ws, path) == data, path
-                assert not _has(off_again, world.ws, "outputs/report.csv")
+                for path in (*off_files, *v1, "scratch/notes.md"):
+                    assert not _has(off_again, world.ws, path), path
             finally:
                 await off_again.factory.release_saved(lease)
-            # And reopening it saved nothing: the record is still version 2.
+            _stop(off_again)
+            # And opening it saved nothing: the record is still version 2.
             final = await world.store().current(workspace_id=world.ws, thread_id=THREAD)
             assert final is not None and final.version == 2
 
