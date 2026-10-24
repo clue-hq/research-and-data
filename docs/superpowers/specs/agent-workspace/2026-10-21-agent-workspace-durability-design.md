@@ -1087,5 +1087,6 @@ and WS-28's list contents for live and expired files (P2).
     deletes blobs older than 24 h that have no artifact row in *its* database) shares the
     `clue-dev-bench` bucket with dushanbe, whose database is a copy — so dushanbe's dev snapshots
     lose their bytes after a day (the likely reason the three Phase 1 dev chats cannot restore).
-    Production has one database per bucket. The fix is a separate bucket for this lane, pending the
-    founder creating it.
+    Production has one database per bucket. The founder declined a separate bucket for this lane
+    (2026-10-25); the proposed fix is turning nashville's orphan sweep off
+    (`CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S=0`), awaiting the founder's go.
