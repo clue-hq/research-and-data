@@ -122,6 +122,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # CRM integration Phase 3 Task 12 (2026-10-24): no address added or removed; it moves with
     # `head-of-abm@v81` (`crm-writing` v4). v40 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v41.json",
+    # CRM integration Phase 4 Task 6 (2026-10-25): one address ADDED, none removed —
+    # `propose_clue_fields_setup@1`, which `head-of-abm@v82` grants. v41 stays the exact replay
+    # input for turns pinned to it.
+    "recipe0-stage0-v42.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

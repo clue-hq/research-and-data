@@ -77,7 +77,8 @@ __all__ = [
 # v79 re-pins `crm-writing` at v3 (one card can use the records it creates).
 # v80 re-pins `stage0-interview` at v53 (a message Clue wrote is never the person's words).
 # v81 re-pins `crm-writing` at v4 (never show Clue's write or proposal ids).
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v81"
+# v82 grants `propose_clue_fields_setup` and re-pins `crm-writing` at v5 (Clue's own fields).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v82"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

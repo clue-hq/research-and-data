@@ -151,6 +151,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "read_crm_targets@1",
     "find_crm_list@1",
     "link_crm_list@1",
+    # CRM integration Phase 4 (recipe0-stage0@42), granted at `head-of-abm@v82`.
+    # `propose_clue_fields_setup@1` is a WRITE (a permission card only an owner or admin can
+    # allow) resolved from the presenting turn, like `propose_crm_changes@1`.
+    "propose_clue_fields_setup@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

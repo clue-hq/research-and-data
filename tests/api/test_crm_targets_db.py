@@ -18,6 +18,7 @@ from sqlalchemy import text
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.crm import writes
+from clue_api.crm.clue_fields import CLUE_FIELDS, mark_clue_field_gone, record_clue_fields
 from clue_api.crm.target_tools import ReadCrmTargetsInput, ReadCrmTargetsTool
 from clue_api.crm.targets import (
     ProjectTargets,
@@ -890,7 +891,11 @@ def test_clues_own_field_values_are_offered_on_both_crms(tmp_path: Path) -> None
         sf_role = sf_by_first["Safe"].clue_committee_role
         assert sf_role is not None and sf_role.value == "Budget holder"
         assert sf_by_first["Safe"].buying_role is None  # still no standard field (R-12.6)
-        assert "buying role: identity not confirmed" in sf_by_first["Weak"].withheld
+        # Salesforce has no buying role, so what is held back is Clue's committee role.
+        assert "committee role: identity not confirmed" in sf_by_first["Weak"].withheld
+        assert not any(item.startswith("buying role") for item in sf_by_first["Weak"].withheld)
+        hs_by_first = {c.first_name.value: c for c in hubspot.contacts if c.first_name is not None}
+        assert "buying role: identity not confirmed" in hs_by_first["Weak"].withheld
 
     _run(tmp_path, "cluefields", body)
 
@@ -919,3 +924,61 @@ def test_no_link_is_offered_from_a_local_address(tmp_path: Path, origin: str) ->
         assert zafran.clue_id is not None and safe.clue_id is not None
 
     _run(tmp_path, "locallink", body)
+
+
+@pytest.mark.parametrize("provider", ["hubspot", "salesforce"])
+@_db
+def test_the_read_says_when_clues_fields_are_not_set_up(tmp_path: Path, provider: str) -> None:
+    """Task 4 review M-2: until the connection's Clue fields are ready, the read says to propose
+    the setup first; the values are still offered."""
+
+    crm = {"hubspot": "HubSpot", "salesforce": "Salesforce"}[provider]
+    note = f"Clue's fields are not set up in {crm}; propose_clue_fields_setup first."
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        await world.fit("fit", account, 0.55, world.project_id)
+        tool = ReadCrmTargetsTool(settings=PUBLIC, conn_factory=conn_session_factory(conn))
+        ctx = _ctx(conn, world.workspace_id)
+        inputs = ReadCrmTargetsInput(project_id=world.project_id)
+
+        # No CRM connected: nothing to set up, no note.
+        refs = (await tool.invoke(inputs, ctx)).references
+        assert refs["connected_crm"] is None and refs["clue_fields_note"] is None
+
+        connection = await _connect(conn, world.workspace_id, provider=provider)
+        refs = (await tool.invoke(inputs, ctx)).references
+        assert refs["clue_fields_note"] == note
+        assert refs["accounts"][0]["clue_tier"] is not None  # still offered
+
+        await record_clue_fields(
+            conn,
+            connection_id=connection.connection_id,
+            workspace_id=world.workspace_id,
+            provider=provider,  # type: ignore[arg-type]
+            created=CLUE_FIELDS[provider],  # type: ignore[index]
+            permission_set_id="0PS000000000001" if provider == "salesforce" else None,
+            label_type_id=None,
+            status="partial",
+        )
+        assert (await tool.invoke(inputs, ctx)).references["clue_fields_note"] == note
+
+        await record_clue_fields(
+            conn,
+            connection_id=connection.connection_id,
+            workspace_id=world.workspace_id,
+            provider=provider,  # type: ignore[arg-type]
+            created=CLUE_FIELDS[provider],  # type: ignore[index]
+            permission_set_id="0PS000000000001" if provider == "salesforce" else None,
+            label_type_id=None,
+            status="ready",
+        )
+        assert (await tool.invoke(inputs, ctx)).references["clue_fields_note"] is None
+
+        field = CLUE_FIELDS[provider][0]  # type: ignore[index]
+        await mark_clue_field_gone(
+            conn, connection_id=connection.connection_id, obj=field.object, crm_name=field.crm_name
+        )
+        assert (await tool.invoke(inputs, ctx)).references["clue_fields_note"] == note
+
+    _run(tmp_path, f"note-{provider[:2]}", body)

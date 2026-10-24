@@ -532,6 +532,8 @@ async def _committee_contacts(
     for claim in await claims_for_entities(conn, entity_ids, _CONTACT_KEYS, scope=scope):
         claims_by_contact.setdefault(str(claim.entity_id), []).append(claim)
 
+    # Salesforce has no buying role (R-12.6): the role held back there is Clue's committee role.
+    role_label = "buying role" if provider == "hubspot" else "committee role"
     contacts: list[TargetContact] = []
     for member in members:
         claims = [claim for claim in claims_by_contact.get(member.id, []) if _live(claim)]
@@ -546,7 +548,7 @@ async def _committee_contacts(
         # A field (persona and role together for the buying role) whose every claim was
         # rejected is withheld as such; its value is never named.
         withheld = [
-            f"{label}: rejected"
+            f"{role_label if label == 'buying role' else label}: rejected"
             for label in dict.fromkeys(_LABELS.values())
             if (label != "buying role" or provider is not None)
             and any(_LABELS[key] == label for key in rejected)
@@ -560,7 +562,7 @@ async def _committee_contacts(
         # committee role field (R-13.2).
         role: TargetValue | None = None
         if provider is not None:
-            role = _buying_role(latest, settings=settings, withheld=withheld)
+            role = _buying_role(latest, settings=settings, withheld=withheld, label=role_label)
         buying_role = role if provider == "hubspot" else None
 
         work_email: TargetValue | None = None
@@ -652,12 +654,13 @@ def _offered(
 
 
 def _buying_role(
-    latest: Mapping[str, Claim], *, settings: Settings, withheld: list[str]
+    latest: Mapping[str, Claim], *, settings: Settings, withheld: list[str], label: str
 ) -> TargetValue | None:
     """The HubSpot buying role from the persona claim, else from the role-on-committee claim.
 
     Both claims that name the same persona are cited; a claim that may not be offered is never
-    cited, and when every source is held back the role is withheld with the first reason.
+    cited, and when every source is held back the role is withheld with the first reason, named
+    ``label``.
     """
     sources: list[tuple[Claim, str | None]] = []
     persona_claim = latest.get(PERSONA_KEY)
@@ -676,7 +679,7 @@ def _buying_role(
             usable.append((claim, persona))
     if not usable:
         if reasons:
-            withheld.append(f"buying role: {reasons[0]}")
+            withheld.append(f"{label}: {reasons[0]}")
         return None
     persona = usable[0][1]
     role = hubspot_buying_role(persona)

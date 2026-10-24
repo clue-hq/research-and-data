@@ -1554,8 +1554,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
     # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
     # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
-    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), ungranted until
-    # Task 6.
+    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), granted at
+    # head-of-abm@v82 (Task 6).
     assert len(registry.names()) == 162
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
@@ -1665,8 +1665,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
     # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
     # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
-    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), ungranted until
-    # Task 6.
+    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), granted at
+    # head-of-abm@v82 (Task 6).
     assert len(registry.names()) == 162
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's

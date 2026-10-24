@@ -447,6 +447,9 @@ class Stage0StepPinProvider:
             # `source_turn_ref`.
             "manage_crm_grants",
             "propose_crm_changes",
+            # CRM integration Phase 4 (recipe0-stage0@42): a permission card on the same terms;
+            # its body's `project_id` is model-authored, the presenting turn is not.
+            "propose_clue_fields_setup",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",

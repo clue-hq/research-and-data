@@ -311,7 +311,13 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # output digest (write_id / proposal_id are Clue's internal ids, for undo only), `crm-writing`
     # v4 (never show the person Clue's write or proposal ids), `stage0-interview@v54` (v53 with its
     # manual paths repointed), `manual-*@v27` and recipe 41. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v81",
+    # v82 (2026-10-25, CRM integration Phase 4 Task 6): v81's surface plus
+    # `propose_clue_fields_setup@1` (set up Clue's own fields; only an owner or admin can allow
+    # the card), `read_crm_targets@1` at its new output digest (Clue's own values and the
+    # not-set-up note), `crm-writing` v5 (section 3c, Clue's own fields; founder-approved
+    # 2026-10-25), `stage0-interview@v55` (v54 with its manual paths repointed), `manual-*@v28`
+    # and recipe 42. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v82",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -570,9 +576,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "read_crm_targets": (AgentRole.HEAD_OF_ABM,),
     "find_crm_list": (AgentRole.HEAD_OF_ABM,),
     "link_crm_list": (AgentRole.HEAD_OF_ABM,),
-    # CRM integration Phase 4 (Task 2): `propose_clue_fields_setup` proposes setting up Clue's own
-    # fields (R-13.3, R-13.4). Registered UNGRANTED until the Phase 4 catalog bump (Task 6).
-    "propose_clue_fields_setup": (),
+    # CRM integration Phase 4: granted to the Head of ABM at `head-of-abm@v82`
+    # (docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md, Task 6).
+    # `propose_clue_fields_setup` proposes setting up Clue's own fields (R-13.3, R-13.4) on a card
+    # only a workspace owner or admin can allow.
+    "propose_clue_fields_setup": (AgentRole.HEAD_OF_ABM,),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -809,6 +817,9 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "read_crm_targets",
                 "find_crm_list",
                 "link_crm_list",
+                # The Phase 4 setup card (head-of-abm@v82) proposes creating fields in the
+                # workspace's real CRM; a dev-harness turn carries no project either.
+                "propose_clue_fields_setup",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to

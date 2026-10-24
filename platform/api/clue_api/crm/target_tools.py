@@ -24,6 +24,7 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 from clue_agents.manual import tool_manual_link
+from clue_api.crm.clue_fields import clue_fields_state
 from clue_api.crm.composio_gateway import (
     ComposioError,
     ComposioGateway,
@@ -111,6 +112,9 @@ class ReadCrmTargetsOutput(ToolOutput):
     contacts_note: str | None
     #: The CRM the workspace has connected ("hubspot" or "salesforce"), or ``None``.
     connected_crm: CrmProvider | None
+    #: Set when a CRM is connected but Clue's own fields are not set up (or one is gone): the
+    #: clue_* values are still offered, but cannot be written until the setup is proposed.
+    clue_fields_note: str | None = None
 
 
 class ReadCrmTargetsTool(Tool):
@@ -207,6 +211,11 @@ class ReadCrmTargetsTool(Tool):
                 limit=inputs.limit,
                 contacts_limit=inputs.contacts_limit,
             )
+            state = (
+                await clue_fields_state(conn, connection_id=active.connection_id)
+                if active is not None
+                else None
+            )
         output = ReadCrmTargetsOutput(
             accounts=targets.accounts,
             contacts=targets.contacts,
@@ -214,6 +223,12 @@ class ReadCrmTargetsTool(Tool):
             total_contacts=targets.total_contacts,
             contacts_note=targets.contacts_note,
             connected_crm=active.provider if active is not None else None,
+            clue_fields_note=(
+                f"Clue's fields are not set up in {_CRM_NAMES[active.provider]}; "
+                "propose_clue_fields_setup first."
+                if active is not None and (state is None or state.status != "ready")
+                else None
+            ),
         )
         return ToolResult(
             tool=self.name, version=self.version, references=output.model_dump(mode="json")

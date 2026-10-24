@@ -3048,8 +3048,8 @@ def clue_fields_setup_snapshot(
         "setup_fields": [
             {
                 "object": objects[field.object],
+                # Labels only: the card never shows the CRM's API names (founder, 2026-10-25).
                 "label": field.label,
-                "crm_name": field.crm_name,
                 "type": _setup_type(field),
             }
             for field in CLUE_FIELDS[provider]

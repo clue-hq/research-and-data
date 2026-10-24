@@ -382,8 +382,8 @@ function setupSnapshot() {
         always_allow: "",
         selected: true,
         setup_fields: [
-          { object: "Account", label: "Clue tier", crm_name: "Clue_Tier__c", type: "Dropdown" },
-          { object: "Contact", label: "Clue id", crm_name: "Clue_Id__c", type: "Text" },
+          { object: "Account", label: "Clue tier", type: "Dropdown" },
+          { object: "Contact", label: "Clue id", type: "Text" },
         ],
         setup_notes: [SALESFORCE_LINE, "Clue never deletes these; an admin can remove them in Salesforce."],
       },

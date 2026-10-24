@@ -162,6 +162,8 @@ def test_the_card_lists_every_clue_field_and_offers_no_always_allow(
         assert group["title"] == f"Set up Clue's fields in {name}"
         assert [record["write_id"] for record in group["records"]] == [str(row.write_id)]
         listed = [(item["object"], item["label"]) for item in group["setup_fields"]]
+        # The card shows labels only, never the CRM's API names (founder, 2026-10-25).
+        assert all(set(item) == {"object", "label", "type"} for item in group["setup_fields"])
         expected_objects = {"company": "Company" if provider == "hubspot" else "Account"}
         assert listed == [
             (expected_objects.get(field.object, "Contact"), field.label)
