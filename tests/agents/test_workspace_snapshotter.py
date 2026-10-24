@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -748,6 +748,103 @@ def test_a_save_still_refuses_a_real_conflict(tmp_path: Path) -> None:
     finally:
         asyncio.run(a.factory.release_saved(lease))
     assert sorted(_current(store)) == ["scratch/a.md"]
+
+
+# --- The rebase guard, one condition at a time (review A2-I2) ------------------------------------
+#
+# A save that lost its compare-and-set is re-aimed only when the version it lost to was the expiry
+# job's and nobody else's: (1) some path the base held live is gone, (2) every live entry the
+# published version has is the base's, byte for byte, and (3) every path that is gone is now an
+# expired receipt. Each test below is a move by ANOTHER writer that breaks exactly one of them and
+# satisfies the other two, so deleting that one condition — and only that one — lets the losing turn
+# publish over the other writer's version. The earlier conflict test above breaks (1) and (2) at
+# once, so on its own it could not tell whether (2) or (3) was there at all.
+
+
+def _save_over_a_move(
+    machine: Machine, store: FakeStore, move: Callable[[], None], files: dict[str, bytes]
+) -> tuple[str, SnapshotPointer | None, dict[str, object] | None]:
+    """Open a turn on ``machine``, let ``move`` publish under it, then save the turn's files.
+
+    Returns the save's status, the pointer ``move`` left published (so a caller can check the
+    losing turn moved nothing) and the turn's note right after its save.
+    """
+
+    lease = _open(machine)
+    try:
+        move()
+        published = store.pointer
+        for path, data in files.items():
+            _write(lease, path, data)
+        report = asyncio.run(lease.save_snapshot())
+        return report.status, published, _note(machine)
+    finally:
+        asyncio.run(machine.factory.release_saved(lease))
+
+
+def test_a_move_that_expired_nothing_the_base_held_is_a_real_conflict(tmp_path: Path) -> None:
+    """Condition 1 alone. Another machine saved a file and the job then expired it: the published
+    version still holds every live file the base held, unchanged, so (2) and (3) both pass and
+    only "something the base held is gone" says this was not an expiry of the turn's base."""
+
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/a.md": b"a"})
+
+    def move() -> None:
+        _turn(b, {"reads/theirs.json": b"theirs"})  # another writer's version...
+        _expire(store, "reads/theirs.json")  # ...then the job's, over it
+
+    status, published, note = _save_over_a_move(a, store, move, {"scratch/c.md": b"c"})
+
+    assert status == "stale"
+    assert note is None  # a refused save leaves no note claiming a version
+    assert store.pointer == published  # the losing turn published nothing
+    assert sorted(_current(store)) == ["reads/theirs.json", "scratch/a.md"]
+
+
+def test_a_move_that_changed_a_surviving_file_is_a_real_conflict(tmp_path: Path) -> None:
+    """Condition 2 alone. Another writer changed ``scratch/y.md`` and the job then expired the
+    base's raw read: something the base held is gone (1) and it is gone as an expired receipt
+    (3), so only "every surviving file is the base's" stops the losing turn — whose disk still
+    holds the OLD ``y`` — from saving it over the other writer's new one."""
+
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"reads/r.json": b"{}", "scratch/y.md": b"y"})
+
+    def move() -> None:
+        _turn(b, {"scratch/y.md": b"y, rewritten by another writer"})
+        _expire(store, "reads/r.json")
+
+    status, published, note = _save_over_a_move(a, store, move, {"scratch/c.md": b"c"})
+
+    assert status == "stale"
+    assert note is None  # a refused save leaves no note claiming a version
+    assert store.pointer == published
+    current = _current(store)
+    assert store.blobs[current["scratch/y.md"].sha256] == b"y, rewritten by another writer"
+    assert "scratch/c.md" not in current
+
+
+def test_a_move_that_deleted_a_file_is_a_real_conflict(tmp_path: Path) -> None:
+    """Condition 3 alone. Another writer deleted ``scratch/z.md``: it is gone (1) and the file it
+    left is the base's (2), so only "every gone path is now an expired receipt" stops the losing
+    turn — whose disk still holds ``z`` — from bringing back a file another writer deleted."""
+
+    store = FakeStore()
+    a, b = _machine(tmp_path, "a", store), _machine(tmp_path, "b", store)
+    _turn(a, {"scratch/y.md": b"y", "scratch/z.md": b"z"})
+
+    def move() -> None:
+        _turn(b, {}, delete=["scratch/z.md"])
+
+    status, published, note = _save_over_a_move(a, store, move, {"scratch/c.md": b"c"})
+
+    assert status == "stale"
+    assert note is None  # a refused save leaves no note claiming a version
+    assert store.pointer == published
+    assert sorted(_current(store)) == ["scratch/y.md"]
 
 
 @dataclass
