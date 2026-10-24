@@ -260,3 +260,7 @@ activity at all. **Scoped re-review: 9/9 ADDRESSED, no new Critical/Important, "
 - **Version claim for the merge:** this branch mints manual **v24**, head-of-abm **v78**, stage0-interview
   **v51**. The CRM lane is at v23/v77/v50 and was NOT messaged (no session addressable); if it mints the
   same numbers the merge has a clash to resolve by hand, as the 2026-09-21 merge did.
+- **2026-10-24: the CRM lane WAS messaged** about the version claim (msg b331e01d, founder's go) after
+  `ListAgents` showed the `crm-integration` session busy on this machine. The earlier "no CRM session is
+  addressable" came from reading only the linked-sessions note, which lists just the sessions this one
+  started. Asked it to take head-of-abm v79 / manual v25 / stage0 v52 or later.
