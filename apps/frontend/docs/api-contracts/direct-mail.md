@@ -1,5 +1,43 @@
 # Direct Mail frontend handoff
 
+## Revision 2 additions (2026-10-25)
+
+- `giftBudgets` stores project-level preferred minimum/maximum and upper gift-price
+  ceiling with revisions and a lock. `saveBudget` reserves no credits and grants
+  no send authority. Editing is deliberate and invalidates draft reviews; approved
+  mailers are unchanged. The separate `budgetCents` remains the all-in send cap.
+- The preview wallet deducts the estimate exactly once on approval. Insufficient
+  balance refuses; pre-order cancellation refunds only a recorded debit. `topUp`
+  adds demo credits only. No processor or agent payment card is implemented.
+  Actual preparation-cost reconciliation is not implemented; Aryan must define
+  the ledger/adjustment approval contract before real billing is connected.
+- `noteTemplates` are versioned saved structures. Applying expands recipient,
+  company, gift and insight fields into a draft, requiring review. Existing
+  approved snapshots never reference a mutable template body.
+- Gift `productUrl`/`observedAt`, insight `sourceUrl`, `assets` and `qr` are optional
+  validated references. The project campaign table links canonical records;
+  absent channel links remain absent. Email integration belongs to its own branch.
+- QR publication, physical assignment and verified routing are separate states.
+  New campaigns clear physical assignment/verification. This UI does not generate
+  codes, assign inventory, publish microsites or run redirect checks.
+- Six chronological tracking milestones precede the carrier-leg details; package
+  photos now display timestamps.
+- Optional `GET /api/direct-mail/pilot` is gated by the existing development-only
+  preview configuration and reads `.local/direct-mail-pilot.json` under the frontend.
+  That folder is Git-ignored. A missing file returns204; production returns404;
+  optional source failures leave existing IndexedDB drafts available with a notice.
+  Import appends isolated `pilot-*` IDs and never overwrites edited records.
+  A single local historical example preserves the final-sheet note and exact
+  purchased variant with verified merchant imagery; the final Sheet contains one
+  purchased gift, so two further proposals stay pending instead of being invented.
+  No addresses, receipts or raw corpus were imported. Aryan receives portable
+  synthetic fixtures, not the local private pilot sample.
+
+All fields are additive; existing browser state remains valid. These are frontend
+proposals, not ratified backend payloads. The original approval snapshot still
+owns gift/card/note/address/cost; asset-publication and QR dispatch requirements
+need backend enforcement in a later contract review.
+
 Status: **frontend proposal, not an implemented backend contract** (2026-10-25).
 Owner of the current UI: `src/features/direct-mail/`. Product decisions and the
 longer-term flow are in [the design spec](../architecture/direct-mail.md).

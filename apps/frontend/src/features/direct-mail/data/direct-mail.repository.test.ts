@@ -65,3 +65,42 @@ test("replacement preserves the old approval and starts a fresh shipment review"
   assert.equal(after.stage, "needs_review");
   assert.equal(after.gifts.every((gift) => gift.available), true);
 });
+
+test("canceling an approved demo mailer refunds only its recorded debit", async () => {
+  const repo = createDirectMailRepository(store());
+  const before = await repo.read(), ready = before.mailers[3];
+  const approved = (await repo.approve([{ id: ready.id, revision: ready.revision }])).state;
+  const record = approved.mailers[3];
+  const canceled = await repo.cancel(record.id, record.revision);
+  assert.equal(canceled.creditBalanceCents, before.creditBalanceCents);
+  await assert.rejects(repo.cancel(record.id, canceled.mailers[3].revision), /cannot be canceled/);
+});
+
+test("pilot reads append isolated examples without replacing an edited record", async () => {
+  const sample = createDirectMailFixture().mailers[0];
+  sample.id = "pilot-example";
+  const repo = createDirectMailRepository(store(), async () => [sample]);
+  const first = await repo.read();
+  assert.equal(first.mailers.length, 9);
+  await repo.patch(sample.id, 1, { note: "Customer revised this" });
+  const second = await repo.read();
+  assert.equal(second.mailers.length, 9);
+  assert.equal(second.mailers.at(-1)!.note, "Customer revised this");
+});
+
+test("an optional pilot load failure leaves saved drafts available with a notice", async () => {
+  const storage = store();
+  const repo = createDirectMailRepository(storage, async () => { throw new Error("File unavailable"); });
+  const result = await repo.read();
+  assert.equal(result.mailers.length, 8);
+  assert.match(result.pilotLoadError ?? "", /pilot/i);
+});
+
+test("a new campaign cannot inherit the source physical QR assignment", async () => {
+  const storage = store();
+  await storage.transact((state) => { state.mailers[0].qr = { destinationUrl: "https://example.com/site", destinationStatus: "published", printedUrl: "https://example.com/qr/used", verifiedAt: "2026-10-25T10:00:00Z" }; return { state, result: null }; });
+  const repo = createDirectMailRepository(storage);
+  const result = await repo.create({ projectId: "10m-landing-page-campaign", campaign: "Another campaign", recipientIds: ["contact-avery"], budgetCents: 12000, cardId: "card-studio", styleId: "style-warm" });
+  assert.equal(result.mailers.at(-1)!.qr?.printedUrl, null);
+  assert.equal(result.mailers.at(-1)!.qr?.verifiedAt, null);
+});

@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { approveMailers, CardAssetSchema, isDraft, requireMailer, reviewMailer, StateSchema, StyleSchema, updateMailer, type ApprovalItem, type ApprovalResult, type CardAsset, type DirectMailState, type HandwritingStyle, type MailerPatch } from "../model/direct-mail";
+import { approveMailers, CardAssetSchema, isDraft, requireMailer, reviewMailer, StateSchema, StyleSchema, updateMailer, type ApprovalItem, type ApprovalResult, type CardAsset, type DirectMailState, type HandwritingStyle, type Mailer, type MailerPatch } from "../model/direct-mail";
 import type { DirectMailStore } from "./direct-mail.storage";
 import { demoGifts } from "./direct-mail.fixture";
+import { GiftBudgetSchema, NoteTemplateSchema, type GiftBudget, type NoteTemplate } from "../model/direct-mail-context";
 
 const CreateSchema = z.object({ projectId: z.string(), campaign: z.string().trim().min(1).max(100), recipientIds: z.array(z.string()).min(1), budgetCents: z.number().int().min(100).max(1_000_000), cardId: z.string(), styleId: z.string() });
 export type CreateCampaign = z.infer<typeof CreateSchema>;
@@ -17,6 +18,9 @@ export interface DirectMailRepository {
   resolveProposal(id: string, revision: number, apply: boolean): Promise<DirectMailState>;
   cancel(id: string, revision: number): Promise<DirectMailState>;
   replace(id: string, revision: number): Promise<DirectMailState>;
+  saveBudget(input: GiftBudget, expectedRevision: number): Promise<DirectMailState>;
+  saveTemplate(input: NoteTemplate): Promise<DirectMailState>;
+  topUp(amountCents: number): Promise<DirectMailState>;
   subscribe(listener: () => void): () => void;
 }
 const EVENT = "clue-direct-mail-change";
@@ -33,13 +37,43 @@ function subscribe(listener: () => void) {
   return () => { window.removeEventListener(EVENT, listener); channel?.close(); };
 }
 
-export function createDirectMailRepository(store: DirectMailStore): DirectMailRepository {
+export function createDirectMailRepository(store: DirectMailStore, pilotLoader?: () => Promise<Mailer[]>): DirectMailRepository {
+  let loaded: Promise<Mailer[]> | undefined;
   async function write(change: (state: DirectMailState) => DirectMailState) {
     const state = await store.transact((state) => { const next = StateSchema.parse(change(state)); return { state: next, result: next }; });
     notify(); return state;
   }
   return {
-    read: () => store.read(), subscribe,
+    read: async () => {
+      if (!pilotLoader) return store.read();
+      let examples: Mailer[];
+      try { examples = await (loaded ??= pilotLoader().catch((error) => { loaded = undefined; throw error; })); }
+      catch { return { ...await store.read(), pilotLoadError: "Saved drafts are available. The optional local pilot examples could not be loaded." }; }
+      return store.transact((state) => {
+        for (const example of examples) if (!state.mailers.some((m) => m.id === example.id)) state.mailers.push(structuredClone(example));
+        return { state: StateSchema.parse(state), result: StateSchema.parse(state) };
+      });
+    }, subscribe,
+    saveBudget: (input, expectedRevision) => write((state) => {
+      const value = GiftBudgetSchema.parse(input);
+      if (!state.mailers.some((m) => m.projectId === value.projectId)) throw new Error("Choose an existing project.");
+      const previous = state.giftBudgets?.find((b) => b.projectId === value.projectId);
+      if ((previous?.revision ?? 0) !== expectedRevision) throw new Error("The project budget changed. Reload before saving.");
+      value.revision = expectedRevision + 1;
+      state.giftBudgets = [...(state.giftBudgets ?? []).filter((b) => b.projectId !== value.projectId), value];
+      for (const mailer of state.mailers) if (mailer.projectId === value.projectId && isDraft(mailer)) { mailer.revision++; mailer.reviewedRevision = null; mailer.stage = "needs_review"; }
+      return state;
+    }),
+    saveTemplate: (input) => write((state) => {
+      const template = NoteTemplateSchema.parse(input);
+      if (state.noteTemplates?.some((t) => t.id === template.id)) throw new Error("Save a new template version instead of overwriting a saved template.");
+      (state.noteTemplates ??= []).push(template); return state;
+    }),
+    topUp: (amount) => write((state) => {
+      if (![100000, 200000].includes(amount)) throw new Error("Choose a $1,000 or $2,000 preview top-up.");
+      state.creditBalanceCents = (state.creditBalanceCents ?? 200000) + amount;
+      (state.creditEntries ??= []).push({ id: crypto.randomUUID(), kind: "top_up", amountCents: amount, mailerId: null, at: new Date().toISOString(), description: "Preview credit top-up" }); return state;
+    }),
     patch: (id, revision, patch) => write((state) => updateMailer(state, id, revision, patch)),
     review: (id, revision) => write((state) => reviewMailer(state, id, revision)),
     async approve(items) { const result = await store.transact((state) => { const result = approveMailers(state, items); return { state: result.state, result }; }); notify(); return result; },
@@ -51,7 +85,9 @@ export function createDirectMailRepository(store: DirectMailStore): DirectMailRe
         const source = state.mailers.find((m) => m.projectId === data.projectId && m.contactId === contactId);
         if (!source) throw new Error("Choose recipients belonging to this project.");
         state.mailers.push({ ...structuredClone(source), id: `mailer-${crypto.randomUUID()}`, revision: 1, reviewedRevision: null, campaign: data.campaign,
-          budgetCents: data.budgetCents, cardId: data.cardId, styleId: data.styleId, gifts: structuredClone(demoGifts), selectedGiftId: null,
+          budgetCents: data.budgetCents, cardId: data.cardId, styleId: data.styleId, gifts: structuredClone(source.gifts), selectedGiftId: null,
+          qr: source.qr ? { ...source.qr, printedUrl: null, verifiedAt: null } : undefined,
+          assets: source.assets?.filter((asset) => asset.scope === "account"),
           stage: "needs_review", addressConfirmed: false, approval: null, priorApprovals: [], inbound: null, outbound: null, events: [], photos: [], exception: null, proposalRequest: null, updatedAt: new Date().toISOString() });
       }
       return state;
@@ -83,7 +119,14 @@ export function createDirectMailRepository(store: DirectMailStore): DirectMailRe
       }
       mailer.proposalRequest = null; mailer.revision++; mailer.reviewedRevision = null; mailer.stage = "needs_review"; return state;
     }),
-    cancel: (id, revision) => write((state) => { const mailer = requireMailer(state, id, revision); if (mailer.stage !== "approved") throw new Error("This mailer cannot be canceled at its current stage."); mailer.stage = "canceled"; mailer.revision++; mailer.events.push({ id: `cancel-${revision}`, title: "Mailer canceled", detail: "Canceled before a merchant order was confirmed.", at: new Date().toISOString(), kind: "standard" }); return state; }),
+    cancel: (id, revision) => write((state) => {
+      const mailer = requireMailer(state, id, revision);
+      if (mailer.stage !== "approved") throw new Error("This mailer cannot be canceled at its current stage.");
+      const at = new Date().toISOString();
+      const debit = state.creditEntries?.find((entry) => entry.id === `approval-${id}-${mailer.approval?.revision}` && entry.kind === "mailer");
+      if (debit) { state.creditBalanceCents = (state.creditBalanceCents ?? 200000) - debit.amountCents; (state.creditEntries ??= []).push({ id: `refund-${debit.id}`, kind: "refund", amountCents: -debit.amountCents, mailerId: id, at, description: `Canceled before ordering · ${mailer.recipient.name}` }); }
+      mailer.stage = "canceled"; mailer.revision++; mailer.events.push({ id: `cancel-${revision}`, title: "Mailer canceled", detail: "Canceled before a merchant order was confirmed.", at, kind: "standard" }); return state;
+    }),
     replace: (id, revision) => write((state) => {
       const mailer = requireMailer(state, id, revision);
       if (mailer.exception?.action !== "replacement") throw new Error("No replacement is requested for this mailer.");
@@ -99,4 +142,4 @@ export function createDirectMailRepository(store: DirectMailStore): DirectMailRe
   };
 }
 const unavailable = async (): Promise<never> => { throw new Error("Direct Mail is not connected to this workspace yet."); };
-export const unavailableDirectMailRepository: DirectMailRepository = { read: unavailable, patch: unavailable, review: unavailable, approve: unavailable, create: unavailable, addCard: unavailable, addStyle: unavailable, requestProposal: unavailable, resolveProposal: unavailable, cancel: unavailable, replace: unavailable, subscribe: () => () => {} };
+export const unavailableDirectMailRepository: DirectMailRepository = { read: unavailable, patch: unavailable, review: unavailable, approve: unavailable, create: unavailable, addCard: unavailable, addStyle: unavailable, requestProposal: unavailable, resolveProposal: unavailable, cancel: unavailable, replace: unavailable, saveBudget: unavailable, saveTemplate: unavailable, topUp: unavailable, subscribe: () => () => {} };

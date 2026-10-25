@@ -1,15 +1,16 @@
 import { z } from "zod";
 import handwritingMetrics from "./handwriting-metrics.json";
+import { CampaignAssetSchema, CreditEntrySchema, GiftBudgetSchema, NoteTemplateSchema, QrConnectionSchema, WebUrlSchema } from "./direct-mail-context";
 
 const Cents = z.number().int().nonnegative().max(10_000_000);
 const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) }).refine((area) => area.x + area.width <= 100 && area.y + area.height <= 100, "The writing area must fit inside the card.");
 export const CardAssetSchema = z.object({ id: z.string(), name: z.string().min(1), version: z.number().int().positive(), frontUrl: z.string().nullable(), backUrl: z.string().nullable(), paper: z.enum(["white", "cream"]), writingArea: AreaSchema, productionReady: z.boolean() });
 export const StyleSchema = z.object({ id: z.string(), name: z.string(), version: z.number().int().positive(), family: z.string(), sourceUrl: z.string().nullable(), productionReady: z.boolean() });
-export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean() });
+export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean(), productUrl: WebUrlSchema.optional(), observedAt: z.string().optional() });
 export const AddressSchema = z.object({ name: z.string(), company: z.string(), line1: z.string(), line2: z.string(), city: z.string(), region: z.string(), postalCode: z.string(), country: z.string() });
 export const StageSchema = z.enum(["researching", "needs_review", "ready", "approved", "ordered", "inbound", "received", "quality_check", "preparing", "ready_to_ship", "shipped", "delivered", "attention", "canceled"]);
 export type Stage = z.infer<typeof StageSchema>;
-const InsightSchema = z.object({ title: z.string(), detail: z.string(), source: z.string(), date: z.string(), excerpt: z.string() });
+const InsightSchema = z.object({ title: z.string(), detail: z.string(), source: z.string(), date: z.string(), excerpt: z.string(), sourceUrl: WebUrlSchema.optional() });
 const EventSchema = z.object({ id: z.string(), title: z.string(), detail: z.string(), at: z.string(), kind: z.enum(["standard", "exception"]) });
 const ShipmentSchema = z.object({ carrier: z.string(), trackingNumber: z.string(), trackingUrl: z.string().nullable(), expected: z.string(), status: z.string() }).nullable();
 const ApprovalSchema = z.object({ revision: z.number(), at: z.string(), gift: GiftSchema, note: z.string(), signature: z.string(), card: CardAssetSchema, style: StyleSchema, address: AddressSchema, estimatedCents: Cents, budgetCents: Cents });
@@ -28,8 +29,9 @@ export const MailerSchema = z.object({
   events: z.array(EventSchema), photos: z.array(z.object({ id: z.string(), url: z.string(), caption: z.string(), at: z.string() })),
   exception: z.object({ title: z.string(), detail: z.string(), action: z.enum(["address", "replacement", "none"]) }).nullable(),
   proposalRequest: z.object({ kind: z.enum(["gifts", "insight"]), feedback: z.string(), requestedAt: z.string() }).nullable(),
+  assets: z.array(CampaignAssetSchema).optional(), qr: QrConnectionSchema.optional(), sourceLabel: z.string().optional(),
 });
-export const StateSchema = z.object({ schemaVersion: z.literal(1), mailers: z.array(MailerSchema), cards: z.array(CardAssetSchema), styles: z.array(StyleSchema) });
+export const StateSchema = z.object({ schemaVersion: z.literal(1), mailers: z.array(MailerSchema), cards: z.array(CardAssetSchema), styles: z.array(StyleSchema), giftBudgets: z.array(GiftBudgetSchema).optional(), noteTemplates: z.array(NoteTemplateSchema).optional(), creditBalanceCents: Cents.optional(), creditEntries: z.array(CreditEntrySchema).optional(), pilotLoadError: z.string().optional() });
 export type DirectMailState = z.infer<typeof StateSchema>;
 export type Mailer = z.infer<typeof MailerSchema>;
 export type Gift = z.infer<typeof GiftSchema>;
@@ -91,9 +93,12 @@ export function readiness(mailer: Mailer, state: DirectMailState): string[] {
   const style = state.styles.find((item) => item.id === mailer.styleId);
   if (!gift) issues.push("Choose a gift.");
   else if (!gift.available) issues.push("Choose an available gift.");
+  const giftBudget = state.giftBudgets?.find((budget) => budget.projectId === mailer.projectId);
+  if (giftBudget && gift?.priceCents != null && gift.priceCents > giftBudget.ceilingCents) issues.push("This gift exceeds the project's gift-price ceiling. Update the budget or choose another gift.");
   if (!card?.productionReady) issues.push("Choose a card approved for production.");
   if (!style?.productionReady) issues.push("Choose a handwriting style approved for production.");
   if (!mailer.note.trim()) issues.push("Write a note.");
+  else if (/\{\{.*?\}\}/s.test(mailer.note)) issues.push("Resolve the note's template fields before approving.");
   else if (!noteFits(mailer.note, mailer.signature, card, style)) issues.push("Adjust the note to fit the writing area and supported handwriting characters.");
   if (!mailer.signature.trim()) issues.push("Add a sender signature.");
   if (!hasReceivingAddress(mailer)) issues.push("Complete the receiving address.");
@@ -146,6 +151,9 @@ export function approveMailers(state: DirectMailState, items: ApprovalItem[]): {
       if (mailer.stage !== "ready" || mailer.reviewedRevision !== revision) throw new Error("Review this mailer before approving it.");
       const issues = readiness(mailer, next);
       if (issues.length) throw new Error(issues[0]);
+      const charge = estimate(mailer)!;
+      const balance = next.creditBalanceCents ?? 200000;
+      if (balance < charge) throw new Error("Not enough gifting credits. Add credits before approving this mailer.");
       const at = new Date().toISOString();
       mailer.approval = { revision, at, gift: structuredClone(selectedGift(mailer)!), note: mailer.note, signature: mailer.signature,
         card: structuredClone(next.cards.find((card) => card.id === mailer.cardId)!),
@@ -154,6 +162,8 @@ export function approveMailers(state: DirectMailState, items: ApprovalItem[]): {
       mailer.stage = "approved";
       mailer.revision += 1;
       mailer.updatedAt = at;
+      next.creditBalanceCents = balance - charge;
+      (next.creditEntries ??= []).push({ id: `approval-${id}-${revision}`, kind: "mailer", amountCents: -charge, mailerId: id, at, description: `Approved estimate · ${mailer.recipient.name}` });
       mailer.events.push({ id: `approval-${revision}`, title: "Mailer approved", detail: "Gift, note, card and spending limit confirmed. Awaiting merchant order confirmation.", at, kind: "standard" });
       return { id, ok: true, message: "Approved" };
     } catch (error) { return { id, ok: false, message: error instanceof Error ? error.message : "Approval failed. Try again." }; }

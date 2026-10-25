@@ -1,5 +1,54 @@
 # Direct Mail customer experience
 
+## Revision 2 — campaign context and customer feedback (2026-10-25)
+
+Founder requested a recipient-level project table connecting gifts, notes,
+microsites, LinkedIn ads and email; richer evidence and product links; reusable
+notes; QR destination status; and chronological fulfillment. Preserve this
+document's existing customer-only and frontend-only boundaries.
+
+Confirmed budget correction: project gifting preferences guide recommendations,
+can be locked and deliberately amended, and reserve no money. A preferred
+$50–$100 gift range with a $120 hard ceiling is an example, not a universal
+default. Search permission is separate from approval to send. Show gift cost,
+tax, inbound delivery, preparation and outbound delivery together at approval.
+Builder ruling: label the search ceiling explicitly as gift price; retain the
+separate all-in mailer spending limit. Never increase it silently. Mock gifting
+credits are separate from subscription credits; approval deducts the approved
+estimate once. Actual-cost settlement and amounts above the approved total need
+a later explicit approval contract; no real payments are introduced here.
+
+Use one project campaign table, grouping recipient records under their existing
+project/account/contact identity. Cells link to canonical assets and mailers;
+missing channel references stay "Not linked". Email is only a reference, because
+its implementation belongs to another branch. Do not infer account attribution
+from unrelated Gallery items. Chat and Gallery open the same table.
+
+The customer reviews agent-prepared details. Replace manual insight selection
+with one feedback request; the eventual agent chooses whether existing research
+is sufficient or a targeted refresh is needed. Preserve current drafts until a
+replacement is accepted. Show source links and the note alongside the gift.
+Note templates are reusable structures, with rendered recipient review required.
+Changing a library template does not change an existing approved snapshot.
+
+Keep preprinted card stock with unique durable QR URLs. During preparation Clue
+binds a physical card to the mailer and approved microsite, then verifies the
+redirect and recipient pairing before dispatch. Customer UI shows destination,
+assignment and verification separately; no warehouse console or manual customer
+scan step. A published page is not proof that its printed QR is connected.
+
+Tracking shows Gift ordered → On its way to Clue → Received at Clue → Inspection
+and preparation → Shipped to recipient → Delivered. Inspection, handwritten card
+and repacking are explicit preparation activities. Future milestones are pending,
+not completed. Package photos carry dates. No extra routine dispatch approval.
+
+Pilot examples use exact final-sheet notes and purchased variants, with source
+references. Earlier ideas may differ from final purchases. Private pilot data
+stays outside tracked source and is loaded only through the local preview seam;
+synthetic fixtures remain portable. Merchant images must match the linked variant;
+missing or unverified images remain explicit rather than using unrelated photos.
+
+
 Status: first customer UI implemented on 2026-10-25 with an isolated local adapter.
 See [the implementation and backend handoff](../api-contracts/direct-mail.md) for
 the exact working scope and remaining integration slices. The decisions

@@ -21,7 +21,8 @@ export function ApprovalDialog({ mailers, busy, close, approve, error }: { maile
     <div className={styles.stack}>{mailers.map((m) => <div className={styles.between} key={m.id}><div>{m.recipient.name}<p className={`${styles.small} ${styles.subtle}`}>{m.gifts.find((g) => g.id === m.selectedGiftId)?.name}</p></div><span>{money(estimate(m))}</span></div>)}
       <div className={`${styles.between} ${styles.total}`}><span>Estimated total · USD</span><strong>{money(mailers.reduce((sum, m) => sum + (estimate(m) ?? 0), 0))}</strong></div>
       <p className={`${styles.small} ${styles.subtle}`}>A replacement or cost above the approved limit will come back to you for review.</p>
-      <p className={styles.caption}>This local preview saves approvals only. It does not place orders or charge a payment method.</p>
+      <p className={`${styles.small} ${styles.subtle}`}>The estimate is deducted from gifting credits when you approve. Your project search budget reserves no credits.</p>
+      <p className={styles.caption}>This local preview updates demo credits only. It does not place orders or charge a payment method.</p>
       {error ? <p role="alert">{error}</p> : null}
     </div><div className={styles.actions}><Button variant="transparent" size="md" disabled={busy} onClick={close}>Back to review</Button><Button variant="primary" size="md" disabled={busy} onClick={approve}>{busy ? "Approving…" : "Confirm approval"}</Button></div>
   </MailDialog>;

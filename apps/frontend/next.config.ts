@@ -48,6 +48,8 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingRoot: process.cwd(),
+  // Private development samples must never enter a deployable standalone bundle.
+  outputFileTracingExcludes: { "/*": ["./.local/**/*"] },
   // `npm run build` uses --webpack, so this key governs production builds. Mirrors the design
   // editor's own next.config.mjs.
   webpack: (config) => {
