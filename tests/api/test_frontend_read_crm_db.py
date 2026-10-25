@@ -20,7 +20,12 @@ from sqlalchemy import text
 
 from clue_api.agent_turn_submission import DERIVATION_CRM_CONNECTED
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
-from clue_api.crm.composio_gateway import ConnectedAccount, ConnectLink, ExecuteResult
+from clue_api.crm.composio_gateway import (
+    ComposioError,
+    ConnectedAccount,
+    ConnectLink,
+    ExecuteResult,
+)
 from clue_api.crm.connections import open_connect_request, open_settings_connect_request
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
@@ -66,6 +71,9 @@ class FakeComposio:
         #: The Salesforce org name each grant's Organization query answers; absent → it fails.
         self.org_names: dict[str, str] = {}
         self.soql: list[str] = []
+        #: Each connected account deleted (a disconnect, R-15.3); ``delete_fails`` makes it fail.
+        self.deleted: list[str] = []
+        self.delete_fails = False
 
     async def create_link(self, **kwargs: Any) -> ConnectLink:
         self.links.append(kwargs)
@@ -83,7 +91,9 @@ class FakeComposio:
         return []
 
     async def delete_account(self, connected_account_id: str) -> None:
-        raise AssertionError("not used here")
+        self.deleted.append(connected_account_id)
+        if self.delete_fails:
+            raise ComposioError("unavailable", None, "Composio is down")
 
     async def execute(
         self, *, slug: str, connected_account_id: str, arguments: Any = None, **_: Any

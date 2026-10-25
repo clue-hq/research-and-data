@@ -149,6 +149,7 @@ from clue_obs import get_logger
 __all__ = [
     "CrmWriteHandler",
     "build_crm_write_handler",
+    "close_disconnected_proposals",
     "close_replaced_connection_proposals",
     "failure_kind",
 ]
@@ -179,6 +180,8 @@ NO_LONGER_ALLOWED_MESSAGE = "This action is no longer allowed, so it was not sen
 #: An allowed setup of Clue's fields that finds them set up already (a second card, R-13.3).
 SETUP_ALREADY_READY_MESSAGE = "Clue's fields are already set up in {crm}."
 RECONNECTED_MESSAGE = "The CRM was reconnected or switched, so this was not sent; propose again."
+#: A change not sent because the CRM was disconnected from Settings (R-15.3).
+DISCONNECTED_MESSAGE = "The CRM was disconnected, so this was not sent."
 #: A change sent whose confirming read kept failing until its attempts ran out (final review I-2).
 UNCONFIRMED_SEND_MESSAGE = "Sent; Clue could not confirm it — check the CRM"
 #: An add to a list the same proposal was to create, when the create did not happen (R-12.7).
@@ -204,6 +207,9 @@ MARKETING_USER_MESSAGE = (
 UNCONFIRMED_MESSAGE = (
     "The CRM was reconnected or switched after this was sent, so Clue could not confirm it; "
     "check the CRM, and propose again if it is missing."
+)
+DISCONNECTED_UNCONFIRMED_MESSAGE = (
+    "The CRM was disconnected after this was sent, so Clue could not confirm it; check the CRM."
 )
 
 FailureKind = Literal[
@@ -2246,13 +2252,66 @@ async def close_replaced_connection_proposals(
         text(
             "SELECT proposal_id FROM crm_write_proposal WHERE workspace_id = :ws "
             "AND connection_id <> :active "
-            "AND status IN ('awaiting_permission', 'queued', 'sending', 'paused') "
+            f"AND status IN {_OPEN_PROPOSAL_STATUSES} "
             "ORDER BY created_at, proposal_id FOR UPDATE"
         ),
         {"ws": workspace_id, "active": active_connection_id},
     )
     closed = [UUID(str(row.proposal_id)) for row in rows.all()]
-    for proposal_id in closed:
+    await _close_proposals(
+        conn,
+        artifacts,
+        closed,
+        not_sent=RECONNECTED_MESSAGE,
+        unconfirmed=UNCONFIRMED_MESSAGE,
+    )
+    if closed:
+        log.info("crm_write.closed_on_reconnect", proposals=len(closed))
+    return closed
+
+
+async def close_disconnected_proposals(
+    conn: AsyncConnection,
+    artifacts: DurableAgentArtifactStore | None,
+    *,
+    connection_id: UUID,
+) -> list[UUID]:
+    """The connection was disconnected from Settings (R-15.3): its proposals still waiting or
+    sending are closed the way a reconnect closes another connection's
+    (:func:`close_replaced_connection_proposals`), with the disconnect named as the reason."""
+    rows = await conn.execute(
+        text(
+            "SELECT proposal_id FROM crm_write_proposal WHERE connection_id = :c "
+            f"AND status IN {_OPEN_PROPOSAL_STATUSES} "
+            "ORDER BY created_at, proposal_id FOR UPDATE"
+        ),
+        {"c": connection_id},
+    )
+    closed = [UUID(str(row.proposal_id)) for row in rows.all()]
+    await _close_proposals(
+        conn,
+        artifacts,
+        closed,
+        not_sent=DISCONNECTED_MESSAGE,
+        unconfirmed=DISCONNECTED_UNCONFIRMED_MESSAGE,
+    )
+    if closed:
+        log.info("crm_write.closed_on_disconnect", proposals=len(closed))
+    return closed
+
+
+_OPEN_PROPOSAL_STATUSES = "('awaiting_permission', 'queued', 'sending', 'paused')"
+
+
+async def _close_proposals(
+    conn: AsyncConnection,
+    artifacts: DurableAgentArtifactStore | None,
+    proposal_ids: list[UUID],
+    *,
+    not_sent: str,
+    unconfirmed: str,
+) -> None:
+    for proposal_id in proposal_ids:
         await conn.execute(
             text(
                 "UPDATE crm_write SET finished_at = now(), "
@@ -2260,14 +2319,14 @@ async def close_replaced_connection_proposals(
                 "WHEN attempts > 0 THEN 'failed' ELSE 'skipped' END, "
                 "failure_kind = CASE WHEN selected THEN 'connection_expired' END, "
                 "crm_message = CASE WHEN NOT selected THEN :not_chosen "
-                "WHEN attempts > 0 THEN :unconfirmed ELSE :reconnected END "
+                "WHEN attempts > 0 THEN :unconfirmed ELSE :not_sent END "
                 "WHERE proposal_id = :id AND status NOT IN ('succeeded', 'failed', 'skipped')"
             ),
             {
                 "id": proposal_id,
                 "not_chosen": NOT_CHOSEN_MESSAGE,
-                "unconfirmed": UNCONFIRMED_MESSAGE,
-                "reconnected": RECONNECTED_MESSAGE,
+                "unconfirmed": unconfirmed,
+                "not_sent": not_sent,
             },
         )
         await set_proposal_status(conn, proposal_id=proposal_id, status="finished")
@@ -2275,9 +2334,6 @@ async def close_replaced_connection_proposals(
         assert proposal is not None
         if artifacts is not None:
             await queue_crm_writes_finished_turn(conn, artifacts, proposal=proposal)
-    if closed:
-        log.info("crm_write.closed_on_reconnect", proposals=len(closed))
-    return closed
 
 
 def build_crm_write_handler(

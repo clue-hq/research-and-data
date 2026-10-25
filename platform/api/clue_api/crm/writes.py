@@ -35,6 +35,7 @@ __all__ = [
     "forget_membership_link",
     "forget_record_link",
     "get_proposal",
+    "grant_phrase",
     "proposal_counts",
     "proposal_linked_records",
     "membership_link_id",
@@ -46,6 +47,7 @@ __all__ = [
     "insert_writes",
     "live_grants",
     "record_link",
+    "revoke_all_grants",
     "revoke_grant",
     "same_value",
     "set_proposal_status",
@@ -423,6 +425,53 @@ async def revoke_grant(conn: AsyncConnection, *, grant_id: UUID, revoked_by_user
         {"grant_id": grant_id, "user": revoked_by_user_id},
     )
     return bool(result.rowcount)
+
+
+async def revoke_all_grants(
+    conn: AsyncConnection, *, connection_id: UUID, revoked_by_user_id: str
+) -> int:
+    """Revoke every live grant of the connection (a disconnect); returns how many were live."""
+    result = await conn.execute(
+        text(
+            "UPDATE crm_write_grant SET revoked_at = now(), revoked_by_user_id = :user "
+            "WHERE connection_id = :connection_id AND revoked_at IS NULL"
+        ),
+        {"connection_id": connection_id, "user": revoked_by_user_id},
+    )
+    return int(result.rowcount or 0)
+
+
+def grant_phrase(provider: str, grant: Grant, *, field_label: str | None = None) -> str:
+    """What a standing permission allows, in the card's "Always allow" wording (card spec §5).
+
+    A grant records no field label: without ``field_label`` a field grant is named by its CRM
+    field name (the agent's ``manage_crm_grants`` view); Settings passes the label, since a
+    person never reads an API name there.
+    """
+    # Imported here: write_prepare imports this module.
+    from clue_api.crm.write_prepare import _noun
+
+    if grant.scope_kind == FULLY_AUTOMATIC:
+        return "every change Clue proposes"
+    if grant.scope_kind == "field":
+        named = grant.field if field_label is None else field_label
+        return f"setting “{named}” on {_noun(str(grant.object), 2)}"
+    kind = grant.kind
+    target = "lists" if provider == "hubspot" else "campaigns"
+    if kind == "list_create":
+        return f"creating Clue {target}"
+    # One scope covers every list and campaign, of companies or contacts (R-12.8).
+    if kind == "list_membership":
+        return "adding records to Clue lists and campaigns"
+    if kind == "list_removal":
+        return "removing records from Clue lists and campaigns"
+    if kind == "create_contact":
+        return "creating contacts"
+    if kind == "create_company":
+        return "creating companies" if provider == "hubspot" else "creating accounts"
+    if kind == "link_duplicate":
+        return "marking possible duplicates"
+    return f"{kind} changes"
 
 
 # --- record links --------------------------------------------------------------------------

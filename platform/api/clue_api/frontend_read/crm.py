@@ -13,6 +13,11 @@ Connecting requires ``workspace.manage_settings`` (owners and admins); any membe
 connection's status, and the progress of a CRM write permission card (``GET /crm/proposals/{id}``:
 what was sent, what failed with the CRM's own message, what was skipped and why, who answered;
 card spec §3 B–F, §6).
+
+Settings → Integrations (R-15.1–R-15.3): any member reads ``GET /crm/integration`` and revokes a
+standing permission; owners and admins open a connect request without a chat
+(``POST /crm/connect-request``, then the same ``connect-link`` and ``complete``), disconnect, and
+set how overwrites are treated.
 """
 
 from __future__ import annotations
@@ -33,15 +38,24 @@ from clue_api.crm.composio_gateway import (
 )
 from clue_api.crm.connections import (
     CrmAccountIdentity,
+    OverwritesMode,
     activate_from_attempt,
     crm_account_identity,
+    disconnect,
     get_connect_request,
     latest_connection,
+    open_settings_connect_request,
+    set_connection_overwrites,
     start_attempt,
 )
+from clue_api.crm.settings_view import integration_view
 from clue_api.crm.wake import queue_crm_connected_turns
 from clue_api.crm.write_answer import proposal_progress
-from clue_api.crm.write_executor import close_replaced_connection_proposals
+from clue_api.crm.write_executor import (
+    close_disconnected_proposals,
+    close_replaced_connection_proposals,
+)
+from clue_api.crm.writes import revoke_all_grants, revoke_grant
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
@@ -71,6 +85,14 @@ class CompleteBody(WireModel):
     request_id: UUID
     status: str
     connected_account_id: str
+
+
+class ConnectRequestBody(WireModel):
+    mode: Literal["connect", "reconnect", "switch"]
+
+
+class OverwritesBody(WireModel):
+    mode: OverwritesMode
 
 
 def auth_config_for(settings: Settings, provider: CrmProvider) -> str:
@@ -257,3 +279,99 @@ def register_crm_routes(
         if progress is None:
             raise refused(404, "crm_proposal_not_found", "No such CRM proposal here.")
         return progress
+
+    @router.get("/crm/integration")
+    async def integration(request: Request, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        principal = principal_for(request, workspace_id)
+        async with conn_factory() as conn:
+            return await integration_view(
+                conn,
+                workspace_id=workspace_id,
+                can_manage=PERMISSION in principal.permissions,
+            )
+
+    @router.post("/crm/connect-request")
+    async def connect_request(
+        body: ConnectRequestBody, request: Request, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        principal = principal_for(request, workspace_id, permission=PERMISSION)
+        async with conn_factory() as conn:
+            await lock_manager(conn, principal, PERMISSION)
+            opened = await open_settings_connect_request(
+                conn,
+                workspace_id=workspace_id,
+                requested_by_user_id=principal.user_id,
+                mode=body.mode,
+            )
+        return {"requestId": str(opened.request_id)}
+
+    @router.post("/crm/disconnect")
+    async def disconnect_crm(request: Request, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        principal = principal_for(request, workspace_id, permission=PERMISSION)
+        async with conn_factory() as conn:
+            await lock_manager(conn, principal, PERMISSION)
+            current = await latest_connection(conn, workspace_id=workspace_id)
+            if current is None or current.status == "disconnected":
+                raise refused(409, "crm_not_connected", "No CRM is connected.")
+            await disconnect(conn, connection_id=current.connection_id)
+            await revoke_all_grants(
+                conn,
+                connection_id=current.connection_id,
+                revoked_by_user_id=principal.user_id,
+            )
+            await close_disconnected_proposals(conn, artifacts, connection_id=current.connection_id)
+        # Clue's grant at Composio goes too (R-15.3). The disconnect stands if this fails: the
+        # connection is no longer used either way.
+        gateway = getattr(request.app.state, "crm_gateway", None) or built
+        if gateway is None:
+            log.warning("crm.disconnect.composio_not_configured")
+        else:
+            try:
+                await gateway.delete_account(current.composio_connected_account_id)
+            except ComposioError as error:
+                log.warning("crm.disconnect.composio_delete_failed", kind=error.kind)
+        return {"outcome": "disconnected"}
+
+    @router.post("/crm/permissions/{grant_id}/revoke")
+    async def revoke_permission(
+        grant_id: UUID, request: Request, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        principal = principal_for(request, workspace_id)
+        async with conn_factory() as conn:
+            current = await latest_connection(conn, workspace_id=workspace_id)
+            row = (
+                None
+                if current is None
+                else (
+                    await conn.execute(
+                        text(
+                            "SELECT revoked_at FROM crm_write_grant WHERE grant_id = :id "
+                            "AND workspace_id = :ws AND connection_id = :c FOR UPDATE"
+                        ),
+                        {"id": grant_id, "ws": workspace_id, "c": current.connection_id},
+                    )
+                ).first()
+            )
+            # A grant of an older connection never applies again: unknown, like another
+            # workspace's.
+            if row is None:
+                raise refused(404, "crm_permission_not_found", "No such permission here.")
+            if row.revoked_at is not None:
+                return {"outcome": "already_revoked"}
+            await revoke_grant(conn, grant_id=grant_id, revoked_by_user_id=principal.user_id)
+        return {"outcome": "revoked"}
+
+    @router.put("/crm/overwrites")
+    async def overwrites(
+        body: OverwritesBody, request: Request, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        principal = principal_for(request, workspace_id, permission=PERMISSION)
+        async with conn_factory() as conn:
+            await lock_manager(conn, principal, PERMISSION)
+            current = await latest_connection(conn, workspace_id=workspace_id)
+            if current is None or current.status == "disconnected":
+                raise refused(409, "crm_not_connected", "No CRM is connected.")
+            await set_connection_overwrites(
+                conn, connection_id=current.connection_id, mode=body.mode
+            )
+        return {"overwrites": body.mode}

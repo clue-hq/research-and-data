@@ -444,22 +444,19 @@ def test_both_tools_refuse_when_the_crm_is_not_configured(tmp_path: Path) -> Non
 
 
 def test_a_list_create_grant_is_worded_like_the_card() -> None:
-    from clue_api.crm.write_tools import _grant_phrase
+    from uuid import uuid4
 
-    assert _grant_phrase("hubspot", "kind", "list_create", None, None) == "creating Clue lists"
-    assert (
-        _grant_phrase("salesforce", "kind", "list_create", None, None) == "creating Clue campaigns"
-    )
+    from clue_api.crm.writes import Grant, grant_phrase
+
+    def phrase(provider: str, kind: str) -> str:
+        return grant_phrase(provider, Grant(uuid4(), "kind", kind, None, None))
+
+    assert phrase("hubspot", "list_create") == "creating Clue lists"
+    assert phrase("salesforce", "list_create") == "creating Clue campaigns"
     # R-12.8: one standing permission each for adding to and removing from any list or campaign.
     for provider in ("hubspot", "salesforce"):
-        assert (
-            _grant_phrase(provider, "kind", "list_membership", None, None)
-            == "adding records to Clue lists and campaigns"
-        )
-        assert (
-            _grant_phrase(provider, "kind", "list_removal", None, None)
-            == "removing records from Clue lists and campaigns"
-        )
+        assert phrase(provider, "list_membership") == "adding records to Clue lists and campaigns"
+        assert phrase(provider, "list_removal") == "removing records from Clue lists and campaigns"
 
 
 def test_the_logs_write_and_proposal_ids_are_marked_internal() -> None:

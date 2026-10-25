@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -33,15 +33,20 @@ __all__ = [
     "ConnectRequest",
     "CrmAccountIdentity",
     "CrmConnection",
+    "OVERWRITES_MODES",
+    "OverwritesMode",
     "activate_from_attempt",
+    "connection_overwrites",
     "count_salesforce_call",
     "crm_account_identity",
+    "disconnect",
     "get_connect_request",
     "get_connection",
     "latest_connection",
     "mark_expired",
     "open_connect_request",
     "open_settings_connect_request",
+    "set_connection_overwrites",
     "start_attempt",
 ]
 
@@ -232,7 +237,21 @@ async def open_settings_connect_request(
     conn: AsyncConnection, *, workspace_id: str, requested_by_user_id: str, mode: str
 ) -> ConnectRequest:
     """A connect request from Settings (R-15.3): no chat, so nothing is woken when it is fulfilled.
-    Each Settings click opens its own; activation fulfils it with every other open request."""
+    An open Settings request of the workspace with the same mode is reused (each click records its
+    own attempt on it, newest wins), so clicking again never piles up requests; activation fulfils
+    it with every other open request."""
+    found = (
+        await conn.execute(
+            text(
+                f"SELECT {_REQUEST_COLUMNS} FROM crm_connect_request "
+                "WHERE workspace_id = :ws AND status = 'open' AND turn_id IS NULL "
+                "AND mode = :mode ORDER BY created_at DESC LIMIT 1 FOR UPDATE"
+            ),
+            {"ws": workspace_id, "mode": mode},
+        )
+    ).first()
+    if found is not None:
+        return _request(found)
     row = (
         await conn.execute(
             text(
@@ -411,6 +430,51 @@ async def mark_expired(conn: AsyncConnection, *, connection_id: UUID) -> None:
             "WHERE connection_id = :id AND status = 'active'"
         ),
         {"id": connection_id},
+    )
+
+
+async def disconnect(conn: AsyncConnection, *, connection_id: UUID) -> bool:
+    """Disconnect an active or expired connection (Settings, R-15.3); ``False`` when it was
+    already disconnected. The row is kept: a later connect to the same CRM account reuses it."""
+    result = await conn.execute(
+        text(
+            "UPDATE workspace_integration_connection SET status = 'disconnected', "
+            "disconnected_at = now(), updated_at = now() "
+            "WHERE connection_id = :id AND status IN ('active', 'expired')"
+        ),
+        {"id": connection_id},
+    )
+    return result.rowcount == 1
+
+
+#: How Clue treats a change that overwrites a value a person set (R-15.1): ``ask`` on a card
+#: every time (the default), or ``follow_grants`` — standing permissions cover it too.
+OverwritesMode = Literal["ask", "follow_grants"]
+OVERWRITES_MODES: tuple[OverwritesMode, ...] = ("ask", "follow_grants")
+
+
+async def connection_overwrites(conn: AsyncConnection, *, connection_id: UUID) -> OverwritesMode:
+    """The connection's overwrites setting (``settings.overwrites``); ``ask`` when unset."""
+    value = await conn.scalar(
+        text(
+            "SELECT settings ->> 'overwrites' FROM workspace_integration_connection "
+            "WHERE connection_id = :id"
+        ),
+        {"id": connection_id},
+    )
+    return "follow_grants" if value == "follow_grants" else "ask"
+
+
+async def set_connection_overwrites(
+    conn: AsyncConnection, *, connection_id: UUID, mode: OverwritesMode
+) -> None:
+    await conn.execute(
+        text(
+            "UPDATE workspace_integration_connection SET "
+            "settings = settings || jsonb_build_object('overwrites', CAST(:mode AS text)), "
+            "updated_at = now() WHERE connection_id = :id"
+        ),
+        {"id": connection_id, "mode": mode},
     )
 
 

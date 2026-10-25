@@ -51,13 +51,14 @@ from clue_api.crm.write_prepare import (
     ProposedChange,
     RefusedChange,
     WriteRefused,
-    _noun,
     card_snapshot,
     clue_fields_setup_change,
     clue_fields_setup_snapshot,
     prepare_changes,
 )
 from clue_api.crm.writes import (
+    Grant,
+    grant_phrase,
     insert_proposal,
     insert_writes,
     live_grants,
@@ -1101,11 +1102,21 @@ async def _grant_views(conn: AsyncConnection, connection: CrmConnection) -> list
     return [_grant_view(row, connection.provider) for row in rows]
 
 
+def _grant(row: Any) -> Grant:
+    return Grant(
+        grant_id=row.grant_id,
+        scope_kind=row.scope_kind,
+        kind=row.kind,
+        object=row.object,
+        field=row.field,
+    )
+
+
 def _grant_view(row: Any, provider: str) -> CrmGrantView:
     granted_at: datetime = row.granted_at
     by = row.granted_by_name or row.granted_by_user_id
     phrase = (
-        f"Always allow {_grant_phrase(provider, row.scope_kind, row.kind, row.object, row.field)}"
+        f"Always allow {grant_phrase(provider, _grant(row))}"
         f" — by {by}, {granted_at.day} {granted_at:%b}"
     )
     return CrmGrantView(
@@ -1118,29 +1129,3 @@ def _grant_view(row: Any, provider: str) -> CrmGrantView:
         granted_by_user_id=row.granted_by_user_id,
         granted_at=granted_at,
     )
-
-
-def _grant_phrase(
-    provider: str, scope_kind: str, kind: str | None, object_name: str | None, field: str | None
-) -> str:
-    """The card's "Always allow" wording (card spec §5). A grant records no field label, so a
-    field is named by its CRM field name."""
-    if scope_kind == "fully_automatic":
-        return "every change Clue proposes"
-    if scope_kind == "field":
-        return f"setting “{field}” on {_noun(str(object_name), 2)}"
-    target = "lists" if provider == "hubspot" else "campaigns"
-    if kind == "list_create":
-        return f"creating Clue {target}"
-    # One scope covers every list and campaign, of companies or contacts (R-12.8).
-    if kind == "list_membership":
-        return "adding records to Clue lists and campaigns"
-    if kind == "list_removal":
-        return "removing records from Clue lists and campaigns"
-    if kind == "create_contact":
-        return "creating contacts"
-    if kind == "create_company":
-        return "creating companies" if provider == "hubspot" else "creating accounts"
-    if kind == "link_duplicate":
-        return "marking possible duplicates"
-    return f"{kind} changes"
