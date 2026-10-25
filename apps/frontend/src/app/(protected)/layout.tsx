@@ -89,11 +89,6 @@ export default async function ProtectedLayout({
           workspaces={workspaces}
         >
           <ConfirmationProvider>
-            {preview && (
-              <div className="pointer-events-none fixed right-3 bottom-3 z-50 rounded-md border border-border bg-background px-3 py-1 text-xs text-muted-foreground shadow-sm">
-                Local preview · Demo data
-              </div>
-            )}
             {profile ? (
               <WorkspaceProfileProvider profile={profile}>
                 <ProjectApplicationShell>{children}</ProjectApplicationShell>

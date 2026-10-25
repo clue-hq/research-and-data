@@ -33,8 +33,9 @@ Stop the process with Ctrl-C. Profile and document edits reset on restart.
 - Existing scripted chat behavior. No model calls, paid research, messages,
   orders or publishing occur. A demo model label is not a live model configuration.
 
-The small “Local preview · Demo data” label identifies this mode on every screen.
-This is a UI development environment, not a full backend emulator. Unsupported
+The floating preview badge was removed at the founder's request; localhost and
+the `dev:preview` command identify this environment. It still uses isolated demo
+data. This is a UI development environment, not a full backend emulator. Unsupported
 API actions return `PREVIEW_ACTION_UNAVAILABLE`, never a fabricated success.
 
 ## Data boundary and handoff

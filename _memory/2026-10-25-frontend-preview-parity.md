@@ -42,3 +42,18 @@
 - Reinitialized the dev server after QA to reset demo edits. No backend services
   started, no remote mutations/pushes. Handoff guide:
   `apps/frontend/docs/architecture/local-preview.md`.
+
+## Typography comparison and badge removal
+
+- Founder requested removal of the floating “Local preview · Demo data” badge.
+  Removed only that overlay; preview isolation and data adapters remain active.
+- Compared rendered DOM styles on production and local Accounts: same
+  Satoshi/Arial font stack, 14px body/20px line height, Home nav 14px/18px at
+  weight 500, page heading 18px/700 and 240px sidebar. No typography changes made.
+- Current production tab: 1626×1223 CSS viewport, device-pixel ratio 1.
+  Local project tab: 1806×1358, ratio 0.9. The roughly 90% local-tab scale explains
+  the smaller appearance/more visible space; this is per-tab and may change.
+  Existing local Accounts tab was at approximately 99% relative scale.
+- Browser zoom was not changed. Confirmed the badge absent in the rendered DOM
+  and screenshot, with font styles unchanged. Design-system build, lint and
+  production build passed (same 11 pre-existing lint warnings, zero errors).
