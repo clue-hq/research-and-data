@@ -26,7 +26,9 @@ pytestmark = pytest.mark.usefixtures("require_design_db")
 
 async def _ws(conn: AsyncConnection) -> str:
     ws = f"ws_test_kitplan_{uuid4().hex[:10]}"
-    await conn.execute(text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws})
+    await conn.execute(
+        text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws}
+    )
     return ws
 
 
@@ -37,9 +39,15 @@ async def _asset(conn: AsyncConnection, ws: str, status: str | None, *, text_: b
         conn,
         workspace_id=ws,
         record={
-            "id": asset_id, "label": "Image", "kind": "image", "status": "ready", "tags": [],
+            "id": asset_id,
+            "label": "Image",
+            "kind": "image",
+            "status": "ready",
+            "tags": [],
             "media": {
-                "mime_type": "image/png", "byte_length": 64, "filename": f"{asset_id}.png",
+                "mime_type": "image/png",
+                "byte_length": 64,
+                "filename": f"{asset_id}.png",
                 "digest": {"algorithm": "sha256", "value": digest},
                 "location": {"provider": "local-store", "opaque_ref": f"sha256/{digest}"},
             },
@@ -51,32 +59,59 @@ async def _asset(conn: AsyncConnection, ws: str, status: str | None, *, text_: b
                 "INSERT INTO design_asset_description (workspace_id, asset_id, origin, title,"
                 " description, model, analysis_status) VALUES (:w, :a, 'ai', :t, :d, 'm', :s)"
             ),
-            {"w": ws, "a": asset_id, "s": status,
-             "t": "Title" if text_ else None, "d": "Described." if text_ else None},
+            {
+                "w": ws,
+                "a": asset_id,
+                "s": status,
+                "t": "Title" if text_ else None,
+                "d": "Described." if text_ else None,
+            },
         )
     return asset_id
 
 
-async def _kit(conn: AsyncConnection, ws: str, asset_ids: list[str], *, stamped: bool = False) -> str:
+async def _kit(
+    conn: AsyncConnection, ws: str, asset_ids: list[str], *, stamped: bool = False
+) -> str:
     kit_id = f"kit_kp_{uuid4().hex[:10]}"
     images = {
-        f"img.{n}": {"asset_id": aid, "role": "photo", **({"description": "Described."} if stamped else {})}
+        f"img.{n}": {
+            "asset_id": aid,
+            "role": "photo",
+            **({"description": "Described."} if stamped else {}),
+        }
         for n, aid in enumerate(asset_ids)
     }
     await design_brand.create_brand_kit(
-        conn, workspace_id=ws,
-        brand_kit={"id": kit_id, "version": 1, "name": "Kit", "approval_status": "approved",
-                   "assets": {"images": images}},
-        brand_summary={"product_ready": False}, diagnostics=[], source="website",
+        conn,
+        workspace_id=ws,
+        brand_kit={
+            "id": kit_id,
+            "version": 1,
+            "name": "Kit",
+            "approval_status": "approved",
+            "assets": {"images": images},
+        },
+        brand_summary={"product_ready": False},
+        diagnostics=[],
+        source="website",
     )
     return kit_id
 
 
-async def _job(conn: AsyncConnection, ws: str, kind: str, status: str, *,
-               request: dict | None = None, kit_id: str | None = None,
-               evidence: dict | None = None) -> str:
-    job = await design_ingestion.create_job(conn, workspace_id=ws, kind=kind,
-                                            request=request or {"url": "https://acme.com"})
+async def _job(
+    conn: AsyncConnection,
+    ws: str,
+    kind: str,
+    status: str,
+    *,
+    request: dict | None = None,
+    kit_id: str | None = None,
+    evidence: dict | None = None,
+) -> str:
+    job = await design_ingestion.create_job(
+        conn, workspace_id=ws, kind=kind, request=request or {"url": "https://acme.com"}
+    )
     await conn.execute(
         text(
             "UPDATE design_ingestion_job SET status = CAST(:s AS design_ingestion_status),"
@@ -86,16 +121,26 @@ async def _job(conn: AsyncConnection, ws: str, kind: str, status: str, *,
             " created_at = clock_timestamp()"
             " WHERE job_id = :j"
         ),
-        {"s": status, "k": kit_id, "v": 1 if kit_id else None,
-         "e": json.dumps(evidence) if evidence is not None else None, "j": job["job_id"]},
+        {
+            "s": status,
+            "k": kit_id,
+            "v": 1 if kit_id else None,
+            "e": json.dumps(evidence) if evidence is not None else None,
+            "j": job["job_id"],
+        },
     )
     return str(job["job_id"])
 
 
 async def _harvest(conn: AsyncConnection, ws: str) -> str:
-    return await _job(conn, ws, "ad_assets", "succeeded",
-                      request={"phase": "harvest", "company_domain": "acme.com"},
-                      evidence={"outcome": {"creatives_custodied": 4}})
+    return await _job(
+        conn,
+        ws,
+        "ad_assets",
+        "succeeded",
+        request={"phase": "harvest", "company_domain": "acme.com"},
+        evidence={"outcome": {"creatives_custodied": 4}},
+    )
 
 
 def _plan(seed: Any) -> tuple[KitRepairPlan, dict]:
@@ -191,8 +236,9 @@ def test_a_harvest_with_a_card_or_an_open_card_job_plans_no_card() -> None:
         kit_id = await _kit(conn, ws, [ready], stamped=True)
         await _job(conn, ws, "website", "succeeded", kit_id=kit_id)
         harvest = await _harvest(conn, ws)
-        await _job(conn, ws, "ad_assets", "queued",
-                   request={"phase": "card", "harvest_job_id": harvest})
+        await _job(
+            conn, ws, "ad_assets", "queued", request={"phase": "card", "harvest_job_id": harvest}
+        )
         return ws, {}
 
     plan, _ = _plan(seed)

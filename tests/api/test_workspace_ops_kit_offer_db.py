@@ -29,8 +29,10 @@ def test_offer_design_job_writes_job_row_and_design_task_together() -> None:
             )
             job = (
                 await conn.execute(
-                    text("SELECT kind::text, status::text, work_id FROM design_ingestion_job"
-                         " WHERE job_id = :j AND workspace_id = :w"),
+                    text(
+                        "SELECT kind::text, status::text, work_id FROM design_ingestion_job"
+                        " WHERE job_id = :j AND workspace_id = :w"
+                    ),
                     {"j": job_id, "w": ws},
                 )
             ).one()
@@ -38,8 +40,10 @@ def test_offer_design_job_writes_job_row_and_design_task_together() -> None:
             assert isinstance(job.work_id, UUID)
             task = (
                 await conn.execute(
-                    text("SELECT kind::text, dedup_key, payload_json AS payload FROM fleet_task"
-                         " WHERE dedup_key = :d"),
+                    text(
+                        "SELECT kind::text, dedup_key, payload_json AS payload FROM fleet_task"
+                        " WHERE dedup_key = :d"
+                    ),
                     {"d": str(job.work_id)},
                 )
             ).one()

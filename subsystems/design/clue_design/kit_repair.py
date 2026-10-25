@@ -69,12 +69,16 @@ async def plan_kit_repair(conn: AsyncConnection, *, workspace_id: str) -> KitRep
     jobs = await ingestion.list_recent(conn, workspace_id=workspace_id, limit=_RECENT)
     kit_jobs = [job for job in jobs if job["kind"] in KIT_BUILDING_KINDS]
     if kit_jobs and kit_jobs[0]["status"] in _OPEN:
-        return KitRepairPlan(in_flight=(f"a {kit_jobs[0]['kind']} ingestion is {kit_jobs[0]['status']}",))
+        return KitRepairPlan(
+            in_flight=(f"a {kit_jobs[0]['kind']} ingestion is {kit_jobs[0]['status']}",)
+        )
     open_repair = next(
         (job for job in jobs if job["kind"] == "kit_repair" and job["status"] in _OPEN), None
     )
     if open_repair is not None:
-        return KitRepairPlan(in_flight=(f"kit repair {open_repair['job_id']} is {open_repair['status']}",))
+        return KitRepairPlan(
+            in_flight=(f"kit repair {open_repair['job_id']} is {open_repair['status']}",)
+        )
 
     kit_job = next(
         (job for job in kit_jobs if job["status"] in _FINISHED and job.get("brand_kit_id")), None
@@ -143,7 +147,9 @@ def _kit_entries(kit: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return entries
 
 
-async def _description_rows(conn: AsyncConnection, workspace_id: str) -> dict[str, tuple[str, bool]]:
+async def _description_rows(
+    conn: AsyncConnection, workspace_id: str
+) -> dict[str, tuple[str, bool]]:
     rows = await conn.execute(
         text(
             "SELECT asset_id, analysis_status,"

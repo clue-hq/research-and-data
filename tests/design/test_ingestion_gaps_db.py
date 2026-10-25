@@ -24,7 +24,9 @@ pytestmark = pytest.mark.usefixtures("require_design_db")
 
 async def _job(conn: AsyncConnection) -> tuple[str, str]:
     ws = f"ws_test_gaps_{uuid4().hex[:10]}"
-    await conn.execute(text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws})
+    await conn.execute(
+        text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"), {"w": ws}
+    )
     job = await design_ingestion.create_job(
         conn, workspace_id=ws, kind=DesignIngestionKind.WEBSITE, request={"url": "https://a.co"}
     )
