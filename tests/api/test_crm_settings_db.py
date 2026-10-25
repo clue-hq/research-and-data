@@ -350,7 +350,7 @@ def test_needs_attention_names_the_missing_field(tmp_path: Any) -> None:
         assert page["research"]["state"] == "needs_attention"
         assert page["research"]["failedField"] == "Clue research link"
         assert page["research"]["reason"] == (
-            "The field Clue uses for Clue research link was deleted in HubSpot."
+            "Clue’s field “Clue research link” was deleted in HubSpot."
         )
         assert _statuses(page)["company_research_links"] == "missing"
         assert _statuses(page)["company_fit"] == "created"

@@ -239,7 +239,7 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
     elif gone_labels:
         research_state = "needs_attention"
         failed_field = gone_labels[0]
-        reason = f"The field Clue uses for {failed_field} was deleted in {crm}."
+        reason = f"Clue’s field “{failed_field}” was deleted in {crm}."
     elif latest is not None and latest.proposal_status == "awaiting_permission":
         research_state = "approval_needed"
     elif (latest is not None and latest.status == "failed") or (
