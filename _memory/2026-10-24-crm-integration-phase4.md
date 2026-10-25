@@ -42,4 +42,25 @@ follow-up fixes re-checked on v83.
 
 ## Open
 - R-13.7 lookup by Clue id deferred. L-14 (Phase 3) still undecided. L4-8 harness retry error.
-- Not pushed; the founder decides when.
+- Pushed to origin 2026-10-25 (no PR yet, by founder instruction).
+
+## 2026-10-25 (later) — own OAuth apps, live check, D-1/D-2
+- Own apps (R-14.1–R-14.5): HubSpot app `clue-hubspot` in dev account `clue-hq-dev` (13 scopes);
+  Salesforce packaged external client app in a 2GP managed package, namespace `clue`, beta
+  `04tg7000000aSozAAE` installed in the Garner test org; Composio custom configs HubSpot
+  `ac_jD3YXBrp_2ed`, Salesforce `ac_k9cNBS3hGCgM` (scopes + v3 redirect set via PATCH, which merges
+  credentials). Nashville `.env` points at both. Package project at `~/clue-salesforce`, HubSpot
+  project at `~/clue-hubspot-app/clue-hubspot` (outside the repo).
+- The nashville branch was fast-forwarded (by the founder) to `integration/f3-onto-crm-phase-4`;
+  stack DB migrated in place to `b1d0eb59cd73`; F3's `CLUE_AGENT_WORKSPACE_*` keys added to `.env`.
+- Live check `docs/superpowers/specs/crm-integration/2026-10-25-own-oauth-apps-live-check-findings.md`:
+  both CRMs pass through Clue's own apps. D-1 (F3: two chats of one project deadlocked on
+  `lock_project`) fixed `2e367467b` with `FOR NO KEY UPDATE`; D-2 (reconnect lost undo) fixed
+  `dc2627ae2` — a reconnect to the same org/portal reuses the connection (`external_account_id`
+  from who-am-I). Both re-checked live. D-5: `test_status_facts_are_workspace_scoped_…` fails on
+  the merged branch regardless (ARV2 seeding FK), not ours.
+- Test CRMs: old connections are `expired` rows; the agent can't open the connect pop-up (founder
+  clicks Connect). A Phase 3 card re-proposed in Conduit chat `thr_9a8eef…` is still waiting.
+- Before production: Salesforce Partner Business Org link for the `clue` namespace, release a package
+  version, HubSpot Marketplace listing before install 25, privacy/terms links, Composio ZDR and a
+  production Composio project.
