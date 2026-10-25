@@ -1,10 +1,16 @@
 # Workspace onboarding operations: add, start, check, repair
 
-Status: **draft for founder review, 2026-10-25.** Direction approved by the founder on 2026-10-25:
+Status: **approved by the founder, 2026-10-25.** The direction was approved earlier the same day:
 build it properly in code, everything through API routes. Scope added the same day: every
 operation also gets a script in `scripts/` that runs the same code, for use from a production
-container. Nothing in this document is built yet. The decisions in §8 are open until the founder
-answers them.
+container.
+
+Founder rulings on §8, 2026-10-25:
+
+- **D1:** "for now let anyone call the api endpoint". The founder confirmed this means no sign-in
+  at all (§8 D1).
+- **D2–D8:** as recommended.
+- **My calls in §8:** accepted.
 
 ## 1. Why
 
@@ -109,7 +115,7 @@ has a dry-run form that writes nothing and returns what would happen, and an app
     is captured twice by accident.
   - **This is my call. Check it.**
 - **Who starts it.** Today an operator has to sign in *as the user* and open a link. The operator
-  route lets staff start it directly for the new workspace (§8, decision D1).
+  route lets an operator start it directly for the new workspace, with no sign-in (§8, D1).
 - **Script.** `scripts/start_workspace_onboarding.py --workspace <id> [--domain d] [--apply]`.
 
 ### 3.3 Pre-flight: check providers
@@ -149,7 +155,7 @@ key cap and the budget, whichever are readable, and warns below a floor. **Exa r
 low.** New setting `CLUE_PREFLIGHT_OPENROUTER_MIN_CREDIT_USD`, default `5`. At or below the floor
 it warns. At zero it refuses.
 
-**Route.** The check is also its own read: `GET /frontend/v1/onboarding/preflight`.
+**Route.** The check is also its own read: `GET /ops/v1/preflight`.
 
 **Script.** `scripts/check_onboarding_providers.py`. It only reads, apart from the half-cent Exa
 probe, so it has no `--apply`.
@@ -174,9 +180,12 @@ different machinery.
 - **Never two at once.** A repair is refused while a full run is open, and a full start is refused
   while a repair is open: `409 onboarding_in_progress` either way.
 - **Who requested it.** `onboarding_run.requested_by_user_id` must name a user.
-  - A route stamps the calling user. A staff user who is not a member is still a valid user.
-  - A script takes `--operator-email`, which must belong to an existing Clue user. It is stamped
-    as the requester, and the actor is `operator:<email>`.
+  - There is no signed-in caller (D1). So every route takes `operator_email` in its body, and
+    every script takes it as `--operator-email`.
+  - It must belong to an existing Clue user. It is stamped as the requester, and the actor is
+    `operator:<email>`.
+  - It is self-declared and not verified, so the audit trail records who the caller *said* they
+    were.
   - **My call.** No schema change.
 - **What counts as missing.** A step is missing when its newest attempt is `failed`, or when its
   document does not exist. An `empty` step is a correct outcome and is not repaired. For example,
@@ -407,29 +416,34 @@ It gives:
 
 Each decision has my recommendation first.
 
-**D1. Who may call these routes?** No staff or platform-admin concept exists today. "Operator" is
-a workspace role, and every route is scoped to one workspace through its membership.
+**D1. Who may call these routes? Founder ruling 2026-10-25: anyone, with no sign-in, for now.**
 
-- **(A) Recommended: a small staff allowlist, plus owner/admin for their own workspace.**
-  - New setting `CLUE_PLATFORM_STAFF_EMAILS`, a comma-separated list. Its default is empty, which
-    means nobody is staff.
-  - Staff routes live under `/frontend/v1/staff/…`, take the workspace id in the path, and need no
-    membership:
-    - add a workspace
-    - start onboarding
-    - pre-flight
-    - repair plan and apply, for any workspace
-  - The workspace's own owners and admins get pre-flight and repair for *their* workspace under
-    `/frontend/v1/onboarding/…`. These use `research.approve_spend`, exactly like the stuck-job
-    resume routes.
-  - Adding a workspace is staff-only. Letting any customer create unlimited workspaces would mean
-    unlimited onboarding spend.
-- **(B) Owner/admin only, no staff.**
-  - Simpler, but adding a workspace to someone else's login has no caller.
-  - Starting or repairing a workspace you are not a member of still means signing in as the user.
-- **(C) Staff as a database table with grants**, managed by a script.
-  - Auditable, and changing staff needs no redeploy.
-  - It is one more table and a management path. Worth it once there are more than a few staff.
+What that means in the build:
+
+- **The routes.** They live on their own router, `/ops/v1/…`, on the platform API, outside the
+  signed-in `/frontend/v1` surface. They take the workspace id in the path. There is no principal,
+  no membership and no permission check.
+  - `POST /ops/v1/workspaces`: add a workspace. Body: `email`, `website`, optional
+    `company_name`, `operator_email`, `apply` (default false).
+  - `GET /ops/v1/preflight`: check the providers.
+  - `POST /ops/v1/workspaces/{workspace_id}/onboarding`: start onboarding. Body: optional
+    `domain` (default: the workspace's website), `operator_email`, `apply` (default false).
+  - `GET /ops/v1/workspaces/{workspace_id}/repair-plan`: the dry run.
+  - `POST /ops/v1/workspaces/{workspace_id}/repair`: apply. Body: `plan_digest`, `reason`,
+    `operator_email`.
+- **The caller's name.** `operator_email` names an existing Clue user. It is self-declared, and it
+  is what the audit row and the run's requester record (§3.4 A).
+- **The risk, as the founder was told when choosing.** Anyone who can reach the platform API can
+  add a workspace to any login and start paid onboarding or repair runs.
+  - The guard rails that remain: pre-flight; one onboarding run at a time per workspace; repair
+    plans only what is missing; every write is audited.
+- **A kill switch. My call.** New setting `CLUE_OPS_ROUTES_ENABLED`, default `true`. When `false`,
+  the router is not mounted and every `/ops/v1` path is a 404. Closing the routes is then an env
+  change, not a deploy of new code. Sign-in can be added later without changing the operations,
+  because they never read a principal.
+
+**Options the founder did not take:** a staff allowlist plus owner/admin, owner/admin only, or a
+staff table.
 
 **D2. How should the brand kit report a partial result?**
 
@@ -536,8 +550,11 @@ item is a scenario through the real routes, database and fleet handlers, not a u
    unchanged.
 6. **Plan drift.** A dry run, then a description finishing, then apply with the old digest refuses
    `plan_changed`.
-7. **Permissions.** A non-staff user gets 403 on the staff routes. A viewer or operator gets 403 on
-   repair. An owner or admin gets 200 for their own workspace. Another workspace's id gets 404.
+7. **Routes and the kill switch.**
+   - The `/ops/v1` routes answer with no sign-in.
+   - An unknown `operator_email` is refused with `422 operator_unknown`.
+   - An unknown workspace id gets 404.
+   - With `CLUE_OPS_ROUTES_ENABLED=false`, every `/ops/v1` path is a 404.
 8. **Scripts.** A dry run writes nothing. `repair_workspace.py` runs without a design API
    configured. `--apply` has the same effect as the route, audit row
    included.
@@ -552,7 +569,7 @@ item is a scenario through the real routes, database and fleet handlers, not a u
 
 Each goes into `.env.example`, with its default, when it is introduced:
 
-- `CLUE_PLATFORM_STAFF_EMAILS=`: empty; only if D1 is A
+- `CLUE_OPS_ROUTES_ENABLED=true`
 - `CLUE_PREFLIGHT_OPENROUTER_MIN_CREDIT_USD=5`
 
 ## 12. Migrations
