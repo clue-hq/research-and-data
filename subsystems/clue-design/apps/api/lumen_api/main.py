@@ -12637,6 +12637,7 @@ def _execute_ingestion_job(
     workspace_id = envelope.workspace_id
     kind = DesignIngestionKind(envelope.ingestion_kind)
     from .asset_enrichment import run_asset_enrichment
+    from lumen_ingestion.kit_repair import run_kit_repair
     runner = {
         DesignIngestionKind.ASSET_ENRICHMENT: run_asset_enrichment,
         DesignIngestionKind.WEBSITE: run_website_ingestion,
@@ -12645,6 +12646,8 @@ def _execute_ingestion_job(
         # Brand Ad Assets v1 W2. Same signature, same never-raises contract, same fence — the
         # lane is a fourth ingestion kind rather than a second job system (see the enum).
         DesignIngestionKind.AD_ASSETS: run_ad_assets_onboarding,
+        # Workspace repair (spec 2026-10-25): batch-describe, republish, re-offer the ad card.
+        DesignIngestionKind.KIT_REPAIR: run_kit_repair,
     }[kind]
     runner(
         str(_host_engine_cache_root(host, workspace_id)),
