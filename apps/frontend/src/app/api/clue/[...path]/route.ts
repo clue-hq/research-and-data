@@ -11,6 +11,7 @@ import {
   fetchAuthenticatedClueBackend,
 } from "@/auth/authenticated-backend";
 import { localProvisioningRefusal, workspaceCookieName } from "@/auth/local-workspace";
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -30,6 +31,17 @@ function errorResponse(
 }
 
 async function proxyRequest(request: Request, context: RouteContext) {
+  if (isFrontendPreviewMode()) {
+    if (!hasAllowedOrigin(request, clueAppOrigin())) {
+      return errorResponse(403, "REQUEST_ORIGIN_FORBIDDEN", "Mutation origin is not allowed");
+    }
+    const { path } = await context.params;
+    const { requestPreviewBackend } = await import("@/features/preview/data/preview-backend");
+    return requestPreviewBackend(`${backendPath(path)}${new URL(request.url).search}`, {
+      method: request.method, headers: request.headers,
+      body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
+    });
+  }
   if (!isAuthenticationEnabled()) {
     return errorResponse(503, "AUTHENTICATION_NOT_CONFIGURED", "Authentication is disabled");
   }

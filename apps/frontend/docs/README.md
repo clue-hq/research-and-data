@@ -24,6 +24,8 @@ specifications from becoming competing sources of truth.
 
 - [`architecture/frontend.md`](architecture/frontend.md) — repository and
   dependency rules.
+- [`architecture/local-preview.md`](architecture/local-preview.md) — complete-interface
+  development preview on port 5000, isolated fixtures and backend handoff boundaries.
 - [`architecture/design-system-audit.md`](architecture/design-system-audit.md) —
   live Figma/token audit, component reuse map, and frontend gaps before direct-mail UI work.
 - [`architecture/direct-mail.md`](architecture/direct-mail.md) — proposed customer

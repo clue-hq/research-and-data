@@ -42,6 +42,9 @@ test("fixture project shell uses the honest pre-artifact contract", async () => 
   assert.ok(project);
   assert.equal(home.defaultBrandId, "brand-clue-demo");
   assert.ok(home.composerCapabilities.contextRefs);
+  assert.deepEqual(project.composerCapabilities, home.composerCapabilities);
+  assert.ok(project.models.some((model) => model.id === project.defaultAgentProfileId));
+  assert.ok(project.entities.length > 0);
   assert.deepEqual(project.artifacts, []);
   assert.deepEqual(Object.keys(project).sort(), [
     "archivedAt",

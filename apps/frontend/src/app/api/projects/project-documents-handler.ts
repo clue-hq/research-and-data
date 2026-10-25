@@ -2,17 +2,24 @@ import { backendPath, browserResponseHeaders, hasAllowedOrigin } from "@/auth/bf
 import { clueAppOrigin, isAuthenticationEnabled } from "@/auth/config";
 import { ClueAuthenticationError } from "@/auth/errors";
 import { ProjectDocumentSaveSchema } from "@/features/projects/model/project-documents";
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
 
 type DocumentTarget = { projectId: string; documentId?: string };
 type Dependencies = {
+  previewEnabled?: () => boolean;
   authenticationEnabled: () => boolean;
   appOrigin: () => string;
   requestBackend: (path: string, init: RequestInit) => Promise<Response>;
 };
 const defaults: Dependencies = {
+  previewEnabled: isFrontendPreviewMode,
   authenticationEnabled: isAuthenticationEnabled,
   appOrigin: clueAppOrigin,
   async requestBackend(path, init) {
+    if (isFrontendPreviewMode()) {
+      const { requestPreviewBackend } = await import("@/features/preview/data/preview-backend");
+      return requestPreviewBackend(path, init);
+    }
     const { fetchAuthenticatedClueBackend } = await import("@/auth/authenticated-backend");
     return fetchAuthenticatedClueBackend(path, init);
   },
@@ -32,7 +39,7 @@ export async function handleProjectDocuments(
   dependencies: Dependencies = defaults,
 ): Promise<Response> {
   try {
-    if (!dependencies.authenticationEnabled()) {
+    if (!dependencies.previewEnabled?.() && !dependencies.authenticationEnabled()) {
       return errorResponse(503, "AUTHENTICATION_NOT_CONFIGURED", "Authentication is disabled");
     }
     if (!hasAllowedOrigin(request, dependencies.appOrigin())) {

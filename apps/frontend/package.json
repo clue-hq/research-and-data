@@ -14,6 +14,8 @@
     "design-system:build": "npm run build --workspace @clue/design-system",
     "predev": "node scripts/copy-design-vendor.mjs",
     "dev": "next dev --hostname localhost",
+    "predev:preview": "node scripts/copy-design-vendor.mjs",
+    "dev:preview": "node scripts/dev-preview.mjs",
     "prebuild": "node scripts/copy-design-vendor.mjs",
     "build": "next build --webpack",
     "start": "next start",

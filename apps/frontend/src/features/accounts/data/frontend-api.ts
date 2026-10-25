@@ -41,6 +41,11 @@ async function authenticatedReadRequest(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
+  const { isFrontendPreviewMode } = await import("@/features/preview/data/preview-mode");
+  if (isFrontendPreviewMode()) {
+    const { requestPreviewBackend } = await import("@/features/preview/data/preview-backend");
+    return requestPreviewBackend(path, init);
+  }
   // Lazy so the repository contracts remain unit-testable outside React's
   // `react-server` export condition. Runtime always loads the server-only
   // authenticated request before issuing a read.
@@ -63,8 +68,8 @@ async function readErrorEnvelope(response: Response) {
 /**
  * Fetch one authenticated read endpoint and return its parsed JSON body.
  *
- * There is no fixture mode and no static workspace configuration. The default
- * requester derives the provider session on the Next server, resolves the
+ * Outside the explicit local frontend preview, the default requester derives
+ * the provider session on the Next server, resolves the
  * selected Clue membership, and forwards `X-Clue-Workspace-Id` to FastAPI.
  */
 export async function fetchRead(

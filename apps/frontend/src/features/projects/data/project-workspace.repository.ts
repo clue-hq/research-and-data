@@ -11,6 +11,7 @@ import {
   projectHomeFixture,
   projectWorkspaceFixture,
 } from "./project-workspace.fixture";
+import { projectDirectoryFixture } from "./project-directory.fixture";
 import {
   chatRequest,
   resolveChatTransport,
@@ -27,8 +28,10 @@ export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
     throw new Error("Project renaming requires a connected workspace.");
   },
   async get(projectId) {
+    const project = projectDirectoryFixture.find((candidate) => candidate.id === projectId);
     return ProjectWorkspaceSchema.parse({
       ...projectWorkspaceFixture,
+      ...(project ? { title: project.title, description: project.description, pinned: project.pinned } : {}),
       id: projectId,
     });
   },

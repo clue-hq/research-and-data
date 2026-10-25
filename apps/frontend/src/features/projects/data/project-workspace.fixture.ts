@@ -91,25 +91,21 @@ export const projectHomeFixture: ProjectHome = {
 };
 
 /**
- * Fixture mode implements the real project-shell shape too. Prototype artifact,
- * plan, questionnaire, phase, model, and context data cannot leak through this
- * repository and masquerade as server state.
+ * Explicit fixture mode uses the same composer as Home. Demo documents are
+ * provided separately by the local preview adapter; live repositories never
+ * fall back to this data.
  */
 export const projectWorkspaceFixture: ProjectWorkspace = {
   archivedAt: null,
   artifacts: [],
   brandId: "brand-clue-demo",
-  composerCapabilities: {
-    agentProfileSelection: false,
-    attachments: false,
-    contextRefs: false,
-  },
+  composerCapabilities: { ...projectHomeFixture.composerCapabilities },
   createdAt: "2026-08-01T00:00:00Z",
-  defaultAgentProfileId: null,
+  defaultAgentProfileId: projectHomeFixture.defaultAgentProfileId,
   description: "",
-  entities: [],
+  entities: [...projectHomeFixture.entities],
   id: "10m-landing-page-campaign",
-  models: [],
+  models: [...projectModels],
   pinned: false,
   productId: null,
   status: "active",

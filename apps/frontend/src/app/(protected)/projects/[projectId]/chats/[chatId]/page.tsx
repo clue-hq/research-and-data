@@ -4,6 +4,7 @@ import { backendDesignArtifactRepository } from "@/features/design-editor/data/a
 import { loadGalleryFeed } from "@/features/design-editor/data/gallery-feed";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
 
 export const metadata: Metadata = {
   title: "Project chat",
@@ -49,7 +50,7 @@ export default async function ProjectChatPage({
   return (
     <ProjectWorkspaceShell
       artifacts={feed.cards}
-      canEditDocuments={session?.principal.permissions.includes("project.write") ?? false}
+      canEditDocuments={isFrontendPreviewMode() || (session?.principal.permissions.includes("project.write") ?? false)}
       documentIds={feed.documentIds}
       initial={{
         edit: query.edit,

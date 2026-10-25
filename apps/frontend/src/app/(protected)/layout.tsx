@@ -15,6 +15,7 @@ import { getSettingsWorkspace } from "@/features/settings/data/workspace.reposit
 import { shellProfile } from "@/features/settings/model/profile";
 import { accountRecoveryFor } from "@/features/accounts/data/accounts-read-result";
 import { AccountsRecoveryScreen } from "@/features/accounts/components/accounts-recovery-screen";
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
 
 export default async function ProtectedLayout({
   children,
@@ -28,8 +29,9 @@ export default async function ProtectedLayout({
   // prop: the projects chat repositories run in the browser, and no component
   // may read an environment variable (`docs/architecture/frontend.md`).
   const transport = resolveChatTransport();
+  const preview = isFrontendPreviewMode();
   let profile = null;
-  if (session) {
+  if (session || preview) {
     try {
       const [person, workspace] = await Promise.all([
         getSettingsProfile(),
@@ -87,6 +89,11 @@ export default async function ProtectedLayout({
           workspaces={workspaces}
         >
           <ConfirmationProvider>
+            {preview && (
+              <div className="pointer-events-none fixed right-3 bottom-3 z-50 rounded-md border border-border bg-background px-3 py-1 text-xs text-muted-foreground shadow-sm">
+                Local preview · Demo data
+              </div>
+            )}
             {profile ? (
               <WorkspaceProfileProvider profile={profile}>
                 <ProjectApplicationShell>{children}</ProjectApplicationShell>
