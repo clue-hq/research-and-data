@@ -321,7 +321,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # removed; `crm-writing` v6 (section 3c items 2 and 3: a created record carries its Clue id;
     # possible duplicates are marked with the CRM's own actions), `stage0-interview@v56` (v55 with
     # its manual paths repointed), `manual-*@v29` and recipe 43. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v83",
+    # v84 (2026-10-25, F3 merged onto CRM Phase 4): v83's surface exactly, no address added or
+    # removed; F3's founder-approved workspace text (the folder table, the `workspace_files.json`
+    # card, the staleness instruction, the limits chapter's retention bullet) re-minted above
+    # CRM: `manual-*@v30` (CRM's v29 plus F3's v23 -> v24 changes), `stage0-interview@v57` (v56
+    # with its manual paths repointed) and recipe 44. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v84",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

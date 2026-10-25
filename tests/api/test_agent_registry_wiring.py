@@ -191,7 +191,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # at its new output digest, `crm-writing@v5`, stage0-interview@v55 and manual@v28.
         # v83 (2026-10-25, Phase 4 live check L4-3): no address moves; `crm-writing@v6`,
         # stage0-interview@v56 and manual@v29.
-        AgentRole.HEAD_OF_ABM: ("c946ca2a86fe46c8d94e99cf795ec38d620ea3b821ffd932e21b14f29e863b96"),
+        # v84 (2026-10-25, F3 merged onto CRM Phase 4): no address moves; stage0-interview@v57
+        # and manual@v30 carry F3's workspace text re-minted above CRM.
+        AgentRole.HEAD_OF_ABM: ("0ca5338458e67c23f2c30262d64e6f5f688f05f7a08c6b2ed7c0189dffea0270"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -686,9 +688,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v83"
+    assert production.profile_ref.address == "profile:head-of-abm@v84"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v56"
+        "skill:stage0-interview@v57"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -728,7 +730,7 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     stage0-interview version whose section 7b teaches how to write the brief.
     """
 
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v83"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v84"
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
     # v72 re-pins it at `@3` (the brief's exclude list, spec 2026-10-16).
@@ -737,8 +739,8 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     assert "launch_arv2_discovery@1" not in granted
     assert "read_discovery_run@3" in granted
     assert "read_discovery_run@2" not in granted
-    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v56"
-    body = head.open_skill("skill:stage0-interview@v56")
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v57"
+    body = head.open_skill("skill:stage0-interview@v57")
     assert "## 7b. Discover accounts for this project" in body
     assert "`must_not`" in body
     assert "discovery_in_progress" in body
@@ -761,7 +763,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v56")
+    body = production.open_skill("skill:stage0-interview@v57")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -821,7 +823,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v56",
+        "skill:stage0-interview@v57",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -842,7 +844,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # on never showing Clue's write or proposal ids; v82 at v5, which adds section 3c,
         # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3.
         "skill:crm-writing@v6",
-        *(f"skill:manual-{name}@v29" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v30" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -852,7 +854,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v29")
+    assert briefing_path in head.open_skill("skill:manual-tools@v30")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -965,7 +967,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v56")
+    body = head.open_skill("skill:stage0-interview@v57")
 
     assert required_guidance in body
 
@@ -1019,7 +1021,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v56" not in remaining
+    assert "skill:stage0-interview@v57" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -1041,7 +1043,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # on never showing Clue's write or proposal ids; v82 at v5, which adds section 3c,
         # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3.
         "skill:crm-writing@v6",
-        *(f"skill:manual-{name}@v29" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v30" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -1175,7 +1177,7 @@ def test_v80_teaches_that_a_message_clue_wrote_is_never_the_persons_words(
     taught, that a wake-up, a finished discovery or a connected CRM is never recorded."""
 
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v56")
+    body = head.open_skill("skill:stage0-interview@v57")
     passage = (
         "Only the person's own words are recorded. A message Clue wrote — a wake-up after CRM "
         "changes, a finished discovery, a connected CRM — is never recorded as an interview answer."
@@ -1192,7 +1194,7 @@ def test_v81_teaches_never_to_show_clues_write_or_proposal_ids(
     section 8, the write log and undo."""
 
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    # v83 discloses v6, which keeps section 8 unchanged.
+    # v84 discloses v6 (as v83 did), which keeps section 8 unchanged.
     body = head.open_skill("skill:crm-writing@v6")
     sentence = (
         "Never show the person Clue's write or proposal ids; name the record and what changed "
@@ -1218,7 +1220,7 @@ def test_v82_grants_clue_fields_setup_and_teaches_clues_own_fields(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
     assert "propose_clue_fields_setup@1" in granted
-    # v83 discloses crm-writing v6, so v5 is read from the catalog folder.
+    # v83 and v84 disclose crm-writing v6, so v5 is read from the catalog folder.
     root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog" / "skills"
     body = (root / "crm-writing" / "v5" / "SKILL.md").read_text()
     section = body.split("## 3c. Clue's own fields", 1)[1].split("\n## ", 1)[0]
@@ -1245,7 +1247,8 @@ def test_v83_pins_crm_writing_v6_which_rewords_only_section_3c_items_2_and_3(
     duplicates are marked with the CRM's own actions), and nothing else."""
 
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    assert head.profile_ref.address == "profile:head-of-abm@v83"
+    # v84 is v83's surface exactly, so it still pins crm-writing v6.
+    assert head.profile_ref.address == "profile:head-of-abm@v84"
     body = head.open_skill("skill:crm-writing@v6")
     section = body.split("## 3c. Clue's own fields", 1)[1].split("\n## ", 1)[0]
     assert "A record Clue creates gets its Clue id by\n   itself." in section
@@ -1265,3 +1268,38 @@ def test_v83_pins_crm_writing_v6_which_rewords_only_section_3c_items_2_and_3(
         return text[: text.rindex("\n", 0, start)] + text[end:]
 
     assert without_items_2_and_3(v6_body) == without_items_2_and_3(v5_body)
+
+
+def test_v84_re_mints_f3s_workspace_text_above_crms_v83(
+    registry: AgentProfileRegistry,
+) -> None:
+    """F3 merged onto CRM Phase 4: head-of-abm v84 is v83's surface exactly. Of the hand-written
+    chapters only manual-workspace v30 differs from v29 beyond its version tokens, and it carries
+    F3's founder-approved retention text; the limits chapter carries F3's retention bullet."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    assert head.profile_ref.address == "profile:head-of-abm@v84"
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    profiles = root / "profiles" / "head-of-abm"
+    v83 = (profiles / "v83" / "profile.yaml").read_text()
+    v84 = (profiles / "v84" / "profile.yaml").read_text()
+
+    def tools_of(text: str) -> str:
+        return text.split("\ntools:\n", 1)[1]
+
+    assert tools_of(v84) == tools_of(v83)
+    workspace = head.open_skill("skill:manual-workspace@v30")
+    assert "### What you have, and what has gone: `context/project/workspace_files.json`" in (
+        workspace
+    )
+    assert "Never deleted by age." in workspace
+    limits = head.open_skill("skill:manual-limits@v30")
+    assert "Files are deleted by age, not the folder" in limits
+    assert "CLUE_AGENT_WORKSPACE_RETENTION_S" not in limits
+    skills = root / "skills"
+    for name in MANUAL_CHAPTERS:
+        if name in {"workspace", "tools", "fields", "errors", "limits"}:
+            continue
+        v29 = (skills / f"manual-{name}" / "v29" / "SKILL.md").read_text()
+        v30 = (skills / f"manual-{name}" / "v30" / "SKILL.md").read_text()
+        assert v30.replace("v30", "v29") == v29, name
