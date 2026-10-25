@@ -26,6 +26,8 @@ specifications from becoming competing sources of truth.
   dependency rules.
 - [`architecture/design-system-audit.md`](architecture/design-system-audit.md) —
   live Figma/token audit, component reuse map, and frontend gaps before direct-mail UI work.
+- [`architecture/direct-mail.md`](architecture/direct-mail.md) — proposed customer
+  flow, confirmed scope, pilot lessons, fixture boundaries and backend handoff.
 - [`architecture/site-editor.md`](architecture/site-editor.md) — the Puck site
   editor: the app/editor-domain split, the frame protocol and where the code lives.
 - [`architecture/ai-elements-and-reasoning.md`](architecture/ai-elements-and-reasoning.md)
