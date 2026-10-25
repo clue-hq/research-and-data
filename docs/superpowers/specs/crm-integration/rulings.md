@@ -554,3 +554,25 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   Clue's fields, list and record links carry on, and waiting cards stay open. Another account, or one
   that cannot be identified, is a new connection (today's switch). A separate "CRM account" table that
   connections point to was considered and kept in reserve for when a workspace can hold several CRMs.
+- **R-14.6 (2026-10-25, founder)** **"Clue tier" becomes "Clue fit level".** The value is the
+  account's fit band, the same one the accounts table shows: **High / Medium / Low** (no longer
+  Tier 1/2/3). In the CRM the field label is **"Clue fit level"** (Clue's fields stay labelled as
+  Clue's, R-6.6); in Clue's own screens it is **"Fit level"**. API names move too (`clue_fit_level`,
+  `Clue_Fit_Level__c`) since no production install uses the old ones; the test CRMs keep their old
+  "Clue tier" field (Clue never deletes fields). HubSpot's own ICP tier field keeps Tier 1/2/3.
+
+## 15. Settings → Integrations (decisions, 2026-10-25)
+
+- **R-15.1 (2026-10-25, founder)** **Build the Figma design "Settings → Integrations · CRM
+  management" (node 2308:1590)**: boards 01–05 pages, 06 dialogs, 07 states. "Fully automatic" and
+  "What Clue changed" are out of scope. Every member views and revokes standing permissions;
+  connection management is owner/admin.
+- **R-15.2 (2026-10-25, founder)** **Research setup is never run from the page**: "Review request"
+  opens the pending setup card in its chat; "Ask Clue to retry / restore" — and "Review request" when
+  no card is pending — opens a **new chat** (in the project where the CRM was connected, else the
+  most recent project) with a **suggested message prefilled in the chat box**, not sent.
+- **R-15.3 (2026-10-25, defaults presented to the founder, not objected to)** HubSpot shows
+  "Portal <id>" (its name needs a permission we do not ask for); Salesforce shows the org name. The
+  Overwrites setting is owner/admin-only (provisional per the design). Disconnect also deletes
+  Clue's grant at Composio. Connect, reconnect and change CRM work from Settings without a chat;
+  chats waiting on a connect card still wake.
