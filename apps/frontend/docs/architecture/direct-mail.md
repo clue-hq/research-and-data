@@ -221,8 +221,9 @@ The backend remains authoritative for money, policy, ordering and fulfillment.
 No backend endpoint is assumed implemented by this design.
 
 One explicit fixture adapter supplies synthetic recipients and scenarios, stores
-local demo interactions across reloads, and exposes a reset. Label the demo
-clearly. Local uploads stay local; no corpus data or credentials enter fixtures.
+local demo interactions across reloads, and exposes a reset. Document mock data
+and scenario controls for developers; do not restore the floating preview badge
+the founder removed. Local uploads stay local; no corpus data or credentials enter fixtures.
 The live adapter must never fall back to fixtures on error. The frontend-only
 delivery includes a proposed API contract, operation list, error/version rules
 and a handoff guide showing exactly where Aryan swaps the adapter. Do not claim
@@ -271,11 +272,33 @@ with versioned approval, separate evidence/cost fields, and two-leg tracking.
 ## Current preview and implementation boundary
 
 The existing app runs at `http://localhost:5000` in this feature worktree.
-Browser-verified Home, Accounts and project chat using existing fixtures.
-Gallery's document feed expects the authenticated backend and currently shows
-an unavailable error in this mode; it is not a working offline gallery demo.
-Process-only fixture overrides leave copied `.env.local` values intact. No
-backend, database migration, real order or hosted deployment was started.
+The explicit local preview now includes the profile/Settings menu, composer
+controls, synthetic Gallery documents and local document editing. Existing
+Home, Accounts and project chat use their fixture adapters. The preview badge
+was removed at the founder's request. See [local-preview.md](local-preview.md)
+for startup and data boundaries. No backend, database migration, real order or
+hosted deployment was started.
+
+## Proposed build sequence
+
+1. **Recipient review first:** implement one complete mailer using synthetic
+   data, from the research explanation through three gift choices, live card
+   preview, address/cost review and approval. Validate the visual composition
+   before applying it to a whole queue.
+2. **Direct Mail queue and navigation:** add the dedicated section, filters,
+   recipient-to-recipient navigation, and chat/Gallery links to that same record.
+   Add reviewed/ready selection and bulk approval after the individual flow works.
+3. **Reusable cards and handwriting:** add the card/style library, local uploads,
+   campaign defaults and per-recipient overrides. Preserve approved asset versions.
+4. **Tracking and exceptions:** show both shipping legs, preparation/inspection
+   photos and actions for delays, replacement review or missing receiving details.
+5. **Production frontend polish and handoff:** validate loading/empty/error states,
+   keyboard and responsive behavior, persistence, duplicate submissions and bulk
+   partial failures. Deliver the proposed API contract and adapter map for Aryan.
+
+The first reviewable slice is one customer journey, not isolated disconnected
+screen mockups. All phases remain frontend-only until backend integration is
+explicitly reviewed and authorized.
 
 This document is the proposed full flow, not proof of implemented Direct Mail
 screens. Next: founder review of this flow, implementation plan, then build and

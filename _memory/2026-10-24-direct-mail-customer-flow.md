@@ -33,3 +33,14 @@
   behavior to the same design document; full-flow approval is still required.
 - Verification at this point: browser smoke only, plus document diff checks at
   close-out. No production build or product test suite claimed for this proposal.
+
+## 2026-10-25 plan explanation
+
+- Founder asked for the concrete Direct Mail plan after preview parity fixes.
+  Explained the shared mailer record, queue/review/library/tracking surfaces,
+  individual review before bulk approval and frontend adapter handoff.
+- Updated the proposal's stale local-preview description and badge guidance.
+  Proposed delivery order: one complete recipient journey, then queue and shared
+  chat/Gallery links + bulk approval, reusable cards/styles, tracking/exceptions,
+  and final frontend verification/handoff. These remain proposals for review.
+- No Direct Mail feature code or backend integration added in this planning turn.
