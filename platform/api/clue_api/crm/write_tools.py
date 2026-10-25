@@ -511,7 +511,11 @@ async def _stored_output(
         covered=sum(group.count for group in groups if group.covered),
         needs_permission=sum(group.count for group in groups if not group.covered),
         groups=groups,
-        overwrites=sum(group.count for group in groups if group.overwrites_person),
+        # Only the overwrites still on the card: one a grant covers (the connection's overwrites
+        # setting is ``follow_grants``) is sent like any other covered change (R-6.5).
+        overwrites=sum(
+            group.count for group in groups if group.overwrites_person and not group.covered
+        ),
     )
 
 

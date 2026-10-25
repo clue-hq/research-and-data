@@ -19,6 +19,7 @@ from sqlalchemy import text
 from clue_api.agent_gate import KIND_CRM_WRITE_PERMISSION, get_gate
 from clue_api.crm import writes
 from clue_api.crm.composio_gateway import ExecuteResult
+from clue_api.crm.connections import OverwritesMode, set_connection_overwrites
 from clue_api.crm.write_tools import (
     CrmChangeInput,
     ProposeCrmChangesInput,
@@ -196,6 +197,50 @@ def test_uncovered_changes_open_one_card_and_replace_an_open_one(tmp_path: Path)
         assert [o["record_ref"] for o in snapshot["overwrites"]] == ["102"]
 
     _run(tmp_path, "replace", body)
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        # (state, covered, needs_permission, overwrites)
+        ("ask", ("awaiting_permission", 0, 1, 1)),
+        ("follow_grants", ("queued", 1, 0, 0)),
+    ],
+)
+def test_the_overwrites_setting_decides_whether_a_grant_covers_an_overwrite(
+    tmp_path: Path, mode: OverwritesMode, expected: tuple[str, int, int, int]
+) -> None:
+    """``overwrites`` counts only the overwrites still on the card: one a field grant covers
+    under ``follow_grants`` is queued with the rest, never counted as asking."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await writes.insert_grant(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            scope_key="field:company.icp_tier",
+            granted_by_user_id=USER_ID,
+        )
+        await set_connection_overwrites(conn, connection_id=connection.connection_id, mode=mode)
+        queue = _FakeQueue()
+        gateway = _FakeCrm(records={"102": {"icp_tier": "Tier 3"}})
+        tool = _tool(conn, gateway, queue)
+
+        refs = (
+            await tool.invoke(
+                _input(seeded, _set_tier("102", "Tier 1")), _ctx(conn, seeded.workspace_id)
+            )
+        ).references
+
+        assert (
+            refs["state"],
+            refs["covered"],
+            refs["needs_permission"],
+            refs["overwrites"],
+        ) == expected
+        assert [g["overwrites_person"] for g in refs["groups"]] == [True]
+
+    _run(tmp_path, f"ow-{mode.replace('_', '')}", body)
 
 
 def test_a_replayed_call_returns_the_same_proposal(tmp_path: Path) -> None:
