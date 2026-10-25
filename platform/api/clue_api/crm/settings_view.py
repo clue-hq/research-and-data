@@ -234,7 +234,11 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
     )
     if clue_fields_set_up(state) or _set_up_but_for_old_fields(state, gone_labels):
         research_state = "ready"
-    elif any(w.status in ("queued", "sending") for w in writes):
+    # The card is allowed (queued/sending) a moment before its change is: both read Preparing.
+    elif any(
+        w.status in ("queued", "sending") or w.proposal_status in ("queued", "sending")
+        for w in writes
+    ):
         research_state = "preparing"
     elif gone_labels:
         research_state = "needs_attention"

@@ -328,6 +328,21 @@ def test_preparing_while_the_setup_is_queued(tmp_path: Any) -> None:
     _run(tmp_path, "owner", body)
 
 
+def test_preparing_once_the_card_is_allowed_before_its_change_is_queued(tmp_path: Any) -> None:
+    """Live check 2026-10-26: just after Allow the card is sending while its change is still
+    "proposed"; the page must already read Preparing (and keep re-reading), never Approval."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
+        connection_id = await _connection(conn, project)
+        await _setup_card(
+            conn, project, connection_id, proposal_status="sending", write_status="proposed"
+        )
+        research = (await _integration(client, project))["research"]
+        assert research["state"] == "preparing"
+
+    _run(tmp_path, "owner", body)
+
+
 def test_ready_when_every_field_is_set_up(tmp_path: Any) -> None:
     async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
         connection_id = await _connection(conn, project)
