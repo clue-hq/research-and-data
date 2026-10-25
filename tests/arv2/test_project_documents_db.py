@@ -15,6 +15,7 @@ project is not an error here, it is *absent* — the same answer a document that
 
 from __future__ import annotations
 
+import asyncio
 from hashlib import sha256
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -32,12 +33,14 @@ from clue_api.arv2.project_documents import (
     ProjectPlanWrite,
     current_plan_version,
     list_project_documents,
+    lock_project,
     plan_document_id,
     read_project_document,
     save_project_document,
     write_project_document,
     write_project_plan,
 )
+from clue_db import db_lifespan
 from clue_storage import StorageBackend
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
@@ -780,7 +783,7 @@ def test_both_writers_take_the_projects_lock_before_any_document_row(tmp_path: A
                 _write(workspace_id, brand_id, project_id),
             )
             project_lock = _index(agent_log, "FROM project WHERE workspace_id")
-            assert "FOR UPDATE" in agent_log[project_lock]
+            assert "FOR NO KEY UPDATE" in agent_log[project_lock]
             assert project_lock < _index(agent_log, "SELECT MAX(version)")
             assert project_lock < _index(agent_log, "INSERT INTO brand_knowledge_document")
 
@@ -796,7 +799,7 @@ def test_both_writers_take_the_projects_lock_before_any_document_row(tmp_path: A
                 user_id=USER_ID,
             )
             human_project_lock = _index(human_log, "FROM project WHERE workspace_id")
-            assert "FOR UPDATE" in human_log[human_project_lock]
+            assert "FOR NO KEY UPDATE" in human_log[human_project_lock]
             document_lock = _index(
                 human_log,
                 "FROM brand_knowledge_document WHERE workspace_id = :workspace_id "
@@ -1027,3 +1030,39 @@ def test_the_replay_read_cannot_answer_one_project_with_another_projects_row(tmp
             assert await _versions_in(conn, workspace_id, project_id, PLAN_PATH) == [1]
 
     run_async(scenario())
+
+
+def test_two_turns_that_each_reference_the_project_both_get_its_lock() -> None:
+    """D-1 (2026-10-25): a turn inserts rows that reference the project (its project-files pin,
+    a foreign key), which holds a key-share lock on the project row until commit, and only then
+    takes :func:`lock_project`. Two such turns at once must take turns — never deadlock."""
+
+    async def body() -> None:
+        async with db_lifespan() as engine:
+            async with engine.begin() as setup:
+                project = await seed_project(setup, f"ws_lock_{uuid4().hex[:12]}")
+            ws, pid = project.workspace_id, project.project_id
+            key_share = text(
+                "SELECT project_id FROM project WHERE workspace_id = :w AND project_id = :p "
+                "FOR KEY SHARE"
+            )
+            first, second = await engine.connect(), await engine.connect()
+            try:
+                tx1, tx2 = await first.begin(), await second.begin()
+                # What each turn's foreign-key insert holds before it asks for the lock.
+                await first.execute(key_share, {"w": ws, "p": pid})
+                await second.execute(key_share, {"w": ws, "p": pid})
+                await asyncio.wait_for(
+                    lock_project(first, workspace_id=ws, project_id=pid), timeout=5
+                )
+                waiting = asyncio.create_task(lock_project(second, workspace_id=ws, project_id=pid))
+                await asyncio.sleep(0.5)
+                assert not waiting.done()  # serialized behind the first turn
+                await tx1.commit()
+                await asyncio.wait_for(waiting, timeout=5)
+                await tx2.commit()
+            finally:
+                await first.close()
+                await second.close()
+
+    run_async(body())

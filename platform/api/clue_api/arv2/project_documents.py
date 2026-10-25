@@ -458,12 +458,18 @@ async def lock_project(conn: AsyncConnection, *, workspace_id: str, project_id: 
     ``OperationalError`` rather than an ``IntegrityError``, so it would escape both of this
     module's typed handlers and surface as a 500 instead of "someone wrote first". One total order
     — project row, then document rows — removes the cycle.
+
+    The lock is ``FOR NO KEY UPDATE``, not ``FOR UPDATE``: it still excludes every other writer
+    taking it, but not the key-share lock a foreign-key insert takes on the project row. A turn
+    inserts rows that reference the project (its project-files pin) before it syncs the library
+    under this lock, so with ``FOR UPDATE`` two turns of one project starting together each held a
+    key-share the other's lock waited on, and Postgres aborted one (D-1, 2026-10-25).
     """
 
     await conn.execute(
         text(
             "SELECT project_id FROM project "
-            "WHERE workspace_id = :workspace_id AND project_id = :project_id FOR UPDATE"
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id FOR NO KEY UPDATE"
         ),
         {"workspace_id": workspace_id, "project_id": project_id},
     )
