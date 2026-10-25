@@ -28,7 +28,9 @@ specifications from becoming competing sources of truth.
   development preview on port 5000, isolated fixtures and backend handoff boundaries.
 - [`architecture/design-system-audit.md`](architecture/design-system-audit.md) —
   live Figma/token audit, component reuse map, and frontend gaps before direct-mail UI work.
-- [`architecture/direct-mail.md`](architecture/direct-mail.md) — proposed customer
+- [`api-contracts/direct-mail.md`](api-contracts/direct-mail.md) — working customer UI,
+  isolated mock adapter, versioned approvals and backend handoff for Aryan.
+- [`architecture/direct-mail.md`](architecture/direct-mail.md) — customer
   flow, confirmed scope, pilot lessons, fixture boundaries and backend handoff.
 - [`architecture/site-editor.md`](architecture/site-editor.md) — the Puck site
   editor: the app/editor-domain split, the frame protocol and where the code lives.

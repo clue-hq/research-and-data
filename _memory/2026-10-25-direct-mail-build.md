@@ -11,3 +11,27 @@
 - Ruling: use IndexedDB for atomic records + uploaded assets so reloads/tabs
   share versioned drafts without embedding mock state in presentation.
 - Task 1 in progress; no Direct Mail implementation committed yet.
+
+## Customer UI checkpoint
+
+- Domain/repository committed at c481db10d and ed50e2523. Customer screens,
+  licensed preview fonts and shell/chat/Gallery entry points at e55fae61d.
+- Browser verified individual gift → card → address → approval → tracking;
+  reload retains approval. Bulk select of 8 records included only the one
+  reviewed/ready record; successful result identified the recipient.
+- Uploaded sample PNG through the real file picker; saved card renders and is
+  marked pending production validation. Narrow viewport has no document overflow.
+- Full frontend suite: 3648 passed, 5 skipped, zero failures before final font
+  error regression addition. Required design build passed; lint initially caught
+  a sidebar data-layer import, fixed through a controller hook. Lint now has only
+  11 existing warnings; production build passed.
+- Raw tsc --noEmit reports pre-existing design-editor test type errors; no new
+  Direct Mail errors appeared. One un-escalated tsx run failed on sandbox IPC;
+  rerunning with the usual sandbox permission worked.
+- Fixed address attention clearance and replacement stale shipment/photo state
+  with failing regression tests first. Missing handwriting now surfaces an error
+  instead of silently rendering a fallback; focused suite now has 13 tests.
+- Handoff documents explicit adapter replacement and live contract review.
+  Initial campaigns use prepared synthetic recommendations; actual research job
+  and incomplete-proposal projections remain a backend integration slice.
+- No production mutations, remote pushes or 3000-series changes.

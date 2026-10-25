@@ -1,6 +1,8 @@
 # Direct Mail customer experience
 
-Status: approved to build on 2026-10-25; implementation in progress. The decisions
+Status: first customer UI implemented on 2026-10-25 with an isolated local adapter.
+See [the implementation and backend handoff](../api-contracts/direct-mail.md) for
+the exact working scope and remaining integration slices. The decisions
 marked confirmed below were agreed with the founder on 2026-10-24.
 Branch: `feat/direct-mail-infrastructure-ui`.
 
