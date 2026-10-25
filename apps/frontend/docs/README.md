@@ -56,6 +56,10 @@ specifications from becoming competing sources of truth.
 - [`research/lightfield-chat-reference.md`](research/lightfield-chat-reference.md)
   — Lightfield chat research, observed reference behavior, and the approved
   Clue adaptation direction.
+- [`research/abm-orchestration.md`](research/abm-orchestration.md) — current ABM
+  and gifting operating models, public pricing, and the proposed shared account
+  plan connecting ownership, agents, channels, artifacts and outcomes; research,
+  not an implemented integration contract.
 
 ## Required update workflow
 
