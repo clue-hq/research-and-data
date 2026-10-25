@@ -259,6 +259,11 @@ def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> No
     Its count and its CRM live on the result row, which is keyed on the *plan* operation's id, so
     the receipt has to cross from one id to the other to say "12 records from hubspot". Joining
     the result on the node's id found nothing, and the sentence fell back to the generic one.
+
+    The node's ``display_params_json`` is ``{}``, as a governed call in a live turn writes it (the
+    live check of 2026-10-25): only a direct toolbelt call journals display parameters, so the
+    action's slug has to come off the result row. Seeding the slug as a display parameter made
+    this test pass while every live CRM read got the generic sentence.
     """
 
     async def scenario() -> None:
@@ -267,7 +272,6 @@ def test_a_crm_read_receipt_names_the_action_and_its_count(tmp_path: Path) -> No
             seeds = await _seed_tool_call(
                 conn,
                 storage,
-                display_params={"slug": "HUBSPOT_SEARCH_DEALS"},
                 references={
                     "provider": "hubspot",
                     "slug": "HUBSPOT_SEARCH_DEALS",

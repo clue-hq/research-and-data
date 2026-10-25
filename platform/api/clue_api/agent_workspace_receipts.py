@@ -67,9 +67,11 @@ READ_AGAIN: Final[Mapping[str, str]] = {
 }
 
 #: The ``references`` keys of a read's result the receipt keeps (``RunCrmActionOutput``): how much
-#: came back, and which CRM answered. ``provider`` is here and not among the displayed parameters
-#: because the ``"tool"`` sentence names it and ``safe_display_fields`` carries only the slug.
-_KEPT_REFERENCE_KEYS: Final = ("record_count", "total", "done", "provider")
+#: came back, which CRM answered, and which action ran. ``slug`` is kept here too, although it is
+#: ``run_crm_action``'s one ``safe_display_fields`` entry: only a direct toolbelt call journals
+#: display parameters, and a governed call in a turn leaves ``display_params_json`` empty — so
+#: without it every live CRM read fell back to the generic sentence (live check, 2026-10-25).
+_KEPT_REFERENCE_KEYS: Final = ("record_count", "total", "done", "provider", "slug")
 
 _UUID: Final = r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
 #: ``AgentWorkspaceBackend.write_spill`` names a result spill after its operation id.
