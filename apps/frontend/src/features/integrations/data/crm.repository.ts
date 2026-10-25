@@ -1,3 +1,4 @@
+import { ApiErrorEnvelopeSchema } from "@/features/accounts/model/vocabulary";
 import {
   CompleteResponseSchema,
   ConnectLinkResponseSchema,
@@ -11,13 +12,19 @@ import { CrmProposalProgressSchema, type CrmProposalProgress } from "../model/cr
 
 const CRM_PATH = "/api/clue/frontend/v1/crm";
 
-async function errorCode(response: Response): Promise<string> {
+/**
+ * The refusal's code from the read API's `{error: {code, message, requestId}}` envelope (the
+ * frontend-read app rewrites every `HTTPException` into it); `HTTP_<status>` when the body is not
+ * that envelope.
+ */
+export async function crmErrorCode(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { detail?: { code?: string } };
-    return body.detail?.code ?? `HTTP_${response.status}`;
+    const parsed = ApiErrorEnvelopeSchema.safeParse(await response.json());
+    if (parsed.success) return parsed.data.error.code;
   } catch {
-    return `HTTP_${response.status}`;
+    // A proxy error page is not the backend's envelope.
   }
+  return `HTTP_${response.status}`;
 }
 
 /** A fresh Composio login link for this connect card (links live about ten minutes). */
@@ -33,7 +40,7 @@ export async function requestConnectLink(
     body: JSON.stringify({ requestId, provider }),
   });
   if (!response.ok) {
-    const code = await errorCode(response);
+    const code = await crmErrorCode(response);
     if (response.status === 403) {
       throw new CrmConnectError("Only a workspace owner or admin can connect the CRM.", code);
     }
@@ -88,6 +95,6 @@ export async function fetchCrmProposal(
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) throw new Error(await errorCode(response));
+  if (!response.ok) throw new Error(await crmErrorCode(response));
   return CrmProposalProgressSchema.parse(await response.json());
 }
