@@ -9,6 +9,7 @@ import {
 } from "./gallery-artifact-card";
 import { GalleryToolbar } from "./gallery-toolbar";
 import styles from "./project-gallery.module.css";
+import { DirectMailProjectLink } from "@/features/direct-mail/components/direct-mail-project-link";
 
 export function ProjectGalleryView({
   controller,
@@ -17,6 +18,7 @@ export function ProjectGalleryView({
   onRetryDocuments,
   onOpenArtifact,
   projectTitle,
+  projectId,
   showSkeletons,
 }: {
   controller: ProjectGalleryController;
@@ -25,6 +27,7 @@ export function ProjectGalleryView({
   onRetryDocuments?: () => void;
   onOpenArtifact: (artifact: GalleryArtifact) => void;
   projectTitle?: string;
+  projectId?: string;
   showSkeletons: boolean;
 }) {
   const isEmpty = controller.visibleArtifactCount === 0 && !showSkeletons;
@@ -38,6 +41,7 @@ export function ProjectGalleryView({
         <strong>Gallery</strong>
         <small>{controller.visibleArtifactCount} artifacts</small>
       </nav>
+      <DirectMailProjectLink projectId={projectId} />
       <div><GalleryToolbar controller={controller} />
       {documentsError ? <div role="alert" className={styles.documentNotice}>{documentsError} <button type="button" onClick={onRetryDocuments}>Try again</button></div> : null}</div>
       {documentsLoading && isEmpty ? <div className={styles.emptyState} role="status">Loading documents…</div> : isEmpty && !documentsError ? (

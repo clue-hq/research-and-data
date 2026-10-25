@@ -14,6 +14,7 @@ import { ProjectSidebarTree } from "./project-sidebar-tree";
 import { SidebarIcon } from "./sidebar-icon";
 import { SidebarProfileMenu } from "./sidebar-profile-menu";
 import { useLocalWorkspaceLabel } from "@/features/session/components/local-workspace-provider";
+import { useDirectMailEnabled } from "@/features/direct-mail/hooks/use-direct-mail";
 
 function NavigationGroup({
   activeHref,
@@ -68,6 +69,7 @@ export function AppSidebar({
 }) {
   const projectsController = useSidebarProjectsController();
   const localWorkspace = useLocalWorkspaceLabel();
+  const directMailEnabled = useDirectMailEnabled();
 
   return (
     <>
@@ -117,7 +119,7 @@ export function AppSidebar({
         <div className="clue-scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-2">
           <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={primaryNavigation} />
           <div className="h-3" />
-          <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={workspaceNavigation} />
+          <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={workspaceNavigation.filter((item) => item.icon !== "mail" || directMailEnabled)} />
           {!collapsed ? <ProjectSidebarTree controller={projectsController} /> : null}
         </div>
 

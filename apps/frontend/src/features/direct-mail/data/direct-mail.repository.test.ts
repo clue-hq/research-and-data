@@ -43,3 +43,25 @@ test("invalid uploads fail before reading bytes, live mode never supplies fixtur
   assert.throws(() => validateAssetFile({ name: "style.exe", size: 10, type: "" }, "font"), /font/);
   await assert.rejects(unavailableDirectMailRepository.read(), /not connected/i);
 });
+
+test("replacement preserves the old approval and starts a fresh shipment review", async () => {
+  const storage = store();
+  await storage.transact((state) => {
+    const mailer = state.mailers[6];
+    mailer.stage = "attention";
+    mailer.exception = { action: "replacement", title: "Gift damaged", detail: "Choose a replacement." };
+    mailer.gifts.forEach((gift) => { gift.available = false; });
+    return { state, result: null };
+  });
+  const repo = createDirectMailRepository(storage);
+  const before = (await repo.read()).mailers[6];
+  const after = (await repo.replace(before.id, before.revision)).mailers[6];
+  assert.deepEqual(after.priorApprovals[0], before.approval);
+  assert.equal(after.approval, null);
+  assert.equal(after.outbound, null);
+  assert.equal(after.inbound, null);
+  assert.equal(after.photos.length, 0);
+  assert.equal(after.selectedGiftId, null);
+  assert.equal(after.stage, "needs_review");
+  assert.equal(after.gifts.every((gift) => gift.available), true);
+});

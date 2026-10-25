@@ -16,6 +16,7 @@ import { shellProfile } from "@/features/settings/model/profile";
 import { accountRecoveryFor } from "@/features/accounts/data/accounts-read-result";
 import { AccountsRecoveryScreen } from "@/features/accounts/components/accounts-recovery-screen";
 import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
+import { DirectMailProvider } from "@/features/direct-mail/data/direct-mail-provider";
 
 export default async function ProtectedLayout({
   children,
@@ -89,6 +90,7 @@ export default async function ProtectedLayout({
           workspaces={workspaces}
         >
           <ConfirmationProvider>
+            <DirectMailProvider enabled={preview}>
             {profile ? (
               <WorkspaceProfileProvider profile={profile}>
                 <ProjectApplicationShell>{children}</ProjectApplicationShell>
@@ -96,6 +98,7 @@ export default async function ProtectedLayout({
             ) : (
               <ProjectApplicationShell>{children}</ProjectApplicationShell>
             )}
+            </DirectMailProvider>
           </ConfirmationProvider>
         </WorkspaceSwitcherProvider>
       </ProjectCatalogInvalidationProvider>

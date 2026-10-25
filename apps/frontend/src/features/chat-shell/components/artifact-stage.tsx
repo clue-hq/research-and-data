@@ -633,6 +633,7 @@ export function ArtifactStage({
           onRetryDocuments={documentTabs?.list.reload}
           onOpenArtifact={onOpenGalleryArtifact}
           projectTitle={projectTitle}
+          projectId={projectId}
         />
       </div>
       {overlay}

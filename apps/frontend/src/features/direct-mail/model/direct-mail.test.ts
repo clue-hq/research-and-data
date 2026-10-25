@@ -79,3 +79,11 @@ test("unverified uploaded assets and pending recommendation changes cannot be ap
   state.mailers[0].proposalRequest = { kind: "gifts", feedback: "Less expensive", requestedAt: "2026-10-25T00:00:00Z" };
   assert.ok(readiness(state.mailers[0], state).some((reason) => /recommendation/i.test(reason)));
 });
+
+test("confirming a complete receiving address resolves its attention state", () => {
+  let state = createDirectMailFixture();
+  state = updateMailer(state, "mailer-priya", 1, { addressConfirmed: true });
+  assert.ok(state.mailers[2].exception);
+  state = updateMailer(state, "mailer-priya", 2, { address: { ...state.mailers[2].address, line1: "200 Example Street" }, addressConfirmed: true });
+  assert.equal(state.mailers[2].exception, null);
+});

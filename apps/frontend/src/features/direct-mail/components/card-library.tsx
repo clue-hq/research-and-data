@@ -1,0 +1,28 @@
+"use client";
+import { Plus, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
+import type { DirectMailController } from "../hooks/use-direct-mail";
+import { useCardLibrary } from "../hooks/use-card-library";
+import { CardFace } from "./mailer-preview";
+import { MailDialog } from "./mail-ui";
+import styles from "./direct-mail.module.css";
+
+export function CardLibrary({ controller: c }: { controller: DirectMailController }) {
+  const f = useCardLibrary(c);
+  return <><div className={styles.heading}><div><h1 className={styles.title}>Cards & handwriting</h1><p className={`${styles.small} ${styles.subtle}`}>Reusable designs for a personal touch on every mailer.</p></div><Button variant="primary" size="md" onClick={() => f.open("card")}><Plus size={16} />Upload card</Button></div>
+    <section className={styles.section}><h2>Card designs</h2><p className={`${styles.small} ${styles.subtle} mb-5`}>Choose a front design and leave room for a handwritten message on the reverse.</p><div className={styles.cardGrid}>{c.data!.cards.map((card) => <article key={card.id} className={styles.cardItem}><CardFace card={card} face="front" /><div><p>{card.name}</p><p className={styles.caption}>6 × 4 in · {card.productionReady ? "Ready to use" : "Pending production validation"}</p></div></article>)}</div></section>
+    <section className={styles.section}><div className={`${styles.between} mb-5`}><div><h2>Handwriting</h2><p className={`${styles.small} ${styles.subtle}`}>A consistent pen style for your notes.</p></div><Button variant="outline" size="md" onClick={() => f.open("font")}><Upload size={14} />Upload font</Button></div><div className={styles.cardGrid}>{c.data!.styles.map((style) => <article className={styles.panel} key={style.id}><p style={{ fontFamily: `"${style.family}", cursive`, fontSize: 26, lineHeight: "36px", minHeight: 76 }}>A little something,<br />chosen just for you.</p><p className="mt-4">{style.name}</p><p className={styles.caption}>{style.productionReady ? "Ready to use" : "Pending production validation"}</p></article>)}</div></section>
+    {f.kind ? <MailDialog title={f.kind === "card" ? "Upload a card design" : "Upload a handwriting font"} description={f.kind === "card" ? "Upload the front artwork and, optionally, a message-side background. Keep the writing area clear." : "Add a licensed font to preview your handwriting style."} close={f.close} busy={c.pending || f.loading} wide={f.kind === "card"}>
+      <form onSubmit={(event) => { event.preventDefault(); void f.save(); }}><div className={styles.stack}><label className={styles.field}>Name<input autoFocus required value={f.name} maxLength={80} onChange={(event) => f.setName(event.target.value)} placeholder={f.kind === "card" ? "e.g. Founder’s note" : "e.g. Alex’s handwriting"} /></label>
+      {f.kind === "card" ? <><div className={styles.twoColumns}><label className={styles.field}>Front artwork<input type="file" accept="image/png,image/jpeg" disabled={f.loading} onChange={(event) => void f.upload(event.target.files?.[0], "front")} /><span className={styles.caption}>PNG or JPEG · up to 3 MB · 3:2 aspect ratio</span></label><label className={styles.field}>Message-side artwork (optional)<input type="file" accept="image/png,image/jpeg" disabled={f.loading} onChange={(event) => void f.upload(event.target.files?.[0], "back")} /></label></div>
+        <div className={styles.twoColumns}><CardFace card={f.card} face="front" /><CardFace card={f.card} note="Your handwritten message goes here." signature="Your name" style={c.data!.styles[0]} /></div>
+        <div className={styles.field}><span>Paper</span><SelectField ariaLabel="Card paper" value={f.paper} options={[{ value: "white", label: "White" }, { value: "cream", label: "Cream" }]} onValueChange={(value) => f.setPaper(value as "white" | "cream")} /></div>
+        <fieldset><legend className={`${styles.small} mb-2`}>Writing area · percentage of card size</legend><div className={styles.twoColumns}>{([['x','Left margin',0,45],['y','Top margin',0,45],['width','Width',35,100],['height','Height',30,100]] as const).map(([key,label,min,max]) => <label className={styles.field} key={key}>{label}<input type="number" min={min} max={max} required value={f.area[key]} onChange={(event) => f.setArea({ ...f.area, [key]: Number(event.target.value) })} /></label>)}</div>{!f.validArea ? <p className={`${styles.small} mt-2`} role="alert">The writing area must stay inside the card.</p> : null}</fieldset>
+      </> : <label className={styles.field}>Font file<input type="file" accept=".ttf,.otf,.woff,.woff2" disabled={f.loading} onChange={(event) => void f.upload(event.target.files?.[0], "font")} /><span className={styles.caption}>TTF, OTF, WOFF or WOFF2 · up to 2 MB</span>{f.fontUrl ? <span className={styles.small}>Font loaded successfully.</span> : null}</label>}
+        <p className={`${styles.small} ${styles.subtle}`}>Saved uploads can be previewed immediately. Clue needs to validate print or handwriting compatibility before they can be approved for fulfillment.</p>
+        {f.error || c.error ? <p role="alert">{f.error ?? c.error}</p> : null}
+      </div><div className={styles.actions}><Button variant="transparent" size="md" disabled={c.pending || f.loading} onClick={f.close}>Cancel</Button><Button type="submit" variant="primary" size="md" disabled={!f.valid || c.pending}>{f.loading ? "Reading file…" : c.pending ? "Saving…" : "Save to library"}</Button></div></form>
+    </MailDialog> : null}
+  </>;
+}

@@ -8,6 +8,7 @@ import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
 import { ProductNotices } from "./product-notices";
+import { DirectMailProjectLink } from "@/features/direct-mail/components/direct-mail-project-link";
 import styles from "./project-flow.module.css";
 
 /**
@@ -122,6 +123,7 @@ export function ConversationContent({
           gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
         />
+        <DirectMailProjectLink projectId={projectId} threadId={chat.activeThreadId} />
       </div>
     </>
   );

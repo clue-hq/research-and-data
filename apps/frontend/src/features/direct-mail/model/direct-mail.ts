@@ -47,6 +47,10 @@ export function estimate(mailer: Mailer): number | null {
   const amounts = [selectedGift(mailer)?.priceCents ?? null, mailer.inboundCents, mailer.preparationCents, mailer.outboundCents, mailer.taxCents];
   return amounts.some((amount) => amount === null) ? null : amounts.reduce<number>((total, amount) => total + (amount ?? 0), 0);
 }
+function hasReceivingAddress(mailer: Mailer) {
+  const a = mailer.address;
+  return [a.name, a.line1, a.city, a.postalCode, a.country].every((value) => value.trim());
+}
 
 /** Conservative 6×4 card layout at 600×400 preview pixels; real print fitting stays backend-owned. */
 export function noteFits(note: string, signature: string, card?: CardAsset): boolean {
@@ -80,8 +84,7 @@ export function readiness(mailer: Mailer, state: DirectMailState): string[] {
   if (!mailer.note.trim()) issues.push("Write a note.");
   else if (!noteFits(mailer.note, mailer.signature, card)) issues.push("Shorten the note to fit the card’s writing area.");
   if (!mailer.signature.trim()) issues.push("Add a sender signature.");
-  const a = mailer.address;
-  if (![a.name, a.line1, a.city, a.postalCode, a.country].every((value) => value.trim())) issues.push("Complete the receiving address.");
+  if (!hasReceivingAddress(mailer)) issues.push("Complete the receiving address.");
   if (!mailer.addressConfirmed) issues.push("Confirm that the recipient can receive mail at this address.");
   const total = estimate(mailer);
   if (total === null) issues.push("A complete cost estimate is needed.");
@@ -105,6 +108,7 @@ export function updateMailer(state: DirectMailState, id: string, revision: numbe
   if (patch.selectedGiftId && !mailer.gifts.some((gift) => gift.id === patch.selectedGiftId)) throw new Error("That gift is no longer an option.");
   Object.assign(mailer, patch, { revision: revision + 1, reviewedRevision: null, stage: "needs_review", updatedAt: new Date().toISOString() });
   if (patch.address && patch.addressConfirmed !== true) mailer.addressConfirmed = false;
+  if (mailer.exception?.action === "address" && mailer.addressConfirmed && hasReceivingAddress(mailer)) mailer.exception = null;
   return next;
 }
 

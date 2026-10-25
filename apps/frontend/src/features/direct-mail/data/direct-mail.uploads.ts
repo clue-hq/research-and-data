@@ -18,7 +18,7 @@ export function registerHandwriting(styles: HandwritingStyle[]) {
   return Promise.all(styles.map((style) => {
     if (!style.sourceUrl || typeof document === "undefined") return Promise.resolve();
     const key = `${style.id}:${style.version}`;
-    if (!registered.has(key)) registered.set(key, new FontFace(style.family, `url(${style.sourceUrl})`).load().then((face) => { document.fonts.add(face); }).catch(() => { registered.delete(key); }));
+    if (!registered.has(key)) registered.set(key, new FontFace(style.family, `url(${style.sourceUrl})`).load().then((face) => { document.fonts.add(face); }).catch(() => { registered.delete(key); throw new Error(`The handwriting style “${style.name}” could not be loaded. Reload to retry before reviewing a card.`); }));
     return registered.get(key)!;
   }));
 }

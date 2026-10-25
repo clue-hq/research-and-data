@@ -14,6 +14,7 @@ export function ProjectGallery({
   onRetryDocuments,
   onOpenArtifact,
   projectTitle,
+  projectId,
   showSkeletons = false,
 }: {
   artifacts: ProjectArtifact[];
@@ -23,6 +24,7 @@ export function ProjectGallery({
   onRetryDocuments?: () => void;
   onOpenArtifact: (artifact: GalleryArtifact) => void;
   projectTitle?: string;
+  projectId?: string;
   showSkeletons?: boolean;
 }) {
   const controller = useProjectGalleryController(artifacts, documents);
@@ -34,6 +36,7 @@ export function ProjectGallery({
       onRetryDocuments={onRetryDocuments}
       onOpenArtifact={onOpenArtifact}
       projectTitle={projectTitle}
+      projectId={projectId}
       showSkeletons={showSkeletons}
     />
   );

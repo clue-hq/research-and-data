@@ -84,7 +84,18 @@ export function createDirectMailRepository(store: DirectMailStore): DirectMailRe
       mailer.proposalRequest = null; mailer.revision++; mailer.reviewedRevision = null; mailer.stage = "needs_review"; return state;
     }),
     cancel: (id, revision) => write((state) => { const mailer = requireMailer(state, id, revision); if (mailer.stage !== "approved") throw new Error("This mailer cannot be canceled at its current stage."); mailer.stage = "canceled"; mailer.revision++; mailer.events.push({ id: `cancel-${revision}`, title: "Mailer canceled", detail: "Canceled before a merchant order was confirmed.", at: new Date().toISOString(), kind: "standard" }); return state; }),
-    replace: (id, revision) => write((state) => { const mailer = requireMailer(state, id, revision); if (mailer.exception?.action !== "replacement") throw new Error("No replacement is requested for this mailer."); if (mailer.approval) mailer.priorApprovals.push(mailer.approval); mailer.approval = null; mailer.selectedGiftId = null; mailer.reviewedRevision = null; mailer.stage = "needs_review"; mailer.exception = null; mailer.revision++; return state; }),
+    replace: (id, revision) => write((state) => {
+      const mailer = requireMailer(state, id, revision);
+      if (mailer.exception?.action !== "replacement") throw new Error("No replacement is requested for this mailer.");
+      if (mailer.approval) mailer.priorApprovals.push(mailer.approval);
+      mailer.approval = null; mailer.selectedGiftId = null; mailer.reviewedRevision = null;
+      mailer.gifts = structuredClone(demoGifts).map((gift) => ({ ...gift, id: `${gift.id}-replacement-${revision}` }));
+      mailer.inbound = null; mailer.outbound = null; mailer.photos = []; mailer.proposalRequest = null;
+      mailer.deliveryEstimate = "7–10 business days after replacement approval";
+      mailer.stage = "needs_review"; mailer.exception = null; mailer.revision++;
+      mailer.events.push({ id: `replacement-${revision}`, title: "Replacement review started", detail: "The earlier approval is retained. Choose a new gift before approving this replacement.", at: new Date().toISOString(), kind: "exception" });
+      return state;
+    }),
   };
 }
 const unavailable = async (): Promise<never> => { throw new Error("Direct Mail is not connected to this workspace yet."); };
