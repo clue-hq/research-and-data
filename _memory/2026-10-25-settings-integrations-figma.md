@@ -8,3 +8,8 @@
 - Draft assumptions are labelled on the activity review board: overwrite settings owner/admin-only (provisional in brief); Fully automatic omitted; Undo sends a request to the original chat for approval. Sample records are illustrative.
 - Discovery returns exceeded Figma's 48 KB output limit; compact JSON.stringify output solved this. One attempted prototype overlay reaction was rejected and rolled back; deliverable is editable static designs, not a wired prototype. Subsequent visual fixes succeeded and were verified.
 - No new design variables or component definitions. No runtime changes, remote Git publication, or actual CRM actions.
+
+## Field clarity follow-up
+- User found the unlabelled right-hand Company/Contact labels confusing: they read like field values. Replaced both provider cards with explicit record groups and short explanations/examples; renamed the heading to Clue fields in the provider and the status to Ready.
+- Verified the actual field registry and R-13.2: company research link and contact profile link are distinct fields. Both designs now show four fields: tier, company research link, committee role, contact link. Corrected the partial-setup state too.
+- Rechecked card screenshots, fixed the longer heading wrapping, resized the full screens/sidebar, and checked horizontal overflow (none). No runtime code changes.
