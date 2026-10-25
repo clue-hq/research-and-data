@@ -71,7 +71,7 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ⏸ Looking a record up by Clue id (R-13.7, deferred)
 
 ## Production readiness
-- ⬜ Own OAuth apps (HubSpot app; Salesforce connected app) — needed for the reads deploy if real customers connect
+- 🔨 Own OAuth apps (R-14.1–R-14.3): HubSpot app + Salesforce packaged external client app created 2026-10-25, Composio custom configs set, nashville `.env` switched; **live reconnect + read/write check owed**; R-14.4 items before real customers (Partner Business Org link, released package version)
 - ⬜ Composio Zero Data Retention on, sandbox off, pinned toolkit versions — same
 - ⬜ HubSpot Marketplace listing (needed before the 25th install)
 

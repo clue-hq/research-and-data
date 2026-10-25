@@ -518,3 +518,33 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   a Clue id and Clue keeps a link to each of them, so the lookup would cover only a lost link; find
   stays by email/domain. The field is still created unique. Revisit if links can be lost (e.g. a
   restore).
+
+## 14. Own OAuth apps (R-5.2) — decisions (2026-10-25)
+
+- **R-14.1 (2026-10-25)** **HubSpot: Clue's own app on HubSpot's developer platform**, project
+  `clue-hubspot` (app uid `clue_hubspot_app`, name "Clue") in developer account `clue-hq-dev`
+  (247744680), **marketplace distribution** (25 installs until a Marketplace listing). Required scopes —
+  exactly the 13 Clue's HubSpot actions need: `oauth`, `crm.objects.companies.read/.write`,
+  `crm.objects.contacts.read/.write`, `crm.objects.deals.read`, `crm.objects.owners.read`,
+  `crm.lists.read/.write`, `crm.schemas.companies.read/.write`, `crm.schemas.contacts.read/.write`; no
+  optional scopes. Line items, products and activity scopes are added as optional only when a feature
+  needs them (a scope change makes every install re-approve).
+- **R-14.2 (2026-10-25, founder: option A)** **Salesforce: a packaged External Client App in a
+  second-generation managed package**, because Salesforce no longer allows new connected apps (Spring
+  '26) and a Local external client app works only in its own org. Each customer's admin installs the
+  package once, then connects from Clue. Rejected: asking Salesforce Support for one classic connected
+  app (B; refused after Spring '26) and staying on Composio's shared app (C; breaks R-5.2 and forces a
+  reconnect later). Set-up: Dev Hub org (`orgfarm-334bf51ddc`), namespace **`clue`** registered in a
+  separate namespace org and linked; app "Clue" (Packaged; scopes `api`, `refresh_token`, `id`;
+  web-server flow only, secret required, no PKCE); package `Clue` (`0Hog70000004VurCAE`), beta version
+  0.1.0 `04tg7000000aSozAAE`, installed in the Garner test org (`orgfarm-8eff0bfa43`, Shashank's) with
+  "All users can self-authorize". Package project kept outside the repo at `~/clue-salesforce`.
+- **R-14.3 (2026-10-25)** **Composio auth configs use custom credentials** (never "Composio managed"):
+  HubSpot `ac_jD3YXBrp_2ed`, Salesforce `ac_k9cNBS3hGCgM` (dev). The dashboard prefills Composio's
+  default scopes and the old `…/api/v1/auth-apps/add` redirect; both were set through the API to the
+  app's exact scopes and `https://backend.composio.dev/api/v3/toolkits/auth/callback`. A production
+  Composio project gets its own configs later.
+- **R-14.4 (2026-10-25)** **Before real customers (open):** link the namespace org to a verified
+  **Salesforce Partner Business Org** (needed for installs in customers' production orgs), promote a
+  package version to released, HubSpot Marketplace listing before install 25, privacy policy and terms
+  links on both apps, Zero Data Retention on in Composio.

@@ -333,3 +333,14 @@ field update through the by-id tool, one record per call; the agent still propos
 `HUBSPOT_UPDATE_CONTACTS` and preparation maps it (§ (b) above and Phase 2's choice of the batch tool
 are superseded for contacts). Companies stay on `HUBSPOT_UPDATE_COMPANY`/`HUBSPOT_UPDATE_COMPANIES`
 (custom properties work there).
+
+## Custom auth configs (2026-10-25)
+- `PATCH /auth_configs/{id}` with `{"type": "custom", "credentials": {…}}` **merges** into the stored
+  credentials: sending only `scopes`, `oauth_redirect_uri` or `optional_scopes` kept `client_id` and
+  `client_secret` (checked present after each call). `optional_scopes: []` clears HubSpot's prefilled
+  marketing optionals.
+- A new custom config is born with Composio's managed defaults (HubSpot's 33 scopes + 4 optional
+  marketing scopes; Salesforce `full refresh_token openid`) and redirect
+  `https://backend.composio.dev/api/v1/auth-apps/add` — always reset both to match the app.
+- `GET /tools/{slug}?toolkit_versions=…` returns each action's `scopes` and `scope_requirements`
+  (`any_of` alternatives), which is how the app scope lists in R-14.1/R-14.2 were derived.
