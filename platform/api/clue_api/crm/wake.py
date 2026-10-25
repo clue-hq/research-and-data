@@ -72,11 +72,14 @@ async def queue_crm_connected_turns(
     """Queue one wake turn per request and return their turn ids.
 
     The turn id is derived from the request, so a replayed callback lands on the same turn. A
-    request whose card-showing turn or project is gone is skipped (there is nobody to wake).
+    request from Settings (no chat, R-15.3), or whose card-showing turn or project is gone, is
+    skipped (there is nobody to wake).
     """
     message = crm_connected_message(provider)
     woken: list[UUID] = []
     for request in requests:
+        if request.project_id is None or request.thread_id is None or request.turn_id is None:
+            continue
         asking = await get_submission(
             conn, workspace_id=request.workspace_id, turn_id=request.turn_id
         )

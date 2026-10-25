@@ -32,6 +32,7 @@ from clue_api.crm.composio_gateway import (
     composio_user_id,
 )
 from clue_api.crm.connections import (
+    CrmAccountIdentity,
     activate_from_attempt,
     crm_account_identity,
     get_connect_request,
@@ -173,10 +174,10 @@ def register_crm_routes(
             return failed
         # Which CRM account the grant belongs to: the same one as an earlier connection is a
         # reconnect, and keeps that connection (D-2). Asked before any lock is held.
-        external_account_id: str | None = None
+        identity: CrmAccountIdentity | None = None
         if account.toolkit in _PROVIDERS:
             toolkit = cast("CrmProvider", account.toolkit)
-            external_account_id = await crm_account_identity(
+            identity = await crm_account_identity(
                 gateway,
                 provider=toolkit,
                 connected_account_id=body.connected_account_id,
@@ -197,7 +198,8 @@ def register_crm_routes(
                 workspace_id=workspace_id,
                 connected_account_id=body.connected_account_id,
                 auth_config_id=auth_config_for(settings, provider),
-                external_account_id=external_account_id,
+                external_account_id=None if identity is None else identity.external_id,
+                external_account_name=None if identity is None else identity.name,
             )
             if activated is None:
                 return {"outcome": "stale"}

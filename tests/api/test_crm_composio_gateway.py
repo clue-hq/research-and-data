@@ -206,3 +206,27 @@ def test_build_returns_none_without_a_key_or_when_disabled(
 
 def test_the_composio_user_id_is_opaque() -> None:
     assert composio_user_id("abc") == "ws_abc"
+
+
+@pytest.mark.parametrize(
+    ("response", "raises"),
+    [
+        (httpx.Response(200, json={"success": True}), None),
+        (httpx.Response(204), None),
+        (httpx.Response(404, json={"error": {"message": "gone"}}), None),
+        (httpx.Response(500, json={"error": {"message": "boom"}}), "unavailable"),
+    ],
+)
+def test_delete_account_treats_404_as_already_deleted(
+    response: httpx.Response, raises: str | None
+) -> None:
+    gateway, seen = _gateway(lambda _: response)
+    if raises is None:
+        asyncio.run(gateway.delete_account("ca_1"))
+    else:
+        with pytest.raises(ComposioError) as caught:
+            asyncio.run(gateway.delete_account("ca_1"))
+        assert caught.value.kind == raises
+    assert seen[0].method == "DELETE"
+    assert seen[0].url == f"{BASE}/connected_accounts/ca_1"
+    assert seen[0].headers["x-api-key"] == "key-1"

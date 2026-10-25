@@ -9,6 +9,7 @@ from datetime import date
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.crm.connections import (
@@ -18,6 +19,7 @@ from clue_api.crm.connections import (
     latest_connection,
     mark_expired,
     open_connect_request,
+    open_settings_connect_request,
     start_attempt,
 )
 from clue_db import db_lifespan
@@ -280,6 +282,7 @@ async def _connect(
     account: str,
     external: str | None,
     auth_config: str = "ac_1",
+    name: str | None = None,
 ):  # type: ignore[no-untyped-def]
     request = await _request(conn, workspace)
     await start_attempt(
@@ -297,6 +300,7 @@ async def _connect(
         connected_account_id=account,
         auth_config_id=auth_config,
         external_account_id=external,
+        external_account_name=name,
     )
     assert activated is not None
     return activated[0]
@@ -376,5 +380,73 @@ def test_an_unknown_crm_account_is_a_new_connection() -> None:
             ("ca_1", "expired", "111"),
             ("ca_2", "active", None),
         ]
+
+    _in_rollback(body)
+
+
+def test_a_settings_connect_request_is_fulfilled_with_the_chats() -> None:
+    """R-15.3: Settings connects without a chat — its request has no project, thread or turn, and
+    activation fulfils it along with every waiting chat's request."""
+
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        chat = await _request(conn, workspace)
+        settings = await open_settings_connect_request(
+            conn, workspace_id=workspace, requested_by_user_id="user-admin", mode="switch"
+        )
+        assert (settings.project_id, settings.thread_id, settings.turn_id) == (None, None, None)
+        assert settings.status == "open" and settings.mode == "switch"
+        assert await start_attempt(
+            conn,
+            request_id=settings.request_id,
+            workspace_id=workspace,
+            provider="salesforce",
+            connected_account_id="ca_settings",
+            started_by_user_id="user-admin",
+        )
+        activated = await activate_from_attempt(
+            conn,
+            request_id=settings.request_id,
+            workspace_id=workspace,
+            connected_account_id="ca_settings",
+            auth_config_id="ac_1",
+        )
+        assert activated is not None
+        assert {r.request_id for r in activated[1]} == {chat.request_id, settings.request_id}
+
+    _in_rollback(body)
+
+
+def test_a_connect_request_has_all_of_its_chat_or_none_of_it() -> None:
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        nested = await conn.begin_nested()
+        with pytest.raises(IntegrityError, match="crm_connect_request_chat_all_or_none"):
+            await conn.execute(
+                text(
+                    "INSERT INTO crm_connect_request (request_id, workspace_id, project_id, "
+                    "requested_by_user_id, mode) VALUES (:id, :ws, 'prj-1', 'user-a', 'connect')"
+                ),
+                {"id": uuid.uuid4(), "ws": workspace},
+            )
+        await nested.rollback()
+
+    _in_rollback(body)
+
+
+def test_the_crm_account_name_is_kept_and_refreshed_on_reconnect() -> None:
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(
+            conn, workspace, provider="salesforce", account="ca_1", external="00D", name="Acme"
+        )
+        assert first.external_account_name == "Acme"
+        renamed = await _connect(
+            conn, workspace, provider="salesforce", account="ca_2", external="00D", name="Acme Inc"
+        )
+        assert renamed.connection_id == first.connection_id
+        assert renamed.external_account_name == "Acme Inc"
+        # A reconnect whose name query failed keeps the name already known.
+        unnamed = await _connect(
+            conn, workspace, provider="salesforce", account="ca_3", external="00D", name=None
+        )
+        assert unnamed.external_account_name == "Acme Inc"
 
     _in_rollback(body)

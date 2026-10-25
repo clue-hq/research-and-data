@@ -21,7 +21,7 @@ from sqlalchemy import text
 from clue_api.agent_turn_submission import DERIVATION_CRM_CONNECTED
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.crm.composio_gateway import ConnectedAccount, ConnectLink, ExecuteResult
-from clue_api.crm.connections import open_connect_request
+from clue_api.crm.connections import open_connect_request, open_settings_connect_request
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.frontend_read.app import frontend_read_workspace_resolver
@@ -63,6 +63,9 @@ class FakeComposio:
         self.accounts: dict[str, ConnectedAccount] = {}
         #: The CRM account each grant belongs to, as "who am I" answers it; absent → the call fails.
         self.identities: dict[str, str] = {}
+        #: The Salesforce org name each grant's Organization query answers; absent → it fails.
+        self.org_names: dict[str, str] = {}
+        self.soql: list[str] = []
 
     async def create_link(self, **kwargs: Any) -> ConnectLink:
         self.links.append(kwargs)
@@ -79,7 +82,22 @@ class FakeComposio:
     async def search_tools(self, **_: Any) -> list[Any]:
         return []
 
-    async def execute(self, *, slug: str, connected_account_id: str, **_: Any) -> Any:
+    async def delete_account(self, connected_account_id: str) -> None:
+        raise AssertionError("not used here")
+
+    async def execute(
+        self, *, slug: str, connected_account_id: str, arguments: Any = None, **_: Any
+    ) -> Any:
+        if slug == "SALESFORCE_RUN_SOQL_QUERY":
+            self.soql.append(arguments["query"])
+            name = self.org_names.get(connected_account_id)
+            if name is None:
+                return ExecuteResult(successful=False, data=None, error="INSUFFICIENT_ACCESS")
+            return ExecuteResult(
+                successful=True,
+                data={"data": {"totalSize": 1, "records": [{"Name": name}]}},
+                error=None,
+            )
         if slug not in ("HUBSPOT_WHO_AM_I", "SALESFORCE_WHO_AM_I"):
             raise AssertionError("not used here")
         identity = self.identities.get(connected_account_id)
@@ -461,5 +479,112 @@ def test_a_reconnect_to_the_same_crm_account_keeps_its_connection(tmp_path: Any)
             ("ca_3", "disconnected", "222"),
             ("ca_4", "active", None),
         ]
+        # HubSpot's portal name needs a scope Clue does not ask for (R-15.3): never stored.
+        names = await conn.execute(
+            text(
+                "SELECT external_account_name FROM workspace_integration_connection "
+                "WHERE workspace_id = :ws"
+            ),
+            {"ws": project.workspace_id},
+        )
+        assert {r[0] for r in names} == {None}
+        assert composio.soql == []
+
+    _run(tmp_path, "owner", body)
+
+
+def test_a_settings_connect_request_has_no_chat(tmp_path: Any) -> None:
+    """R-15.3: connecting from Settings needs no chat. Its request carries no project, thread or
+    turn; activation fulfils it, and only the chat that waited on a connect card is woken."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, composio: Any) -> None:
+        chat = await _waiting_chat(conn, client, project, "a")
+        settings = await open_settings_connect_request(
+            conn,
+            workspace_id=project.workspace_id,
+            requested_by_user_id=USER_ID,
+            mode="connect",
+        )
+        assert (settings.project_id, settings.thread_id, settings.turn_id) == (None, None, None)
+        link = await client.post(
+            f"{CRM}/connect-link",
+            json={"request_id": str(settings.request_id), "provider": "hubspot"},
+            headers=_headers(project),
+        )
+        assert link.status_code == 200, link.text
+        composio.accounts["ca_1"] = ConnectedAccount(id="ca_1", status="ACTIVE", toolkit="hubspot")
+        complete = {
+            "request_id": str(settings.request_id),
+            "status": "success",
+            "connected_account_id": "ca_1",
+        }
+        done = await client.post(f"{CRM}/complete", json=complete, headers=_headers(project))
+        assert done.json() == {"outcome": "connected", "provider": "hubspot"}
+        statuses = await conn.execute(
+            text("SELECT request_id, status FROM crm_connect_request WHERE workspace_id = :ws"),
+            {"ws": project.workspace_id},
+        )
+        assert {r.request_id: r.status for r in statuses} == {
+            chat.request_id: "fulfilled",
+            settings.request_id: "fulfilled",
+        }
+        woken = await _wake_turns(conn, project.workspace_id)
+        assert [(r.thread_id, r.derived_from_turn_id) for r in woken] == [
+            (chat.thread_id, chat.turn_id)
+        ]
+        replay = await client.post(f"{CRM}/complete", json=complete, headers=_headers(project))
+        assert replay.json() == {"outcome": "stale"}
+        assert len(await _wake_turns(conn, project.workspace_id)) == 1
+
+    _run(tmp_path, "owner", body)
+
+
+def test_salesforce_connection_keeps_the_org_name(tmp_path: Any) -> None:
+    """R-15.3: Salesforce shows the org's name. It is read at completion from the Organization
+    object; a failed name query still identifies the org, so the reconnect keeps its connection
+    and the name already known."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, composio: Any) -> None:
+        async def connect(chat: str, account: str) -> Any:
+            waiting = await _waiting_chat(conn, client, project, chat)
+            await client.post(
+                f"{CRM}/connect-link",
+                json={"request_id": str(waiting.request_id), "provider": "salesforce"},
+                headers=_headers(project),
+            )
+            composio.accounts[account] = ConnectedAccount(
+                id=account, status="ACTIVE", toolkit="salesforce"
+            )
+            done = await client.post(
+                f"{CRM}/complete",
+                json={
+                    "request_id": str(waiting.request_id),
+                    "status": "success",
+                    "connected_account_id": account,
+                },
+                headers=_headers(project),
+            )
+            assert done.json() == {"outcome": "connected", "provider": "salesforce"}
+            return (
+                await conn.execute(
+                    text(
+                        "SELECT connection_id, external_account_id, external_account_name "
+                        "FROM workspace_integration_connection WHERE workspace_id = :ws "
+                        "AND status = 'active'"
+                    ),
+                    {"ws": project.workspace_id},
+                )
+            ).one()
+
+        composio.identities.update({"ca_1": "00DORG", "ca_2": "00DORG"})
+        composio.org_names["ca_1"] = "Acme Robotics"
+        first = await connect("a", "ca_1")
+        assert (first.external_account_id, first.external_account_name) == (
+            "00DORG",
+            "Acme Robotics",
+        )
+        assert composio.soql == ["SELECT Name FROM Organization LIMIT 1"]
+        again = await connect("b", "ca_2")  # the name query fails this time
+        assert tuple(again) == (first.connection_id, "00DORG", "Acme Robotics")
 
     _run(tmp_path, "owner", body)

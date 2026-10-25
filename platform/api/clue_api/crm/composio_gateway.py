@@ -95,6 +95,8 @@ class ComposioGateway(Protocol):
 
     async def get_account(self, connected_account_id: str) -> ConnectedAccount: ...
 
+    async def delete_account(self, connected_account_id: str) -> None: ...
+
     async def search_tools(
         self, *, toolkit: CrmProvider, query: str, limit: int
     ) -> list[ToolInfo]: ...
@@ -156,6 +158,20 @@ class HttpComposioGateway:
             status=str(payload.get("status") or ""),
             toolkit=str(toolkit.get("slug") or ""),
         )
+
+    async def delete_account(self, connected_account_id: str) -> None:
+        """Delete Clue's grant at Composio (a disconnect, R-15.3). An account Composio no longer
+        has is already deleted, so a 404 is success; the body is not read (it may be empty)."""
+        try:
+            response = await self._client.request(
+                "DELETE",
+                f"{self._base_url}/connected_accounts/{connected_account_id}",
+                headers=self._headers,
+            )
+        except httpx.HTTPError as exc:
+            raise ComposioError("unavailable", None, str(exc) or type(exc).__name__) from exc
+        if response.status_code >= 400 and response.status_code != 404:
+            raise _http_error(response)
 
     async def search_tools(self, *, toolkit: CrmProvider, query: str, limit: int) -> list[ToolInfo]:
         payload = await self._request(

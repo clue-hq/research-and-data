@@ -1,11 +1,12 @@
 """The workspace CRM connection and the connect requests that wait on it.
 
 Spec: docs/superpowers/specs/crm-integration/2026-10-20-crm-integration-first-release-design.md
-§4, §7; rulings R-3.1 (workspace-owned), R-3.10 (connect card + connect requests). A workspace has
-at most one ``active`` connection (a partial unique index). A connect request is one connect card
-shown in one chat; it records the latest login attempt (newest click wins) so the callback can be
-verified before anything is activated, and activation fulfils every open request in the workspace
-so each waiting chat can be woken.
+§4, §7; rulings R-3.1 (workspace-owned), R-3.10 (connect card + connect requests), R-15.3
+(Settings connects without a chat). A workspace has at most one ``active`` connection (a partial
+unique index). A connect request is one connect card shown in one chat, or one connect from
+Settings (no project, thread or turn); it records the latest login attempt (newest click wins) so
+the callback can be verified before anything is activated, and activation fulfils every open
+request in the workspace so each waiting chat can be woken.
 
 Every function writes through the ``conn`` it is given and never commits.
 """
@@ -24,11 +25,13 @@ from clue_api.crm.composio_gateway import (
     ComposioError,
     ComposioGateway,
     CrmProvider,
+    ExecuteResult,
     composio_user_id,
 )
 
 __all__ = [
     "ConnectRequest",
+    "CrmAccountIdentity",
     "CrmConnection",
     "activate_from_attempt",
     "count_salesforce_call",
@@ -38,6 +41,7 @@ __all__ = [
     "latest_connection",
     "mark_expired",
     "open_connect_request",
+    "open_settings_connect_request",
     "start_attempt",
 ]
 
@@ -50,6 +54,26 @@ _IDENTITY: dict[CrmProvider, tuple[str, str]] = {
 }
 
 
+#: The Salesforce org's name (R-15.3). HubSpot's portal name needs a scope Clue does not ask
+#: for, so a HubSpot connection has no name and the page shows "Portal <id>".
+_SALESFORCE_ORG_NAME_QUERY = "SELECT Name FROM Organization LIMIT 1"
+
+
+@dataclass(frozen=True)
+class CrmAccountIdentity:
+    """The CRM account a grant belongs to: its id, and its name when the CRM gives one."""
+
+    external_id: str
+    name: str | None
+
+
+def _body(result: ExecuteResult) -> dict[str, Any]:
+    """A successful answer's body; Composio sometimes nests the CRM's body under ``data``."""
+    data = result.data if result.successful and isinstance(result.data, dict) else {}
+    inner = data.get("data")
+    return inner if isinstance(inner, dict) else data
+
+
 async def crm_account_identity(
     gateway: ComposioGateway,
     *,
@@ -57,25 +81,37 @@ async def crm_account_identity(
     connected_account_id: str,
     workspace_id: str,
     version: str,
-) -> str | None:
-    """The CRM account a new grant belongs to (HubSpot portal id, Salesforce org id), or ``None``
-    when the CRM does not say — then the grant is treated as a new connection (D-2)."""
+) -> CrmAccountIdentity | None:
+    """The CRM account a new grant belongs to (HubSpot portal id, Salesforce org id and name), or
+    ``None`` when the CRM does not say which account — then the grant is treated as a new
+    connection (D-2). A failed name query leaves the name ``None`` and keeps the id."""
+
+    async def call(slug: str, arguments: dict[str, Any]) -> ExecuteResult | None:
+        try:
+            return await gateway.execute(
+                slug=slug,
+                arguments=arguments,
+                connected_account_id=connected_account_id,
+                user_id=composio_user_id(workspace_id),
+                version=version,
+            )
+        except ComposioError:
+            return None
 
     slug, field = _IDENTITY[provider]
-    try:
-        result = await gateway.execute(
-            slug=slug,
-            arguments={},
-            connected_account_id=connected_account_id,
-            user_id=composio_user_id(workspace_id),
-            version=version,
-        )
-    except ComposioError:
+    who = await call(slug, {})
+    value = None if who is None else _body(who).get(field)
+    if value in (None, ""):
         return None
-    data = result.data if result.successful and isinstance(result.data, dict) else {}
-    inner = data.get("data")
-    value = inner.get(field) if isinstance(inner, dict) else None
-    return str(value) if value not in (None, "") else None
+    name: str | None = None
+    if provider == "salesforce":
+        answer = await call("SALESFORCE_RUN_SOQL_QUERY", {"query": _SALESFORCE_ORG_NAME_QUERY})
+        records = None if answer is None else _body(answer).get("records")
+        first = records[0] if isinstance(records, list) and records else None
+        found = first.get("Name") if isinstance(first, dict) else None
+        if found is not None and str(found).strip():
+            name = str(found).strip()
+    return CrmAccountIdentity(external_id=str(value), name=name)
 
 
 @dataclass(frozen=True)
@@ -88,15 +124,20 @@ class CrmConnection:
     status: str
     connected_by_user_id: str
     connected_at: datetime
+    external_account_id: str | None = None
+    external_account_name: str | None = None
 
 
 @dataclass(frozen=True)
 class ConnectRequest:
+    """One connect card in a chat, or one connect from Settings — then ``project_id``,
+    ``thread_id`` and ``turn_id`` are all ``None`` (there is no chat to wake)."""
+
     request_id: UUID
     workspace_id: str
-    project_id: str
-    thread_id: str
-    turn_id: UUID
+    project_id: str | None
+    thread_id: str | None
+    turn_id: UUID | None
     requested_by_user_id: str
     mode: str
     status: str
@@ -106,7 +147,8 @@ class ConnectRequest:
 
 _CONNECTION_COLUMNS = (
     "connection_id, workspace_id, provider, composio_connected_account_id, "
-    "composio_auth_config_id, status, connected_by_user_id, connected_at"
+    "composio_auth_config_id, status, connected_by_user_id, connected_at, "
+    "external_account_id, external_account_name"
 )
 _REQUEST_COLUMNS = (
     "request_id, workspace_id, project_id, thread_id, turn_id, requested_by_user_id, mode, "
@@ -186,6 +228,23 @@ async def open_connect_request(
     return _request(row)
 
 
+async def open_settings_connect_request(
+    conn: AsyncConnection, *, workspace_id: str, requested_by_user_id: str, mode: str
+) -> ConnectRequest:
+    """A connect request from Settings (R-15.3): no chat, so nothing is woken when it is fulfilled.
+    Each Settings click opens its own; activation fulfils it with every other open request."""
+    row = (
+        await conn.execute(
+            text(
+                "INSERT INTO crm_connect_request (request_id, workspace_id, requested_by_user_id, "
+                f"mode) VALUES (:id, :ws, :user, :mode) RETURNING {_REQUEST_COLUMNS}"
+            ),
+            {"id": uuid4(), "ws": workspace_id, "user": requested_by_user_id, "mode": mode},
+        )
+    ).one()
+    return _request(row)
+
+
 async def get_connect_request(
     conn: AsyncConnection, *, request_id: UUID, workspace_id: str
 ) -> ConnectRequest | None:
@@ -240,6 +299,7 @@ async def activate_from_attempt(
     connected_account_id: str,
     auth_config_id: str,
     external_account_id: str | None = None,
+    external_account_name: str | None = None,
 ) -> tuple[CrmConnection, list[ConnectRequest]] | None:
     """Activate the connection the request's latest attempt produced.
 
@@ -253,6 +313,8 @@ async def activate_from_attempt(
     **reconnect**: that connection is made active again with the new grant, so everything keyed on
     it — undo, Clue's fields, list and record links — carries on (D-2, 2026-10-25). A grant to
     another account, or one that could not be identified, is a new connection, as before.
+    ``external_account_name`` is the account's name (Salesforce org name); a reconnect refreshes
+    it when one was found and otherwise keeps the name already known.
     """
     request = (
         await conn.execute(
@@ -301,6 +363,7 @@ async def activate_from_attempt(
         "ac": auth_config_id,
         "user": request.pending_started_by_user_id,
         "external": external_account_id,
+        "name": external_account_name,
     }
     if same_account is not None:
         row = (
@@ -309,6 +372,7 @@ async def activate_from_attempt(
                     "UPDATE workspace_integration_connection SET status = 'active', "
                     "composio_connected_account_id = :account, composio_auth_config_id = :ac, "
                     "connected_by_user_id = :user, connected_at = now(), disconnected_at = NULL, "
+                    "external_account_name = COALESCE(CAST(:name AS text), external_account_name), "
                     "updated_at = now() WHERE connection_id = :id "
                     f"RETURNING {_CONNECTION_COLUMNS}"
                 ),
@@ -321,8 +385,9 @@ async def activate_from_attempt(
                 text(
                     "INSERT INTO workspace_integration_connection (connection_id, workspace_id, "
                     "provider, composio_connected_account_id, composio_auth_config_id, status, "
-                    "connected_by_user_id, external_account_id) VALUES (:id, :ws, :provider, "
-                    f":account, :ac, 'active', :user, :external) RETURNING {_CONNECTION_COLUMNS}"
+                    "connected_by_user_id, external_account_id, external_account_name) VALUES "
+                    "(:id, :ws, :provider, :account, :ac, 'active', :user, :external, :name) "
+                    f"RETURNING {_CONNECTION_COLUMNS}"
                 ),
                 {**values, "id": uuid4()},
             )
