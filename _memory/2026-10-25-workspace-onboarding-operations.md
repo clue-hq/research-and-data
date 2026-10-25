@@ -67,3 +67,26 @@
 - After approval: write the plan, implement, run the scenario tests on a throwaway database, and
   commit locally. Never push.
 - Never touch production or Illumio. The founder decides when to deploy and run.
+
+## Test commands (Task 0, 2026-10-26)
+
+**Test database**
+- `clue_onb_ops_test` on `clue-pg-papeete:55040`, user `clue`. It is a throwaway database,
+  migrated to `cba395a41e66`.
+- The DSN is the nashville lane's, with the database name swapped.
+
+**Platform tests**
+
+```bash
+CLUE_DATABASE_URL=… uv run pytest <files> -q -rs
+```
+
+**Design tests**
+
+Run one named file at a time:
+
+```bash
+cd subsystems/clue-design && PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/<file>
+```
+
+Set `LUMEN_INGESTION_DESCRIBE=0` and `LUMEN_INGESTION_VISION=0` for these runs.

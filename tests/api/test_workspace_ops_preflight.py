@@ -1,4 +1,4 @@
-"""Onboarding pre-flight: the providers it needs, checked before a run spends (spec 2026-10-25 §3.3).
+"""Onboarding pre-flight: the providers it needs, checked before a run spends (spec §3.3).
 
 Offline: OpenRouter and the design API are answered by a scripted transport; the Exa probe is a
 fake (its real body is a one-result search through the provider caller).
