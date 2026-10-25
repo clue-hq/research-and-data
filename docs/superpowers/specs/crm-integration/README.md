@@ -7,6 +7,7 @@ group. Add a line here whenever a new document is written.
 
 | Document | What it is | Status |
 |---|---|---|
+| [`2026-10-25-own-oauth-apps-live-check-findings.md`](2026-10-25-own-oauth-apps-live-check-findings.md) | Live check of Clue's own HubSpot and Salesforce apps (R-14.x) on the merged CRM+F3 code: what passed, defects D-1–D-4 | Record — D-1 (F3 deadlock) and D-2 (undo after reconnect) open |
 | [`2026-10-25-phase-4-live-check-findings.md`](2026-10-25-phase-4-live-check-findings.md) | Phase 4 live check on both test CRMs: setup, Clue field writes, a deleted field set up again, a possible-duplicate link; findings L4-1–L4-7 | Record — L4-1–L4-6 fixed and re-checked live |
 | [`../../plans/2026-10-24-crm-integration-phase-4-clue-fields.md`](../../plans/2026-10-24-crm-integration-phase-4-clue-fields.md) | Phase 4 (Clue's own fields) plan: registry, owner/admin setup card, setup run (HubSpot group/properties/label; Salesforce fields, permission set R-13.1, external id), writing Clue fields, duplicate links, skill v5, live check; decisions D-1–D-6 (ruled R-13.2–R-13.7) | Approved 2026-10-24; built and live-checked 2026-10-25 |
 | [`2026-10-23-phase-3-live-check-findings.md`](2026-10-23-phase-3-live-check-findings.md) | Phase 3 live check on both test CRMs: what passed (lists, targets, tiers, committee, missing accounts, campaign, removal), findings L-1–L-11 and what was decided on them (R-12.11–R-12.14) | Record — step 4 and the Tasks 10–11 re-run still to add |
