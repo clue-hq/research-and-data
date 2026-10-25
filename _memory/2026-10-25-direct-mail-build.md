@@ -35,3 +35,23 @@
   Initial campaigns use prepared synthetic recommendations; actual research job
   and incomplete-proposal projections remain a backend integration slice.
 - No production mutations, remote pushes or 3000-series changes.
+
+## Closing verification
+
+- Fresh whole-branch review found four material issues; fixed in one pass:
+  reviewed drafts now invalidate on first edit, pending saves preserve later typing,
+  fit checks use bundled font advances/preserved whitespace, and Gallery retains
+  its 36px/54px/content grid rows. Regression tests failed before the fixes.
+- Final full suite: 3652 passed, 5 skipped, zero failures (3657 tests total).
+  Design-system build, lint (11 pre-existing warnings, zero errors) and production
+  build all passed after fixes.
+- Browser: first edit after marking reviewed excludes the mailer from bulk;
+  W×280 visibly blocks approval; card image upload works; creating a project
+  campaign creates separate recipients; chat/Gallery share persistent records;
+  narrow-screen review has no document overflow; no console errors in QA tab.
+- Demo data now includes the local Field team workshop campaign and an uploaded
+  Workshop thank-you sample card used for browser verification. These exist only
+  in this browser, not Git. The user's current preview tab was left in place.
+- One deferred minor: dated package-photo captions (timestamps already in model).
+- Keep feature branch/worktree for user iteration. No merge, push or production
+  mutation. Local server remains on port 5000.

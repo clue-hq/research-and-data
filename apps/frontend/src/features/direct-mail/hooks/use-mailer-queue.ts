@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { estimate, isDraft, readiness, type ApprovalResult, type Mailer } from "../model/direct-mail";
 import type { DirectMailController } from "./use-direct-mail";
+import { readPendingDraft } from "../data/direct-mail.drafts";
 
 export const queueTabs = [{ id: "all", label: "All mailers" }, { id: "review", label: "Needs review" }, { id: "active", label: "In progress" }, { id: "attention", label: "Needs attention" }, { id: "delivered", label: "Delivered" }];
 export function useMailerQueue(c: DirectMailController) {
@@ -26,7 +27,7 @@ export function useMailerQueue(c: DirectMailController) {
   const currentPage = Math.min(page, pages);
   const visible = matching.slice((currentPage - 1) * 10, currentPage * 10);
   const selected = visible.filter((m) => selection.includes(m.id));
-  const ready = selected.filter((m) => m.stage === "ready" && m.reviewedRevision === m.revision && c.data && readiness(m, c.data).length === 0);
+  const ready = selected.filter((m) => m.stage === "ready" && m.reviewedRevision === m.revision && !readPendingDraft(m.id) && c.data && readiness(m, c.data).length === 0);
   function filter(key: string, value: string) { const next = new URLSearchParams(params.toString()); if (value) next.set(key, value); else next.delete(key); if (key !== "page") next.delete("page"); if (key === "project") next.delete("campaign"); setSelection([]); router.replace(`/direct-mail?${next}`, { scroll: false }); }
   function toggle(id: string) { setSelection((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]); }
   async function approve() {

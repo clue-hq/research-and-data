@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDirectMailFixture } from "../data/direct-mail.fixture";
-import { approveMailers, estimate, readiness, reviewMailer, updateMailer, StateSchema } from "./direct-mail";
+import { approveMailers, estimate, noteFits, readiness, reviewMailer, updateMailer, StateSchema } from "./direct-mail";
 
 function readyState() {
   let state = createDirectMailFixture();
@@ -86,4 +86,12 @@ test("confirming a complete receiving address resolves its attention state", () 
   assert.ok(state.mailers[2].exception);
   state = updateMailer(state, "mailer-priya", 2, { address: { ...state.mailers[2].address, line1: "200 Example Street" }, addressConfirmed: true });
   assert.equal(state.mailers[2].exception, null);
+});
+
+test("wide glyphs and preserved tab spacing cannot pass a visibly overflowing card", () => {
+  const state = createDirectMailFixture();
+  const card = state.cards[0];
+  assert.equal(noteFits("W".repeat(280), "Alex", card), false);
+  assert.equal(noteFits("\tW".repeat(120), "Alex", card), false);
+  assert.equal(noteFits(state.mailers[0].note, state.mailers[0].signature, card), true);
 });

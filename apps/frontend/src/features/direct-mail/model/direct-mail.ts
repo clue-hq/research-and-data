@@ -1,4 +1,5 @@
 import { z } from "zod";
+import handwritingMetrics from "./handwriting-metrics.json";
 
 const Cents = z.number().int().nonnegative().max(10_000_000);
 const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) }).refine((area) => area.x + area.width <= 100 && area.y + area.height <= 100, "The writing area must fit inside the card.");
@@ -52,21 +53,32 @@ function hasReceivingAddress(mailer: Mailer) {
   return [a.name, a.line1, a.city, a.postalCode, a.country].every((value) => value.trim());
 }
 
-/** Conservative 6×4 card layout at 600×400 preview pixels; real print fitting stays backend-owned. */
-export function noteFits(note: string, signature: string, card?: CardAsset): boolean {
+/** Font advances match the preview's 22px/29px layout, with an 8% safety margin.
+ * Preserve whitespace and split long words as CSS overflow-wrap:anywhere does.
+ * Unknown glyphs/styles fail closed; production fitting stays backend-owned. */
+export function noteFits(note: string, signature: string, card?: CardAsset, style?: HandwritingStyle): boolean {
   if (!card || note.length > 600) return false;
-  const width = 600 * card.writingArea.width / 100;
-  const height = 400 * card.writingArea.height / 100;
-  const columns = Math.max(1, Math.floor(width / 12));
+  const advances = (handwritingMetrics as Record<string, Record<string, number>>)[style?.family ?? "Clue Handwritten"];
+  if (!advances) return false;
+  const width = 600 * card.writingArea.width / 100 - 4;
+  const height = 400 * card.writingArea.height / 100 - 4;
+  const scale = 22 * 1.08;
+  const tabWidth = advances[" "] * scale * 8;
   let lines = 0;
-  for (const paragraph of `${note}\n\n${signature}`.split("\n")) {
+  for (const paragraph of `${note}\n\n${signature}`.replaceAll("\r\n", "\n").split("\n")) {
     let used = 0;
     lines += 1;
-    for (const word of paragraph.split(/\s+/)) {
-      if (used && used + word.length + 1 > columns) { lines++; used = 0; }
-      const length = word.length + (used ? 1 : 0);
-      lines += Math.floor(Math.max(0, length - 1) / columns);
-      used += length % columns || (length ? columns : 0);
+    for (const token of paragraph.match(/[^ \t]+|[ \t]/gu) ?? []) {
+      if (token === "\t") { const size = tabWidth - used % tabWidth; if (used + size > width) { lines++; used = tabWidth; } else used += size; continue; }
+      const glyphs = Array.from(token).map((character) => advances[character]);
+      if (glyphs.some((advance) => advance === undefined)) return false;
+      const tokenWidth = glyphs.reduce((sum, advance) => sum + advance * scale, 0);
+      if (tokenWidth <= width) {
+        if (used + tokenWidth > width) { lines++; used = 0; }
+        used += tokenWidth;
+      } else {
+        for (const advance of glyphs) { const size = advance * scale; if (used + size > width) { lines++; used = 0; } used += size; }
+      }
     }
   }
   return lines * 29 <= height;
@@ -82,7 +94,7 @@ export function readiness(mailer: Mailer, state: DirectMailState): string[] {
   if (!card?.productionReady) issues.push("Choose a card approved for production.");
   if (!style?.productionReady) issues.push("Choose a handwriting style approved for production.");
   if (!mailer.note.trim()) issues.push("Write a note.");
-  else if (!noteFits(mailer.note, mailer.signature, card)) issues.push("Shorten the note to fit the card’s writing area.");
+  else if (!noteFits(mailer.note, mailer.signature, card, style)) issues.push("Adjust the note to fit the writing area and supported handwriting characters.");
   if (!mailer.signature.trim()) issues.push("Add a sender signature.");
   if (!hasReceivingAddress(mailer)) issues.push("Complete the receiving address.");
   if (!mailer.addressConfirmed) issues.push("Confirm that the recipient can receive mail at this address.");

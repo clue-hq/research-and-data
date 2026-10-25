@@ -41,9 +41,10 @@ export function ProjectGalleryView({
         <strong>Gallery</strong>
         <small>{controller.visibleArtifactCount} artifacts</small>
       </nav>
-      <DirectMailProjectLink projectId={projectId} />
       <div><GalleryToolbar controller={controller} />
       {documentsError ? <div role="alert" className={styles.documentNotice}>{documentsError} <button type="button" onClick={onRetryDocuments}>Try again</button></div> : null}</div>
+      <div className={styles.galleryContent}>
+      <DirectMailProjectLink projectId={projectId} />
       {documentsLoading && isEmpty ? <div className={styles.emptyState} role="status">Loading documents…</div> : isEmpty && !documentsError ? (
         <div className={styles.emptyState}>
           <strong>No artifacts found</strong>
@@ -110,6 +111,7 @@ export function ProjectGalleryView({
           ) : null}
         </div>
       )}
+      </div>
     </section>
   );
 }

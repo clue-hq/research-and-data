@@ -122,7 +122,7 @@ Uploaded cards/fonts are immediately previewable but `productionReady: false`.
 Browser decoding proves neither print quality nor robot compatibility. Production
 needs image dimensions/DPI, handwriting conversion, supported glyphs, real text
 fit and eligible asset versions. The current conservative fit estimate uses a
-600×400 logical card; it is not a printer or robot instruction format.
+600×400 logical card with advance metrics extracted from the bundled fonts, preserved whitespace and a safety margin. Regenerate the metrics with `python3 scripts/generate-mailer-font-metrics.py` when those fonts change. This is not a printer or robot instruction format.
 
 Assets are local data URLs in IndexedDB for this phase. Real assets need upload
 authorization, durable object storage, signed references and lifecycle handling

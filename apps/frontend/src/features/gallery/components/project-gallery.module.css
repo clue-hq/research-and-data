@@ -15,6 +15,17 @@
   font-family: var(--font-satoshi), "Satoshi Variable", Inter, sans-serif;
 }
 
+.galleryContent {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.galleryContent > * { flex-shrink: 0; }
+.galleryContent > .emptyState { margin: auto; }
+
 .breadcrumbBar {
   position: sticky;
   z-index: 21;

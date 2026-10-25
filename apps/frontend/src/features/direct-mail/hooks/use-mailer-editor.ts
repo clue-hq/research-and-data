@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { estimate, readiness, type Mailer, type MailerPatch } from "../model/direct-mail";
 import type { DirectMailController } from "./use-direct-mail";
 import { readPendingDraft, writePendingDraft } from "../data/direct-mail.drafts";
 
 export function useMailerEditor(c: DirectMailController, saved: Mailer) {
   const [draft, setDraft] = useState(() => readPendingDraft(saved.id));
+  const draftRef = useRef(draft);
+  const saving = useRef(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [approval, setApproval] = useState<Mailer | null>(null);
@@ -16,18 +18,36 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer) {
   const mailer = { ...saved, ...draft?.patch };
   const changedElsewhere = draft !== null && draft.revision !== saved.revision;
   const issues = c.data ? readiness(mailer, c.data) : [];
-  function edit(patch: MailerPatch) {
-    const next = { revision: draft?.revision ?? saved.revision, patch: { ...draft?.patch, ...patch } };
+  function replaceBuffer(next: typeof draft) {
+    draftRef.current = next;
     setDraft(next);
     setRecoveryError(writePendingDraft(saved.id, next) ? null : "Draft recovery is unavailable. Use Save draft before leaving this page.");
   }
+  function edit(patch: MailerPatch) {
+    const current = draftRef.current;
+    const next = { revision: current?.revision ?? saved.revision, patch: { ...current?.patch, ...patch } };
+    replaceBuffer(next);
+    // Invalidate a reviewed record immediately, including for other open views.
+    // Further typing stays in the recovery buffer until explicitly saved.
+    if (saved.stage === "ready" && next.revision === saved.revision && !saving.current) return persist(next);
+  }
+  async function persist(submitted: NonNullable<typeof draft>) {
+    if (saving.current) return null;
+    saving.current = true;
+    try {
+      const result = await c.run(() => c.repository.patch(saved.id, submitted.revision, submitted.patch));
+      if (!result) return null;
+      const record = result.mailers.find((item) => item.id === saved.id)!;
+      if (draftRef.current === submitted) { replaceBuffer(null); return record; }
+      // A keystroke arrived after the request started: retain it and use the
+      // successful write's revision as its base. Never advance review yet.
+      if (draftRef.current) replaceBuffer({ ...draftRef.current, revision: record.revision });
+      return null;
+    } finally { saving.current = false; }
+  }
   async function save() {
-    if (!draft) return saved;
-    const result = await c.run(() => c.repository.patch(saved.id, draft.revision, draft.patch));
-    if (!result) return null;
-    setDraft(null);
-    writePendingDraft(saved.id, null);
-    return result.mailers.find((item) => item.id === saved.id)!;
+    if (saving.current) return null;
+    return draftRef.current ? persist(draftRef.current) : saved;
   }
   async function go(next: number) { if (await save()) setStep(next); }
   async function review(openApproval: boolean) {
@@ -53,6 +73,6 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer) {
     const current = await save();
     if (current) await c.run(() => c.repository.resolveProposal(current.id, current.revision, apply));
   }
-  return { mailer, step, go, edit, save, dirty: !!draft, changedElsewhere, recoveryError, discard: () => { setDraft(null); writePendingDraft(saved.id, null); }, issues,
+  return { mailer, step, go, edit, save, dirty: !!draft, changedElsewhere, recoveryError, discard: () => replaceBuffer(null), issues,
     estimate: estimate(mailer), approval, setApproval, approvalError, review, approve, request, setRequest, feedback, setFeedback, submitRequest, resolveRequest };
 }
