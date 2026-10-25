@@ -13,8 +13,13 @@
 ## State
 
 - **Spec drafted:** `docs/superpowers/specs/2026-10-25-workspace-onboarding-operations-design.md`.
-- **Open decisions:** eight, D1–D8, in spec §8. A builder check has run; its corrections are folded into the spec. The founder must approve before any code is
-  written.
+- **Spec approved by the founder, 2026-10-25.**
+  - D1: open `/ops/v1` routes with no sign-in. The founder chose this explicitly over "any
+    signed-in user", after being told the risk.
+  - D2–D8: as recommended. My calls: accepted.
+- **Plan:** `docs/superpowers/plans/2026-10-25-workspace-onboarding-operations.md`, tasks 0–13.
+  Awaiting the founder's review.
+- **Execution:** native. The session implements the tasks itself, then one review at the end.
 - **Code written:** none so far.
 
 ## Verified facts (recon, 2026-10-25)
