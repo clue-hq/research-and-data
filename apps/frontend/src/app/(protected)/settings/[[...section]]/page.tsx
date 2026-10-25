@@ -2,7 +2,7 @@ import { readSettingsSection } from "@/features/settings/data/settings-read";
 import { AccountsRecoveryScreen } from "@/features/accounts/components/accounts-recovery-screen";
 import { notFound, redirect } from "next/navigation";
 import { getProtectedSession } from "@/features/session/data/session-dal";
-import { SettingsRouteSchema } from "@/features/settings/model/settings";
+import { SettingsRouteSchema, type SettingsSection } from "@/features/settings/model/settings";
 import { staticSettingsSections } from "@/features/settings/data/static-sections";
 import { SettingsScreen } from "@/features/settings/components/settings-screen";
 import { ProfileSettings } from "@/features/settings/components/profile-settings";
@@ -15,6 +15,9 @@ import { researchEntities } from "@/features/settings/model/research-fields";
 import { BillingSettings } from "@/features/settings/components/billing-settings";
 import { PagesSettings } from "@/features/settings/components/pages-settings";
 import { IntegrationsSettings } from "@/features/settings/components/integrations-settings";
+import { CrmIntegrationPage } from "@/features/settings/components/crm-integration-page";
+import { crmProviderPageRedirect } from "@/features/integrations/model/crm-integration-page";
+import { CRM_PROVIDER_NAMES, type CrmProvider } from "@/features/integrations/model/crm";
 
 export default async function SettingsPage({
   params,
@@ -24,7 +27,7 @@ export default async function SettingsPage({
   const segments = (await params).section ?? [];
   const parsed = SettingsRouteSchema.safeParse(segments);
   if (!parsed.success) notFound();
-  const { section, entity, view } = parsed.data;
+  const { section, entity, view, provider } = parsed.data;
   if (section === "data-model" && entity && view === "display") {
     redirect(`/settings/data-model/${entity}/fields`);
   }
@@ -35,6 +38,12 @@ export default async function SettingsPage({
   const canManageSettings =
     session?.principal.permissions.includes("workspace.manage_settings") ?? false;
   const result = await readSettingsSection(section, entity);
+  // A CRM's own page exists only while that CRM is the connected one (after a disconnect the
+  // refreshed page lands back on the overview). Outside the read's try: redirect throws.
+  if (provider && result.section === "integrations") {
+    const target = crmProviderPageRedirect(provider, result.data);
+    if (target) redirect(target);
+  }
   let content;
   if (result.section === "recovery") {
     content = (
@@ -91,7 +100,13 @@ export default async function SettingsPage({
         );
         break;
       case "integrations":
-        content = (
+        content = provider ? (
+          <CrmIntegrationPage
+            key={`${session?.principal.workspace_id}:${provider}`}
+            integration={result.data}
+            pageWorkspace={session?.principal.workspace_id ?? null}
+          />
+        ) : (
           <IntegrationsSettings
             key={session?.principal.workspace_id}
             integration={result.data}
@@ -118,13 +133,24 @@ export default async function SettingsPage({
   return (
     <SettingsScreen
       section={section}
-      dataModelEntityName={
-        researchEntities.find(
-          (item) => item.id === entity,
-        )?.name
-      }
+      nested={nestedHeader(section, entity, provider)}
     >
       {content}
     </SettingsScreen>
   );
+}
+
+function nestedHeader(
+  section: SettingsSection,
+  entity: string | undefined,
+  provider: CrmProvider | undefined,
+) {
+  if (section === "integrations" && provider) {
+    return { title: CRM_PROVIDER_NAMES[provider], backHref: "/settings/integrations" };
+  }
+  const entityName = researchEntities.find((item) => item.id === entity)?.name;
+  if (section === "data-model" && entityName) {
+    return { title: entityName, backHref: "/settings/data-model" };
+  }
+  return undefined;
 }

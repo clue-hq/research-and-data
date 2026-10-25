@@ -168,7 +168,8 @@ function CrmSignInWatch({
   return null;
 }
 
-function CrmDialog({
+/** The board 06 dialog shell (always open; the parent mounts it and closes it through `onCancel`). */
+export function CrmDialog({
   title,
   busy,
   onCancel,
@@ -201,7 +202,7 @@ function CrmDialog({
   );
 }
 
-function DialogActions({ children }: { children: ReactNode }) {
+export function DialogActions({ children }: { children: ReactNode }) {
   return <div className={styles.actions}>{children}</div>;
 }
 
@@ -218,17 +219,27 @@ const BRAND_MARKS: Record<CrmProvider, { src: string; width: number; height: num
   salesforce: { src: "/icons/crm/salesforce.svg", width: 28, height: 19.5 },
 };
 
+/** The provider page header draws the marks 36 wide (boards 02/03 "CRM header"). */
+const LARGE_SCALE = 36 / 28;
+
 /** A CRM's brand mark at the design's size ("HubSpot / brand mark", "Salesforce / brand mark"). */
-export function CrmBrandMark({ provider }: { provider: CrmProvider }) {
+export function CrmBrandMark({
+  provider,
+  size = "default",
+}: {
+  provider: CrmProvider;
+  size?: "default" | "large";
+}) {
   const mark = BRAND_MARKS[provider];
+  const scale = size === "large" ? LARGE_SCALE : 1;
   return (
     <Image
       alt=""
       aria-hidden="true"
       className={styles.brandMark}
-      height={mark.height}
+      height={Math.round(mark.height * scale * 100) / 100}
       src={mark.src}
-      width={mark.width}
+      width={mark.width * scale}
     />
   );
 }

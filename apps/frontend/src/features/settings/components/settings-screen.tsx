@@ -19,14 +19,14 @@ const titles = {
 export function SettingsScreen({
   section,
   children,
-  dataModelEntityName,
+  nested,
 }: {
   section: SettingsSection;
   children: ReactNode;
-  dataModelEntityName?: string;
+  /** A page under a section (a Data model entity, a connected CRM): back link + its own title. */
+  nested?: { title: string; backHref: string };
 }) {
   const staticSection = ["connections", "mcp-server"].includes(section);
-  const nestedDataModel = section === "data-model" && dataModelEntityName;
   return (
     <div className={styles.settingsShell}>
       <SettingsSidebar activeSection={section} />
@@ -35,17 +35,17 @@ export function SettingsScreen({
           <div className={styles.settingsHeaderRow}>
             <SettingsMobileNavigation activeSection={section} />
             <div>
-              {nestedDataModel ? (
+              {nested ? (
                 <Link
                   className={styles.headerBackLink}
-                  href="/settings/data-model"
+                  href={nested.backHref}
                   prefetch={false}
                 >
                   <ChevronLeft size={13} strokeWidth={1.4} />
-                  Data Model
+                  {titles[section]}
                 </Link>
               ) : null}
-              <h1>{nestedDataModel || titles[section]}</h1>
+              <h1>{nested?.title ?? titles[section]}</h1>
             </div>
           </div>
         </header>

@@ -54,6 +54,22 @@ const neutralVariant = [
   "disabled:shadow-none",
 ].join(" ")
 
+// Settings → Integrations' destructive confirm (Figma "Action / Disconnect", button-sm/critical):
+// additive, like `neutral`.
+const criticalVariant = [
+  "border-[0.5px]",
+  "[background-color:var(--clue-ds-color-components-button-bg-critical-default)]",
+  "[border-color:var(--clue-ds-color-components-button-border-critical-default)]",
+  "[color:var(--clue-ds-color-content-utility-critical)]",
+  "[box-shadow:0_1px_0_rgb(0_0_0/5%),inset_0_1.5px_0_rgb(255_255_255)]",
+  "hover:[background-color:var(--clue-ds-color-components-button-bg-critical-hover)]",
+  "active:[background-color:var(--clue-ds-color-components-button-bg-critical-pressed)]",
+  "active:shadow-none",
+  "disabled:[background-color:var(--clue-ds-color-components-button-bg-critical-disabled)]",
+  "disabled:[color:var(--clue-ds-color-content-disabled)]",
+  "disabled:shadow-none",
+].join(" ")
+
 // The design's small button (26px; its label sits in a 2px container, hence the +2px).
 const designSmSize = [
   "h-[var(--clue-ds-product-component-button-sm-height)]",
@@ -99,6 +115,7 @@ const buttonVariants = cva(
         transparent: transparentVariant,
         primary: primaryVariant,
         neutral: neutralVariant,
+        critical: criticalVariant,
       },
       size: {
         default:
