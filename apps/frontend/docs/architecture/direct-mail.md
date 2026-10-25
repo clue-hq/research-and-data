@@ -1,6 +1,6 @@
 # Direct Mail customer experience
 
-Status: proposed design, awaiting review of the complete flow. The decisions
+Status: approved to build on 2026-10-25; implementation in progress. The decisions
 marked confirmed below were agreed with the founder on 2026-10-24.
 Branch: `feat/direct-mail-infrastructure-ui`.
 
