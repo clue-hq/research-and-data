@@ -6,6 +6,11 @@ import {
   startChat,
   visibleProjects,
 } from "./use-projects-screen-controller";
+import {
+  MAX_PREFILLED_PROMPT_LENGTH,
+  prefilledPrompt,
+  urlWithoutPrompt,
+} from "../model/prefilled-prompt";
 
 function source(path: string) {
   return readFileSync(new URL(path, import.meta.url), "utf8");
@@ -127,4 +132,53 @@ test("a chat is never started while an attachment is still uploading, and it is 
   );
   // And nothing silently substitutes an empty list for a withheld snapshot.
   assert.doesNotMatch(controller, /snapshot\(\) \?\? \[\]/);
+});
+
+test("a ?prompt= link fills the Home composer with its text, cut to a sane length", () => {
+  assert.equal(
+    prefilledPrompt("Ask Clue to analyse my HubSpot deals"),
+    "Ask Clue to analyse my HubSpot deals",
+  );
+  // A repeated parameter takes the first value, the way a browser reads it.
+  assert.equal(prefilledPrompt(["first", "second"]), "first");
+  // Missing, empty or blank changes nothing: the composer starts empty.
+  assert.equal(prefilledPrompt(undefined), "");
+  assert.equal(prefilledPrompt(""), "");
+  assert.equal(prefilledPrompt("   \n "), "");
+  // A long message is cut, never refused.
+  const long = "x".repeat(MAX_PREFILLED_PROMPT_LENGTH + 500);
+  assert.equal(prefilledPrompt(long).length, MAX_PREFILLED_PROMPT_LENGTH);
+  assert.equal(MAX_PREFILLED_PROMPT_LENGTH, 2000);
+});
+
+test("the prompt parameter is dropped from the address, everything else kept", () => {
+  assert.equal(
+    urlWithoutPrompt("https://app.test/projects/prj?prompt=Hello%20there"),
+    "/projects/prj",
+  );
+  assert.equal(
+    urlWithoutPrompt("https://app.test/projects/prj?prompt=Hi&x=1#top"),
+    "/projects/prj?x=1#top",
+  );
+  assert.equal(urlWithoutPrompt("https://app.test/projects/prj"), null);
+});
+
+test("the Home composer starts with the linked prompt and sends nothing until the person submits", () => {
+  // Hook wiring, asserted at its source (no React renderer under node:test).
+  const controller = source("./use-projects-screen-controller.ts");
+  const page = source("../../../app/(protected)/projects/[projectId]/page.tsx");
+  const screen = source("../components/projects-screen.tsx");
+  // The route reads `prompt` once and hands the cleaned text to the Home.
+  assert.match(page, /prompt\?: string \| string\[\]/);
+  assert.match(page, /initialPrompt=\{prefilledPrompt\(query\.prompt\)\}/);
+  assert.match(screen, /useProjectsScreenController\(projectId, initialPrompt\)/);
+  // The composer's state is born with it — the initial value, not an effect.
+  assert.match(controller, /useState\(initialPrompt\)/);
+  // The only `startChat` call stays inside the submit handler: nothing in an
+  // effect sends the prefilled text.
+  assert.equal(controller.split("startChat(repositories").length, 2);
+  const effects = controller.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[[^\]]*\]\);/g) ?? [];
+  for (const effect of effects) assert.doesNotMatch(effect, /newChat|startChat|submit/);
+  // And the parameter leaves the address once read, so a reload starts clean.
+  assert.match(controller, /window\.history\.replaceState\(null, "", withoutPrompt\)/);
 });
