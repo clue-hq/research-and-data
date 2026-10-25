@@ -188,20 +188,20 @@ test("needs attention without a failed field names the deleted item: board 07 23
   assert.match(sf.body, /^The field Clue uses for contacts’ buying roles was deleted in Salesforce\./);
 });
 
-test("needs attention with a failed field names that same field in title, body and message", () => {
-  // Two deleted fields: the backend's failedField is the one the whole card is about.
+test("needs attention names the first missing preparation and restores that same field", () => {
+  // Two deleted fields: the backend's failedField is the first missing one in page order.
   const copy = researchStateCopy(
     "needs_attention",
     "hubspot",
     items({ company_research_links: "missing", company_fit: "missing" }),
-    "Clue fit level",
+    "Clue research link",
   );
-  assert.equal(copy.title, "“Clue fit level” can’t be saved.");
+  assert.equal(copy.title, "Company research links can’t be saved.");
   assert.equal(
     copy.body,
-    "Clue’s “Clue fit level” field was deleted in HubSpot. Ask Clue to propose restoring it; an owner or admin approves the request in chat.",
+    "The field Clue uses for company research links was deleted in HubSpot. Ask Clue to propose restoring it; an owner or admin approves the request in chat.",
   );
-  assert.equal(copy.action?.askClueMessage, "Restore Clue’s “Clue fit level” field in HubSpot.");
+  assert.equal(copy.action?.askClueMessage, "Restore Clue’s “Clue research link” field in HubSpot.");
 
   const outside = researchStateCopy("needs_attention", "salesforce", items({}), "Clue id");
   assert.equal(outside.title, "“Clue id” can’t be saved.");

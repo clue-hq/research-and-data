@@ -238,7 +238,17 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
         research_state = "preparing"
     elif gone_labels:
         research_state = "needs_attention"
-        failed_field = gone_labels[0]
+        # The first missing preparation in page order, so the page's title and its "Restore"
+        # message name the same field; a gone field outside the four falls back to the first.
+        gone = set(state.gone_names) if state is not None else set()
+        failed_field = next(
+            (
+                field.label
+                for item in _ITEMS
+                if (field := _clue_field(provider, item)).qualified_name in gone
+            ),
+            gone_labels[0],
+        )
         reason = f"Clue’s field “{failed_field}” was deleted in {crm}."
     elif latest is not None and latest.proposal_status == "awaiting_permission":
         research_state = "approval_needed"

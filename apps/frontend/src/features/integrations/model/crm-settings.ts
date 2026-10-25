@@ -249,19 +249,19 @@ export function researchStateCopy(
       );
     // 2310:2535.
     case "needs_attention": {
-      // The backend's `failedField` is the field the card is about; title, body and the restore
-      // message all name it. Without one, the deleted item names it (as the board does).
       const missing = items.find((item) => item.status === "missing");
       const tail = "Ask Clue to propose restoring it; an owner or admin approves the request in chat.";
-      const [title, body] = failedField
+      // The design names the missing preparation; `failedField` (the same field, chosen by the
+      // backend in page order) names it in the restore message.
+      const [title, body] = missing
         ? [
-            `“${failedField}” can’t be saved.`,
-            `Clue’s “${failedField}” field was deleted in ${crm}. ${tail}`,
+            `${missing.title} can’t be saved.`,
+            `The field Clue uses for ${lowerFirst(missing.title)} was deleted in ${crm}. ${tail}`,
           ]
-        : missing
+        : failedField
           ? [
-              `${missing.title} can’t be saved.`,
-              `The field Clue uses for ${lowerFirst(missing.title)} was deleted in ${crm}. ${tail}`,
+              `“${failedField}” can’t be saved.`,
+              `Clue’s “${failedField}” field was deleted in ${crm}. ${tail}`,
             ]
           : ["A field Clue uses can’t be saved.", `A field Clue uses was deleted in ${crm}. ${tail}`];
       return plain(
