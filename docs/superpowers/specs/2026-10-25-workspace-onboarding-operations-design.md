@@ -155,7 +155,9 @@ key cap and the budget, whichever are readable, and warns below a floor. **Exa r
 low.** New setting `CLUE_PREFLIGHT_OPENROUTER_MIN_CREDIT_USD`, default `5`. At or below the floor
 it warns. At zero it refuses.
 
-**Route.** The check is also its own read: `GET /ops/v1/preflight`.
+**Route.** The check is also its own read, scoped to a workspace:
+`GET /ops/v1/workspaces/{workspace_id}/preflight`. It is scoped because the Exa probe's ledger row
+needs a workspace to charge.
 
 **Script.** `scripts/check_onboarding_providers.py`. It only reads, apart from the half-cent Exa
 probe, so it has no `--apply`.
@@ -425,7 +427,7 @@ What that means in the build:
   no membership and no permission check.
   - `POST /ops/v1/workspaces`: add a workspace. Body: `email`, `website`, optional
     `company_name`, `operator_email`, `apply` (default false).
-  - `GET /ops/v1/preflight`: check the providers.
+  - `GET /ops/v1/workspaces/{workspace_id}/preflight`: check the providers.
   - `POST /ops/v1/workspaces/{workspace_id}/onboarding`: start onboarding. Body: optional
     `domain` (default: the workspace's website), `operator_email`, `apply` (default false).
   - `GET /ops/v1/workspaces/{workspace_id}/repair-plan`: the dry run.
