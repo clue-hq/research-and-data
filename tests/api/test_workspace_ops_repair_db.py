@@ -153,6 +153,39 @@ async def _illumio(conn: AsyncConnection, *, failed_assets: int = 4) -> tuple[st
     )
 
 
+async def close_open_work(ws: str, engine: Any = None) -> None:
+    """Tests that COMMIT a repair leave queued fleet tasks behind; on a shared test database the
+    design suites' fleet worker would claim them (and wait forever on an analysis pool that does
+    not exist in tests). Close everything this workspace left open."""
+    if engine is None:
+        async with db_lifespan() as own:
+            await close_open_work(ws, own)
+        return
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE fleet_task SET status = 'failed', claimed_by = NULL, claimed_at = NULL"
+                " WHERE status IN ('queued', 'claimed') AND payload_json->>'workspace_id' = :w"
+            ),
+            {"w": ws},
+        )
+        await conn.execute(
+            text(
+                "UPDATE design_ingestion_job SET status = 'failed',"
+                ' error_json = \'{"code": "test_cleanup"}\'::jsonb'
+                " WHERE workspace_id = :w AND status IN ('queued', 'running')"
+            ),
+            {"w": ws},
+        )
+        await conn.execute(
+            text(
+                "UPDATE onboarding_run SET status = 'failed', finished_at = now()"
+                " WHERE workspace_id = :w AND status IN ('queued', 'running')"
+            ),
+            {"w": ws},
+        )
+
+
 async def _count(conn: AsyncConnection, sql: str, ws: str) -> int:
     return int((await conn.execute(text(sql), {"w": ws})).scalar_one())
 
@@ -312,10 +345,46 @@ def test_two_applies_race_and_exactly_one_wins() -> None:
                     except OpsRefused as refused:
                         return refused
 
-            return list(await asyncio.gather(apply(), apply()))
+            try:
+                return list(await asyncio.gather(apply(), apply()))
+            finally:
+                await close_open_work(ws, engine)
 
     outcomes = run_async(scenario())
     refused = [o for o in outcomes if isinstance(o, OpsRefused)]
     applied = [o for o in outcomes if not isinstance(o, OpsRefused)]
     assert len(applied) == 1 and len(refused) == 1
     assert refused[0].code in ("nothing_to_repair", "plan_changed")
+
+
+def test_a_repair_is_refused_while_a_full_onboarding_run_is_open() -> None:
+    """Final review #4 / spec §3.4 A: never two at once — a repair (either half) is refused with
+    409 onboarding_in_progress while a full run is queued or running."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws, operator, _ = await _illumio(conn)
+            brand = (
+                await conn.execute(
+                    text("SELECT brand_id FROM onboarding_run WHERE workspace_id = :w"), {"w": ws}
+                )
+            ).scalar_one()
+            await conn.execute(
+                text(
+                    "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, company_domain,"
+                    " requested_by_user_id) VALUES (:r, :w, :b, 'illumio.com', :u)"
+                ),
+                {"r": uuid4(), "w": ws, "b": brand, "u": operator.user_id},
+            )
+            plan = await plan_repair(conn, workspace_id=ws)
+            with pytest.raises(OpsRefused) as refused:
+                await apply_repair(
+                    conn,
+                    workspace_id=ws,
+                    plan_digest=plan.plan_digest,
+                    operator=operator,
+                    reason="during onboarding",
+                )
+            assert (refused.value.status, refused.value.code) == (409, "onboarding_in_progress")
+
+    run_async(scenario())

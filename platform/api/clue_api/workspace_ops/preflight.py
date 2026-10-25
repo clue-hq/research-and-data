@@ -138,7 +138,9 @@ async def _openrouter(
         return ProbeResult(provider, "no_credit", True, _message(response))
     if response.status_code != 200:
         return ProbeResult(provider, "unreachable", True, f"HTTP {response.status_code}")
-    data = (response.json() or {}).get("data") or {}
+    data = _data(response)
+    if data is None:
+        return ProbeResult(provider, "unreachable", True, "HTTP 200 with an unreadable body")
     figures = [
         _decimal(data.get("limit_remaining")),
         _decimal((data.get("effective_budget") or {}).get("remaining_usd")),
@@ -164,7 +166,7 @@ async def _balance(http: httpx.AsyncClient, headers: dict[str, str]) -> Decimal 
         return None
     if response.status_code != 200:
         return None
-    data = (response.json() or {}).get("data") or {}
+    data = _data(response) or {}
     total, used = _decimal(data.get("total_credits")), _decimal(data.get("total_usage"))
     return None if total is None or used is None else total - used
 
@@ -201,6 +203,16 @@ def _ad_lane(env: Mapping[str, str]) -> tuple[ProbeResult, ...]:
         )
         for provider, key in (("adyntel", "ADYNTEL_API_KEY"), ("pdl", "PDL_API_KEY"))
     )
+
+
+def _data(response: httpx.Response) -> dict[str, Any] | None:
+    """The ``data`` object of an OpenRouter answer, or ``None`` when the body is not one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    data = body.get("data") if isinstance(body, dict) else None
+    return data if isinstance(data, dict) else ({} if isinstance(body, dict) else None)
 
 
 def _decimal(value: Any) -> Decimal | None:

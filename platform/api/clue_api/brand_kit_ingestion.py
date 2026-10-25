@@ -204,16 +204,7 @@ class BrandKitWebsiteIngestion:
             existing = await list_recent(
                 conn, workspace_id=workspace_id, limit=1, kinds=AD_INGESTION_KINDS
             )
-            # Gap-aware (spec 2026-10-25 §3.2): a kit job queued, running or finished — gapped or
-            # not — suppresses a new capture (a gapped kit is REPAIRED, not re-captured). Only a
-            # newest capture that FAILED with no kit in the workspace at all is captured again,
-            # so a capture that died (the design API was down) cannot block every later start.
-            recapture = (
-                bool(existing)
-                and existing[0].get("status") == "failed"
-                and not await list_brand_kits(conn, workspace_id=workspace_id)
-            )
-            if existing and not recapture:
+            if existing:
                 log.info("ad_harvest.already_offered", workspace_id=workspace_id)
                 return
             domain = company_domain(website)

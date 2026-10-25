@@ -66,15 +66,23 @@ class KitRepairPlan:
 
 
 async def plan_kit_repair(conn: AsyncConnection, *, workspace_id: str) -> KitRepairPlan:
-    jobs = await ingestion.list_recent(conn, workspace_id=workspace_id, limit=_RECENT)
-    kit_jobs = [job for job in jobs if job["kind"] in KIT_BUILDING_KINDS]
+    # Each kind is read on its own: one ``asset_enrichment`` job per asset retry (Illumio's
+    # recovery made over a hundred) would otherwise crowd the kit and harvest jobs out of a
+    # count-limited window and the plan would silently be empty.
+    kit_jobs = await ingestion.list_recent(
+        conn, workspace_id=workspace_id, limit=_RECENT, kinds=KIT_BUILDING_KINDS
+    )
+    repair_jobs = await ingestion.list_recent(
+        conn, workspace_id=workspace_id, limit=_RECENT, kinds=("kit_repair",)
+    )
+    ad_jobs = await ingestion.list_recent(
+        conn, workspace_id=workspace_id, limit=_RECENT, kinds=("ad_assets",)
+    )
     if kit_jobs and kit_jobs[0]["status"] in _OPEN:
         return KitRepairPlan(
             in_flight=(f"a {kit_jobs[0]['kind']} ingestion is {kit_jobs[0]['status']}",)
         )
-    open_repair = next(
-        (job for job in jobs if job["kind"] == "kit_repair" and job["status"] in _OPEN), None
-    )
+    open_repair = next((job for job in repair_jobs if job["status"] in _OPEN), None)
     if open_repair is not None:
         return KitRepairPlan(
             in_flight=(f"kit repair {open_repair['job_id']} is {open_repair['status']}",)
@@ -121,7 +129,7 @@ async def plan_kit_repair(conn: AsyncConnection, *, workspace_id: str) -> KitRep
     republish = kit_id if (describe or unstamped) else None
 
     in_flight = (f"{queued} descriptions are already queued or analysing",) if queued else ()
-    harvest, card_note = await _card_harvest(conn, workspace_id, jobs)
+    harvest, card_note = await _card_harvest(conn, workspace_id, ad_jobs)
     return KitRepairPlan(
         describe=tuple(sorted(describe)),
         unsupported=tuple(sorted(unsupported)),

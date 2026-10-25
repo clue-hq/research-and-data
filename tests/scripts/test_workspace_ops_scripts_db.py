@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from clue_db import db_lifespan
 from scripts import provision_additional_workspace, repair_workspace
-from tests.api.test_workspace_ops_repair_db import _illumio
+from tests.api.test_workspace_ops_repair_db import _illumio, close_open_work
 from tests.auth.conftest import run_async
 from tests.profiling.conftest import (
     migrated_db,  # noqa: F401
@@ -31,6 +31,21 @@ def _seed_illumio() -> tuple[str, Any]:
             return ws, operator
 
     return run_async(scenario())
+
+
+@pytest.fixture
+def seeded() -> Any:
+    """An Illumio-shaped workspace, committed; its open work is closed afterwards."""
+    workspaces: list[str] = []
+
+    def make() -> tuple[str, Any]:
+        ws, operator = _seed_illumio()
+        workspaces.append(ws)
+        return ws, operator
+
+    yield make
+    for ws in workspaces:
+        run_async(close_open_work(ws))
 
 
 def _counts(ws: str) -> tuple[int, int, int]:
@@ -51,8 +66,10 @@ def _counts(ws: str) -> tuple[int, int, int]:
     return run_async(scenario())
 
 
-def test_repair_script_dry_run_writes_nothing(capsys: pytest.CaptureFixture[str]) -> None:
-    ws, operator = _seed_illumio()
+def test_repair_script_dry_run_writes_nothing(
+    seeded: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ws, operator = seeded()
     before = _counts(ws)
     code = repair_workspace.main(["--workspace", ws, "--operator-email", operator.email])
     assert code == 0
@@ -63,9 +80,10 @@ def test_repair_script_dry_run_writes_nothing(capsys: pytest.CaptureFixture[str]
 
 
 def test_repair_script_apply_matches_the_route_and_a_second_apply_refuses(
+    seeded: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    ws, operator = _seed_illumio()
+    ws, operator = seeded()
     runs, jobs, audits = _counts(ws)
     args = ["--workspace", ws, "--operator-email", operator.email, "--reason", "outage", "--apply"]
     assert repair_workspace.main(args) == 0
@@ -76,10 +94,10 @@ def test_repair_script_apply_matches_the_route_and_a_second_apply_refuses(
 
 
 def test_repair_script_runs_without_a_design_api(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    seeded: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("CLUE_DESIGN_API_BASE_URL", raising=False)
-    ws, operator = _seed_illumio()
+    ws, operator = seeded()
     args = ["--workspace", ws, "--operator-email", operator.email, "--reason", "vm", "--apply"]
     assert repair_workspace.main(args) == 0
 
@@ -101,9 +119,10 @@ def test_repair_script_runs_without_a_design_api(
 
 
 def test_provision_script_dry_run_then_apply_writes_the_audit_row(
+    seeded: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, operator = _seed_illumio()
+    _, operator = seeded()
     name = f"Acme {uuid4().hex[:6]}"
     base = [
         "--email",

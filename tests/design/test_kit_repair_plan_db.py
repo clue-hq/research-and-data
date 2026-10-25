@@ -243,3 +243,24 @@ def test_a_harvest_with_a_card_or_an_open_card_job_plans_no_card() -> None:
 
     plan, _ = _plan(seed)
     assert plan.offer_card_for_harvest is None
+
+
+def test_sixty_retry_jobs_above_the_kit_job_do_not_hide_the_kit_or_the_harvest() -> None:
+    """Final review #1: Illumio's recovered descriptions came through one ``asset_enrichment``
+    job per asset. A planner that windowed the newest 50 jobs of ANY kind saw only those and
+    planned nothing for the kit or the card."""
+
+    async def seed(conn: AsyncConnection) -> tuple[str, dict]:
+        ws = await _ws(conn)
+        failed = [await _asset(conn, ws, "failed") for _ in range(2)]
+        kit_id = await _kit(conn, ws, failed)
+        await _job(conn, ws, "website", "succeeded_with_gaps", kit_id=kit_id)
+        harvest = await _harvest(conn, ws)
+        for _ in range(60):
+            await _job(conn, ws, "asset_enrichment", "succeeded", request={"targets": {}})
+        return ws, {"failed": failed, "kit": kit_id, "harvest": harvest}
+
+    plan, facts = _plan(seed)
+    assert plan.describe == tuple(sorted(facts["failed"]))
+    assert plan.republish_brand_kit_id == facts["kit"]
+    assert plan.offer_card_for_harvest == facts["harvest"]

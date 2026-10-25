@@ -1228,9 +1228,11 @@ def _gaps(evidence: JsonObject) -> list[JsonObject]:
     steps = evidence.get("steps") or {}
     gaps: list[JsonObject] = []
     enrich = steps.get("enrich") if isinstance(steps.get("enrich"), dict) else {}
-    if enrich.get("status") == "failed":
-        failed = int(enrich.get("total") or 0) - int(enrich.get("ready") or 0)
-        gaps.append({"area": "ad_analyses", "failed": max(failed, 1),
+    # Analyses that RAN and failed. Analysis switched off or keyless (every ad ``pending``,
+    # ``failed`` 0) is a deployment setting the pre-flight refuses on, like a skipped card.
+    failed = int(enrich.get("failed") or 0)
+    if failed > 0:
+        gaps.append({"area": "ad_analyses", "failed": failed,
                      "reason": str(enrich.get("reason") or "analysis failed")[:200]})
     distill = steps.get("distill") if isinstance(steps.get("distill"), dict) else {}
     # ``skipped`` is not a gap: a harvest-only request asked for no card, and a missing model key

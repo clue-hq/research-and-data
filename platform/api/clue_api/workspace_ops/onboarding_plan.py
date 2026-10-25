@@ -225,12 +225,24 @@ async def research_gaps(conn: AsyncConnection, *, workspace_id: str) -> list[dic
 
 
 async def brand_kit_gaps(conn: AsyncConnection, *, workspace_id: str) -> list[dict[str, Any]]:
-    """The newest kit-building job's own ``gaps`` (spec §5.1), as onboarding-view entries."""
+    """The brand kit's gaps (spec §5.1), as onboarding-view entries.
+
+    The newest kit-building job speaks for the kit — unless a ``kit_repair`` job FINISHED after
+    it, in which case the repair's own gaps are what is still missing (a repaired gap
+    disappears, spec §3.4 A). A repair still running changes nothing yet.
+    """
     from clue_design.ingestion import list_recent
     from clue_design.kit_repair import KIT_BUILDING_KINDS
 
-    jobs = await list_recent(conn, workspace_id=workspace_id, limit=1, kinds=KIT_BUILDING_KINDS)
-    evidence = (jobs[0].get("evidence") if jobs else None) or {}
+    kit_jobs = await list_recent(conn, workspace_id=workspace_id, limit=1, kinds=KIT_BUILDING_KINDS)
+    if not kit_jobs:
+        return []
+    source = kit_jobs[0]
+    repairs = await list_recent(conn, workspace_id=workspace_id, limit=20, kinds=("kit_repair",))
+    finished = [job for job in repairs if job["status"] in ("succeeded", "succeeded_with_gaps")]
+    if finished and str(finished[0]["created_at"]) > str(source["created_at"]):
+        source = finished[0]
+    evidence = source.get("evidence") or {}
     gaps = evidence.get("gaps") if isinstance(evidence, dict) else None
     return [
         {

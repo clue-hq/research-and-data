@@ -242,3 +242,39 @@ def test_record_operation_writes_one_audit_row() -> None:
             assert (row.onboarding_run_id, row.design_job_ids) == (run_id, ["ingest_1"])
 
     run_async(scenario())
+
+
+def test_brand_kit_gaps_clear_once_a_later_kit_repair_finishes() -> None:
+    """Final review #2: a repaired gap disappears from the onboarding view (spec §3.4 A)."""
+    import json as _json
+
+    from clue_api.workspace_ops.onboarding_plan import brand_kit_gaps
+    from clue_design import ingestion as design_ingestion
+
+    async def job(conn: AsyncConnection, ws: str, kind: str, status: str, evidence: dict) -> None:
+        created = await design_ingestion.create_job(conn, workspace_id=ws, kind=kind, request={})
+        await conn.execute(
+            text(
+                "UPDATE design_ingestion_job SET status = CAST(:s AS design_ingestion_status),"
+                " evidence_json = CAST(:e AS jsonb), created_at = clock_timestamp()"
+                " WHERE job_id = :j"
+            ),
+            {"s": status, "e": _json.dumps(evidence), "j": created["job_id"]},
+        )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws, _brand, _user = await _seed(conn, "kitgaps")
+            gap = {"area": "descriptions", "failed": 252, "reason": "auth_invalid"}
+            await job(conn, ws, "website", "succeeded_with_gaps", {"gaps": [gap]})
+            assert [g["item"] for g in await brand_kit_gaps(conn, workspace_id=ws)] == [
+                "descriptions"
+            ]
+            # A repair still running changes nothing yet.
+            await job(conn, ws, "kit_repair", "running", {})
+            assert len(await brand_kit_gaps(conn, workspace_id=ws)) == 1
+            # A finished repair speaks for the kit: here it healed everything.
+            await job(conn, ws, "kit_repair", "succeeded", {"gaps": []})
+            assert await brand_kit_gaps(conn, workspace_id=ws) == []
+
+    run_async(scenario())

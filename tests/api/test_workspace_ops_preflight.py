@@ -145,3 +145,28 @@ def test_ad_lane_keys_only_warn() -> None:
     adyntel = _by(report)["adyntel"]
     assert (adyntel.outcome, adyntel.required) == ("not_configured", False)
     assert report.blocking == ()
+
+
+def test_a_non_json_answer_is_unreachable_not_a_crash() -> None:
+    """Final review #5: a proxy's HTML 200 must not turn a start into a 500."""
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/healthz"):
+            return httpx.Response(200, json={})
+        return httpx.Response(200, text="<html>captive portal</html>")
+
+    async def run() -> PreflightReport:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+            return await check_providers(
+                secrets=Secrets(openrouter_api_key=SecretStr("k"), exa_api_key=SecretStr("e")),
+                settings=Settings(design_api_base_url="http://design.internal"),
+                workspace_id="ws-pf",
+                http=http,
+                exa_probe=_exa(),
+                env={},
+            )
+
+    report = asyncio.run(run())
+    assert _by(report)["openrouter_platform"].outcome == "unreachable"

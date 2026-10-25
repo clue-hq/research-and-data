@@ -113,6 +113,19 @@ async def apply_repair(
     # start and a repair cannot both see "no run open" and both begin one.
     await conn.execute(_LOCK_SQL, {"key": f"ops-repair:{workspace_id}"})
     await conn.execute(_LOCK_SQL, {"key": f"onboarding-start:{workspace_id}"})
+    # Never two at once (spec §3.4 A): while a full onboarding is open neither half of a repair
+    # runs — the walk may fix what is missing, and its documents and kit would race the repair's.
+    open_full = (
+        await conn.execute(
+            text(
+                "SELECT run_id FROM onboarding_run WHERE workspace_id = :w AND kind = 'full'"
+                " AND status IN ('queued', 'running') LIMIT 1"
+            ),
+            {"w": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if open_full is not None:
+        raise OpsRefused(409, "onboarding_in_progress", str(open_full))
     plan = await plan_repair(conn, workspace_id=workspace_id, settings=settings)
     if plan.is_empty:
         raise OpsRefused(

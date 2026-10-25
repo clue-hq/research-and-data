@@ -872,3 +872,34 @@ def test_ensure_skips_a_gapped_kit_which_repair_heals() -> None:
             assert INGEST_WEBSITE_PATH not in [request.url.path for request in design.requests]
 
     run_async(scenario())
+
+
+def test_a_failed_harvest_is_not_re_offered_by_the_kit_recapture_rule() -> None:
+    """Final review #3: the kit's re-capture rule (no kit + failed capture) is the KIT's alone.
+    A workspace with no kit whose ad harvest failed must not re-buy a harvest on every start."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            provisioned = await _provision(conn, "adharvest-failed")
+            workspace_id = provisioned.workspace.workspace_id
+            harvest = await design_ingestion.create_job(
+                conn, workspace_id=workspace_id, kind="ad_assets", request={"phase": "harvest"}
+            )
+            from sqlalchemy import text
+
+            await conn.execute(
+                text("UPDATE design_ingestion_job SET status = 'failed' WHERE job_id = :j"),
+                {"j": harvest["job_id"]},
+            )
+            design = _DesignApiDouble()
+            app = _setup_app(conn_factory=_shared_conn_factory(conn), design=design,
+                             recon=_CaptureEnqueuer(), ad_harvest=AD_HARVEST)
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                started = await client.post(
+                    "/stage0/setup", headers={"X-Workspace-Id": workspace_id}
+                )
+            assert started.status_code == 202
+            assert ONBOARD_AD_ASSETS_PATH not in [r.url.path for r in design.requests]
+
+    run_async(scenario())
