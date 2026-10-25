@@ -133,6 +133,9 @@ class DesignIngestionKind(StrEnum):
     ASSET_UPLOAD = "asset_upload"
     AD_ASSETS = "ad_assets"
     ASSET_ENRICHMENT = "asset_enrichment"
+    #: Workspace repair (spec 2026-10-25): batch-describe failed assets, republish the kit with
+    #: the descriptions stamped, re-offer a missing ad-DNA card. APPENDED, like the others.
+    KIT_REPAIR = "kit_repair"
 
 
 class DesignIngestionStatus(StrEnum):
@@ -142,6 +145,9 @@ class DesignIngestionStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    #: Finished with a usable result but with gaps (failed descriptions, ad analyses, card, brief
+    #: or grammar audit) listed in the job's evidence ``gaps`` (spec 2026-10-25 §5.1).
+    SUCCEEDED_WITH_GAPS = "succeeded_with_gaps"
 
 
 class DesignCompilationStatus(StrEnum):
