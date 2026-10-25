@@ -41,17 +41,15 @@ test("the connection section names the account the CRM's way and offers managers
   assert.equal(hubspot.accountFieldLabel, "Portal");
   assert.equal(hubspot.accountLabel, "Portal 21436587");
   assert.equal(hubspot.connectedBy, "Aryan");
-  assert.equal(hubspot.connectedOn, "22 Oct 2026");
+  assert.equal("connectedOn" in hubspot, false);
   assert.deepEqual(hubspot.actions, ["reconnect", "change", "disconnect"]);
-  assert.equal(hubspot.note, "Reconnecting the same portal keeps your permissions and history.");
+  // No note under a manager's buttons (founder 2026-10-26).
+  assert.equal(hubspot.note, null);
   assert.equal(hubspot.expired, null);
 
   const salesforce = crmConnectionView(crmIntegrationFixture("ready", "salesforce"));
   assert.equal(salesforce.accountFieldLabel, "Organization");
-  assert.equal(
-    salesforce.note,
-    "Reconnecting the same organization keeps your permissions and history.",
-  );
+  assert.equal(salesforce.note, null);
 });
 
 test("a member sees the connection without reconnect, change or disconnect, and is told who can", () => {

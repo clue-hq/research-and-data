@@ -124,8 +124,9 @@ export interface CrmResearchDetails {
   columns: { item: string; progress: string };
   blocking: { heading: string; body: string } | null;
   nextSteps: { heading: string; body: string } | null;
-  whereToFind: { heading: string; lines: string[] } | null;
-  footer: string;
+  /** One paragraph; when present it carries the read-only line and `footer` is null. */
+  whereToFind: { heading: string; body: string } | null;
+  footer: string | null;
 }
 
 export interface CrmResearchStateCopy {
@@ -321,21 +322,24 @@ export function researchStateCopy(
       return plain(
         "Ready",
         `${crm} is ready to receive your research.`,
-        "Clue has prepared the fields for your research.",
+        "Clue has prepared the fields for your research. You control updates through chat approvals and the Permissions section below.",
         null,
         {
           details: {
             ...details,
             whereToFind: {
               heading: `Where to find this in ${crm}`,
-              lines:
-                provider === "salesforce"
+              body: [
+                ...(provider === "salesforce"
                   ? [
                       "Open an account or contact record and look for the fields labelled Clue.",
                       "With your approval, Clue also grants the connected user access to these fields.",
                     ]
-                  : ["Open a company or contact record and look for its Clue properties."],
+                  : ["Open a company or contact record and look for its Clue properties."]),
+                FOOTER,
+              ].join(" "),
             },
+            footer: null,
           },
         },
       );

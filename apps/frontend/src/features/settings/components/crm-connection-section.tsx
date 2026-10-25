@@ -41,7 +41,7 @@ export function CrmConnectionSection({
         </div>
         <p className={styles.warning}>{view.expired.warning}</p>
         <p className={styles.subtle}>{view.expired.note}</p>
-        {view.actions.length === 0 ? <p className={styles.subtle}>{view.note}</p> : null}
+        {view.note ? <p className={styles.subtle}>{view.note}</p> : null}
       </section>
     );
   }
@@ -53,7 +53,6 @@ export function CrmConnectionSection({
       <div className={styles.details}>
         <Detail label={view.accountFieldLabel} value={view.accountLabel} />
         {view.connectedBy ? <Detail label="Connected by" value={view.connectedBy} /> : null}
-        <Detail label="Connected on" value={view.connectedOn} />
       </div>
       <div className={styles.divider} />
       {view.actions.length > 0 ? (
@@ -76,7 +75,7 @@ export function CrmConnectionSection({
           ) : null}
         </div>
       ) : null}
-      <p className={styles.subtle}>{view.note}</p>
+      {view.note ? <p className={styles.subtle}>{view.note}</p> : null}
     </section>
   );
 }

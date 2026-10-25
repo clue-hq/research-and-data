@@ -282,7 +282,10 @@ test("ready: board 07 2338:2427 (HubSpot) and 2338:2538 (Salesforce)", () => {
   const hs = researchStateCopy("ready", "hubspot");
   assert.equal(hs.statusLabel, "Ready");
   assert.equal(hs.title, "HubSpot is ready to receive your research.");
-  assert.equal(hs.body, "Clue has prepared the fields for your research.");
+  assert.equal(
+    hs.body,
+    "Clue has prepared the fields for your research. You control updates through chat approvals and the Permissions section below.",
+  );
   assert.equal(hs.action, null);
   assert.equal(hs.details.heading, "HubSpot preparation details");
   assert.equal(
@@ -290,14 +293,12 @@ test("ready: board 07 2338:2427 (HubSpot) and 2338:2538 (Salesforce)", () => {
     "Clue adds fields to your company and contact records so approved research can be saved there. Creating fields does not write research values.",
   );
   assert.deepEqual(hs.details.columns, { item: "What Clue is preparing", progress: "Progress" });
+  // One paragraph, the read-only line included (founder 2026-10-26).
   assert.deepEqual(hs.details.whereToFind, {
     heading: "Where to find this in HubSpot",
-    lines: ["Open a company or contact record and look for its Clue properties."],
+    body: "Open a company or contact record and look for its Clue properties. Details are read-only. Record updates follow your chat approvals and standing permissions.",
   });
-  assert.equal(
-    hs.details.footer,
-    "Details are read-only. Record updates follow your chat approvals and standing permissions.",
-  );
+  assert.equal(hs.details.footer, null);
 
   const sf = researchStateCopy("ready", "salesforce");
   assert.equal(sf.title, "Salesforce is ready to receive your research.");
@@ -308,11 +309,9 @@ test("ready: board 07 2338:2427 (HubSpot) and 2338:2538 (Salesforce)", () => {
   );
   assert.deepEqual(sf.details.whereToFind, {
     heading: "Where to find this in Salesforce",
-    lines: [
-      "Open an account or contact record and look for the fields labelled Clue.",
-      "With your approval, Clue also grants the connected user access to these fields.",
-    ],
+    body: "Open an account or contact record and look for the fields labelled Clue. With your approval, Clue also grants the connected user access to these fields. Details are read-only. Record updates follow your chat approvals and standing permissions.",
   });
+  assert.equal(sf.details.footer, null);
 });
 
 test("not connected has plain copy in the same voice (no board)", () => {

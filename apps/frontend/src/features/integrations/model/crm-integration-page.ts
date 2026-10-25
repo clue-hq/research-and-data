@@ -59,13 +59,12 @@ export interface CrmConnectionView {
   accountFieldLabel: string;
   accountLabel: string;
   connectedBy: string | null;
-  connectedOn: string;
   /** Only an expired connection: the board 07 "Expired" lines. */
   expired: { warning: string; note: string } | null;
   /** Owner/admin actions; none for a member (board 07 member view). */
   actions: CrmConnectionAction[];
-  /** The line under the actions (or, for a member, in their place). */
-  note: string;
+  /** A member's line in place of the actions; null for an owner or admin. */
+  note: string | null;
 }
 
 /** The connection section (boards 02/03 "Connection", board 07 "Expired" and member view). */
@@ -83,7 +82,6 @@ export function crmConnectionView(integration: CrmIntegration): CrmConnectionVie
     accountFieldLabel: word === "portal" ? "Portal" : "Organization",
     accountLabel: connection.accountLabel,
     connectedBy: connection.connectedByName,
-    connectedOn: crmDay(connection.connectedAt),
     expired: expired
       ? {
           warning: "Your connection expired. Clue can’t read or write until you reconnect.",
@@ -91,9 +89,7 @@ export function crmConnectionView(integration: CrmIntegration): CrmConnectionVie
         }
       : null,
     actions: !manage ? [] : expired ? ["reconnect"] : ["reconnect", "change", "disconnect"],
-    note: manage
-      ? `Reconnecting the same ${word} keeps your permissions and history.`
-      : "Ask an owner or admin to reconnect, change, or disconnect this CRM.",
+    note: manage ? null : "Ask an owner or admin to reconnect, change, or disconnect this CRM.",
   };
 }
 

@@ -6,6 +6,7 @@ import {
   CrmStatusBadge,
 } from "@/features/integrations/components/crm-connect-dialogs";
 import { CrmIntegrationDialogs } from "@/features/integrations/components/crm-integration-dialogs";
+import { usePendingSectionsRefresh } from "@/features/accounts/hooks/use-pending-sections-refresh";
 import { useCrmIntegrationActions } from "@/features/integrations/hooks/use-crm-integration-actions";
 import { useCrmSettingsConnect } from "@/features/integrations/hooks/use-crm-settings-connect";
 import {
@@ -36,6 +37,8 @@ export function CrmIntegrationPage({
 }) {
   const connect = useCrmSettingsConnect({ pageWorkspace, connection: integration.connection });
   const actions = useCrmIntegrationActions(pageWorkspace);
+  // "We'll show you when {CRM} is ready": re-read the page while Clue is preparing.
+  usePendingSectionsRefresh(integration.research.state === "preparing");
   const connection = crmConnectionView(integration);
   const accountLine = crmOverviewCard(integration).lines[0]?.text ?? "";
   return (

@@ -83,14 +83,10 @@ export function CrmResearchSection({ view }: { view: CrmResearchView }) {
           {details.whereToFind ? (
             <>
               <p className={styles.label}>{details.whereToFind.heading}</p>
-              {details.whereToFind.lines.map((line) => (
-                <p className={styles.subtle} key={line}>
-                  {line}
-                </p>
-              ))}
+              <p className={styles.subtle}>{details.whereToFind.body}</p>
             </>
           ) : null}
-          <p className={styles.subtle}>{details.footer}</p>
+          {details.footer ? <p className={styles.subtle}>{details.footer}</p> : null}
         </div>
       ) : null}
     </section>
