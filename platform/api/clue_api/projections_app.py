@@ -74,6 +74,7 @@ from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueu
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_api.workspace_ops.preflight import build_preflight
+from clue_api.workspace_ops.routes import install_ops_routes
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Secrets, Settings, load_settings
 from clue_core import (
@@ -1088,6 +1089,18 @@ def create_projections_app(
                 # the providers first and refuses before a run exists when one is dead.
                 preflight=build_preflight(resolved, runtime_secrets, conn_factory),
             )
+        )
+        # The open operator routes (spec 2026-10-25, ruling D1): the same start, pre-flight and
+        # repair, for an operator naming any workspace. Unmounted by CLUE_OPS_ROUTES_ENABLED=false.
+        install_ops_routes(
+            app,
+            settings=resolved,
+            conn_factory=conn_factory,
+            enqueuer=DbOnboardingEnqueuer(),
+            brand_kit_ingestion=build_brand_kit_ingestion_trigger(
+                settings=resolved, conn_factory=conn_factory
+            ),
+            preflight=build_preflight(resolved, runtime_secrets, conn_factory),
         )
     if discovery_webhook_router is not None:
         app.include_router(discovery_webhook_router)
