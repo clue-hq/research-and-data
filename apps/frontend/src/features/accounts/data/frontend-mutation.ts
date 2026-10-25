@@ -3,7 +3,8 @@ import { ClueApiError } from "./clue-api-error";
 
 const BFF_PREFIX = "/api/clue/frontend/v1";
 
-async function readErrorEnvelope(response: Response) {
+/** The read API's `{error: {code, message, requestId}}` envelope, or null when the body is not one. */
+export async function readErrorEnvelope(response: Response) {
   try {
     const parsed = ApiErrorEnvelopeSchema.safeParse(await response.json());
     if (parsed.success) return parsed.data.error;

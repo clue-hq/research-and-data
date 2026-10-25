@@ -15,11 +15,15 @@ adapter) in `src/features/integrations/data/crm-settings.repository.ts`; the ser
 All routes live under `/frontend/v1/crm` on the read app (`CLUE_FRONTEND_READ_ENABLED`), with the usual
 authenticated principal and workspace dependency. The Settings page reads `GET /integration` on the
 server through the authenticated read seam (`fetchRead`); browser actions go through the same-origin BFF
-`/api/clue/frontend/v1/crm/…` (the path the connect card's `crm.repository.ts` uses). Payloads are bare
-camelCase objects.
+`/api/clue/frontend/v1/crm/…` (the path the connect card's `crm.repository.ts` uses), through the shared
+`fetchMutation`. Every browser request names the page's workspace in `X-Clue-Page-Workspace`
+(`httpCrmSettingsRepository(pageWorkspace)`); when the selected workspace changed since the page loaded
+the BFF refuses with `409 WORKSPACE_CHANGED`, which the repository throws as `CrmWorkspaceChangedError`
+so the screen can say so and reload — the action did not happen. Payloads are bare camelCase objects.
 
 Every refusal is the read API's envelope `{"error": {"code", "message", "requestId"}}` (never
-`{"detail": …}`); the repository throws it as `ClueApiError {code, status, requestId}`. Common codes:
+`{"detail": …}`); the repository throws it as `ClueApiError {code, status, requestId}` (code
+`HTTP_ERROR` when a body is not the envelope). Common codes:
 `UNAUTHORIZED` (401), `PERMISSION_REQUIRED` (403, the action needs `workspace.manage_settings`),
 `crm_not_connected` (409), `crm_permission_not_found` (404), `crm_not_configured` (503), and a 422
 validation envelope for a bad body.
@@ -93,10 +97,14 @@ validation envelope for a bad body.
 
 - The research section's words come from `researchStateCopy(state, provider, items, failedField)`
   (board 07); the backend's `reason` is not shown verbatim (the design words each state itself).
+- `needs_attention` names one field throughout: with `failedField` the title, body and the "Restore …"
+  message all name it; without one the deleted item names it, as the board does.
 - Fixtures are explicit only. `CLUE_CRM_SETTINGS_FIXTURE=<provider>:<state>` (server, read in
   `crm-settings.server.ts` only) serves `crmIntegrationFixture(state, provider)` to the Settings page for
-  checking a state; unset or malformed means live and a failed live read never falls back to it.
+  checking a state; unset, malformed or `NODE_ENV=production` means live, and a failed live read never
+  falls back to it. Browser actions stay live in fixture mode. The `not_connected` fixture is worded for
+  HubSpot whatever provider is asked, like the backend.
   `fixtureCrmSettingsRepository(payload)` is the in-memory browser adapter for tests and design checks.
 - Fixed with this contract: `crm.repository.ts` read refusal codes from `body.detail.code`, which the read
   app never sends, so `connect_request_closed` was never recognised; it now reads the envelope
-  (`crmErrorCode`).
+  (`crmErrorCode`, through `frontend-mutation.ts`'s `readErrorEnvelope` — the one envelope parse).

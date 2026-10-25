@@ -87,10 +87,11 @@ export function crmIntegrationFixture(
       research.reason = `${crm} stopped part of the setup. Clue can retry the remaining steps.`;
       break;
     case "not_connected":
+      // With nothing connected the backend words the items for HubSpot whatever was asked.
       return {
         connection: null,
         canManage: true,
-        research,
+        research: { ...research, items: items("hubspot", ["pending", "pending", "pending", "pending"]) },
         permissions: [],
         overwrites: "ask",
         askClueProjectId: "prj_fixture",

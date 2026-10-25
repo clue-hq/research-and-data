@@ -1,4 +1,4 @@
-import { ApiErrorEnvelopeSchema } from "@/features/accounts/model/vocabulary";
+import { readErrorEnvelope } from "@/features/accounts/data/frontend-mutation";
 import {
   CompleteResponseSchema,
   ConnectLinkResponseSchema,
@@ -18,13 +18,7 @@ const CRM_PATH = "/api/clue/frontend/v1/crm";
  * that envelope.
  */
 export async function crmErrorCode(response: Response): Promise<string> {
-  try {
-    const parsed = ApiErrorEnvelopeSchema.safeParse(await response.json());
-    if (parsed.success) return parsed.data.error.code;
-  } catch {
-    // A proxy error page is not the backend's envelope.
-  }
-  return `HTTP_${response.status}`;
+  return (await readErrorEnvelope(response))?.code ?? `HTTP_${response.status}`;
 }
 
 /** A fresh Composio login link for this connect card (links live about ten minutes). */

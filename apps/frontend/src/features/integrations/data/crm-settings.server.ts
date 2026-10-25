@@ -22,12 +22,15 @@ import { crmIntegrationFixture } from "./crm-settings.fixtures";
 /**
  * The one place `CLUE_CRM_SETTINGS_FIXTURE` is read: `<provider>:<state>` (e.g.
  * `salesforce:permission_needed`) serves that fixture instead of the backend, for checking a
- * state the live data cannot produce. Opt-in only — unset or malformed means live, and a failed
- * live read never falls back to it.
+ * state the live data cannot produce. Opt-in and development only — unset, malformed or
+ * `NODE_ENV=production` means live, and a failed live read never falls back to it.
  */
 export function crmSettingsFixtureSelection(
   value: string | undefined = process.env.CLUE_CRM_SETTINGS_FIXTURE,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
 ): { provider: CrmProvider; state: CrmResearchState } | null {
+  // A production page never shows fixture data: its actions would reach the real CRM.
+  if (nodeEnv === "production") return null;
   const [provider, state, ...rest] = (value ?? "").trim().split(":");
   const parsedProvider = CrmProviderSchema.safeParse(provider);
   const parsedState = CrmResearchStateSchema.safeParse(state);

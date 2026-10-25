@@ -82,6 +82,17 @@ test("a fixture of every research state parses, for both CRMs", () => {
   }
 });
 
+test("not connected is worded the backend's way whatever the provider (nothing is connected)", () => {
+  assert.deepEqual(
+    crmIntegrationFixture("not_connected", "salesforce"),
+    crmIntegrationFixture("not_connected", "hubspot"),
+  );
+  assert.equal(
+    crmIntegrationFixture("not_connected", "salesforce").research.items[0]?.description,
+    "A link on each company record to its research in Clue.",
+  );
+});
+
 test("a review chat outside approval_needed is refused (Task 3 ruling)", () => {
   const wrong = structuredClone(BACKEND_EXAMPLE);
   (wrong.research as { reviewChat: unknown }).reviewChat = { projectId: "p", threadId: "t" };
@@ -154,12 +165,11 @@ test("preparing: board 07 2310:2518", () => {
   assert.equal(researchStateCopy("preparing", "salesforce").title, "Clue is preparing Salesforce…");
 });
 
-test("needs attention names the deleted item: board 07 2310:2535", () => {
+test("needs attention without a failed field names the deleted item: board 07 2310:2535", () => {
   const copy = researchStateCopy(
     "needs_attention",
     "hubspot",
     items({ company_research_links: "missing" }),
-    "Clue research link",
   );
   assert.equal(copy.statusLabel, "Needs attention");
   assert.equal(copy.title, "Company research links can’t be saved.");
@@ -170,25 +180,40 @@ test("needs attention names the deleted item: board 07 2310:2535", () => {
   assert.deepEqual(copy.action, {
     kind: "ask_clue",
     label: "Ask Clue to restore",
-    askClueMessage: "Restore Clue’s “Clue research link” field in HubSpot.",
+    askClueMessage: "Restore Clue’s fields in HubSpot.",
   });
 
-  const sf = researchStateCopy(
-    "needs_attention",
-    "salesforce",
-    items({ contact_buying_roles: "missing" }),
-    "Clue committee role",
-  );
+  const sf = researchStateCopy("needs_attention", "salesforce", items({ contact_buying_roles: "missing" }));
   assert.equal(sf.title, "Contacts’ buying roles can’t be saved.");
   assert.match(sf.body, /^The field Clue uses for contacts’ buying roles was deleted in Salesforce\./);
 });
 
-test("needs attention for a field outside the four items still reads plainly", () => {
-  const copy = researchStateCopy("needs_attention", "hubspot", items({}), "Clue id");
+test("needs attention with a failed field names that same field in title, body and message", () => {
+  // Two deleted fields: the backend's failedField is the one the whole card is about.
+  const copy = researchStateCopy(
+    "needs_attention",
+    "hubspot",
+    items({ company_research_links: "missing", company_fit: "missing" }),
+    "Clue fit level",
+  );
+  assert.equal(copy.title, "“Clue fit level” can’t be saved.");
+  assert.equal(
+    copy.body,
+    "Clue’s “Clue fit level” field was deleted in HubSpot. Ask Clue to propose restoring it; an owner or admin approves the request in chat.",
+  );
+  assert.equal(copy.action?.askClueMessage, "Restore Clue’s “Clue fit level” field in HubSpot.");
+
+  const outside = researchStateCopy("needs_attention", "salesforce", items({}), "Clue id");
+  assert.equal(outside.title, "“Clue id” can’t be saved.");
+  assert.equal(outside.action?.askClueMessage, "Restore Clue’s “Clue id” field in Salesforce.");
+});
+
+test("needs attention with nothing to name still reads plainly", () => {
+  const copy = researchStateCopy("needs_attention", "hubspot", items({}));
   assert.equal(copy.title, "A field Clue uses can’t be saved.");
   assert.equal(
     copy.body,
-    "Clue’s “Clue id” field was deleted in HubSpot. Ask Clue to propose restoring it; an owner or admin approves the request in chat.",
+    "A field Clue uses was deleted in HubSpot. Ask Clue to propose restoring it; an owner or admin approves the request in chat.",
   );
 });
 

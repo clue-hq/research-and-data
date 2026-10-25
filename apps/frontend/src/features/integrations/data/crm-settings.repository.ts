@@ -1,5 +1,6 @@
 import { ClueApiError } from "@/features/accounts/data/clue-api-error";
-import { ApiErrorEnvelopeSchema } from "@/features/accounts/model/vocabulary";
+import { fetchMutation } from "@/features/accounts/data/frontend-mutation";
+import { PAGE_WORKSPACE_HEADER, WORKSPACE_CHANGED } from "@/features/projects/data/chat-api";
 import {
   CrmConnectRequestResponseSchema,
   CrmDisconnectResponseSchema,
@@ -16,7 +17,8 @@ import {
  * Settings → Integrations' backend: `GET /crm/integration` and the four Settings actions
  * (contract `docs/api-contracts/crm-settings.md`). Every refusal is a `ClueApiError` carrying the
  * backend's `{error: {code, message, requestId}}` envelope, e.g. `crm_not_connected`,
- * `crm_permission_not_found`, `PERMISSION_REQUIRED`.
+ * `crm_permission_not_found`, `PERMISSION_REQUIRED`; a workspace switched since the page loaded is
+ * a `CrmWorkspaceChangedError`.
  */
 export interface CrmSettingsRepository {
   getIntegration(): Promise<CrmIntegration>;
@@ -27,41 +29,45 @@ export interface CrmSettingsRepository {
   setOverwrites(mode: CrmOverwritesMode): Promise<CrmOverwritesMode>;
 }
 
-/** The same-origin BFF the connect card's `crm.repository.ts` uses. */
-const CRM_PATH = "/api/clue/frontend/v1/crm";
-
-async function refusal(response: Response, path: string): Promise<ClueApiError> {
-  let envelope = null;
-  try {
-    const parsed = ApiErrorEnvelopeSchema.safeParse(await response.json());
-    if (parsed.success) envelope = parsed.data.error;
-  } catch {
-    // A proxy error page is not the backend's envelope.
+/**
+ * A Settings action refused because the selected workspace changed since the page loaded (the
+ * BFF's `409 WORKSPACE_CHANGED`, L4-4). The screen tells the person and reloads; nothing changed.
+ */
+export class CrmWorkspaceChangedError extends ClueApiError {
+  constructor(cause: ClueApiError) {
+    super(cause.message, { code: cause.code, status: cause.status, requestId: cause.requestId });
+    this.name = "CrmWorkspaceChangedError";
   }
-  return new ClueApiError(
-    envelope?.message ?? `Clue API returned ${response.status} for ${path}`,
-    {
-      code: envelope?.code ?? `HTTP_${response.status}`,
-      requestId: envelope?.requestId ?? response.headers.get("X-Request-Id") ?? null,
-      status: response.status,
-    },
-  );
 }
 
-/** The browser adapter, through the authenticated `/api/clue` BFF. */
-export function httpCrmSettingsRepository(clueFetch: typeof fetch = fetch): CrmSettingsRepository {
+/**
+ * The browser adapter, through the authenticated `/api/clue` BFF (the shared `fetchMutation`,
+ * which reads the `{error: {code, message, requestId}}` envelope into a `ClueApiError`).
+ * `pageWorkspace` is the workspace the page was loaded for; every request names it in
+ * `X-Clue-Page-Workspace`, so an action never lands on a workspace switched to in another tab.
+ */
+export function httpCrmSettingsRepository(
+  pageWorkspace: string | null,
+  clueFetch: typeof fetch = fetch,
+): CrmSettingsRepository {
   async function call(path: string, method: string, body?: unknown): Promise<unknown> {
-    const response = await clueFetch(`${CRM_PATH}${path}`, {
-      method,
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (!response.ok) throw await refusal(response, path);
-    return response.json();
+    try {
+      return await fetchMutation(
+        `/crm${path}`,
+        {
+          method,
+          cache: "no-store",
+          headers: pageWorkspace ? { [PAGE_WORKSPACE_HEADER]: pageWorkspace } : {},
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        clueFetch,
+      );
+    } catch (error) {
+      if (error instanceof ClueApiError && error.code === WORKSPACE_CHANGED) {
+        throw new CrmWorkspaceChangedError(error);
+      }
+      throw error;
+    }
   }
 
   return {
