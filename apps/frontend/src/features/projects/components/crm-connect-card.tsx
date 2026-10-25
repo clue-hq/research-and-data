@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { openSignInWindow } from "@/features/integrations/hooks/crm-sign-in";
 import { useCrmCardWatch } from "@/features/integrations/hooks/use-crm-connect";
 import {
   CRM_PROVIDER_NAMES,
@@ -60,16 +61,14 @@ export function CrmConnectCard({
     setError(null);
     watch.clearFailure();
     setOpening(provider);
-    // Open the tab synchronously (inside the click) so pop-up blockers allow it.
-    const tab = window.open("about:blank", "_blank");
     try {
-      if (!onConnect) throw new CrmConnectError("Connecting is not available here.", "unavailable");
-      const url = await onConnect(card.requestId, provider);
-      if (tab) tab.location.href = url;
-      else window.open(url, "_blank", "noopener");
+      // Opens the window synchronously (inside the click) so pop-up blockers allow it.
+      await openSignInWindow(() => {
+        if (!onConnect) throw new CrmConnectError("Connecting is not available here.", "unavailable");
+        return onConnect(card.requestId, provider);
+      });
       setAuthorizing(provider);
     } catch (failed) {
-      tab?.close();
       setError(
         failed instanceof CrmConnectError
           ? failed.message

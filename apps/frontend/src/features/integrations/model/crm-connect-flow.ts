@@ -102,14 +102,18 @@ export function crmFinishCopy(provider: CrmProvider) {
   };
 }
 
-/** "Reconnect HubSpot" (2310:2347); `accountLabel` is the connection's account (R-15.3). */
+/**
+ * "Reconnect HubSpot" (2310:2347). The account is named in brackets after the CRM's own word for
+ * it, so a HubSpot label ("Portal 21436587") never reads "the same Portal … portal".
+ */
 export function crmReconnectCopy(provider: CrmProvider, accountLabel: string) {
-  const noun = accountNoun(provider);
+  const name = CRM_PROVIDER_NAMES[provider];
+  const account = provider === "hubspot" ? "account" : "organization";
   return {
-    title: `Reconnect ${CRM_PROVIDER_NAMES[provider]}`,
+    title: `Reconnect ${name}`,
     lines: [
-      `Sign in to the same ${accountLabel} ${noun} to keep your permissions, pending cards, and history.`,
-      `If you choose another ${noun}, Clue will ask you to confirm the change.`,
+      `Sign in to the same ${name} ${account}${accountLabel ? ` (${accountLabel})` : ""} to keep your permissions, pending cards, and history.`,
+      `If you choose another ${accountNoun(provider)}, Clue will ask you to confirm the change.`,
     ],
   };
 }

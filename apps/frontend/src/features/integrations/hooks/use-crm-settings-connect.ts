@@ -1,15 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useReducer, useState } from "react";
-import { ClueApiError } from "@/features/accounts/data/clue-api-error";
-import { WORKSPACE_CHANGED } from "@/features/projects/data/chat-api";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { requestConnectLink } from "../data/crm.repository";
-import {
-  CrmWorkspaceChangedError,
-  httpCrmSettingsRepository,
-} from "../data/crm-settings.repository";
-import { CRM_PROVIDER_NAMES, CrmConnectError, type CrmProvider } from "../model/crm";
+import { httpCrmSettingsRepository } from "../data/crm-settings.repository";
+import { crmSettingsConnectHandlers, settingsSignIn } from "./crm-sign-in";
+import type { CrmProvider } from "../model/crm";
 import {
   CRM_CONNECT_FLOW_CLOSED,
   crmConnectFlowReducer,
@@ -60,49 +56,38 @@ export function useCrmSettingsConnect({
   const [flow, dispatch] = useReducer(crmConnectFlowReducer, CRM_CONNECT_FLOW_CLOSED);
   const repository = useMemo(() => httpCrmSettingsRepository(pageWorkspace), [pageWorkspace]);
   const [busy, setBusy] = useState(false);
+  // Each click and each cancel bumps this; a click whose number is stale was cancelled.
+  const attempt = useRef(0);
 
   const onSignIn = useCallback(
     (mode: CrmConnectMode, provider: CrmProvider, requestId: string | null) => {
-      // Open the window synchronously (inside the click) so pop-up blockers allow it.
-      const tab = window.open("about:blank", "_blank");
+      const mine = ++attempt.current;
       setBusy(true);
-      void (async () => {
-        try {
-          const id = requestId ?? (await repository.requestConnect(mode));
-          const url = await requestConnectLink(id, provider, fetch, pageWorkspace);
-          if (tab) tab.location.href = url;
-          else window.open(url, "_blank", "noopener");
-          dispatch({ type: "opened", mode, provider, requestId: id });
-        } catch (error) {
-          tab?.close();
-          if (workspaceChanged(error)) {
-            window.location.reload();
-            return;
-          }
-          dispatch({ type: "failed", mode, provider, message: refusalMessage(error, provider) });
-        } finally {
-          setBusy(false);
-        }
-      })();
+      // Called inside the click: settingsSignIn opens the window before it awaits anything.
+      void settingsSignIn(
+        {
+          requestConnect: (requestMode) => repository.requestConnect(requestMode),
+          requestLink: (id, crm) => requestConnectLink(id, crm, fetch, pageWorkspace),
+          cancelled: () => attempt.current !== mine,
+          dispatch,
+          reload: () => window.location.reload(),
+        },
+        mode,
+        provider,
+        requestId,
+      ).finally(() => setBusy(false));
     },
     [pageWorkspace, repository],
   );
 
-  const onConnected = useCallback(() => {
-    dispatch({ type: "connected" });
-    router.refresh();
-  }, [router]);
-  const onFailed = useCallback(
-    (mode: CrmConnectMode, provider: CrmProvider) =>
-      dispatch({
-        type: "failed",
-        mode,
-        provider,
-        message: `${CRM_PROVIDER_NAMES[provider]} didn’t connect. Try again.`,
-      }),
-    [],
+  const { onConnected, onFailed } = useMemo(
+    () => crmSettingsConnectHandlers(dispatch, () => router.refresh()),
+    [router],
   );
-  const onCancel = useCallback(() => dispatch({ type: "cancel" }), []);
+  const onCancel = useCallback(() => {
+    attempt.current += 1;
+    dispatch({ type: "cancel" });
+  }, []);
   const onContinueChange = useCallback(() => dispatch({ type: "continue_change" }), []);
   const before = connection ? { status: connection.status, connectedAt: connection.connectedAt } : null;
 
@@ -126,19 +111,4 @@ export function useCrmSettingsConnect({
       onFailed,
     },
   };
-}
-
-function workspaceChanged(error: unknown): boolean {
-  return (
-    error instanceof CrmWorkspaceChangedError ||
-    (error instanceof CrmConnectError && error.code === WORKSPACE_CHANGED)
-  );
-}
-
-function refusalMessage(error: unknown, provider: CrmProvider): string {
-  if (error instanceof CrmConnectError) return error.message;
-  if (error instanceof ClueApiError && error.status === 403) {
-    return "Only a workspace owner or admin can connect the CRM.";
-  }
-  return `Could not start the ${CRM_PROVIDER_NAMES[provider]} connection. Please try again.`;
 }

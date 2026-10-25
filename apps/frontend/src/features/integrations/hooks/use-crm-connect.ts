@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { completeConnection, fetchCrmConnection, requestConnectLink } from "../data/crm.repository";
+import { crmWatchMessage, crmWatchPlan } from "../model/crm-connect-watch";
 import {
   CRM_CONNECT_CHANNEL,
   crmConnectionAnswersCard,
@@ -103,8 +104,10 @@ export function useCrmConnectionWatch(
   const beforeStatus = before?.status ?? null;
   const beforeAt = before?.connectedAt ?? null;
 
+  const plan = crmWatchPlan(requestId, authorizing, connected !== null);
+
   useEffect(() => {
-    if (requestId === null) return;
+    if (!plan.read || requestId === null) return;
     let live = true;
     void answeringConnection(beforeStatus, beforeAt).then((answer) => {
       if (live && answer) setConnected(answer);
@@ -112,16 +115,17 @@ export function useCrmConnectionWatch(
     return () => {
       live = false;
     };
-  }, [requestId, beforeStatus, beforeAt]);
+  }, [plan.read, requestId, beforeStatus, beforeAt]);
 
   // The callback tab's word, whenever it comes: a card reloaded mid-login still hears it.
   useEffect(() => {
-    if (requestId === null || connected !== null || typeof BroadcastChannel === "undefined") return;
+    if (!plan.listen || requestId === null || typeof BroadcastChannel === "undefined") return;
     let live = true;
     const channel = new BroadcastChannel(CRM_CONNECT_CHANNEL);
     channel.onmessage = (event: MessageEvent<CrmConnectBroadcast>) => {
-      if (event.data?.requestId !== requestId) return;
-      if (event.data.outcome === "failed") {
+      const word = crmWatchMessage(event.data, requestId);
+      if (word === "ignore") return;
+      if (word === "failed") {
         setFailed(event.data.provider ?? authorizing);
         return;
       }
@@ -134,12 +138,12 @@ export function useCrmConnectionWatch(
       live = false;
       channel.close();
     };
-  }, [authorizing, requestId, beforeStatus, beforeAt, connected]);
+  }, [plan.listen, authorizing, requestId, beforeStatus, beforeAt]);
 
   // While a login is open in another tab, re-read the connection in case no word comes back
   // (the login finished in another browser, or the callback tab was closed early).
   useEffect(() => {
-    if (requestId === null || authorizing === null || connected !== null) return;
+    if (!plan.poll) return;
     let live = true;
     const timer = window.setInterval(() => {
       void answeringConnection(beforeStatus, beforeAt).then((answer) => {
@@ -150,7 +154,7 @@ export function useCrmConnectionWatch(
       live = false;
       window.clearInterval(timer);
     };
-  }, [requestId, authorizing, beforeStatus, beforeAt, connected]);
+  }, [plan.poll, beforeStatus, beforeAt]);
 
   return {
     connected,
