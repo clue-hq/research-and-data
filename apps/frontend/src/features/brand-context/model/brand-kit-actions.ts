@@ -9,7 +9,10 @@ export const IngestionJobSchema = z.object({
   kind: z.string(),
   // `.catch`: a status this build does not know must degrade to the in-flight reading — never
   // to one that would claim a published kit (the FE-N2 ruling, as slice 3 applied it).
-  status: z.enum(["queued", "running", "succeeded", "failed"]).catch("running"),
+  // `succeeded_with_gaps` (spec 2026-10-25): a finished job whose kit was published with gaps.
+  status: z
+    .enum(["queued", "running", "succeeded", "succeeded_with_gaps", "failed"])
+    .catch("running"),
   /** Present for `kind == "website"` jobs only (slice 4's DTO addition). */
   website_url: z.string().nullish(),
 });

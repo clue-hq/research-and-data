@@ -93,7 +93,9 @@ export async function saveDescription(
 // -- ingestion jobs --------------------------------------------------------
 
 export type IngestJobKind = "website" | "pdf" | "asset_upload";
-export type IngestJobStatus = "queued" | "running" | "succeeded" | "failed";
+/** `succeeded_with_gaps` (spec 2026-10-25): a kit was published, with failed descriptions, ad
+ * analyses or card listed as the job's gaps — finished, and read like `succeeded`. */
+export type IngestJobStatus = "queued" | "running" | "succeeded" | "succeeded_with_gaps" | "failed";
 
 export interface IngestJob {
   job_id: string;
@@ -109,7 +111,12 @@ export interface IngestJob {
 }
 
 export function isTerminalJob(job: IngestJob): boolean {
-  return job.status === "succeeded" || job.status === "failed";
+  return isSucceededJob(job) || job.status === "failed";
+}
+
+/** Finished with a kit — cleanly or with gaps a workspace repair can heal. */
+export function isSucceededJob(job: IngestJob): boolean {
+  return job.status === "succeeded" || job.status === "succeeded_with_gaps";
 }
 
 function readJobResponse(payload: { job?: IngestJob }): IngestJob {
