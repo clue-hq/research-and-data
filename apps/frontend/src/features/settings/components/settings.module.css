@@ -1054,3 +1054,52 @@
   border-radius: 50%;
   background: var(--clue-ds-color-primitives-positive-600);
 }
+
+/* Settings → Integrations CRM card (Figma 2309:1732 / 2309:2636 / 2309:2790). */
+.crmCard {
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.crmCardRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.crmLogos {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.crmCardText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crmCardTitle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.crmWarningText {
+  margin: 0;
+  color: var(--clue-ds-color-content-utility-warning);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.crmCardActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 16px;
+}

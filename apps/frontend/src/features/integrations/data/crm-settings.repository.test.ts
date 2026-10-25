@@ -6,7 +6,7 @@ import {
   fixtureCrmSettingsRepository,
   httpCrmSettingsRepository,
 } from "./crm-settings.repository";
-import { crmIntegrationFixture } from "./crm-settings.fixtures";
+import { crmIntegrationFixture, withFixtureVariants } from "./crm-settings.fixtures";
 import { crmSettingsFixtureSelection, readCrmIntegration } from "./crm-settings.server";
 
 interface Call {
@@ -209,6 +209,7 @@ test("the fixture switch is explicit: provider:state, anything else is live", ()
   assert.deepEqual(crmSettingsFixtureSelection("salesforce:permission_needed"), {
     provider: "salesforce",
     state: "permission_needed",
+    variants: [],
   });
   assert.equal(crmSettingsFixtureSelection(undefined), null);
   assert.equal(crmSettingsFixtureSelection(""), null);
@@ -222,7 +223,38 @@ test("the fixture switch is ignored in production", () => {
   assert.deepEqual(crmSettingsFixtureSelection("salesforce:ready", "development"), {
     provider: "salesforce",
     state: "ready",
+    variants: [],
   });
+});
+
+test("the fixture switch takes optional variants for the expired and member boards", () => {
+  assert.deepEqual(crmSettingsFixtureSelection("hubspot:ready:expired", "development"), {
+    provider: "hubspot",
+    state: "ready",
+    variants: ["expired"],
+  });
+  assert.deepEqual(crmSettingsFixtureSelection("hubspot:not_connected:member", "development"), {
+    provider: "hubspot",
+    state: "not_connected",
+    variants: ["member"],
+  });
+  assert.deepEqual(
+    crmSettingsFixtureSelection("salesforce:ready:expired:member", "development"),
+    { provider: "salesforce", state: "ready", variants: ["expired", "member"] },
+  );
+  assert.equal(crmSettingsFixtureSelection("hubspot:ready:stale", "development"), null);
+});
+
+test("fixture variants: expired marks the connection expired, member takes manage away", () => {
+  const expired = withFixtureVariants(crmIntegrationFixture("ready", "hubspot"), ["expired"]);
+  assert.equal(expired.connection?.status, "expired");
+  assert.equal(expired.canManage, true);
+  const member = withFixtureVariants(crmIntegrationFixture("not_connected", "hubspot"), [
+    "expired",
+    "member",
+  ]);
+  assert.equal(member.connection, null);
+  assert.equal(member.canManage, false);
 });
 
 test("in production the server read is live even with the switch set", async () => {

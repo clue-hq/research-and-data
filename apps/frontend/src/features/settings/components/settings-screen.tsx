@@ -25,9 +25,7 @@ export function SettingsScreen({
   children: ReactNode;
   dataModelEntityName?: string;
 }) {
-  const staticSection = ["connections", "mcp-server", "integrations"].includes(
-    section,
-  );
+  const staticSection = ["connections", "mcp-server"].includes(section);
   const nestedDataModel = section === "data-model" && dataModelEntityName;
   return (
     <div className={styles.settingsShell}>

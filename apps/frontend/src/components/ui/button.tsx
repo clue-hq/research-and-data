@@ -39,6 +39,35 @@ const primaryVariant = [
   "disabled:shadow-none",
 ].join(" ")
 
+// Settings → Integrations lift (Figma "Action / …" button-sm/secondary): additive, like the two
+// above, so every existing variant keeps its appearance.
+const neutralVariant = [
+  "border-[0.5px]",
+  "[background-color:var(--clue-ds-color-components-button-bg-neutral-default)]",
+  "[border-color:var(--clue-ds-color-components-button-border-neutral-default)]",
+  "[color:var(--clue-ds-color-content-neutral)]",
+  "[box-shadow:0_1px_0_rgb(0_0_0/5%),inset_0_1.5px_0_rgb(255_255_255)]",
+  "hover:[background-color:var(--clue-ds-color-components-button-bg-neutral-hover)]",
+  "active:[background-color:var(--clue-ds-color-components-button-bg-neutral-pressed)]",
+  "active:shadow-none",
+  "disabled:[color:var(--clue-ds-color-content-disabled)]",
+  "disabled:shadow-none",
+].join(" ")
+
+// The design's small button (26px; its label sits in a 2px container, hence the +2px).
+const designSmSize = [
+  "h-[var(--clue-ds-product-component-button-sm-height)]",
+  "gap-[var(--clue-ds-product-component-button-gap)]",
+  "rounded-[var(--clue-ds-product-component-button-sm-radius)]",
+  "px-[calc(var(--clue-ds-product-component-button-sm-padding-inline)+2px)]",
+  "py-[var(--clue-ds-product-component-button-sm-padding-block)]",
+  "[font-family:var(--clue-ds-typography-text-sm-medium-font-family)]",
+  "[font-size:var(--clue-ds-typography-text-sm-medium-font-size)]",
+  "[font-weight:var(--clue-ds-typography-text-sm-medium-font-weight)]",
+  "[line-height:var(--clue-ds-typography-text-sm-medium-line-height)]",
+  "[&_svg:not([class*='size-'])]:size-[var(--clue-ds-product-component-button-sm-icon-size)]",
+].join(" ")
+
 const mdSize = [
   "h-[var(--clue-ds-product-component-button-md-height)]",
   "gap-[var(--clue-ds-product-component-button-gap)]",
@@ -69,6 +98,7 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         transparent: transparentVariant,
         primary: primaryVariant,
+        neutral: neutralVariant,
       },
       size: {
         default:
@@ -83,6 +113,7 @@ const buttonVariants = cva(
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
         md: mdSize,
+        "design-sm": designSmSize,
       },
     },
     defaultVariants: {

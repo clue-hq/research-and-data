@@ -8,7 +8,8 @@ import styles from "./crm-callback.module.css";
  * Where Composio returns the browser after the CRM's consent screen (R-3.10).
  *
  * It reports the result to the backend once; the backend verifies the connection and wakes the
- * chat that showed the connect card, so this tab only has to say what happened.
+ * chat that showed the connect card (or Settings refreshes itself), so this tab only has to say
+ * what happened. The copy does not know which one started it.
  */
 export function CrmCallback({
   requestId,
@@ -27,16 +28,16 @@ export function CrmCallback({
       : result.outcome === "connected"
         ? [
             `${result.provider ? CRM_PROVIDER_NAMES[result.provider] : "Your CRM"} is connected`,
-            "You can close this tab. The chat continues by itself.",
+            "You can close this tab. Clue carries on where you started.",
           ]
         : result.outcome === "stale"
           ? [
               "This login is out of date",
-              "A newer connect attempt replaced it, or the CRM is already connected. Close this tab and check the chat.",
+              "A newer connect attempt replaced it, or the CRM is already connected. Close this tab and check where you started.",
             ]
           : [
               "That didn't work",
-              "Close this tab and try again from the chat.",
+              "Close this tab and try again where you started.",
             ];
 
   return (

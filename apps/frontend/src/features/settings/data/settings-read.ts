@@ -5,6 +5,7 @@ import { getSettingsWorkspace } from "./workspace.repository";
 import { getSettingsMembers } from "./members.repository";
 import { getSettingsResearchFields } from "./research-fields.repository";
 import { getPagesSettings } from "./pages.repository";
+import { readCrmIntegration } from "@/features/integrations/data/crm-settings.server";
 import type { ResearchEntity } from "../model/research-fields";
 
 export async function readSettingsSection(section: string, entity?: ResearchEntity) {
@@ -18,6 +19,8 @@ export async function readSettingsSection(section: string, entity?: ResearchEnti
         return { section, data: await getSettingsMembers() } as const;
       case "pages":
         return { section: "pages", data: await getPagesSettings() } as const;
+      case "integrations":
+        return { section: "integrations", data: await readCrmIntegration() } as const;
       case "data-model":
         return entity
           ? { section: "research-fields", data: await getSettingsResearchFields(entity) } as const

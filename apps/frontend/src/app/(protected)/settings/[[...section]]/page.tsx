@@ -14,6 +14,7 @@ import { ResearchFieldsSettings } from "@/features/settings/components/research-
 import { researchEntities } from "@/features/settings/model/research-fields";
 import { BillingSettings } from "@/features/settings/components/billing-settings";
 import { PagesSettings } from "@/features/settings/components/pages-settings";
+import { IntegrationsSettings } from "@/features/settings/components/integrations-settings";
 
 export default async function SettingsPage({
   params,
@@ -89,6 +90,15 @@ export default async function SettingsPage({
           />
         );
         break;
+      case "integrations":
+        content = (
+          <IntegrationsSettings
+            key={session?.principal.workspace_id}
+            integration={result.data}
+            pageWorkspace={session?.principal.workspace_id ?? null}
+          />
+        );
+        break;
       default:
         switch (section) {
           case "billing":
@@ -99,9 +109,7 @@ export default async function SettingsPage({
           default:
             content = (
               <SettingsComingSoon
-                section={
-                  section as "connections" | "mcp-server" | "integrations"
-                }
+                section={section as "connections" | "mcp-server"}
                 connections={staticSettingsSections.connections}
               />
             );

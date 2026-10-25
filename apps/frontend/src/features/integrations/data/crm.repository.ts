@@ -1,4 +1,5 @@
 import { readErrorEnvelope } from "@/features/accounts/data/frontend-mutation";
+import { PAGE_WORKSPACE_HEADER, WORKSPACE_CHANGED } from "@/features/projects/data/chat-api";
 import {
   CompleteResponseSchema,
   ConnectLinkResponseSchema,
@@ -21,20 +22,33 @@ export async function crmErrorCode(response: Response): Promise<string> {
   return (await readErrorEnvelope(response))?.code ?? `HTTP_${response.status}`;
 }
 
-/** A fresh Composio login link for this connect card (links live about ten minutes). */
+/**
+ * A fresh Composio login link for this connect request (links live about ten minutes).
+ * `pageWorkspace` (Settings) names the workspace the page was loaded for, so a click never lands
+ * on a workspace switched to in another tab; that refusal is a `CrmConnectError` with code
+ * `WORKSPACE_CHANGED`.
+ */
 export async function requestConnectLink(
   requestId: string,
   provider: CrmProvider,
   clueFetch: typeof fetch = fetch,
+  pageWorkspace: string | null = null,
 ): Promise<string> {
   const response = await clueFetch(`${CRM_PATH}/connect-link`, {
     method: "POST",
     cache: "no-store",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(pageWorkspace ? { [PAGE_WORKSPACE_HEADER]: pageWorkspace } : {}),
+    },
     body: JSON.stringify({ requestId, provider }),
   });
   if (!response.ok) {
     const code = await crmErrorCode(response);
+    if (code === WORKSPACE_CHANGED) {
+      throw new CrmConnectError("The workspace changed since this page loaded.", code);
+    }
     if (response.status === 403) {
       throw new CrmConnectError("Only a workspace owner or admin can connect the CRM.", code);
     }

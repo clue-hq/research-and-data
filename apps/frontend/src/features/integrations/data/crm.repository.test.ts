@@ -45,3 +45,21 @@ test("an unknown proposal surfaces the backend's code", async () => {
     message: "crm_proposal_not_found",
   });
 });
+
+test("a Settings connect link names the page's workspace and a switched workspace is typed", async () => {
+  let header: string | null = "unset";
+  const answer = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    header = new Headers(init?.headers).get("X-Clue-Page-Workspace");
+    return new Response(JSON.stringify({ redirectUrl: "https://example.test/x", expiresAt: null }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+  assert.equal(await requestConnectLink(REQUEST, "hubspot", answer, "ws_1"), "https://example.test/x");
+  assert.equal(header, "ws_1");
+  await requestConnectLink(REQUEST, "hubspot", answer);
+  assert.equal(header, null);
+  await assert.rejects(
+    requestConnectLink(REQUEST, "hubspot", refusal(409, "WORKSPACE_CHANGED"), "ws_1"),
+    (error: unknown) => error instanceof CrmConnectError && error.code === "WORKSPACE_CHANGED",
+  );
+});

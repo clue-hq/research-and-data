@@ -99,8 +99,10 @@ validation envelope for a bad body.
   (board 07); the backend's `reason` is not shown verbatim (the design words each state itself).
 - `needs_attention` names one field throughout: with `failedField` the title, body and the "Restore …"
   message all name it; without one the deleted item names it, as the board does.
-- Fixtures are explicit only. `CLUE_CRM_SETTINGS_FIXTURE=<provider>:<state>` (server, read in
-  `crm-settings.server.ts` only) serves `crmIntegrationFixture(state, provider)` to the Settings page for
+- Fixtures are explicit only. `CLUE_CRM_SETTINGS_FIXTURE=<provider>:<state>[:expired][:member]`
+  (server, read in `crm-settings.server.ts` only) serves `crmIntegrationFixture(state, provider)`
+  (with `withFixtureVariants`: `expired` marks the connection expired, `member` sets `canManage`
+  false) to the Settings page for
   checking a state; unset, malformed or `NODE_ENV=production` means live, and a failed live read never
   falls back to it. Browser actions stay live in fixture mode. The `not_connected` fixture is worded for
   HubSpot whatever provider is asked, like the backend.

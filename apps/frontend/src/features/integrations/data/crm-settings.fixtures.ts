@@ -125,3 +125,20 @@ export function crmIntegrationFixture(
     askClueProjectId: "prj_fixture",
   };
 }
+
+/** Board variants the research states alone cannot show (`CLUE_CRM_SETTINGS_FIXTURE=<crm>:<state>:<variant>…`). */
+export const CRM_FIXTURE_VARIANTS = ["expired", "member"] as const;
+export type CrmFixtureVariant = (typeof CRM_FIXTURE_VARIANTS)[number];
+
+/** `expired`: the connection expired (boards 05, 07 Expired); `member`: a reader without manage rights. */
+export function withFixtureVariants(
+  integration: CrmIntegration,
+  variants: readonly CrmFixtureVariant[],
+): CrmIntegration {
+  let result = integration;
+  if (variants.includes("expired") && result.connection) {
+    result = { ...result, connection: { ...result.connection, status: "expired" } };
+  }
+  if (variants.includes("member")) result = { ...result, canManage: false };
+  return result;
+}
