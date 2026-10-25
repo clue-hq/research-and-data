@@ -326,7 +326,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # card, the staleness instruction, the limits chapter's retention bullet) re-minted above
     # CRM: `manual-*@v30` (CRM's v29 plus F3's v23 -> v24 changes), `stage0-interview@v57` (v56
     # with its manual paths repointed) and recipe 44. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v84",
+    # v85 (2026-10-25, founder ruling R-14.6): v84's surface, no address added or removed; Clue's
+    # own CRM field "Clue tier" becomes "Clue fit level", so `read_crm_targets@1` is re-pinned at
+    # its new output digest (clue_fit_level), `crm-writing` v7, `stage0-interview@v58` (v57 with
+    # its manual paths repointed), `manual-*@v31` and recipe 45. Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v85",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

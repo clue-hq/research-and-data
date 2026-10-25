@@ -559,7 +559,7 @@ class ProposeClueFieldsSetupTool(Tool):
     name = "propose_clue_fields_setup"
     version = "1"
     model_description = (
-        "Propose setting up Clue's own fields in the connected CRM (Clue tier, research link, "
+        "Propose setting up Clue's own fields in the connected CRM (Clue fit level, research link, "
         "committee role, contact link and Clue id; on Salesforce also a permission set that gives "
         "the connected user access to them). Clue builds the setup itself: give only this "
         "conversation's project_id. A permission card asks the person, and only a workspace owner "

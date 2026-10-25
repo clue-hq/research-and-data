@@ -81,7 +81,9 @@ __all__ = [
 # v83 re-pins `crm-writing` at v6 (possible duplicates marked with the CRM's own actions).
 # v84 adds no tool: it carries F3's workspace text re-minted above CRM (`manual-*@v30`), which
 # tells the agent what each folder keeps and for how long now that a chat's rough work expires.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v84"
+# v85 re-pins `crm-writing` at v7 and `read_crm_targets` at its new output: "Clue tier" is now
+# "Clue fit level" (R-14.6).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v85"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

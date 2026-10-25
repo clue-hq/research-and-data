@@ -853,7 +853,7 @@ def clue_field_gone_message(provider: CrmProvider, field: ClueField) -> str:
 #: :class:`TargetAccount` or :class:`TargetContact`, by the field's key) and the word
 #: ``withheld`` names it by. Clue's possible-duplicate link is set only by a duplicate link.
 _CLUE_TARGETS: Mapping[str, str] = {
-    "clue_tier": "fit",
+    "clue_fit_level": "fit",
     "clue_research_link": "research link",
     "clue_id": "Clue id",
     "clue_committee_role": "buying role",
@@ -1311,7 +1311,7 @@ def _with_values(item: _Item, values: Mapping[str, object]) -> _Item:
 
 
 def _no_fit_reason(account: TargetAccount) -> str:
-    """Why an account has no tier: its fit held back, or none scored in this project."""
+    """Why an account has no tier or fit level: its fit held back, or none scored here."""
     return next(
         (w.split(": ", 1)[1] for w in account.withheld if w.startswith("fit: ")),
         "Clue has no fit for this account in this project",
@@ -1331,7 +1331,7 @@ def _check_company(
             offered: TargetValue | None = (
                 getattr(account, clue.key) if clue.key in _CLUE_TARGETS else None
             )
-            if offered is None and clue.key == "clue_tier":
+            if offered is None and clue.key == "clue_fit_level":
                 return f"{named}: {_no_fit_reason(account)}."
             if offered is None and clue.key in _CLUE_LINKS:
                 return f"{named}: {_LOCAL_LINK}"

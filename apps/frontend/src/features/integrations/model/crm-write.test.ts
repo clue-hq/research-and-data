@@ -382,7 +382,7 @@ function setupSnapshot() {
         always_allow: "",
         selected: true,
         setup_fields: [
-          { object: "Account", label: "Clue tier", type: "Dropdown" },
+          { object: "Account", label: "Clue fit level", type: "Dropdown" },
           { object: "Contact", label: "Clue id", type: "Text" },
         ],
         setup_notes: [SALESFORCE_LINE, "Clue never deletes these; an admin can remove them in Salesforce."],
@@ -406,7 +406,7 @@ test("the setup card lists Clue's fields and what else changes, and offers no Al
   assert.equal(group.kind, "clue_fields_setup");
   assert.deepEqual(
     group.setupFields.map((field) => `${field.object} · ${field.label} (${field.type})`),
-    ["Account · Clue tier (Dropdown)", "Contact · Clue id (Text)"],
+    ["Account · Clue fit level (Dropdown)", "Contact · Clue id (Text)"],
   );
   assert.ok(group.setupNotes.includes(SALESFORCE_LINE));
   // The one change is ticked; Allow sends it and grants nothing.

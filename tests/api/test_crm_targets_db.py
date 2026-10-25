@@ -866,8 +866,8 @@ def test_clues_own_field_values_are_offered_on_both_crms(tmp_path: Path) -> None
 
         hubspot = await _targets(world, settings=PUBLIC)
         (zafran,) = hubspot.accounts
-        assert zafran.clue_tier is not None
-        assert (zafran.clue_tier.value, zafran.clue_tier.claim_ids) == ("tier_2", (fit,))
+        assert zafran.clue_fit_level is not None
+        assert (zafran.clue_fit_level.value, zafran.clue_fit_level.claim_ids) == ("medium", (fit,))
         assert zafran.clue_id is not None and zafran.clue_id.value == str(account)
         assert zafran.clue_research_link is not None
         assert zafran.clue_research_link.value == f"https://app.cluehq.ai/accounts/{account}"
@@ -884,7 +884,8 @@ def test_clues_own_field_values_are_offered_on_both_crms(tmp_path: Path) -> None
         # Salesforce stores the labels of the same options (R-13.2): the role too.
         salesforce = await _targets(world, provider="salesforce", settings=PUBLIC)
         (sf_zafran,) = salesforce.accounts
-        assert sf_zafran.clue_tier is not None and sf_zafran.clue_tier.value == "Tier 2"
+        assert sf_zafran.clue_fit_level is not None
+        assert sf_zafran.clue_fit_level.value == "Medium"
         sf_by_first = {
             c.first_name.value: c for c in salesforce.contacts if c.first_name is not None
         }
@@ -898,6 +899,37 @@ def test_clues_own_field_values_are_offered_on_both_crms(tmp_path: Path) -> None
         assert "buying role: identity not confirmed" in hs_by_first["Weak"].withheld
 
     _run(tmp_path, "cluefields", body)
+
+
+@pytest.mark.parametrize(("provider", "expected"), [("hubspot", "high"), ("salesforce", "High")])
+@_db
+def test_clue_fit_level_is_the_fit_band_in_each_crm(
+    tmp_path: Path, provider: str, expected: str
+) -> None:
+    """R-14.6: read_crm_targets offers Clue's fit level as the account's fit band (``high`` on
+    HubSpot, "High" on Salesforce), never a Clue tier; HubSpot's own ICP tier keeps Tier 1."""
+
+    async def body(conn: Any, world: _World, seeded: Any) -> None:
+        account = await world.account("Zafran Security", "zafran.io")
+        fit = await world.fit("fit", account, 0.9, world.project_id)
+        page = await _targets(world, provider=provider, settings=PUBLIC)
+        (zafran,) = page.accounts
+        assert zafran.clue_fit_level is not None
+        assert (zafran.clue_fit_level.value, zafran.clue_fit_level.claim_ids) == (expected, (fit,))
+        assert not hasattr(zafran, "clue_tier")
+        if provider == "hubspot":
+            assert zafran.hubspot_icp_tier is not None
+            assert zafran.hubspot_icp_tier.value == "tier_1"
+
+        await _connect(conn, world.workspace_id, provider=provider)
+        tool = ReadCrmTargetsTool(settings=PUBLIC, conn_factory=conn_session_factory(conn))
+        inputs = ReadCrmTargetsInput(project_id=world.project_id)
+        refs = (await tool.invoke(inputs, _ctx(conn, world.workspace_id))).references
+        offered = refs["accounts"][0]
+        assert offered["clue_fit_level"]["value"] == expected
+        assert "clue_tier" not in offered
+
+    _run(tmp_path, f"fitlevel-{provider}", body)
 
 
 @pytest.mark.parametrize(
@@ -949,7 +981,7 @@ def test_the_read_says_when_clues_fields_are_not_set_up(tmp_path: Path, provider
         connection = await _connect(conn, world.workspace_id, provider=provider)
         refs = (await tool.invoke(inputs, ctx)).references
         assert refs["clue_fields_note"] == note
-        assert refs["accounts"][0]["clue_tier"] is not None  # still offered
+        assert refs["accounts"][0]["clue_fit_level"] is not None  # still offered
 
         await record_clue_fields(
             conn,

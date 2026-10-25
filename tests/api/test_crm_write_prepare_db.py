@@ -3501,7 +3501,7 @@ def test_a_clue_field_is_refused_until_clues_fields_are_set_up(tmp_path: Path) -
     async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
         world = await _researched(conn, seeded)
         gateway = _FakeCrm(records={"101": {"domain": "zafran.io"}})
-        change = _hubspot_company(world, "101", {"clue_tier": "tier_1"})
+        change = _hubspot_company(world, "101", {"clue_fit_level": "high"})
         expected = [(0, "crm_clue_fields_not_set_up", _NOT_SET_UP.format(crm="HubSpot"))]
 
         never = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
@@ -3513,17 +3513,17 @@ def test_a_clue_field_is_refused_until_clues_fields_are_set_up(tmp_path: Path) -
         assert [(r.index, r.reason_code, r.message) for r in partial.refused] == expected
 
         # Ready, but this field was found missing since: still not set up.
-        await _clue_fields_ready(conn, connection, gone="company.clue_tier")
+        await _clue_fields_ready(conn, connection, gone="company.clue_fit_level")
         gone = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
         assert [(r.index, r.reason_code, r.message) for r in gone.refused] == expected
 
         await _clue_fields_ready(conn, connection)
         ready = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
         assert ready.refused == []
-        (tier,) = ready.changes
-        assert (tier.field, tier.after) == ("clue_tier", "tier_1")
-        assert tier.source_claim_ids == (world.claims["fit"],)
-        assert tier.arguments == {"companyId": "101", "properties": {"clue_tier": "tier_1"}}
+        (fit_level,) = ready.changes
+        assert (fit_level.field, fit_level.after) == ("clue_fit_level", "high")
+        assert fit_level.source_claim_ids == (world.claims["fit"],)
+        assert fit_level.arguments == {"companyId": "101", "properties": {"clue_fit_level": "high"}}
 
     _run(tmp_path, "cluenotready", body)
 
@@ -3552,7 +3552,7 @@ def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path
                     world,
                     "101",
                     {
-                        "clue_tier": "tier_1",
+                        "clue_fit_level": "high",
                         "clue_research_link": link,
                         "clue_id": str(world.zafran),
                     },
@@ -3567,11 +3567,11 @@ def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path
                     clue_entity_id=nick,
                 ),
                 _contact_update("202", {"clue_committee_role": "BLOCKER"}, clue_entity_id=nick),
-                _hubspot_company(world, "102", {"clue_tier": "tier_2"}),
+                _hubspot_company(world, "102", {"clue_fit_level": "medium"}),
                 _hubspot_company(world, "103", {"clue_id": str(world.nick)}),
                 ProposedChange(
                     "HUBSPOT_UPDATE_COMPANY",
-                    {"companyId": "104", "properties": {"clue_tier": "tier_1"}},
+                    {"companyId": "104", "properties": {"clue_fit_level": "high"}},
                     "no account named",
                 ),
             ],
@@ -3585,7 +3585,7 @@ def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path
         ]
         written = {(c.parsed.record_ref, c.field): c for c in batch.changes}
         assert {key: c.after for key, c in written.items()} == {
-            ("101", "clue_tier"): "tier_1",
+            ("101", "clue_fit_level"): "high",
             ("101", "clue_research_link"): link,
             ("101", "clue_id"): str(world.zafran),
             ("201", "clue_committee_role"): "CHAMPION",
@@ -3597,7 +3597,7 @@ def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path
         )
         assert written[("201", "clue_id")].source_claim_ids == ()
         # The value is never named in a refusal.
-        assert all("BLOCKER" not in r.message and "tier_2" not in r.message for r in batch.refused)
+        assert all("BLOCKER" not in r.message and "medium" not in r.message for r in batch.refused)
 
     _run(tmp_path, "cluehubspot", body)
 
@@ -3643,7 +3643,7 @@ def test_salesforce_clue_fields_are_written_through_custom_fields(tmp_path: Path
             [
                 ProposedChange(
                     "SALESFORCE_UPDATE_ACCOUNT",
-                    {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                    {"account_id": "001A", "custom_fields": {"Clue_Fit_Level__c": "High"}},
                     "x",
                     clue_entity_id=str(world.zafran),
                 ),
@@ -3665,9 +3665,9 @@ def test_salesforce_clue_fields_are_written_through_custom_fields(tmp_path: Path
         assert _refusal(batch) == [(2, "crm_personal_data_not_allowed")]
         assert [(c.field, c.after, dict(c.arguments)) for c in batch.changes] == [
             (
-                "Clue_Tier__c",
-                "Tier 1",
-                {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                "Clue_Fit_Level__c",
+                "High",
+                {"account_id": "001A", "custom_fields": {"Clue_Fit_Level__c": "High"}},
             ),
             (
                 "Clue_Committee_Role__c",
@@ -3689,7 +3689,7 @@ def test_salesforce_clue_fields_are_written_through_custom_fields(tmp_path: Path
             [
                 ProposedChange(
                     "SALESFORCE_UPDATE_ACCOUNT",
-                    {"account_id": "001A", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                    {"account_id": "001A", "custom_fields": {"Clue_Fit_Level__c": "High"}},
                     "x",
                     clue_entity_id=str(world.zafran),
                 )
@@ -3873,23 +3873,24 @@ def test_a_clue_field_the_crm_no_longer_describes_is_marked_gone(tmp_path: Path)
         world = await _researched(conn, seeded)
         await _clue_fields_ready(conn, connection)
         gateway = _FakeCrm(
-            records={"101": {"domain": "zafran.io"}}, without_fields=frozenset({"clue_tier"})
+            records={"101": {"domain": "zafran.io"}}, without_fields=frozenset({"clue_fit_level"})
         )
         batch = await _prepare_batch(
             conn,
             gateway,
             connection,
             proposal_id,
-            [_hubspot_company(world, "101", {"clue_tier": "tier_1"})],
+            [_hubspot_company(world, "101", {"clue_fit_level": "high"})],
         )
         assert [(r.reason_code, r.message) for r in batch.refused] == [
             (
                 "crm_clue_fields_not_set_up",
-                "Clue's field Clue tier no longer exists in HubSpot; set up Clue's fields again.",
+                "Clue's field Clue fit level no longer exists in HubSpot; set up Clue's fields "
+                "again.",
             )
         ]
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
         assert state is not None and state.status == "gone"
-        assert state.gone_names == ("companies.clue_tier",)
+        assert state.gone_names == ("companies.clue_fit_level",)
 
     _run(tmp_path, "cluedescribegone", body)

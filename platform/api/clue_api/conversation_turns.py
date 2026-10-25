@@ -229,7 +229,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # moves with `head-of-abm@v83` (`crm-writing` v6, `stage0-interview` v56, `manual-*@v29`).
 # Revision 44 (F3 merged onto CRM Phase 4, 2026-10-25) admits and removes no address: it moves
 # with `head-of-abm@v84` (F3's workspace text, `stage0-interview` v57, `manual-*@v30`).
-CONVERSATION_RECIPE_VERSION = 44
+# Revision 45 (founder ruling R-14.6, 2026-10-25) admits and removes no address: it moves with
+# `head-of-abm@v85` ("Clue fit level": `crm-writing` v7, `stage0-interview` v58, `manual-*@v31`).
+CONVERSATION_RECIPE_VERSION = 45
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

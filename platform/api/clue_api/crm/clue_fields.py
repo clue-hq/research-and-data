@@ -121,8 +121,9 @@ HUBSPOT_DUPLICATE_LABEL = HubSpotAssociationLabel(
 )
 SALESFORCE_PERMISSION_SET = SalesforcePermissionSet(name="Clue_Fields", label="Clue fields")
 
-#: Tier labels, best first; HubSpot stores ``tier_1``… (as its own ICP tier does, R-12.1).
-_TIERS = ("Tier 1", "Tier 2", "Tier 3")
+#: Fit levels, best first: the fit bands the accounts table shows (R-14.6). HubSpot stores the
+#: lowercase value (``high``…), Salesforce the label.
+_FIT_LEVELS = ("High", "Medium", "Low")
 #: Committee roles in R-12.6's order, with HubSpot's buying-role values.
 _ROLES = (
     ("CHAMPION", "Champion"),
@@ -166,7 +167,7 @@ def _salesforce(
     relationship_name: str | None = None,
 ) -> ClueField:
     """A Salesforce field; its API name is the key in Title_Case with ``__c``
-    (``clue_tier`` → ``Clue_Tier__c``)."""
+    (``clue_fit_level`` → ``Clue_Fit_Level__c``)."""
     return ClueField(
         key=key,
         object=obj,
@@ -183,18 +184,17 @@ def _salesforce(
     )
 
 
-_HUBSPOT_TIERS = tuple(
-    ClueFieldOption(f"tier_{n}", label) for n, label in enumerate(_TIERS, start=1)
-)
+_HUBSPOT_FIT_LEVELS = tuple(ClueFieldOption(label.lower(), label) for label in _FIT_LEVELS)
 _HUBSPOT_ROLES = tuple(ClueFieldOption(value, label) for value, label in _ROLES)
-_SALESFORCE_TIERS = tuple(ClueFieldOption(label, label) for label in _TIERS)
+_SALESFORCE_FIT_LEVELS = tuple(ClueFieldOption(label, label) for label in _FIT_LEVELS)
 _SALESFORCE_ROLES = tuple(ClueFieldOption(label, label) for _, label in _ROLES)
 
-#: Clue's own fields per provider (R-13.2). Company: tier, research link, Clue id; contact:
-#: committee role, contact link, Clue id; Salesforce also the possible-duplicate lookup (R-13.5).
+#: Clue's own fields per provider (R-13.2). Company: fit level (R-14.6), research link, Clue id;
+#: contact: committee role, contact link, Clue id; Salesforce also the possible-duplicate lookup
+#: (R-13.5).
 CLUE_FIELDS: Mapping[CrmProvider, tuple[ClueField, ...]] = {
     "hubspot": (
-        _hubspot("clue_tier", "company", "Clue tier", options=_HUBSPOT_TIERS),
+        _hubspot("clue_fit_level", "company", "Clue fit level", options=_HUBSPOT_FIT_LEVELS),
         _hubspot("clue_research_link", "company", "Clue research link"),
         _hubspot("clue_id", "company", "Clue id"),
         _hubspot("clue_committee_role", "contact", "Clue committee role", options=_HUBSPOT_ROLES),
@@ -202,7 +202,13 @@ CLUE_FIELDS: Mapping[CrmProvider, tuple[ClueField, ...]] = {
         _hubspot("clue_id", "contact", "Clue id"),
     ),
     "salesforce": (
-        _salesforce("clue_tier", "company", "Clue tier", "Picklist", options=_SALESFORCE_TIERS),
+        _salesforce(
+            "clue_fit_level",
+            "company",
+            "Clue fit level",
+            "Picklist",
+            options=_SALESFORCE_FIT_LEVELS,
+        ),
         _salesforce("clue_research_link", "company", "Clue research link", "Url"),
         _salesforce("clue_id", "company", "Clue id", "Text", length=64, external_id=True),
         _salesforce(

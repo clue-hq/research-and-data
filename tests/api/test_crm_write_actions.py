@@ -459,7 +459,7 @@ def test_salesforce_batch_names_each_record_once() -> None:
     items = [
         {"account_id": "001jV00000HsWdp", "custom_fields": {"Clue_Id__c": "c-1"}},
         {"account_id": "001B", "industry": "Banking"},
-        {"account_id": "001jV00000HsWdpQAF", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+        {"account_id": "001jV00000HsWdpQAF", "custom_fields": {"Clue_Fit_Level__c": "High"}},
     ]
     assert batch.record_key("001jV00000HsWdpQAF") == batch.record_key("001jV00000HsWdp")
     assert batch.build(items)["records"] == [
@@ -467,7 +467,7 @@ def test_salesforce_batch_names_each_record_once() -> None:
             "attributes": {"type": "Account"},
             "Id": "001jV00000HsWdp",
             "Clue_Id__c": "c-1",
-            "Clue_Tier__c": "Tier 1",
+            "Clue_Fit_Level__c": "High",
         },
         {"attributes": {"type": "Account"}, "Id": "001B", "Industry": "Banking"},
     ]

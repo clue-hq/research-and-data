@@ -85,7 +85,7 @@ export interface CrmWriteGroup {
   reason: string;
   records: readonly CrmWriteRecord[];
   alwaysAllowPhrase: string;
-  /** Only on the setup of Clue's own fields: each field it creates ("Account", "Clue tier"). */
+  /** Only on the setup of Clue's own fields: each field it creates ("Account", "Clue fit level"). */
   setupFields: readonly { object: string; label: string; type: string }[];
   /** Only on the setup of Clue's own fields: what else changes in the CRM, one line each. */
   setupNotes: readonly string[];

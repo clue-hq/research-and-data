@@ -3192,7 +3192,7 @@ _HUBSPOT_NO_PROPERTY = (
     '\\"error\\":\\"PROPERTY_DOESNT_EXIST\\",\\"name\\":\\"{name}\\"}]",'
     '"correlationId":"c-1","category":"VALIDATION_ERROR"}'
 )
-_GONE_TIER = "Clue's field Clue tier no longer exists in {crm}; set up Clue's fields again."
+_GONE_TIER = "Clue's field Clue fit level no longer exists in {crm}; set up Clue's fields again."
 
 
 def _clue_company(world: Any, record: str, fields: Mapping[str, object]) -> ProposedChange:
@@ -3216,10 +3216,12 @@ def test_a_clue_field_hubspot_no_longer_has_is_marked_gone(tmp_path: Path) -> No
             seeded,
             connection,
             gateway,
-            _clue_company(world, "101", {"clue_tier": "tier_1"}),
+            _clue_company(world, "101", {"clue_fit_level": "high"}),
             _clue_company(world, "102", {"clue_id": str(world.zafran)}),
         )
-        refusal = ExecuteResult(False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_tier"))
+        refusal = ExecuteResult(
+            False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_fit_level")
+        )
         # The batch is refused whole, then each change is sent alone (the clue_id one lands).
         gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [refusal, refusal]
 
@@ -3233,7 +3235,7 @@ def test_a_clue_field_hubspot_no_longer_has_is_marked_gone(tmp_path: Path) -> No
         assert logged["102"]["status"] == "succeeded"
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
         assert state is not None and state.status == "gone"
-        assert state.gone_names == ("companies.clue_tier",)
+        assert state.gone_names == ("companies.clue_fit_level",)
 
     _run(tmp_path, "cluegonehs", body)
 
@@ -3244,10 +3246,14 @@ def test_a_refusal_naming_another_field_does_not_mark_a_clue_field_gone(tmp_path
         await _clue_fields_ready(conn, connection)
         gateway = _WritingCrm(records={"101": {"domain": "zafran.io"}})
         proposal_id = await _propose(
-            conn, seeded, connection, gateway, _clue_company(world, "101", {"clue_tier": "tier_1"})
+            conn,
+            seeded,
+            connection,
+            gateway,
+            _clue_company(world, "101", {"clue_fit_level": "high"}),
         )
         gateway.failures["HUBSPOT_UPDATE_COMPANIES"] = [
-            ExecuteResult(False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_tier_old"))
+            ExecuteResult(False, None, _HUBSPOT_NO_PROPERTY.replace("{name}", "clue_fit_level_old"))
         ]
 
         await _handle(_handler(conn, tmp_path, gateway), connection)
@@ -3267,15 +3273,15 @@ def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) ->
         await _clue_fields_ready(conn, connection)
         gateway = _WritingCrm(
             records={
-                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None},
-                "001B": {"Website": "https://zafran.io", "Clue_Tier__c": None},
+                "001A": {"Website": "https://zafran.io", "Clue_Fit_Level__c": None},
+                "001B": {"Website": "https://zafran.io", "Clue_Fit_Level__c": None},
             }
         )
 
         def tier(record: str) -> ProposedChange:
             return ProposedChange(
                 "SALESFORCE_UPDATE_ACCOUNT",
-                {"account_id": record, "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+                {"account_id": record, "custom_fields": {"Clue_Fit_Level__c": "High"}},
                 "x",
                 clue_entity_id=str(world.zafran),
             )
@@ -3283,7 +3289,7 @@ def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) ->
         proposal_id = await _propose(conn, seeded, connection, gateway, tier("001A"))
         error = {
             "statusCode": "INVALID_FIELD",
-            "message": "No such column 'Clue_Tier__c' on sobject of type Account",
+            "message": "No such column 'Clue_Fit_Level__c' on sobject of type Account",
             "fields": [],
         }
         gateway.failures["SALESFORCE_PATCH_COMPOSITE_SOBJECTS"] = [
@@ -3300,7 +3306,7 @@ def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) ->
         assert logged["001A"]["status"] == "failed"
         assert logged["001A"]["crm_message"] == _GONE_TIER.format(crm="Salesforce")
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
-        assert state is not None and state.gone_names == ("Account.Clue_Tier__c",)
+        assert state is not None and state.gone_names == ("Account.Clue_Fit_Level__c",)
 
         # The read before sending meets the missing column too: the same, without a send.
         await _clue_fields_ready(conn, connection)
@@ -3309,8 +3315,8 @@ def test_a_clue_field_salesforce_no_longer_has_is_marked_gone(tmp_path: Path) ->
             ExecuteResult(
                 False,
                 None,
-                "SELECT Id, Clue_Tier__c FROM Account WHERE Id IN ('001B')\n"
-                "ERROR at Row:1:Column:12\nNo such column 'Clue_Tier__c' on entity 'Account'. "
+                "SELECT Id, Clue_Fit_Level__c FROM Account WHERE Id IN ('001B')\n"
+                "ERROR at Row:1:Column:12\nNo such column 'Clue_Fit_Level__c' on entity 'Account'. "
                 "(INVALID_FIELD)",
             )
         ]
@@ -3398,7 +3404,11 @@ def test_two_fields_of_one_salesforce_record_are_one_composite_entry(tmp_path: P
         await _clue_fields_ready(conn, connection)
         gateway = _WritingCrm(
             records={
-                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None, "Clue_Id__c": None}
+                "001A": {
+                    "Website": "https://zafran.io",
+                    "Clue_Fit_Level__c": None,
+                    "Clue_Id__c": None,
+                }
             }
         )
         proposal_id = await _propose(
@@ -3410,7 +3420,7 @@ def test_two_fields_of_one_salesforce_record_are_one_composite_entry(tmp_path: P
                 "SALESFORCE_UPDATE_ACCOUNT",
                 {
                     "account_id": "001A",
-                    "custom_fields": {"Clue_Tier__c": "Tier 1", "Clue_Id__c": str(world.zafran)},
+                    "custom_fields": {"Clue_Fit_Level__c": "High", "Clue_Id__c": str(world.zafran)},
                 },
                 "Clue's fields",
                 clue_entity_id=str(world.zafran),
@@ -3420,7 +3430,7 @@ def test_two_fields_of_one_salesforce_record_are_one_composite_entry(tmp_path: P
         await _handle(_handler(conn, tmp_path, gateway), connection)
 
         assert await _field_statuses(conn, proposal_id) == {
-            "Clue_Tier__c": "succeeded",
+            "Clue_Fit_Level__c": "succeeded",
             "Clue_Id__c": "succeeded",
         }
         (write,) = gateway.writes
@@ -3428,7 +3438,7 @@ def test_two_fields_of_one_salesforce_record_are_one_composite_entry(tmp_path: P
         (entry,) = write[1]["records"]
         assert entry["Id"] == "001A"
         assert {k: v for k, v in entry.items() if k not in ("attributes", "Id")} == {
-            "Clue_Tier__c": "Tier 1",
+            "Clue_Fit_Level__c": "High",
             "Clue_Id__c": str(world.zafran),
         }
 
@@ -3473,7 +3483,7 @@ def test_a_missing_salesforce_field_named_in_the_repeated_query_is_not_a_clue_fi
     tmp_path: Path,
 ) -> None:
     """Final fix pass item 3: Salesforce's INVALID_FIELD repeats the whole query, so an answer
-    about another missing field also names Clue_Tier__c. Only the field inside "No such column"
+    about another missing field also names Clue_Fit_Level__c. Only the field inside "No such column"
     is the one missing."""
 
     async def body(conn: Any, seeded: Any, connection: CrmConnection) -> None:
@@ -3481,7 +3491,7 @@ def test_a_missing_salesforce_field_named_in_the_repeated_query_is_not_a_clue_fi
         await _clue_fields_ready(conn, connection)
         gateway = _WritingCrm(
             records={
-                "001A": {"Website": "https://zafran.io", "Clue_Tier__c": None, "Tier__c": None}
+                "001A": {"Website": "https://zafran.io", "Clue_Fit_Level__c": None, "Tier__c": None}
             }
         )
         proposal_id = await _propose(
@@ -3493,7 +3503,7 @@ def test_a_missing_salesforce_field_named_in_the_repeated_query_is_not_a_clue_fi
                 "SALESFORCE_UPDATE_ACCOUNT",
                 {
                     "account_id": "001A",
-                    "custom_fields": {"Clue_Tier__c": "Tier 1", "Tier__c": "T1"},
+                    "custom_fields": {"Clue_Fit_Level__c": "High", "Tier__c": "T1"},
                 },
                 "x",
                 clue_entity_id=str(world.zafran),
@@ -3503,7 +3513,7 @@ def test_a_missing_salesforce_field_named_in_the_repeated_query_is_not_a_clue_fi
             ExecuteResult(
                 False,
                 None,
-                "SELECT Id, Clue_Tier__c, Tier__c FROM Account WHERE Id IN ('001A')\n"
+                "SELECT Id, Clue_Fit_Level__c, Tier__c FROM Account WHERE Id IN ('001A')\n"
                 "ERROR at Row:1:Column:27\nNo such column 'Tier__c' on entity 'Account'. "
                 "(INVALID_FIELD)",
             )

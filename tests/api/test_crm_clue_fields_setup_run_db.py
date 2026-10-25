@@ -423,16 +423,16 @@ def test_hubspot_clean_run_creates_everything_in_order_and_records_ready(tmp_pat
         assert [(a["objectType"], a["name"]) for a in made] == [
             (f.crm_object, f.crm_name) for f in fields
         ]
-        tier = made[0]
-        assert (tier["type"], tier["fieldType"], tier["groupName"]) == (
+        fit_level = made[0]
+        assert (fit_level["type"], fit_level["fieldType"], fit_level["groupName"]) == (
             "enumeration",
             "select",
             "clue",
         )
-        assert [(o["value"], o["label"], o["displayOrder"]) for o in tier["options"]] == [
-            ("tier_1", "Tier 1", 0),
-            ("tier_2", "Tier 2", 1),
-            ("tier_3", "Tier 3", 2),
+        assert [(o["value"], o["label"], o["displayOrder"]) for o in fit_level["options"]] == [
+            ("high", "High", 0),
+            ("medium", "Medium", 1),
+            ("low", "Low", 2),
         ]
         # R-13.7: the Clue id is unique; nothing else is.
         assert [a["name"] for a in made if a.get("hasUniqueValue")] == ["clue_id", "clue_id"]
@@ -525,12 +525,9 @@ def test_salesforce_clean_run_grants_access_and_proves_it_before_ready(tmp_path:
             (f.crm_object, f.crm_name) for f in fields
         ]
         by_name = {a["field_api_name"] + "@" + a["object_api_name"]: a for a in made}
-        assert by_name["Clue_Tier__c@Account"]["field_type"] == "Picklist"
-        assert [v["full_name"] for v in by_name["Clue_Tier__c@Account"]["picklist_values"]] == [
-            "Tier 1",
-            "Tier 2",
-            "Tier 3",
-        ]
+        assert by_name["Clue_Fit_Level__c@Account"]["field_type"] == "Picklist"
+        fit_level = by_name["Clue_Fit_Level__c@Account"]
+        assert [v["full_name"] for v in fit_level["picklist_values"]] == ["High", "Medium", "Low"]
         clue_id = by_name["Clue_Id__c@Contact"]
         assert (clue_id["field_type"], clue_id["length"], clue_id["external_id"]) == (
             "Text",
@@ -557,7 +554,7 @@ def test_salesforce_clean_run_grants_access_and_proves_it_before_ready(tmp_path:
         )
         assert crm.assignments == {(ps_id, SF_USER)}
         account_read = crm.calls[-2][1]["query"]
-        assert account_read.startswith("SELECT Id, Clue_Tier__c, Clue_Research_Link__c")
+        assert account_read.startswith("SELECT Id, Clue_Fit_Level__c, Clue_Research_Link__c")
         assert "FROM Account" in account_read
 
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
@@ -654,7 +651,7 @@ def test_ready_needs_the_read_back_to_see_every_field(tmp_path: Path) -> None:
         assert write.status == "failed"
         assert write.crm_message == (
             "Salesforce still hides Clue's fields from the connected user after the permission "
-            "set: No such column 'Clue_Tier__c' on entity 'Account'. (INVALID_FIELD)."
+            "set: No such column 'Clue_Fit_Level__c' on entity 'Account'. (INVALID_FIELD)."
         )
         state = await clue_fields_state(conn, connection_id=connection.connection_id)
         assert state is not None
@@ -695,7 +692,7 @@ def test_a_card_for_another_field_set_is_never_run(tmp_path: Path) -> None:
         proposal_id = await _queued_setup(conn, seeded, connection)
         await conn.execute(
             text("UPDATE crm_write SET arguments = CAST(:args AS jsonb) WHERE proposal_id = :id"),
-            {"args": json.dumps({"fields": ["companies.clue_tier"]}), "id": proposal_id},
+            {"args": json.dumps({"fields": ["companies.clue_fit_level"]}), "id": proposal_id},
         )
         crm = _SchemaCrm()
         await _execute(conn, tmp_path, connection, crm)
@@ -884,7 +881,7 @@ def test_a_partial_run_never_shrinks_the_record(tmp_path: Path) -> None:
         await conn.execute(
             text(
                 "UPDATE crm_clue_fields SET status = 'gone', gone_at = now(), "
-                "gone_names = ARRAY['Account.Clue_Tier__c']"
+                "gone_names = ARRAY['Account.Clue_Fit_Level__c']"
             )
         )
         await _queued_setup(conn, seeded, connection)
@@ -902,7 +899,7 @@ def test_a_partial_run_never_shrinks_the_record(tmp_path: Path) -> None:
         assert state.created_names == tuple(f.qualified_name for f in fields)
         assert state.permission_set_id == "0PSjV0000000000"
         # Only a run that reaches ready replaces the gone state.
-        assert (state.status, state.gone_names) == ("gone", ("Account.Clue_Tier__c",))
+        assert (state.status, state.gone_names) == ("gone", ("Account.Clue_Fit_Level__c",))
 
     _run(tmp_path, "sf-no-shrink", body, "salesforce")
 
@@ -922,8 +919,8 @@ def test_a_setup_that_runs_out_of_attempts_names_the_step_it_stopped_at(tmp_path
         write = await _setup_write(conn, proposal_id)
         assert (write.status, write.retryable, write.attempts) == ("failed", True, 5)
         assert write.crm_message == (
-            'Setting up Clue\'s fields stopped at the field "Clue tier" on companies: You have '
-            "reached your ten secondly limit. Propose the setup again to finish it."
+            'Setting up Clue\'s fields stopped at the field "Clue fit level" on companies: '
+            "You have reached your ten secondly limit. Propose the setup again to finish it."
         )
         assert _steps(write) == [
             ('the property group "Clue" on companies', "created"),

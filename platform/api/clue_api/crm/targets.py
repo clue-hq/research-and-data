@@ -26,8 +26,8 @@ Contacts are capped per page (``contacts_limit``); ``total_contacts`` says how m
 committees hold, and ``contacts_note`` says so in words when some were cut.
 
 Clue's own fields (Phase 4, R-13.2) are offered on both CRMs in the provider's own values: the
-tier from the same fit (R-12.1), the committee role from the same persona as the buying role
-(R-12.6), Clue's id, and the links to the account and contact pages, built from
+fit level, the band of the same fit (R-14.6), the committee role from the same persona as the
+buying role (R-12.6), Clue's id, and the links to the account and contact pages, built from
 ``CLUE_APP_ORIGIN`` and never offered when that is a local address (R-13.6). Whether the
 connection has Clue's fields set up is the write's check, not this read's.
 """
@@ -140,10 +140,10 @@ class TargetAccount:
     crm_record_id: str | None
     #: The fit Clue holds but may not use, and why ("fit: rejected").
     withheld: tuple[str, ...] = ()
-    #: Clue's own fields (R-13.2), in the provider's values: the tier of the project's fit
-    #: (offered with a provider only), Clue's id, and the link to the account's page in Clue
-    #: (``None`` while Clue runs on a local address, R-13.6).
-    clue_tier: TargetValue | None = None
+    #: Clue's own fields (R-13.2), in the provider's values: the fit level, the band of the
+    #: project's fit (R-14.6; offered with a provider only), Clue's id, and the link to the
+    #: account's page in Clue (``None`` while Clue runs on a local address, R-13.6).
+    clue_fit_level: TargetValue | None = None
     clue_id: TargetValue | None = None
     clue_research_link: TargetValue | None = None
 
@@ -242,7 +242,7 @@ def clue_app_link(settings: Settings, path: str) -> str | None:
 
 def _clue_value(provider: CrmProvider, obj: ClueObject, key: str, hubspot_value: str) -> str:
     """A Clue picklist field's value on ``provider``: HubSpot stores the option's value
-    (``tier_1``, ``CHAMPION``), Salesforce its label ("Tier 1", "Champion")."""
+    (``high``, ``CHAMPION``), Salesforce its label ("High", "Champion")."""
     if provider == "hubspot":
         return hubspot_value
     labels = {o.value: o.label for o in clue_field("hubspot", obj, key).options}
@@ -359,11 +359,12 @@ async def project_targets(
                 ),
                 crm_record_id=account_links.get(account_id),
                 withheld=fit_withheld.get(account_id, ()),
-                clue_tier=(
+                clue_fit_level=(
                     TargetValue(
-                        _clue_value(provider, "company", "clue_tier", tier), (UUID(str(fit.id)),)
+                        _clue_value(provider, "company", "clue_fit_level", band.lower()),
+                        (UUID(str(fit.id)),),
                     )
-                    if provider is not None and tier is not None and fit is not None
+                    if provider is not None and band is not None and fit is not None
                     else None
                 ),
                 clue_id=TargetValue(account_id, ()),

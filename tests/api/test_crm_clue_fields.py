@@ -21,7 +21,7 @@ def _names(provider: str) -> set[tuple[str, str]]:
 
 def test_hubspot_fields() -> None:
     assert _names("hubspot") == {
-        ("company", "clue_tier"),
+        ("company", "clue_fit_level"),
         ("company", "clue_research_link"),
         ("company", "clue_id"),
         ("contact", "clue_committee_role"),
@@ -34,13 +34,8 @@ def test_hubspot_fields() -> None:
         assert field.group == "clue"
         assert field.crm_object == {"company": "companies", "contact": "contacts"}[field.object]
 
-    tier = clue_field("hubspot", "company", "clue_tier")
-    assert (tier.type, tier.field_type) == ("enumeration", "select")
-    assert [(o.value, o.label) for o in tier.options] == [
-        ("tier_1", "Tier 1"),
-        ("tier_2", "Tier 2"),
-        ("tier_3", "Tier 3"),
-    ]
+    fit_level = clue_field("hubspot", "company", "clue_fit_level")
+    assert (fit_level.type, fit_level.field_type) == ("enumeration", "select")
     role = clue_field("hubspot", "contact", "clue_committee_role")
     assert [(o.value, o.label) for o in role.options] == [
         ("CHAMPION", "Champion"),
@@ -66,7 +61,7 @@ def test_hubspot_fields() -> None:
 
 def test_salesforce_fields() -> None:
     assert _names("salesforce") == {
-        ("company", "Clue_Tier__c"),
+        ("company", "Clue_Fit_Level__c"),
         ("company", "Clue_Research_Link__c"),
         ("company", "Clue_Id__c"),
         ("contact", "Clue_Committee_Role__c"),
@@ -78,13 +73,7 @@ def test_salesforce_fields() -> None:
         assert field.crm_object == {"company": "Account", "contact": "Contact"}[field.object]
         assert field.group is None
 
-    tier = clue_field("salesforce", "company", "Clue_Tier__c")
-    assert tier.type == "Picklist"
-    assert [(o.value, o.label) for o in tier.options] == [
-        ("Tier 1", "Tier 1"),
-        ("Tier 2", "Tier 2"),
-        ("Tier 3", "Tier 3"),
-    ]
+    assert clue_field("salesforce", "company", "Clue_Fit_Level__c").type == "Picklist"
     role = clue_field("salesforce", "contact", "Clue_Committee_Role__c")
     assert [o.value for o in role.options] == [
         "Champion",
@@ -128,3 +117,24 @@ def test_qualified_names_tell_the_two_clue_ids_apart() -> None:
     for fields in CLUE_FIELDS.values():
         names = [f.qualified_name for f in fields]
         assert len(names) == len(set(names))
+
+
+def test_clue_fields_name_fit_level() -> None:
+    """R-14.6: Clue's company field is its fit level, the fit band the accounts table shows
+    (High / Medium / Low), labelled "Clue fit level" in both CRMs; no Clue tier is left."""
+    hubspot = clue_field("hubspot", "company", "clue_fit_level")
+    assert hubspot.label == "Clue fit level"
+    assert [(o.value, o.label) for o in hubspot.options] == [
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+    salesforce = clue_field("salesforce", "company", "Clue_Fit_Level__c")
+    assert salesforce.label == "Clue fit level"
+    assert [(o.value, o.label) for o in salesforce.options] == [
+        ("High", "High"),
+        ("Medium", "Medium"),
+        ("Low", "Low"),
+    ]
+    for provider in ("hubspot", "salesforce"):
+        assert not any("tier" in f.crm_name.lower() for f in CLUE_FIELDS[provider])  # type: ignore[index]

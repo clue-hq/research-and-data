@@ -569,7 +569,7 @@ def test_a_create_carrying_a_wrong_or_unowned_clue_value_is_refused(tmp_path: Pa
                 ),
                 ProposedChange(
                     "HUBSPOT_CREATE_COMPANY",
-                    {"name": "Zafran Security", "domain": "zafran.io", "clue_tier": "tier_1"},
+                    {"name": "Zafran Security", "domain": "zafran.io", "clue_fit_level": "high"},
                     "x",  # no Clue account named
                 ),
             ],
