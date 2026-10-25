@@ -548,3 +548,9 @@ All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integrati
   **Salesforce Partner Business Org** (needed for installs in customers' production orgs), promote a
   package version to released, HubSpot Marketplace listing before install 25, privacy policy and terms
   links on both apps, Zero Data Retention on in Composio.
+- **R-14.5 (2026-10-25, founder)** **A reconnect to the same CRM account keeps its connection.**
+  Completing a connection asks the CRM which account it is (HubSpot portal id, Salesforce org id) and
+  stores it; the same account makes the earlier connection active again with the new grant, so undo,
+  Clue's fields, list and record links carry on, and waiting cards stay open. Another account, or one
+  that cannot be identified, is a new connection (today's switch). A separate "CRM account" table that
+  connections point to was considered and kept in reserve for when a workspace can hold several CRMs.

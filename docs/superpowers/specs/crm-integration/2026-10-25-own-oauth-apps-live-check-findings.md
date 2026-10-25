@@ -48,6 +48,12 @@ connection.
   other (`de3afdb2…`) went through. Code path: `agent_turn_fleet_wiring.py:740` →
   `project_library.py:607` → `arv2/project_documents.py:463`. Lock order between the project row and
   a row the other turn holds is not the same in both turns. Owner: the F3 agent-workspace lane.
+  **Fixed (founder asked to fix it here) `2e367467b`:** `lock_project` takes `FOR NO KEY UPDATE`, which still serializes every
+  writer that takes it but does not conflict with the key-share lock a foreign-key insert holds
+  (the pin's FK to `project`). Taking the lock earlier instead would hang: the artifact store binds
+  artifacts to the project on its own connection. Regression test
+  `test_two_turns_that_each_reference_the_project_both_get_its_lock`. **Re-checked live:** the same
+  scenario (two Garner chats woken by one Salesforce reconnect) — both turns finished, no deadlock.
 - **D-2 — A reconnect to the same CRM loses undo of every earlier Clue change (CRM, Important).**
   `_reversed_writes` only accepts writes made on the current `connection_id`. A reconnect (expired
   token, or the move to Clue's own apps) creates a new connection row for the same org/portal, so
@@ -57,6 +63,16 @@ connection.
   workaround. Suggested fix: treat a new connection to the **same external account** (same Salesforce
   org id / HubSpot portal id) as the same identity for undo, lists, record links and Clue fields; a
   switch to a different org/portal keeps today's behaviour. Needs a ruling.
+  **Fixed `dc2627ae2`:** completing a connection asks the CRM who it is (`HUBSPOT_WHO_AM_I`
+  `portal_id`, `SALESFORCE_WHO_AM_I` `organization_id`) and stores it in `external_account_id`;
+  the same account reuses its connection (status back to active, new grant), another or an
+  unidentified account is a new connection. Founder approved the approach 2026-10-25.
+  **Re-checked live:** Garner's expired Salesforce connection `34845800…` came back `active` on
+  reconnect with the new grant and its org id; no new row.
+- **D-5 — A pre-existing test failure on the merged branch (not CRM, not D-1).**
+  `tests/api/test_project_context_files_db.py::test_status_facts_are_workspace_scoped_and_keep_person_only_accounts`
+  fails with an `arv2_job_run_scope` foreign-key violation while seeding an `arv2_research_job`,
+  with or without the D-1 change. Owner: whoever owns that test (ARV2 / F3 merge).
 - **D-3 — The first reconnect turn failed before the migration (setup, not a defect).** The branch
   had moved to the merged code while the DB was still on Phase 4's head; every turn failed on
   `project_library_epoch`. Fixed by migrating; noted so a lane that pulls the merge migrates first.
