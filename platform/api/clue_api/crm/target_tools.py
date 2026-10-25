@@ -24,7 +24,7 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 from clue_agents.manual import tool_manual_link
-from clue_api.crm.clue_fields import clue_fields_state
+from clue_api.crm.clue_fields import clue_fields_set_up, clue_fields_state
 from clue_api.crm.composio_gateway import (
     ComposioError,
     ComposioGateway,
@@ -226,7 +226,7 @@ class ReadCrmTargetsTool(Tool):
             clue_fields_note=(
                 f"Clue's fields are not set up in {_CRM_NAMES[active.provider]}; "
                 "propose_clue_fields_setup first."
-                if active is not None and (state is None or state.status != "ready")
+                if active is not None and not clue_fields_set_up(state)
                 else None
             ),
         )

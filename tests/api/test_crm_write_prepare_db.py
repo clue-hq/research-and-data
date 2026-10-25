@@ -3488,6 +3488,20 @@ async def _clue_fields_ready(
         )
 
 
+async def _ready_before_fit_level(conn: Any, connection: Any, provider: str) -> None:
+    """A setup made ``ready`` before R-14.6: Clue's company field was "Clue tier", so the record
+    names it and not the current fit-level field (the test CRMs are in this state)."""
+    current = {"hubspot": "companies.clue_fit_level", "salesforce": "Account.Clue_Fit_Level__c"}
+    old = {"hubspot": "companies.clue_tier", "salesforce": "Account.Clue_Tier__c"}
+    await conn.execute(
+        text(
+            "UPDATE crm_clue_fields SET created_names = "
+            "array_replace(created_names, :current, :old) WHERE connection_id = :c"
+        ),
+        {"current": current[provider], "old": old[provider], "c": connection.connection_id},
+    )
+
+
 def _hubspot_company(world: Any, record: str, fields: Mapping[str, object]) -> ProposedChange:
     return ProposedChange(
         "HUBSPOT_UPDATE_COMPANY",
@@ -3526,6 +3540,32 @@ def test_a_clue_field_is_refused_until_clues_fields_are_set_up(tmp_path: Path) -
         assert fit_level.arguments == {"companyId": "101", "properties": {"clue_fit_level": "high"}}
 
     _run(tmp_path, "cluenotready", body)
+
+
+def test_a_fit_level_write_waits_for_the_setup_on_a_connection_from_before_it(
+    tmp_path: Path,
+) -> None:
+    """R-14.6: a setup ``ready`` before Clue fit level existed did not create it, so a fit-level
+    write is refused as not set up (never as gone) until the setup has run again."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        world = await _researched(conn, seeded)
+        gateway = _FakeCrm(records={"101": {"domain": "zafran.io"}})
+        change = _hubspot_company(world, "101", {"clue_fit_level": "high"})
+        await _clue_fields_ready(conn, connection)
+        await _ready_before_fit_level(conn, connection, "hubspot")
+
+        before = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert [(r.index, r.reason_code, r.message) for r in before.refused] == [
+            (0, "crm_clue_fields_not_set_up", _NOT_SET_UP.format(crm="HubSpot"))
+        ]
+
+        await _clue_fields_ready(conn, connection)  # what the setup run records
+        after = await _prepare_batch(conn, gateway, connection, proposal_id, [change])
+        assert after.refused == []
+        assert [(c.field, c.after) for c in after.changes] == [("clue_fit_level", "high")]
+
+    _run(tmp_path, "fitlevel-stale", body)
 
 
 def test_hubspot_clue_fields_carry_exactly_what_the_targets_offer(tmp_path: Path) -> None:

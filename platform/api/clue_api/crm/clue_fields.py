@@ -34,6 +34,7 @@ __all__ = [
     "ClueFieldsStatus",
     "clue_field",
     "clue_field_ready",
+    "clue_fields_set_up",
     "clue_field_written",
     "clue_fields_state",
     "mark_clue_field_gone",
@@ -270,6 +271,18 @@ def clue_field_ready(state: ClueFieldsState | None, field: ClueField) -> bool:
         and state.status == "ready"
         and field.qualified_name in state.created_names
         and field.qualified_name not in state.gone_names
+    )
+
+
+def clue_fields_set_up(state: ClueFieldsState | None) -> bool:
+    """Whether Clue's fields are fully set up: the setup is ``ready`` and created every field in
+    the current :data:`CLUE_FIELDS`. A field added since (R-14.6's Clue fit level) leaves an older
+    ``ready`` setup not fully set up, so it can be proposed and run again; the run makes only what
+    is missing. Such a field is not set up, never gone."""
+    return (
+        state is not None
+        and state.status == "ready"
+        and all(f.qualified_name in state.created_names for f in CLUE_FIELDS[state.provider])
     )
 
 

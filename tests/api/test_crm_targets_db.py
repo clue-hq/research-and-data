@@ -49,6 +49,7 @@ from clue_toolbelt import PreconditionFailed
 from tests._workspace import seed_project
 from tests.api.test_crm_propose_db import _ctx
 from tests.api.test_crm_tools_db import _connect
+from tests.api.test_crm_write_prepare_db import _ready_before_fit_level
 from tests.api.test_lane_d4_agent_gate_db import _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -1006,6 +1007,20 @@ def test_the_read_says_when_clues_fields_are_not_set_up(tmp_path: Path, provider
             status="ready",
         )
         assert (await tool.invoke(inputs, ctx)).references["clue_fields_note"] is None
+
+        # R-14.6: ready before Clue fit level existed, so not fully set up.
+        await _ready_before_fit_level(conn, connection, provider)
+        assert (await tool.invoke(inputs, ctx)).references["clue_fields_note"] == note
+        await record_clue_fields(
+            conn,
+            connection_id=connection.connection_id,
+            workspace_id=world.workspace_id,
+            provider=provider,  # type: ignore[arg-type]
+            created=CLUE_FIELDS[provider],  # type: ignore[index]
+            permission_set_id="0PS000000000001" if provider == "salesforce" else None,
+            label_type_id=None,
+            status="ready",
+        )
 
         field = CLUE_FIELDS[provider][0]  # type: ignore[index]
         await mark_clue_field_gone(

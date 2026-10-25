@@ -35,7 +35,7 @@ from clue_api.agent_gate import (
     insert_gate,
 )
 from clue_api.agent_gate_tools import gate_ref
-from clue_api.crm.clue_fields import clue_fields_state
+from clue_api.crm.clue_fields import clue_fields_set_up, clue_fields_state
 from clue_api.crm.composio_gateway import ComposioError, ComposioGateway
 from clue_api.crm.connections import CrmConnection
 from clue_api.crm.salesforce_budget import CrmBudgetExhausted, SalesforceBudget
@@ -651,7 +651,7 @@ class ProposeClueFieldsSetupTool(Tool):
         connection = await _active_connection(self._conn_factory, ctx.workspace_id)
         async with self._conn_factory() as conn:
             state = await clue_fields_state(conn, connection_id=connection.connection_id)
-        if state is not None and state.status == "ready":
+        if clue_fields_set_up(state):
             raise _Refused(
                 "crm_clue_fields_ready",
                 f"Clue's fields are already set up in {_CRM_NAMES[connection.provider]}.",

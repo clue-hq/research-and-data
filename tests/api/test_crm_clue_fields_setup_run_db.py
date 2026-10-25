@@ -48,7 +48,7 @@ from tests.api.test_crm_write_executor_db import (
     _proposal_status,
     _wake_messages,
 )
-from tests.api.test_crm_write_prepare_db import _FakeBudget
+from tests.api.test_crm_write_prepare_db import _FakeBudget, _ready_before_fit_level
 from tests.api.test_lane_d4_agent_gate_db import OTHER_USER_ID, _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -490,6 +490,44 @@ def test_hubspot_rerun_makes_nothing_twice_and_keeps_the_label_type(tmp_path: Pa
         assert (state.status, state.label_type_id) == ("ready", "7")
 
     _run(tmp_path, "hs-rerun", body)
+
+
+def test_a_ready_setup_from_before_fit_level_gains_only_the_new_field(tmp_path: Path) -> None:
+    """R-14.6: a connection set up when Clue's field was "Clue tier" is not fully set up. The
+    setup may be proposed and allowed again, makes only the fit-level field (the old field stays
+    in the CRM; Clue never deletes), and the record ends ``ready`` with it; nothing reads as
+    gone."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        crm = _SchemaCrm()
+        await _queued_setup(conn, seeded, connection)
+        await _execute(conn, tmp_path, connection, crm)
+        # The CRM and Clue's record as they were before the rename.
+        old = crm.properties.pop(("companies", "clue_fit_level"))
+        crm.properties[("companies", "clue_tier")] = {**old, "name": "clue_tier"}
+        await _ready_before_fit_level(conn, connection, "hubspot")
+        crm.calls.clear()
+
+        proposal_id = await _allowed_by_admin(conn, seeded)
+        await _execute(conn, tmp_path, connection, crm)
+
+        made = [args for slug, args in crm.calls if slug.endswith("SPECIFIED_OBJECT_TYPE")]
+        assert [
+            (a["objectType"], a["name"])
+            for a in made
+            if a["name"] in {"clue_fit_level", "clue_tier"}
+        ] == [("companies", "clue_fit_level")]
+        assert ("companies", "clue_tier") in crm.properties  # never deleted
+        write = await _setup_write(conn, proposal_id)
+        assert write.status == "succeeded"
+        assert write.crm_message == "Set up Clue's fields in HubSpot: 1 created, 8 already there."
+        state = await clue_fields_state(conn, connection_id=connection.connection_id)
+        assert state is not None
+        assert state.status == "ready"
+        assert state.created_names == tuple(f.qualified_name for f in CLUE_FIELDS["hubspot"])
+        assert state.gone_names == ()
+
+    _run(tmp_path, "hs-before-fit-level", body)
 
 
 # --- Salesforce --------------------------------------------------------------------------------

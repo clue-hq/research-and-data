@@ -80,6 +80,7 @@ from clue_api.crm.clue_fields import (
     CLUE_FIELDS,
     ClueField,
     clue_field_written,
+    clue_fields_set_up,
     clue_fields_state,
     mark_clue_field_gone,
     record_clue_fields,
@@ -1159,7 +1160,7 @@ class CrmWriteHandler:
     async def _run_setup(self, crm: _Crm, write: _Write) -> None:
         """Set up Clue's fields (:mod:`clue_api.crm.clue_fields_setup`) and record what exists.
 
-        A connection already ``ready`` is skipped without a call: two cards may both be allowed,
+        A connection already fully set up is skipped without a call: two cards may both be allowed,
         and the one task per connection runs them one after the other. The run is idempotent, so a
         retry after a rate limit, or a run resumed after a crash, starts from the top and makes
         only what is missing. A stop keeps what the run found so far (``partial``) and leaves the
@@ -1167,7 +1168,7 @@ class CrmWriteHandler:
         connection = crm.connection
         async with self._conn_factory() as conn:
             state = await clue_fields_state(conn, connection_id=connection.connection_id)
-        if state is not None and state.status == "ready":
+        if clue_fields_set_up(state):
             message = SETUP_ALREADY_READY_MESSAGE.format(crm=crm.name)
             await self._record(
                 crm, [write], {write.write_id: _Outcome("skipped", crm_message=message)}

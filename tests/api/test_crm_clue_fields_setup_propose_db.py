@@ -40,7 +40,7 @@ from tests.api.test_crm_write_answer_db import (
     _settings,
     _snapshot,
 )
-from tests.api.test_crm_write_prepare_db import _FakeCrm
+from tests.api.test_crm_write_prepare_db import _FakeCrm, _ready_before_fit_level
 from tests.api.test_lane_d4_agent_gate_db import OTHER_USER_ID, USER_ID, _seed
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -301,6 +301,31 @@ def test_proposing_again_when_ready_is_refused(tmp_path: Path, provider: str) ->
         assert count == 0
 
     _run(tmp_path, f"ready-{provider}", body, provider)
+
+
+@pytest.mark.parametrize("provider", ["hubspot", "salesforce"])
+def test_a_ready_setup_missing_a_current_field_may_be_proposed_again(
+    tmp_path: Path, provider: str
+) -> None:
+    """R-14.6: a setup ``ready`` with the old field set lacks Clue fit level, so it is not fully
+    set up and the setup may be proposed again."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await record_clue_fields(
+            conn,
+            connection_id=connection.connection_id,
+            workspace_id=seeded.workspace_id,
+            provider=provider,  # type: ignore[arg-type]
+            created=CLUE_FIELDS[provider],  # type: ignore[index]
+            permission_set_id="0PS1" if provider == "salesforce" else None,
+            label_type_id="7" if provider == "hubspot" else None,
+            status="ready",
+        )
+        await _ready_before_fit_level(conn, connection, provider)
+        proposed = await _propose(conn, seeded)
+        assert proposed["state"] == "awaiting_permission"
+
+    _run(tmp_path, f"stale-ready-{provider}", body, provider)
 
 
 def test_a_partial_setup_may_be_proposed_again(tmp_path: Path) -> None:

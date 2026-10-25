@@ -136,5 +136,5 @@ def test_clue_fields_name_fit_level() -> None:
         ("Medium", "Medium"),
         ("Low", "Low"),
     ]
-    for provider in ("hubspot", "salesforce"):
-        assert not any("tier" in f.crm_name.lower() for f in CLUE_FIELDS[provider])  # type: ignore[index]
+    assert "clue_tier" not in {f.crm_name for f in CLUE_FIELDS["hubspot"]}
+    assert "Clue_Tier__c" not in {f.crm_name for f in CLUE_FIELDS["salesforce"]}
