@@ -30,6 +30,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-10-25-workspace-onboarding-operations.md` — operator lifecycle after the Illumio outage:
+  open `/ops/v1` routes and matching scripts (add a workspace, start onboarding, pre-flight,
+  repair), `succeeded_with_gaps`, repair runs, the `kit_repair` job and the re-offerable ad card.
+  Built 2026-10-26, local only. The live proof, deploy and Illumio repair are owed, founder's call.
 - `2026-10-12-wave2-lane-a.md`, `2026-10-12-wave2-a9.md`, `2026-10-12-wave2-lane-b.md`,
   `2026-10-12-wave2-lane-c.md` — Wave 2 of the website agent on Puck, run in four parallel worktrees
   (charter `docs/superpowers/plans/2026-10-12-wave2-parallel-lanes.md`); one note per lane.
