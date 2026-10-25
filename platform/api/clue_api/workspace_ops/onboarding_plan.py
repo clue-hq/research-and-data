@@ -179,3 +179,66 @@ async def plan_onboarding_repair(
         )
     )
     return OnboardingRepairPlan(steps=steps, **context)
+
+
+async def research_gaps(conn: AsyncConnection, *, workspace_id: str) -> list[dict[str, Any]]:
+    """Every research or ICP step whose newest attempt failed, in plain words (spec §5.2).
+
+    The same merge as the planner — the newest full run with every later repair run laid over
+    it — so a gap a repair fixed disappears. ``empty`` is a correct outcome, never a gap.
+    """
+    full = (
+        await conn.execute(
+            text(
+                "SELECT run_id, requested_at FROM onboarding_run WHERE workspace_id = :w"
+                " AND kind = 'full' ORDER BY requested_at DESC LIMIT 1"
+            ),
+            {"w": workspace_id},
+        )
+    ).first()
+    if full is None:
+        return []
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT * FROM (SELECT DISTINCT ON (s.kind, coalesce(s.subject_ref, ''))"
+                " s.kind, s.subject_ref, s.status, s.failure_code, s.failure_message"
+                " FROM onboarding_step s JOIN onboarding_run r ON r.run_id = s.run_id"
+                " WHERE r.workspace_id = :w AND (r.run_id = :full OR (r.kind = 'repair'"
+                " AND r.requested_at >= :at))"
+                " ORDER BY s.kind, coalesce(s.subject_ref, ''), r.requested_at DESC,"
+                " s.started_at DESC NULLS LAST) newest WHERE status = 'failed'"
+                " ORDER BY kind, coalesce(subject_ref, '')"
+            ),
+            {"w": workspace_id, "full": full.run_id, "at": full.requested_at},
+        )
+    ).mappings()
+    return [
+        {
+            "area": "research",
+            "item": f"{row['kind']}:{row['subject_ref']}" if row["subject_ref"] else row["kind"],
+            "code": row["failure_code"],
+            "message": (row["failure_message"] or "")[:200] or None,
+        }
+        for row in rows
+    ]
+
+
+async def brand_kit_gaps(conn: AsyncConnection, *, workspace_id: str) -> list[dict[str, Any]]:
+    """The newest kit-building job's own ``gaps`` (spec §5.1), as onboarding-view entries."""
+    from clue_design.ingestion import list_recent
+    from clue_design.kit_repair import KIT_BUILDING_KINDS
+
+    jobs = await list_recent(conn, workspace_id=workspace_id, limit=1, kinds=KIT_BUILDING_KINDS)
+    evidence = (jobs[0].get("evidence") if jobs else None) or {}
+    gaps = evidence.get("gaps") if isinstance(evidence, dict) else None
+    return [
+        {
+            "area": "brand_kit",
+            "item": str(gap.get("area") or "unknown"),
+            "code": gap.get("reason"),
+            "message": f"{gap.get('failed', 1)} failed",
+        }
+        for gap in (gaps if isinstance(gaps, list) else [])
+        if isinstance(gap, dict)
+    ]

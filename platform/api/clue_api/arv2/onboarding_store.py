@@ -10,16 +10,24 @@ step → document → UPDATE step. Nothing here calls a provider.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
-from uuid import UUID
+from typing import Any, Literal
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.onboarding_lineage import ProductLink
+
 __all__ = [
+    "create_repair_run",
+    "current_brand_icps",
+    "product_links",
+    "researched_product_ids",
     "DocumentRow",
     "RunStatus",
     "StepStatus",
@@ -106,6 +114,105 @@ async def create_run(
             "domain": company_domain.strip(),
             "user_id": requested_by_user_id,
         },
+    )
+
+
+async def create_repair_run(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    workspace_id: str,
+    brand_id: str,
+    company_domain: str,
+    requested_by_user_id: str,
+    planned_steps: list[dict[str, Any]],
+) -> None:
+    """Insert a ``queued`` repair run carrying the steps a workspace repair planned
+    (spec 2026-10-25 §3.4 A). Re-inserting the same id is a no-op."""
+    await conn.execute(
+        text(
+            "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, company_domain, "
+            " requested_by_user_id, kind, planned_steps) VALUES (:run_id, :workspace_id, "
+            " :brand_id, :domain, :user_id, 'repair', CAST(:planned AS jsonb)) "
+            "ON CONFLICT (run_id) DO NOTHING"
+        ),
+        {
+            "run_id": run_id,
+            "workspace_id": workspace_id,
+            "brand_id": brand_id,
+            "domain": company_domain.strip(),
+            "user_id": requested_by_user_id,
+            "planned": json.dumps(planned_steps),
+        },
+    )
+
+
+async def researched_product_ids(
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str
+) -> frozenset[str]:
+    """Products of this brand that some onboarding run already researched to completion."""
+    rows = await conn.execute(
+        text(
+            "SELECT DISTINCT s.subject_ref FROM onboarding_step s "
+            "JOIN onboarding_run r ON r.run_id = s.run_id "
+            "WHERE s.workspace_id = :w AND r.brand_id = :b AND s.kind = 'product_research' "
+            "AND s.status = 'completed' AND s.subject_ref IS NOT NULL"
+        ),
+        {"w": workspace_id, "b": brand_id},
+    )
+    return frozenset(str(row[0]) for row in rows)
+
+
+async def product_links(
+    conn: AsyncConnection, *, workspace_id: str, product_ids: Sequence[str]
+) -> tuple[ProductLink, ...]:
+    """The named products as research targets for a repair run (resolution ``repair``)."""
+    if not product_ids:
+        return ()
+    rows = await conn.execute(
+        text(
+            "SELECT product_id, name FROM product WHERE workspace_id = :w "
+            "AND product_id = ANY(:ids) AND status = 'active' ORDER BY product_id"
+        ),
+        {"w": workspace_id, "ids": list(product_ids)},
+    )
+    return tuple(
+        ProductLink(
+            product_id=str(row.product_id),
+            name=str(row.name),
+            resolution_state="repair",
+            candidate_count=0,
+            lineage_id=uuid5(NAMESPACE_URL, f"onboarding-repair-product:{row.product_id}"),
+        )
+        for row in rows
+    )
+
+
+async def current_brand_icps(
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str, icp_keys: Sequence[str]
+) -> tuple[Any, ...]:
+    """The brand's current (served, brand-level) ICP document for each key, as ``IcpRef``s."""
+    from clue_api.arv2.onboarding_driver import IcpRef
+
+    if not icp_keys:
+        return ()
+    paths = [f"audience/icp-{key}.md" for key in icp_keys]
+    rows = await conn.execute(
+        text(
+            "SELECT DISTINCT ON (path) document_id, path, version FROM brand_knowledge_document "
+            "WHERE workspace_id = :w AND brand_id = :b AND project_id IS NULL "
+            "AND path = ANY(:paths) AND status IN :served ORDER BY path, version DESC"
+        ).bindparams(bindparam("served", expanding=True)),
+        {"w": workspace_id, "b": brand_id, "paths": paths, "served": list(_SERVED_STATUSES)},
+    )
+    return tuple(
+        IcpRef(
+            document_id=row.document_id,
+            icp_key=str(row.path).removeprefix("audience/icp-").removesuffix(".md"),
+            version=int(row.version),
+            path=str(row.path),
+        )
+        for row in rows
     )
 
 

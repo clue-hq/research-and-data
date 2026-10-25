@@ -275,3 +275,22 @@ def build_exa_probe(
         return result
 
     return probe
+
+
+def build_preflight(
+    settings: Settings, secrets: Secrets, conn_factory: ConnFactory
+) -> Callable[[str], Awaitable[PreflightReport]]:
+    """The composed pre-flight a start or an operator route runs: one HTTP client per check."""
+    exa_probe = build_exa_probe(secrets, conn_factory)
+
+    async def preflight(workspace_id: str) -> PreflightReport:
+        async with httpx.AsyncClient() as http:
+            return await check_providers(
+                secrets=secrets,
+                settings=settings,
+                workspace_id=workspace_id,
+                http=http,
+                exa_probe=exa_probe,
+            )
+
+    return preflight

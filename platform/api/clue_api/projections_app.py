@@ -73,6 +73,7 @@ from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_re
 from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueuer
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
+from clue_api.workspace_ops.preflight import build_preflight
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Secrets, Settings, load_settings
 from clue_core import (
@@ -1083,6 +1084,9 @@ def create_projections_app(
                 brand_kit_ingestion=build_brand_kit_ingestion_trigger(
                     settings=resolved, conn_factory=conn_factory
                 ),
+                # Ruling D8 (spec 2026-10-25): every start — the setting-up screen's too — checks
+                # the providers first and refuses before a run exists when one is dead.
+                preflight=build_preflight(resolved, runtime_secrets, conn_factory),
             )
         )
     if discovery_webhook_router is not None:
