@@ -576,6 +576,12 @@ def ingestion_job_resolution(job: JsonObject) -> JsonObject | None:
     return resolution if isinstance(resolution, dict) else None
 
 
+def ingestion_job_gaps(job: JsonObject) -> list[JsonObject]:
+    evidence = job.get("evidence")
+    gaps = evidence.get("gaps") if isinstance(evidence, dict) else None
+    return [gap for gap in gaps if isinstance(gap, dict)] if isinstance(gaps, list) else []
+
+
 def ingestion_job_dto(job: JsonObject) -> JsonObject:
     """Public view of an ingestion job row (no request/evidence bodies — one named URL, one
     bounded outcome summary and one bounded resolution block apart, see
@@ -593,6 +599,9 @@ def ingestion_job_dto(job: JsonObject) -> JsonObject:
             or ((job.get("error") or {}).get("progress"))
             or ((job.get("evidence") or {}) if job.get("kind") == "asset_enrichment" else None),
         "resolution": ingestion_job_resolution(job),
+        # What a finished job did without (spec 2026-10-25 §5.1); ``[]`` for a clean or
+        # unfinished one. Its presence is what makes ``succeeded_with_gaps`` the status.
+        "gaps": ingestion_job_gaps(job),
         "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),
         "brand_kit_version": job.get("brand_kit_version"),

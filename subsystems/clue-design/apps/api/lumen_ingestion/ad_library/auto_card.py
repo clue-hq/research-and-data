@@ -36,6 +36,9 @@ __all__ = ["KIT_INGESTION_KINDS", "card_job_id", "card_offer_hook", "offer_card_
 #: The ingestion kinds that end with a brand kit. An ``ad_assets`` job builds none.
 KIT_INGESTION_KINDS = ("website", "pdf", "asset_upload")
 
+#: A job that finished with a usable result — a gapped one included (spec 2026-10-25 §5.1).
+_FINISHED = ("succeeded", "succeeded_with_gaps")
+
 #: How far back the readiness check looks. A workspace has a handful of ingestion jobs.
 _RECENT = 50
 
@@ -112,7 +115,7 @@ def _newest_usable_harvest(store: IngestionJobStore) -> Optional[JsonObject]:
         request = job.get("request") or {}
         if request.get("phase") != "harvest":
             continue
-        if job.get("status") != "succeeded":
+        if job.get("status") not in _FINISHED:
             return None
         outcome = (job.get("evidence") or {}).get("outcome") or {}
         return job if int(outcome.get("creatives_custodied") or 0) > 0 else None
@@ -122,7 +125,7 @@ def _newest_usable_harvest(store: IngestionJobStore) -> Optional[JsonObject]:
 def _newest_kit(store: IngestionJobStore) -> Optional[JsonObject]:
     """The newest kit-building ingestion that finished with a kit."""
     for job in store.list_recent(_RECENT, kinds=KIT_INGESTION_KINDS):
-        if job.get("status") == "succeeded" and job.get("brand_kit_id"):
+        if job.get("status") in _FINISHED and job.get("brand_kit_id"):
             return job
     return None
 
