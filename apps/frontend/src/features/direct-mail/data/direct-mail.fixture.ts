@@ -23,6 +23,7 @@ export function createDemoMailer(index: number): Mailer {
   return {
     id: `mailer-${key}`, revision: 1, reviewedRevision: null,
     projectId: "10m-landing-page-campaign", projectName: "10x revenue campaign", campaign: "Fall account outreach", threadId: "thread-primary",
+    accountId: `account-${company.toLowerCase().replaceAll(" ", "-")}`, contactId: `contact-${key}`,
     recipient: { name, company, role, initials: name.split(" ").map((word) => word[0]).join("") },
     insight: { title: "Bringing the field team closer to customers", detail: `${name.split(" ")[0]} is bringing the field and marketing teams together for a customer-led planning workshop. The gift should be useful in that work, with a short note about turning observations into action.`, source: "Sample account research brief", date: "2026-10-20", excerpt: "The team is running small, in-person workshops to bring customer observations into next quarter’s campaign planning. This is synthetic research for the frontend example." },
     gifts: structuredClone(demoGifts), selectedGiftId: null,
@@ -47,6 +48,7 @@ export function createDirectMailFixture() {
     ], mailers: people.map((_, index) => createDemoMailer(index)),
   });
   state.mailers[2].address.line1 = "";
+  for (const mailer of state.mailers.slice(6)) { mailer.projectId = "custom-reports"; mailer.projectName = "custom reports"; mailer.campaign = "Partner follow-up"; mailer.threadId = "thread-review"; }
   state.mailers[2].exception = { title: "Receiving address needed", detail: "Confirm an address where Priya can receive the package.", action: "address" };
   for (let index = 3; index < state.mailers.length; index++) {
     const mailer = state.mailers[index];

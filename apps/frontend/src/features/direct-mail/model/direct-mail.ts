@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const Cents = z.number().int().nonnegative().max(10_000_000);
-const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) });
+const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) }).refine((area) => area.x + area.width <= 100 && area.y + area.height <= 100, "The writing area must fit inside the card.");
 export const CardAssetSchema = z.object({ id: z.string(), name: z.string().min(1), version: z.number().int().positive(), frontUrl: z.string().nullable(), backUrl: z.string().nullable(), paper: z.enum(["white", "cream"]), writingArea: AreaSchema, productionReady: z.boolean() });
 export const StyleSchema = z.object({ id: z.string(), name: z.string(), version: z.number().int().positive(), family: z.string(), sourceUrl: z.string().nullable(), productionReady: z.boolean() });
 export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean() });
@@ -15,6 +15,7 @@ const ApprovalSchema = z.object({ revision: z.number(), at: z.string(), gift: Gi
 export const MailerSchema = z.object({
   id: z.string(), revision: z.number().int().positive(), reviewedRevision: z.number().nullable(),
   projectId: z.string(), projectName: z.string(), campaign: z.string(), threadId: z.string(),
+  accountId: z.string(), contactId: z.string(),
   recipient: z.object({ name: z.string(), role: z.string(), company: z.string(), initials: z.string() }),
   insight: InsightSchema, gifts: z.array(GiftSchema).length(3), selectedGiftId: z.string().nullable(),
   note: z.string(), signature: z.string(), cardId: z.string(), styleId: z.string(),
