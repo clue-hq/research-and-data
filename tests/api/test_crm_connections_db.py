@@ -270,3 +270,111 @@ def test_the_salesforce_counter_resets_each_day() -> None:
         assert await count_salesforce_call(conn, connection_id=connection_id, today=next_day) == 1
 
     _in_rollback(body)
+
+
+async def _connect(
+    conn: AsyncConnection,
+    workspace: str,
+    *,
+    provider: str,
+    account: str,
+    external: str | None,
+    auth_config: str = "ac_1",
+):  # type: ignore[no-untyped-def]
+    request = await _request(conn, workspace)
+    await start_attempt(
+        conn,
+        request_id=request.request_id,
+        workspace_id=workspace,
+        provider=provider,  # type: ignore[arg-type]
+        connected_account_id=account,
+        started_by_user_id="user-admin",
+    )
+    activated = await activate_from_attempt(
+        conn,
+        request_id=request.request_id,
+        workspace_id=workspace,
+        connected_account_id=account,
+        auth_config_id=auth_config,
+        external_account_id=external,
+    )
+    assert activated is not None
+    return activated[0]
+
+
+async def _rows(conn: AsyncConnection, workspace: str) -> list[tuple[str, str, str | None]]:
+    rows = await conn.execute(
+        text(
+            "SELECT composio_connected_account_id, status, external_account_id "
+            "FROM workspace_integration_connection WHERE workspace_id = :ws "
+            "ORDER BY connected_at, composio_connected_account_id"
+        ),
+        {"ws": workspace},
+    )
+    return [tuple(r) for r in rows]  # type: ignore[misc]
+
+
+def test_a_reconnect_to_the_same_crm_account_keeps_the_connection() -> None:
+    """D-2 (2026-10-25): an expired connection reconnected to the same Salesforce org (or HubSpot
+    portal) is the same CRM — the connection, and everything keyed on it (undo, Clue's fields,
+    list and record links), carries on."""
+
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(
+            conn, workspace, provider="salesforce", account="ca_old", external="00DORG"
+        )
+        await mark_expired(conn, connection_id=first.connection_id)
+        again = await _connect(
+            conn,
+            workspace,
+            provider="salesforce",
+            account="ca_new",
+            external="00DORG",
+            auth_config="ac_own",
+        )
+        assert again.connection_id == first.connection_id
+        assert again.status == "active"
+        assert again.composio_connected_account_id == "ca_new"
+        assert again.composio_auth_config_id == "ac_own"
+        assert await _rows(conn, workspace) == [("ca_new", "active", "00DORG")]
+
+    _in_rollback(body)
+
+
+def test_a_reconnect_while_still_active_keeps_the_connection() -> None:
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(conn, workspace, provider="hubspot", account="ca_1", external="111")
+        again = await _connect(conn, workspace, provider="hubspot", account="ca_2", external="111")
+        assert again.connection_id == first.connection_id
+        assert await _rows(conn, workspace) == [("ca_2", "active", "111")]
+
+    _in_rollback(body)
+
+
+def test_another_crm_account_is_a_new_connection() -> None:
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(conn, workspace, provider="hubspot", account="ca_1", external="111")
+        other = await _connect(conn, workspace, provider="hubspot", account="ca_2", external="222")
+        assert other.connection_id != first.connection_id
+        assert await _rows(conn, workspace) == [
+            ("ca_1", "disconnected", "111"),
+            ("ca_2", "active", "222"),
+        ]
+
+    _in_rollback(body)
+
+
+def test_an_unknown_crm_account_is_a_new_connection() -> None:
+    """When the account cannot be identified, nothing is assumed: a new connection, as before."""
+
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(conn, workspace, provider="hubspot", account="ca_1", external="111")
+        await mark_expired(conn, connection_id=first.connection_id)
+        unknown = await _connect(conn, workspace, provider="hubspot", account="ca_2", external=None)
+        assert unknown.connection_id != first.connection_id
+        assert await _rows(conn, workspace) == [
+            ("ca_1", "expired", "111"),
+            ("ca_2", "active", None),
+        ]
+
+    _in_rollback(body)

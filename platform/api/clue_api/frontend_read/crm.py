@@ -17,7 +17,7 @@ card spec §3 B–F, §6).
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -33,6 +33,7 @@ from clue_api.crm.composio_gateway import (
 )
 from clue_api.crm.connections import (
     activate_from_attempt,
+    crm_account_identity,
     get_connect_request,
     latest_connection,
     start_attempt,
@@ -78,6 +79,17 @@ def auth_config_for(settings: Settings, provider: CrmProvider) -> str:
         if provider == "hubspot"
         else settings.composio_salesforce_auth_config_id
     ).strip()
+
+
+_PROVIDERS: frozenset[str] = frozenset({"hubspot", "salesforce"})
+
+
+def _toolkit_version(settings: Settings, provider: CrmProvider) -> str:
+    return (
+        settings.composio_hubspot_toolkit_version
+        if provider == "hubspot"
+        else settings.composio_salesforce_toolkit_version
+    )
 
 
 def register_crm_routes(
@@ -159,6 +171,18 @@ def register_crm_routes(
             return failed
         if account.status != "ACTIVE":
             return failed
+        # Which CRM account the grant belongs to: the same one as an earlier connection is a
+        # reconnect, and keeps that connection (D-2). Asked before any lock is held.
+        external_account_id: str | None = None
+        if account.toolkit in _PROVIDERS:
+            toolkit = cast("CrmProvider", account.toolkit)
+            external_account_id = await crm_account_identity(
+                gateway,
+                provider=toolkit,
+                connected_account_id=body.connected_account_id,
+                workspace_id=workspace_id,
+                version=_toolkit_version(settings, toolkit),
+            )
         async with conn_factory() as conn:
             await lock_manager(conn, principal, PERMISSION)
             card = await get_connect_request(
@@ -173,6 +197,7 @@ def register_crm_routes(
                 workspace_id=workspace_id,
                 connected_account_id=body.connected_account_id,
                 auth_config_id=auth_config_for(settings, provider),
+                external_account_id=external_account_id,
             )
             if activated is None:
                 return {"outcome": "stale"}

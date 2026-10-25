@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from clue_api.agent_turn_submission import DERIVATION_CRM_CONNECTED
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
-from clue_api.crm.composio_gateway import ConnectedAccount, ConnectLink
+from clue_api.crm.composio_gateway import ConnectedAccount, ConnectLink, ExecuteResult
 from clue_api.crm.connections import open_connect_request
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
@@ -61,6 +61,8 @@ class FakeComposio:
     def __init__(self) -> None:
         self.links: list[dict[str, Any]] = []
         self.accounts: dict[str, ConnectedAccount] = {}
+        #: The CRM account each grant belongs to, as "who am I" answers it; absent → the call fails.
+        self.identities: dict[str, str] = {}
 
     async def create_link(self, **kwargs: Any) -> ConnectLink:
         self.links.append(kwargs)
@@ -77,8 +79,14 @@ class FakeComposio:
     async def search_tools(self, **_: Any) -> list[Any]:
         return []
 
-    async def execute(self, **_: Any) -> Any:
-        raise AssertionError("not used here")
+    async def execute(self, *, slug: str, connected_account_id: str, **_: Any) -> Any:
+        if slug not in ("HUBSPOT_WHO_AM_I", "SALESFORCE_WHO_AM_I"):
+            raise AssertionError("not used here")
+        identity = self.identities.get(connected_account_id)
+        if identity is None:
+            return ExecuteResult(successful=False, data=None, error="who am I failed")
+        key = "portal_id" if slug == "HUBSPOT_WHO_AM_I" else "organization_id"
+        return ExecuteResult(successful=True, data={"data": {key: identity}}, error=None)
 
 
 class _MemoryStorage:
@@ -389,3 +397,69 @@ def test_any_member_can_read_the_connection_status(tmp_path: Any) -> None:
         assert response.json() == {"status": "none"}
 
     _run(tmp_path, "viewer", body)
+
+
+def test_a_reconnect_to_the_same_crm_account_keeps_its_connection(tmp_path: Any) -> None:
+    """D-2 (2026-10-25): completing a connection asks the CRM which account it is; the same
+    HubSpot portal as the expired connection reuses that connection, another portal does not."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, composio: Any) -> None:
+        async def connect(chat: str, account: str) -> str:
+            waiting = await _waiting_chat(conn, client, project, chat)
+            await client.post(
+                f"{CRM}/connect-link",
+                json={"request_id": str(waiting.request_id), "provider": "hubspot"},
+                headers=_headers(project),
+            )
+            composio.accounts[account] = ConnectedAccount(
+                id=account, status="ACTIVE", toolkit="hubspot"
+            )
+            done = await client.post(
+                f"{CRM}/complete",
+                json={
+                    "request_id": str(waiting.request_id),
+                    "status": "success",
+                    "connected_account_id": account,
+                },
+                headers=_headers(project),
+            )
+            assert done.json() == {"outcome": "connected", "provider": "hubspot"}
+            return str(
+                await conn.scalar(
+                    text(
+                        "SELECT connection_id FROM workspace_integration_connection "
+                        "WHERE composio_connected_account_id = :a"
+                    ),
+                    {"a": account},
+                )
+            )
+
+        composio.identities.update({"ca_1": "111", "ca_2": "111", "ca_3": "222"})
+        first = await connect("a", "ca_1")
+        await conn.execute(
+            text(
+                "UPDATE workspace_integration_connection SET status = 'expired' "
+                "WHERE connection_id = :id"
+            ),
+            {"id": first},
+        )
+        assert await connect("b", "ca_2") == first  # same portal: the same connection again
+        other = await connect("c", "ca_3")
+        assert other != first  # another portal: a new connection
+        unknown = await connect("d", "ca_4")  # "who am I" failed: a new connection, as before
+        assert unknown not in (first, other)
+        rows = await conn.execute(
+            text(
+                "SELECT composio_connected_account_id, status, external_account_id "
+                "FROM workspace_integration_connection WHERE workspace_id = :ws "
+                "ORDER BY connected_at"
+            ),
+            {"ws": project.workspace_id},
+        )
+        assert [tuple(r) for r in rows] == [
+            ("ca_2", "disconnected", "111"),
+            ("ca_3", "disconnected", "222"),
+            ("ca_4", "active", None),
+        ]
+
+    _run(tmp_path, "owner", body)

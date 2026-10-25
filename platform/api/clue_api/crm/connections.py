@@ -20,13 +20,19 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.crm.composio_gateway import CrmProvider
+from clue_api.crm.composio_gateway import (
+    ComposioError,
+    ComposioGateway,
+    CrmProvider,
+    composio_user_id,
+)
 
 __all__ = [
     "ConnectRequest",
     "CrmConnection",
     "activate_from_attempt",
     "count_salesforce_call",
+    "crm_account_identity",
     "get_connect_request",
     "get_connection",
     "latest_connection",
@@ -34,6 +40,42 @@ __all__ = [
     "open_connect_request",
     "start_attempt",
 ]
+
+
+#: The "who am I" action of each CRM and the field naming its account (verified live 2026-10-25:
+#: HubSpot ``portal_id``, Salesforce ``organization_id``; neither needs an extra scope).
+_IDENTITY: dict[CrmProvider, tuple[str, str]] = {
+    "hubspot": ("HUBSPOT_WHO_AM_I", "portal_id"),
+    "salesforce": ("SALESFORCE_WHO_AM_I", "organization_id"),
+}
+
+
+async def crm_account_identity(
+    gateway: ComposioGateway,
+    *,
+    provider: CrmProvider,
+    connected_account_id: str,
+    workspace_id: str,
+    version: str,
+) -> str | None:
+    """The CRM account a new grant belongs to (HubSpot portal id, Salesforce org id), or ``None``
+    when the CRM does not say — then the grant is treated as a new connection (D-2)."""
+
+    slug, field = _IDENTITY[provider]
+    try:
+        result = await gateway.execute(
+            slug=slug,
+            arguments={},
+            connected_account_id=connected_account_id,
+            user_id=composio_user_id(workspace_id),
+            version=version,
+        )
+    except ComposioError:
+        return None
+    data = result.data if result.successful and isinstance(result.data, dict) else {}
+    inner = data.get("data")
+    value = inner.get(field) if isinstance(inner, dict) else None
+    return str(value) if value not in (None, "") else None
 
 
 @dataclass(frozen=True)
@@ -197,13 +239,20 @@ async def activate_from_attempt(
     workspace_id: str,
     connected_account_id: str,
     auth_config_id: str,
+    external_account_id: str | None = None,
 ) -> tuple[CrmConnection, list[ConnectRequest]] | None:
     """Activate the connection the request's latest attempt produced.
 
     Returns ``None`` unless the request is open and its latest attempt is exactly
     ``connected_account_id`` (a stale, replayed or forged callback activates nothing). Otherwise
-    disconnects any other active connection (a switch), inserts the new active row, and marks every
+    disconnects any other active connection (a switch), activates the connection, and marks every
     open request in the workspace ``fulfilled`` — returning them so each waiting chat can be woken.
+
+    ``external_account_id`` is the CRM account the new grant belongs to (Salesforce org id, HubSpot
+    portal id). A grant to the account an earlier connection of this workspace already holds is a
+    **reconnect**: that connection is made active again with the new grant, so everything keyed on
+    it — undo, Clue's fields, list and record links — carries on (D-2, 2026-10-25). A grant to
+    another account, or one that could not be identified, is a new connection, as before.
     """
     request = (
         await conn.execute(
@@ -217,32 +266,67 @@ async def activate_from_attempt(
     ).first()
     if request is None or request.pending_connected_account_id != connected_account_id:
         return None
+    same_account = (
+        None
+        if external_account_id is None
+        else (
+            await conn.execute(
+                text(
+                    "SELECT connection_id FROM workspace_integration_connection "
+                    "WHERE workspace_id = :ws AND provider = :provider "
+                    "AND external_account_id = :external "
+                    "ORDER BY connected_at DESC LIMIT 1 FOR UPDATE"
+                ),
+                {
+                    "ws": workspace_id,
+                    "provider": request.pending_provider,
+                    "external": external_account_id,
+                },
+            )
+        ).scalar_one_or_none()
+    )
     await conn.execute(
         text(
             "UPDATE workspace_integration_connection SET status = 'disconnected', "
             "disconnected_at = now(), updated_at = now() "
-            "WHERE workspace_id = :ws AND status = 'active'"
+            "WHERE workspace_id = :ws AND status = 'active' "
+            "AND connection_id IS DISTINCT FROM :keep"
         ),
-        {"ws": workspace_id},
+        {"ws": workspace_id, "keep": same_account},
     )
-    row = (
-        await conn.execute(
-            text(
-                "INSERT INTO workspace_integration_connection (connection_id, workspace_id, "
-                "provider, composio_connected_account_id, composio_auth_config_id, status, "
-                "connected_by_user_id) VALUES (:id, :ws, :provider, :account, :ac, 'active', "
-                f":user) RETURNING {_CONNECTION_COLUMNS}"
-            ),
-            {
-                "id": uuid4(),
-                "ws": workspace_id,
-                "provider": request.pending_provider,
-                "account": connected_account_id,
-                "ac": auth_config_id,
-                "user": request.pending_started_by_user_id,
-            },
-        )
-    ).one()
+    values = {
+        "ws": workspace_id,
+        "provider": request.pending_provider,
+        "account": connected_account_id,
+        "ac": auth_config_id,
+        "user": request.pending_started_by_user_id,
+        "external": external_account_id,
+    }
+    if same_account is not None:
+        row = (
+            await conn.execute(
+                text(
+                    "UPDATE workspace_integration_connection SET status = 'active', "
+                    "composio_connected_account_id = :account, composio_auth_config_id = :ac, "
+                    "connected_by_user_id = :user, connected_at = now(), disconnected_at = NULL, "
+                    "updated_at = now() WHERE connection_id = :id "
+                    f"RETURNING {_CONNECTION_COLUMNS}"
+                ),
+                {**values, "id": same_account},
+            )
+        ).one()
+    else:
+        row = (
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_integration_connection (connection_id, workspace_id, "
+                    "provider, composio_connected_account_id, composio_auth_config_id, status, "
+                    "connected_by_user_id, external_account_id) VALUES (:id, :ws, :provider, "
+                    f":account, :ac, 'active', :user, :external) RETURNING {_CONNECTION_COLUMNS}"
+                ),
+                {**values, "id": uuid4()},
+            )
+        ).one()
     fulfilled = (
         await conn.execute(
             text(
