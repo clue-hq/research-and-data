@@ -166,6 +166,10 @@ Related documents:
   but only with a **before/after preview and the user's permission**. **For now this always asks,
   whatever "Always allow" or "Fully automatic" grants exist**; letting grants skip it will be a
   setting on the future Settings → Integrations page.
+  **Built 2026-10-26 (R-15.x, Task 4):** the connection's "Overwrites" setting — `ask` (default)
+  keeps this behaviour; `follow_grants` lets a standing field grant cover an overwrite like any
+  other change (not on the card, sent ticked). The agent's `overwrites` count names only overwrites
+  still on the card.
 - **R-6.6 (2026-10-20)** Adopted as guidance: established ABM tools (6sense, Demandbase) write
   **their own clearly labelled fields, account-level scores and stages, in scheduled batches, don't
   touch rep-owned standard fields, and create records rarely and deliberately**.
