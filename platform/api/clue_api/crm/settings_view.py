@@ -17,6 +17,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -31,9 +32,9 @@ from clue_api.crm.clue_fields import (
 )
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.connections import CrmConnection, connection_overwrites, latest_connection
-from clue_api.crm.writes import Grant, grant_phrase, live_grants
+from clue_api.crm.writes import FULLY_AUTOMATIC, Grant, grant_scope_key, live_grants, object_noun
 
-__all__ = ["ResearchState", "integration_view", "research_view"]
+__all__ = ["ResearchState", "integration_view", "research_view", "settings_grant_description"]
 
 ResearchState = Literal[
     "approval_needed",
@@ -93,6 +94,12 @@ _ITEMS: tuple[_Item, ...] = (
 )
 
 _RECORD: Mapping[CrmProvider, str] = {"hubspot": "company record", "salesforce": "account record"}
+#: How a reason names the records of Clue's object.
+_RECORD_WORD: Mapping[CrmProvider, Mapping[str, str]] = {
+    "hubspot": {"company": "company", "contact": "contact"},
+    "salesforce": {"company": "account", "contact": "contact"},
+}
+_CRM_NAMES: Mapping[CrmProvider, str] = {"hubspot": "HubSpot", "salesforce": "Salesforce"}
 
 #: A CRM refusal that names a missing permission: HubSpot ``MISSING_SCOPES`` or an HTTP 403,
 #: Salesforce ``INSUFFICIENT_ACCESS`` (and ``…_OR_READONLY``). Matched in the CRM's own answer and
@@ -218,15 +225,21 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
     failed_field: str | None = None
     reason: str | None = None
     refused_step: str | None = None
-    if clue_fields_set_up(state):
+    crm = _CRM_NAMES[provider]
+    # A gone field Clue no longer sets up (the test CRMs' old "Clue tier") is not a missing field.
+    gone_labels = (
+        [label for name in state.gone_names if (label := _label_of(provider, name))]
+        if state is not None
+        else []
+    )
+    if clue_fields_set_up(state) or _set_up_but_for_old_fields(state, gone_labels):
         research_state = "ready"
     elif any(w.status in ("queued", "sending") for w in writes):
         research_state = "preparing"
-    elif state is not None and state.status == "gone":
+    elif gone_labels:
         research_state = "needs_attention"
-        failed_field = next(
-            (label for name in state.gone_names if (label := _label_of(provider, name))), None
-        )
+        failed_field = gone_labels[0]
+        reason = f"The field Clue uses for {failed_field} was deleted in {crm}."
     elif latest is not None and latest.proposal_status == "awaiting_permission":
         research_state = "approval_needed"
     elif (latest is not None and latest.status == "failed") or (
@@ -236,40 +249,111 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
         if failed is not None and _names_permission(failed):
             research_state = "permission_needed"
             refused_step = _failed_step(failed)
+            records = _refused_records(provider, refused_step)
+            reason = f"The connected {crm} user doesn’t have permission to create fields on " + (
+                "these records." if records is None else f"{records} records."
+            )
         else:
             research_state = "couldnt_finish"
-        reason = None if failed is None else failed.crm_message
+            reason = f"{crm} stopped part of the setup. Clue can retry the remaining steps."
     else:
         research_state = "approval_needed"
     return {
         "state": research_state,
         "failedField": failed_field,
         "reason": reason,
-        "reviewChat": review,
+        # Only an unanswered card is reviewed; any other state opens a new chat (R-15.2).
+        "reviewChat": review if research_state == "approval_needed" else None,
         "items": _items(provider, state, refused_step),
     }
 
 
-async def _field_label(conn: AsyncConnection, connection: CrmConnection, grant: Grant) -> str:
-    """The label a field grant's field is shown by: Clue's own label for Clue's fields, else the
-    CRM's label the card that offered the permission showed; never the CRM's API name."""
-    clue = clue_field_written(connection.provider, str(grant.object), str(grant.field))
-    if clue is not None:
-        return clue.label
-    label = await conn.scalar(
+def _set_up_but_for_old_fields(state: ClueFieldsState | None, gone_labels: list[str]) -> bool:
+    """A setup marked gone only for a field Clue no longer sets up, with every current field
+    created: as good as ready."""
+    return (
+        state is not None
+        and state.status == "gone"
+        and not gone_labels
+        and all(f.qualified_name in state.created_names for f in CLUE_FIELDS[state.provider])
+    )
+
+
+def _refused_records(provider: CrmProvider, step: str | None) -> str | None:
+    """The records ("company", "account", "contact") whose fields the refused step was making;
+    ``None`` when the step names none (e.g. Salesforce's permission set)."""
+    if step is None:
+        return None
+    for field in CLUE_FIELDS[provider]:
+        if step in _field_steps(field):
+            return _RECORD_WORD[provider][field.object]
+    for field in CLUE_FIELDS[provider]:
+        if step.endswith(f" on {field.crm_object}"):
+            return _RECORD_WORD[provider][field.object]
+    return None
+
+
+async def _field_labels(
+    conn: AsyncConnection, connection: CrmConnection, grants: Sequence[Grant]
+) -> dict[UUID, str]:
+    """The label each field grant's field is shown by: Clue's own label for Clue's fields, else
+    the CRM's label the newest card that offered the permission showed (one query for all);
+    never the CRM's API name. A field with neither is left out."""
+    labels: dict[UUID, str] = {}
+    asked: dict[str, list[UUID]] = {}
+    for grant in grants:
+        if grant.scope_kind != "field":
+            continue
+        clue = clue_field_written(connection.provider, str(grant.object), str(grant.field))
+        if clue is not None:
+            labels[grant.grant_id] = clue.label
+        else:
+            asked.setdefault(grant_scope_key(grant), []).append(grant.grant_id)
+    if not asked:
+        return labels
+    rows = await conn.execute(
         text(
-            "SELECT grp ->> 'field_label' FROM crm_write_proposal p "
+            "SELECT DISTINCT ON (grp ->> 'scope_key') grp ->> 'scope_key' AS scope, "
+            "grp ->> 'field_label' AS label FROM crm_write_proposal p "
             "JOIN agent_gate a ON a.gate_id = p.gate_id "
             "CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN "
             "jsonb_typeof(a.subject_snapshot -> 'groups') = 'array' "
             "THEN a.subject_snapshot -> 'groups' ELSE '[]'::jsonb END) grp "
-            "WHERE p.connection_id = :c AND grp ->> 'scope_key' = :scope "
+            "WHERE p.connection_id = :c AND grp ->> 'scope_key' = ANY(:scopes) "
             "AND coalesce(grp ->> 'field_label', '') <> '' "
-            "ORDER BY p.created_at DESC LIMIT 1"
+            "ORDER BY grp ->> 'scope_key', p.created_at DESC"
         ),
-        {"c": connection.connection_id, "scope": f"field:{grant.object}.{grant.field}"},
+        {"c": connection.connection_id, "scopes": list(asked)},
     )
-    return str(label) if label else "a field"
+    for row in rows:
+        for grant_id in asked[row.scope]:
+            labels[grant_id] = str(row.label)
+    return labels
+
+
+def settings_grant_description(provider: CrmProvider, grant: Grant, label: str | None) -> str:
+    """How Settings names a standing permission (the Figma design's imperative wording; the chat
+    card and the agent tool keep theirs). Never a CRM API name."""
+    if grant.scope_kind == FULLY_AUTOMATIC:
+        return "Always allow every change Clue proposes"
+    if grant.scope_kind == "field":
+        return f"Always set {label or 'a field'} on {object_noun(str(grant.object), 2)}"
+    kind = grant.kind
+    if kind == "list_create":
+        return (
+            "Always create Clue lists" if provider == "hubspot" else "Always create Clue campaigns"
+        )
+    if kind == "list_membership":
+        return "Always add records to Clue lists and campaigns"
+    if kind == "list_removal":
+        return "Always remove records from Clue lists and campaigns"
+    if kind == "create_contact":
+        return "Always create contacts"
+    if kind == "create_company":
+        return "Always create companies" if provider == "hubspot" else "Always create accounts"
+    if kind == "link_duplicate":
+        return "Always mark possible duplicates"
+    return "Always allow these changes"
 
 
 async def _permissions(conn: AsyncConnection, connection: CrmConnection) -> list[dict[str, Any]]:
@@ -285,15 +369,16 @@ async def _permissions(conn: AsyncConnection, connection: CrmConnection) -> list
         {"ids": [g.grant_id for g in grants]},
     )
     by_id = {row.grant_id: row for row in rows}
+    labels = await _field_labels(conn, connection, grants)
     shown = []
     for grant in grants:
-        label = await _field_label(conn, connection, grant) if grant.scope_kind == "field" else None
         row = by_id[grant.grant_id]
         shown.append(
             {
                 "grantId": str(grant.grant_id),
-                "description": "Always allow "
-                + grant_phrase(connection.provider, grant, field_label=label),
+                "description": settings_grant_description(
+                    connection.provider, grant, labels.get(grant.grant_id)
+                ),
                 "grantedByName": row.display_name,
                 "grantedAt": row.granted_at.isoformat(),
             }

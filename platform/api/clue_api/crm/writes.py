@@ -10,7 +10,7 @@ through the ``conn`` it is given and never commits.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -39,6 +39,7 @@ __all__ = [
     "proposal_counts",
     "proposal_linked_records",
     "membership_link_id",
+    "object_noun",
     "record_membership_link",
     "covering_grant",
     "grant_scope_key",
@@ -441,21 +442,29 @@ async def revoke_all_grants(
     return int(result.rowcount or 0)
 
 
-def grant_phrase(provider: str, grant: Grant, *, field_label: str | None = None) -> str:
+#: How a change names an object's records (Salesforce calls a company an account).
+_NOUNS: Mapping[str, tuple[str, str]] = {
+    "company": ("company", "companies"),
+    "account": ("account", "accounts"),
+    "contact": ("contact", "contacts"),
+    "lead": ("lead", "leads"),
+}
+
+
+def object_noun(object_name: str, count: int) -> str:
+    """The word for one (``count == 1``) or several records of a write action's object."""
+    one, many = _NOUNS.get(object_name, (object_name, f"{object_name}s"))
+    return one if count == 1 else many
+
+
+def grant_phrase(provider: str, grant: Grant) -> str:
     """What a standing permission allows, in the card's "Always allow" wording (card spec §5).
-
-    A grant records no field label: without ``field_label`` a field grant is named by its CRM
-    field name (the agent's ``manage_crm_grants`` view); Settings passes the label, since a
-    person never reads an API name there.
-    """
-    # Imported here: write_prepare imports this module.
-    from clue_api.crm.write_prepare import _noun
-
+    A grant records no field label, so a field grant is named by its CRM field name (the agent's
+    ``manage_crm_grants`` view; Settings words its own, :mod:`clue_api.crm.settings_view`)."""
     if grant.scope_kind == FULLY_AUTOMATIC:
         return "every change Clue proposes"
     if grant.scope_kind == "field":
-        named = grant.field if field_label is None else field_label
-        return f"setting “{named}” on {_noun(str(grant.object), 2)}"
+        return f"setting “{grant.field}” on {object_noun(str(grant.object), 2)}"
     kind = grant.kind
     target = "lists" if provider == "hubspot" else "campaigns"
     if kind == "list_create":

@@ -96,6 +96,7 @@ from clue_api.crm.writes import (
     live_grants,
     same_value,
 )
+from clue_api.crm.writes import object_noun as _noun
 from clue_config import Settings
 
 __all__ = [
@@ -2747,18 +2748,6 @@ def _record_not_found(
 
 
 # --- the card (card spec §3, §5, §6) -------------------------------------------------------
-
-_NOUNS: Mapping[str, tuple[str, str]] = {
-    "company": ("company", "companies"),
-    "account": ("account", "accounts"),
-    "contact": ("contact", "contacts"),
-    "lead": ("lead", "leads"),
-}
-
-
-def _noun(object_name: str, count: int) -> str:
-    one, many = _NOUNS.get(object_name, (object_name, f"{object_name}s"))
-    return one if count == 1 else many
 
 
 def _display(value: object) -> str:

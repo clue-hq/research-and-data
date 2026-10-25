@@ -459,6 +459,29 @@ def test_a_list_create_grant_is_worded_like_the_card() -> None:
         assert phrase(provider, "list_removal") == "removing records from Clue lists and campaigns"
 
 
+def test_the_agent_tools_field_grant_names_the_crm_field() -> None:
+    """The agent's ``manage_crm_grants`` view keeps its wording (Settings words its own)."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from clue_api.crm.write_tools import _grant_view
+
+    row = SimpleNamespace(
+        grant_id=uuid4(),
+        scope_kind="field",
+        kind="field_update",
+        object="company",
+        field="clue_fit_level",
+        granted_by_user_id="usr_1",
+        granted_by_name="Priya Rao",
+        granted_at=datetime(2026, 10, 25, 9, 0, tzinfo=UTC),
+    )
+    assert _grant_view(row, "hubspot").phrase == (
+        "Always allow setting “clue_fit_level” on companies — by Priya Rao, 25 Oct"
+    )
+
+
 def test_the_logs_write_and_proposal_ids_are_marked_internal() -> None:
     """R-12.17 (live check L-15): the agent showed the person Clue's write ids. The log still
     returns them (undo needs ``write_id``), and its output schema says they are for undo only."""

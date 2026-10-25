@@ -349,6 +349,9 @@ def test_needs_attention_names_the_missing_field(tmp_path: Any) -> None:
         page = await _integration(client, project)
         assert page["research"]["state"] == "needs_attention"
         assert page["research"]["failedField"] == "Clue research link"
+        assert page["research"]["reason"] == (
+            "The field Clue uses for Clue research link was deleted in HubSpot."
+        )
         assert _statuses(page)["company_research_links"] == "missing"
         assert _statuses(page)["company_fit"] == "created"
 
@@ -398,7 +401,11 @@ def test_permission_needed_when_the_crm_names_a_permission(
         )
         page = await _integration(client, project)
         assert page["research"]["state"] == "permission_needed"
-        assert page["research"]["reason"] == message
+        # Clue's own sentence, never the CRM's message.
+        assert page["research"]["reason"] == (
+            "The connected HubSpot user doesn’t have permission to create fields on company "
+            "records."
+        )
         assert _statuses(page) == {
             "company_research_links": "permission_needed",
             "contact_profile_links": "pending",
@@ -427,8 +434,105 @@ def test_couldnt_finish_when_the_crm_refused_otherwise(tmp_path: Any) -> None:
         )
         page = await _integration(client, project)
         assert page["research"]["state"] == "couldnt_finish"
-        assert page["research"]["reason"] == message
+        assert page["research"]["reason"] == (
+            "HubSpot stopped part of the setup. Clue can retry the remaining steps."
+        )
         assert set(_statuses(page).values()) == {"pending"}
+
+    _run(tmp_path, "owner", body)
+
+
+def test_permission_needed_on_salesforce_names_the_records_or_says_these(tmp_path: Any) -> None:
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
+        connection_id = await _connection(conn, project, provider="salesforce", name="Acme")
+
+        async def refused(step: str) -> str:
+            await conn.execute(
+                text("DELETE FROM crm_write WHERE connection_id = :c"), {"c": connection_id}
+            )
+            await _setup_card(
+                conn,
+                project,
+                connection_id,
+                proposal_status="finished",
+                write_status="failed",
+                failure_kind="permission",
+                message="Salesforce refused it.",
+                response={
+                    "steps": [{"step": step, "result": "failed"}],
+                    "crm_answer": '[{"errorCode":"INSUFFICIENT_ACCESS_OR_READONLY"}]',
+                },
+            )
+            research = (await _integration(client, project))["research"]
+            assert research["state"] == "permission_needed"
+            return str(research["reason"])
+
+        assert await refused("access to Account.Clue_Research_Link__c") == (
+            "The connected Salesforce user doesn’t have permission to create fields on account "
+            "records."
+        )
+        assert await refused('the permission set "Clue fields"') == (
+            "The connected Salesforce user doesn’t have permission to create fields on these "
+            "records."
+        )
+
+    _run(tmp_path, "owner", body)
+
+
+def test_review_chat_is_only_given_while_approval_is_needed(tmp_path: Any) -> None:
+    """An older card still waits, but a newer setup failed: the page shows the failure."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
+        connection_id = await _connection(conn, project)
+        older = await _setup_card(
+            conn,
+            project,
+            connection_id,
+            proposal_status="awaiting_permission",
+            write_status="proposed",
+            thread_id="thr_old_card",
+        )
+        await conn.execute(
+            text(
+                "UPDATE crm_write_proposal SET created_at = now() - interval '1 hour' "
+                "WHERE proposal_id = :p"
+            ),
+            {"p": older},
+        )
+        await _setup_card(
+            conn,
+            project,
+            connection_id,
+            proposal_status="finished",
+            write_status="failed",
+            failure_kind="other",
+            message="HubSpot refused it.",
+            response={**_REFUSED_STEPS, "crm_answer": '{"message":"limit"}'},
+        )
+        research = (await _integration(client, project))["research"]
+        assert research["state"] == "couldnt_finish"
+        assert research["reviewChat"] is None
+
+    _run(tmp_path, "owner", body)
+
+
+def test_a_gone_field_clue_no_longer_sets_up_is_ignored(tmp_path: Any) -> None:
+    """The test CRMs' old "Clue tier" field (R-14.6) is not a missing field."""
+
+    async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
+        connection_id = await _connection(conn, project)
+        await _registry(conn, project, connection_id)
+        await conn.execute(
+            text(
+                "UPDATE crm_clue_fields SET status = 'gone', gone_at = now(), "
+                "created_names = array_append(created_names, 'companies.clue_tier'), "
+                "gone_names = ARRAY['companies.clue_tier'] WHERE connection_id = :c"
+            ),
+            {"c": connection_id},
+        )
+        research = (await _integration(client, project))["research"]
+        assert research["state"] == "ready"
+        assert (research["failedField"], research["reason"]) == (None, None)
 
     _run(tmp_path, "owner", body)
 
@@ -451,6 +555,7 @@ def test_permissions_never_show_a_crm_api_name(tmp_path: Any) -> None:
 
         await grant("field:company.clue_fit_level")
         await grant("kind:list_create")
+        await grant("kind:list_membership")
         await grant("field:company.industry")
         await grant("field:company.hs_custom_x__c")
         # The card that offered "industry" showed HubSpot's own label for it.
@@ -490,12 +595,15 @@ def test_permissions_never_show_a_crm_api_name(tmp_path: Any) -> None:
         )
         page = await _integration(client, project)
         descriptions = [p["description"] for p in page["permissions"]]
-        assert descriptions == [
-            "Always allow setting “Clue fit level” on companies",
-            "Always allow creating Clue lists",
-            "Always allow setting “Industry” on companies",
-            "Always allow setting “a field” on companies",
-        ]
+        assert sorted(descriptions) == sorted(
+            [
+                "Always set Clue fit level on companies",
+                "Always create Clue lists",
+                "Always add records to Clue lists and campaigns",
+                "Always set Industry on companies",
+                "Always set a field on companies",
+            ]
+        )
         for text_ in descriptions:
             assert "clue_" not in text_ and "__c" not in text_
         name = await conn.scalar(
@@ -510,17 +618,28 @@ def test_permissions_never_show_a_crm_api_name(tmp_path: Any) -> None:
 def test_salesforce_permissions_say_accounts_and_the_field_label(tmp_path: Any) -> None:
     async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
         connection_id = await _connection(conn, project, provider="salesforce", name="Acme")
-        await insert_grant(
-            conn,
-            workspace_id=project.workspace_id,
-            connection_id=connection_id,
-            scope_key="field:account.Clue_Fit_Level__c",
-            granted_by_user_id=USER_ID,
-        )
+        for scope in (
+            "field:account.Clue_Fit_Level__c",
+            "kind:list_create",
+            "kind:create_company",
+            "kind:list_membership",
+        ):
+            await insert_grant(
+                conn,
+                workspace_id=project.workspace_id,
+                connection_id=connection_id,
+                scope_key=scope,
+                granted_by_user_id=USER_ID,
+            )
         page = await _integration(client, project)
-        assert [p["description"] for p in page["permissions"]] == [
-            "Always allow setting “Clue fit level” on accounts"
-        ]
+        assert sorted(p["description"] for p in page["permissions"]) == sorted(
+            [
+                "Always set Clue fit level on accounts",
+                "Always create Clue campaigns",
+                "Always create accounts",
+                "Always add records to Clue lists and campaigns",
+            ]
+        )
 
     _run(tmp_path, "owner", body)
 
