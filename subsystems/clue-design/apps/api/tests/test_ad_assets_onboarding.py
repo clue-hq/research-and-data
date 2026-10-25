@@ -1282,3 +1282,69 @@ def test_card_offer_accepts_a_gapped_kit_and_harvest(
     assert store.require(kit_job["job_id"])["status"] == "succeeded_with_gaps"
 
     assert offer_card_if_ready(workspace_id) is not None
+
+
+# --- a failed card can be offered again (spec 2026-10-25 §3.4 B) -------------------------------
+
+
+def test_card_job_id_attempt_zero_is_unchanged() -> None:
+    import hashlib
+
+    from lumen_ingestion.ad_library.auto_card import card_job_id
+
+    expected = "ingest_adcard_" + hashlib.sha256(b"ws:h").hexdigest()[:24]
+    assert card_job_id("ws", "h") == expected
+    assert card_job_id("ws", "h", 0) == expected
+    assert card_job_id("ws", "h", 1) != expected
+
+
+def test_failed_card_is_reoffered_as_attempt_one_on_retry(tmp_path: Path, lane_on: None) -> None:
+    from lumen_ingestion.ad_library.auto_card import card_job_id, offer_card_if_ready
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    harvest = _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    first = offer_card_if_ready(workspace_id)
+    assert first == card_job_id(workspace_id, harvest["job_id"])
+    failed = _drive(
+        client,
+        tmp_path,
+        first,
+        provider=_NoLibraryCalls(),
+        distiller=_FailingDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+    assert failed["status"] == "succeeded_with_gaps"
+
+    # The automatic hook never re-offers; only an explicit repair retry does, once.
+    assert offer_card_if_ready(workspace_id) is None
+    retried = offer_card_if_ready(workspace_id, retry=True)
+    assert retried == card_job_id(workspace_id, harvest["job_id"], 1)
+    assert offer_card_if_ready(workspace_id, retry=True) is None  # attempt 1 is queued
+
+
+def test_retry_does_not_offer_when_the_harvest_already_has_a_card(
+    tmp_path: Path, lane_on: None
+) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    first = offer_card_if_ready(workspace_id)
+    done = _drive(
+        client,
+        tmp_path,
+        first,
+        provider=_NoLibraryCalls(),
+        distiller=_StubDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+    assert done["status"] == "succeeded"
+    assert offer_card_if_ready(workspace_id, retry=True) is None
