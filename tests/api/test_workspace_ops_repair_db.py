@@ -189,7 +189,8 @@ def test_illumio_replay_dry_run_then_apply_then_nothing() -> None:
             run = (
                 await conn.execute(
                     text(
-                        "SELECT run_id, kind, planned_steps, requested_by_user_id FROM onboarding_run"
+                        "SELECT run_id, kind, planned_steps, requested_by_user_id"
+                        " FROM onboarding_run"
                         " WHERE workspace_id = :w AND kind = 'repair'"
                     ),
                     {"w": ws},
@@ -217,7 +218,8 @@ def test_illumio_replay_dry_run_then_apply_then_nothing() -> None:
             audit = (
                 await conn.execute(
                     text(
-                        "SELECT actor, reason, onboarding_run_id, design_job_ids, estimated_cost_usd"
+                        "SELECT actor, reason, onboarding_run_id, design_job_ids,"
+                        " estimated_cost_usd"
                         " FROM workspace_operation WHERE workspace_id = :w"
                     ),
                     {"w": ws},

@@ -837,11 +837,12 @@ async def _job_with_status(conn: AsyncConnection, workspace_id: str, status: str
     )
 
 
-async def _replay_setup(conn: AsyncConnection, workspace_id: str) -> "_DesignApiDouble":
+async def _replay_setup(conn: AsyncConnection, workspace_id: str) -> _DesignApiDouble:
     design = _DesignApiDouble()
     app = _setup_app(conn_factory=_shared_conn_factory(conn), design=design,
                      recon=_CaptureEnqueuer())
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         replayed = await client.post("/stage0/setup", headers={"X-Workspace-Id": workspace_id})
     assert replayed.status_code == 202
     return design
