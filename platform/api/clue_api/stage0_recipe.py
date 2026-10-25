@@ -447,6 +447,9 @@ class Stage0StepPinProvider:
             # `source_turn_ref`.
             "manage_crm_grants",
             "propose_crm_changes",
+            # CRM integration Phase 4 (recipe0-stage0@42): a permission card on the same terms;
+            # its body's `project_id` is model-authored, the presenting turn is not.
+            "propose_clue_fields_setup",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",
@@ -501,6 +504,13 @@ class Stage0StepPinProvider:
             # ``crm_write_log`` joins at recipe0-stage0@37 on the same terms: its body is a set of
             # filters, never a project.
             "crm_write_log",
+            # CRM integration Phase 3 (recipe0-stage0@38): ``read_crm_targets``,
+            # ``find_crm_list`` and ``link_crm_list`` name a ``project_id`` in their body, which is
+            # model-authored, so the pin is the execution's own project (the tools refuse a
+            # project outside the workspace themselves).
+            "find_crm_list",
+            "link_crm_list",
+            "read_crm_targets",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

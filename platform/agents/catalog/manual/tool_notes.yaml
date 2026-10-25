@@ -520,7 +520,7 @@ find_crm_actions:
     A list of the connected CRM's actions that match the search, each with its input schema and
     its access. Nothing was read from the CRM. Run a read with run_crm_action; propose a write with
     propose_crm_changes.
-  skill_section: crm-sales-analysis v2 section 3, "Read the setup first"; crm-writing v1 section 3, "Finding the write action".
+  skill_section: crm-sales-analysis v2 section 3, "Read the setup first"; crm-writing v6 section 3, "Finding the write action".
   see_also: [tools]
   refusals:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand.
@@ -580,19 +580,27 @@ propose_crm_changes:
     the person a permission card; state "queued" means a standing permission covers every change
     and they are being sent. End your turn with one line on what is waiting: the chat continues by
     itself with the results once the changes are sent.
-  skill_section: crm-writing v1 sections 4 and 6, "One proposal per decision" and "After proposing".
+  skill_section: crm-writing v6 sections 3b, 3c, 4 and 6, "Writing a project's research into the CRM", "Clue's own fields", "One proposal per decision" and "After proposing".
   see_also: [gates-authority, humans-screens]
   refusals:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot write to the CRM.
     crm_turn_not_found: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
     crm_not_connected: Call connect_crm to ask the person to connect the CRM, and propose again once it is connected.
     crm_connection_expired: Call connect_crm; it shows the person a Reconnect card. Propose again once they reconnect.
-    crm_write_not_allowed: Leave that change out, and tell the person plainly that Clue cannot make this write yet.
-    crm_write_not_parsable: Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again.
+    crm_write_not_allowed: "Leave that change out, and tell the person plainly that Clue cannot make this write yet. A possible-duplicate link has no action of its own: use the actions in crm-writing section 3c."
+    crm_write_not_parsable: Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again. To add to a list or campaign this same call creates, give the add the list id new:<the exact name of the create>; only adds may use it. To use a company or person this same call creates, refer to it as new:company:<its domain> (to add it to a HubSpot list, or as a new person's company) or new:contact:<its email> (to add the person to a Salesforce campaign), spelled exactly like the create; nowhere else.
     crm_field_forbidden: Leave that field out of every change and propose again; Clue never writes consent or phone fields, and writes only the allowed fields on a person (crm-writing section 5).
     crm_value_not_allowed: Use one of the allowed values the message lists, and propose again.
-    crm_removal_not_allowed: Leave that removal out, and tell the person to remove the member in the CRM if they want it gone.
+    crm_removal_not_allowed: Leave that removal out. For a list or campaign member Clue did not add, tell the person to remove it in the CRM. For a possible-duplicate link, Clue removes only a Salesforce link it made itself, by undoing that change with reverses_write_id; it cannot undo a HubSpot link, so tell the person to remove it there (crm-writing section 3c).
+    crm_list_exists: Clue already keeps a list or campaign of that name; the message gives its id. Add to that one instead of creating another.
+    crm_list_not_kept: Clue does not keep that HubSpot list yet. If the person named it, link it first with link_crm_list, then propose the change again; the other changes are on the card.
+    crm_list_gone: HubSpot no longer has that list. Look for it by name; if it is not there, propose creating the list again, then add to the new one. The other changes are on the card.
     crm_read_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now.
+    crm_record_not_found: Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed.
+    crm_field_unknown: The CRM has no field by that name. Look up the field's real name in the CRM's field list, and propose that change again; the other changes are on the card. When every change was refused this way, nothing was proposed.
+    crm_personal_data_not_allowed: That change wrote a person value (or a company's ICP tier) that is not what Clue researched and cleared, or it named no Clue contact. Read read_crm_targets, name the contact (or account) as clue_entity_id, and write only the values it offers; leave out a field it lists as withheld. For a buying role, give only Clue's role; Clue adds it to the roles already there and never removes one. A Clue field on a company needs the account as clue_entity_id too. When the message says Clue writes its links only from its public address, leave the link fields out; Clue is running on a local address. For a possible-duplicate link, link only two records of this same Clue contact. The other changes are on the card.
+    crm_clue_fields_not_set_up: Clue's own fields are not set up in this CRM yet, or one of them no longer exists there. Leave those fields out, and call propose_clue_fields_setup to ask an owner or admin to set them up (again); then propose the Clue fields once they are ready (crm-writing section 3c). The other changes are on the card.
+    crm_possible_duplicate: The CRM already has more than one contact for this person, so Clue created nothing. You may mark them as possible duplicates, exactly as the message says (same records, same action); never link records because their names look alike, and never merge them (crm-writing section 3c).
     crm_nothing_to_change: Tell the person the CRM already holds those values, so there is nothing to change.
     crm_action_failed: Check the action's input schema against the CRM's message, fix the arguments, and propose again.
     crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
@@ -604,9 +612,10 @@ propose_crm_changes:
 crm_write_log:
   afterwards: >-
     Nothing changed. The rows are what Clue changed or tried to change in the CRM, newest first:
-    each with its write_id, the value before and after, its status, and the CRM's message when it
-    failed. To undo one, propose it again with reverses_write_id (crm-writing section 8).
-  skill_section: crm-writing v1 section 8, "The write log and undo".
+    each with its write_id (Clue's internal id, for undo only, never shown to the person), the
+    value before and after, its status, and the CRM's message when it failed. To undo one, propose
+    it again with reverses_write_id (crm-writing section 8).
+  skill_section: crm-writing v6 section 8, "The write log and undo".
   see_also: [tools]
   refusals:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so there is no write log to read.
@@ -617,7 +626,7 @@ manage_crm_grants:
     a revoke, `revoked` is the permission withdrawn, and those changes ask on a card again;
     `already_revoked: true` means it had been withdrawn before and nothing changed. Permissions
     are given only on the card, never with this tool.
-  skill_section: crm-writing v1 section 8, "The write log and undo".
+  skill_section: crm-writing v6 section 8, "The write log and undo".
   see_also: [gates-authority]
   refusals:
     crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so there are no permissions to manage.
@@ -625,3 +634,76 @@ manage_crm_grants:
     crm_not_connected: Tell the person no CRM is connected, so there are no permissions to list or revoke.
     crm_grant_not_named: List the permissions first, then revoke by the grant_id of the one the person named.
     crm_grant_not_found: List the permissions again, and revoke by a grant_id from that list.
+
+read_crm_targets:
+  afterwards: >-
+    Nothing changed; the CRM was not called. These are the only accounts, tiers and person values
+    Clue may write for this project. Write nothing a contact lists as withheld, and tell the person
+    what was held back and why. It also gives Clue's own values: clue_tier, clue_research_link and
+    clue_id on an account, clue_committee_role, clue_contact_link and clue_id on a contact. Write
+    them only into Clue's own fields, exactly as given. When clue_fields_note is set, Clue's fields
+    are not set up yet: call propose_clue_fields_setup first. A creation also sets
+    the record's Clue id itself once the fields are set up.
+  skill_section: crm-writing v6 sections 3b and 3c, "Writing a project's research into the CRM" and "Clue's own fields".
+  see_also: [tools]
+  refusals:
+    project_not_found: Use this conversation's own project id.
+    invalid_account_id: Pass account ids exactly as the project's accounts give them, or leave account_ids out.
+
+propose_clue_fields_setup:
+  afterwards: >-
+    Clue built the setup itself and the chat now shows the person a permission card. Only a
+    workspace owner or admin can allow it; if someone else answers Allow, the card refuses it
+    (crm_setup_needs_admin): tell them to ask an owner or admin. On Salesforce, say the card also
+    creates a "Clue fields" permission set that gives the connected user access to the fields, and
+    that this user must be a Salesforce admin. End your turn with one line on what is waiting.
+  skill_section: crm-writing v6 section 3c, "Clue's own fields".
+  see_also: [gates-authority, humans-screens]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot set up its fields.
+    crm_turn_not_found: Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved.
+    project_not_found: Use this conversation's own project id.
+    crm_not_connected: Call connect_crm to ask the person to connect (or reconnect) the CRM, and propose the setup again once it is connected.
+    crm_clue_fields_ready: Clue's fields are already set up; do not propose the setup again. Write the Clue fields read_crm_targets gives.
+
+find_crm_list:
+  afterwards: >-
+    Nothing changed. `lists` are the lists (HubSpot) or campaigns (Salesforce) Clue keeps for the
+    project; propose changes only to one with stored true. One with gone true is no longer in the
+    CRM. With a name, `found` lists what the CRM has under exactly that name; when the person named
+    it, link it with link_crm_list before proposing changes to it. When `found` has more than one
+    Salesforce campaign, ask the person which one they mean.
+  skill_section: crm-writing v6 section 3b, "Writing a project's research into the CRM".
+  see_also: [tools]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists.
+    crm_not_connected: Call connect_crm to ask the person to connect the CRM.
+    crm_connection_expired: Call connect_crm; it shows the person a Reconnect card.
+    project_not_found: Use this conversation's own project id.
+    crm_action_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now.
+    crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
+    crm_unavailable: Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now.
+    salesforce_api_disabled: Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns.
+    salesforce_api_share_exhausted: Tell the person Clue has used its share of the org's API calls for today, and look for the campaign again tomorrow.
+    salesforce_limits_unavailable: Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce.
+
+link_crm_list:
+  afterwards: >-
+    Clue now keeps the list (HubSpot) or campaign (Salesforce) for the project, marked as one the
+    person named, not one Clue created. Nothing changed in the CRM. Propose the adds to it with
+    propose_crm_changes; Clue never removes members it did not add.
+  skill_section: crm-writing v6 section 3b, "Writing a project's research into the CRM".
+  see_also: [tools]
+  refusals:
+    crm_not_configured: Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists.
+    crm_not_connected: Call connect_crm to ask the person to connect the CRM.
+    crm_connection_expired: Call connect_crm; it shows the person a Reconnect card.
+    project_not_found: Use this conversation's own project id.
+    crm_list_not_found: The CRM has no list or campaign with that id. Find it by its exact name with find_crm_list, and link the id it gives.
+    crm_list_not_manual: That HubSpot list is filled by a rule, so Clue cannot add to it. Tell the person, and ask for a list whose members are set by hand, or propose creating Clue's own list.
+    crm_action_failed: Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now.
+    crm_rate_limited: Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy.
+    crm_unavailable: Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now.
+    salesforce_api_disabled: Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns.
+    salesforce_api_share_exhausted: Tell the person Clue has used its share of the org's API calls for today, and link the campaign tomorrow.
+    salesforce_limits_unavailable: Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce.

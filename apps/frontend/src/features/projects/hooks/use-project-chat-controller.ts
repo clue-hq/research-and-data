@@ -133,6 +133,9 @@ function newestTurnCursor(turns: readonly ChatTurn[]): number | null {
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
 
+/** The derivation of the wake-up turn Clue queues when a CRM write card's changes finish. */
+const CRM_WRITES_FINISHED = "crm_writes_finished";
+
 /**
  * How often a thread held by a discovery re-reads its thread list. The thread
  * stream announces the wake turn that normally ends a hold; this only catches
@@ -261,6 +264,11 @@ export interface ProjectChatController {
   loadOlderMessages(): Promise<void>;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
+  /**
+   * How many "changes finished" wake-up turns (derivation `crm_writes_finished`) this thread has
+   * (R-12.18). When it moves, a CRM write card still being written to re-reads at once.
+   */
+  crmWritesFinished: number;
   submitMessage(
     text: string,
     options?: {
@@ -1338,6 +1346,11 @@ export function useProjectChatController({
     return map;
   }, [gateRead]);
 
+  const crmWritesFinished = useMemo(
+    () => turns.filter((turn) => turn.derivation === CRM_WRITES_FINISHED).length,
+    [turns],
+  );
+
   const gateFor = useCallback(
     (part: ChatGatePart) => {
       const gateId = agentGateIdFromPart(part);
@@ -1558,6 +1571,7 @@ export function useProjectChatController({
     loadOlderMessages,
     gateFor,
     gateAnswerForTurn,
+    crmWritesFinished,
     submitMessage,
     answerGate,
     recoverGate,

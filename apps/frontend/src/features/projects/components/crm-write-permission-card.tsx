@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  CLUE_FIELDS_SETUP_KIND,
   allowLabel,
   answeredLine,
   countsLine,
@@ -14,6 +15,7 @@ import {
   crmWriteRecordsCaption,
   groupTickState,
   initialSelection,
+  pausedCaption,
   selectedCount,
   sendingTitle,
   toggleGroup,
@@ -51,14 +53,17 @@ export function CrmWritePermissionCard({
   busy,
   card,
   onDecide,
+  wake = 0,
 }: {
   busy: boolean;
   card: GateCardModel;
   onDecide: (card: GateCardModel, input: GateDecisionInput) => void;
+  /** The chat's count of "changes finished" wake-ups: the card re-reads when it moves (R-12.18). */
+  wake?: number;
 }) {
   const write = card.crmWrite;
   const answeredOrClosed = card.state !== "requested";
-  const progress = useCrmProposalProgress(card.crmProposalId, answeredOrClosed);
+  const progress = useCrmProposalProgress(card.crmProposalId, answeredOrClosed, wake);
   if (write === null) return null;
   const gateState =
     card.state === "responded" || card.state === "denied" || card.state === "withdrawn"
@@ -116,6 +121,8 @@ function AskingCard({
   const count = selectedCount(selection);
   const canAllow = card.permittedDecisions.includes("approved");
   const canDecline = card.permittedDecisions.includes("rejected");
+  // Setting up Clue's own fields is one change: "Allow", never "Allow 1".
+  const setup = write.groups.some((group) => group.kind === CLUE_FIELDS_SETUP_KIND);
 
   function toggleAlwaysAllow(scopeKey: string) {
     setAlwaysAllow((current) => {
@@ -129,16 +136,20 @@ function AskingCard({
   return (
     <section className={frame.card} data-crm-write-state="asking" aria-label={write.title}>
       <Header title={write.title} description={write.description} icon={<ProviderLogo write={write} />} />
-      {write.groups.map((group, index) => (
-        <GroupLine
-          disabled={busy}
-          group={group}
-          key={`${group.alwaysAllowPhrase}:${index}`}
-          selection={selection}
-          onToggleGroup={() => setSelection((current) => toggleGroup(current, group))}
-          onToggleRecord={(writeId) => setSelection((current) => toggleRecord(current, writeId))}
-        />
-      ))}
+      {write.groups.map((group, index) =>
+        group.kind === CLUE_FIELDS_SETUP_KIND ? (
+          <SetupGroup group={group} key={`setup:${index}`} />
+        ) : (
+          <GroupLine
+            disabled={busy}
+            group={group}
+            key={`${group.alwaysAllowPhrase}:${index}`}
+            selection={selection}
+            onToggleGroup={() => setSelection((current) => toggleGroup(current, group))}
+            onToggleRecord={(writeId) => setSelection((current) => toggleRecord(current, writeId))}
+          />
+        ),
+      )}
       {write.overwritesHeading ? (
         <div className={styles.section}>
           <p className={styles.warning}>
@@ -209,7 +220,7 @@ function AskingCard({
                   })
                 }
               >
-                {allowLabel(count)}
+                {setup ? "Allow" : allowLabel(count)}
               </Button>
             ) : null}
           </div>
@@ -273,6 +284,34 @@ function GroupLine({
           )}
         </Records>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Setting up Clue's own fields (Phase 4): every field it creates and what else changes in the CRM,
+ * always shown; there is one change, so nothing to tick or open.
+ */
+function SetupGroup({ group }: { group: CrmWriteGroup }) {
+  return (
+    <div className={styles.group}>
+      <div className={styles.rowBody}>
+        <p className={styles.rowTitle}>{group.title}</p>
+        <ul className={styles.recordList}>
+          {group.setupFields.map((field) => (
+            <li className={styles.rowText} key={`${field.object}:${field.label}`}>
+              {`${field.object} · ${field.label}`}
+              <span className={frame.caption}>{` (${field.type})`}</span>
+            </li>
+          ))}
+        </ul>
+        {group.setupNotes.map((note) => (
+          <p className={frame.caption} key={note}>
+            {note}
+          </p>
+        ))}
+        {group.reason ? <Reason text={group.reason} /> : null}
+      </div>
     </div>
   );
 }
@@ -498,7 +537,7 @@ function PausedCard({ progress, write }: { progress: CrmProposalProgress | null;
       />
       {progress ? <p className={styles.rowText}>{`${countsLine(progress.counts)} so far`}</p> : null}
       <div className={frame.actions}>
-        <p className={frame.caption}>Sending carries on in order once it is reconnected.</p>
+        <p className={frame.caption}>{pausedCaption(write.providerName)}</p>
         <Link className={styles.linkButton} href="/settings/integrations">
           Reconnect {write.providerName}
         </Link>

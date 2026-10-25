@@ -18,8 +18,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_obs import get_logger
+
 if TYPE_CHECKING:
     from clue_api.crm.write_prepare import PreparedChange
+
+log = get_logger("clue_api.crm.writes")
 
 __all__ = [
     "Grant",
@@ -29,8 +33,10 @@ __all__ = [
     "clue_added_members",
     "clue_wrote_current_value",
     "forget_membership_link",
+    "forget_record_link",
     "get_proposal",
     "proposal_counts",
+    "proposal_linked_records",
     "membership_link_id",
     "record_membership_link",
     "covering_grant",
@@ -149,6 +155,40 @@ async def proposal_counts(conn: AsyncConnection, *, proposal_id: UUID) -> WriteC
     return WriteCounts(**{key: int(value) for key, value in row._mapping.items()})
 
 
+async def proposal_created_records(
+    conn: AsyncConnection, *, proposal_id: UUID
+) -> list[tuple[str, str]]:
+    """``(record_label, new CRM id)`` of each record — and each list or campaign — the proposal's
+    succeeded creates made."""
+    rows = await conn.execute(
+        text(
+            "SELECT record_label, record_ref FROM crm_write WHERE proposal_id = :id "
+            "AND kind IN ('create_contact', 'create_company', 'list_create') "
+            "AND status = 'succeeded' "
+            "AND record_ref IS NOT NULL ORDER BY ordinal"
+        ),
+        {"id": proposal_id},
+    )
+    return [(str(row.record_label), str(row.record_ref)) for row in rows]
+
+
+async def proposal_linked_records(conn: AsyncConnection, *, proposal_id: UUID) -> int:
+    """How many existing CRM records the proposal linked to their Clue entities (Task 6): by a
+    succeeded update, or by a create that found the record already there. Links the proposal
+    made, not ones that were there already."""
+    count = await conn.scalar(
+        text(
+            "SELECT count(*) FROM crm_record_link l JOIN crm_write w "
+            "ON w.write_id = l.created_by_write_id WHERE w.proposal_id = :id "
+            "AND ((w.kind = 'field_update' AND w.status = 'succeeded') "
+            "OR (w.kind IN ('create_contact', 'create_company') AND w.status = 'skipped')) "
+            "AND NOT l.created_by_clue AND l.clue_entity_id IS NOT NULL"
+        ),
+        {"id": proposal_id},
+    )
+    return int(count or 0)
+
+
 async def set_proposal_status(
     conn: AsyncConnection,
     *,
@@ -197,12 +237,14 @@ async def insert_writes(
                 "INSERT INTO crm_write (write_id, proposal_id, workspace_id, connection_id, "
                 "ordinal, slug, arguments, kind, object, record_ref, record_label, field, "
                 "before_value, after_value, overwrites_person, reason, source_ref, "
-                "reverses_write_id, scope_key, covered_by, selected, status, idempotency_key) "
+                "reverses_write_id, scope_key, covered_by, selected, status, idempotency_key, "
+                "source_claim_ids, clue_entity_id) "
                 "VALUES (:write_id, :proposal_id, :workspace_id, :connection_id, :ordinal, :slug, "
                 "CAST(:arguments AS jsonb), :kind, :object, :record_ref, :record_label, :field, "
                 "CAST(:before AS jsonb), CAST(:after AS jsonb), :overwrites_person, :reason, "
                 ":source_ref, :reverses_write_id, :scope_key, :covered_by, :selected, "
-                "'proposed', :idempotency_key)"
+                "'proposed', :idempotency_key, CAST(:source_claim_ids AS uuid[]), "
+                ":clue_entity_id)"
             ),
             {
                 "write_id": change.write_id,
@@ -213,7 +255,8 @@ async def insert_writes(
                 "slug": change.spec.slug,
                 "arguments": json.dumps(change.arguments, default=str),
                 "kind": change.parsed.change_kind(change.spec),
-                "object": change.spec.object,
+                # The change's own object: a HubSpot list holds companies or contacts.
+                "object": change.parsed.object,
                 "record_ref": change.parsed.record_ref,
                 "record_label": change.parsed.label,
                 "field": change.field,
@@ -227,6 +270,9 @@ async def insert_writes(
                 "covered_by": change.covered_by,
                 "selected": not change.overwrites_person,
                 "idempotency_key": f"crm_write:{change.write_id}",
+                # R-8.7: the claims the value came from, so an erasure can list what Clue wrote.
+                "source_claim_ids": list(change.source_claim_ids),
+                "clue_entity_id": change.clue_entity_id,
             },
         )
 
@@ -315,7 +361,11 @@ def covering_grant(grants: Sequence[Grant], scope_key: str, kind: str) -> UUID |
     """The grant that covers a change of this scope and kind, if any.
 
     The caller never asks for an overwrite of a person's value: no grant covers one (R-6.5).
+    Setting up Clue's own fields is never covered either: an owner or admin allows it on its
+    card each time (R-13.3).
     """
+    if kind == "clue_fields_setup":
+        return None
     for grant in grants:
         if grant.scope_kind == FULLY_AUTOMATIC:
             return grant.grant_id
@@ -390,7 +440,11 @@ async def record_link(
     created_by_write_id: UUID | None = None,
 ) -> None:
     """Remember which CRM record a Clue entity is. A later link fills a missing entity id but
-    never forgets that Clue created the record."""
+    never forgets that Clue created the record.
+
+    A CRM record's link is never overwritten (Task 6 policy): a record already linked to another
+    Clue entity keeps that entity, and the attempt is logged. One Clue entity may be linked to
+    several records (through creates or finds); reads take its most recent link."""
     params: dict[str, Any] = {
         "workspace_id": workspace_id,
         "connection_id": connection_id,
@@ -400,7 +454,7 @@ async def record_link(
         "created_by_clue": created_by_clue,
         "created_by_write_id": created_by_write_id,
     }
-    await conn.execute(
+    result = await conn.execute(
         text(
             "INSERT INTO crm_record_link (workspace_id, connection_id, crm_object, crm_id, "
             "clue_entity_id, created_by_clue, created_by_write_id) VALUES (:workspace_id, "
@@ -409,11 +463,25 @@ async def record_link(
             "clue_entity_id = COALESCE(crm_record_link.clue_entity_id, "
             "EXCLUDED.clue_entity_id), "
             "created_by_clue = crm_record_link.created_by_clue OR EXCLUDED.created_by_clue, "
-            "created_by_write_id = COALESCE(crm_record_link.created_by_write_id, "
-            "EXCLUDED.created_by_write_id)"
+            # The write that made the link: a link that already named its entity keeps
+            # whatever it had (an update of an already-linked record links nothing new).
+            "created_by_write_id = CASE WHEN crm_record_link.clue_entity_id IS NULL "
+            "THEN COALESCE(crm_record_link.created_by_write_id, EXCLUDED.created_by_write_id) "
+            "ELSE crm_record_link.created_by_write_id END "
+            "RETURNING clue_entity_id"
         ),
         params,
     )
+    kept = result.scalar_one()
+    if clue_entity_id is not None and kept is not None and kept != clue_entity_id:
+        log.warning(
+            "crm.record_link.kept_existing_entity",
+            connection_id=str(connection_id),
+            crm_object=crm_object,
+            crm_id=crm_id,
+            kept=str(kept),
+            offered=str(clue_entity_id),
+        )
 
 
 #: A list (HubSpot) or campaign (Salesforce) membership Clue added is remembered as a record link
@@ -448,6 +516,20 @@ async def record_membership_link(
     )
 
 
+async def forget_record_link(
+    conn: AsyncConnection, *, connection_id: UUID, crm_object: str, crm_id: str
+) -> None:
+    """Forget a record link of this connection whose CRM record the CRM no longer has (Task 11
+    fix round 1): Clue no longer knows the entity by it, so a create of it may go ahead."""
+    await conn.execute(
+        text(
+            "DELETE FROM crm_record_link WHERE connection_id = :connection_id "
+            "AND crm_object = :object AND crm_id = :crm_id"
+        ),
+        {"connection_id": connection_id, "object": crm_object, "crm_id": crm_id},
+    )
+
+
 async def forget_membership_link(
     conn: AsyncConnection, *, workspace_id: str, list_ref: str, record_ref: str
 ) -> None:
@@ -468,19 +550,42 @@ async def forget_membership_link(
 
 
 async def clue_added_members(
-    conn: AsyncConnection, *, connection_id: UUID, pairs: Sequence[tuple[str, str]]
+    conn: AsyncConnection,
+    *,
+    connection_id: UUID,
+    pairs: Sequence[tuple[str, str]],
+    project_id: str | None = None,
 ) -> set[tuple[str, str]]:
-    """Which (list, record) memberships of this connection Clue added itself."""
+    """Which (list, record) memberships of this connection Clue added itself.
+
+    With ``project_id``, only those a proposal of that project added: a list can serve several
+    projects (R-11.11), and one project never removes a member another project added. The project
+    is the one of the proposal whose write created the link; a link no write created belongs to
+    no project.
+    """
     wanted = {
         membership_link_id(list_ref, record): (list_ref, record) for list_ref, record in pairs
     }
     if not wanted:
         return set()
+    project_clause = (
+        ""
+        if project_id is None
+        else "AND EXISTS (SELECT 1 FROM crm_write w JOIN crm_write_proposal p "
+        "ON p.proposal_id = w.proposal_id WHERE w.write_id = l.created_by_write_id "
+        "AND p.project_id = :project_id) "
+    )
     rows = await conn.execute(
         text(
-            "SELECT crm_id FROM crm_record_link WHERE connection_id = :connection_id "
-            "AND crm_object = :object AND created_by_clue AND crm_id = ANY(:ids)"
+            "SELECT l.crm_id FROM crm_record_link l WHERE l.connection_id = :connection_id "
+            "AND l.crm_object = :object AND l.created_by_clue AND l.crm_id = ANY(:ids) "
+            + project_clause
         ),
-        {"connection_id": connection_id, "object": MEMBERSHIP_LINK_OBJECT, "ids": list(wanted)},
+        {
+            "connection_id": connection_id,
+            "object": MEMBERSHIP_LINK_OBJECT,
+            "ids": list(wanted),
+            "project_id": project_id,
+        },
     )
     return {wanted[crm_id] for (crm_id,) in rows}

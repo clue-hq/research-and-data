@@ -36,6 +36,7 @@ from clue_api.agent_gate import (
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.crm import writes
 from clue_api.crm.connections import mark_expired
+from clue_api.crm.lists import store_list
 from clue_api.crm.write_executor import close_replaced_connection_proposals
 from clue_api.crm.write_tools import (
     CrmChangeInput,
@@ -54,6 +55,7 @@ from clue_core import new_operation_id
 from clue_projections import open_gate_kinds_for_threads, thread_gates
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
+from tests.api._crm_people import clear_people
 from tests.api.test_crm_tools_db import _connect
 from tests.api.test_crm_write_prepare_db import _FakeCrm
 from tests.api.test_lane_d4_agent_gate_db import OTHER_USER_ID, USER_ID, _seed
@@ -174,7 +176,8 @@ async def _propose(conn: Any, seeded: Any, *changes: CrmChangeInput) -> dict[str
         work_queue=_FakeQueue(),  # type: ignore[arg-type]
     )
     inputs = ProposeCrmChangesInput(
-        changes=list(changes), source_turn_ref=derive_turn_action_ref(seeded.turn_id)
+        changes=await clear_people(conn, seeded, changes),
+        source_turn_ref=derive_turn_action_ref(seeded.turn_id),
     )
     ctx = ToolContext(
         workspace_id=seeded.workspace_id,
@@ -284,6 +287,20 @@ def _run(tmp_path: Path, label: str, body: Any) -> None:
             seeded.label = label
             seeded.storage = FsStorage(tmp_path / f"crm-answer-{label}")
             connection = await _connect(conn, seeded.workspace_id)
+            # The contact list these tests add to is one Clue keeps (Phase 3, fix round 1 #1).
+            await store_list(
+                conn,
+                workspace_id=seeded.workspace_id,
+                connection_id=connection.connection_id,
+                provider="hubspot",
+                crm_object="contact",
+                crm_list_id="9",
+                name="Q4 committee",
+                kind="hubspot_list",
+                created_by_clue=True,
+                created_by_write_id=None,
+                project_id=seeded.project_id,
+            )
             await body(conn, seeded, connection)
 
     run_async(scenario())
@@ -348,7 +365,7 @@ def test_allow_queues_the_selected_changes_and_records_always_allow(tmp_path: Pa
         }
         captured = await _captured_message(conn, seeded, "allow")
         assert captured["crm_write"]["summary"] == (
-            "Allowed 3 of 4 changes; always allow adding contacts to Clue lists."
+            "Allowed 3 of 4 changes; always allow adding records to Clue lists and campaigns."
         )
 
     _run(tmp_path, "allow", body)
@@ -523,6 +540,52 @@ def test_a_card_is_answered_once_by_any_member(tmp_path: Path) -> None:
         assert await _answers(conn, seeded.workspace_id) == 1
 
     _run(tmp_path, "once", body)
+
+
+@pytest.mark.parametrize("status", ["queued", "sending", "finished", "declined"])
+def test_an_answer_that_lost_the_race_says_someone_answered_first(
+    tmp_path: Path, status: str
+) -> None:
+    """Final review M-1: a colleague's answer moved the proposal on a moment before this one (its
+    gate answer not yet visible to this request): the click is told someone answered first, never
+    that the card is stale."""
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        await writes.set_proposal_status(
+            conn,
+            proposal_id=UUID(proposed["proposal_id"]),
+            status=status,
+            answered_by_user_id=OTHER_USER_ID,
+        )
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="late", selected=_ids_in(snapshot, "101")
+            )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "CRM_WRITE_ALREADY_ANSWERED"
+        assert await _answers(conn, seeded.workspace_id) == 0
+
+    _run(tmp_path, f"race-{status}", body)
+
+
+def test_a_card_closed_unanswered_is_stale_not_answered(tmp_path: Path) -> None:
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _set_tier("101", "Tier 1"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        # Closed by the system (a reconnect), with nobody's answer.
+        await writes.set_proposal_status(
+            conn, proposal_id=UUID(proposed["proposal_id"]), status="finished"
+        )
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="closed", selected=_ids_in(snapshot, "101")
+            )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "GATE_SUBJECT_STALE"
+
+    _run(tmp_path, "closed-unanswered", body)
 
 
 def test_the_turn_list_names_the_gate_a_turn_answered(tmp_path: Path) -> None:
@@ -775,8 +838,8 @@ def test_the_results_message_names_who_allowed_what(tmp_path: Path) -> None:
         )
         message = (await seeded.storage.get(key)).decode()
         assert message.startswith(
-            "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding contacts to "
-            "Clue lists. The CRM changes are finished: 2 done, 0 failed, 0 skipped"
+            "Aryan Keshri allowed 2 of 3 changes and granted: always allow adding records to "
+            "Clue lists and campaigns. The CRM changes are finished: 2 done, 0 failed, 0 skipped"
         ), message
 
     _run(tmp_path, "wake-names", body)
@@ -1192,3 +1255,106 @@ def test_a_newer_card_never_replaces_a_proposal_an_answer_queued(tmp_path: Path)
         assert (await _proposal(conn, first["proposal_id"])).status == "queued"
 
     _run(tmp_path, "race-order", body)
+
+
+# --- Task 3b (R-12.7): a new list and its adds through the real card ---------------------------
+
+
+def _create_list(name: str = "Clue: Q4") -> CrmChangeInput:
+    return CrmChangeInput(
+        slug="HUBSPOT_CREATE_LIST",
+        arguments={"name": name, "object_type_id": "0-1", "processing_type": "MANUAL"},
+        reason="The project's committee list.",
+    )
+
+
+def _add_to_new(record: str, name: str = "Clue: Q4") -> CrmChangeInput:
+    return CrmChangeInput(
+        slug="HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        arguments={"list_id": f"new:{name}", "operation": "add", "record_ids": [record]},
+        reason="The buying committee Clue found.",
+    )
+
+
+def _executor(conn: Any, tmp_path: Path) -> tuple[Any, Any]:
+    from tests.api.test_crm_write_executor_db import _handler, _WritingCrm
+
+    gateway = _WritingCrm(lists={"501": []})
+    return gateway, _handler(conn, tmp_path, gateway)
+
+
+async def _list_writes(conn: Any, proposal_id: str) -> dict[str, tuple[str, str | None]]:
+    rows = await conn.execute(
+        text("SELECT kind, status, crm_message FROM crm_write WHERE proposal_id = :id"),
+        {"id": UUID(proposal_id)},
+    )
+    return {row.kind: (row.status, row.crm_message) for row in rows}
+
+
+def test_a_covered_create_waits_with_its_adds_for_the_card(tmp_path: Path) -> None:
+    """Review #2: an "Always allow" on creating lists does not send the create ahead of the card
+    that asks about its adds; nothing is sent before the answer, then the create goes first."""
+    from tests.api.test_crm_write_executor_db import _context
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        await writes.insert_grant(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            scope_key="kind:list_create",
+            granted_by_user_id=USER_ID,
+        )
+        proposed = await _propose(conn, seeded, _create_list(), _add_to_new("501"))
+        assert proposed["state"] == "awaiting_permission"
+        snapshot = await _snapshot(conn, seeded, proposed)
+        assert [g["title"] for g in snapshot["groups"]] == ['Add 1 contact to the list "Clue: Q4"']
+
+        gateway, handler = _executor(conn, tmp_path)
+        await handler.handle(_context(connection))
+        assert gateway.writes == []  # the proposal waits for its card, create included
+
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="allow", selected=_ids_in(snapshot, "501")
+            )
+        assert response.status_code == 202, response.text
+        await handler.handle(_context(connection))
+
+        assert [slug for slug, _ in gateway.writes] == [
+            "HUBSPOT_CREATE_LIST",
+            "HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
+        ]
+        assert gateway.writes[1][1]["list_id"] == "17"
+        assert (await _list_writes(conn, proposed["proposal_id"]))["list_membership"][0] == (
+            "succeeded"
+        )
+
+    _run(tmp_path, "newlistcovered", body)
+
+
+def test_unticking_the_create_on_the_card_skips_its_adds(tmp_path: Path) -> None:
+    """Review #3: the person allows the add but unticks the list it goes into."""
+    from tests.api.test_crm_write_executor_db import NOT_CREATED, _context
+
+    async def body(conn: Any, seeded: Any, connection: Any) -> None:
+        proposed = await _propose(conn, seeded, _create_list(), _add_to_new("501"))
+        snapshot = await _snapshot(conn, seeded, proposed)
+        assert [g["title"] for g in snapshot["groups"]] == [
+            'Create the list "Clue: Q4"',
+            'Add 1 contact to the list "Clue: Q4"',
+        ]
+        async with _client(conn, seeded) as client:
+            response = await _answer(
+                client, seeded, proposed, snapshot, key="allow", selected=_ids_in(snapshot, "501")
+            )
+        assert response.status_code == 202, response.text
+
+        gateway, handler = _executor(conn, tmp_path)
+        await handler.handle(_context(connection))
+
+        logged = await _list_writes(conn, proposed["proposal_id"])
+        assert logged["list_create"][0] == "skipped"
+        assert logged["list_membership"] == ("skipped", NOT_CREATED)
+        assert gateway.writes == []
+
+    _run(tmp_path, "newlistunticked", body)

@@ -117,3 +117,7 @@ Docs module: `docs/superpowers/specs/crm-integration/` — `README.md` (index), 
   Watch: the wake turn appears in both open tabs within ~2 s, and its turn.accepted has
   `"source": "worker"`. Nothing is running on the stack (checked 2026-10-21 after F2).
 Task 12: founder trial on the local stack (gate before Phase 2); then commit Task 11 as one unit (or revise the skill), then deploy reads (R-2.4).
+
+- 2026-10-22: Phase 2 (write foundation) built and live-checked — continued in
+  `_memory/2026-10-22-crm-integration-phase2.md`. The owed F2 server-started wake test above was
+  seen live during it (the `crm_writes_finished` wake turn appeared in the open tab without reload).

@@ -12,9 +12,36 @@ Salesforce API names (``Industry``, ``Tier__c``). Salesforce's named tools take 
 arguments (``industry``), so they are mapped here.
 
 Never allowlisted: merges, deletes, GDPR/erase actions and Composio's natural-language
-(``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write — use
-the batch ``HUBSPOT_UPDATE_CONTACTS``); the Salesforce ``*_BY_ID`` update tools (deprecated in the
-pinned toolkit). ``link_duplicate`` is a declared kind with no action until Phase 3.
+(``*_FROM_NL``) actions; ``HUBSPOT_UPDATE_CONTACT`` (it reported success on a refused write); the
+Salesforce ``*_BY_ID`` update tools (deprecated in the pinned toolkit).
+
+A HubSpot contact's field update is proposed as ``HUBSPOT_UPDATE_CONTACTS`` (one input) but always
+sent through ``HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID`` (``objectType`` contacts, one record per
+call): Composio's schema of the batch tool keeps only ~45 standard contact properties and silently
+drops the rest -- Clue's own fields and ``hs_buying_role`` among them -- while answering success
+(Phase 4 live check). Preparation logs every field update under :func:`field_update_spec`, so a
+change proposed with either action is logged and sent, retried and undone as the by-id one.
+
+``link_duplicate`` (Phase 4, Task 5; R-6.13, R-13.5) marks two CRM contacts of one person as
+possible duplicates; Clue never merges them. On HubSpot it is ``HUBSPOT_CREATE_OBJECT_ASSOCIATION``
+between two contacts with Clue's "Possible duplicate" label (preparation fills in the label's type
+id from Clue's setup); on Salesforce it is ``SALESFORCE_UPDATE_CONTACT`` setting Clue's lookup
+field ``Clue_Possible_Duplicate__c`` on one contact to the other's id — that change alone, parsed
+as a ``link_duplicate`` (:attr:`ParsedChange.kind`). Clearing that field is a plain field update,
+allowed only as the undo of Clue's own link. HubSpot has no allowlisted way to remove a label.
+
+``clue_fields_setup`` (Phase 4, Task 2; R-13.3, R-13.4) sets up Clue's own fields in the CRM. It is
+not on the allowlist: no Composio action of its own, never proposed through ``propose_crm_changes``.
+``propose_clue_fields_setup`` builds the one change from ``CLUE_FIELDS``
+(:mod:`clue_api.crm.clue_fields`) with :func:`clue_fields_setup_spec`, so the agent never chooses a
+field; the executor runs it (Task 3). Only a workspace owner or admin may allow it, and no
+standing permission covers it.
+
+``list_create`` (Phase 3, Task 3) creates a Clue list: a **manual** HubSpot list of companies or
+contacts, or a Salesforce campaign (which holds contacts). Its ``label`` is the list's name; it
+sets no field and names no record until the CRM gives it an id. A HubSpot list membership change
+names no object type, so its ``object`` here is ``contact``; preparation reads the real one from
+the list Clue keeps (``crm_list.crm_object``).
 
 What a result means is the executor's business (Task 6), but two traps are recorded here: a
 Salesforce composite call is ``successful`` even when records fail (each carries ``success`` and
@@ -24,28 +51,51 @@ the record back after writing.
 
 from __future__ import annotations
 
+import builtins
+import copy
 import dataclasses
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from clue_api.crm.clue_fields import CLUE_FIELDS
 from clue_api.crm.composio_gateway import CrmProvider
 
 __all__ = [
+    "HUBSPOT_OBJECT_TYPE_IDS",
+    "NEW_COMPANY_PREFIX",
+    "NEW_CONTACT_PREFIX",
+    "NEW_LIST_PREFIX",
+    "SALESFORCE_DUPLICATE_FIELD",
     "WRITE_ACTIONS",
+    "CLUE_CAMPAIGN_SETTINGS",
+    "CLUE_FIELDS_SETUP",
+    "CLUE_FIELDS_SETUP_SLUG",
     "BatchSpec",
     "ItemOutcome",
     "ParsedChange",
     "WriteActionSpec",
     "WriteKind",
     "WriteNotParsable",
+    "clue_fields_setup_arguments",
+    "clue_fields_setup_spec",
     "field_update_spec",
     "forbidden_fields",
+    "hubspot_link_label",
     "is_forbidden_field",
     "is_write",
+    "created_reference",
+    "find_value",
+    "new_list_name",
+    "record_reference",
+    "record_references",
+    "reference_in",
     "scope_key",
     "single_field_arguments",
+    "website_host",
+    "with_reference_filled",
     "write_spec",
 ]
 
@@ -55,8 +105,16 @@ WriteKind = Literal[
     "list_removal",
     "create_contact",
     "create_company",
+    "list_create",
     "link_duplicate",
+    "clue_fields_setup",
 ]
+
+#: The kind no standing permission ("Always allow", "Fully automatic") ever covers (R-13.3).
+CLUE_FIELDS_SETUP: WriteKind = "clue_fields_setup"
+#: What a ``clue_fields_setup`` change is logged as in ``crm_write.slug``: Clue's own name, not a
+#: Composio action (the setup is many calls, run by the executor).
+CLUE_FIELDS_SETUP_SLUG = "CLUE_FIELDS_SETUP"
 
 Arguments = Mapping[str, Any]
 
@@ -71,14 +129,16 @@ class ParsedChange:
     #: The CRM id of the record; ``None`` for a record that does not exist yet.
     record_ref: str | None
     #: Field -> the value the change sets (empty for membership). ``None`` or ``""`` clears it.
-    fields: Mapping[str, object]
+    fields: Mapping[str, builtins.object]  # ``object`` is the field above
     #: The list (HubSpot) or campaign (Salesforce) for membership kinds.
     list_ref: str | None
     #: What the card calls the record: its name or email, else its id.
     label: str
-    #: Set only when one action carries two kinds (HubSpot's list membership adds and removes);
-    #: read it through :meth:`change_kind`.
+    #: Set only when one action carries two kinds (HubSpot's list membership adds and removes;
+    #: a Salesforce contact update that is a duplicate link); read it through :meth:`change_kind`.
     kind: WriteKind | None = None
+    #: A ``link_duplicate``'s other contact: the CRM id ``record_ref`` is linked to.
+    duplicate_ref: str | None = None
 
     def change_kind(self, spec: WriteActionSpec) -> WriteKind:
         return self.kind or spec.kind
@@ -99,6 +159,38 @@ def _one_group(arguments: Arguments) -> str:
     return ""
 
 
+def _as_is(record_ref: str) -> str:
+    return record_ref
+
+
+def _salesforce_record_key(record_ref: str) -> str:
+    """A Salesforce record by the 15 characters its 15- and 18-character ids share."""
+    return record_ref[:15]
+
+
+def _merged_records(keys: Sequence[str]) -> tuple[list[str], list[int]]:
+    """Each record once, in the order it first appears, and each item's record's position.
+
+    A batch call names each record once (live: Salesforce refuses a composite call naming one Id
+    twice, "Duplicate id specified", and HubSpot's batch update refuses duplicate ids), so the
+    changes of one record are one entry carrying all their fields, and share its outcome."""
+    order: list[str] = []
+    position: dict[str, int] = {}
+    for key in keys:
+        if key not in position:
+            position[key] = len(order)
+            order.append(key)
+    return order, [position[key] for key in keys]
+
+
+def _merge_fields(entry: dict[str, Any], fields: Mapping[str, object], record: str) -> None:
+    for name, value in fields.items():
+        if name in entry and entry[name] != value:
+            # The executor never puts two values of one field of a record in one call.
+            raise ValueError(f"Two values of {name} for {record} in one batch call.")
+        entry[name] = value
+
+
 @dataclass(frozen=True)
 class BatchSpec:
     #: The action that carries many changes in one call.
@@ -110,6 +202,9 @@ class BatchSpec:
     split: Callable[[Any, Sequence[Arguments]], list[ItemOutcome]]
     #: Changes join one call only when their group is equal (e.g. the same list and operation).
     group: Callable[[Arguments], str] = dataclasses.field(default=_one_group)
+    #: When two record ids are one record: a call merges such changes into one entry, and the
+    #: executor never puts two changes of one field of one record in one call.
+    record_key: Callable[[str], str] = dataclasses.field(default=_as_is)
 
 
 @dataclass(frozen=True)
@@ -178,7 +273,152 @@ def _unwrap(data: Any) -> Any:
     return data
 
 
+#: A membership change may add to a list the same batch creates, before it has an id: its
+#: list argument is ``new:`` and the exact name the create gives the list (R-12.7). Preparation
+#: checks the batch holds that create; the executor sends the create first and puts the new id in.
+NEW_LIST_PREFIX = "new:"
+
+
+def new_list_name(list_ref: str | None) -> str | None:
+    """The name of the list a ``new:<name>`` reference points at; ``None`` for a CRM id."""
+    if list_ref is None or not list_ref.startswith(NEW_LIST_PREFIX):
+        return None
+    return list_ref[len(NEW_LIST_PREFIX) :]
+
+
+def website_host(value: object) -> str:
+    """A website as the lower-case host it names: ``https://www.Acme.com/about`` is
+    ``acme.com``. No scheme, ``www.``, port, path, query or trailing slash."""
+    host = str(value or "").strip().lower()
+    host = re.sub(r"^[a-z][a-z0-9+.-]*://", "", host)
+    host = re.split(r"[/?#]", host, maxsplit=1)[0].rsplit("@", 1)[-1].split(":", 1)[0]
+    host = host.strip(".")
+    return host.removeprefix("www.")
+
+
+#: A change may also use a record the same batch creates, before it has an id (R-12.11): a
+#: company or account by ``new:company:<domain>``, a person by ``new:contact:<email>``, spelled
+#: like the create's domain (HubSpot ``domain``, Salesforce ``website``, matched as the host it
+#: names) or email (without case or surrounding spaces). Only in the places
+#: :func:`reference_in` reads; preparation checks the batch holds that create, and the executor
+#: sends the create first and puts the new record's id in.
+NEW_COMPANY_PREFIX = "new:company:"
+NEW_CONTACT_PREFIX = "new:contact:"
+
+
+def record_reference(value: object) -> str | None:
+    """The reference ``value`` makes to a record the batch creates, spelled as Clue matches it
+    (``new:company:<host>`` or ``new:contact:<email in lower case>``); ``None`` for any other
+    value."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    lowered = text.lower()
+    if lowered.startswith(NEW_COMPANY_PREFIX):
+        return NEW_COMPANY_PREFIX + website_host(text[len(NEW_COMPANY_PREFIX) :])
+    if lowered.startswith(NEW_CONTACT_PREFIX):
+        return NEW_CONTACT_PREFIX + text[len(NEW_CONTACT_PREFIX) :].strip().lower()
+    return None
+
+
+def record_references(value: object) -> list[str]:
+    """Every record reference anywhere in ``value`` (arguments, at any depth), in order."""
+    if isinstance(value, Mapping):
+        return [ref for item in value.values() for ref in record_references(item)]
+    if isinstance(value, list):
+        return [ref for item in value for ref in record_references(item)]
+    reference = record_reference(value)
+    return [] if reference is None else [reference]
+
+
+def created_reference(kind: str, fields: Mapping[str, object]) -> str | None:
+    """The reference other changes use for the record a create makes: a company by the host of
+    its domain or website, a person by their email. ``None`` for any other change, or a create
+    with nothing to match on."""
+    if kind == "create_company":
+        host = website_host(fields.get("domain") or fields.get("Website") or "")
+        return NEW_COMPANY_PREFIX + host if host else None
+    if kind == "create_contact":
+        email = next(
+            (
+                str(fields[name]).strip().lower()
+                for name in ("email", "work_email", "Email")
+                if isinstance(fields.get(name), str) and str(fields[name]).strip()
+            ),
+            None,
+        )
+        return NEW_CONTACT_PREFIX + email if email else None
+    return None
+
+
+def find_value(key: str, fields: Mapping[str, object]) -> object | None:
+    """What a create is looked for by before it is made (R-7.1): its ``find_existing`` field.
+    A person created with only ``work_email`` is looked for by that email under ``key``, spelled
+    as :func:`created_reference` spells it, so preparation and the send find the same record."""
+    value = fields.get(key)
+    if key == "email" and (value is None or str(value).strip() == ""):
+        made = created_reference("create_contact", fields)
+        return made[len(NEW_CONTACT_PREFIX) :] if made is not None else None
+    return value
+
+
+def _reference_path(slug: str, arguments: Arguments) -> tuple[list[str | int], str] | None:
+    """Where a change of ``slug`` may hold a record reference, and of which kind (R-12.11):
+    a company added to a HubSpot list, a new person's company, a person added to a Salesforce
+    campaign."""
+    if slug == "HUBSPOT_UPDATE_LIST_MEMBERSHIPS" and arguments.get("operation") == "add":
+        return ["record_ids", 0], NEW_COMPANY_PREFIX
+    if slug == "HUBSPOT_CREATE_CONTACT":
+        return ["associations", 0, "to", "id"], NEW_COMPANY_PREFIX
+    if slug == "SALESFORCE_CREATE_CONTACT":
+        return ["account_id"], NEW_COMPANY_PREFIX
+    if slug == "SALESFORCE_ADD_CONTACT_TO_CAMPAIGN":
+        return ["contact_id"], NEW_CONTACT_PREFIX
+    return None
+
+
+def _at(arguments: Any, path: Sequence[str | int]) -> Any:
+    value = arguments
+    for step in path:
+        if isinstance(step, int):
+            if not isinstance(value, list) or len(value) <= step:
+                return None
+        elif not isinstance(value, Mapping):
+            return None
+        value = value[step] if isinstance(step, int) else value.get(step)
+    return value
+
+
+def reference_in(slug: str, arguments: Arguments) -> str | None:
+    """The record reference a change holds in the one place its action may hold one; ``None``
+    when that place holds a CRM id (or a reference of the other kind)."""
+    place = _reference_path(slug, arguments)
+    if place is None:
+        return None
+    path, prefix = place
+    reference = record_reference(_at(arguments, path))
+    return reference if reference is not None and reference.startswith(prefix) else None
+
+
+def with_reference_filled(slug: str, arguments: Arguments, value: str) -> dict[str, Any]:
+    """``arguments`` with the record reference :func:`reference_in` reads replaced by ``value``
+    (the record's CRM id, or the reference as Clue spells it)."""
+    place = _reference_path(slug, arguments)
+    filled: dict[str, Any] = copy.deepcopy(dict(arguments))
+    if place is None or _at(filled, place[0]) is None:
+        return filled
+    path = place[0]
+    holder: Any = filled
+    for step in path[:-1]:
+        holder = holder[step]
+    holder[path[-1]] = value
+    return filled
+
+
 # --- HubSpot ----------------------------------------------------------------------------------
+
+#: HubSpot's object type ids of the objects a Clue list holds (composio-api-notes.md § Phase 3).
+HUBSPOT_OBJECT_TYPE_IDS: Mapping[str, str] = {"company": "0-2", "contact": "0-1"}
 
 #: Contact-to-company association types HubSpot defines (primary, unlabeled).
 _HUBSPOT_CONTACT_COMPANY_TYPES = frozenset({1, 279})
@@ -207,6 +447,24 @@ def _hubspot_update_contacts(arguments: Arguments) -> ParsedChange:
     )
 
 
+_HUBSPOT_CONTACT_UPDATE = "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"
+
+
+def _hubspot_update_contact_by_id(arguments: Arguments) -> ParsedChange:
+    """The by-id update, locked to one contact (``objectType`` exactly ``contacts``)."""
+    _only(arguments, {"objectType", "objectId", "properties"})
+    if arguments.get("objectType") != "contacts":
+        raise WriteNotParsable(
+            f"Clue updates contacts only with {_HUBSPOT_CONTACT_UPDATE}: 'objectType' must be "
+            '"contacts".'
+        )
+    record = _id(arguments, "objectId")
+    fields = _require_fields(_mapping(arguments, "properties"))
+    return ParsedChange(
+        "contact", record, dict(fields), None, _label(fields, "email", fallback=record)
+    )
+
+
 def _hubspot_list_membership(arguments: Arguments) -> ParsedChange:
     _only(arguments, {"list_id", "operation", "record_ids"})
     list_ref = _id(arguments, "list_id")
@@ -219,6 +477,29 @@ def _hubspot_list_membership(arguments: Arguments) -> ParsedChange:
     record = _id({"record_id": records[0]}, "record_id")
     kind: WriteKind = "list_membership" if operation == "add" else "list_removal"
     return ParsedChange("contact", record, {}, list_ref, record, kind=kind)
+
+
+def _list_name(arguments: Arguments) -> str:
+    name = arguments.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise WriteNotParsable("'name' must be the list's name.")
+    return name.strip()
+
+
+def _hubspot_create_list(arguments: Arguments) -> ParsedChange:
+    _only(arguments, {"name", "object_type_id", "processing_type"})
+    name = _list_name(arguments)
+    if arguments.get("processing_type") != "MANUAL":
+        raise WriteNotParsable(
+            "Clue creates manual lists only: set 'processing_type' to \"MANUAL\"."
+        )
+    type_id = str(arguments.get("object_type_id"))
+    object_name = next((o for o, t in HUBSPOT_OBJECT_TYPE_IDS.items() if t == type_id), None)
+    if object_name is None:
+        raise WriteNotParsable(
+            '\'object_type_id\' must be "0-2" (a list of companies) or "0-1" (of contacts).'
+        )
+    return ParsedChange(object_name, None, {}, None, name)
 
 
 def _hubspot_associated_company(associations: object) -> str | None:
@@ -268,13 +549,61 @@ def _hubspot_create(object_name: str, *label_fields: str) -> Callable[[Arguments
     return parse
 
 
+#: How a HubSpot association action may name the contacts object.
+_HUBSPOT_CONTACT_TYPES = frozenset({"contacts", "contact", "0-1"})
+
+
+def _not_itself(record: str, other: str, *, same: bool) -> None:
+    if same:
+        raise WriteNotParsable(
+            f"A contact is not a duplicate of itself: {record} and {other} are one record."
+        )
+
+
+def _hubspot_link_duplicate(arguments: Arguments) -> ParsedChange:
+    """Two contacts linked with Clue's "Possible duplicate" label. The agent names the two
+    contacts; preparation adds Clue's label (``labels`` may only carry a user-defined one, checked
+    against Clue's there)."""
+    _only(arguments, {"objectType", "objectId", "toObjectType", "toObjectId", "labels"})
+    for name in ("objectType", "toObjectType"):
+        if name in arguments and str(arguments[name]).lower() not in _HUBSPOT_CONTACT_TYPES:
+            raise WriteNotParsable("Clue links two contacts only: both object types are contacts.")
+    record = _id(arguments, "objectId")
+    other = _id(arguments, "toObjectId")
+    _not_itself(record, other, same=record == other)
+    labels = arguments.get("labels")
+    if labels not in (None, []) and not (
+        isinstance(labels, list)
+        and len(labels) == 1
+        and isinstance(labels[0], Mapping)
+        and set(labels[0]) <= {"associationCategory", "associationTypeId"}
+        and labels[0].get("associationCategory") == "USER_DEFINED"
+    ):
+        raise WriteNotParsable(
+            "A duplicate link carries only Clue's \"Possible duplicate\" label: leave 'labels' "
+            "out and Clue adds it."
+        )
+    return ParsedChange("contact", record, {}, None, record, duplicate_ref=other)
+
+
+def hubspot_link_label(arguments: Arguments) -> object | None:
+    """The association type id a HubSpot duplicate link's arguments carry, if any."""
+    labels = arguments.get("labels")
+    if isinstance(labels, list) and labels and isinstance(labels[0], Mapping):
+        return labels[0].get("associationTypeId")
+    return None
+
+
 def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
-        if id_arg == "inputs":  # already the batch shape, one input each
-            return {"inputs": [dict(item["inputs"][0]) for item in items]}
+        order, positions = _merged_records([str(item[id_arg]) for item in items])
+        properties: list[dict[str, Any]] = [{} for _ in order]
+        for item, at in zip(items, positions, strict=True):
+            _merge_fields(properties[at], item["properties"], order[at])
         return {
             "inputs": [
-                {"id": str(item[id_arg]), "properties": dict(item["properties"])} for item in items
+                {"id": record, "properties": props}
+                for record, props in zip(order, properties, strict=True)
             ]
         }
 
@@ -282,8 +611,6 @@ def _hubspot_inputs_build(id_arg: str) -> Callable[[Sequence[Arguments]], dict[s
 
 
 def _hubspot_record_id(item: Arguments) -> str:
-    if "inputs" in item:
-        return str(item["inputs"][0]["id"])
     if "record_ids" in item:
         return str(item["record_ids"][0])
     return str(item["companyId"])
@@ -399,15 +726,35 @@ def _salesforce_fields(
     return _require_fields(fields)  # type: ignore[return-value]
 
 
+#: Clue's Salesforce lookup that marks a contact as a possible duplicate of another (R-6.13).
+SALESFORCE_DUPLICATE_FIELD = next(
+    field.crm_name for field in CLUE_FIELDS["salesforce"] if field.key == "clue_possible_duplicate"
+)
+
+
 def _salesforce_update(
     object_name: str, id_arg: str, names: Mapping[str, str], *labels: str
 ) -> Callable[[Arguments], ParsedChange]:
     def parse(arguments: Arguments) -> ParsedChange:
         record = _id(arguments, id_arg)
         fields = _salesforce_fields(arguments, names, id_arg)
-        return ParsedChange(
+        change = ParsedChange(
             object_name, record, fields, None, _label(fields, *labels, fallback=record)
         )
+        if object_name != "contact" or SALESFORCE_DUPLICATE_FIELD not in fields:
+            return change
+        if len(fields) != 1:
+            raise WriteNotParsable(
+                f"A duplicate link ({SALESFORCE_DUPLICATE_FIELD}) is proposed on its own, "
+                "with no other field."
+            )
+        value = fields[SALESFORCE_DUPLICATE_FIELD]
+        if value is None or str(value).strip() == "":
+            return change  # clearing it: a field update (only Clue's own undo passes)
+        other = _id({SALESFORCE_DUPLICATE_FIELD: value}, SALESFORCE_DUPLICATE_FIELD)
+        # Salesforce answers 18-character ids for 15-character ones.
+        _not_itself(record, other, same=record[:15] == other[:15])
+        return dataclasses.replace(change, kind="link_duplicate", duplicate_ref=other)
 
     return parse
 
@@ -439,19 +786,39 @@ def _salesforce_remove_from_campaign(arguments: Arguments) -> ParsedChange:
     return ParsedChange("contact", record, {}, _id(arguments, "campaign_id"), record)
 
 
+#: How Clue creates every Salesforce campaign (R-12.9): active and "In Progress", because a target
+#: list is in use from the start (an inactive "Planned" one is hidden from most reports and
+#: pickers). Preparation adds these to the name the agent gives; the card says so.
+CLUE_CAMPAIGN_SETTINGS: Mapping[str, object] = {"is_active": True, "status": "In Progress"}
+
+
+def _salesforce_create_campaign(arguments: Arguments) -> ParsedChange:
+    # The name, and only the settings Clue itself sends, so the card shows everything sent.
+    _only(arguments, {"name", *CLUE_CAMPAIGN_SETTINGS})
+    for setting, value in CLUE_CAMPAIGN_SETTINGS.items():
+        if setting in arguments and arguments[setting] != value:
+            raise WriteNotParsable(
+                f"Clue creates campaigns with {setting} {value!r} (R-12.9); leave '{setting}' out."
+            )
+    return ParsedChange("contact", None, {}, None, _list_name(arguments))
+
+
 def _salesforce_composite_build(
     object_name: str, parse: Callable[[Arguments], ParsedChange]
 ) -> Callable[[Sequence[Arguments]], dict[str, Any]]:
     sobject = _SALESFORCE_SOBJECT[object_name]
 
     def build(items: Sequence[Arguments]) -> dict[str, Any]:
-        records = []
-        for item in items:
-            change = parse(item)
+        changes = [parse(item) for item in items]
+        _, positions = _merged_records(
+            [_salesforce_record_key(str(change.record_ref)) for change in changes]
+        )
+        records: list[dict[str, Any]] = []
+        for change, at in zip(changes, positions, strict=True):
+            if at == len(records):
+                records.append({"attributes": {"type": sobject}, "Id": change.record_ref})
             # ``None`` clears the field here, which the named update tools cannot do (undo).
-            records.append(
-                {"attributes": {"type": sobject}, "Id": change.record_ref, **change.fields}
-            )
+            _merge_fields(records[at], change.fields, str(change.record_ref))
         return {
             "sobject_name": sobject,
             "external_id_field_name": "Id",
@@ -472,8 +839,12 @@ def _salesforce_composite_split(
         body = _unwrap(data)
         results = body.get("results") if isinstance(body, Mapping) else body
         results = results if isinstance(results, list) else []
+        # One result per record entry: the changes merged into one share it.
+        _, positions = _merged_records(
+            [_salesforce_record_key(str(item[id_arg])) for item in items]
+        )
         outcomes = []
-        for index, item in enumerate(items):
+        for index, item in zip(positions, items, strict=True):
             record = str(item[id_arg])
             result = results[index] if index < len(results) else None
             if not isinstance(result, Mapping):
@@ -525,6 +896,8 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             split=_hubspot_split_results,
         ),
     ),
+    # Proposed, never sent: preparation logs its change as the by-id update below (the batch
+    # tool's Composio schema drops every non-standard contact property, Phase 4 live check).
     WriteActionSpec(
         provider="hubspot",
         slug="HUBSPOT_UPDATE_CONTACTS",
@@ -533,14 +906,22 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         parse=_hubspot_update_contacts,
         read_before=_HUBSPOT_READ,
         find_existing=None,
-        batch=BatchSpec(
-            slug="HUBSPOT_UPDATE_CONTACTS",
-            max_size=100,
-            build=_hubspot_inputs_build("inputs"),
-            split=_hubspot_split_results,
-        ),
+        batch=None,
     ),
-    # Schema only — verified at the Phase 2 live check (the test portal has no lists).
+    # Verified live (Phase 4 live check): applies custom properties and answers the record with
+    # the properties it was sent. One record per call (it has no batch form).
+    WriteActionSpec(
+        provider="hubspot",
+        slug=_HUBSPOT_CONTACT_UPDATE,
+        kind="field_update",
+        object="contact",
+        parse=_hubspot_update_contact_by_id,
+        read_before=_HUBSPOT_READ,
+        find_existing=None,
+        batch=None,
+    ),
+    # Verified live (Phase 3 Task 1, company lists): add answers {recordsIdsAdded}, remove
+    # {recordIdsRemoved}; adding an existing member is successful with empty data.
     WriteActionSpec(
         provider="hubspot",
         slug="HUBSPOT_UPDATE_LIST_MEMBERSHIPS",
@@ -573,6 +954,28 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=("HUBSPOT_SEARCH_COMPANIES", "domain"),
         batch=None,
     ),
+    # Verified live (Phase 3 Task 1): a manual company list.
+    WriteActionSpec(
+        provider="hubspot",
+        slug="HUBSPOT_CREATE_LIST",
+        kind="list_create",
+        object="company",  # or contact: the parsed change carries the list's object
+        parse=_hubspot_create_list,
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    ),
+    # Verified in the Phase 4 spike (two contacts linked with the label); answer unverified.
+    WriteActionSpec(
+        provider="hubspot",
+        slug="HUBSPOT_CREATE_OBJECT_ASSOCIATION",
+        kind="link_duplicate",
+        object="contact",
+        parse=_hubspot_link_duplicate,
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    ),
     # Salesforce
     WriteActionSpec(
         provider="salesforce",
@@ -587,6 +990,7 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             max_size=200,
             build=_salesforce_composite_build("account", _sf_update_account),
             split=_salesforce_composite_split("account_id"),
+            record_key=_salesforce_record_key,
         ),
     ),
     WriteActionSpec(
@@ -602,10 +1006,12 @@ _SPECS: tuple[WriteActionSpec, ...] = (
             max_size=200,
             build=_salesforce_composite_build("contact", _sf_update_contact),
             split=_salesforce_composite_split("contact_id"),
+            record_key=_salesforce_record_key,
         ),
     ),
-    # Schema only — verified at the Phase 2 live check (the test org has no campaigns). Adding
-    # fails when the contact is already a member, so read_before checks membership by SOQL.
+    # Verified live (Phase 3 Task 1): answers {id, success, errors}; the member's Status is the
+    # campaign's default ("Sent"). Adding an existing member is refused ("Already a campaign
+    # member.", DUPLICATE_VALUE), so read_before checks membership by SOQL.
     WriteActionSpec(
         provider="salesforce",
         slug="SALESFORCE_ADD_CONTACT_TO_CAMPAIGN",
@@ -616,7 +1022,7 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=None,
         batch=None,
     ),
-    # Schema only — verified at the Phase 2 live check.
+    # Verified live (Phase 3 Task 1): ``member_id`` takes the contact's id; answers {}.
     WriteActionSpec(
         provider="salesforce",
         slug="SALESFORCE_REMOVE_FROM_CAMPAIGN",
@@ -649,6 +1055,18 @@ _SPECS: tuple[WriteActionSpec, ...] = (
         find_existing=(_SOQL, "Website"),
         batch=None,
     ),
+    # Verified live (Phase 3 Task 1 re-run): answers {id, success, errors}; a new campaign is
+    # "Planned". Only a Marketing User may create one. A campaign holds contacts.
+    WriteActionSpec(
+        provider="salesforce",
+        slug="SALESFORCE_CREATE_CAMPAIGN",
+        kind="list_create",
+        object="contact",
+        parse=_salesforce_create_campaign,
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    ),
 )
 
 WRITE_ACTIONS: Mapping[tuple[CrmProvider, str], WriteActionSpec] = {
@@ -662,6 +1080,39 @@ def write_spec(provider: CrmProvider, slug: str) -> WriteActionSpec | None:
 
 def is_write(provider: CrmProvider, slug: str) -> bool:
     return (provider, slug) in WRITE_ACTIONS
+
+
+# --- setting up Clue's own fields (Phase 4, R-13.4) -----------------------------------------------
+
+
+def clue_fields_setup_arguments(provider: CrmProvider) -> dict[str, Any]:
+    """The setup change's arguments: every Clue field of ``provider``, by qualified name, in
+    :data:`CLUE_FIELDS` order. Built from code; the agent gives none of it."""
+    return {"fields": [field.qualified_name for field in CLUE_FIELDS[provider]]}
+
+
+def _clue_fields_setup_parse(provider: CrmProvider) -> Callable[[Arguments], ParsedChange]:
+    def parse(arguments: Arguments) -> ParsedChange:
+        if dict(arguments) != clue_fields_setup_arguments(provider):
+            raise WriteNotParsable("Clue's fields are set up exactly as Clue defines them.")
+        return ParsedChange("clue_fields", None, {}, None, "Clue's fields")
+
+    return parse
+
+
+def clue_fields_setup_spec(provider: CrmProvider) -> WriteActionSpec:
+    """The ``clue_fields_setup`` change of ``provider``. Not in :data:`WRITE_ACTIONS`: nothing
+    proposes it but ``propose_clue_fields_setup``."""
+    return WriteActionSpec(
+        provider=provider,
+        slug=CLUE_FIELDS_SETUP_SLUG,
+        kind=CLUE_FIELDS_SETUP,
+        object="clue_fields",
+        parse=_clue_fields_setup_parse(provider),
+        read_before=None,
+        find_existing=None,
+        batch=None,
+    )
 
 
 # --- fields never written (ruling R-8.7) -------------------------------------------------------
@@ -748,8 +1199,8 @@ def single_field_arguments(
         raise ValueError(f"{spec.slug} is not a field update.")
     if spec.slug == "HUBSPOT_UPDATE_COMPANY":
         return {"companyId": record_ref, "properties": {field: value}}
-    if spec.slug == "HUBSPOT_UPDATE_CONTACTS":
-        return {"inputs": [{"id": record_ref, "properties": {field: value}}]}
+    if spec.slug == _HUBSPOT_CONTACT_UPDATE:
+        return {"objectType": "contacts", "objectId": record_ref, "properties": {field: value}}
     names, id_arg = {
         "SALESFORCE_UPDATE_ACCOUNT": (_SALESFORCE_ACCOUNT_ARGS, "account_id"),
         "SALESFORCE_UPDATE_CONTACT": (_SALESFORCE_CONTACT_ARGS, "contact_id"),
@@ -760,9 +1211,19 @@ def single_field_arguments(
     return {id_arg: record_ref, argument: value}
 
 
+#: The action each object's field update is logged and sent as, whichever one proposed it.
+_FIELD_UPDATE_SLUGS: Mapping[tuple[CrmProvider, str], str] = {
+    ("hubspot", "company"): "HUBSPOT_UPDATE_COMPANY",
+    ("hubspot", "contact"): _HUBSPOT_CONTACT_UPDATE,
+    ("salesforce", "account"): "SALESFORCE_UPDATE_ACCOUNT",
+    ("salesforce", "contact"): "SALESFORCE_UPDATE_CONTACT",
+}
+
+
 def field_update_spec(provider: CrmProvider, object: str) -> WriteActionSpec:  # noqa: A002
-    """The allowlisted field update of this CRM object (a create that finds its record uses it)."""
-    for spec in _SPECS:
-        if spec.provider == provider and spec.object == object and spec.kind == "field_update":
-            return spec
-    raise LookupError(f"No field update for {provider} {object}.")
+    """The field update this CRM object's changes are logged and sent as: a proposed update
+    (``HUBSPOT_UPDATE_CONTACTS`` becomes the by-id update) and a create that finds its record."""
+    slug = _FIELD_UPDATE_SLUGS.get((provider, object))
+    if slug is None:
+        raise LookupError(f"No field update for {provider} {object}.")
+    return WRITE_ACTIONS[(provider, slug)]

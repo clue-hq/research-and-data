@@ -20,6 +20,14 @@ def test_from_nl_and_unlisted_slugs_are_refused(provider: str, slug: str) -> Non
     assert not is_readable(provider, slug)  # type: ignore[arg-type]
 
 
+def test_the_list_reads_are_allowed_and_list_writes_are_not() -> None:
+    # Phase 3: Clue finds a project's list by name (composio-api-notes.md § Phase 3 shapes).
+    assert is_readable("hubspot", "HUBSPOT_GET_CRM_LIST_BY_NAME")
+    assert is_readable("hubspot", "HUBSPOT_SEARCH_CRM_LISTS")
+    assert not is_readable("hubspot", "HUBSPOT_CREATE_LIST")
+    assert not is_readable("salesforce", "SALESFORCE_CREATE_CAMPAIGN")
+
+
 def test_every_listed_action_is_readable_and_none_is_natural_language() -> None:
     for provider, slugs in READ_ACTIONS.items():
         for slug in slugs:

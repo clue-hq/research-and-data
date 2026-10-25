@@ -51,8 +51,15 @@ export function ProjectsTransportProvider({
     return { userId: currentUserId, workspaceId: currentWorkspaceId };
   }, [currentUserId, currentWorkspaceId, transport.mode]);
 
+  // HTTP requests name the workspace this page was loaded for (L4-4).
+  const pageTransport = useMemo<ChatTransport>(
+    () =>
+      transport.mode === "http" ? { ...transport, workspaceId: currentWorkspaceId } : transport,
+    [currentWorkspaceId, transport],
+  );
+
   return (
-    <TransportContext.Provider value={transport}>
+    <TransportContext.Provider value={pageTransport}>
       <ViewerIdentityContext.Provider value={viewerIdentity}>
         {children}
       </ViewerIdentityContext.Provider>

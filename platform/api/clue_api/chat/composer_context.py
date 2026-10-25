@@ -71,10 +71,15 @@ __all__ = [
 # v76 grants the CRM reads (`connect_crm`, `find_crm_actions`, `run_crm_action`) and
 # `write_brand_document`, with the `crm-sales-analysis` skill.
 # v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
-# the `crm-writing` skill. v78 adds no tool: it carries the re-minted manual (`manual-*@v24`),
-# which tells the agent what each folder keeps and for how long now that a chat's rough work
-# expires.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v78"
+# the `crm-writing` skill.
+# v78 grants the project's first CRM writes (`read_crm_targets`, `find_crm_list`,
+# `link_crm_list`), with `crm-writing` v2.
+# v79 re-pins `crm-writing` at v3 (one card can use the records it creates).
+# v80 re-pins `stage0-interview` at v53 (a message Clue wrote is never the person's words).
+# v81 re-pins `crm-writing` at v4 (never show Clue's write or proposal ids).
+# v82 grants `propose_clue_fields_setup` and re-pins `crm-writing` at v5 (Clue's own fields).
+# v83 re-pins `crm-writing` at v6 (possible duplicates marked with the CRM's own actions).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v83"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

@@ -36,6 +36,11 @@ const GroupSchema = z.object({
   records: z.array(RecordSchema).min(1),
   scope_key: z.string(),
   always_allow: z.string(),
+  /** Setting up Clue's own fields (Phase 4): the fields it creates and what else changes. */
+  setup_fields: z
+    .array(z.object({ object: z.string(), label: z.string(), type: z.string() }))
+    .default([]),
+  setup_notes: z.array(z.string()).default([]),
 });
 
 const OverwriteSchema = z.object({
@@ -80,7 +85,14 @@ export interface CrmWriteGroup {
   reason: string;
   records: readonly CrmWriteRecord[];
   alwaysAllowPhrase: string;
+  /** Only on the setup of Clue's own fields: each field it creates ("Account", "Clue tier"). */
+  setupFields: readonly { object: string; label: string; type: string }[];
+  /** Only on the setup of Clue's own fields: what else changes in the CRM, one line each. */
+  setupNotes: readonly string[];
 }
+
+/** The kind of change that sets up Clue's own fields; only an owner or admin allows it. */
+export const CLUE_FIELDS_SETUP_KIND = "clue_fields_setup";
 
 export interface CrmWriteOverwrite {
   writeId: string;
@@ -149,6 +161,8 @@ export function crmWriteCard(snapshot: unknown): CrmWriteCardModel | null {
           change: varied ? (changes?.[index] ?? null) : null,
         })),
         alwaysAllowPhrase: group.always_allow,
+        setupFields: group.setup_fields,
+        setupNotes: group.setup_notes,
       };
     }),
     overwritesHeading: card.overwrites.length > 0 ? card.overwrites_heading : null,
@@ -241,6 +255,8 @@ const NOUNS: Readonly<Record<string, readonly [string, string]>> = {
   account: ["account", "accounts"],
   contact: ["contact", "contacts"],
   lead: ["lead", "leads"],
+  list: ["list", "lists"],
+  campaign: ["campaign", "campaigns"],
 };
 
 function noun(object: string, count: number): string {
@@ -252,11 +268,23 @@ function changes(count: number): string {
   return `${count} ${count === 1 ? "change" : "changes"}`;
 }
 
-/** The caption above an opened group's records: "48 contacts". */
+/**
+ * The caption above an opened group's records: "48 contacts". A group's `object` is what its
+ * records are: the list's members (a HubSpot list holds companies or contacts), or "list" /
+ * "campaign" for a list Clue creates.
+ */
 export function crmWriteRecordsCaption(group: CrmWriteGroup): string {
   const count = group.records.length;
-  const object = group.kind === "list_membership" || group.kind === "list_removal" ? "contact" : group.object;
-  return `${count} ${noun(object, count)}`;
+  return `${count} ${noun(group.object, count)}`;
+}
+
+/**
+ * The paused card's caption. A reconnect makes a new connection and Clue never sends changes
+ * across connections, so the changes left are not sent after it (R-11.10); the wake turn
+ * (write_executor.py `_stopped`) says the same to the agent.
+ */
+export function pausedCaption(providerName: string): string {
+  return `If you reconnect ${providerName}, the changes not yet sent are not sent; Clue will propose them again.`;
 }
 
 export function allowLabel(count: number): string {
@@ -296,24 +324,43 @@ export function crmWriteDoneLine(
   const people = noun("contact", tally.chosen);
   const things = noun(group.object, tally.chosen);
   switch (group.kind) {
+    case "list_create": {
+      // Never "Created" when it was not: refused (e.g. not a Marketing User) or skipped (the CRM
+      // already had one of that name).
+      const name = group.records[0]?.name ?? "";
+      if (tally.done > 0) return `Created the ${target} "${name}"`;
+      if (tally.failed > 0) return `Could not create the ${target} "${name}"`;
+      return `Did not create the ${target} "${name}"`;
+    }
     case "list_membership":
-      return `Added ${count} ${people} to the ${target} "${group.listRef ?? ""}"`;
+      return `Added ${count} ${things} to the ${target} "${group.listRef ?? ""}"`;
     case "list_removal":
-      return `Removed ${count} ${people} from the ${target} "${group.listRef ?? ""}"`;
+      return `Removed ${count} ${things} from the ${target} "${group.listRef ?? ""}"`;
     case "field_update":
       return `Set "${group.fieldLabel ?? "a field"}" on ${count} ${things}`;
     case "create_contact":
       return `Created ${count} ${people}`;
     case "create_company":
       return `Created ${count} ${things}`;
+    case CLUE_FIELDS_SETUP_KIND: {
+      const crm = CRM_PROVIDER_NAMES[provider];
+      if (tally.done > 0) return `Set up Clue's fields in ${crm}`;
+      if (setupAlreadyDone(tally)) return `Clue's fields were already set up in ${crm}`;
+      return `Could not set up Clue's fields in ${crm}`;
+    }
     default:
       return `Marked ${count} possible ${tally.chosen === 1 ? "duplicate" : "duplicates"}`;
   }
 }
 
+/** A setup change skipped, none failed: the connection already had Clue's fields. */
+function setupAlreadyDone(tally: CrmWriteTally): boolean {
+  return tally.skipped > 0 && tally.failed === 0;
+}
+
 /**
- * One group's done-state line and mark: ✓ when at least one change succeeded ("N of M"); ✕ with
- * the failed/skipped count when none did.
+ * One group's done-state line and mark: ✓ when at least one change succeeded ("N of M"), or a
+ * setup was skipped as already done; ✕ with the failed/skipped count when none did.
  */
 export function crmWriteGroupOutcome(
   provider: CrmProvider,
@@ -322,6 +369,7 @@ export function crmWriteGroupOutcome(
 ): { mark: "done" | "failed"; line: string } {
   const line = crmWriteDoneLine(provider, group, tally);
   if (tally.done > 0) return { mark: "done", line };
+  if (group.kind === CLUE_FIELDS_SETUP_KIND && setupAlreadyDone(tally)) return { mark: "done", line };
   return { mark: "failed", line: `${line} — ${countsLine(tally)}` };
 }
 
@@ -329,7 +377,7 @@ export function crmWriteGroupOutcome(
 export function crmWriteRefusal(code: string): string {
   switch (code) {
     case "CRM_CONNECTION_CHANGED":
-      return "The CRM connection changed or expired, so these changes can't be sent. Reconnect it, and Clue will propose them again.";
+      return "The CRM connection changed or expired, so these changes can't be sent.";
     case "CRM_WRITE_NOTHING_SELECTED":
       return "Tick at least one change to allow.";
     case "CRM_WRITE_UNKNOWN_CHANGE":
@@ -337,7 +385,11 @@ export function crmWriteRefusal(code: string): string {
     case "GATE_REPLACED":
       return "A newer proposal replaced this one.";
     case "GATE_SUBJECT_STALE":
-      return "This card can no longer be answered. Clue will propose these changes again.";
+      return "This card can no longer be answered.";
+    case "CRM_WRITE_ALREADY_ANSWERED":
+      return "Someone answered this card first.";
+    case "crm_setup_needs_admin":
+      return "Only a workspace owner or admin can set up Clue's fields.";
     case "GATE_ALREADY_ANSWERED":
       return "Someone already answered this card.";
     default:

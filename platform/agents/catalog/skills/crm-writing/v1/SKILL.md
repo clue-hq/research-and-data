@@ -27,7 +27,7 @@ tools:
   - name: propose_crm_changes
     version: "1"
     input_schema_sha256: 4df276a6bfc8255bf2ddbec8e832de2daac96c9009de955532c0c02724f0f8b5
-    output_schema_sha256: 52ca0f17baa566220dd48df63579a570c4a8bfd20be3f12ded64a4fbb85a4a13
+    output_schema_sha256: d8227de9b75aeaefd1757ae6ce8fb094128f60b7223554d8ab23f8cb3e7ef587
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---
@@ -127,7 +127,7 @@ results.
 To undo a change:
 
 - **A field change.** Propose the old value with `reverses_write_id` set to that change's
-  `write_id`. It goes through the card again.
+  `write_id`. It goes through the card again, unless an Always-allow permission covers it.
 - **An addition to a list or campaign.** Propose the matching removal. Clue removes only members
   it added itself.
 - **A created record.** Clue does not undo it. Tell the person to delete it in the CRM if they

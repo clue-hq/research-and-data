@@ -2,9 +2,10 @@ import { z } from "zod";
 import { SseFrameReader } from "../model/chat-events";
 import {
   ClueChatApiError,
+  chatRefusalOf,
   chatRequest,
   chatUrl,
-  refusalOf,
+  withPageWorkspace,
   type ChatTransport,
 } from "./chat-api";
 
@@ -137,9 +138,13 @@ export function openTokenStream(options: TokenStreamOptions): ChatStreamHandle {
         }
         const response = await fetch(
           chatUrl(options.transport, options.eventsPath, { stream_token: token }),
-          { headers, cache: "no-store", signal: controller.signal },
+          {
+            headers: withPageWorkspace(options.transport, headers),
+            cache: "no-store",
+            signal: controller.signal,
+          },
         );
-        if (!response.ok) throw await refusalOf(response);
+        if (!response.ok) throw await chatRefusalOf(response);
         if (!response.body) throw new Error("the stream returned no body");
         openedAt = Date.now();
 

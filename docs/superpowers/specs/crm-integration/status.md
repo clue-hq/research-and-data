@@ -6,7 +6,7 @@ Decisions: [`rulings.md`](rulings.md).
 
 Legend: ✅ built · 🔨 in progress · ⬜ not started · ⏸ parked (waiting on a Clue feature or a founder call)
 
-_Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and analysis work; publishing blocked (F4); findings in [`2026-10-21-trial-1-findings.md`](2026-10-21-trial-1-findings.md), to be discussed before fixing._
+_Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `feat/crm-integration-phase-3`, unpushed; live check passed on both test CRMs incl. deleted-list recovery ([`2026-10-23-phase-3-live-check-findings.md`](2026-10-23-phase-3-live-check-findings.md)); whole-branch review done, fixes in. Open: L-14 (founder undecided), live proof of the L-3 re-read and a Salesforce deleted campaign._
 
 ## Phase 1 — reads (the internal "v1" checkpoint)
 - ✅ Task 0: Composio REST spike — findings in `composio-api-notes.md`
@@ -35,24 +35,40 @@ _Last updated: 2026-10-21 — Trial 1 run on the local stack: connect, reads and
   public callback URL and Composio keys in that environment.
 
 ## Phase 2 — write foundation
-- 📝 Design reviewed 2026-10-22 (R-6.21–R-6.25, R-8.7); card spec current (R-6.22); plan `docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md` awaiting founder review
-- ⬜ `propose_crm_changes`: classification, find-before-create, before-values, overwrite marker
-- ⬜ Write log, idempotency keys, executor (fleet task), `crm_writes_finished` wake with per-record results
-- ⬜ Retry rule (automatic for temporary failures only) and per-workspace throttle
-- ⬜ Permission card (Allow once / Always allow / Fully automatic); grants; `manage_crm_grants`
-- ⬜ Overwrites of a person's value always ask
-- ⬜ `crm_write_log` and undo through chat
-- ⬜ Forbidden actions enforced (merge, delete, consent fields, `*_FROM_NL`, GDPR erasure)
+- ✅ Design reviewed 2026-10-22 (R-6.21–R-6.25, R-8.7); card spec current (R-6.22); plan `docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md` executed (subagent-driven, Tasks 1–11)
+- ✅ Write allowlist (13 actions, `crm/write_actions.py`): kind of change, object and fields, forbidden fields; `HUBSPOT_UPDATE_CONTACT` left out (reports success on a refused write)
+- ✅ Schema: `crm_write_proposal`, `crm_write` (the log), `crm_write_grant`, `crm_record_link`, the `crm_write_permission` gate, `crm_write` fleet kind, `crm_writes_finished` wake (`ebf28e41a6a4`, `a3b587b8fdfd`, `0e92986934d3`)
+- ✅ `propose_crm_changes`: find-before-create, before-values from a read, picklist values checked, overwrite marker (R-6.5), grouping for the card, one live card per chat (a new proposal replaces an unanswered one)
+- ✅ Executor on the fleet: batch calls, read-back after every write (`not_applied`), retries for temporary failures, auth errors pause, never resumes across connections, re-offers itself; `crm_writes_finished` / paused wake turns name who allowed what
+- ✅ Permission card in chat (six states; any member answers; answering starts no agent turn and adds no bubble — R-11.3/R-11.4/R-11.6); progress route `GET /crm/proposals/{id}`
+- ✅ Standing permissions ("Always allow" per kind of change on the card); `manage_crm_grants` (list, revoke; idempotent revoke); a new connection starts with none
+- ✅ `crm_write_log` (filters, before-values, action slug for undo) and undo through chat (`reverses_write_id`; removals only of members Clue added)
+- ✅ `crm-writing` skill v1 (founder-approved wording), Head of ABM v77 (recipe 37, manual v23), crm-sales-analysis v2 points to it
+- ✅ Live check on both test CRMs 2026-10-22 — [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md): propose/allow/log/undo/revoke/create/refusals/overwrite all pass; decided the same day: L6 per-change not-found (R-11.7, fixed), L8 CRM message text and L9 create id in the log (fixed), L5 lists wait for Phase 3 (R-11.8), L10 Salesforce field coverage stays (R-11.9, design A noted)
+- ✅ Final review (0 Critical, 5 Important, 12 Minor) fixed and re-run live 2026-10-23 on the restarted stack (decline, replace, paused batch, real reconnect, CRM message text, per-change not-found, Cancel); L13 fixed. Deferred by the founder: Phase 1 by-hand path, live onboarding refresh, non-admin member
+- ⬜ **Open frontend bugs (noted, fixing set aside):** L12 — a card in a chat started from the project page can show "belongs to a different conversation" until a reload (every card kind); L14 — a card linked by two turns renders twice. Details: [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md) "Open frontend bugs"
+- ⬜ Per-workspace throttle (R-7.3) — not built in Phase 2
+- ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
 
 ## Phase 3 — first writes (a few at a time)
-- ⬜ Target accounts → Clue list (HubSpot) / campaign (Salesforce)
-- ⬜ HubSpot Target account + ICP tier fields
-- ⬜ Buying-committee contacts (Salesforce: Contacts only); missing companies/accounts
-- ⬜ Duplicate tagging and "possible duplicate" links (nothing written when a link isn't possible)
+- ✅ Plan `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md` (branch `feat/crm-integration-phase-3`, unpushed): Tasks 1–12 built and reviewed task by task, whole-branch review + one fix pass; Head of ABM v81 (recipe 41, manual v27, crm-writing v4, stage0-interview v54)
+- ✅ Clue's own list per project (R-11.11): HubSpot company list / Salesforce campaign (created active, "In Progress", R-12.9), kept by id, one list for many projects, `find_crm_list` / `link_crm_list`, marked gone when the CRM deleted it — live-checked on both CRMs — recovery after a deleted list live-checked (HubSpot); Salesforce deleted campaign unit-tested
+- ✅ HubSpot Target account + ICP tier from Clue's fit bands (R-12.1) — live-checked
+- ✅ `read_crm_targets`: what may be written about a project's accounts and committee (R-8.7 / R-12.5), emails graded `verified_smtp` or `catch_all_valid` (R-12.10), names cleaned before splitting (R-12.12), held-back fields named — live-checked (name cleaning: re-run owed)
+- ✅ Buying-committee contacts and missing companies/accounts created first (R-6.18); person values checked in prepare against the targets; record links Clue entity ↔ CRM record — live-checked on both CRMs
+- ✅ One card can use the records it creates (`new:company:<domain>`, `new:contact:<email>`, R-12.11) — live-checked on both CRMs
+- ✅ Card shows names, not ids (R-12.13) — live-checked; a Clue-written message is not recorded as the person's words (R-12.14, prompt only — held on most wake turns, not all: L-14 open)
+- ✅ A list deleted in the CRM counts as gone (R-12.15), a turn's open cards are always shown (R-12.16), no internal ids in replies (R-12.17), live card progress (R-12.18)
+- ⬜ L-14 (code check vs prompt) — founder to decide; live proof of the L-3 late-value re-read
+- ✅ "Possible duplicate" links → built in Phase 4 (R-12.4, R-13.5)
 
 ## Phase 4 — Clue's own fields (admin opt-in)
-- ⬜ HubSpot "Clue" property group and fields
-- ⬜ Salesforce Clue custom fields (+ external-id field for upserts)
+- ✅ Branch `feat/crm-integration-phase-4` (unpushed); plan `docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md`, rulings R-13.1–R-13.7; Tasks 1–6 built and reviewed, final review 0 Critical / 0 Important, fix pass `52a84138e`…`e885c7cf1`
+- ✅ Setup card (owner/admin only): HubSpot "Clue" group, 6 fields, "Possible duplicate" label; Salesforce 6 fields, permission set + assignment (R-13.1), external id — live-checked on both test CRMs
+- ✅ Writing Clue's fields (tier, links, committee role, Clue id), gated on setup; a field deleted in the CRM is refused, marked gone and set up again — live-checked
+- ✅ "Possible duplicate" links (HubSpot association label; Salesforce lookup), undo only for Clue's own Salesforce link — live-checked on Salesforce
+- ✅ Live check findings `2026-10-25-phase-4-live-check-findings.md`: L4-1–L4-6 fixed and re-checked live (Head of ABM v83, crm-writing v6); L4-8 (harness retry error) not this lane's
+- ⏸ Looking a record up by Clue id (R-13.7, deferred)
 
 ## Production readiness
 - ⬜ Own OAuth apps (HubSpot app; Salesforce connected app) — needed for the reads deploy if real customers connect

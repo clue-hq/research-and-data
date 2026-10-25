@@ -21,6 +21,7 @@ from clue_api.crm.connections import activate_from_attempt, start_attempt
 from clue_api.crm.write_tools import (
     CrmChangeInput,
     CrmWriteLogInput,
+    CrmWriteLogOutput,
     CrmWriteLogTool,
     ManageCrmGrantsInput,
     ManageCrmGrantsTool,
@@ -289,7 +290,9 @@ def test_grants_are_listed_and_revoked(tmp_path: Path) -> None:
         # Granted in one transaction, so in no particular order between themselves.
         assert {g["grant_id"]: g["phrase"] for g in listed["grants"]} == {
             str(field): f"Always allow setting “icp_tier” on companies — by Aryan, {when}",
-            str(lists): f"Always allow adding contacts to Clue lists — by Aryan, {when}",
+            str(
+                lists
+            ): f"Always allow adding records to Clue lists and campaigns — by Aryan, {when}",
         }
 
         revoked = (await tool.invoke(_grants_input(seeded, "revoke", field), ctx)).references
@@ -438,3 +441,31 @@ def test_both_tools_refuse_when_the_crm_is_not_configured(tmp_path: Path) -> Non
         ] == ["crm_not_configured"]
 
     _run(tmp_path, "unconfigured", body)
+
+
+def test_a_list_create_grant_is_worded_like_the_card() -> None:
+    from clue_api.crm.write_tools import _grant_phrase
+
+    assert _grant_phrase("hubspot", "kind", "list_create", None, None) == "creating Clue lists"
+    assert (
+        _grant_phrase("salesforce", "kind", "list_create", None, None) == "creating Clue campaigns"
+    )
+    # R-12.8: one standing permission each for adding to and removing from any list or campaign.
+    for provider in ("hubspot", "salesforce"):
+        assert (
+            _grant_phrase(provider, "kind", "list_membership", None, None)
+            == "adding records to Clue lists and campaigns"
+        )
+        assert (
+            _grant_phrase(provider, "kind", "list_removal", None, None)
+            == "removing records from Clue lists and campaigns"
+        )
+
+
+def test_the_logs_write_and_proposal_ids_are_marked_internal() -> None:
+    """R-12.17 (live check L-15): the agent showed the person Clue's write ids. The log still
+    returns them (undo needs ``write_id``), and its output schema says they are for undo only."""
+
+    rows = CrmWriteLogOutput.model_json_schema()["$defs"]["CrmLoggedWrite"]["properties"]
+    for field in ("write_id", "proposal_id"):
+        assert "for undo only, never shown to the person" in rows[field]["description"]

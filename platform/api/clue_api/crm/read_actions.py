@@ -42,6 +42,9 @@ READ_ACTIONS: Mapping[CrmProvider, frozenset[str]] = {
             "HUBSPOT_LIST_PRODUCTS",
             "HUBSPOT_READ_APAGE_OF_OBJECTS_BY_TYPE",
             "HUBSPOT_SEARCH_CRM_OBJECTS_BY_CRITERIA",
+            # Phase 3: a project's list, found by name (composio-api-notes.md § Phase 3 shapes).
+            "HUBSPOT_GET_CRM_LIST_BY_NAME",
+            "HUBSPOT_SEARCH_CRM_LISTS",
         }
     ),
     "salesforce": frozenset(

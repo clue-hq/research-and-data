@@ -2965,7 +2965,9 @@ of kind `crm_write_permission`, rendered by `CrmWritePermissionCard`.
   for Allow; "Don't allow" is `decision: "rejected"` with no `crm_write`. Any member of the
   workspace may answer (R-6.8), so the addressee rule does not apply to this kind. Refusals shown
   on the card, which stays as it was: `422 CRM_WRITE_NOTHING_SELECTED`,
-  `422 CRM_WRITE_UNKNOWN_CHANGE`, `409 CRM_CONNECTION_CHANGED`, `409 GATE_REPLACED`.
+  `422 CRM_WRITE_UNKNOWN_CHANGE`, `409 CRM_CONNECTION_CHANGED`, `409 GATE_REPLACED`,
+  `409 CRM_WRITE_ALREADY_ANSWERED` (another member's answer got there first: "Someone answered
+  this card first."; the card then reads its gate again).
 - **Progress:** `GET /frontend/v1/crm/proposals/:proposalId` → `{proposalId, state (asking |
   sending | paused | done | declined | replaced | closed), provider, counts{done, failed, skipped,
   pending}, groups[{…, chosen, done, failed, skipped, pending}], overwrites[], failed[{writeId,

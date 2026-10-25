@@ -107,6 +107,27 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, which
     # `head-of-abm@v77` grants. v36 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v37.json",
+    # CRM integration Phase 3 (2026-10-23): three addresses ADDED, none removed —
+    # `read_crm_targets@1`, `find_crm_list@1` and `link_crm_list@1`, which `head-of-abm@v78`
+    # grants. v37 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v38.json",
+    # CRM integration Phase 3 Task 10 (2026-10-24): no address added or removed; it moves with
+    # `head-of-abm@v79` (`crm-writing` v3). v38 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v39.json",
+    # CRM integration Phase 3 Task 11 (2026-10-24): no address added or removed; it moves with
+    # `head-of-abm@v80` (`stage0-interview` v53). v39 stays the exact replay input for turns pinned
+    # to it.
+    "recipe0-stage0-v40.json",
+    # CRM integration Phase 3 Task 12 (2026-10-24): no address added or removed; it moves with
+    # `head-of-abm@v81` (`crm-writing` v4). v40 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v41.json",
+    # CRM integration Phase 4 Task 6 (2026-10-25): one address ADDED, none removed —
+    # `propose_clue_fields_setup@1`, which `head-of-abm@v82` grants. v41 stays the exact replay
+    # input for turns pinned to it.
+    "recipe0-stage0-v42.json",
+    # CRM integration Phase 4 follow-up (2026-10-25): no address added or removed; it moves with
+    # `head-of-abm@v83` (`crm-writing` v6). v42 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v43.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

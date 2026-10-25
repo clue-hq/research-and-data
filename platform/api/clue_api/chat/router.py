@@ -2537,6 +2537,7 @@ def build_chat_router(
                         decision=response.decision,
                         selected_write_ids=_crm_selected(response),
                         always_allow=_crm_always_allow(response),
+                        answered_by_user_id=who.user_id,
                     )
                 except crm_write_answer.CrmAnswerRefused as exc:
                     raise _refuse(

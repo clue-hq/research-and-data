@@ -6,6 +6,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from alembic import command
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_db import db_lifespan
 
 from .conftest import run_async
+from .test_crm_write_foundation_migration import _alembic_config, _seed_chain, _submission
 
 WS = "ws-crm-migration"
 
@@ -119,3 +121,61 @@ def test_the_derived_turn_kind_admits_crm_connected_and_keeps_the_others() -> No
         "design_leg_redelivery",
     ):
         assert f"'{kind}'" in definition, kind
+
+
+_BEFORE_CRM = "cba395a41e66"  # the revision before 3b800d603402
+
+
+async def _committed_crm_connected_turn() -> dict[str, object]:
+    """A ``crm_connected`` wake turn with a child row, committed (final review I-4)."""
+    async with db_lifespan() as engine, engine.connect() as conn:
+        tx = await conn.begin()
+        seeded = await _seed_chain(conn)
+        wake = await _submission(
+            conn, seeded, derivation="crm_connected", derived_from=seeded["answering_turn"]
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO agent_turn_submission_context_ref (turn_id, workspace_id, ordinal, "
+                "object_type, object_id) VALUES (:t, :ws, 0, 'project_document', 'doc-1')"
+            ),
+            {"t": wake, "ws": seeded["ws"]},
+        )
+        await tx.commit()
+        return {"ws": seeded["ws"], "wake": wake, "user_turn": seeded["answering_turn"]}
+
+
+async def _turns(ws: str) -> dict[str, int]:
+    async with db_lifespan() as engine, engine.connect() as conn:
+        counts = await conn.execute(
+            text(
+                "SELECT count(*) FILTER (WHERE derivation = 'crm_connected') AS wakes, "
+                "count(*) FILTER (WHERE derivation IS NULL) AS users, "
+                "(SELECT count(*) FROM agent_turn_submission_context_ref r "
+                " WHERE r.workspace_id = :ws) AS refs "
+                "FROM agent_turn_submission WHERE workspace_id = :ws"
+            ),
+            {"ws": ws},
+        )
+        row = counts.one()
+        return {"wakes": int(row.wakes), "users": int(row.users), "refs": int(row.refs)}
+
+
+@pytest.mark.usefixtures("require_db")
+def test_the_connection_migration_downgrades_with_a_crm_connected_turn_present() -> None:
+    """The downgrade lifts the append-only guards to delete the wake turns and their children
+    (as ebf28e41a6a4 does), so a DB that has connected a CRM can still be downgraded."""
+    cfg = _alembic_config()
+    command.upgrade(cfg, "head")
+    try:
+        written = run_async(_committed_crm_connected_turn())
+        assert run_async(_turns(str(written["ws"]))) == {"wakes": 1, "users": 1, "refs": 1}
+
+        command.downgrade(cfg, _BEFORE_CRM)
+        # Only the CRM wake and its child go; the person's own turn stays.
+        assert run_async(_turns(str(written["ws"]))) == {"wakes": 0, "users": 1, "refs": 0}
+
+        command.upgrade(cfg, "head")
+        assert run_async(_turns(str(written["ws"]))) == {"wakes": 0, "users": 1, "refs": 0}
+    finally:
+        command.upgrade(cfg, "head")

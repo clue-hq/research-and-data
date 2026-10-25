@@ -374,3 +374,147 @@ Related documents:
   Set aside: holding the answer turn until the writes finish (blocks the chat, worse when paused);
   recording the answer with no submission (changes the gate-answer contract every card relies on);
   faking a finished run.
+- **R-11.7 (2026-10-22)** **A missing record refuses only its own change.** When the read before the
+  card finds that a record does not exist (HubSpot 404), that change is refused as
+  `crm_record_not_found` and the rest of the batch goes on the card; the agent tells the person
+  which record was missing. (Live check L6: the whole proposal was refused.)
+- ~~**R-11.8 (2026-10-22)** **List lookup and creation wait for Phase 3.** Clue can add contacts to a
+  HubSpot list but cannot look lists up or create one (live check L5); the list-lookup read and the
+  create-list write (and the Salesforce campaign equivalents) arrive with the target-accounts
+  feature in Phase 3.~~ *(replaced by R-11.11)*
+- **R-11.9 (2026-10-22)** **Salesforce field coverage stays at Composio's named arguments for now.**
+  `SALESFORCE_UPDATE_ACCOUNT` / `_UPDATE_CONTACT` accept only the fields Composio names (plus
+  `custom_fields`), so a standard field outside that list (live check L10: `Rating`) cannot be
+  proposed, although the composite patch that actually sends every Salesforce update could set it.
+  Nothing in Phases 3–4 needs such a field. **Noted for later (design A):** accept any field by its
+  Salesforce API name on the existing action, checked at proposal time against the org's field
+  definitions (exists, updateable, not forbidden; label and picklist labels from the same read),
+  sent through the composite patch as today — about a day with its live test. Not chosen:
+  allowlisting `SALESFORCE_UPDATE_RECORD` as a second action.
+- **R-11.10 (2026-10-23)** **A reconnect does not resume a paused batch — and the card says so.**
+  Every reconnect creates a new connection, and Clue never resumes changes across connections, so
+  changes left unsent when a connection lapses are closed and proposed again. The paused card says
+  that plainly instead of "sending carries on once it is reconnected" (final review I-1, option a).
+  Resuming on a same-portal / same-org reconnect (stamping the org id at activation, carrying the
+  queued changes and the record of members Clue added) is not chosen for now. This replaces the
+  "resume in order" part of R-7.2.
+- **R-11.11 (2026-10-23, replaces R-11.8)** **Clue keeps the ids of its CRM lists and campaigns
+  itself (Phase 3).** A CRM assigns a list's or campaign's id when it is created; Clue cannot choose
+  it, so Clue stores it. (1) **Clue's own list:** the first time a project writes, the agent proposes
+  "Create the list 'Clue: <project name>'" (HubSpot: a *manual* list; Salesforce: a campaign) on the
+  normal card; the returned id is stored as a CRM record of Clue's, marked created by Clue. (2) **A
+  list the person already has:** the person names it; the agent finds it by exact name and Clue
+  stores its id, marked not created by Clue (Clue never removes members it did not add; a
+  rule-based HubSpot list cannot take members and is refused). (3) **A list belongs to many
+  projects:** the stored list is one row, and a separate link records every project that uses it.
+  (4) **Recovery:** if the stored id stops working (HubSpot "List does not exist with ID …"), Clue
+  looks the list up by its exact name, and proposes creating it again only if it is truly gone.
+  Needs Clue's allowlists widened — reads `HUBSPOT_GET_CRM_LIST_BY_NAME`, `HUBSPOT_SEARCH_CRM_LISTS`;
+  writes `HUBSPOT_CREATE_LIST`, `SALESFORCE_CREATE_CAMPAIGN` — each verified live on both test CRMs
+  first. (Live check L5: the agent could not find a list because these actions were never on Clue's
+  allowlist; the HubSpot grant itself already allows lists.)
+
+## 12. Phase 3 — first writes (decisions, 2026-10-23)
+
+All six taken as recommended in `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md`.
+
+- **R-12.1 (2026-10-23)** **HubSpot ICP tier comes from Clue's fit bands:** High → Tier 1, Medium →
+  Tier 2, Low → Tier 3, using the same thresholds the screens use (0.70 / 0.40); an account with no
+  fit gets no tier change. (ARV2 has no tier of its own.)
+- ~~**R-12.2 (2026-10-23)** **"Verified" email means `verified_smtp` only.** A catch-all, unknown or
+  unverified address is never written, and a person without a verified email is not created (R-8.7).~~
+  *Superseded by R-12.10.*
+- **R-12.3 (2026-10-23)** **What goes on the list:** HubSpot — one list of the target **companies** per
+  project ("Clue: <project>"); Salesforce — one **campaign** per project holding the committee
+  **contacts** Clue wrote (Salesforce campaigns cannot hold accounts).
+- **R-12.4 (2026-10-23)** **Duplicate links move to Phase 4.** Both ways of linking a possible
+  duplicate (HubSpot association label, Salesforce custom field) are admin schema changes in the
+  customer's CRM, Phase 4's subject. Phase 3 keeps find-before-create and records which CRM record
+  each Clue entity maps to.
+- **R-12.5 (2026-10-23)** **The person-data gate checks what ARV2 records today:** a value comes only
+  from a live claim that is not `sensitive`, not marked unsafe for outreach and not a `weak` identity
+  match; the jurisdiction/use-class gate is added when ARV2 records jurisdiction (the deferred
+  privacy sprint).
+- **R-12.6 (2026-10-23)** **Persona → HubSpot buying role:** champion → Champion, economic buyer →
+  Budget holder, technical evaluator → Influencer, blocker → Blocker, user → End user — confirmed
+  against the portal's own options before anything is built on it. No role is written to
+  Salesforce in Phase 3 (no standard field).
+- **R-12.7 (2026-10-23)** **Creating Clue's list and adding to it is one card.** The first time a
+  project writes, one permission card says "Create the list 'Clue: <project>'" and "Add N companies
+  to it" (Salesforce: the campaign and its contacts). Clue sends the create first, then fills the new
+  list's id into the adds of the same batch. (Found in Task 3: an add needs the list's CRM id, which
+  exists only after the create.)
+- **R-12.8 (2026-10-23)** **"Always allow" for list membership stays one permission (R-6.7) and is
+  worded neutrally:** "Always allow adding records to Clue lists and campaigns", on the card and in
+  the permissions list.
+- **R-12.9 (2026-10-23)** **Clue creates its Salesforce campaigns active, with status "In Progress".** A
+  target list is in use from the moment it is created; an inactive "Planned" campaign is hidden
+  from most campaign reports and pickers.
+- **R-12.10 (2026-10-23, replaces R-12.2)** **"Verified" email, for now, means the provider graded it
+  valid: `verified_smtp` or `catch_all_valid`.** A catch-all address (the company's mail server
+  accepts any address, so the mailbox itself is unproven) is written like a verified one — the same
+  two verdicts the account and contact screens already show. `unverified` (Exa Websets, Sumble: no
+  check), `unknown` and `invalid` are never written, and a person with none of the two is not
+  created (R-8.7). "For now": revisit if catch-all addresses bounce in practice.
+- **R-12.11 (2026-10-24)** **One card can use the records it creates (live-check finding L-1, option a).**
+  R-12.7's `new:` reference is extended from lists to records: a change on a card may point at a
+  company/account or person the same card creates (for a list add, a person's company link, a
+  Salesforce campaign add), and the executor sends the creates first and fills in their new CRM ids,
+  the way it already fills in a new list's id. A change whose create fails or does not land is not
+  sent. Before: "create + add/link" needed one card per step (two or three cards in a row).
+- **R-12.12 (2026-10-24)** **A person's name is cleaned before it is split (live-check L-5).** Clue's
+  research holds one `full_name`; `read_crm_targets` drops everything after the first comma
+  (credentials: ", MBA, SHRM-CP"), leading honorifics (Dr., Mr., Mrs., Ms., Miss, Prof., Rev.) and
+  trailing degree abbreviations (PhD, MD), then splits; Jr./Sr./II/III stay in the last name. The
+  prepare check compares against the cleaned name. The title is not written anywhere (no Salutation
+  field — outside R-8.7's person fields).
+- **R-12.13 (2026-10-24)** **The card shows names, not raw ids (live-check L-6):** a list or campaign by
+  its stored name, a company id in a field by the company's name (from Clue's records or the
+  before-read); the id only when Clue knows no name.
+- **R-12.14 (2026-10-24)** **A message Clue wrote is not recorded as the person's words (live-check
+  L-7): prompt only (option B), no code check.** The stage0-interview skill says so; the founder
+  waived reviewing that wording for this edit.
+- **R-12.15 (2026-10-24)** **HubSpot's answer for a deleted list counts as gone (live-check L-12).**
+  "Attempted to modify membership for deleted lists …" marks Clue's kept list gone, like a not-found
+  list, so the agent can find it by name and create a new one.
+- **R-12.16 (2026-10-24)** **A card the turn created cannot go missing (live-check L-13).** When a turn
+  ends, Clue itself shows every card that turn created which is still waiting for an answer, even
+  if the agent left it out of its final answer. Applies to every card kind, not only CRM.
+  *Amended 2026-10-24 (Task 12 review, option a):* a card that a newer card of the same kind and
+  subject replaced in the same turn (a redrafted directive or product selection) is not shown.
+- **R-12.17 (2026-10-24)** **Clue's write and proposal ids are never shown to the person (live-check
+  L-15).** `crm_write_log` marks them as internal ("for undo only, never shown to the person"), and
+  crm-writing says: "Never show the person Clue's write or proposal ids; name the record and what
+  changed instead." (Founder-approved wording.)
+- **R-12.18 (2026-10-24)** **A card keeps its progress current while the tab is hidden (live-check
+  L-16):** it re-reads every 15 s when hidden (2 s when shown) instead of pausing, and re-reads at
+  once when the chat receives the "changes finished" wake-up.
+- L-14 (the R-12.14 prompt line did not always hold): to be decided after R-12.15–R-12.18 land.
+
+## 13. Phase 4 — Clue's own fields (decisions, 2026-10-24)
+
+- **R-13.1 (2026-10-24)** **In Salesforce, Clue grants access to its own fields itself, inside the
+  admin's one-time setup approval.** A field created through the Tooling API is invisible to every
+  user until field-level access is granted (spike). Clue creates a "Clue fields" permission set with
+  read/edit on its fields and assigns it to the connected user, as part of the `clue_fields_setup`
+  approval; the card says plainly that this changes access settings in the org.
+- **R-13.2 (2026-10-24, D-1)** **Starting Clue fields: what Clue can fill today.** Company — Clue tier,
+  Clue research link; contact — Clue committee role, Clue contact link; both — Clue id (Salesforce
+  external id; HubSpot unique property). ABM stage and committee status wait until Clue has the data.
+  Salesforce also gets `Clue_Possible_Duplicate__c` for duplicate links (R-6.13).
+- **R-13.3 (2026-10-24, D-2)** **Only a workspace owner or admin approves setting up Clue's fields**;
+  any member's agent may propose it; never covered by "Always allow" or "Fully automatic". The
+  founder asked whether every member could approve; kept to owners/admins because setup changes the
+  customer's CRM schema and, on Salesforce, its access settings (a one-line change if reopened).
+- **R-13.4 (2026-10-24, D-3)** **Setup is proposed by a dedicated tool that builds the fixed setup**
+  from code; the agent cannot choose field names, types or access.
+- **R-13.5 (2026-10-24, D-4)** **A duplicate is only two CRM records Clue finds for one Clue person**
+  (find-before-create matching more than one record); never a guess from names alone.
+- **R-13.6 (2026-10-24, D-5)** **The research and contact links are built from `CLUE_APP_ORIGIN`** and
+  are not written when that origin is a localhost address.
+- **R-13.7 (2026-10-24, D-6)** **HubSpot's Clue id property is unique** and is used to find the record
+  when Clue has no CRM id linked.
+  *Amended 2026-10-25 (founder):* the lookup by Clue id is **deferred**. Only records Clue wrote carry
+  a Clue id and Clue keeps a link to each of them, so the lookup would cover only a lost link; find
+  stays by email/domain. The field is still created unique. Revisit if links can be lost (e.g. a
+  restore).

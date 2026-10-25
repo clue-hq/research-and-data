@@ -403,8 +403,9 @@ def gate_response_message(
     if response.selected_product_ids is not None:
         payload["selected_product_ids"] = list(response.selected_product_ids)
     # A CRM write card answer: the choices, de-duplicated in the order made, and one sentence the
-    # agent reads ("Allowed 60 of 61 changes; always allow adding contacts to Clue lists."). The
-    # sentence is derived from the immutable card, so a retried click captures the same bytes.
+    # agent reads ("Allowed 60 of 61 changes; always allow adding records to Clue lists and
+    # campaigns."). The sentence is derived from the immutable card, so a retried click captures
+    # the same bytes.
     if crm_write_summary is not None:
         chosen = response.crm_write or CrmWriteAnswer()
         payload["crm_write"] = {

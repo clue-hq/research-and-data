@@ -61,7 +61,7 @@ Once the finalize budget is spent the runtime appends: "Execution finalization w
 - Readable: `.deepagent`, `inputs`, `context`, `scratch`, `reads`, `work`, `outputs`, `brand`, `project`, `attachments`.
 - Writable: `scratch`, `work`, `outputs`, `project`.
 - Allowed file types: `.json`, `.md`, `.txt`, `.yaml`.
-- Your folders belong to this chat, not to one turn, and they are not tied to one machine — any worker can continue this chat and finds them as you left them. Files are deleted by age, not the folder: see the workspace chapter for what goes when.
+- Retention class: `agent-ephemeral-v1`. The directory belongs to the chat thread, not to one turn. It is purged when the human archives the thread, or 86,400 seconds (`CLUE_AGENT_WORKSPACE_RETENTION_S`) after the thread's newest turn reached a terminal status. A turn still running, or awaiting input, keeps it.
 
 Everything a path means is `.deepagent/skills/manual-workspace/v24/SKILL.md`; the errors these bounds produce are
 `.deepagent/skills/manual-errors/v24/SKILL.md`.

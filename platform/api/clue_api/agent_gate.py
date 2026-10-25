@@ -30,6 +30,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -63,6 +64,7 @@ __all__ = [
     "insert_gate_answer",
     "money_text",
     "open_gates_for_thread",
+    "open_gates_for_turn",
     "redact_gate_snapshots_for_subject",
     "refuse_misnamed_gate_links",
 ]
@@ -579,6 +581,49 @@ async def open_gates_for_thread(
     gate (a CRM write card whose proposal moved on without an answer) is not open either.
     """
 
+    return await _open_gates(conn, workspace_id=workspace_id, scope="thread_id", value=thread_id)
+
+
+async def open_gates_for_turn(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[AgentGateRow, ...]:
+    """Every gate one turn presented that is still open, oldest first — the same openness as
+    :func:`open_gates_for_thread` (unanswered, not erased, not withdrawn) — except a draft the
+    turn superseded: a gate for which this turn later presented another gate of the same kind
+    and subject (a redraft gets a new gate id, since the id is keyed on the digest). The turn's
+    finalization links these so a card the turn created always shows (R-12.16)."""
+
+    return await _open_gates(
+        conn,
+        workspace_id=workspace_id,
+        scope="turn_id",
+        value=turn_id,
+        extra=_SUPERSEDED_IN_TURN_SQL,
+    )
+
+
+#: A newer gate of the same kind and subject, presented later in the same turn, supersedes ``g``.
+#: Strictly later only: two gates presented in one transaction share ``created_at`` and are both
+#: kept, rather than one hidden by an arbitrary tie-break.
+_SUPERSEDED_IN_TURN_SQL = (
+    "NOT EXISTS (SELECT 1 FROM agent_gate newer "
+    "WHERE newer.workspace_id = g.workspace_id AND newer.turn_id = g.turn_id "
+    "AND newer.kind = g.kind AND newer.subject_ref = g.subject_ref "
+    "AND newer.created_at > g.created_at)"
+)
+
+
+async def _open_gates(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    scope: Literal["thread_id", "turn_id"],
+    value: str | UUID,
+    extra: str = "TRUE",
+) -> tuple[AgentGateRow, ...]:
     rows = (
         (
             await conn.execute(
@@ -587,12 +632,12 @@ async def open_gates_for_thread(
                     "FROM agent_gate g "
                     "LEFT JOIN agent_gate_answer a "
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
-                    "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
+                    f"WHERE g.workspace_id = :workspace_id AND g.{scope} = :value "
                     "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
-                    f"  AND NOT {GATE_WITHDRAWN_SQL} "
+                    f"  AND NOT {GATE_WITHDRAWN_SQL} AND {extra} "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
-                {"workspace_id": workspace_id, "thread_id": thread_id},
+                {"workspace_id": workspace_id, "value": value},
             )
         )
         .mappings()

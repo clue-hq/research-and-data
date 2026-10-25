@@ -25,23 +25,11 @@ inside it. There is no host filesystem, no shell and no network here.
 | `project/` | read and write | this project's library, shared by every thread of the project. Three paths under it are yours to write; the rest is compiled. |
 | `inputs/` | read | this turn's human message and the refs attached to it. Rewritten every turn. |
 | `context/` | read | the cards the turn composed for you. Rewritten every turn. |
-| `scratch/` | read and write | your notebook. It stays until 7 days after this chat's last activity, then it is deleted and shows in your file list as expired. Nobody else reads it. |
-| `reads/` | read | what a tool pulled down for you: the whole result of a CRM read, a tool result too big to put in the reply, your `run_python` output. Read only. Deleted 48 hours after this chat's last activity — a receipt stays, saying what the file was and how to get it again. |
-| `work/` | read and write | your working files: tables, scripts, drafts. They stay until 7 days after this chat's last activity. Two folders inside are different: `work/conversation_history/` and `work/large_tool_results/` are copies the platform made of things it already has, and they go after 48 hours like `reads/`. |
-| `outputs/` | read and write | what you made for the person. Saved durably at the end of every turn and kept for as long as this chat exists. Never deleted by age. |
+| `scratch/` | read and write | your notebook. It persists across the turns of this chat and nobody else reads it. |
+| `reads/` | read | reserved for platform written spilled reads. It arrives with a later plan; nothing writes there today. |
+| `work/` | read and write | scratch inside one turn. Nothing is persisted from it. |
+| `outputs/` | read and write | the turn's durable product. Saved as artifacts at finalize and kept here for this chat's later turns, until the workspace is cleaned 24 hours after the chat's last turn. Check a file is there before relying on it. |
 | `.deepagent/` | read | your own manifest, profile, prompt and skills, including these manual chapters. |
-
-### What you have, and what has gone: `context/project/workspace_files.json`
-
-Every turn starts with this file. It lists what is in your folders right now, how old each file is,
-and every file that has been deleted for age. A deleted file keeps a receipt: what made it, when,
-how much it held, and one line on how to get it again. If a file you remember is not in the live
-list, look for it in the expired list before you assume it is there.
-
-When a chat has been idle for a while, your earlier numbers may rest on files that are gone. Before
-you rely on an earlier analysis, check how old it is and whether its source files are still there.
-Decide for yourself whether to read the source again — you do not have to tell the person you
-checked.
 
 Writes are allowed only under `scratch/`, `work/`, `outputs/` and `project/`, only with the
 extensions `.json`, `.md`, `.txt` and `.yaml`, and only inside the quotas in `.deepagent/skills/manual-limits/v24/SKILL.md`. A write
@@ -131,7 +119,6 @@ carry a hash you cannot derive from an id, so list the folder rather than guessi
 | `context/project/budget.json` | `limit_millicents`, an `external_research_budget_cents` literal, and a scope sentence. |
 | `context/project/brand_knowledge_index.json` | the brand document index, the project's confirmed ICP reference, and the confirmed product set. Present only when at least one brand document is pinned. |
 | `context/project/project_library_index.json` | the manifest of the `project/` mount you are reading: one line per file with its path, its workspace path, kind, version, status, a one line summary and the digest of the bytes installed there, plus the digest of the whole generation and how many artifacts `project/artifacts/index.json` names. It is the same manifest the mount serves as `project/index.json`. |
-| `context/project/workspace_files.json` | what is in your folders right now, each file's age, and every file deleted for age with a receipt saying what it was and how to get it again. |
 | `context/focus/*` | the hydrated row for each attached account, contact or project. A contact card is deliberately minimal: name, title, persona, account name, account domain. |
 | `context/workspace-product/*` | the brand row, and the product row when one is pinned. |
 | `context/memory/*` | advisory preferences and learnings, when any are selected. |

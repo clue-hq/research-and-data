@@ -18,9 +18,11 @@ from clue_api.crm.write_actions import (
     WRITE_ACTIONS,
     ParsedChange,
     WriteNotParsable,
+    field_update_spec,
     forbidden_fields,
     is_forbidden_field,
     scope_key,
+    single_field_arguments,
     write_spec,
 )
 
@@ -34,6 +36,10 @@ _EXAMPLES: dict[tuple[str, str], tuple[dict[str, Any], ParsedChange]] = {
     ("hubspot", "HUBSPOT_UPDATE_CONTACTS"): (
         {"inputs": [{"id": "201", "properties": {"jobtitle": "COO"}}]},
         ParsedChange("contact", "201", {"jobtitle": "COO"}, None, "201"),
+    ),
+    ("hubspot", "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID"): (
+        {"objectType": "contacts", "objectId": "201", "properties": {"clue_id": "c-1"}},
+        ParsedChange("contact", "201", {"clue_id": "c-1"}, None, "201"),
     ),
     ("hubspot", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS"): (
         {"list_id": "9", "operation": "add", "record_ids": ["201"]},
@@ -73,6 +79,18 @@ _EXAMPLES: dict[tuple[str, str], tuple[dict[str, Any], ParsedChange]] = {
             None,
             "Aldercare",
         ),
+    ),
+    ("hubspot", "HUBSPOT_CREATE_LIST"): (
+        {"name": "Clue: Q4 hotel groups", "object_type_id": "0-2", "processing_type": "MANUAL"},
+        ParsedChange("company", None, {}, None, "Clue: Q4 hotel groups"),
+    ),
+    ("hubspot", "HUBSPOT_CREATE_OBJECT_ASSOCIATION"): (
+        {"objectId": "201", "toObjectId": "202"},
+        ParsedChange("contact", "201", {}, None, "201", duplicate_ref="202"),
+    ),
+    ("salesforce", "SALESFORCE_CREATE_CAMPAIGN"): (
+        {"name": "Clue: Q4 hotel groups"},
+        ParsedChange("contact", None, {}, None, "Clue: Q4 hotel groups"),
     ),
     ("salesforce", "SALESFORCE_UPDATE_ACCOUNT"): (
         {"account_id": "001A", "industry": "Hospitality", "custom_fields": {"Tier__c": "1"}},
@@ -137,12 +155,34 @@ def test_no_allowlisted_write_merges_deletes_or_runs_an_llm() -> None:
     assert write_spec("hubspot", "HUBSPOT_SEARCH_DEALS") is None
 
 
-def test_the_allowlist_covers_every_kind_but_link_duplicate() -> None:
+def test_the_allowlist_covers_every_kind() -> None:
     for provider in ("hubspot", "salesforce"):
         kinds = {spec.kind for (p, _s), spec in WRITE_ACTIONS.items() if p == provider}
-        assert kinds >= {"field_update", "list_membership", "create_contact", "create_company"}
-        assert "link_duplicate" not in kinds
-    assert {spec.kind for spec in WRITE_ACTIONS.values()} >= {"list_removal"}
+        assert kinds >= {
+            "field_update",
+            "list_membership",
+            "create_contact",
+            "create_company",
+            "list_create",
+        }
+    assert {spec.kind for spec in WRITE_ACTIONS.values()} >= {"list_removal", "link_duplicate"}
+
+
+def test_a_salesforce_duplicate_link_is_a_contact_update_of_clues_lookup_alone() -> None:
+    """Phase 4 (R-6.13): setting Clue_Possible_Duplicate__c is a link_duplicate, scoped by its
+    kind; clearing it is an ordinary field update (only Clue's own undo passes preparation)."""
+    spec = write_spec("salesforce", "SALESFORCE_UPDATE_CONTACT")
+    assert spec is not None
+    link = spec.parse(
+        {"contact_id": "003A", "custom_fields": {"Clue_Possible_Duplicate__c": "003B"}}
+    )
+    assert (link.change_kind(spec), link.duplicate_ref) == ("link_duplicate", "003B")
+    assert scope_key(spec, link, None) == "kind:link_duplicate"
+    cleared = spec.parse(
+        {"contact_id": "003A", "custom_fields": {"Clue_Possible_Duplicate__c": None}}
+    )
+    assert cleared.change_kind(spec) == "field_update"
+    assert cleared.duplicate_ref is None
 
 
 def test_consent_and_phone_fields_are_forbidden() -> None:
@@ -174,6 +214,34 @@ def test_every_spec_has_an_example() -> None:
     assert set(WRITE_ACTIONS) == set(_EXAMPLES)
 
 
+def test_a_hubspot_contact_field_update_is_sent_by_id() -> None:
+    """Phase 4 live check: Composio's HUBSPOT_UPDATE_CONTACTS drops every non-standard property,
+    so a contact's field update is logged and sent as the by-id update, one record per call."""
+    proposed = write_spec("hubspot", "HUBSPOT_UPDATE_CONTACTS")
+    sent = field_update_spec("hubspot", "contact")
+    assert proposed is not None and proposed.batch is None
+    assert sent.slug == "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID" and sent.batch is None
+    assert (sent.kind, sent.object, sent.read_before) == (
+        "field_update",
+        "contact",
+        proposed.read_before,
+    )
+    arguments = single_field_arguments(sent, "201", "hs_buying_role", "CHAMPION")
+    assert arguments == {
+        "objectType": "contacts",
+        "objectId": "201",
+        "properties": {"hs_buying_role": "CHAMPION"},
+    }
+    assert sent.parse(arguments) == ParsedChange(
+        "contact", "201", {"hs_buying_role": "CHAMPION"}, None, "201"
+    )
+    # Scoped like the proposed action, so a grant covers both.
+    parsed = proposed.parse({"inputs": [{"id": "201", "properties": {"jobtitle": "COO"}}]})
+    assert scope_key(proposed, parsed, "jobtitle") == scope_key(sent, parsed, "jobtitle")
+    # Companies stay on their batch tool (custom properties work there).
+    assert field_update_spec("hubspot", "company").slug == "HUBSPOT_UPDATE_COMPANY"
+
+
 def test_hubspot_list_removal_is_its_own_kind_and_scope() -> None:
     spec = write_spec("hubspot", "HUBSPOT_UPDATE_LIST_MEMBERSHIPS")
     assert spec is not None
@@ -200,6 +268,53 @@ def test_a_list_removal_never_matches_a_list_add_grant() -> None:
     assert scope_key(
         sf_remove, sf_remove.parse({"campaign_id": "7", "member_id": "3"}), None
     ) == scope_key(spec, remove, None)
+
+
+@pytest.mark.parametrize(
+    ("provider", "slug", "arguments", "object_name"),
+    [
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "MANUAL"},
+            "company",
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Clue: Q4", "object_type_id": "0-1", "processing_type": "MANUAL"},
+            "contact",
+        ),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Clue: Q4"}, "contact"),
+    ],
+)
+def test_create_list_is_a_list_create_change(
+    provider: str, slug: str, arguments: Mapping[str, Any], object_name: str
+) -> None:
+    spec = write_spec(provider, slug)  # type: ignore[arg-type]
+    assert spec is not None
+    parsed = spec.parse(arguments)
+    assert parsed.change_kind(spec) == "list_create"
+    assert (parsed.object, parsed.record_ref, parsed.label) == (object_name, None, "Clue: Q4")
+    assert parsed.fields == {} and parsed.list_ref is None
+    assert scope_key(spec, parsed, None) == "kind:list_create"
+    # Nothing is read before a list is created, and it is never a batch.
+    assert spec.read_before is None and spec.batch is None
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "DYNAMIC"},
+        {"name": "Clue: Q4", "object_type_id": "0-2", "processing_type": "SNAPSHOT"},
+        {"name": "Clue: Q4", "object_type_id": "0-2"},
+    ],
+)
+def test_hubspot_creates_manual_lists_only(arguments: Mapping[str, Any]) -> None:
+    spec = write_spec("hubspot", "HUBSPOT_CREATE_LIST")
+    assert spec is not None
+    with pytest.raises(WriteNotParsable, match="Clue creates manual lists only"):
+        spec.parse(arguments)
 
 
 def test_scope_keys() -> None:
@@ -250,8 +365,46 @@ def test_scope_keys() -> None:
             {"campaign_id": "7", "campaign_member_id": "00v"},
         ),
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"companyId": "1", "properties": {}}),
+        # the by-id update is locked to one contact
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "companies", "objectId": "1", "properties": {"a": 1}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectId": "1", "properties": {"a": 1}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "contacts", "objectId": "1", "properties": {}},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_PARTIALLY_UPDATE_CRM_OBJECT_BY_ID",
+            {"objectType": "contacts", "objectId": "1", "properties": {"a": 1}, "idProperty": "x"},
+        ),
         ("hubspot", "HUBSPOT_UPDATE_COMPANY", {"properties": {"name": "x"}}),
         ("salesforce", "SALESFORCE_CREATE_CONTACT", {"first_name": "Ana"}),
+        # a list is named, of companies or contacts, and holds nothing the card cannot show
+        ("hubspot", "HUBSPOT_CREATE_LIST", {"object_type_id": "0-2", "processing_type": "MANUAL"}),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Q4", "object_type_id": "0-3", "processing_type": "MANUAL"},
+        ),
+        (
+            "hubspot",
+            "HUBSPOT_CREATE_LIST",
+            {"name": "Q4", "object_type_id": "0-2", "processing_type": "MANUAL", "filters": {}},
+        ),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": " "}),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "budgeted_cost": 9}),
+        # R-12.9: Clue's campaigns are active and "In Progress", nothing else
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "is_active": False}),
+        ("salesforce", "SALESFORCE_CREATE_CAMPAIGN", {"name": "Q4", "status": "Planned"}),
         (
             "hubspot",
             "HUBSPOT_CREATE_CONTACT",
@@ -297,6 +450,54 @@ def test_hubspot_batches_join_records_and_split_by_id() -> None:
     assert [(o.ok, o.crm_id) for o in outcomes] == [(False, "1"), (True, "2")]
 
 
+def test_salesforce_batch_names_each_record_once() -> None:
+    """Live (Phase 4): Salesforce refuses a composite call naming one Id twice. Changes of one
+    record -- its 15- and 18-character ids alike -- are one entry, and share its result."""
+    spec = write_spec("salesforce", "SALESFORCE_UPDATE_ACCOUNT")
+    assert spec is not None and spec.batch is not None
+    batch = spec.batch
+    items = [
+        {"account_id": "001jV00000HsWdp", "custom_fields": {"Clue_Id__c": "c-1"}},
+        {"account_id": "001B", "industry": "Banking"},
+        {"account_id": "001jV00000HsWdpQAF", "custom_fields": {"Clue_Tier__c": "Tier 1"}},
+    ]
+    assert batch.record_key("001jV00000HsWdpQAF") == batch.record_key("001jV00000HsWdp")
+    assert batch.build(items)["records"] == [
+        {
+            "attributes": {"type": "Account"},
+            "Id": "001jV00000HsWdp",
+            "Clue_Id__c": "c-1",
+            "Clue_Tier__c": "Tier 1",
+        },
+        {"attributes": {"type": "Account"}, "Id": "001B", "Industry": "Banking"},
+    ]
+    refused = {"statusCode": "FIELD_CUSTOM_VALIDATION_EXCEPTION", "message": "no"}
+    data = {
+        "results": [
+            {"id": "001jV00000HsWdpQAF", "success": False, "errors": [refused]},
+            {"id": "001B", "success": True, "errors": []},
+        ]
+    }
+    assert [o.ok for o in batch.split(data, items)] == [False, True, False]
+    # Two values of one field of one record never share a call (the executor splits them).
+    with pytest.raises(ValueError):
+        batch.build([items[1], {"account_id": "001B", "industry": "Retail"}])
+
+
+def test_hubspot_batch_names_each_company_once() -> None:
+    spec = write_spec("hubspot", "HUBSPOT_UPDATE_COMPANY")
+    assert spec is not None and spec.batch is not None
+    items = [
+        {"companyId": "1", "properties": {"industry": "A"}},
+        {"companyId": "1", "properties": {"name": "Acme"}},
+    ]
+    assert spec.batch.build(items) == {
+        "inputs": [{"id": "1", "properties": {"industry": "A", "name": "Acme"}}]
+    }
+    answer = {"status": "COMPLETE", "results": [{"id": "1", "properties": {}}]}
+    assert [o.ok for o in spec.batch.split(answer, items)] == [True, True]
+
+
 def test_salesforce_batch_can_clear_and_keeps_per_record_failures() -> None:
     spec = write_spec("salesforce", "SALESFORCE_UPDATE_CONTACT")
     assert spec is not None and spec.batch is not None
@@ -338,3 +539,10 @@ def test_hubspot_list_batch_groups_by_list_and_operation() -> None:
     assert batch.build([a, b]) == {"list_id": "9", "operation": "add", "record_ids": ["1", "2"]}
     outcomes = batch.split({"recordsIdsAdded": ["1"], "recordIdsMissing": ["2"]}, [a, b])
     assert [(o.ok, o.crm_id) for o in outcomes] == [(True, "1"), (False, "2")]
+
+
+def test_a_campaign_create_may_name_the_active_status_clue_sets() -> None:
+    spec = write_spec("salesforce", "SALESFORCE_CREATE_CAMPAIGN")
+    assert spec is not None
+    parsed = spec.parse({"name": "Clue: Q4", "is_active": True, "status": "In Progress"})
+    assert parsed.label == "Clue: Q4" and parsed.change_kind(spec) == "list_create"

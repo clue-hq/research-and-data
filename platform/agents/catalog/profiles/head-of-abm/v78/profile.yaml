@@ -2,16 +2,16 @@ schema_version: '1'
 kind: profile
 name: head-of-abm
 version: v78
-# v78 (2026-10-23, F3 Phase 2 - the chat's rough work expires; spec
-# docs/superpowers/specs/agent-workspace/, plan
-# docs/superpowers/plans/2026-10-23-agent-workspace-phase-2-retention.md, Task 8): v77's surface
-# exactly - the same prompt v18, grant, tool addresses, workspace, caps and conversation recipe
-# 37. No tool address moves. The manual re-mints at `manual-*@v24` for the founder-approved text
-# (2026-10-23): the workspace chapter's folder table now says what each folder keeps and for how
-# long, a new section describes `context/project/workspace_files.json` and carries the staleness
-# instruction (ruling AW-4), and the limits chapter's retention bullet replaces the retired
-# `CLUE_AGENT_WORKSPACE_RETENTION_S` sentence. stage0-interview v51 is v50 with its manual paths
-# repointed to v24.
+# v78 (2026-10-23, CRM integration Phase 3 - first writes; plan
+# docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md, Task 8):
+# v77's surface with THREE addresses ADDED - `read_crm_targets@1` (a project's accounts and
+# committee as Clue may write them into the CRM, with what is withheld and why),
+# `find_crm_list@1` (the project's CRM list or campaign, or one found by name) and
+# `link_crm_list@1` (keep a list the person names for the project) - and `crm-writing` v2
+# (v1 plus section 3b, founder-approved 2026-10-23). `propose_crm_changes@1` is re-pinned at its
+# new input digest (it gained `clue_entity_id`). stage0-interview v51 is v50 with its manual
+# paths repointed to v24. The manual re-mints at `manual-*@v24`; the conversation recipe moves
+# 37 -> 38. Prompt v18 stays.
 # v77 (2026-10-22, CRM integration Phase 2 - writes; spec
 # docs/superpowers/specs/crm-integration/, plan
 # docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md, Task 10):
@@ -99,8 +99,8 @@ skills:
   version: v2
   sha256: dcfab038661b512ba8ba805f2742dac4850bfb13cc4587a922eef9fbc3d9e7e8
 - name: crm-writing
-  version: v1
-  sha256: e3ead90690bc49d47989c4f787aa315da93594b9e07b583919416ddfef2a8878
+  version: v2
+  sha256: 68703b1b5f2eae09a24ade6abfbcc8dcc0d4d3e196dafe4506694fe2932e3574
 - name: manual-index
   version: v24
   sha256: 9da697f2c4fa3038207d237eb6754a9a5367bc4065c69e058dcf9f39a027cc14
@@ -109,10 +109,10 @@ skills:
   sha256: 28a1ca704169c7ceb9d70aecc4244fa08ff2bbe14f5cc52a36832fb190dc8592
 - name: manual-workspace
   version: v24
-  sha256: 7db6be3ddff8c8c2fc1f9984b14e9350751e5bfea408f4c06909922f88decfea
+  sha256: a84988b056634d17ef7f481d0ff69b6ce7da9499e18be55af1cf10d70348d683
 - name: manual-tools
   version: v24
-  sha256: 42169a9def5f41accd227685bfcef8cd6a09b165de0ae1446876ac87d3ae2ca5
+  sha256: 104e0be31e0560ecdc7529453e3d546da9ebf6a2a04a67427beaee90e41a8520
 - name: manual-fields
   version: v24
   sha256: f2173ec755105234a7bd2cfb9c1771e6e1cfc4c55170679fa8f8c84ce371e874
@@ -142,7 +142,7 @@ skills:
   sha256: 7fdbd6f07b55f983e5330a9495d2bfcd98cc3c08dee408e65b8563ae9bd4220f
 - name: manual-limits
   version: v24
-  sha256: ffc5d0ec0541bf11b85b5bc3824145082b32fad8b4b597082e1a2ecb811971c1
+  sha256: fdf96127eb9c52f7d3c0ebee01be4db105c78998fc5a6f53b9dab8056c5381ff
 - name: manual-glossary
   version: v24
   sha256: db5bfde7871ef673405c10e4b67d3c38518a17d60cb8cfb1dd9db7fd9b0fbcd9
@@ -265,8 +265,8 @@ tools:
 # permissions. The conversation recipe moves 36 -> 37.
 - name: propose_crm_changes
   version: '1'
-  input_schema_sha256: 4df276a6bfc8255bf2ddbec8e832de2daac96c9009de955532c0c02724f0f8b5
-  output_schema_sha256: 52ca0f17baa566220dd48df63579a570c4a8bfd20be3f12ded64a4fbb85a4a13
+  input_schema_sha256: 8875ab40d1d37905e4f2ecef8bd3b3ed41290d3d5bfc83ac4461f35ba86d3902
+  output_schema_sha256: d8227de9b75aeaefd1757ae6ce8fb094128f60b7223554d8ab23f8cb3e7ef587
 - name: crm_write_log
   version: '1'
   input_schema_sha256: 17871b5c66e4df7e60acb3640152f096ca7abc4bddc3daabf737570d7345cfb3
@@ -275,6 +275,21 @@ tools:
   version: '1'
   input_schema_sha256: 9809d75e02ea3134d5e6a8a3ccd7e611223534963a8f9bbbfa56bc2dfad1497b
   output_schema_sha256: 956632841f74d3e72deefbd3046a677bd00a0a87dd97a801d9546b5b7fef3721
+# v78 (CRM integration Phase 3, first writes): THREE addresses ADDED. read_crm_targets reads what
+# Clue may write about a project's accounts and committee; find_crm_list and link_crm_list find
+# and keep the project's CRM list or campaign. The conversation recipe moves 37 -> 38.
+- name: read_crm_targets
+  version: '1'
+  input_schema_sha256: 2c42b7fb2070ce97f0096425c2ef08edb57ae96cde10ec10abff8058cba1037d
+  output_schema_sha256: fdbdf60f3efaf793b1a0fd236440e8e505d30849219c7496d237beab16f83a34
+- name: find_crm_list
+  version: '1'
+  input_schema_sha256: 858ed262e622e93e186325b6bd2d11b09bb4dbadb9ef7d08c76f19e9ce9fb675
+  output_schema_sha256: 645dc6b7f732beed30fd13969baaa68e8e30723923af0fe36d73fcd294ea0399
+- name: link_crm_list
+  version: '1'
+  input_schema_sha256: fb162a45095e8470da718ce183e7a4a5731844461d9aacd3b954659d98924c87
+  output_schema_sha256: f79a1f9f4c9dfc4af943eac3b6df33a72c27eec52a3a06c5cc8f256b53eb9f60
 model:
   model_id: x-ai/grok-4.6
   timeout_s: 30.0

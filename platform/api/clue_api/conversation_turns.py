@@ -214,7 +214,20 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 37 (CRM integration Phase 2, 2026-10-22) admits three addresses and removes none:
 # ``propose_crm_changes@1``, ``crm_write_log@1`` and ``manage_crm_grants@1``, granted by
 # `head-of-abm@v77`.
-CONVERSATION_RECIPE_VERSION = 37
+# Revision 38 (CRM integration Phase 3, 2026-10-23) admits three addresses and removes none:
+# ``read_crm_targets@1``, ``find_crm_list@1`` and ``link_crm_list@1``, granted by
+# `head-of-abm@v78`.
+# Revision 39 (CRM integration Phase 3 Task 10, 2026-10-24) admits and removes no address: it
+# moves with `head-of-abm@v79` (`crm-writing` v3, `manual-*@v25`).
+# Revision 40 (CRM integration Phase 3 Task 11, 2026-10-24) admits and removes no address: it
+# moves with `head-of-abm@v80` (`stage0-interview` v53, `manual-*@v26`).
+# Revision 41 (CRM integration Phase 3 Task 12, 2026-10-24) admits and removes no address: it
+# moves with `head-of-abm@v81` (`crm-writing` v4, `stage0-interview` v54, `manual-*@v27`).
+# Revision 42 (CRM integration Phase 4 Task 6, 2026-10-25) admits one address and removes none:
+# ``propose_clue_fields_setup@1``, granted by `head-of-abm@v82`.
+# Revision 43 (CRM integration Phase 4 follow-up, 2026-10-25) admits and removes no address: it
+# moves with `head-of-abm@v83` (`crm-writing` v6, `stage0-interview` v56, `manual-*@v29`).
+CONVERSATION_RECIPE_VERSION = 43
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

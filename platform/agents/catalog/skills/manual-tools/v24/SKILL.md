@@ -52,6 +52,9 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `propose_crm_changes@1` | write | no | yes | Propose CRM changes |
 | `crm_write_log@1` | read | no | no | Review CRM changes |
 | `manage_crm_grants@1` | write | no | no | Manage CRM permissions |
+| `read_crm_targets@1` | read | no | no | Review what goes into your CRM |
+| `find_crm_list@1` | read | no | no | Find the project's CRM list |
+| `link_crm_list@1` | write | no | no | Use your CRM list |
 
 ## inspect_statement_history@1
 
@@ -1212,7 +1215,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A list of the connected CRM's actions that match the search, each with its input schema and its access. Nothing was read from the CRM. Run a read with run_crm_action; propose a write with propose_crm_changes.
 
-**Taught by.** crm-sales-analysis v2 section 3, "Read the setup first"; crm-writing v1 section 3, "Finding the write action".
+**Taught by.** crm-sales-analysis v2 section 3, "Read the setup first"; crm-writing v2 section 3, "Finding the write action".
 
 **See also.** `.deepagent/skills/manual-tools/v24/SKILL.md`.
 
@@ -1333,7 +1336,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## propose_crm_changes@1
 
-**What it does.** Propose changes to the connected CRM: one batch of write actions found with find_crm_actions (access 'write'), each with its arguments and a one-line reason the person reads. Clue checks every change, reads the values the CRM holds today, and sends at once the changes a standing permission covers. When state is 'awaiting_permission' a permission card asks the person: tell them to use the card and end your turn; the chat continues by itself when the changes are done. Put everything you want to change in one call. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#propose_crm_changes
+**What it does.** Propose changes to the connected CRM: one batch of write actions found with find_crm_actions (access 'write'), each with its arguments and a one-line reason the person reads. Clue checks every change, reads the values the CRM holds today, and sends at once the changes a standing permission covers. When state is 'awaiting_permission' a permission card asks the person: tell them to use the card and end your turn; the chat continues by itself when the changes are done. Put everything you want to change in one call. To create a list or campaign and add to it in the same call, give each add the list id 'new:' followed by the exact name the create gives it (e.g. list_id 'new:Clue: Q4 hotel groups'); Clue creates the list first and adds to it with its new id. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#propose_crm_changes
 
 - Effect class: `write`.
 - Spends: no.
@@ -1363,6 +1366,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `needs_permission` | `int` | — |
 | `groups` | `list[CrmChangeGroup]` | — |
 | `overwrites` | `int` | — |
+| `refused` | `list[CrmRefusedChange]` | Changes left out of the proposal, each with its reason; the others are on the card. |
 
 *CrmChangeGroup*: One row.
 
@@ -1375,6 +1379,16 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `covered` | `bool` | A standing permission covers these: they are sent without asking. |
 | `overwrites_person` | `bool` | These overwrite a value a person set; each is shown on the card on its own, unticked. |
 
+*CrmRefusedChange*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `index` | `int` | Its position in `changes`, counting from 0. |
+| `slug` | `str` | — |
+| `record_ref` | `str or None` | — |
+| `reason_code` | `str` | — |
+| `message` | `str` | Names the record, e.g. "HubSpot has no company 999999999999." |
+
 **Refusals**
 
 | Code | Next move |
@@ -1384,11 +1398,17 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `crm_not_connected` | Call connect_crm to ask the person to connect the CRM, and propose again once it is connected. |
 | `crm_connection_expired` | Call connect_crm; it shows the person a Reconnect card. Propose again once they reconnect. |
 | `crm_write_not_allowed` | Leave that change out, and tell the person plainly that Clue cannot make this write yet. |
-| `crm_write_not_parsable` | Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again. |
+| `crm_write_not_parsable` | Fix the arguments the message names, following the action's input schema from find_crm_actions, and propose again. To add to a list or campaign this same call creates, give the add the list id new:<the exact name of the create>; only adds may use it. |
 | `crm_field_forbidden` | Leave that field out of every change and propose again; Clue never writes consent or phone fields, and writes only the allowed fields on a person (crm-writing section 5). |
 | `crm_value_not_allowed` | Use one of the allowed values the message lists, and propose again. |
 | `crm_removal_not_allowed` | Leave that removal out, and tell the person to remove the member in the CRM if they want it gone. |
+| `crm_list_exists` | Clue already keeps a list or campaign of that name; the message gives its id. Add to that one instead of creating another. |
+| `crm_list_not_kept` | Clue does not keep that HubSpot list yet. If the person named it, link it first with link_crm_list, then propose the change again; the other changes are on the card. |
+| `crm_list_gone` | HubSpot no longer has that list. Look for it by name; if it is not there, propose creating the list again, then add to the new one. The other changes are on the card. |
 | `crm_read_failed` | Try once more; if it still fails, tell the person Clue cannot read the CRM well enough to show the change right now. |
+| `crm_record_not_found` | Tell the person which record was not found; the other changes are on the card. When every change was refused this way, nothing was proposed. |
+| `crm_field_unknown` | The CRM has no field by that name. Look up the field's real name in the CRM's field list, and propose that change again; the other changes are on the card. When every change was refused this way, nothing was proposed. |
+| `crm_personal_data_not_allowed` | That change wrote a person value (or a company's ICP tier) that is not what Clue researched and cleared, or it named no Clue contact. Read read_crm_targets, name the contact (or account) as clue_entity_id, and write only the values it offers; leave out a field it lists as withheld. For a buying role, give only Clue's role; Clue adds it to the roles already there and never removes one. The other changes are on the card. |
 | `crm_nothing_to_change` | Tell the person the CRM already holds those values, so there is nothing to change. |
 | `crm_action_failed` | Check the action's input schema against the CRM's message, fix the arguments, and propose again. |
 | `crm_rate_limited` | Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy. |
@@ -1399,13 +1419,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** The changes are recorded as one proposal. State "awaiting_permission" means the chat now shows the person a permission card; state "queued" means a standing permission covers every change and they are being sent. End your turn with one line on what is waiting: the chat continues by itself with the results once the changes are sent.
 
-**Taught by.** crm-writing v1 sections 4 and 6, "One proposal per decision" and "After proposing".
+**Taught by.** crm-writing v2 sections 3b, 4 and 6, "Writing a project's research into the CRM", "One proposal per decision" and "After proposing".
 
 **See also.** `.deepagent/skills/manual-gates-authority/v24/SKILL.md`, `.deepagent/skills/manual-humans-screens/v24/SKILL.md`.
 
 ## crm_write_log@1
 
-**What it does.** Read what Clue changed (or tried to change) in the CRM, newest first: each change's record, field, the value before and after, its status and the CRM's message when it failed. By default the last 7 days; narrow by proposal_id (any age), record (its CRM id or part of its name), status or since_days. To undo a change, call propose_crm_changes with reverses_write_id set to its write_id: for a field update (kind 'field_update'), propose the same action with the before value; for adding someone to a list or campaign (kind 'list_membership'), propose the matching removal; for a removal, propose adding them back. Clue does not undo a created record (kinds 'create_contact', 'create_company'): tell the person to delete it in the CRM if they want it gone. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#crm_write_log
+**What it does.** Read what Clue changed (or tried to change) in the CRM, newest first: each change's record, field, the value before and after, its status and the CRM's message when it failed. By default the last 7 days; narrow by proposal_id (any age), record (its CRM id or part of its name), status or since_days. To undo a change, call propose_crm_changes with reverses_write_id set to its write_id: for a field update (kind 'field_update'), propose the same action with the before value; for adding someone to a list or campaign (kind 'list_membership'), propose the matching removal; for a removal, propose adding them back. Clue does not undo a created record or list (kinds 'create_contact', 'create_company', 'list_create'): Clue never deletes CRM records, so tell the person to delete it in the CRM if they want it gone. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#crm_write_log
 
 - Effect class: `read`.
 - Spends: no.
@@ -1459,7 +1479,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Nothing changed. The rows are what Clue changed or tried to change in the CRM, newest first: each with its write_id, the value before and after, its status, and the CRM's message when it failed. To undo one, propose it again with reverses_write_id (crm-writing section 8).
 
-**Taught by.** crm-writing v1 section 8, "The write log and undo".
+**Taught by.** crm-writing v2 section 8, "The write log and undo".
 
 **See also.** `.deepagent/skills/manual-tools/v24/SKILL.md`.
 
@@ -1516,9 +1536,182 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** `grants` lists the connected CRM's standing permissions ("Always allow") in plain words. After a revoke, `revoked` is the permission withdrawn, and those changes ask on a card again; `already_revoked: true` means it had been withdrawn before and nothing changed. Permissions are given only on the card, never with this tool.
 
-**Taught by.** crm-writing v1 section 8, "The write log and undo".
+**Taught by.** crm-writing v2 section 8, "The write log and undo".
 
 **See also.** `.deepagent/skills/manual-gates-authority/v24/SKILL.md`.
+
+## read_crm_targets@1
+
+**What it does.** Read a project's accounts and their buying-committee contacts as Clue may write them into the connected CRM: each account's name, domain, fit band, HubSpot ICP tier and the CRM record it already is; each contact's first and last name, job title, buying role (HubSpot only), verified work email and LinkedIn URL, and the CRM record it already is. Every value carries the claim ids it came from: pass one as a change's source_ref when you propose it with propose_crm_changes. A field Clue holds but may not write is listed in the contact's 'withheld' with the reason; never write it some other way. Page with offset and limit when total_accounts is larger than the page; when contacts_note says contacts were cut, read fewer accounts at a time. Reads only Clue's records; the CRM is not called. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#read_crm_targets
+
+- Effect class: `read`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: none: reading the project's accounts and claims writes nothing.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `project_id`, `include_contacts`, `offset`, `limit`, `contacts_limit`.
+- The human sees: "Review what goes into your CRM".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `project_id` | `str` | required | none | — |
+| `account_ids` | `list[str] or None` | `None` | max_length=200 | Only these accounts of the project. |
+| `include_contacts` | `bool` | `True` | none | — |
+| `offset` | `int` | `0` | ge=0 | — |
+| `limit` | `int` | `100` | ge=1, le=200 | — |
+| `contacts_limit` | `int` | `200` | ge=1, le=200 | The most contacts returned for the page's accounts. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `accounts` | `list[TargetAccount]` | — |
+| `contacts` | `list[TargetContact]` | — |
+| `total_accounts` | `int` | The project's accounts (narrowed by `account_ids`); `accounts` is one page of them. |
+| `total_contacts` | `int` | The committee contacts of this page's accounts; `contacts` is at most contacts_limit. |
+| `contacts_note` | `str or None` | Says, in words, when contacts were cut to the limit. |
+| `connected_crm` | `Optional[Literal['hubspot', 'salesforce']]` | The CRM the workspace has connected ("hubspot" or "salesforce"), or `None`. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `project_not_found` | Use this conversation's own project id. |
+| `invalid_account_id` | Pass account ids exactly as the project's accounts give them, or leave account_ids out. |
+
+**Afterwards.** Nothing changed; the CRM was not called. These are the only accounts, tiers and person values Clue may write for this project. Write nothing a contact lists as withheld, and tell the person what was held back and why.
+
+**Taught by.** crm-writing v2 section 3b, "Writing a project's research into the CRM".
+
+**See also.** `.deepagent/skills/manual-tools/v24/SKILL.md`.
+
+## find_crm_list@1
+
+**What it does.** Find the list (HubSpot) or campaign (Salesforce) a project adds to. 'lists' are the ones Clue keeps for the project; propose changes only to one with stored true. A list with gone true is one the CRM no longer has: look for it by name, and if it is not there, propose creating it again. With name, the CRM is searched for a list of exactly that name and 'found' lists it: when the person named it, link it with link_crm_list before proposing changes to it (a HubSpot list with manual false is set by a rule and cannot take members). Salesforce campaigns may share a name: when 'found' has more than one, ask the person which one they mean. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#find_crm_list
+
+- Effect class: `read`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: none: reading Clue's kept lists and one CRM list lookup writes nothing.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `project_id`, `object`.
+- The human sees: "Find the project's CRM list".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `project_id` | `str` | required | none | — |
+| `name` | `Optional[Annotated[str, StringConstraints(strip_whitespace=True, to_upper=None, to_lower=None, strict=None, min_length=1, max_length=255, pattern=None, ascii_only=None)]]` | `None` | none | The exact name of a list (HubSpot, case ignored) or campaign (Salesforce) to look up in the CRM. Leave it out to see only the lists Clue keeps for the project. |
+| `object` | `Literal['company', 'contact']` | `'company'` | none | HubSpot only: what the list holds. Clue's HubSpot lists hold companies (R-12.3). |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `connected_crm` | `Literal['hubspot', 'salesforce']` | The CRM the workspace has connected. |
+| `lists` | `list[CrmListView]` | The lists Clue keeps for this project: the live ones first, then any the CRM no longer has (`gone`). |
+| `found` | `list[CrmListView]` | The lists the CRM has under `name` (empty without a name). On Salesforce, several campaigns may share a name: the active ones come first, newest first. |
+| `note` | `str or None` | Says, in words, what was not found, what is gone, or that a name is shared. |
+
+*CrmListView*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `crm_list_id` | `str` | — |
+| `name` | `str` | — |
+| `object` | `Literal['company', 'contact']` | What the list holds: HubSpot lists hold companies or contacts; a Salesforce campaign holds contacts. |
+| `manual` | `bool` | Clue may add to it: a HubSpot list whose members are set by hand (not by a rule), or any Salesforce campaign. |
+| `stored` | `bool` | Clue keeps it for this project, so changes to it may be proposed. |
+| `gone` | `bool` | Clue kept it, but the CRM no longer has it. |
+| `created_by_clue` | `bool` | Clue created it (only a kept list can say so). |
+| `active` | `bool or None` | Whether a Salesforce campaign is active; `None` on HubSpot. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists. |
+| `crm_not_connected` | Call connect_crm to ask the person to connect the CRM. |
+| `crm_connection_expired` | Call connect_crm; it shows the person a Reconnect card. |
+| `project_not_found` | Use this conversation's own project id. |
+| `crm_action_failed` | Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now. |
+| `crm_rate_limited` | Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy. |
+| `crm_unavailable` | Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now. |
+| `salesforce_api_disabled` | Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns. |
+| `salesforce_api_share_exhausted` | Tell the person Clue has used its share of the org's API calls for today, and look for the campaign again tomorrow. |
+| `salesforce_limits_unavailable` | Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce. |
+
+**Afterwards.** Nothing changed. `lists` are the lists (HubSpot) or campaigns (Salesforce) Clue keeps for the project; propose changes only to one with stored true. One with gone true is no longer in the CRM. With a name, `found` lists what the CRM has under exactly that name; when the person named it, link it with link_crm_list before proposing changes to it. When `found` has more than one Salesforce campaign, ask the person which one they mean.
+
+**Taught by.** crm-writing v2 section 3b, "Writing a project's research into the CRM".
+
+**See also.** `.deepagent/skills/manual-tools/v24/SKILL.md`.
+
+## link_crm_list@1
+
+**What it does.** Keep a list (HubSpot) or campaign (Salesforce) the person named for this project, so Clue can propose adding to it. Give the id find_crm_list found (and, on HubSpot, its object). Clue checks in the CRM that it exists and, on HubSpot, that its members are set by hand, not by a rule. Clue never removes members it did not add. This changes only Clue's own records, not the CRM, so no permission card is shown; linking it again changes nothing. Manual: .deepagent/skills/manual-tools/v24/SKILL.md#link_crm_list
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: one crm_list row per (connection_id, crm_list_id) and one crm_list_project row per (list_id, project_id); storing and linking again changes nothing.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `project_id`, `crm_list_id`, `object`.
+- The human sees: "Use your CRM list".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `project_id` | `str` | required | none | — |
+| `crm_list_id` | `str` | required | strip_whitespace=True, min_length=1, max_length=100 | The list's (HubSpot) or campaign's (Salesforce) id, as find_crm_list gave it. |
+| `object` | `Literal['company', 'contact']` | `'company'` | none | HubSpot only: what the list holds, as find_crm_list gave it. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `connected_crm` | `Literal['hubspot', 'salesforce']` | — |
+| `list` | `CrmListView` | The list as Clue now keeps it for the project. |
+
+*CrmListView*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `crm_list_id` | `str` | — |
+| `name` | `str` | — |
+| `object` | `Literal['company', 'contact']` | What the list holds: HubSpot lists hold companies or contacts; a Salesforce campaign holds contacts. |
+| `manual` | `bool` | Clue may add to it: a HubSpot list whose members are set by hand (not by a rule), or any Salesforce campaign. |
+| `stored` | `bool` | Clue keeps it for this project, so changes to it may be proposed. |
+| `gone` | `bool` | Clue kept it, but the CRM no longer has it. |
+| `created_by_clue` | `bool` | Clue created it (only a kept list can say so). |
+| `active` | `bool or None` | Whether a Salesforce campaign is active; `None` on HubSpot. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, so Clue cannot use the CRM's lists. |
+| `crm_not_connected` | Call connect_crm to ask the person to connect the CRM. |
+| `crm_connection_expired` | Call connect_crm; it shows the person a Reconnect card. |
+| `project_not_found` | Use this conversation's own project id. |
+| `crm_list_not_found` | The CRM has no list or campaign with that id. Find it by its exact name with find_crm_list, and link the id it gives. |
+| `crm_list_not_manual` | That HubSpot list is filled by a rule, so Clue cannot add to it. Tell the person, and ask for a list whose members are set by hand, or propose creating Clue's own list. |
+| `crm_action_failed` | Try once more; if it still fails, tell the person Clue cannot read the CRM's lists right now. |
+| `crm_rate_limited` | Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy. |
+| `crm_unavailable` | Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now. |
+| `salesforce_api_disabled` | Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), so Clue cannot use its campaigns. |
+| `salesforce_api_share_exhausted` | Tell the person Clue has used its share of the org's API calls for today, and link the campaign tomorrow. |
+| `salesforce_limits_unavailable` | Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce. |
+
+**Afterwards.** Clue now keeps the list (HubSpot) or campaign (Salesforce) for the project, marked as one the person named, not one Clue created. Nothing changed in the CRM. Propose the adds to it with propose_crm_changes; Clue never removes members it did not add.
+
+**Taught by.** crm-writing v2 section 3b, "Writing a project's research into the CRM".
+
+**See also.** `.deepagent/skills/manual-tools/v24/SKILL.md`.
 
 ## The framework file tools
 

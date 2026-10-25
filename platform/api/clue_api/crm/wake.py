@@ -37,7 +37,13 @@ from clue_api.conversation_capture import (
 from clue_api.crm.composio_gateway import CrmProvider
 from clue_api.crm.connections import ConnectRequest
 from clue_api.crm.write_answer import allowed_sentence
-from clue_api.crm.writes import WriteCounts, WriteProposal, proposal_counts
+from clue_api.crm.writes import (
+    WriteCounts,
+    WriteProposal,
+    proposal_counts,
+    proposal_created_records,
+    proposal_linked_records,
+)
 from clue_spine import get_project
 
 __all__ = [
@@ -134,12 +140,25 @@ def _opening(allowed: str | None) -> str:
 
 
 def crm_writes_finished_message(
-    proposal_id: UUID, counts: WriteCounts, *, allowed: str | None = None
+    proposal_id: UUID,
+    counts: WriteCounts,
+    *,
+    allowed: str | None = None,
+    created: Sequence[tuple[str, str]] = (),
+    linked: int = 0,
 ) -> str:
+    """``created`` is ``(label, new CRM id)`` of each record the proposal's creates made;
+    ``linked`` is how many existing CRM records its updates linked to their Clue records."""
     message = (
         f"{_opening(allowed)}The CRM changes are finished: {_tally(counts)} — "
         f"{_log_hint(proposal_id)}."
     )
+    if created:
+        message += " Created " + ", ".join(f"{label} ({crm_id})" for label, crm_id in created) + "."
+    if linked == 1:
+        message += " Linked 1 Clue record to its CRM record."
+    elif linked:
+        message += f" Linked {linked} Clue records to their CRM records."
     if counts.reconnected:
         message += (
             f" {counts.reconnected} were not sent (or not confirmed) because the CRM was "
@@ -155,13 +174,16 @@ def crm_writes_paused_message(
     counts: WriteCounts,
     *,
     reason: str,
-    resumes: str,
+    next_step: str,
     allowed: str | None = None,
 ) -> str:
+    """``next_step`` is one whole sentence on what happens to the waiting changes: they carry on
+    by themselves only when the same connection can still send them (a budget or a passing
+    error); after an expired connection they are not sent and are proposed again (R-11.10)."""
     return (
         f"{_opening(allowed)}The CRM changes are paused: {reason.rstrip('.')}. "
         f"So far {_tally(counts)}, "
-        f"{counts.waiting} waiting. They continue by themselves {resumes}. "
+        f"{counts.waiting} waiting. {next_step} "
         f"{_log_hint(proposal_id).capitalize()}."
     )
 
@@ -185,6 +207,8 @@ async def queue_crm_writes_finished_turn(
             proposal.proposal_id,
             counts,
             allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
+            created=await proposal_created_records(conn, proposal_id=proposal.proposal_id),
+            linked=await proposal_linked_records(conn, proposal_id=proposal.proposal_id),
         ),
     )
 
@@ -195,7 +219,7 @@ async def queue_crm_writes_paused_turn(
     *,
     proposal: WriteProposal,
     reason: str,
-    resumes: str,
+    next_step: str,
 ) -> UUID | None:
     """Wake the proposing chat when the proposal's writes pause.
 
@@ -213,7 +237,7 @@ async def queue_crm_writes_paused_turn(
             proposal.proposal_id,
             counts,
             reason=reason,
-            resumes=resumes,
+            next_step=next_step,
             allowed=await allowed_sentence(conn, proposal_id=proposal.proposal_id),
         ),
     )

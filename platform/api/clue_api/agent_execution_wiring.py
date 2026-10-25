@@ -23,6 +23,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentConstitution,
@@ -55,7 +56,11 @@ from clue_agents.contracts import (
 )
 from clue_agents.execution import SPILL_THRESHOLD_BYTES, spill_stub
 from clue_agents.ports import ExecutionProgress, OperationFailure, SpillSink
-from clue_api.agent_gate import refuse_misnamed_gate_links
+from clue_api.agent_gate import (
+    GATE_OBJECT_TYPE,
+    open_gates_for_turn,
+    refuse_misnamed_gate_links,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
@@ -1273,6 +1278,36 @@ class DbAgentDelegationRuntime:
         )
 
 
+async def _recorded_open_gate_refs(
+    conn: AsyncConnection, *, finalization_id: UUID, workspace_id: str
+) -> tuple[DomainObjectRef, ...] | None:
+    """The ``open_gate`` links an already recorded finalization carries, in order; ``None`` when
+    the finalization is not recorded yet."""
+    recorded = await conn.scalar(
+        text("SELECT 1 FROM agent_finalization WHERE id = :id AND workspace_id = :workspace"),
+        {"id": finalization_id, "workspace": workspace_id},
+    )
+    if recorded is None:
+        return None
+    rows = await conn.execute(
+        text(
+            "SELECT object_type, object_id, object_version FROM agent_finalization_domain_ref "
+            "WHERE finalization_id = :id AND workspace_id = :workspace "
+            "AND ref_role = 'open_gate' ORDER BY ordinal"
+        ),
+        {"id": finalization_id, "workspace": workspace_id},
+    )
+    return tuple(
+        DomainObjectRef(
+            workspace_id=workspace_id,
+            object_type=row.object_type,
+            object_id=row.object_id,
+            version=row.object_version,
+        )
+        for row in rows
+    )
+
+
 class C5AgentExecutionAdapter(AgentExecutionAdapter):
     """Trusted C6 adapter: proposal -> C5 graph -> dynamic nodes -> ToolInvoker."""
 
@@ -2133,11 +2168,50 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             status=FinalizeStatus(envelope.status.value),
             open_gate_refs=envelope.open_gate_refs,
         )
+        open_gate_refs = await self._with_open_turn_gates(envelope)
+        if open_gate_refs != envelope.open_gate_refs:
+            envelope = envelope.model_copy(update={"open_gate_refs": open_gate_refs})
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,
             envelope=envelope,
         )
+
+    async def _with_open_turn_gates(
+        self, envelope: AgentFinalizeEnvelope
+    ) -> tuple[DomainObjectRef, ...]:
+        """The envelope's ``open_gate_refs`` plus every card this turn created that is still open
+        and that the agent left out (R-12.16, live check L-13): the turn's links and the chat's
+        gate parts come from the envelope's ``open_gate_refs``, so a card missing there is a card
+        the person never sees. Every gate kind; an answered, erased, withdrawn or superseded card
+        is not added.
+
+        A retry of a finalization already recorded (the process died after recording it) adds
+        the links recorded then, not today's open gates: the record refuses a different envelope,
+        and a card answered in between must not change what this turn already finalized."""
+        refs = envelope.open_gate_refs
+        workspace_id = self._constitution.workspace_id
+        async with self._conn_factory() as conn:
+            recorded = await _recorded_open_gate_refs(
+                conn, finalization_id=envelope.finalization_id, workspace_id=workspace_id
+            )
+            if recorded is not None:
+                candidates = recorded
+            else:
+                gates = await open_gates_for_turn(
+                    conn, workspace_id=workspace_id, turn_id=self._turn_id
+                )
+                candidates = tuple(
+                    DomainObjectRef(
+                        workspace_id=workspace_id,
+                        object_type=GATE_OBJECT_TYPE,
+                        object_id=str(gate.gate_id),
+                    )
+                    for gate in gates
+                )
+        linked = {(ref.object_type, ref.object_id) for ref in refs}
+        missing = tuple(ref for ref in candidates if (ref.object_type, ref.object_id) not in linked)
+        return (*refs, *missing)
 
     def bind_finalization_authority(self, authority: object) -> None:
         if hasattr(self, "_finalization_authority"):

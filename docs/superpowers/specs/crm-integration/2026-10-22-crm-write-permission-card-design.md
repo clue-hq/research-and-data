@@ -51,7 +51,7 @@ approves every one explicitly (R-6.5).
 │      Who set it isn't known                                 │
 │     Why: …                                                  │
 │                                                             │
-│ ☐ Always allow adding contacts to Clue lists                │
+│ ☐ Always allow adding records to Clue lists and campaigns   │
 │ ☐ Always allow setting "ICP tier" on companies              │
 │                                                             │
 │ Any member of this workspace can answer.                    │
@@ -89,8 +89,10 @@ approves every one explicitly (R-6.5).
 
 **Standing permissions**
 - One tick per kind of change on the card, all unticked by default:
-  **"Always allow {phrase}"** — e.g. "Always allow adding contacts to Clue lists", "Always allow
-  setting "ICP tier" on companies".
+  **"Always allow {phrase}"** — e.g. "Always allow adding records to Clue lists and campaigns",
+  "Always allow setting "ICP tier" on companies". (R-12.8, founder 2026-10-23: adding to and
+  removing from lists and campaigns are one standing permission each, whatever the list holds, and
+  are worded for all of them.)
 - Ticking one makes it a standing permission when the person presses Allow; next time those changes
   skip the card. Revoked through chat ("stop setting ICP tier without asking") or the future
   Settings → Integrations page.
@@ -180,7 +182,9 @@ approves every one explicitly (R-6.5).
 
 | Kind | Group title (HubSpot) | Group title (Salesforce) | "Always allow" phrase |
 |---|---|---|---|
-| Add to list / campaign | Add {n} contacts to the list "{list}" | Add {n} contacts to the campaign "{campaign}" | adding contacts to Clue lists / campaigns |
+| Add to list / campaign | Add {n} {companies / contacts} to the list "{list}" | Add {n} contacts to the campaign "{campaign}" | adding records to Clue lists and campaigns (R-12.8) |
+| Remove from list / campaign | Remove {n} {companies / contacts} from the list "{list}" | Remove {n} contacts from the campaign "{campaign}" | removing records from Clue lists and campaigns (R-12.8) |
+| Create a list / campaign | Create the list "{name}" | Create the campaign "{name}" | creating Clue lists / campaigns |
 | Set a field | Set "{field label}" on {n} {companies / contacts} | Set "{field label}" on {n} {accounts / contacts} | setting "{field label}" on {companies / contacts} |
 | Create contacts | Create {n} contacts | Create {n} contacts | creating contacts |
 | Create companies | Create {n} companies | Create {n} accounts | creating companies / accounts |
