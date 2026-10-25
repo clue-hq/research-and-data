@@ -28,7 +28,7 @@ from clue_api.crm.clue_fields import (
     record_clue_fields,
 )
 from clue_api.crm.composio_gateway import ComposioError, ExecuteResult
-from clue_api.crm.connections import CrmConnection
+from clue_api.crm.connections import CrmConnection, set_connection_overwrites
 from clue_api.crm.write_prepare import (
     PreparedBatch,
     PreparedChange,
@@ -684,6 +684,64 @@ def test_a_grant_covers_fills_but_never_overwrites(tmp_path: Path) -> None:
         assert again[0].covered_by is None
 
     _run(tmp_path, "grant", body)
+
+
+def test_follow_grants_lets_a_grant_cover_an_overwrite(tmp_path: Path) -> None:
+    """R-6.5 + the Settings overwrites setting: with ``ask`` (the default) an overwrite of a
+    person's value is listed on the card, unticked, whatever grants exist; with
+    ``follow_grants`` a standing field grant covers it like any other change."""
+
+    async def body(conn: Any, seeded: Any, connection: CrmConnection, proposal_id: UUID) -> None:
+        grant_id = await writes.insert_grant(
+            conn,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            scope_key="field:company.icp_tier",
+            granted_by_user_id=USER_ID,
+        )
+        gateway = _FakeCrm(records={"102": {"icp_tier": "Tier 3"}})
+        change = [_set_company("102", "icp_tier", "Tier 1")]
+
+        # ``ask`` (explicitly set, and the default when unset): listed, unticked, not covered.
+        await set_connection_overwrites(conn, connection_id=connection.connection_id, mode="ask")
+        (asked,) = await _prepare(conn, gateway, connection, proposal_id, change)
+        assert asked.overwrites_person is True and asked.covered_by is None
+        card = card_snapshot([asked], provider="hubspot", project_name="Q4")
+        assert len(card["overwrites"]) == 1 and card["overwrites"][0]["selected"] is False
+
+        # ``follow_grants``: the field grant covers the overwrite; the card lists nothing.
+        await set_connection_overwrites(
+            conn, connection_id=connection.connection_id, mode="follow_grants"
+        )
+        (covered,) = await _prepare(conn, gateway, connection, proposal_id, change)
+        assert covered.overwrites_person is True
+        assert covered.covered_by == f"grant:{grant_id}"
+        card = card_snapshot([covered], provider="hubspot", project_name="Q4")
+        assert card["groups"] == [] and card["overwrites"] == []
+        assert card["overwrites_heading"] is None
+
+        # A covered overwrite is logged ticked, so the executor sends it without a card.
+        await writes.insert_writes(
+            conn,
+            proposal_id=proposal_id,
+            workspace_id=seeded.workspace_id,
+            connection_id=connection.connection_id,
+            prepared=[covered],
+        )
+        selected = await conn.scalar(
+            text("SELECT selected FROM crm_write WHERE write_id = :w"),
+            {"w": covered.write_id},
+        )
+        assert selected is True
+
+        # Without a grant for its field, ``follow_grants`` still asks.
+        assert await writes.revoke_grant(conn, grant_id=grant_id, revoked_by_user_id=USER_ID)
+        (uncovered,) = await _prepare(conn, gateway, connection, proposal_id, change)
+        assert uncovered.covered_by is None
+        card = card_snapshot([uncovered], provider="hubspot", project_name="Q4")
+        assert len(card["overwrites"]) == 1
+
+    _run(tmp_path, "followgrants", body)
 
 
 def test_the_card_snapshot_groups_by_action_and_field_with_counts_and_lists_overwrites_alone(

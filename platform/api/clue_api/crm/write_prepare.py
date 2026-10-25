@@ -2,7 +2,8 @@
 
 Spec: docs/superpowers/specs/crm-integration/ (Phase 2 plan, Task 4) and the permission card
 (``2026-10-22-crm-write-permission-card-design.md`` §3, §5, §6). Rulings: R-6.5 (an overwrite of a
-person's value always asks and is never covered by a standing permission), R-6.7 (what a standing
+person's value asks and is never covered by a standing permission, unless the connection's
+overwrites setting is ``follow_grants``), R-6.7 (what a standing
 permission covers), R-6.25 call 11 (when the CRM cannot tell who set a value, a person did), R-7.1
 (every create is find-then-create), R-8.1/R-8.7 (consent and phone fields are never written; a
 person carries only name, job title, company link, work email, buying role and LinkedIn URL).
@@ -51,7 +52,7 @@ from clue_api.crm.composio_gateway import (
     ExecuteResult,
     composio_user_id,
 )
-from clue_api.crm.connections import CrmConnection
+from clue_api.crm.connections import CrmConnection, OverwritesMode, connection_overwrites
 from clue_api.crm.lists import CrmList, live_list_named, mark_gone, stored_list
 from clue_api.crm.targets import (
     TargetAccount,
@@ -142,7 +143,8 @@ class PreparedChange:
     after: object | None
     overwrites_person: bool
     scope_key: str
-    #: ``grant:<id>`` when a standing permission covers it; never for an overwrite.
+    #: ``grant:<id>`` when a standing permission covers it; an overwrite only when the
+    #: connection's overwrites setting is ``follow_grants`` (R-6.5).
     covered_by: str | None
     reason: str
     source_ref: str | None
@@ -1921,10 +1923,14 @@ class _Builder:
         connection: CrmConnection,
         grants: Sequence[Grant],
         metas: Mapping[str, Mapping[str, _FieldMeta]],
+        overwrites_mode: OverwritesMode,
     ) -> None:
         self._conn = conn
         self._connection = connection
         self._grants = grants
+        #: The connection's overwrites setting: ``ask`` never lets a grant cover an overwrite of a
+        #: person's value; ``follow_grants`` lets one cover it like any other change (R-6.5).
+        self._overwrites_mode = overwrites_mode
         self._metas = metas
         self.prepared: list[PreparedChange] = []
 
@@ -2044,7 +2050,9 @@ class _Builder:
     ) -> None:
         scope = scope or scope_key(spec, parsed, field)
         grant = (
-            None if overwrites else covering_grant(self._grants, scope, parsed.change_kind(spec))
+            None
+            if overwrites and self._overwrites_mode == "ask"
+            else covering_grant(self._grants, scope, parsed.change_kind(spec))
         )
         self.prepared.append(
             PreparedChange(
@@ -2315,7 +2323,13 @@ async def prepare_changes(
         )
 
     grants = await live_grants(conn, connection_id=connection.connection_id)
-    builder = _Builder(conn, connection, grants, metas)
+    builder = _Builder(
+        conn,
+        connection,
+        grants,
+        metas,
+        await connection_overwrites(conn, connection_id=connection.connection_id),
+    )
 
     # Before-values: field updates in batches per object where the CRM has a batch read
     # (HubSpot companies, every Salesforce object), else per record (HubSpot contacts).
@@ -2853,8 +2867,8 @@ def card_snapshot(
     """What the permission card shows while it asks (card spec §6).
 
     Changes a standing permission covers never appear. The rest are grouped by action and field
-    (and list); every overwrite of a person's value is listed on its own, unticked (R-6.5), and
-    never offered an "Always allow".
+    (and list); every overwrite of a person's value a grant does not cover is listed on its own,
+    unticked (R-6.5), and never offered an "Always allow".
     """
     shown = [change for change in prepared if change.covered_by is None]
     grouped: dict[tuple[object, ...], list[PreparedChange]] = {}

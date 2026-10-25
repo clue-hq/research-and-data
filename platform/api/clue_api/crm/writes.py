@@ -231,8 +231,9 @@ async def insert_writes(
 ) -> None:
     """Log the prepared changes in order, before anything is sent (R-7.1).
 
-    A change is ticked unless it overwrites a value a person set (R-6.5: each one is approved
-    explicitly).
+    A change is ticked unless it overwrites a value a person set and no standing permission
+    covers it (R-6.5: such an overwrite is approved explicitly; one a grant covers under the
+    ``follow_grants`` setting is sent like any other covered change).
     """
     for ordinal, change in enumerate(prepared):
         await conn.execute(
@@ -271,7 +272,7 @@ async def insert_writes(
                 "reverses_write_id": change.reverses_write_id,
                 "scope_key": change.scope_key,
                 "covered_by": change.covered_by,
-                "selected": not change.overwrites_person,
+                "selected": not change.overwrites_person or change.covered_by is not None,
                 "idempotency_key": f"crm_write:{change.write_id}",
                 # R-8.7: the claims the value came from, so an erasure can list what Clue wrote.
                 "source_claim_ids": list(change.source_claim_ids),
@@ -363,7 +364,8 @@ async def live_grants(conn: AsyncConnection, *, connection_id: UUID) -> list[Gra
 def covering_grant(grants: Sequence[Grant], scope_key: str, kind: str) -> UUID | None:
     """The grant that covers a change of this scope and kind, if any.
 
-    The caller never asks for an overwrite of a person's value: no grant covers one (R-6.5).
+    The caller asks for an overwrite of a person's value only under the connection's
+    ``follow_grants`` setting; under ``ask`` no grant covers one (R-6.5).
     Setting up Clue's own fields is never covered either: an owner or admin allows it on its
     card each time (R-13.3).
     """
