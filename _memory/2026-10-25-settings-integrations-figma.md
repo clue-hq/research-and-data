@@ -13,3 +13,8 @@
 - User found the unlabelled right-hand Company/Contact labels confusing: they read like field values. Replaced both provider cards with explicit record groups and short explanations/examples; renamed the heading to Clue fields in the provider and the status to Ready.
 - Verified the actual field registry and R-13.2: company research link and contact profile link are distinct fields. Both designs now show four fields: tier, company research link, committee role, contact link. Corrected the partial-setup state too.
 - Rechecked card screenshots, fixed the longer heading wrapping, resized the full screens/sidebar, and checked horizontal overflow (none). No runtime code changes.
+
+## Activity deferred; state placement clarified
+- Founder removed What Clue changed from the current design scope, including the entire 08 Activity & undo states board. Deleted both provider activity cards and their undo footnotes, removed board `2310:2602`, and resized the CRM screens to 1396/1428 px high.
+- Clarified review captions: board 06 contains modal dialogs; board 07 contains inline replacement states, except the Set up Clue's fields confirmation modal. These are static editable designs, not a wired prototype.
+- Reviewed updated HubSpot page and board 07 screenshots; no activity/undo UI remnants or horizontal overflow remain in the section. No runtime changes.
