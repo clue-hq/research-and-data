@@ -189,7 +189,7 @@ def test_a_hubspot_person_create_finding_two_contacts_is_refused_naming_both(
         ((index, code, message),) = _refused(batch)
         assert (index, code) == (0, "crm_possible_duplicate")
         assert "201" in message and "202" in message
-        assert "link_duplicate" in message and _LINK_SLUG in message
+        assert "link_duplicate" not in message and _LINK_SLUG in message
         assert "nick@zafran.io" not in message  # the person's email is never echoed
 
     _run(tmp_path, "dupcreatehs", body)
@@ -626,7 +626,7 @@ def test_a_create_meeting_two_contacts_at_send_is_skipped_naming_both(tmp_path: 
         ).one()
         assert (row.status, row.failure_kind, row.record_ref) == ("skipped", "conflict", None)
         assert "201" in row.crm_message and "202" in row.crm_message
-        assert "link_duplicate" in row.crm_message
+        assert "link_duplicate" not in row.crm_message and "possible duplicates" in row.crm_message
         links = await conn.scalar(
             text("SELECT count(*) FROM crm_record_link WHERE connection_id = :c"),
             {"c": connection.connection_id},
