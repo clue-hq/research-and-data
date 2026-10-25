@@ -2,88 +2,75 @@
 """Give an existing Clue user one more workspace they own, then print the link that onboards it.
 
     python scripts/provision_additional_workspace.py --email shank@cluehq.ai \
-        --website https://acme.com [--company-name "Acme"] [--app-origin https://app.cluehq.ai] \
-        [--apply]
+        --website https://acme.com --operator-email you@cluehq.ai [--company-name "Acme"] \
+        [--app-origin https://app.cluehq.ai] [--apply]
 
-**Dry run by default.** Without ``--apply`` it creates everything inside a transaction, prints
-what it would create, and rolls back. With ``--apply`` it commits.
+**Dry run by default.** Without ``--apply`` it makes the writes inside a savepoint, prints what it
+would create, and rolls back. With ``--apply`` it commits and writes a ``workspace_operation``
+audit row naming ``--operator-email`` (an existing Clue user).
 
-Run it where the app settings point at the target database (a production worker container has
-them). It creates the workspace, its one brand and an owner membership
-(``clue_auth.provision_additional_workspace``); it starts nothing and spends nothing. Onboarding
-starts when the user, signed in, opens the printed link: the setting-up screen selects the new
-workspace (membership re-checked server-side) and starts the normal onboarding run, which also
-starts brand-kit ingestion on the platform API.
+The same function serves ``POST /ops/v1/workspaces`` (``clue_api.workspace_ops.add_workspace``).
+It starts nothing and spends nothing: onboarding starts from the printed link (signed in as the
+owner), from ``scripts/start_workspace_onboarding.py``, or from the operator route. Runbook:
+``scripts/workspace_onboarding_operations.md``.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-from urllib.parse import urlencode
+import sys
 
-from clue_auth import provision_additional_workspace
+from clue_api.workspace_ops.add_workspace import add_workspace, operator_setup_url
+from clue_api.workspace_ops.operators import OpsRefused, resolve_operator
 from clue_config import Settings
 from clue_db import db_lifespan, transaction
 
-
-class _DryRun(Exception):
-    """Raised inside the transaction so a dry run rolls everything back."""
+__all__ = ["main", "operator_setup_url"]
 
 
-def operator_setup_url(app_origin: str, workspace_id: str, website: str) -> str:
-    query = urlencode({"workspace": workspace_id, "website": website})
-    return f"{app_origin.rstrip('/')}/onboarding/setting-up?{query}"
-
-
-async def _run(
-    *, email: str, website: str, company_name: str | None, app_origin: str | None, apply: bool
-) -> None:
+async def _run(args: argparse.Namespace) -> int:
     settings = Settings()
-    origin = app_origin or settings.app_origin
     try:
         async with db_lifespan(), transaction() as conn:
-            result = await provision_additional_workspace(
+            operator = await resolve_operator(conn, args.operator_email)
+            created = await add_workspace(
                 conn,
-                email=email,
-                company_website=website,
-                company_name=company_name,
+                email=args.email,
+                website=args.website,
+                company_name=args.company_name,
+                operator=operator,
+                app_origin=args.app_origin or settings.app_origin,
                 pages_system_suffix=settings.pages_system_suffix,
+                apply=args.apply,
             )
-            link = operator_setup_url(origin, result.workspace.workspace_id, result.company_website)
-            print(f"user       {result.user.user_id} ({email.strip().casefold()})")
-            print(f"workspace  {result.workspace.workspace_id}  {result.workspace.name!r}")
-            print(f"brand      {result.brand.brand_id}")
-            print(f"membership {result.membership.membership_id}  owner, active")
-            print(f"onboarding {link}")
-            if not apply:
-                raise _DryRun
-    except _DryRun:
+    except OpsRefused as refused:
+        print(f"REFUSED {refused.code}: {refused.message}")
+        return 1
+    print(f"user       {created['user_id']} ({created['email']})")
+    print(f"workspace  {created['workspace_id']}  {created['workspace_name']!r}")
+    print(f"brand      {created['brand_id']}")
+    print(f"membership {created['membership_id']}  owner, active")
+    print(f"onboarding {created['onboarding_link']}")
+    if args.apply:
+        print("COMMITTED. Start onboarding next (see the runbook).")
+    else:
         print("DRY RUN: rolled back, nothing written (pass --apply to commit)")
-        return
-    print("COMMITTED. Sign in as the user and open the onboarding link above.")
+    return 0
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--email", required=True)
     parser.add_argument("--website", required=True)
+    parser.add_argument("--operator-email", required=True)
     parser.add_argument("--company-name")
     parser.add_argument("--app-origin", help="defaults to the app_origin setting")
     parser.add_argument("--apply", action="store_true")
-    args = parser.parse_args()
-    asyncio.run(
-        _run(
-            email=args.email,
-            website=args.website,
-            company_name=args.company_name,
-            app_origin=args.app_origin,
-            apply=args.apply,
-        )
-    )
+    return asyncio.run(_run(parser.parse_args(argv)))
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
