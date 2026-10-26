@@ -22,6 +22,7 @@ from clue_api.crm.connections import (
     open_settings_connect_request,
     start_attempt,
 )
+from clue_api.crm.writes import insert_grant
 from clue_db import db_lifespan
 
 from .conftest import run_async
@@ -351,6 +352,45 @@ def test_a_reconnect_while_still_active_keeps_the_connection() -> None:
         again = await _connect(conn, workspace, provider="hubspot", account="ca_2", external="111")
         assert again.connection_id == first.connection_id
         assert await _rows(conn, workspace) == [("ca_2", "active", "111")]
+
+    _in_rollback(body)
+
+
+def test_switching_clears_the_previous_connections_standing_permissions() -> None:
+    """The Change CRM dialog says "Always allow" permissions are cleared: a switch revokes the old
+    connection's grants, as Disconnect does, so a later reconnect to that account brings none
+    back (final review 2026-10-26)."""
+
+    async def body(conn: AsyncConnection, workspace: str) -> None:
+        first = await _connect(conn, workspace, provider="hubspot", account="ca_1", external="111")
+        await insert_grant(
+            conn,
+            workspace_id=workspace,
+            connection_id=first.connection_id,
+            scope_key="field:company.clue_fit_level",
+            granted_by_user_id="user-admin",
+        )
+        await _connect(conn, workspace, provider="hubspot", account="ca_2", external="222")
+        live = await conn.scalar(
+            text(
+                "SELECT count(*) FROM crm_write_grant "
+                "WHERE connection_id = :c AND revoked_at IS NULL"
+            ),
+            {"c": first.connection_id},
+        )
+        assert live == 0
+        back = await _connect(conn, workspace, provider="hubspot", account="ca_3", external="111")
+        assert back.connection_id == first.connection_id
+        assert (
+            await conn.scalar(
+                text(
+                    "SELECT count(*) FROM crm_write_grant "
+                    "WHERE connection_id = :c AND revoked_at IS NULL"
+                ),
+                {"c": back.connection_id},
+            )
+            == 0
+        )
 
     _in_rollback(body)
 

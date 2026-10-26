@@ -350,12 +350,12 @@ def test_a_new_connection_starts_with_no_grants(tmp_path: Path) -> None:
         after = (await tool.invoke(_grants_input(seeded, "list"), ctx)).references
         assert after["grants"] == []
 
-        # The old connection's grant no longer applies, so it cannot be revoked either: it reads
-        # as unknown, like a missing id, and stays as it was.
+        # The switch revoked the old connection's grant (the Change CRM dialog says so), and it
+        # reads as unknown to the tool, like a missing id.
         with pytest.raises(PreconditionFailed) as old:
             await tool.invoke(_grants_input(seeded, "revoke", old_grant), ctx)
         assert [f.reason_code for f in old.value.failures] == ["crm_grant_not_found"]
-        assert await writes.live_grants(conn, connection_id=connection.connection_id)
+        assert not await writes.live_grants(conn, connection_id=connection.connection_id)
 
     _run(tmp_path, "new-connection", body)
 

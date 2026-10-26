@@ -324,7 +324,8 @@ async def activate_from_attempt(
 
     Returns ``None`` unless the request is open and its latest attempt is exactly
     ``connected_account_id`` (a stale, replayed or forged callback activates nothing). Otherwise
-    disconnects any other active connection (a switch), activates the connection, and marks every
+    disconnects any other active connection and revokes its standing permissions (a switch),
+    activates the connection, and marks every
     open request in the workspace ``fulfilled`` — returning them so each waiting chat can be woken.
 
     ``external_account_id`` is the CRM account the new grant belongs to (Salesforce org id, HubSpot
@@ -366,15 +367,31 @@ async def activate_from_attempt(
             )
         ).scalar_one_or_none()
     )
-    await conn.execute(
-        text(
-            "UPDATE workspace_integration_connection SET status = 'disconnected', "
-            "disconnected_at = now(), updated_at = now() "
-            "WHERE workspace_id = :ws AND status = 'active' "
-            "AND connection_id IS DISTINCT FROM :keep"
-        ),
-        {"ws": workspace_id, "keep": same_account},
+    replaced = (
+        (
+            await conn.execute(
+                text(
+                    "UPDATE workspace_integration_connection SET status = 'disconnected', "
+                    "disconnected_at = now(), updated_at = now() "
+                    "WHERE workspace_id = :ws AND status = 'active' "
+                    "AND connection_id IS DISTINCT FROM :keep RETURNING connection_id"
+                ),
+                {"ws": workspace_id, "keep": same_account},
+            )
+        )
+        .scalars()
+        .all()
     )
+    # A switch clears the replaced connection's standing permissions, as Disconnect does, so a
+    # later reconnect to that account brings none back (the Change CRM dialog says so).
+    if replaced:
+        await conn.execute(
+            text(
+                "UPDATE crm_write_grant SET revoked_at = now(), revoked_by_user_id = :user "
+                "WHERE connection_id = ANY(:ids) AND revoked_at IS NULL"
+            ),
+            {"ids": list(replaced), "user": request.pending_started_by_user_id},
+        )
     values = {
         "ws": workspace_id,
         "provider": request.pending_provider,
