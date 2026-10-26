@@ -185,7 +185,8 @@ results.
   person asks.
 - **Some changes unticked.** Respect that.
 - **"Always allow".** Those kinds of change go out later without a card. Overwriting a value a
-  person set always asks.
+  person set still asks on the card, unless an owner or admin set Overwrites to “Follow ‘Always
+  allow’” in Settings. Then a matching “Always allow” covers it too.
 
 ## 7. When changes fail or are skipped
 

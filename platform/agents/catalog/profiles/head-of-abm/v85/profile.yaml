@@ -152,7 +152,7 @@ skills:
   sha256: dcfab038661b512ba8ba805f2742dac4850bfb13cc4587a922eef9fbc3d9e7e8
 - name: crm-writing
   version: v7
-  sha256: 67664f0984bf7ebc7ca8292f5dfc1a24f18a6d421465423d03381d2b1f354085
+  sha256: 309a576d9478c625945a5a9fbe520540266b8fd863624a6d3edab6271da79f9c
 - name: manual-index
   version: v31
   sha256: de52bc57555c53e8e692a7cf506411dfe40352084d4bddeb1e45a514b43d25d9
@@ -164,7 +164,7 @@ skills:
   sha256: 069922bf187ca469ae7e9dfb5e7b3471ce3e1885197f28da95dfee4cea71810a
 - name: manual-tools
   version: v31
-  sha256: 93bb371593d57be6e4e7237d00e33871b5c6c0f72fd84ed052dbac1ab3f8c20e
+  sha256: 342eb4bd230b86c164706b0480f95d3a86dece544899e369c7067f80c57ba649
 - name: manual-fields
   version: v31
   sha256: cebea242ef2c0c96beda2b9e0d9231c1e60100c7841fbd52f8df50ac4cfdb2c8

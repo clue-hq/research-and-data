@@ -1378,7 +1378,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `field` | `str or None` | — |
 | `count` | `int` | — |
 | `covered` | `bool` | A standing permission covers these: they are sent without asking. |
-| `overwrites_person` | `bool` | These overwrite a value a person set; each is shown on the card on its own, unticked. |
+| `overwrites_person` | `bool` | These overwrite a value a person set. Unless a standing permission covers them (`covered`), each is shown on the card on its own, unticked. |
 
 *CrmRefusedChange*: One row.
 

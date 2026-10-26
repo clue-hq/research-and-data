@@ -195,7 +195,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # and manual@v30 carry F3's workspace text re-minted above CRM.
         # v85 (2026-10-25, R-14.6): no address moves; `read_crm_targets@1` re-pinned at its new
         # output digest (clue_fit_level), `crm-writing@v7`, stage0-interview@v58 and manual@v31.
-        AgentRole.HEAD_OF_ABM: ("729828148c9c189c7f1937bb3f7f3b499a63da9c85698e5973b79e51a7688baf"),
+        AgentRole.HEAD_OF_ABM: ("420a963b1922219a259f5d9bb976713bd805efd79d744de33c37c2493d129ed2"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -1338,6 +1338,13 @@ def test_v85_names_clues_field_clue_fit_level(registry: AgentProfileRegistry) ->
         v6.replace("version: v6", "version: v7")
         .replace("Clue tier", "Clue fit level")
         .replace(old_digest, new_digest)
+        # Founder-approved 2026-10-26 (the Settings overwrites setting, R-6.5 note).
+        .replace(
+            "Overwriting a value a\n  person set always asks.",
+            "Overwriting a value a\n  person set still asks on the card, unless an owner or admin"
+            " set Overwrites to “Follow ‘Always\n  allow’” in Settings. Then a matching “Always"
+            " allow” covers it too.",
+        )
     )
     for name in MANUAL_CHAPTERS:
         if name in {"tools", "fields", "errors", "limits"}:

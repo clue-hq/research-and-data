@@ -150,7 +150,8 @@ class CrmChangeGroup(BaseModel):
     count: int
     #: A standing permission covers these: they are sent without asking.
     covered: bool
-    #: These overwrite a value a person set; each is shown on the card on its own, unticked.
+    #: These overwrite a value a person set. Unless a standing permission covers them (`covered`),
+    #: each is shown on the card on its own, unticked.
     overwrites_person: bool
 
 
