@@ -133,3 +133,30 @@ def test_a_domain_hosting_only_other_companies_pages_resolves_to_nothing() -> No
 def test_only_records_of_the_accounts_own_domain_are_considered() -> None:
     records = [_record("Banner Health", "bannerbank.com"), _record("Banner Bank", "bannerbank.com")]
     assert resolve_company("bannerhealth.com", "Banner Health", records) is None
+
+
+def test_a_record_filed_under_another_domain_counts_when_its_website_is_the_account_domain() -> (
+    None
+):
+    """Live run 2026-10-27: AI Ark files eHealth, Inc. under ``ehealthinsurance.com`` while its
+    website is ``eHealth.com`` — the domain discovery found. The record's own website places it
+    on the account's domain; the name rule still keeps "eHealth Jamaica Limited" out."""
+    records = [
+        _record(
+            "eHealth, Inc.", "ehealthinsurance.com", website="http://www.eHealth.com", staff=2077
+        ),
+        _record(
+            "eHealth Jamaica Limited",
+            "endelevufinancial.com",
+            website="http://www.eHealth.com",
+            staff=0,
+        ),
+    ]
+    chosen = resolve_company("ehealth.com", "eHealth, Inc.", records)
+    assert chosen is not None and chosen.company.name == "eHealth, Inc."
+
+
+def test_a_domain_filed_as_a_full_url_still_matches() -> None:
+    records = [_record("HM Alpha Hotels & Resorts", "http://www.hmalpha.com", website="")]
+    chosen = resolve_company("hmalpha.com", "HM Alpha Hotels & Resorts", records)
+    assert chosen is not None and chosen.how == "single_record"

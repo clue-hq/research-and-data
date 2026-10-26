@@ -10,7 +10,8 @@ lists, so a group shares its domain with each of its hotels or schools: ``wandah
 52 records, and the group's own page is not the biggest. The trial on 135 real accounts settled
 the rule the founder approved:
 
-1. Only records of the account's own domain are considered.
+1. Only records of the account's own domain are considered: filed there by AI Ark, or whose own
+   website is there.
 2. With several records, stray pages under five staff are set aside ("Toro Inc", "Toro Asia").
 3. The record's name must match the account's name once case, accents, punctuation, "&"/"and"
    and company suffixes are set aside — exactly, never "close enough". A single record must match
@@ -105,17 +106,34 @@ def names_match(a: str | None, b: str | None) -> bool:
 
 
 def fold_domain(value: str | None) -> str:
-    return (value or "").strip().lower().removeprefix("www.").rstrip("/")
+    """A domain as compared: lower-case, no scheme, no ``www.``, no path (AI Ark sometimes files
+    a domain as a full URL, ``http://www.hmalpha.com``)."""
+    rest = re.sub(r"^https?://", "", (value or "").strip().lower())
+    return rest.partition("/")[0].removeprefix("www.")
 
 
-def _website_is_homepage(company: AiArkCompany, domain: str) -> bool:
+def _website(company: AiArkCompany) -> tuple[str, str]:
+    """The record's own website as (host, path), lower-cased, ``www.`` and slashes dropped."""
     link = company.raw.get("link") if isinstance(company.raw, dict) else None
     website = link.get("website") if isinstance(link, dict) else None
     if not isinstance(website, str):
-        return False
+        return "", ""
     rest = re.sub(r"^https?://", "", website.strip().lower())
     host, _, path = rest.partition("/")
-    return host.removeprefix("www.") == domain and not path.strip("/")
+    return host.removeprefix("www."), path.strip("/")
+
+
+def _website_is_homepage(company: AiArkCompany, domain: str) -> bool:
+    return _website(company) == (domain, "")
+
+
+def _on_domain(company: AiArkCompany, domain: str) -> bool:
+    """Whether a record is about ``domain``: AI Ark files it there, or its own website is there.
+
+    Live run 2026-10-27: AI Ark files eHealth, Inc. under ``ehealthinsurance.com`` while its own
+    website is ``eHealth.com``, the domain discovery found it by.
+    """
+    return fold_domain(company.domain) == domain or _website(company)[0] == domain
 
 
 def resolve_company(
@@ -123,7 +141,7 @@ def resolve_company(
 ) -> Resolution | None:
     """The one record ``account_name`` at ``domain`` is, by the strict rule; else ``None``."""
     domain = fold_domain(domain)
-    own = [record for record in records if fold_domain(record.domain) == domain]
+    own = [record for record in records if _on_domain(record, domain)]
     if not own:
         return None
     if len(own) == 1:
