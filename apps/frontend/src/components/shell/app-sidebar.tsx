@@ -5,6 +5,7 @@ import { DesignIcon } from "@/components/ui/design-icon";
 import {
   primaryNavigation,
   workspaceNavigation,
+  v2WorkspaceNavigation,
   type SidebarNavigationItem,
 } from "@/config/navigation";
 import { useSidebarProjectsController } from "@/features/projects/hooks/use-sidebar-projects-controller";
@@ -119,7 +120,7 @@ export function AppSidebar({
         <div className="clue-scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-2">
           <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={primaryNavigation} />
           <div className="h-3" />
-          <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={workspaceNavigation.filter((item) => item.icon !== "mail" || directMailEnabled)} />
+          <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={directMailEnabled ? v2WorkspaceNavigation : workspaceNavigation.filter((item) => item.icon !== "mail")} />
           {!collapsed ? <ProjectSidebarTree controller={projectsController} /> : null}
         </div>
 

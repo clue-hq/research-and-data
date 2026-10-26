@@ -24,3 +24,26 @@
 - V2 running on 5001, separate from V1 5000. Browser verified account-owner change
   keeps sender, and chat → plan → gift/card/note → $98 cost approval → tracking.
 - Task 3 in progress: finish browser checks, fresh review and local checkpoint.
+
+- Final review: two important findings reproduced RED→GREEN in tests: open
+  email dialogs now capture immutable copy/revision; fresh reply guidance uses
+  current ownership and outstanding reply status. One artifact-version mismatch
+  was elevated to correctness because shared-record consistency is a V2 goal;
+  every surface now uses the same resolver (regression test passes).
+- Review boundaries accepted: live providers/orders/publication/CRM and live
+  availability events remain outside this frontend preview. Existing gift gates
+  remain in force. Author verified browser behavior independently.
+- Final suite after review fixes: 3,675 pass, 5 skip, 0 fail. Lint 0 errors,
+  11 inherited warnings; production build and token generation pass.
+- Browser QA: note/card/cost approval, tracking, owner assignment, same-record
+  landing-page preview, Escape dismissal, artifact empty search/reset, email-only
+  account editing/approval, incoming reply stop, and analytics all verified.
+  Desktop layout inspected at 1159×899; narrower account table keeps next actions
+  visible and moves connected-asset shortcuts into the account drawer. Mobile
+  breakpoint styling exists but was not device-tested.
+- V1 git status remains clean and its port-5000 listener is the original PID94397.
+  V2 uses port5001/PID18120. QA locally approved Avery and Drew and reassigned
+  Northstar to Jamie; Alex remains the prepared sender. No external actions.
+- Closing: keep both branches/worktrees under the user's explicit request; no
+  merge/push/PR/remote deployment. Documentation records the provider handoff and
+  limits. Keep manual ledger rather than invoking the previously runaway helper.

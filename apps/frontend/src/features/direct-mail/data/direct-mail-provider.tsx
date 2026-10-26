@@ -3,10 +3,11 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { createDirectMailRepository, unavailableDirectMailRepository } from "./direct-mail.repository";
 import { createBrowserDirectMailStore } from "./direct-mail.storage";
 import { loadPilotMailers } from "./direct-mail.pilot";
+import { createV2MailFixture } from "@/features/orchestration/data/mail.fixture";
 
 const Context = createContext({ enabled: false, repository: unavailableDirectMailRepository });
-export function DirectMailProvider({ enabled, children }: { enabled: boolean; children: ReactNode }) {
-  const value = useMemo(() => ({ enabled, repository: enabled ? createDirectMailRepository(createBrowserDirectMailStore(), loadPilotMailers) : unavailableDirectMailRepository }), [enabled]);
+export function DirectMailProvider({ enabled, children, v2 = false }: { enabled: boolean; children: ReactNode; v2?: boolean }) {
+  const value = useMemo(() => ({ enabled, repository: enabled ? createDirectMailRepository(v2 ? createBrowserDirectMailStore(createV2MailFixture, "clue-direct-mail-preview-v2") : createBrowserDirectMailStore(), v2 ? undefined : loadPilotMailers) : unavailableDirectMailRepository }), [enabled, v2]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 export function useDirectMailRepository() { return useContext(Context); }

@@ -12,6 +12,7 @@ import { MailerTracking } from "./mailer-tracking";
 import { CardLibrary } from "./card-library";
 import { DirectMailSettings } from "./mail-context";
 import { ProjectMailPlan } from "./project-mail-plan";
+import { MailerAccountContext } from "@/features/orchestration/components/mailer-context";
 import styles from "./direct-mail.module.css";
 
 export function DirectMailScreen({ recordId }: { recordId?: string }) {
@@ -26,6 +27,7 @@ export function DirectMailScreen({ recordId }: { recordId?: string }) {
     {!c.enabled ? <div className={styles.empty}><h1 className={styles.title}>Direct Mail isn’t connected yet</h1><p className={styles.subtle}>This workspace will show mailers when the Direct Mail service is connected.</p></div> : <>
       {c.error ? <div className={`${styles.notice} ${styles.error}`} role="alert">{c.error} <Button variant="transparent" size="sm" onClick={() => void c.reload()}>Reload data</Button></div> : null}
       {c.data?.pilotLoadError ? <div className={styles.notice} role="status">{c.data.pilotLoadError} <Button variant="transparent" size="sm" onClick={() => void c.reload()}>Retry pilot import</Button></div> : null}
+      {mailer ? <MailerAccountContext mailerId={mailer.id} /> : null}
       {!c.data ? !c.error ? <p className={`${styles.subtle} py-12`} role="status">Loading mailers…</p> : null : !recordId ? <MailerQueue controller={c} /> : recordId === "library" ? <CardLibrary controller={c} /> : recordId === "settings" ? <DirectMailSettings controller={c} /> : recordId === "project" ? <ProjectMailPlan controller={c} projectId={params.get("project") ?? c.data.mailers[0]?.projectId} /> : mailer ? isDraft(mailer) ? <MailerReview key={mailer.id} controller={c} saved={mailer} queueHref={queueHref} /> : <MailerTracking controller={c} mailer={mailer} /> : <div className={styles.empty}><h1 className={styles.title}>Mailer not found</h1><Link href="/direct-mail">Return to direct mail</Link></div>}
     </>}
   </div></div></main></ApplicationShell>;

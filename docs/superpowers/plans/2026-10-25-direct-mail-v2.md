@@ -36,9 +36,9 @@
 
 **Interfaces:** WorkspaceState holds people, account plans, campaigns, artifacts, emails and activity. WorkspaceRepository exposes read, updateAccountOwner, saveEmail, approveEmail, markReplyHandled and addChatMessage with revision checks, subscriptions and atomic IndexedDB persistence. createV2MailFixture() supplies linked fictional mailers with existing domain validation.
 
-- [ ] Write tests for non-gift account presence, referential integrity, owner/sender separation, stale approval refusal, email change invalidation, reply stops, missing-recipient errors and account metrics.
-- [ ] Run targeted tests and observe missing behavior; implement immutable domain transitions and validated atomic fixture adapter.
-- [ ] Run focused tests and commit the coherent data layer.
+- [x] Write tests for non-gift account presence, referential integrity, owner/sender separation, stale approval refusal, email change invalidation, reply stops, missing-recipient errors and account metrics.
+- [x] Run targeted tests and observe missing behavior; implement immutable domain transitions and validated atomic fixture adapter.
+- [x] Run focused tests and commit the coherent data layer.
 
 ### Task 2: Connected product surfaces
 
@@ -46,20 +46,20 @@
 
 **Interfaces:** Components consume the shared hook and the existing DirectMailController. Account selection uses URL query state; artifact/email links use stable IDs. Existing MailerReview/MailerTracking remain the gift detail/approval surface.
 
-- [ ] Build project overview with approach/owner/status/next-step rows, useful summaries and gift-free accounts.
-- [ ] Add account detail with evidence, buying group, sender, channel plan and connected assets; assignment changes update shared state.
-- [ ] Add conversational brief/review path with honest scripted fixture responses and actionable links.
-- [ ] Add linked artifact previews (page/ad/email/note), email review/scheduling/inbox and results from shared records; do not imply real publish/send.
-- [ ] Verify filters, empty states, keyboard dialogs, back navigation and responsive layouts in browser.
+- [x] Build project overview with approach/owner/status/next-step rows, useful summaries and gift-free accounts.
+- [x] Add account detail with evidence, buying group, sender, channel plan and connected assets; assignment changes update shared state.
+- [x] Add conversational brief/review path with honest scripted fixture responses and actionable links.
+- [x] Add linked artifact previews (page/ad/email/note), email review/scheduling/inbox and results from shared records; do not imply real publish/send.
+- [x] Verify filters, empty states, keyboard dialogs and back navigation in browser; inspect the desktop responsive table. Mobile-device QA remains unperformed.
 
 ### Task 3: Preview routing, handoff and validation
 
 **Files:** Modify preview-gated app routes, navigation, protected provider composition and Direct Mail context links. Add architecture/direct-mail-v2.md and update docs index and session ledger.
 
-- [ ] Wire project/home/chat/Gallery, workspace Artifacts, Email and Analytics to V2 only in explicit preview mode; connected-mode routes retain existing behavior.
-- [ ] Start V2 with npm run dev:preview -- --port 5001, leaving V1 server alone.
-- [ ] Walk project chat → account plan → gift/note review → cost approval → tracking; also email-only account, sender change, asset preview, reply and analytics.
-- [ ] Run design-system build, full tests, lint and production build. Fix new failures, document inherited ones.
-- [ ] Request one fresh whole-branch review; resolve material findings, verify both localhost URLs, commit locally and show V2.
+- [x] Wire project/home/chat/Gallery, workspace Artifacts, Email and Analytics to V2 only in explicit preview mode; connected-mode routes retain existing behavior.
+- [x] Start V2 with npm run dev:preview -- --port 5001, leaving V1 server alone.
+- [x] Walk project chat → account plan → gift/note review → cost approval → tracking; also email-only account, sender change, asset preview, reply and analytics.
+- [x] Run design-system build, full tests, lint and production build. Fix new failures, document inherited ones.
+- [x] Request one fresh whole-branch review; resolve material findings, verify both localhost URLs, commit locally and show V2.
 
 Execution choice: continue inline under the founder's build instruction. The approved research and this plan cover the customer frontend; backend contract reconciliation remains a later step.

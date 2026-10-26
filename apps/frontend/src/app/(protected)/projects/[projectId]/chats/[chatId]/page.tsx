@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { WorkspaceScreen } from "@/features/orchestration/components/workspace-screen";
+import { PROJECT_ID } from "@/features/orchestration/model/workspace";
 import { getProtectedSession } from "@/features/session/data/session-dal";
 import { backendDesignArtifactRepository } from "@/features/design-editor/data/artifact.repository.server";
 import { loadGalleryFeed } from "@/features/design-editor/data/gallery-feed";
@@ -31,6 +34,9 @@ export default async function ProjectChatPage({
     params,
     searchParams,
   ]);
+  if (isFrontendPreviewMode() && projectId === PROJECT_ID && chatId === "thread-primary") {
+    return <Suspense><WorkspaceScreen view={query.surface === "gallery" ? "artifacts" : query.surface === "target-accounts" ? "plan" : "chat"} projectScoped /></Suspense>;
+  }
   // R2: surface/edit/selection are the ratified pane-state vocabulary,
   // wired into the chat surface's artifact rail since Phase C (C-3):
   // surface=gallery opens the rail on the gallery, web|ad on the artifact

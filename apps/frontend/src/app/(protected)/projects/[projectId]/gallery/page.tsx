@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
+import { PROJECT_ID, projectHref } from "@/features/orchestration/model/workspace";
 import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
 
 interface ProjectGalleryPageProps {
@@ -17,6 +19,7 @@ export default async function ProjectGalleryPage({
   searchParams,
 }: ProjectGalleryPageProps) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
+  if (isFrontendPreviewMode() && projectId === PROJECT_ID) redirect(`${projectHref}?view=artifacts`);
   if (query.thread) {
     redirect(projectChatHref(projectId, query.thread, { surface: "gallery" }));
   }

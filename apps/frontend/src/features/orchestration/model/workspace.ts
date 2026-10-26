@@ -83,3 +83,10 @@ export function workspaceMetrics(state: WorkspaceState) {
   return { accounts: state.accounts.length, replies: count("human_reply"), meetingsBooked: count("meeting_booked"), meetingsHeld: count("meeting_held"), opportunities: count("opportunity") };
 }
 export function person(state: WorkspaceState, id: string) { return state.people.find((p) => p.id === id)!; }
+export function replyAttention(state: WorkspaceState) {
+  return state.emails.filter((e) => e.status === "reply").map((email) => {
+    const account = state.accounts.find((a) => a.id === email.accountId)!;
+    const owner = person(state, account.ownerId);
+    return { emailId: email.id, title: `${account.contact.split(" ")[0]} is waiting for a reply`, detail: `${owner.name} owns the next step. The follow-up sequence remains stopped.` };
+  });
+}
