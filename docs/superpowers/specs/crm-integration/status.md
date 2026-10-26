@@ -48,7 +48,7 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ✅ Final review (0 Critical, 5 Important, 12 Minor) fixed and re-run live 2026-10-23 on the restarted stack (decline, replace, paused batch, real reconnect, CRM message text, per-change not-found, Cancel); L13 fixed. Deferred by the founder: Phase 1 by-hand path, live onboarding refresh, non-admin member
 - ⬜ **Open frontend bugs (noted, fixing set aside):** L12 — a card in a chat started from the project page can show "belongs to a different conversation" until a reload (every card kind); L14 — a card linked by two turns renders twice. Details: [`2026-10-22-phase-2-live-check-findings.md`](2026-10-22-phase-2-live-check-findings.md) "Open frontend bugs"
 - ⬜ Per-workspace throttle (R-7.3) — not built in Phase 2
-- ⏸ "Fully automatic" and the "skip overwrite card" setting — Settings → Integrations page
+- ✅ The "skip overwrite card" setting — Settings → Integrations Overwrites (`follow_grants`, R-6.5 note); "Fully automatic" out of scope (R-15.1)
 
 ## Phase 3 — first writes (a few at a time)
 - ✅ Plan `docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md` (branch `feat/crm-integration-phase-3`, unpushed): Tasks 1–12 built and reviewed task by task, whole-branch review + one fix pass; Head of ABM v81 (recipe 41, manual v27, crm-writing v4, stage0-interview v54)
@@ -70,6 +70,14 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ✅ Live check findings `2026-10-25-phase-4-live-check-findings.md`: L4-1–L4-6 fixed and re-checked live (Head of ABM v83, crm-writing v6); L4-8 (harness retry error) not this lane's
 - ⏸ Looking a record up by Clue id (R-13.7, deferred)
 
+## Settings → Integrations (R-14.6, R-15.1–R-15.3)
+- ✅ Branch `feat/crm-settings-integrations` (unpushed); plan `docs/superpowers/plans/2026-10-25-crm-settings-integrations.md`, Tasks 1–8 built subagent-driven and reviewed task by task
+- ✅ "Clue tier" → "Clue fit level" (High/Medium/Low) in both CRMs; Head of ABM v85
+- ✅ Backend `GET /crm/integration`, connect-request from Settings, disconnect (deletes the Composio account), revoke, overwrites; the overwrites setting lets a grant cover an overwrite
+- ✅ Overview + connect dialogs, provider page (connection, research setup states, permissions, overwrites), `?prompt=` on the project home
+- ✅ Live check 2026-10-26 on both test CRMs — [`2026-10-26-settings-integrations-live-check-findings.md`](2026-10-26-settings-integrations-live-check-findings.md): founder page review applied; L-2/L-3/L-6 fixed
+- ⬜ Member view (founder testing), live proof of the 5 s Preparing refresh, whole-branch review
+
 ## Production readiness
 - 🔨 Own OAuth apps (R-14.1–R-14.3): HubSpot app + Salesforce packaged external client app created 2026-10-25, Composio custom configs set, nashville `.env` switched; **live-checked 2026-10-25 on both test CRMs** (`2026-10-25-own-oauth-apps-live-check-findings.md`; D-1 F3 deadlock and D-2 reconnect-keeps-connection fixed and re-checked live; D-5 a pre-existing ARV2 test failure); R-14.4 items before real customers (Partner Business Org link, released package version)
 - ⬜ Composio Zero Data Retention on, sandbox off, pinned toolkit versions — same
@@ -79,7 +87,6 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 - ⏸ Writes on events / standing sync (R-6.16); writes from anything other than the Head of ABM (R-6.15, "for now")
 - ⏸ All activity writes: notes (incl. research summaries), owner tasks, logged meetings/emails/replies, visit roll-ups, and their flood control (R-6.19)
 - ⏸ Creating deals (R-6.20)
-- ⏸ Settings → Integrations page (grants, write log, the "skip overwrite card" setting)
 - ⏸ Importing accounts/contacts from the CRM (R-1.9)
 - ⏸ Recorded sales calls (R-1.7), Slack, email sending
 - ⏸ What our Langfuse traces keep of CRM data (R-5.5)

@@ -7,6 +7,7 @@ group. Add a line here whenever a new document is written.
 
 | Document | What it is | Status |
 |---|---|---|
+| [`2026-10-26-settings-integrations-live-check-findings.md`](2026-10-26-settings-integrations-live-check-findings.md) | Live check of Settings → Integrations on both test CRMs: overview, provider page, research setup from Settings, overwrites, revoke, disconnect and connect again; founder page review; findings L-1–L-7 | Record — L-2, L-3, L-6 fixed; member view owed |
 | [`2026-10-25-own-oauth-apps-live-check-findings.md`](2026-10-25-own-oauth-apps-live-check-findings.md) | Live check of Clue's own HubSpot and Salesforce apps (R-14.x) on the merged CRM+F3 code: what passed, defects D-1–D-4 | Record — D-1 and D-2 fixed and re-checked live; D-5 open (not CRM) |
 | [`2026-10-25-phase-4-live-check-findings.md`](2026-10-25-phase-4-live-check-findings.md) | Phase 4 live check on both test CRMs: setup, Clue field writes, a deleted field set up again, a possible-duplicate link; findings L4-1–L4-7 | Record — L4-1–L4-6 fixed and re-checked live |
 | [`../../plans/2026-10-24-crm-integration-phase-4-clue-fields.md`](../../plans/2026-10-24-crm-integration-phase-4-clue-fields.md) | Phase 4 (Clue's own fields) plan: registry, owner/admin setup card, setup run (HubSpot group/properties/label; Salesforce fields, permission set R-13.1, external id), writing Clue fields, duplicate links, skill v5, live check; decisions D-1–D-6 (ruled R-13.2–R-13.7) | Approved 2026-10-24; built and live-checked 2026-10-25 |
