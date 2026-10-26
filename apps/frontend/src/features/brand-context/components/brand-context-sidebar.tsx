@@ -25,6 +25,9 @@ const measuredItems: Record<MeasuredSection, { icon: BrandContextIconName; label
   motion: { icon: "sortActive", label: "Motion" },
 };
 
+/** Hidden from the sidebar for now (founder 2026-10-27); their panels and code stay. */
+const hiddenMeasuredSections: ReadonlySet<MeasuredSection> = new Set(["components", "motion"]);
+
 function DocumentButton({ controller, document }: { controller: BrandContextController; document: BrandKnowledgeDocument }) {
   return (
     <button
@@ -59,7 +62,9 @@ export function BrandContextSidebar({
 }) {
   const items = [
     ...brandKitItems.slice(0, 2),
-    ...measuredSections(measured).map((id) => ({ id, ...measuredItems[id] })),
+    ...measuredSections(measured)
+      .filter((id) => !hiddenMeasuredSections.has(id))
+      .map((id) => ({ id, ...measuredItems[id] })),
     ...brandKitItems.slice(2),
   ];
   return (
