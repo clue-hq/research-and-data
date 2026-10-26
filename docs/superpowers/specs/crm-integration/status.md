@@ -80,7 +80,9 @@ _Last updated: 2026-10-24 — Phase 3 built (Tasks 1–12 + final fix pass) on `
 
 ## Production readiness
 - 🔨 Own OAuth apps (R-14.1–R-14.3): HubSpot app + Salesforce packaged external client app created 2026-10-25, Composio custom configs set, nashville `.env` switched; **live-checked 2026-10-25 on both test CRMs** (`2026-10-25-own-oauth-apps-live-check-findings.md`; D-1 F3 deadlock and D-2 reconnect-keeps-connection fixed and re-checked live; D-5 a pre-existing ARV2 test failure); R-14.4 items before real customers (Partner Business Org link, released package version)
+- ✅ Production Composio project `clue_production` (2026-10-26): HubSpot `ac_KeqvrdIN6q8d`, Salesforce `ac_BYMP208InVku`, both custom credentials (same apps as dev), redirect `…/api/v3/toolkits/auth/callback`, scopes read back through the API (HubSpot the 13 of R-14.1; Salesforce set to `api refresh_token id` — the dashboard had `full refresh_token openid`)
 - ⬜ Composio Zero Data Retention on, sandbox off, pinned toolkit versions — same
+- ⬜ Production env: `CLUE_COMPOSIO_*` keys on Railway + the VM, and in `deploy/check_prod_env.py`
 - ⬜ HubSpot Marketplace listing (needed before the 25th install)
 
 ## Parked
