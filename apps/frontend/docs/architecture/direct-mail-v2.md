@@ -1,113 +1,94 @@
-# Connected account experience V2
+# Project workspace V2
 
-Status: working local frontend preview, not a backend integration or deployment.
+Status: local frontend preview. Revised after the founder rejected the initial
+V2 scope and visual treatment on 2026-10-25.
 
-## Run and compare
+## Scope
 
-V1 remains on `feat/direct-mail-infrastructure-ui`, in the original
-`direct-mail-infrastructure-ui/clue-main-pull-oct24` worktree, on port 5000.
-V2 is `feat/direct-mail-infrastructure-v2`, in the separate
-`direct-mail-v2/clue-main-pull-oct24` worktree, on port 5001.
+This branch owns the project account view and its connection to Direct Mail.
+The previous V2 Email and Analytics screens, email models/actions, scripted chat
+and custom Home are removed. Home, chat, global Artifacts and sidebar use the
+original Clue implementation. Email belongs to the separate email branch.
 
-From V2's `apps/frontend` directory:
+V1 stays on `feat/direct-mail-infrastructure-ui`, port 5000. V2 stays on
+`feat/direct-mail-infrastructure-v2`, port 5001, in a separate worktree.
 
 ```sh
+# From this worktree's apps/frontend directory
 npm run dev:preview -- --port 5001
 ```
 
-The existing preview launcher clears backend configuration, restricts its origin
-to loopback, and enables explicit fixture mode. No new environment flag was added.
-V2 has separate dependencies, browser origin and IndexedDB names. There are no
-production orders, emails, publishes, CRM writes or model calls in this flow.
-No private corpus, credentials or pilot contact records are copied into V2.
+Open `/projects/10m-landing-page-campaign/plan`. The launcher enables isolated
+fixture mode and clears live backend configuration. No purchases, messages,
+model calls, publication or fulfillment actions run against live services.
 
-## Walkthrough
+## Customer experience
 
-1. `/projects/10m-landing-page-campaign/chats/thread-primary` opens the prepared
-   conversational brief. The chips and composer return clearly identified local
-   example responses; they do not run a live agent.
-2. **Account plan** connects six fictional accounts. Four have mailers; Meridian
-   and Atlas Cloud start with email. Open an account for evidence, buying team,
-   ownership, selected approach and all related creative.
-3. **Northstar / Avery** starts with three gifts, card and note selection, a
-   confirmed sample address, and a $98 itemized estimate. Review and approve to
-   enter tracking. Approval does not manufacture order or carrier events.
-4. **Fieldwork / Priya** demonstrates a receiving-address hold. **Harbor / Casey**
-   shows fulfillment preparation. **Linden / Riley** shows carrier delivery and
-   a separate human reply. Shipment status and personal receipt remain distinct.
-5. **Artifacts** and project **Gallery** display the same records. Pages, ads,
-   emails and notes link back to the account. Email and note previews read their
-   owning records. A page preview is not published; no public URL or QR assignment
-   is invented. Ads are creative previews with sample audience eligibility.
-6. **Email** lets a user edit recipient copy, choose a sender and trigger, review
-   the rendered message, and save a local approval. Edits invalidate approval.
-   A human reply stops the sequence; marking it handled does not resume sending.
-7. **Results / Analytics** reads recorded distinct-account outcomes and approved
-   gift estimates. It does not infer a meeting from delivery or revenue from a gift.
+- Accounts: compact table of account, relationship owner, research, gift status
+  and connected artifacts. Search, status/owner filters, stable sorting and
+  25/50/100-row pages keep rendering bounded.
+- Selection applies only to visible rows on the current page. Filter and page
+  changes clear it. Bulk owner assignment checks every selected revision and
+  commits atomically; it preserves the sender on already prepared items.
+- An account opens one drawer with Overview, Gift, Page, Note and Ad tabs as
+  available. Gift and note previews read the existing mailer and approval
+  snapshot, rather than storing a second copy.
+- The drawer opens the existing Direct Mail review for gift selection, the card,
+  the note and itemized cost approval. Approved gifts open existing tracking.
+  A recorded approval alone does not create order/shipping events.
+- Project Artifacts is a searchable, paginated list. It opens the same account
+  drawer. Page/ad previews contain recipient-facing fictional copy. Pages remain
+  unpublished; QR assignment and public destinations are not simulated.
+- Chat opens the original Clue project chat. No custom agent simulator is added.
 
-## Object ownership
+Project = overall account motion; campaign = channel program within it. Project
+owner, account owner and prepared sender stay distinct. Territory is context;
+automatic territory routing is not implemented.
 
-Project = the overall account motion; campaign = a channel program inside it.
-The account plan exists independently of any mailer. Maya is the project and
-campaign owner in these examples. Alex and Jamie own account relationships;
-the sender on each outgoing item is explicit and can differ from account owner.
-Territory is assignment context, not an implemented automatic routing engine.
-Reassigning an account preserves existing approved sender/content snapshots.
+## Scale fixture and repository handoff
 
-`features/orchestration/model/workspace.ts` defines the Zod records and immutable
-revision-checked email/ownership operations. `data/workspace.fixture.ts` owns
-fictional people, accounts, channel programs, assets, email and outcomes.
-`data/workspace.repository.ts` is the presentation-facing seam; components never
-fetch backend payloads. `hooks/use-workspace.ts` handles subscription, pending
-and error state. IndexedDB transactions prevent stale multi-tab writes.
+`features/orchestration/data/workspace.fixture.ts` generates 1,000 fictional
+accounts at runtime: six prepared examples plus 994 research-pending accounts.
+Pending accounts have no invented research, fit score, contacts or artifacts.
+No private training corpus or real pilot contacts are copied into the project.
 
-The existing Direct Mail domain remains responsible for gift changes, review,
-cost approval, card assets and tracking. `data/mail.fixture.ts` composes a V2 seed
-joined by canonical account/contact/mailer IDs. `createBrowserRecordStore` is
-the shared atomic fixture persistence helper. V2 stores are
-`clue-orchestration-preview-v2` and `clue-direct-mail-preview-v2`.
+`model/account-list.ts` handles local filtering, stable sorting, pagination and
+selection boundaries. Only the visible page is rendered. The full fixture is
+still loaded in browser memory: this proves the frontend list behavior, not live
+server pagination or production throughput.
 
-## Backend handoff for Aryan
+`data/workspace.repository.ts` is the ownership/persistence seam. The preview
+adapter uses atomic IndexedDB transactions and revision checks, with cross-tab
+notifications. Storage version 4 migrates earlier V2 fixtures, preserving owner
+assignments while removing retired email records and replacing preview copy.
+The separate `clue-direct-mail-preview-v2` store retains existing gift edits and
+approvals; V1 browser storage is untouched.
 
-Replace the repository adapters and seed composition at the protected-layout
-boundary after an explicit contract review. Keep revision conflicts and approved
-snapshots enforceable on the server; IndexedDB is only a preview adapter.
-The models are frontend proposals, not assertions about backend schema.
+For live integration, review contracts with the founder first. Aryan should
+replace fixture reads with scoped account projections and server pagination,
+filter/sort queries and batch owner assignment. Preserve stable account,
+contact, mailer and artifact IDs, authorization, revision conflicts and approved
+snapshots on the server. Components must not embed transport logic.
 
-Required live services include account-plan projections, actual evidence/claim
-references, authorized owner/sender identities, recipient email approvals and
-provider events, creative version/publication records, QR routing, gift ordering,
-fulfillment events, cost settlement and CRM/calendar outcome events. Link these
-through shared IDs; avoid copying record bodies between surfaces.
+Required services outside this frontend slice include actual research claim
+references, authenticated owner identities, creative generation/versioning,
+publication/QR routing, gift ordering, fulfillment events and cost settlement.
 
-Email infrastructure remains a separate implementation effort. This version
-demonstrates the shared customer journey and does not replace that branch's
-mailbox integration. The original live-mode project and artifact routes retain
-their existing behavior when explicit preview mode is off.
+## Validation and limits
 
-## Deliberate limits
+The scale-model tests cover page boundaries, search/filter/sort, page-only
+selection, unchanged off-page accounts, stale-batch rejection and sender
+preservation. Cross-domain tests cover account/contact/mailer joins and existing
+gift-approval gates. Browser checks cover the table, local bulk assignment,
+previews and original navigation.
 
-- One prepared project and six fictional accounts; other existing app routes keep
-  their original fixture behavior.
-- Page/ad previews are inspectable concepts. Full editing, publication, media
-  budgets and campaign activation are not implemented in this slice.
-- No automatic territory assignment, live agent reasoning, mailbox sending,
-  reply composition, payment processing or fulfillment simulation.
-- A search budget sets a preferred gift range and ceiling without reserving funds.
-  Final gift approval uses the existing demo-credit estimate mechanism.
+The isolated preview is not a live workspace or deployed backend integration.
+The previous V2 research report remains background material, not authorization
+to build the removed email or analytics infrastructure.
 
-Reference: [approved product research](../research/abm-orchestration.md).
-
-## Verification
-
-The completed slice passed token generation, the production build, 3,675 tests
-(with 5 inherited skips), and lint (zero errors, 11 inherited warnings). A fresh
-review found stale email-dialog revisions and hardcoded reply ownership; both
-were reproduced in failing tests and fixed. Canonical artifact revisions also
-have regression coverage. Browser QA covered the connected customer journey at
-1159×899; no mobile-device verification is claimed.
-
-The current browser retains QA example edits: Avery is approved and awaiting
-merchant confirmation, Drew's edited message has a local approval, and Northstar
-is assigned to Jamie while Alex remains its prepared sender. New browser storage
-starts from the original six-account fixture.
+Final checks: design-token generation and production build passed; lint has zero
+errors and 11 inherited warnings. The full suite passed 3,672 tests with 5 skips;
+an additional prepared-mailer scale test passed in the final four-test scale run.
+Browser QA confirmed 25 rendered rows out of 1,000, bounded page selection,
+preview-to-tracking navigation and the restored chat controls. Desktop layouts
+were inspected at 1159px and 2511px; mobile-device verification was not performed.

@@ -1,14 +1,12 @@
 import { DesignIcon } from "@/components/ui/design-icon";
 import type { SidebarIconName } from "@/config/navigation";
-import { Mail, Inbox, ChartNoAxesCombined } from "lucide-react";
+import { Mail } from "lucide-react";
 
 interface SidebarIconProps {
   name: SidebarIconName;
 }
 
 export function SidebarIcon({ name }: SidebarIconProps) {
-  if (name === "email") return <Inbox size={16} strokeWidth={1.5} aria-hidden="true" />;
-  if (name === "analytics") return <ChartNoAxesCombined size={16} strokeWidth={1.5} aria-hidden="true" />;
   if (name === "mail") return <Mail size={16} strokeWidth={1.5} aria-hidden="true" />;
   if (name !== "account") {
     return <DesignIcon name={name} size={16} />;

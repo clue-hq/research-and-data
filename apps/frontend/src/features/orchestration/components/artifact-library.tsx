@@ -1,33 +1,67 @@
 "use client";
+
 import { useState } from "react";
-import Link from "next/link";
-import { Search, ArrowUpRight, ExternalLink } from "lucide-react";
+import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
 import { MailerPreview } from "@/features/direct-mail/components/mailer-preview";
 import type { DirectMailState } from "@/features/direct-mail/model/direct-mail";
-import { person, type CampaignArtifact, type WorkspaceState } from "../model/workspace";
-import { AccountLink, DetailPanel, Status } from "./workspace-ui";
+import type { CampaignArtifact, WorkspaceState } from "../model/workspace";
 import { artifactVersion } from "../model/artifact-version";
+import type { PreviewKind } from "./account-detail";
 import s from "./workspace.module.css";
 
-const kindNames = { page: "Landing page", ad: "LinkedIn ad", email: "Email", note: "Handwritten note" };
-export function ArtifactThumb({ asset, data, mail }: { asset: CampaignArtifact; data: WorkspaceState; mail: DirectMailState | null }) {
-  const account = data.accounts.find((a) => a.id === asset.accountId)!;
-  const email = data.emails.find((e) => e.id === asset.emailId), mailer = mail?.mailers.find((m) => m.id === asset.mailerId);
-  return <div className={s.assetThumb} aria-hidden="true">{asset.kind === "page" ? <div className={s.miniPage}><span>clue / for {account.name}</span><strong>{asset.headline}</strong><span>An idea for your next account campaign.</span></div> : asset.kind === "ad" ? <div className={s.miniAd}><strong>{asset.headline}</strong><small>CLUE · {account.name}</small></div> : asset.kind === "email" ? <div className={s.miniEmail}>To {account.contact}<strong>{email?.subject}</strong>{email?.body.slice(0,160)}</div> : <div className={s.noteThumb}>{mailer?.note.slice(0,150) ?? "Loading the connected note…"}</div>}</div>;
+export const kindNames = { page: "Landing page", ad: "LinkedIn ad", note: "Handwritten note" };
+
+export function ProjectArtifacts({ data, mail, open }: {
+  data: WorkspaceState; mail: DirectMailState | null; open: (id: string, preview: PreviewKind) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [kind, setKind] = useState("all");
+  const [page, setPage] = useState(1);
+  const assets = data.artifacts.filter((asset) => (kind === "all" || kind === asset.kind) && asset.title.toLowerCase().includes(search.trim().toLowerCase()));
+  const pages = Math.max(1, Math.ceil(assets.length / 25));
+  const currentPage = Math.min(page, pages);
+  const visible = assets.slice((currentPage - 1) * 25, currentPage * 25);
+  return <div className={s.workspace}>
+    <div className={s.toolbar}>
+      <label className={s.search}><Search size={15} aria-hidden="true" /><input aria-label="Search project artifacts" placeholder="Search artifacts" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>
+      <SelectField ariaLabel="Artifact type" className={s.select} value={kind} onValueChange={(value) => { setKind(value); setPage(1); }} options={[{ value: "all", label: "All types" }, ...Object.entries(kindNames).map(([value, label]) => ({ value, label }))]} />
+    </div>
+    <div className={s.tableScroll}><table className={s.table}>
+      <caption className={s.srOnly}>Artifacts in this project</caption>
+      <thead><tr><th>Artifact</th><th>Account</th><th>Type</th><th>Status</th><th>Version</th></tr></thead>
+      <tbody>{visible.map((asset) => {
+        const account = data.accounts.find((item) => item.id === asset.accountId)!;
+        const mailer = mail?.mailers.find((item) => item.id === asset.mailerId);
+        return <tr key={asset.id}>
+          <td><button className={s.accountButton} onClick={() => open(asset.accountId, asset.kind)}>{asset.title}</button></td>
+          <td><button className={s.textButton} onClick={() => open(account.id, "overview")}>{account.name}</button></td>
+          <td>{kindNames[asset.kind]}</td><td className={s.muted}>{asset.kind === "note" && mailer?.approval ? "Approved" : "Draft"}</td><td className={s.muted}>v{artifactVersion(asset, mail)}</td>
+        </tr>;
+      })}</tbody>
+    </table>{!visible.length ? <div className={s.empty}>No artifacts match these filters.</div> : null}</div>
+    <footer className={s.pagination}><span>{assets.length} artifacts</span><div className={s.paginationControls}><Button variant="transparent" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</Button><span className={s.pageNumber}>{currentPage} / {pages}</span><Button variant="transparent" size="sm" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next</Button></div></footer>
+  </div>;
 }
-export function ArtifactLibraryV2({ data, mail, initialType, open }: { data: WorkspaceState; mail: DirectMailState | null; initialType?: string; open: (id: string) => void }) {
-  const [kind, setKind] = useState(initialType ?? "all"), [account, setAccount] = useState("all"), [query, setQuery] = useState("");
-  const assets = data.artifacts.filter((a) => (kind === "all" || a.kind === kind) && (account === "all" || a.accountId === account) && a.title.toLowerCase().includes(query.toLowerCase()));
-  return <><div className={s.toolbar}><div className={`${s.row} ${s.wrap}`}><label className={s.search}><Search size={14} /><input aria-label="Search artifacts" placeholder="Search connected assets" value={query} onChange={(e) => setQuery(e.target.value)} /></label><select className={s.select} aria-label="Filter artifact type" value={kind} onChange={(e) => setKind(e.target.value)}><option value="all">All types</option>{Object.entries(kindNames).map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select><select className={s.select} aria-label="Filter artifact account" value={account} onChange={(e) => setAccount(e.target.value)}><option value="all">All accounts</option>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div><span className={s.caption}>{assets.length} assets</span></div><div className={s.artifactGrid}>{assets.map((asset) => { const email = data.emails.find((e) => e.id === asset.emailId), mailer = mail?.mailers.find((m) => m.id === asset.mailerId); const version = artifactVersion(asset, data, mail); return <button className={s.assetCard} key={asset.id} onClick={() => open(asset.id)}><ArtifactThumb asset={asset} data={data} mail={mail} /><div className={s.assetInfo}><h3>{asset.title}</h3><div className={s.between}><span className={s.caption}>{kindNames[asset.kind]} · v{version}</span><Status>{email?.approval || mailer?.approval ? "Approved" : asset.status === "review" ? "For review" : "Draft"}</Status></div></div></button>; })}</div>{assets.length === 0 ? <div className={s.empty}><p>No assets match these filters.</p><button className={s.textLink} onClick={() => { setKind("all"); setAccount("all"); setQuery(""); }}>Clear filters</button></div> : null}</>;
-}
-export function ArtifactDetail({ asset, data, mail, close }: { asset: CampaignArtifact; data: WorkspaceState; mail: DirectMailState | null; close: () => void }) {
-  const a = data.accounts.find((a) => a.id === asset.accountId)!, sender = person(data, a.senderId);
-  const email = data.emails.find((e) => e.id === asset.emailId), mailer = mail?.mailers.find((m) => m.id === asset.mailerId);
-  const card = mail?.cards.find((c) => c.id === mailer?.cardId), style = mail?.styles.find((s) => s.id === mailer?.styleId);
-  return <DetailPanel title={asset.title} description={`${kindNames[asset.kind]} · Version ${artifactVersion(asset, data, mail)}`} close={close} wide>
-    <div className={`${s.between} mb-5`}><AccountLink account={a} /><span className={s.tag}>{asset.kind === "page" ? "Preview · Not published" : "Connected to account plan"}</span></div>
-    {asset.kind === "page" ? <div className={s.pagePreview}><header><strong>clue</strong><span>Prepared for {a.name}</span></header><h2>{asset.headline}</h2><p>{a.insight}</p><span className={s.previewButton}>{asset.cta}</span><article><h3>Start with the account finding</h3><p>{a.evidence}</p></article><article><h3>Bring the buying team into the story</h3><p>{a.committee.filter((p) => p.name !== "Not identified").map((p) => p.name).join(" and ")} need a useful next step, connected to the work already underway.</p></article><article><h3>A concrete next conversation</h3><p>{sender.name} can walk through an account example and the decisions behind it.</p></article><p className={s.caption}>Creative preview · Example account content</p></div> : asset.kind === "ad" ? <><div className={s.card}><p className="text-[13px] font-medium mb-1">Clue</p><p className={`${s.caption} mb-4`}>Sponsored · Creative preview</p><p className="text-[13px] mb-4">{asset.body}</p><div className={s.miniAd} style={{ height:280 }}><strong style={{ fontSize:36, maxWidth:360 }}>{asset.headline}</strong><small>{asset.cta} ↗</small></div></div><div className={`${s.card} ${s.spaced}`}><Status tone={a.audienceSize < 300 ? "warm" : "neutral"}>{a.audienceSize < 300 ? "Audience too small to launch" : "Audience eligible in sample forecast"}</Status><p className={`${s.caption} mt-2`}>{a.audienceSize.toLocaleString()} estimated members. LinkedIn needs at least 300. {a.audienceSize < 300 ? "Group relevant accounts before reviewing a media budget." : "Review the audience, destination and media budget before any launch."}</p><Link href={`/artifacts?asset=page-${a.id}`} className={`${s.textLink} mt-3 text-[12px]`}>Open landing page<ExternalLink size={12} /></Link></div></> : asset.kind === "email" && email ? <div className={s.card}><div className={s.caption}>From {person(data, email.senderId).name} · To {a.contact}</div><h2 className="font-medium mt-4">{email.subject}</h2><p className={s.emailBody}>{email.body}</p><Link className={s.textLink} href={`/email?message=${email.id}`}>Open email review<ArrowUpRight size={13} /></Link></div> : mailer && card && style ? <><MailerPreview card={mailer.approval?.card ?? card} style={mailer.approval?.style ?? style} note={mailer.approval?.note ?? mailer.note} signature={mailer.approval?.signature ?? mailer.signature} /><Link className={`${s.textLink} mt-4`} href={`/direct-mail/${mailer.id}`}>Open gift and note<ArrowUpRight size={13} /></Link></> : <p className={s.caption}>Loading the connected note…</p>}
-    <section className={`${s.section} ${s.spaced}`}><h2>Why this asset exists</h2><p className={s.messageText}>{a.rationale}</p><p className={`${s.caption} mt-3`}>Account plan → {a.name} → {kindNames[asset.kind]}</p></section>
-    {asset.kind === "page" ? <section className={s.section}><h2>Publication & printed links</h2><p className={s.caption}>This version has no public URL. A QR can be assigned after publication and destination verification. Previewing the page does not publish it.</p></section> : null}
-  </DetailPanel>;
+
+export function ArtifactPreview({ asset, data, mail }: { asset: CampaignArtifact; data: WorkspaceState; mail: DirectMailState | null }) {
+  const account = data.accounts.find((item) => item.id === asset.accountId)!;
+  const mailer = mail?.mailers.find((item) => item.id === asset.mailerId);
+  const card = mailer?.approval?.card ?? mail?.cards.find((item) => item.id === mailer?.cardId);
+  const style = mailer?.approval?.style ?? mail?.styles.find((item) => item.id === mailer?.styleId);
+  return <>
+    <div className={s.previewMeta}><span>{kindNames[asset.kind]} · v{artifactVersion(asset, mail)}</span><span>{asset.kind === "note" && mailer?.approval ? "Approved" : "Draft"}</span></div>
+    {asset.kind === "page" ? <>
+      <div className={s.pagePreview}>
+        <header><strong>clue</strong><span>For {account.name}</span></header>
+        <div className={s.pageHero}><span className={s.pageEyebrow}>An account brief for {account.contact.split(" ")[0]}</span><h2>{asset.headline}</h2><p>{asset.body}</p><span className={s.previewCta}>{asset.cta}</span></div>
+        <section><h3>{asset.sectionTitle}</h3><p>{asset.sectionBody}</p></section>
+      </div>
+      <p className={s.previewFootnote}>Not published. A live destination is needed before this page can be linked from the gift’s QR code.</p>
+    </> : asset.kind === "ad" ? <>
+      <div className={s.adPreview}><header><strong>Clue</strong><span>Sponsored</span></header><p>{asset.body}</p><div className={s.adCreative}><span>Prepared for {account.name}</span><h2>{asset.headline}</h2><strong>clue</strong></div><footer><span>Account brief</span><span>{asset.cta}</span></footer></div>
+      <p className={s.previewFootnote}>{account.audienceSize.toLocaleString()} estimated audience members in this example. Audience eligibility, destination and budget still need verification before launch.</p>
+    </> : mailer && card ? <MailerPreview card={card} style={style} note={mailer.approval?.note ?? mailer.note} signature={mailer.approval?.signature ?? mailer.signature} /> : <p className={s.caption}>{mail ? "The connected card is unavailable." : "Loading the connected note…"}</p>}
+  </>;
 }

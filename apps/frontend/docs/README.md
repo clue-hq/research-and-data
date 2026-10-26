@@ -64,6 +64,10 @@ specifications from becoming competing sources of truth.
   plan connecting ownership, agents, channels, artifacts and outcomes; research,
   not an implemented integration contract.
 
+- [`architecture/direct-mail-v2.md`](architecture/direct-mail-v2.md) — isolated
+  project workspace on port 5001: bounded account table, contextual previews and
+  Direct Mail handoff. Email is owned by the separate email branch.
+
 ## Required update workflow
 
 For every implementation topic:

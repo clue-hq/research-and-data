@@ -2,7 +2,7 @@ import { createDirectMailFixture } from "@/features/direct-mail/data/direct-mail
 import { estimate, StateSchema } from "@/features/direct-mail/model/direct-mail";
 import { createWorkspaceFixture } from "./workspace.fixture";
 export function createV2MailFixture() {
-  const state = createDirectMailFixture(), workspace = createWorkspaceFixture();
+  const state = createDirectMailFixture(), workspace = createWorkspaceFixture(6);
   state.mailers = state.mailers.filter((m) => workspace.accounts.some((a) => a.mailerId === m.id));
   state.creditEntries = []; state.creditBalanceCents = 200000;
   for (const mailer of state.mailers) {
