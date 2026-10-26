@@ -1001,7 +1001,8 @@ class OpenDesignLegTool(Tool):
         document, the page is born noindex — the DAL's one birth rule (founder ruling 2026-10-16).
 
         A workspace listed in ``CLUE_DESIGN_SITE_ENGINE_WORKSPACES`` (website agent on Puck,
-        2026-10-09 plan) is born a Puck ``site`` document instead, through the same DAL call
+        2026-10-09 plan), or every workspace when the list holds ``*``, is born a Puck ``site``
+        document instead, through the same DAL call
         and the same read-back: the site minter is pure, so it runs inline, and the creation
         contract stamps the approved kit onto a site exactly as onto a web document.
         """
@@ -1011,7 +1012,7 @@ class OpenDesignLegTool(Tool):
             if requested_brand_kit_id is None or requested_brand_kit_version is None
             else {"id": requested_brand_kit_id, "version": requested_brand_kit_version}
         )
-        if workspace_id in self._site_engine_workspaces:
+        if "*" in self._site_engine_workspaces or workspace_id in self._site_engine_workspaces:
             site_doc = self._mint_site_document(
                 document_id=document_id,
                 title=title,
@@ -1895,7 +1896,8 @@ def build_design_leg_tools(
     sibling design write tools.
 
     ``site_engine_workspaces`` (``CLUE_DESIGN_SITE_ENGINE_WORKSPACES``) lists the workspaces
-    whose new websites are born as Puck ``site`` documents; empty leaves every birth unchanged.
+    whose new websites are born as Puck ``site`` documents (``*``: every workspace); empty leaves
+    every birth unchanged.
     """
 
     return (

@@ -727,8 +727,9 @@ class Settings(BaseSettings):
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
     # Website agent on Puck (2026-10-09 plan): workspaces whose NEW websites are born as Puck
-    # `site` documents instead of WebDocs. Comma-separated workspace ids; empty = off everywhere,
-    # so every existing path is byte-identical. Head of ABM is unchanged: `open_design_leg`
+    # `site` documents instead of WebDocs. Comma-separated workspace ids, or `*` for every
+    # workspace (production since 2026-10-26); empty = off everywhere, so every existing path is
+    # byte-identical. Head of ABM is unchanged: `open_design_leg`
     # with doc_kind="web" births a site for listed workspaces.
     # Env: CLUE_DESIGN_SITE_ENGINE_WORKSPACES.
     design_site_engine_workspaces: str = ""
